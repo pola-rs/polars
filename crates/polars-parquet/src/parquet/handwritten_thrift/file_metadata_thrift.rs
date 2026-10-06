@@ -17,7 +17,9 @@ use polars_parquet_format::{
     EncryptionWithFooterKey, FileCryptoMetaData, KeyValue, SchemaElement, SortingColumn,
 };
 
-use super::parquet_thrift::{FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol};
+use super::parquet_thrift::{
+    FieldIdentifier, FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol,
+};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{
@@ -35,6 +37,14 @@ impl<T> RequireField<T> for Option<T> {
     fn require(self, name: &str) -> ParquetResult<T> {
         self.ok_or_else(|| ParquetError::oos(format!("{name} missing")))
     }
+}
+
+/// Get the value of a boolean struct field, or an error if the field has
+/// another type.
+#[inline]
+fn bool_field(f: &FieldIdentifier, name: &str) -> ParquetResult<bool> {
+    f.bool_val
+        .ok_or_else(|| ParquetError::oos(format!("{name} is not a boolean field")))
 }
 
 /// Decode a Thrift list by reading the prefix and invoking `read_one` for
@@ -209,7 +219,7 @@ fn read_aes_gcm_v1(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<Aes
     read_struct_fields!(prot, |f| {
         1 => aad_prefix = Some(prot.read_bytes_owned()?),
         2 => aad_file_unique = Some(prot.read_bytes_owned()?),
-        3 => supply_aad_prefix = Some(f.bool_val.expect("thrift bool field")),
+        3 => supply_aad_prefix = Some(bool_field(&f, "supply_aad_prefix")?),
     });
     Ok(AesGcmV1 {
         aad_prefix,
@@ -500,8 +510,8 @@ fn read_statistics(
             prot.skip_bytes(len as usize)?;
             min_value = Some(ByteRange { offset, len });
         },
-        7 => is_max_value_exact = Some(f.bool_val.expect("thrift bool field")),
-        8 => is_min_value_exact = Some(f.bool_val.expect("thrift bool field")),
+        7 => is_max_value_exact = Some(bool_field(&f, "is_max_value_exact")?),
+        8 => is_min_value_exact = Some(bool_field(&f, "is_min_value_exact")?),
     });
 
     Ok(CompactStatistics {
@@ -538,8 +548,8 @@ fn read_sorting_column(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult
 
     read_struct_fields!(prot, |f| {
         1 => column_idx = Some(prot.read_i32()?),
-        2 => descending = Some(f.bool_val.expect("thrift bool field")),
-        3 => nulls_first = Some(f.bool_val.expect("thrift bool field")),
+        2 => descending = Some(bool_field(&f, "descending")?),
+        3 => nulls_first = Some(bool_field(&f, "nulls_first")?),
     });
 
     Ok(SortingColumn {
@@ -705,7 +715,7 @@ fn read_time_type(
     let mut is_adjusted: Option<bool> = None;
     let mut unit: Option<polars_parquet_format::TimeUnit> = None;
     read_struct_fields!(prot, |f| {
-        1 => is_adjusted = Some(f.bool_val.expect("thrift bool field")),
+        1 => is_adjusted = Some(bool_field(&f, "is_adjusted_to_u_t_c")?),
         2 => unit = Some(read_time_unit(prot)?),
     });
     Ok(TimeType {
@@ -721,7 +731,7 @@ fn read_timestamp_type(
     let mut is_adjusted: Option<bool> = None;
     let mut unit: Option<polars_parquet_format::TimeUnit> = None;
     read_struct_fields!(prot, |f| {
-        1 => is_adjusted = Some(f.bool_val.expect("thrift bool field")),
+        1 => is_adjusted = Some(bool_field(&f, "is_adjusted_to_u_t_c")?),
         2 => unit = Some(read_time_unit(prot)?),
     });
     Ok(TimestampType {
@@ -738,7 +748,7 @@ fn read_int_type(
     let mut is_signed: Option<bool> = None;
     read_struct_fields!(prot, |f| {
         1 => bit_width = Some(prot.read_i8()?),
-        2 => is_signed = Some(f.bool_val.expect("thrift bool field")),
+        2 => is_signed = Some(bool_field(&f, "is_signed")?),
     });
     Ok(IntType {
         bit_width: bit_width.require("IntType.bit_width")?,
@@ -788,6 +798,34 @@ mod tests {
     #[test]
     fn column_order_truncated_is_an_error() {
         assert!(decode_column_order(&[0x1C]).is_err());
+    }
+
+    #[test]
+    fn aes_gcm_v1_supply_aad_prefix() {
+        // `supply_aad_prefix` (id 3) as a boolean true, then stop.
+        let mut prot = ThriftSliceInputProtocol::new(&[0x31, 0x00]);
+        let algorithm = read_aes_gcm_v1(&mut prot).unwrap();
+        assert_eq!(algorithm.supply_aad_prefix, Some(true));
+    }
+
+    #[test]
+    fn non_boolean_bool_field_is_an_error() {
+        // `supply_aad_prefix` (id 3) encoded as an i32 of 1, then stop.
+        let mut prot = ThriftSliceInputProtocol::new(&[0x35, 0x02, 0x00]);
+        let Err(ParquetError::OutOfSpec(message)) = read_aes_gcm_v1(&mut prot) else {
+            panic!("expected an out of spec error");
+        };
+        assert!(
+            message.contains("supply_aad_prefix is not a boolean field"),
+            "{message}"
+        );
+
+        // `is_signed` (id 2) encoded as an i32 of 1, after `bit_width` (id 1) of 32.
+        let mut prot = ThriftSliceInputProtocol::new(&[0x13, 0x20, 0x15, 0x02, 0x00]);
+        assert!(matches!(
+            read_int_type(&mut prot),
+            Err(ParquetError::OutOfSpec(_))
+        ));
     }
 
     #[test]
