@@ -16,6 +16,7 @@
 // see https://queue.acm.org/detail.cfm?id=3022184
 
 mod admission;
+mod knee;
 mod model;
 mod regime;
 
@@ -27,6 +28,7 @@ use std::time::{Duration, Instant};
 
 pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
 use crossbeam_queue::ArrayQueue;
+use knee::{KneeConfig, KneeController, KneeTick};
 pub use model::Model;
 use polars_core::runtime::ASYNC;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -65,6 +67,20 @@ pub struct ControllerConfig {
     control_interval: Duration,
     // Total budget only resizes if the relative changes exceeds this threshold
     budget_resize_threshold: f64,
+    // BDP v2 prototype (PLDEV_BDP_*): which model sets the byte budget.
+    bdp_model: BdpModel,
+    knee_gain: f64,
+    knee_round_ticks: u32,
+    knee_max_bytes: Option<u64>,
+    knee_ramp_lifetime_ratio: f64,
+}
+
+/// Which model sets the in-flight byte budget. `Ttfb` is today's model; `Knee` applies the
+/// knee-based prototype.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BdpModel {
+    Ttfb,
+    Knee,
 }
 
 impl Default for ControllerConfig {
@@ -95,6 +111,18 @@ impl Default for ControllerConfig {
             floor_request_budget: get_inflight_floor_request_budget(),
             control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
+            bdp_model: match std::env::var("PLDEV_BDP_MODEL").as_deref() {
+                Err(_) | Ok("ttfb") => BdpModel::Ttfb,
+                Ok("knee") => BdpModel::Knee,
+                Ok(v) => panic!("invalid value for PLDEV_BDP_MODEL: {v}"),
+            },
+            knee_gain: 1.0,
+            knee_round_ticks: 2,
+            knee_ramp_lifetime_ratio: 2.0,
+            knee_max_bytes: std::env::var("PLDEV_BDP_MAX_BYTES").ok().map(|v| {
+                v.parse()
+                    .unwrap_or_else(|_| panic!("invalid value for PLDEV_BDP_MAX_BYTES: {v}"))
+            }),
         }
     }
 }
@@ -223,6 +251,8 @@ pub struct ConcurrencyController {
     config: ControllerConfig,
     sample_queue: Arc<ArrayQueue<IoSample>>,
     samples_dropped: Arc<RelaxedCell<u64>>,
+    // Bytes of completed data requests, counted outside the sample queue (which drops when full).
+    completed_bytes: Arc<RelaxedCell<u64>>,
     head_rtt: Arc<HeadRttChannel>,
     inflight_budget: Arc<InFlightBudget>,
     _control_task: tokio::task::JoinHandle<()>,
@@ -232,6 +262,7 @@ impl ConcurrencyController {
     pub fn new(config: ControllerConfig, pacing_budget: Option<PacingBudget>) -> Self {
         let sample_queue = Arc::new(ArrayQueue::new(SAMPLE_QUEUE_CAPACITY));
         let samples_dropped = Arc::new(RelaxedCell::new_u64(0));
+        let completed_bytes = Arc::new(RelaxedCell::new_u64(0));
         let head_rtt = Arc::new(HeadRttChannel::new());
 
         let inflight_budget = Arc::new(InFlightBudget::new(
@@ -244,6 +275,7 @@ impl ConcurrencyController {
         let control_task = Self::spawn_control_loop(
             sample_queue.clone(),
             samples_dropped.clone(),
+            completed_bytes.clone(),
             head_rtt.clone(),
             inflight_budget.clone(),
             config.clone(),
@@ -254,6 +286,7 @@ impl ConcurrencyController {
             config,
             sample_queue,
             samples_dropped,
+            completed_bytes,
             head_rtt,
             inflight_budget,
             _control_task: control_task,
@@ -266,6 +299,7 @@ impl ConcurrencyController {
 
     /// Record IO for a completed data request. Hot path.
     pub fn record_io(&self, sample: IoSample) {
+        self.completed_bytes.fetch_add(sample.n_bytes);
         if self.sample_queue.push(sample).is_err() {
             // Queue full: drop. Samples are statistics is considered acceptable.
             self.samples_dropped.fetch_add(1);
@@ -288,6 +322,7 @@ impl ConcurrencyController {
     fn spawn_control_loop(
         sample_queue: Arc<ArrayQueue<IoSample>>,
         samples_dropped: Arc<RelaxedCell<u64>>,
+        completed_bytes: Arc<RelaxedCell<u64>>,
         head_rtt: Arc<HeadRttChannel>,
         admission: Arc<InFlightBudget>,
         config: ControllerConfig,
@@ -307,6 +342,20 @@ impl ConcurrencyController {
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
             let max_inflight_budget = config.request_budget as f64;
+
+            let mut knee = (config.bdp_model != BdpModel::Ttfb).then(|| {
+                KneeController::new(KneeConfig {
+                    init_budget: config.init_byte_budget,
+                    max_budget: config.knee_max_bytes,
+                    gain: config.knee_gain,
+                    round_ticks: config.knee_round_ticks,
+                    tick: config.control_interval,
+                    probe_interval: Duration::from_millis(3000),
+                    idle_grace: Duration::from_millis(5000),
+                    idle_reset: Duration::from_secs(30),
+                    ramp_lifetime_ratio: config.knee_ramp_lifetime_ratio,
+                })
+            });
 
             loop {
                 ticker.tick().await;
@@ -332,7 +381,29 @@ impl ConcurrencyController {
                     (state, signal, dropped, bw_hwm_held)
                 };
 
-                if !matches!(state, RegimeState::WarmIdle { .. }) {
+                let bytes_done = completed_bytes.swap(0);
+                let bytes_parked = admission.take_bytes_parked();
+                let stats = admission.stats();
+                let knee_budget = knee.as_mut().map(|k| {
+                    k.step(KneeTick {
+                        now,
+                        bytes_done,
+                        bytes_in_use: stats.bytes_in_use,
+                        bytes_parked,
+                        bytes_waiting: stats.bytes_waiting,
+                        bytes_sat: stats.bytes_saturation,
+                        bytes_budget: admission.current_byte_budget(),
+                    })
+                });
+
+                if let Some(target) = knee_budget {
+                    let current = admission.current_byte_budget();
+                    let ratio = target as f64 / current.max(1) as f64;
+                    let threshold = config.budget_resize_threshold;
+                    if ratio < (1.0 - threshold) || ratio > (1.0 + threshold) {
+                        admission.resize_byte_budget(target);
+                    }
+                } else if !matches!(state, RegimeState::WarmIdle { .. }) {
                     // Compute base BDP
                     let base_byte_budget = match (state, signal) {
                         (RegimeState::Init, _) | (_, None) => config.init_byte_budget,
@@ -372,7 +443,20 @@ impl ConcurrencyController {
 
                 // Log snapshot.
                 if std::env::var("POLARS_LOG_CONCURRENCY").is_ok() {
+                    // After this tick's resize.
                     let stats = admission.stats();
+                    if let Some(k) = &knee {
+                        eprintln!(
+                            "[KneeBudget {}] kphase={}, knee={:.1} MB, knee_budget={:.1} MB, \
+                            bw_round={:.1} MB/s, braking={}",
+                            chrono::Utc::now(),
+                            k.phase().label(),
+                            k.knee().unwrap_or(0) as f64 / 1e6,
+                            k.budget() as f64 / 1e6,
+                            k.last_bw_round() / 1e6,
+                            u8::from(k.braking()),
+                        );
+                    }
                     eprintln!(
                         "[InFlightConcurrency {}] regime={}, \
                         bw_hwm={:.1} MB/s, \
