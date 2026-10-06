@@ -336,8 +336,8 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
     }
 }
 
-/// An [`AnyValueBuffer`] that converts nested values in batches; as each value
-/// retains a [`Series`] (until converted), this saves a huge amount of memory.
+/// An [`AnyValueBuffer`] that converts nested values in batches (as each value retains
+/// a [`Series`] until finally converted, this can prevent excessive peak memory use).
 pub struct AnyValueBufferBatched<'a> {
     values: AnyValueBuffer<'a>,
     converted: Option<SeriesBuilder>,
@@ -422,9 +422,19 @@ impl<'a> AnyValueBufferBatched<'a> {
         }
         Ok(series)
     }
+
+    /// Convert into a column of `height` rows.
+    pub fn into_column(self, name: PlSmallStr, height: usize) -> PolarsResult<Column> {
+        let series = self.into_series()?;
+        Ok(if series.is_empty() {
+            Column::full_null(name, height, series.dtype())
+        } else {
+            series.with_name(name).into_column()
+        })
+    }
 }
 
-/// An [`AnyValueBuffer`] that should be used when we trust the builder
+/// An [`AnyValueBuffer`] that should be used when we trust the builder.
 #[derive(Clone)]
 pub enum AnyValueBufferTrusted<'a> {
     Boolean(BooleanChunkedBuilder),

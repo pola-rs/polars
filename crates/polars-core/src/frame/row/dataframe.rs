@@ -84,17 +84,7 @@ impl DataFrame {
         let v = buffers
             .into_iter()
             .zip(schema.iter_names())
-            .map(|(b, name)| {
-                let mut c = b.into_series()?.into_column();
-                // if the schema adds a column not in the rows, we
-                // fill it with nulls
-                if c.is_empty() {
-                    Ok(Column::full_null(name.clone(), expected_len, c.dtype()))
-                } else {
-                    c.rename(name.clone());
-                    Ok(c)
-                }
-            })
+            .map(|(b, name)| b.into_column(name.clone(), expected_len))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         DataFrame::new(expected_len, v)
@@ -117,7 +107,8 @@ impl DataFrame {
 /// Every row must have the same width as the first, which can be narrower than
 /// the schema (the missing columns are filled with nulls) but not wider, as
 /// the extra values would otherwise be silently dropped.
-fn check_row_width(
+#[inline]
+pub fn check_row_width(
     row: &Row,
     width: &mut Option<usize>,
     n_columns: usize,

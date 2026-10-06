@@ -1,5 +1,5 @@
 use polars::frame::row::{
-    AnyValueBufferBatched, Row, rows_to_schema_supertypes, rows_to_supertypes,
+    AnyValueBufferBatched, Row, check_row_width, rows_to_schema_supertypes, rows_to_supertypes,
 };
 use polars::prelude::*;
 use pyo3::exceptions::PyKeyError;
@@ -64,15 +64,7 @@ impl PyDataFrame {
         let mut width = None;
         let mut height = 0;
         let mut push_row = |record: &Bound<PyAny>, row: Row<'static>| {
-            // rows are as wide as the first (any further schema columns are null)
-            let expected = *width.get_or_insert(row.0.len().min(buffers.len()));
-            if row.0.len() != expected {
-                return Err(PyPolarsErr::from(polars_err!(
-                    ShapeMismatch: "row at index {} has length {} (expected {})",
-                    height, row.0.len(), expected
-                ))
-                .into());
-            }
+            check_row_width(&row, &mut width, buffers.len(), height).map_err(PyPolarsErr::from)?;
             for (i, (buffer, value)) in buffers.iter_mut().zip(row.0).enumerate() {
                 push(py, buffer, value, || read(record, i))?;
             }
@@ -91,14 +83,7 @@ impl PyDataFrame {
             let columns = buffers
                 .into_iter()
                 .zip(schema.iter_names())
-                .map(|(buffer, name)| {
-                    let series = buffer.into_series()?;
-                    Ok(if series.is_empty() {
-                        Column::full_null(name.clone(), height, series.dtype())
-                    } else {
-                        series.with_name(name.clone()).into()
-                    })
-                })
+                .map(|(buffer, name)| buffer.into_column(name.clone(), height))
                 .collect::<PolarsResult<Vec<_>>>()?;
             DataFrame::new(height, columns)
         })

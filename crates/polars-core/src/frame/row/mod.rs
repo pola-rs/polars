@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
 pub use av_buffer::*;
+pub use dataframe::check_row_width;
 use polars_arrow::bitmap::Bitmap;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "object")]
