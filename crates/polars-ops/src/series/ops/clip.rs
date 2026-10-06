@@ -1,6 +1,7 @@
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::broadcast::broadcast_len;
 
 #[inline]
 fn clamp<T: PartialOrd>(input: T, min: T, max: T) -> T {
@@ -151,10 +152,7 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    let len = [ca.len(), min.len(), max.len()]
-        .into_iter()
-        .find(|l| *l != 1)
-        .unwrap_or(1);
+    let len = broadcast_len([ca.len(), min.len(), max.len()])?;
     let ca = &*ca.broadcast_to(len)?;
     let out = match (min.len(), max.len()) {
         (1, 1) => match (min.get(0), max.get(0)) {
@@ -202,7 +200,7 @@ where
     T::Native: PartialOrd,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    let len = if ca.len() == 1 { bound.len() } else { ca.len() };
+    let len = broadcast_len([ca.len(), bound.len()])?;
     let ca = &*ca.broadcast_to(len)?;
     let out = match bound.len() {
         1 => match bound.get(0) {
