@@ -320,8 +320,8 @@ impl KneeController {
                     self.min_lifetime = f64::INFINITY;
                     self.lifetime_held = false;
                     self.ramp_hist.clear();
+                    // Scan start: not a knee sample.
                     if binding && !limiter_bound {
-                        self.ramp_hist.push((round_budget, bw_round));
                         self.set_budget(self.budget.saturating_mul(2));
                     }
                 }
@@ -353,8 +353,8 @@ impl KneeController {
                     self.lifetime_held = true;
                 } else {
                     self.lifetime_held = false;
-                    // The knee comes from rounds where the budget bound only.
-                    if binding {
+                    // The knee comes from rounds that bind and use at least half of the budget.
+                    if lifetime_measured {
                         self.ramp_hist.push((round_budget, bw_round));
                     }
                     let has_knee = !self.ramp_hist.is_empty();
@@ -614,32 +614,45 @@ mod tests {
         assert_eq!(c.budget(), 100);
     }
 
-    /// The HTTP rate limiter admits requests at its rate, half of them metadata, and doubles the
-    /// rate every round: data bandwidth doubles too, but RampUp holds.
+    /// Scan start (fills the budget, delivers little); then the HTTP rate limiter admits requests
+    /// at its rate, half of them metadata, and doubles it every round: data bandwidth doubles too,
+    /// but RampUp holds. Once the limiter releases, demand (150) stays below the budget: still no
+    /// knee, so no Stable target scaled from scan-start bandwidth.
     #[test]
     fn ramp_up_holds_while_the_limiter_binds() {
         let mut c = KneeController::new(cfg());
         let t0 = Instant::now();
-        let mut rate = 100.0;
-        for i in 0..20u64 {
-            if i > 0 && i % 2 == 0 {
-                rate *= 2.0;
-            }
+        let mut step = |i: u64, bytes_done: u64, demand: u64, rate: f64, admitted: u64| {
             let budget = c.budget();
-            let admitted = (rate * 0.1) as u64;
+            let in_use = budget.min(demand);
             c.step(KneeTick {
                 now: t0 + Duration::from_millis(100 * (i + 1)),
-                bytes_done: 10 * (admitted / 2),
-                bytes_in_use: budget,
-                bytes_parked: 1,
+                bytes_done,
+                bytes_in_use: in_use,
+                bytes_parked: u64::from(budget <= demand),
                 bytes_waiting: 0,
-                bytes_sat: 1.0,
+                bytes_sat: in_use as f64 / budget as f64,
                 bytes_budget: budget,
                 limiter_rate: Some(rate),
                 limiter_admitted: admitted,
             });
+            c.budget()
+        };
+        step(0, 1, u64::MAX, 100.0, 1);
+        step(1, 1, u64::MAX, 100.0, 1);
+        let mut rate = 100.0;
+        for i in 2..22 {
+            if i % 2 == 0 {
+                rate *= 2.0;
+            }
+            let admitted = (rate * 0.1) as u64;
+            step(i, 10 * (admitted / 2), u64::MAX, rate, admitted);
+        }
+        for i in 22..42 {
+            step(i, 5000, 150, 1e6, 50);
         }
         assert_eq!(c.phase(), KneePhase::RampUp);
-        assert_eq!(c.budget(), 100);
+        assert_eq!(c.knee(), None);
+        assert_eq!(c.budget(), 200);
     }
 }
