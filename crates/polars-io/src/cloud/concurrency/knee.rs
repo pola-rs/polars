@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Debug)]
 pub struct KneeConfig {
     pub init_budget: u64,
-    pub max_budget: Option<u64>,
+    pub max_budget: u64,
     pub gain: f64,
     pub round_ticks: u32,
     /// Control tick length; a round lasts `round_ticks` ticks.
@@ -130,9 +130,7 @@ pub struct KneeController {
 
 impl KneeController {
     pub fn new(cfg: KneeConfig) -> Self {
-        let budget = cfg
-            .max_budget
-            .map_or(cfg.init_budget, |max| cfg.init_budget.min(max));
+        let budget = cfg.init_budget.min(cfg.max_budget);
         Self {
             cfg,
             phase: KneePhase::Init,
@@ -199,6 +197,9 @@ impl KneeController {
                     *self = Self::new(self.cfg.clone());
                 } else if self.knee.is_some() {
                     self.resume_stable(t.now);
+                } else {
+                    // No knee yet: the RampUp state is from the traffic before the idle period.
+                    *self = Self::new(self.cfg.clone());
                 }
             }
             self.last_io = Some(t.now);
@@ -293,7 +294,12 @@ impl KneeController {
             self.recent_bw.pop_front();
         }
         self.recent_bw.push_back(bw_round);
-        let sustained_bw = self.recent_bw.iter().copied().fold(f64::INFINITY, f64::min);
+        // 0 until the window is full (start, after idle).
+        let sustained_bw = if self.recent_bw.len() == SUSTAINED_ROUNDS {
+            self.recent_bw.iter().copied().fold(f64::INFINITY, f64::min)
+        } else {
+            0.0
+        };
 
         // The round binds and uses at least half of the applied budget (not scan start).
         let lifetime_measured =
@@ -328,8 +334,8 @@ impl KneeController {
             },
             // Bandwidth follows the HTTP rate limiter, not the budget: hold.
             KneePhase::RampUp if limiter_bound => {
-                // Growth is judged from the bandwidth at the end of the hold.
-                self.best_bw = bw_round;
+                // Growth is judged from the best bandwidth so far, including the hold.
+                self.best_bw = self.best_bw.max(bw_round);
                 self.no_growth_rounds = 0;
                 self.not_binding_rounds = 0;
                 self.lifetime_held = false;
@@ -366,7 +372,7 @@ impl KneeController {
                         self.set_budget(self.budget.saturating_mul(2));
                     } else if binding {
                         self.no_growth_rounds += 1;
-                        if self.no_growth_rounds >= 2 {
+                        if self.no_growth_rounds >= 2 && has_knee {
                             self.enter_stable(now);
                         }
                     } else {
@@ -388,6 +394,8 @@ impl KneeController {
                     // `set_budget` keeps it at or above the initial budget.
                     let floor = self.knee.map_or(self.cfg.init_budget, |k| k / 2);
                     self.set_budget(((self.budget as f64 * 0.8) as u64).max(floor));
+                    // The probe interval restarts when the brake releases.
+                    self.stable_since = Some(now);
                 } else {
                     self.set_budget(target);
                     if self
@@ -486,10 +494,7 @@ impl KneeController {
 
     fn set_budget(&mut self, budget: u64) {
         let budget = budget.max(self.cfg.init_budget.min(self.budget).max(1));
-        self.budget = match self.cfg.max_budget {
-            Some(max) => budget.min(max),
-            None => budget,
-        };
+        self.budget = budget.min(self.cfg.max_budget);
     }
 }
 
@@ -500,7 +505,7 @@ mod tests {
     fn cfg() -> KneeConfig {
         KneeConfig {
             init_budget: 100,
-            max_budget: None,
+            max_budget: u64::MAX,
             gain: 1.0,
             round_ticks: 2,
             tick: Duration::from_millis(100),
@@ -653,6 +658,30 @@ mod tests {
         }
         assert_eq!(c.phase(), KneePhase::RampUp);
         assert_eq!(c.knee(), None);
+        assert_eq!(c.budget(), 200);
+    }
+
+    /// Slow link: requests outlive several rounds, so binding rounds deliver nothing. No knee
+    /// from those; once bytes arrive the knee is the budget they were delivered at.
+    #[test]
+    fn no_knee_from_rounds_without_delivery() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        let full = |c: &mut KneeController, i: u64, bytes_done: u64| {
+            let budget = c.budget();
+            tick(c, t0, i, bytes_done, budget, 1);
+        };
+        full(&mut c, 0, 1);
+        full(&mut c, 1, 1);
+        for i in 2..12 {
+            full(&mut c, i, 0);
+        }
+        assert_eq!(c.phase(), KneePhase::RampUp);
+        assert_eq!(c.knee(), None);
+        for i in 12..24 {
+            full(&mut c, i, 50);
+        }
+        assert_eq!(c.knee(), Some(200));
         assert_eq!(c.budget(), 200);
     }
 }
