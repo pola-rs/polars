@@ -67,7 +67,7 @@ pub struct ControllerConfig {
     control_interval: Duration,
     // Total budget only resizes if the relative changes exceeds this threshold
     budget_resize_threshold: f64,
-    // BDP v2 prototype (PLDEV_BDP_*): which model sets the byte budget.
+    // Which model sets the byte budget (`POLARS_INFLIGHT_BYTE_BUDGET_MODEL`).
     bdp_model: BdpModel,
     knee_gain: f64,
     knee_round_ticks: u32,
@@ -76,8 +76,8 @@ pub struct ControllerConfig {
     knee_ramp_lifetime_ratio: f64,
 }
 
-/// Which model sets the in-flight byte budget. `Ttfb` is today's model; `Knee` applies the
-/// knee-based prototype.
+/// Which model sets the in-flight byte budget. `Knee` (default) is the knee-based controller;
+/// `Ttfb` is the previous TTFB-based model, kept as a fallback.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum BdpModel {
     Ttfb,
@@ -114,10 +114,10 @@ impl Default for ControllerConfig {
             floor_request_budget: get_inflight_floor_request_budget(),
             control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
-            bdp_model: match std::env::var("PLDEV_BDP_MODEL").as_deref() {
-                Err(_) | Ok("ttfb") => BdpModel::Ttfb,
-                Ok("knee") => BdpModel::Knee,
-                Ok(v) => panic!("invalid value for PLDEV_BDP_MODEL: {v}"),
+            bdp_model: match std::env::var("POLARS_INFLIGHT_BYTE_BUDGET_MODEL").as_deref() {
+                Err(_) | Ok("knee") => BdpModel::Knee,
+                Ok("ttfb") => BdpModel::Ttfb,
+                Ok(v) => panic!("invalid value for POLARS_INFLIGHT_BYTE_BUDGET_MODEL: {v}"),
             },
             knee_gain: 1.0,
             knee_round_ticks: 2,
@@ -134,15 +134,18 @@ impl Default for ControllerConfig {
 /// request budget can hold (`max_inflight_bytes` = request budget x max request size), at least the
 /// initial budget.
 fn get_knee_max_byte_budget(init_byte_budget: u64, max_inflight_bytes: u64) -> u64 {
-    std::env::var("PLDEV_BDP_MAX_BYTES").map_or_else(
+    std::env::var("POLARS_INFLIGHT_MAX_BYTE_BUDGET").map_or_else(
         |_| {
             (polars_utils::sys::total_memory() / 16)
                 .min(max_inflight_bytes)
                 .max(init_byte_budget)
         },
-        |v| {
-            v.parse()
-                .unwrap_or_else(|_| panic!("invalid value for PLDEV_BDP_MAX_BYTES: {v}"))
+        |x| {
+            x.parse::<NonZeroU64>()
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_INFLIGHT_MAX_BYTE_BUDGET: {x}")
+                })
+                .get()
         },
     )
 }

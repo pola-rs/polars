@@ -1,4 +1,4 @@
-//! Knee-based in-flight byte budget (BDP v2 prototype, `PLDEV_BDP_MODEL=knee`).
+//! Knee-based in-flight byte budget: the default model (`POLARS_INFLIGHT_BYTE_BUDGET_MODEL`).
 //!
 //! RampUp doubles the budget per round while it binds and the delivered bandwidth of the round
 //! grows by at least 25% over the best round so far. The knee is the smallest budget at which
