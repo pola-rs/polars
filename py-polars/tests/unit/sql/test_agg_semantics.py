@@ -247,6 +247,11 @@ def test_sum_avg_distinct_empty_table() -> None:
         "COUNT(DISTINCT 1)",
         "QUANTILE_CONT(1, 0.5)",
         "STRING_AGG('a', ',')",
+        "SUM(-1000000000)",
+        "SUM(2000000000)",
+        "SUM(DISTINCT 2000000000)",
+        "SUM(2000000000) FILTER (WHERE g > 0)",
+        "SUM(TRUE)",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 3])
@@ -257,7 +262,31 @@ def test_aggregate_of_constant(agg: str, n_rows: int) -> None:
         f"SELECT {agg} AS a FROM self",
         f"SELECT g, {agg} AS a FROM self GROUP BY g ORDER BY g",
     ]:
-        assert_sql_matches(df, query=query, compare_with="duckdb")
+        assert_sql_matches(
+            df,
+            query=query,
+            compare_with="duckdb",
+            engines=["in-memory", "streaming"],
+        )
+
+
+def test_sum_of_integer_literal() -> None:
+    # Integer literals are summed as Int64.
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              SUM(-1000000000) AS s,
+              SUM(1000000000) FILTER (WHERE x > 1) AS f,
+              TOTAL(1000000000) AS t
+            FROM self
+        """,
+        compare_with=None,
+        check_dtypes=True,
+        expected=pl.DataFrame({"s": [-3000000000], "f": [2000000000], "t": [3e9]}),
+        engines=["in-memory", "streaming"],
+    )
 
 
 def test_group_concat_distinct_with_separator_errors() -> None:

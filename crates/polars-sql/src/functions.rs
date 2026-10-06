@@ -2176,18 +2176,23 @@ impl SQLFunctionVisitor<'_> {
         Ok(())
     }
 
-    /// Parse an argument of the function currently being visited.
+    /// Parse a value argument of the function currently being visited, as opposed to a
+    /// parameter.
     ///
     /// Behaves like [`parse_sql_expr`] but also accounts for any
     /// active `FILTER (WHERE …)` clause from the surrounding call.
-    /// Parse a value argument, as opposed to a parameter. A function that reads its values
-    /// once per row reads a constant once per row too.
     fn parse_sql_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
-        let mut parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        Ok(self.read_arg(parsed))
+    }
+
+    /// Read a parsed value argument. A function that reads its values once per row reads a
+    /// constant once per row too.
+    fn read_arg(&self, mut parsed: Expr) -> Expr {
         if self.reads_rows && is_constant_key(&parsed) {
             parsed = polars_lazy::dsl::repeat(parsed, len());
         }
-        Ok(self.apply_filter(parsed))
+        self.apply_filter(parsed)
     }
 
     fn apply_filter(&self, expr: Expr) -> Expr {
@@ -2593,39 +2598,37 @@ impl SQLFunctionVisitor<'_> {
     }
 
     fn visit_sum(&mut self) -> PolarsResult<Expr> {
-        let (args, is_distinct) = extract_args_distinct(self.func)?;
-        let mut arg = match args.as_slice() {
-            // `sql_sum` sums a literal as `literal * len()`.
-            [FunctionArgExpr::Expr(sql_expr @ SQLExpr::Value(_))]
-                if !is_distinct && self.filter.is_none() =>
-            {
-                parse_sql_expr(sql_expr, self.ctx, self.active_schema)?
-            },
-            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
-            [FunctionArgExpr::Wildcard] => {
-                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
-            },
-            _ => return self.not_supported_error(),
-        };
-        if is_distinct {
-            arg = arg.unique();
-        }
-        Ok(sql_sum(arg))
+        Ok(sql_sum(self.parse_sum_arg()?))
     }
 
     fn visit_total(&mut self) -> PolarsResult<Expr> {
+        let arg = self.parse_sum_arg()?;
+        let total = literal_sum(&arg).unwrap_or_else(|| arg.sum());
+        Ok(total.cast(DataType::Float64))
+    }
+
+    /// The argument of SUM or TOTAL. Without DISTINCT or FILTER, a numeric literal is kept
+    /// as is, so that `literal_sum` sums it as `literal * len()`.
+    fn parse_sum_arg(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
-        let mut arg = match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
-            [FunctionArgExpr::Wildcard] => {
-                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
-            },
+        let sql_expr = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => sql_expr,
+            [FunctionArgExpr::Wildcard] => &SQLExpr::Wildcard(AttachedToken::empty()),
             _ => return self.not_supported_error(),
         };
-        if is_distinct {
-            arg = arg.unique();
+        let parsed = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
+        if !is_distinct && self.filter.is_none() && literal_sum(&parsed).is_some() {
+            return Ok(parsed);
         }
-        Ok(arg.sum().cast(DataType::Float64))
+        // Integer literals are summed as Int64, as in `literal_sum`.
+        let parsed = match parsed {
+            e @ Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
+                e.cast(DataType::Int64)
+            },
+            e => e,
+        };
+        let arg = self.read_arg(parsed);
+        Ok(if is_distinct { arg.unique() } else { arg })
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {
@@ -2895,7 +2898,7 @@ pub(crate) fn sql_sum(arg: Expr) -> Expr {
 fn literal_sum(arg: &Expr) -> Option<Expr> {
     match arg {
         Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
-            Some((arg.clone() * len()).cast(DataType::Int64))
+            Some(arg.clone() * len().cast(DataType::Int64))
         },
         Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))) => Some(arg.clone() * len()),
         _ if decimal_literal(arg).is_some() => Some(arg.clone() * len()),
