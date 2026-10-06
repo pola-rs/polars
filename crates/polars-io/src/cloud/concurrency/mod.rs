@@ -71,7 +71,8 @@ pub struct ControllerConfig {
     bdp_model: BdpModel,
     knee_gain: f64,
     knee_round_ticks: u32,
-    knee_max_bytes: Option<u64>,
+    // Memory bound for the knee's in-flight byte budget.
+    knee_max_bytes: u64,
     knee_ramp_lifetime_ratio: f64,
 }
 
@@ -87,6 +88,7 @@ impl Default for ControllerConfig {
     fn default() -> Self {
         // Only used for bytes-based budget.
         let target_chunk_size = get_random_access_chunk_size() as u64;
+        let init_byte_budget = get_init_byte_budget(target_chunk_size);
         Self {
             window: Duration::from_millis(1000),
 
@@ -100,7 +102,7 @@ impl Default for ControllerConfig {
             //   1 Gbps x 50 ms = 6.25 MB
             //   10 Gbps x 50 ms = 62.5 MB
             //   100 Gbps x 50 ms = 625 MB
-            init_byte_budget: get_init_byte_budget(target_chunk_size),
+            init_byte_budget,
 
             // Byte-based budget floor.
             // Must be >=larger than target_chunk_size to avoid potential deadlock.
@@ -119,12 +121,21 @@ impl Default for ControllerConfig {
             knee_gain: 1.0,
             knee_round_ticks: 2,
             knee_ramp_lifetime_ratio: 2.0,
-            knee_max_bytes: std::env::var("PLDEV_BDP_MAX_BYTES").ok().map(|v| {
-                v.parse()
-                    .unwrap_or_else(|_| panic!("invalid value for PLDEV_BDP_MAX_BYTES: {v}"))
-            }),
+            knee_max_bytes: get_knee_max_byte_budget(init_byte_budget),
         }
     }
+}
+
+/// Ceiling for the knee's in-flight byte budget: total memory / 16 (cgroup-aware), at least the
+/// initial budget.
+fn get_knee_max_byte_budget(init_byte_budget: u64) -> u64 {
+    std::env::var("PLDEV_BDP_MAX_BYTES").map_or_else(
+        |_| (polars_utils::sys::total_memory() / 16).max(init_byte_budget),
+        |v| {
+            v.parse()
+                .unwrap_or_else(|_| panic!("invalid value for PLDEV_BDP_MAX_BYTES: {v}"))
+        },
+    )
 }
 
 /// Max number of bytes concurrently in flight during the init and start of rampup phase.
@@ -334,8 +345,11 @@ impl ConcurrencyController {
     ) -> tokio::task::JoinHandle<()> {
         if polars_config::config().verbose() {
             eprintln!(
-                "[InFlightConcurrency]: spawn control loop: control_interval: {}ms",
-                config.control_interval.as_millis()
+                "[InFlightConcurrency]: spawn control loop: control_interval: {}ms, \
+                bdp_model: {:?}, knee_max_byte_budget: {}",
+                config.control_interval.as_millis(),
+                config.bdp_model,
+                config.knee_max_bytes,
             );
         }
         ASYNC.spawn(async move {
@@ -351,7 +365,7 @@ impl ConcurrencyController {
             let mut knee = (config.bdp_model != BdpModel::Ttfb).then(|| {
                 KneeController::new(KneeConfig {
                     init_budget: config.init_byte_budget,
-                    max_budget: config.knee_max_bytes,
+                    max_budget: Some(config.knee_max_bytes),
                     gain: config.knee_gain,
                     round_ticks: config.knee_round_ticks,
                     tick: config.control_interval,
