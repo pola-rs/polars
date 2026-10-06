@@ -337,6 +337,7 @@ serde = [
   "polars-ops/serde",
   "polars-utils/serde",
   "polars-compute/serde",
+  "polars-expr/serde",
 ]
 fused = ["polars-expr/fused", "polars-ops/fused"]
 list_sets = ["polars-expr/list_sets", "polars-ops/list_sets"]
