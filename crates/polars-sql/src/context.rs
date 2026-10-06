@@ -26,8 +26,8 @@ use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::group_context::{
-    AggregateOutputs, GroupContextSplitter, OutputNames, has_windows_over_aggregates,
-    is_marked_aggregate, strip_aggregate_marks,
+    AggregateOutputs, GroupContextSplitter, OutputNames, check_columns_in_aggregates,
+    has_windows_over_aggregates, is_marked_aggregate, strip_aggregate_marks,
 };
 use crate::grouping_sets::{
     GroupingCall, GroupingSets, canonicalize_keys, contains_grouping_placeholder,
@@ -2116,6 +2116,7 @@ impl SQLContext {
         lf = if !has_group_by && !has_windows_over_aggregates(&all_projections) {
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
             self.group_scope.mark_whole_frame_windows = false;
+            check_columns_in_aggregates(&all_projections, &subquery_names)?;
             projections = all_projections;
             explicit_aliases.extend(qualify.is_some().then_some(true));
             // A window over the whole frame has one value per row, so for the output

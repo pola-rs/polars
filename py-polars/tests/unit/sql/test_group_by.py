@@ -207,6 +207,20 @@ def test_having_on_group_key(query: str) -> None:
     assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT SUM(x), x FROM self",
+        "SELECT x / SUM(x) FROM self",
+        "SELECT *, COUNT(*) FROM self",
+    ],
+)
+def test_column_outside_aggregate_without_group_by_error(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(SQLSyntaxError, match="'x' should participate in the GROUP BY"):
+        df.sql(query)
+
+
 def test_group_by_all_multi() -> None:
     dt1 = date(1999, 12, 31)
     dt2 = date(2028, 7, 5)

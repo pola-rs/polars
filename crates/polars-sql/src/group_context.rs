@@ -282,6 +282,49 @@ pub(crate) fn has_windows_over_aggregates(projections: &[Expr]) -> bool {
         && projections.iter().any(has_marked_aggregate)
 }
 
+/// Check that a block that aggregates without GROUP BY reads the input columns only in its
+/// aggregates: `x` has no single value in `SELECT SUM(x), x FROM t`.
+pub(crate) fn check_columns_in_aggregates(
+    projections: &[Expr],
+    subquery_names: &PlHashSet<PlSmallStr>,
+) -> PolarsResult<()> {
+    struct Finder<'a> {
+        subquery_names: &'a PlHashSet<PlSmallStr>,
+        column: Option<PlSmallStr>,
+    }
+    impl Visitor for Finder<'_> {
+        type Node = Expr;
+        type Arena = ();
+
+        fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
+            Ok(match node {
+                _ if is_marked_aggregate(node) => VisitRecursion::Skip,
+                Expr::Column(name)
+                    if !self.subquery_names.contains(name) && !is_correlated_result_col(name) =>
+                {
+                    self.column = Some(name.clone());
+                    VisitRecursion::Stop
+                },
+                _ => VisitRecursion::Continue,
+            })
+        }
+    }
+    if !projections.iter().any(has_marked_aggregate) {
+        return Ok(());
+    }
+    for expr in projections {
+        let mut finder = Finder {
+            subquery_names,
+            column: None,
+        };
+        expr.visit(&mut finder, &())?;
+        if let Some(name) = finder.column {
+            polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", name);
+        }
+    }
+    Ok(())
+}
+
 /// Marks the call of an aggregate function: a SQL aggregate, or a user-defined function that
 /// returns one value. The parser sets it in the clauses that run in the group context of a
 /// block (the SELECT list, QUALIFY, HAVING and the aggregates of ORDER BY), and in the inputs
