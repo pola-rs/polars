@@ -46,6 +46,11 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
         IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
+        self.0.agg_list(groups)
+    }
+
     fn arg_sort_multiple(
         &self,
         by: &[Column],
