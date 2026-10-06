@@ -39,9 +39,11 @@ pub mod rle_id;
 pub mod rolling_fixed_window;
 #[cfg(feature = "dynamic_group_by")]
 pub mod rolling_group_by;
+pub mod scalar_window;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;
+pub mod sort;
 pub mod sorted_group_by;
 pub mod sorted_unique;
 pub mod streaming_slice;

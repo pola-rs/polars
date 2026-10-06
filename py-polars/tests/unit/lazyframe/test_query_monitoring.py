@@ -7,7 +7,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -376,6 +376,216 @@ def test_metrics_handle_snapshot() -> None:
     assert expected_keys <= set(rows[0].keys())
     assert any(r["done"] for r in rows)
     assert sum(r["rows_sent"] for r in rows) > 0
+
+
+def _observe_streaming(run: Callable[[], object]) -> MagicMock:
+    """Run `run` with the fake cloud observer installed and return the observer."""
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring()
+        run()
+    return observer
+
+
+def _planned_payloads(
+    observer: MagicMock,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Decode the IR and physical payloads handed to `on_query_planned`."""
+    msgpack = pytest.importorskip("msgpack")
+    _, _, ir_bytes, phys_bytes = observer.on_query_planned.call_args.args
+    ir = msgpack.unpackb(ir_bytes, raw=False)
+    phys = msgpack.unpackb(phys_bytes, raw=False)
+    return ir, phys
+
+
+def test_physical_nodes_attributed_to_ir_nodes() -> None:
+    """Every physical node carries the id of an IR node from the IR payload."""
+    observer = _observe_streaming(lambda: _sample_lf().collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    ir_ids = {node["id"] for node in ir}
+    assert len(phys) > 0
+    assert all(node["ir_node_id"] is not None for node in phys)
+    assert all(node["ir_node_id"] in ir_ids for node in phys)
+
+
+def test_ir_node_lowers_to_many_physical_nodes() -> None:
+    """A filter with a non-elementwise predicate is one IR node, many physical."""
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > pl.col("a").mean())
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    (filter_id,) = [n["id"] for n in ir if n["properties"]["type"] == "Filter"]
+    assert sum(n["ir_node_id"] == filter_id for n in phys) > 1
+
+
+def test_temporary_ir_node_inherits_attribution() -> None:
+    """`collect_all` wraps bare inputs in memory sinks that lowering invents.
+
+    Those sink IR nodes are never in the IR payload, so their physical sink is
+    attributed to the `SinkMultiple` node whose lowering created them.
+    """
+    observer = _observe_streaming(
+        lambda: pl.collect_all([_sample_lf()], engine="streaming")
+    )
+    ir, phys = _planned_payloads(observer)
+
+    (sink_multiple_id,) = [
+        n["id"] for n in ir if n["properties"]["type"] == "SinkMultiple"
+    ]
+    (memory_sink,) = [n for n in phys if n["properties"]["type"] == "InMemorySink"]
+    assert memory_sink["ir_node_id"] == sink_multiple_id
+
+
+def test_multiplexer_inherits_input_attribution() -> None:
+    """A multiplexer inserted after lowering takes its input's IR node."""
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+        .with_columns(b=pl.col("a") * 2)
+        .filter(pl.col("b") > pl.col("b").mean())
+    )
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    _, phys = _planned_payloads(observer)
+
+    by_id = {n["id"]: n for n in phys}
+    multiplexers = [n for n in phys if n["properties"]["type"] == "Multiplexer"]
+    assert len(multiplexers) > 0
+    for multiplexer in multiplexers:
+        (input_id,) = multiplexer["input_ids"]
+        assert multiplexer["ir_node_id"] == by_id[input_id]["ir_node_id"]
+
+
+def test_split_source_clones_keep_source_attribution() -> None:
+    """Fanning an in-memory source out twice clones it per consumer.
+
+    The clones replace the multiplexer, and each keeps the `DataFrameScan` IR
+    node of the source it copies.
+    """
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > pl.col("a").mean())
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    (scan_id,) = [n["id"] for n in ir if n["properties"]["type"] == "DataFrameScan"]
+    sources = [n for n in phys if n["properties"]["type"] == "InMemorySource"]
+    assert len(sources) > 1
+    assert all(n["ir_node_id"] == scan_id for n in sources)
+
+
+def test_fused_drop_keeps_filter_attribution() -> None:
+    """A projection fused into the filter below it leaves a node owned by the filter."""
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        .filter(pl.col("b") > 4)
+        .select("a")
+    )
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    (filter_id,) = [n["id"] for n in ir if n["properties"]["type"] == "Filter"]
+    (phys_filter,) = [n for n in phys if n["properties"]["type"] == "Filter"]
+    assert phys_filter["ir_node_id"] == filter_id
+    assert not [n for n in phys if n["properties"]["type"] == "SimpleProjection"]
+
+
+def _assert_all_attributed(
+    ir: list[dict[str, Any]], phys: list[dict[str, Any]]
+) -> None:
+    """Every physical node names an IR node that is in the IR payload."""
+    ir_ids = {node["id"] for node in ir}
+    assert len(phys) > 0
+    assert all(node["ir_node_id"] in ir_ids for node in phys)
+
+
+def test_cache_ir_node_owns_no_physical_nodes() -> None:
+    """Common-subplan elimination inserts `Cache` IR nodes that lower to nothing.
+
+    The cached subtree's physical nodes belong to the IR nodes inside it, so no
+    physical node carries a `Cache` id, and every id still resolves.
+    """
+    base = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).with_columns(b=pl.col("a") * 2)
+    observer = _observe_streaming(
+        lambda: pl.collect_all(
+            [base.select(pl.col("b").sum()), base.filter(pl.col("b") > 4)],
+            engine="streaming",
+        )
+    )
+    ir, phys = _planned_payloads(observer)
+
+    cache_ids = {n["id"] for n in ir if n["properties"]["type"] == "Cache"}
+    # If this fails, the plan shape no longer triggers CSE: change the plan,
+    # not the assertion.
+    assert cache_ids
+    _assert_all_attributed(ir, phys)
+    assert not any(n["ir_node_id"] in cache_ids for n in phys)
+
+
+def test_range_join_temporaries_attribute_to_join() -> None:
+    """Lowering a range join appends temporary `Sort`/`HStack` IR nodes.
+
+    Those never reach the observer, so their physical nodes must be claimed by
+    the original join IR node rather than by an id the observer cannot resolve.
+    """
+    left = pl.LazyFrame({"a": [1, 5, 9]})
+    right = pl.LazyFrame({"lo": [0, 4], "hi": [2, 6]})
+    lf = left.join_where(
+        right, pl.col("a") >= pl.col("lo"), pl.col("a") <= pl.col("hi")
+    )
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    _assert_all_attributed(ir, phys)
+    join_ids = {n["id"] for n in ir if n["properties"]["type"] in ("Join", "IEJoin")}
+    assert join_ids
+    assert any(n["ir_node_id"] in join_ids for n in phys)
+
+
+def test_in_memory_fallback_attributes_to_its_ir_node() -> None:
+    """An order-preserving keep-last distinct lowers through an in-memory fallback.
+
+    The fallback builds a throwaway IR arena; the physical node it inserts must
+    still belong to the original `Distinct` IR node.
+    """
+    lf = pl.LazyFrame({"a": [1, 1, 2, 2, 3]}).unique(keep="last", maintain_order=True)
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    _assert_all_attributed(ir, phys)
+    (distinct_id,) = [n["id"] for n in ir if n["properties"]["type"] == "Distinct"]
+    assert any(n["ir_node_id"] == distinct_id for n in phys)
+
+
+def test_merged_reductions_attribute_to_filter() -> None:
+    """Two reductions over the same input are folded into one `Reduce` node.
+
+    Folding removes the per-reduction nodes from the plan while the filter is
+    being lowered; the surviving node must still belong to the `Filter` IR node.
+    """
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(
+        (pl.col("a") > pl.col("a").mean()) & (pl.col("a") < pl.col("a").max())
+    )
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    _assert_all_attributed(ir, phys)
+    (filter_id,) = [n["id"] for n in ir if n["properties"]["type"] == "Filter"]
+    reduces = [n for n in phys if n["properties"]["type"] == "Reduce"]
+    assert len(reduces) == 1
+    assert reduces[0]["ir_node_id"] == filter_id
+
+
+def test_concatenated_inputs_attribute_to_their_own_scans() -> None:
+    """Sibling inputs lowered back to back must not claim each other's nodes."""
+    lf = pl.concat([pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [3, 4]})]).select(
+        pl.col("a") * 2
+    )
+    observer = _observe_streaming(lambda: lf.collect(engine="streaming"))
+    ir, phys = _planned_payloads(observer)
+
+    _assert_all_attributed(ir, phys)
+    scan_ids = [n["id"] for n in ir if n["properties"]["type"] == "DataFrameScan"]
+    assert len(scan_ids) == 2
+    for scan_id in scan_ids:
+        assert sum(n["ir_node_id"] == scan_id for n in phys) == 1
 
 
 def test_on_query_failed_called() -> None:

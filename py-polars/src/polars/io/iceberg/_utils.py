@@ -63,19 +63,25 @@ def _new_pyiceberg_scan(
     selected_fields: tuple[str, ...] = ("*",),
     limit: int | None = None,
 ) -> Any:
+    from polars.io.iceberg._cache import with_metadata_file_cache
+
+    scan: Any
+
     if from_snapshot_id_exclusive is None and to_snapshot_id_inclusive is None:
-        return tbl.scan(
+        scan = tbl.scan(
             snapshot_id=snapshot_id,
             selected_fields=selected_fields,
             limit=limit,
         )
+    else:
+        scan = tbl.incremental_append_scan(
+            from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+            selected_fields=selected_fields,
+            limit=limit,
+        )
 
-    return tbl.incremental_append_scan(
-        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
-        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
-        selected_fields=selected_fields,
-        limit=limit,
-    )
+    return with_metadata_file_cache(scan)
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.

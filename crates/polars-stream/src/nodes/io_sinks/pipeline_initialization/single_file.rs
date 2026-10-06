@@ -30,6 +30,7 @@ pub fn start_single_file_sink_pipeline(
     io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
+    let task_metrics = execution_state.task_metrics();
 
     let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
@@ -123,8 +124,12 @@ pub fn start_single_file_sink_pipeline(
     }
 
     let (writer_tx, writer_rx) = connector::connector();
-    let writer_handle =
-        file_writer_starter.start_file_writer(writer_rx, file_open_task, num_pipelines_per_sink)?;
+    let writer_handle = file_writer_starter.start_file_writer(
+        writer_rx,
+        file_open_task,
+        num_pipelines_per_sink,
+        execution_state.task_metrics.clone(),
+    )?;
 
     let schema = Arc::clone(&file_schema);
     let inflight_morsel_semaphore =
@@ -140,11 +145,14 @@ pub fn start_single_file_sink_pipeline(
 
     let resize_pipeline_handle = executor::AbortOnDropHandle::new(executor::spawn(
         TaskPriority::High,
+        task_metrics,
         resize_pipeline.run(),
     ));
 
-    let handle =
-        executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
+    let handle = executor::AbortOnDropHandle::new(executor::spawn(
+        TaskPriority::High,
+        task_metrics,
+        async move {
             writer_handle.await?;
             let sent_size = resize_pipeline_handle.await?;
 
@@ -166,7 +174,8 @@ pub fn start_single_file_sink_pipeline(
             }
 
             Ok(())
-        }));
+        },
+    ));
 
     Ok(handle)
 }

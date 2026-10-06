@@ -346,8 +346,7 @@ pub fn initialize_scan_predicate(
             .downcast_into_iter()
             .next()
             .unwrap()
-            .values()
-            .clone();
+            .true_and_valid();
 
         let hive_len = hive_parts.df().height();
         let mask_len = hive_inclusion_bitmap.len();

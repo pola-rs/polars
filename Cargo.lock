@@ -3204,6 +3204,7 @@ version = "0.55.1"
 dependencies = [
  "polars-error",
  "serde",
+ "sysinfo",
 ]
 
 [[package]]
@@ -3743,7 +3744,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",
@@ -3754,7 +3755,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",
@@ -3765,7 +3766,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",
@@ -3819,6 +3820,7 @@ dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
  "futures",
+ "libc",
  "memchr",
  "num-traits",
  "parking_lot",
@@ -3844,6 +3846,7 @@ dependencies = [
  "polars-time",
  "polars-utils",
  "pyo3",
+ "rand 0.10.2",
  "rayon",
  "recursive",
  "schemars",
@@ -3851,6 +3854,7 @@ dependencies = [
  "serde_json",
  "slotmap",
  "strum_macros 0.28.0",
+ "tempfile",
  "tokio",
  "uuid",
  "version_check",

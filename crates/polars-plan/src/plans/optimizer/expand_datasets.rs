@@ -27,8 +27,9 @@ use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
 use crate::plans::optimizer::ApplyScanPredicateFn;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
-use crate::plans::{AExpr, Card, IR};
+use crate::plans::{AExpr, Card, IR, is_elementwise_rec, is_inherently_nondeterministic};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
+use crate::utils::aexpr_to_leaf_names_iter;
 
 #[cfg(feature = "python")]
 pub type PyScanResolveThreadPool = polars_utils::python_thread_pool::PyThreadPool;
@@ -37,11 +38,13 @@ pub(super) fn expand_datasets(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    prune_hive_filters: bool,
     apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
 ) -> PolarsResult<()> {
     // Polled locally by block_in_place_on; the continuations do not need Send.
     let mut expansion_tasks: FuturesUnordered<LocalBoxFuture<'static, (Node, PolarsResult<IR>)>> =
         FuturesUnordered::new();
+    let mut hive_filter_nodes = Vec::new();
 
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool: LazyCell<Arc<PyScanResolveThreadPool>> =
@@ -101,8 +104,6 @@ pub(super) fn expand_datasets(
                             let live_filter_columns: Option<Arc<[PlSmallStr]>> =
                                 predicate.as_ref().map(|x| {
                                     use polars_core::prelude::PlIndexSet;
-
-                                    use crate::utils::aexpr_to_leaf_names_iter;
 
                                     let mut out: Arc<[PlSmallStr]> = PlIndexSet::from_iter(
                                         aexpr_to_leaf_names_iter(x.node(), expr_arena),
@@ -185,7 +186,12 @@ pub(super) fn expand_datasets(
                     Err(err) => ControlFlow::Break(err),
                 }
             },
-            |_, _, _| ControlFlow::Continue(()),
+            |key, storage, _| {
+                if prune_hive_filters && matches!(storage.get(key), IR::Filter { .. }) {
+                    hive_filter_nodes.push(key);
+                }
+                ControlFlow::Continue(())
+            },
         ),
         &mut vec![],
         &mut vec![],
@@ -206,7 +212,79 @@ pub(super) fn expand_datasets(
         })?;
     }
 
+    for node in hive_filter_nodes {
+        prune_hive_filter(node, ir_arena, expr_arena, apply_scan_predicate_to_scan_ir);
+    }
+
     Ok(())
+}
+
+/// Apply a retained filter to the Hive values after the scan's own predicate has pruned files.
+/// This runs after Hive rewriting so each branch evaluates only its surviving partitions,
+/// and removing all partitions cannot cause the rewrite to construct an empty union.
+/// Remove the row filter if pruning fully evaluates it.
+fn prune_hive_filter(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
+) {
+    let IR::Filter { input, predicate } = ir_arena.get(node) else {
+        return;
+    };
+    let input = *input;
+    let mut scan_node = input;
+    let filter_predicate = predicate.clone();
+    // Projection pushdown can insert a projection to drop columns used only by the
+    // scan predicate. It does not change the rows or names seen by the retained filter.
+    while let IR::SimpleProjection { input, .. } = ir_arena.get(scan_node) {
+        scan_node = *input;
+    }
+
+    let IR::Scan {
+        hive_parts: Some(hive_parts),
+        predicate,
+        predicate_file_skip_applied,
+        unified_scan_args,
+        ..
+    } = ir_arena.get_mut(scan_node)
+    else {
+        return;
+    };
+
+    if hive_parts.df().height() == 0
+        || unified_scan_args.has_row_index_or_slice()
+        || !aexpr_to_leaf_names_iter(filter_predicate.node(), expr_arena)
+            .all(|name| hive_parts.df().schema().contains(name))
+        || !is_elementwise_rec(filter_predicate.node(), expr_arena)
+        || is_inherently_nondeterministic(filter_predicate.node(), expr_arena)
+    {
+        return;
+    }
+
+    let scan_predicate = predicate.replace(filter_predicate);
+    let scan_file_skip = predicate_file_skip_applied.take();
+    let result = apply_scan_predicate_to_scan_ir(scan_node, ir_arena, expr_arena);
+
+    let IR::Scan {
+        predicate,
+        predicate_file_skip_applied,
+        ..
+    } = ir_arena.get_mut(scan_node)
+    else {
+        unreachable!()
+    };
+    // A successful call can also be a no-op. Only remove the filter when pruning
+    // confirms that the entire predicate has been applied to the surviving files.
+    let filter_applied = result.is_ok()
+        && predicate_file_skip_applied.is_some_and(|skip| skip.no_residual_predicate);
+    *predicate = scan_predicate;
+    // This metadata describes the original scan predicate, not the retained filter.
+    *predicate_file_skip_applied = scan_file_skip;
+
+    if filter_applied {
+        ir_arena.replace(node, ir_arena.get(input).clone());
+    }
 }
 
 /// Await one dataset expansion, then read its heavy-source footers.

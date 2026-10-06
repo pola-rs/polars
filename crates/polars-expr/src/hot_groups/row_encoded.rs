@@ -60,6 +60,7 @@ impl HotGrouper for RowEncodedHashHotGrouper {
         hot_group_idxs.reserve(keys.hashes.len());
         cold_idxs.reserve(keys.hashes.len());
 
+        let hashes = keys.hashes.values().as_slice();
         unsafe {
             keys.for_each_hash(|idx, opt_h| {
                 if let Some(h) = opt_h {
@@ -68,6 +69,7 @@ impl HotGrouper for RowEncodedHashHotGrouper {
                         h,
                         key,
                         force_hot,
+                        *hashes.get(idx as usize + 1).unwrap_or(&u64::MAX),
                         |a, b| *a == b.1,
                         |k| (h, k.to_owned()),
                         |k, ev_k| {

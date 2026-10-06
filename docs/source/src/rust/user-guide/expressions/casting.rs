@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:castnum]
 
     // --8<-- [start:downcast]
-    println!("Before downcasting: {} bytes", df.estimated_size());
+    println!("Before downcasting: {} bytes", df.estimated_size(false));
     let result = df
         .clone()
         .lazy()
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("floats").cast(DataType::Float32),
         ])
         .collect()?;
-    println!("After downcasting: {} bytes", result.estimated_size());
+    println!("After downcasting: {} bytes", result.estimated_size(false));
     // --8<-- [end:downcast]
 
     // --8<-- [start:overflow]

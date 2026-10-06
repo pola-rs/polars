@@ -138,6 +138,7 @@ impl HotGrouper for KeyRowHashHotGrouper {
                         h,
                         i,
                         force_hot,
+                        *hashes.get(i + 1).unwrap_or(&u64::MAX),
                         |i, k| (*hot).eq_key(*k, keys, *i),
                         |i| (*hot).push(keys, i),
                         |i, k| {

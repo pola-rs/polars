@@ -1,8 +1,8 @@
 #[cfg(feature = "dynamic_group_by")]
 use polars_defs::time::group_by::RollingGroupOptionsIR;
-use polars_utils::unique_column_name;
 
 use super::*;
+use crate::unique_column_name;
 
 #[cfg_attr(not(feature = "dynamic_group_by"), allow(dead_code))]
 pub(crate) struct GroupByRollingExec {

@@ -21,9 +21,9 @@ use polars_defs::time::duration::Duration;
 use polars_lazy::prelude::*;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::functions::{DurationArgs, duration};
+use polars_plan::dsl::string::StringNameSpace;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
-use polars_utils::unique_column_name;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -37,8 +37,8 @@ use sqlparser::keywords;
 use sqlparser::parser::{Parser, ParserOptions};
 use sqlparser::tokenizer::Token;
 
-use crate::SQLContext;
-use crate::functions::SQLFunctionVisitor;
+use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
+use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{
     decimal_lit, fold_scalar, parse_exact_literal, try_fold_decimal_arithmetic,
 };
@@ -48,6 +48,7 @@ use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
     timeunit_from_precision,
 };
+use crate::{SQLContext, unique_column_name};
 
 #[inline]
 #[cold]
@@ -210,6 +211,22 @@ fn compare(lhs: Expr, op: &SQLBinaryOperator, rhs: Expr) -> Option<Expr> {
         SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),
         _ => return None,
     })
+}
+
+type StringMatch = fn(StringNameSpace, Expr) -> Expr;
+
+/// The string method matching a case-sensitive LIKE pattern whose only wildcards
+/// are a '%' at its start and/or end, with the literal text between them.
+fn literal_like_match(pattern: &str) -> Option<(StringMatch, &str)> {
+    let plain = |s: &str| !s.is_empty() && !s.contains(['%', '_']);
+    let (matches, needle): (StringMatch, &str) =
+        match (pattern.strip_prefix('%'), pattern.strip_suffix('%')) {
+            (Some(rest), Some(_)) => (StringNameSpace::contains_literal, rest.strip_suffix('%')?),
+            (None, Some(prefix)) => (StringNameSpace::starts_with, prefix),
+            (Some(suffix), None) => (StringNameSpace::ends_with, suffix),
+            (None, None) => return None,
+        };
+    plain(needle).then_some((matches, needle))
 }
 
 /// `expr`, a string, as a value of temporal `dtype`: folded when it is a literal
@@ -619,16 +636,9 @@ impl SQLExprVisitor<'_> {
                 SQLBinaryOperator::Eq
             };
             self.visit_binary_op(expr, &op, pattern)
-        } else if !case_insensitive
-            && pat.len() > 2
-            && pat.starts_with('%')
-            && pat.ends_with('%')
-            && !pat[1..pat.len() - 1].contains(['%', '_'])
-        {
-            // plain substring match (eg: '%foo%' with no other wildcard chars)
-            let needle = pat[1..pat.len() - 1].to_string();
+        } else if !case_insensitive && let Some((matches, needle)) = literal_like_match(&pat) {
             let expr = self.visit_expr(expr)?;
-            let matches = expr.str().contains_literal(lit(needle));
+            let matches = matches(expr.str(), lit(needle.to_string()));
             Ok(if negated { matches.not() } else { matches })
         } else {
             // create regex from pattern containing SQL wildcard chars ('%' => '.*', '_' => '.');
@@ -1093,13 +1103,35 @@ impl SQLExprVisitor<'_> {
     ///
     /// See [SQLFunctionVisitor] for more details
     fn visit_function(&mut self, function: &SQLFunction) -> PolarsResult<Expr> {
+        let window = match &function.over {
+            Some(window) => Some(self.ctx.resolve_window(window)?),
+            None => None,
+        };
+        let is_window = window.is_some();
+        let in_window = self.ctx.group_scope.in_window;
+        self.ctx.group_scope.in_window |= is_window;
         let mut visitor = SQLFunctionVisitor {
             func: function,
             ctx: self.ctx,
             active_schema: self.active_schema,
             filter: None,
+            window,
         };
-        visitor.visit_function()
+        let expr = visitor.visit_function();
+        self.ctx.group_scope.in_window = in_window;
+        let expr = expr?;
+
+        if !is_window
+            && (in_window || self.ctx.group_scope.mark_aggregates)
+            && PolarsSQLFunctions::is_aggregate_call(function, self.ctx, &expr)?
+        {
+            polars_ensure!(
+                !has_marked_aggregate(&expr),
+                SQLSyntax: "aggregate function calls cannot be nested"
+            );
+            return Ok(mark_aggregate(expr));
+        }
+        Ok(expr)
     }
 
     /// Visit a SQL `ALL` expression.

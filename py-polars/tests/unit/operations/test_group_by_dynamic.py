@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import AttributeRemovedError, ComputeError, InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, EngineType, Label, StartBy
@@ -1568,3 +1568,113 @@ def test_group_by_dynamic_empty_include_boundaries_columns(
 
     assert result.height == 0
     assert result.schema == expected.schema
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("start", "every", "time_zone"),
+    [
+        # Month-end start: clamping to a short month must not carry over.
+        (datetime(2024, 1, 31), "1mo", None),
+        (datetime(2024, 1, 31), "2mo", None),
+        (datetime(2024, 1, 31, 12), "1q", None),
+        (datetime(2024, 2, 29), "1y", None),
+        # Start on a local time that is skipped once by daylight saving.
+        (datetime(2021, 3, 10, 2, 30), "1d", "America/New_York"),
+        (datetime(2021, 3, 7, 2, 30), "1w", "America/New_York"),
+    ],
+)
+def test_group_by_dynamic_calendar_grid_matches_datetime_range(
+    engine: EngineType, start: datetime, every: str, time_zone: str | None
+) -> None:
+    end = start + timedelta(days=730)
+    t = pl.datetime_range(
+        start, end, "1d", time_zone=time_zone, eager=True, time_unit="us"
+    ).alias("t")
+    expected = pl.datetime_range(
+        start, end, every, time_zone=time_zone, eager=True, time_unit="us"
+    ).alias("_lower_boundary")
+
+    lf = pl.LazyFrame({"t": t})
+    out = (
+        lf.group_by_dynamic(
+            "t",
+            every=every,
+            period="1h",
+            start_by="datapoint",
+            include_boundaries=True,
+        )
+        .agg(pl.len())
+        .collect(engine=engine)
+    )
+    assert_series_equal(out["_lower_boundary"], expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("closed", ["left", "right", "both", "none"])
+@pytest.mark.parametrize("every", ["1mo", "2mo"])
+@pytest.mark.parametrize("period", ["1d", "2d", "3d"])
+def test_group_by_dynamic_calendar_sparse_matches_dense(
+    engine: EngineType, closed: ClosedInterval, every: str, period: str
+) -> None:
+    dense = pl.datetime_range(
+        datetime(2024, 1, 31), datetime(2025, 12, 31), "1d", eager=True, time_unit="us"
+    ).alias("t")
+    rng = np.random.default_rng(0)
+
+    def windows(t: pl.Series) -> pl.DataFrame:
+        return (
+            pl.LazyFrame({"t": t, "v": t})
+            .group_by_dynamic(
+                "t",
+                every=every,
+                period=period,
+                closed=closed,
+                start_by="datapoint",
+                include_boundaries=True,
+            )
+            .agg(pl.col("v"))
+            .collect(engine=engine)
+        )
+
+    expected = windows(dense)
+    for _ in range(10):
+        mask = rng.random(dense.len()) < 0.05
+        mask[0] = True
+        sparse = dense.filter(pl.Series(mask))
+        result = windows(sparse)
+
+        expected_sparse = (
+            expected.with_columns(pl.col("v").list.set_intersection(sparse.implode()))
+            .filter(pl.col("v").list.len() > 0)
+            .with_columns(pl.col("v").list.sort())
+        )
+        assert_frame_equal(result, expected_sparse)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_group_by_dynamic_calendar_sparse_skip(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"t": [datetime(2024, 1, 31), datetime(2024, 7, 9), datetime(2024, 8, 1)]}
+    )
+    out = (
+        lf.group_by_dynamic(
+            "t",
+            every="1mo",
+            period="2d",
+            start_by="datapoint",
+            closed="right",
+            include_boundaries=True,
+        )
+        .agg(pl.len())
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {
+            "_lower_boundary": [datetime(2024, 7, 31)],
+            "_upper_boundary": [datetime(2024, 8, 2)],
+            "t": [datetime(2024, 7, 31)],
+            "len": pl.Series([1], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)

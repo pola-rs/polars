@@ -106,6 +106,7 @@ jobs:
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
           POLARS_ALLOW_EXTENSION: '1'
+          POLARS_OVERRIDE_TOTAL_MEMORY_MB: '1000'  # So we don't ask for memory which miri doesn't support
         run: >
           cargo miri test
           --features object

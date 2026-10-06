@@ -2227,3 +2227,20 @@ def test_join_on_filter_with_aggregate_key(how: Literal["inner", "left"]) -> Non
     expected = pl.DataFrame({"k": [3], "v": [1]})
     for result in [sql, api]:
         assert_frame_equal(result.collect(), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.k, b.v FROM a JOIN b ON a.k = b.j AND b.j = a.k",
+        "SELECT a.k, b.v FROM a, b WHERE b.j = a.k AND a.k = b.j",
+    ],
+)
+def test_join_on_repeated_key(query: str) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3]}),
+        "b": pl.DataFrame({"j": [2, 3, 4], "v": ["x", "y", "z"]}),
+    }
+    assert_sql_matches(
+        frames, query=query, compare_with="duckdb", check_row_order=False
+    )

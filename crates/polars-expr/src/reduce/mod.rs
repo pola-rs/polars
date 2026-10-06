@@ -27,9 +27,14 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
+#[cfg(feature = "approx_quantile")]
+pub use approx_quantile::{
+    new_approx_quantile_merge_reduction, new_approx_quantile_state_reduction,
+};
 pub use convert::into_reduction;
 pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_arrow::array::{Array, PrimitiveArray, StaticArray};
+use polars_arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
 
@@ -524,6 +529,55 @@ where
     }
 }
 
+/// Reduces the valid values of rows `subset` of `arr` into groups `group_idxs`, spreading
+/// the updates over lanes with `stride`, and sets the bits of those groups in `mask`.
+///
+/// # Safety
+/// The subset and group_idxs are in-bounds.
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+unsafe fn update_masked_lanes<R: Reducer>(
+    reducer: &R,
+    slots: &mut [R::Value],
+    mask: &mut [u8],
+    arr: &<R::Dtype as PolarsDataType>::Array,
+    subset: &[IdxSize],
+    group_idxs: &[IdxSize],
+    stride: usize,
+    seq_id: u64,
+) {
+    let mut offset = 0usize;
+    if !arr.has_nulls() && mask.len() <= 8 {
+        // At most 64 groups, so the groups seen fit in a register.
+        let mut seen = 0u64;
+        for (i, g) in subset.iter().zip(group_idxs) {
+            let g = *g as usize;
+            let grp = slots.get_unchecked_mut(g + (offset & LANE_MASK));
+            reducer.reduce_one(grp, Some(arr.value_unchecked(*i as usize)), seq_id);
+            seen |= 1 << g;
+            offset = offset.wrapping_add(stride);
+        }
+        for (byte, bits) in mask.iter_mut().zip(seen.to_le_bytes()) {
+            *byte |= bits;
+        }
+        return;
+    }
+
+    for (i, g) in subset.iter().zip(group_idxs) {
+        if let Some(v) = arr.get_unchecked(*i as usize) {
+            let g = *g as usize;
+            let grp = slots.get_unchecked_mut(g + (offset & LANE_MASK));
+            reducer.reduce_one(grp, Some(v), seq_id);
+            // Only store if needed, a store on each row would chain
+            // the updates through the shared mask byte.
+            if !get_bit_unchecked(mask, g) {
+                set_bit_unchecked(mask, g, true);
+            }
+        }
+        offset = offset.wrapping_add(stride);
+    }
+}
+
 pub struct VecMaskGroupedReduction<R: Reducer> {
     values: Vec<R::Value>,
     layout: LaneLayout,
@@ -610,25 +664,18 @@ where
             self.layout.expand(&mut self.values, self.reducer.init());
         }
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
-        let arr = ca.downcast_as_array();
-        let stride = self.layout.stride;
-        let slots = self.values.as_mut_slice();
-        let mut offset = 0usize;
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
-            for (i, g) in subset.iter().zip(group_idxs) {
-                if let Some(v) = arr.get_unchecked(*i as usize) {
-                    let g = *g as usize;
-                    let grp = slots.get_unchecked_mut(g + (offset & LANE_MASK));
-                    self.reducer.reduce_one(grp, Some(v), seq_id);
-                    // Only store if needed, a store on each row would chain
-                    // the updates through the shared mask byte.
-                    if !self.mask.get_unchecked(g) {
-                        self.mask.set_unchecked(g, true);
-                    }
-                }
-                offset = offset.wrapping_add(stride);
-            }
+            update_masked_lanes(
+                &self.reducer,
+                self.values.as_mut_slice(),
+                self.mask.as_mut_slice(),
+                ca.downcast_as_array(),
+                subset,
+                group_idxs,
+                self.layout.stride,
+                seq_id,
+            );
         }
         Ok(())
     }

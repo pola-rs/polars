@@ -132,7 +132,16 @@ impl PhysicalExpr for TernaryExpr {
         let masked_df = |names: &[PlSmallStr], mask: &Bitmap| -> PolarsResult<DataFrame> {
             let columns = names
                 .iter()
-                .map(|c| df.column(c).unwrap().mask(mask))
+                .map(|c| {
+                    let c = df.column(c).unwrap();
+                    // Common subexpression elimination can add a scalar column of one row to a
+                    // frame with another height.
+                    if c.len() == 1 && df.height() != 1 {
+                        c.new_from_index(0, df.height()).mask(mask)
+                    } else {
+                        c.mask(mask)
+                    }
+                })
                 .collect();
             DataFrame::new(df.height(), columns)
         };
@@ -159,7 +168,7 @@ impl PhysicalExpr for TernaryExpr {
                 (1, r) if r != 1 => return self.cast_arm(falsy),
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
-                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and falsy height in when/then/otherwise");
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and falsy height ({}) in when/then/otherwise", l, r);
                     return self.cast_arm(falsy);
                 },
             }
@@ -171,7 +180,7 @@ impl PhysicalExpr for TernaryExpr {
                 (1, r) if r != 1 => return self.cast_arm(truthy),
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
-                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and truthy height in when/then/otherwise");
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and truthy height ({}) in when/then/otherwise", l, r);
                     return self.cast_arm(truthy);
                 },
             }

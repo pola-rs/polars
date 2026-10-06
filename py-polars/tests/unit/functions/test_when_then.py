@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import random
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -11,6 +11,9 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_when_then() -> None:
@@ -864,3 +867,24 @@ def test_when_otherwise_broadcast_28969(
         {"t": [1 if x else 2 for x in input]}, schema={"t": pl.Int64}
     )
     assert_frame_equal(out, expected)
+
+
+def test_when_then_scalar_condition_on_empty_frame_with_cse() -> None:
+    n = pl.len().cast(pl.Int64)
+    running = pl.col("x").cum_sum()
+    q = pl.LazyFrame({"x": []}, schema={"x": pl.Int64}).with_columns(
+        pl.when(n > 1).then((running - 1) / (n - 1)).otherwise(0.0).alias("y"),
+        (running * n).alias("z"),
+    )
+    expected = pl.DataFrame(
+        schema={"x": pl.Int64, "y": pl.Float64, "z": pl.Int64},
+    )
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_scalar_condition_masks_unselected_branch(engine: EngineType) -> None:
+    q = pl.LazyFrame({"x": ["bad", "worse"]}).select(
+        pl.when(pl.lit(False)).then(pl.col("x").cast(pl.Int64)).otherwise(0)
+    )
+    assert q.collect(engine=engine).to_series().to_list() == [0, 0]

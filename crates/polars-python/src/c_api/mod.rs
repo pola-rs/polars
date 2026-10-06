@@ -244,6 +244,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_expr))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::pipe_with_dtype))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))

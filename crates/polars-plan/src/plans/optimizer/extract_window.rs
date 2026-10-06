@@ -18,7 +18,6 @@
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::unique_column_name;
 use recursive::recursive;
 
 use crate::plans::{
@@ -26,6 +25,7 @@ use crate::plans::{
     ToFieldContext, is_length_preserving_ae, is_splittable,
 };
 use crate::prelude::{ProjectionOptions, WindowMapping};
+use crate::unique_column_name;
 
 pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
     let mut visited = PlIndexSet::new();
@@ -296,7 +296,8 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
                 .get(e.node())
                 .to_field(&ToFieldContext::new(expr_arena, &input_schema))
                 .unwrap();
-            schema.with_column(e.output_name().clone(), field.dtype);
+            let dtype = field.dtype.materialize_unknown(true).unwrap();
+            schema.with_column(e.output_name().clone(), dtype);
         }
 
         top = ir_arena.add(IR::Window {

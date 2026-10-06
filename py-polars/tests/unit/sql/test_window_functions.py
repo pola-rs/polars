@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -206,12 +210,9 @@ def test_window_function_order_by_multi() -> None:
             "value": [10, 20, 15, 30, 25],
         }
     )
-    # Note: Polars uses ROWS semantics, not RANGE semantics; we make that explicit in
-    # the query below so we can compare the result with SQLite (relational databases
-    # usually default to RANGE semantics if not given an explicit frame spec)
-    #
-    # RANGE >> gives peer groups the same value: (A,X) → [25, 25, ...]
-    # ROWS >> gives each row its own cumulative: (A,X) → [10, 25, ...]
+    # The ROWS frame gives each row its own running value: (A,X) → [10, 25, ...].
+    # Without a frame, rows with equal ORDER BY values get the same value:
+    # (A,X) → [25, 25, ...].
     query = """
         SELECT
             category,
@@ -541,70 +542,37 @@ def test_window_multiple_named_windows(df_test: pl.DataFrame) -> None:
 
 
 def test_window_frame_validation() -> None:
-    df = pl.DataFrame({"lbl": ["aa", "cc", "bb"], "value": [50, 75, -100]})
+    df = pl.DataFrame({"lbl": ["aa", "cc", "bb", "bb"], "value": [50, 75, -100, 10]})
 
-    # Omitted window frame => implicit ROWS semantics
-    # (for Polars; for databases it usually implies RANGE semantics)
-    for query in (
-        """
-        SELECT lbl, SUM(value) OVER (ORDER BY lbl) AS sum_value
-        FROM self ORDER BY lbl ASC
-        """,
-        """
-        SELECT lbl, SUM(value) OVER (
-            ORDER BY lbl
-            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        ) AS sum_value
-        FROM self ORDER BY lbl ASC
-        """,
+    # Without a frame, rows with equal ORDER BY values (peers) share one value
+    for frame in (
+        "",
+        "RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
+        "GROUPS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
     ):
-        assert df.sql(query).rows() == [("aa", 50), ("bb", -50), ("cc", 25)]
+        query = f"""
+            SELECT lbl, SUM(value) OVER (ORDER BY lbl {frame}) AS sum_value
+            FROM self ORDER BY lbl, value
+        """
+        assert df.sql(query).rows() == [
+            ("aa", 50),
+            ("bb", -40),
+            ("bb", -40),
+            ("cc", 35),
+        ]
         assert_sql_matches(df, query=query, compare_with="sqlite")
 
-    # Rejected: RANGE frame (peer group semantics not supported)
-    query = """
-        SELECT lbl, SUM(value) OVER (
-            ORDER BY lbl
-            RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        ) AS sum_value
-        FROM self
-    """
-    with pytest.raises(
-        SQLInterfaceError,
-        match="RANGE-based window frames are not supported",
+    # Rejected: offsets in RANGE and GROUPS frames, and FOLLOWING offsets
+    for frame in (
+        "ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING",
+        "RANGE BETWEEN 1 PRECEDING AND CURRENT ROW",
+        "GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW",
     ):
-        df.sql(query)
-
-    # Rejected: GROUPS frame
-    query = """
-        SELECT lbl, SUM(value) OVER (
-            ORDER BY lbl
-            GROUPS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        ) AS sum_value
-        FROM self
-    """
-    with pytest.raises(
-        SQLInterfaceError,
-        match="GROUPS-based window frames are not supported",
-    ):
-        df.sql(query)
-
-    # Rejected: ROWS with incompatible bounds
-    query = """
-        SELECT lbl, SUM(value) OVER (
-            ORDER BY lbl
-            ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
-        ) AS sum_value
-        FROM self
-    """
-    with pytest.raises(
-        SQLInterfaceError,
-        match=(
-            "only 'ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW' is currently "
-            "supported; found 'ROWS BETWEEN 1 PRECEDING AND CURRENT ROW'"
-        ),
-    ):
-        df.sql(query)
+        with pytest.raises(
+            SQLInterfaceError,
+            match=f"SUM with window frame '{frame}' is not supported",
+        ):
+            df.sql(f"SELECT SUM(value) OVER (ORDER BY lbl {frame}) FROM self")
 
 
 @pytest.mark.parametrize(
@@ -746,18 +714,19 @@ def test_window_order_by_nulls_default_placement() -> None:
     }
 
 
-def test_window_order_by_mixed_nulls_placement_error() -> None:
-    df = pl.DataFrame({"a": [1.0, None], "b": [2, 1]})
-    with (
-        pl.SQLContext(df=df, eager=True) as ctx,
-        pytest.raises(
-            SQLSyntaxError,
-            match=r"does not .*support mixed NULLS FIRST/LAST",
-        ),
-    ):
-        ctx.execute(
-            "SELECT ROW_NUMBER() OVER (ORDER BY a NULLS LAST, b NULLS FIRST) FROM df"
-        )
+def test_window_order_by_mixed_directions() -> None:
+    df = pl.DataFrame({"a": [1.0, None, 1.0, None], "b": [2, 1, None, 2]})
+    query = """
+        SELECT
+            a,
+            b,
+            ROW_NUMBER() OVER (ORDER BY a NULLS LAST, b NULLS FIRST) AS x,
+            ROW_NUMBER() OVER (ORDER BY a DESC, b) AS y,
+            SUM(b) OVER (ORDER BY a NULLS FIRST, b DESC) AS z
+        FROM self
+        ORDER BY a, b
+    """
+    assert_sql_matches(df, query=query, compare_with="duckdb")
 
 
 @pytest.mark.parametrize(
@@ -875,3 +844,757 @@ def test_window_order_by_scalar_and_literal_keys(order_by: str) -> None:
         compare_with="sqlite",
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.fixture
+def df_window() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6, 7],
+            "g": [1, 1, 1, 2, 2, None, None],
+            "x": [5, 3, None, 2, 2, 4, None],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id, SUM(x) OVER (w ORDER BY id) AS a FROM t WINDOW w AS (PARTITION BY g)",
+        "SELECT id, RANK() OVER (w ORDER BY id DESC) AS a FROM t WINDOW w AS (PARTITION BY g)",
+        "SELECT id, LAG(x) OVER (w ORDER BY id) AS a FROM t WINDOW w AS (PARTITION BY g)",
+        "SELECT id, COUNT(*) OVER w AS a, COUNT(x) OVER w AS b, SUM(x) OVER w AS c FROM t WINDOW w AS (PARTITION BY g ORDER BY id)",
+        "SELECT id, ROW_NUMBER() OVER v AS a FROM t WINDOW w AS (PARTITION BY g), v AS (w ORDER BY id DESC)",
+        "SELECT id, SUM(x) OVER (w ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS a FROM t WINDOW w AS (PARTITION BY g ORDER BY id)",
+    ],
+)
+def test_window_named_window_extended(df_window: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"t": df_window}, query=query, compare_with="duckdb", check_row_order=False
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "error_type", "error"),
+    [
+        (
+            "SELECT SUM(x) OVER (w PARTITION BY id) FROM t WINDOW w AS (PARTITION BY g)",
+            SQLSyntaxError,
+            "cannot override PARTITION BY of window 'w'",
+        ),
+        (
+            "SELECT SUM(x) OVER (w ORDER BY x) FROM t WINDOW w AS (ORDER BY id)",
+            SQLSyntaxError,
+            "cannot override ORDER BY of window 'w'",
+        ),
+        (
+            "SELECT SUM(x) OVER (w ORDER BY id) FROM t WINDOW w AS (ROWS UNBOUNDED PRECEDING)",
+            SQLSyntaxError,
+            "cannot copy window 'w' because it has a frame clause",
+        ),
+        (
+            "SELECT SUM(x) OVER v FROM t WINDOW v AS (w ORDER BY id)",
+            SQLInterfaceError,
+            "named window 'w' was not found",
+        ),
+    ],
+)
+def test_window_named_window_errors(
+    df_window: pl.DataFrame, query: str, error_type: type[Exception], error: str
+) -> None:
+    with pytest.raises(error_type, match=error):
+        pl.SQLContext(t=df_window).execute(query, eager=True)
+
+
+def test_window_last_value(df_window: pl.DataFrame) -> None:
+    query = """
+        SELECT
+            id,
+            LAST_VALUE(x) OVER (PARTITION BY g) AS a,
+            LAST_VALUE(x) OVER () AS b,
+            LAST_VALUE(x) OVER (PARTITION BY g ORDER BY id) AS c,
+            LAST_VALUE(x) OVER (
+                ORDER BY id DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            ) AS d
+        FROM t
+        ORDER BY id
+    """
+    assert_sql_matches(
+        {"t": df_window},
+        query=query,
+        compare_with=None,
+        expected={
+            "id": [1, 2, 3, 4, 5, 6, 7],
+            "a": [None, None, None, 2, 2, None, None],
+            "b": [None] * 7,
+            "c": [5, 3, None, 2, 2, 4, None],
+            "d": [5, 3, None, 2, 2, 4, None],
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT LAST_VALUE(x) OVER () AS a FROM t",
+        "SELECT FIRST_VALUE(x) OVER () AS a FROM t",
+        "SELECT SUM(x) OVER () AS a FROM t",
+        "SELECT COUNT(*) OVER () AS a FROM t",
+        "SELECT AVG(x) OVER w AS a FROM t WINDOW w AS ()",
+        "SELECT 1 + MAX(x) OVER () AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY 1) AS a FROM t",
+        "SELECT FIRST_VALUE(x) OVER (PARTITION BY 'a') AS a FROM t",
+        "SELECT COUNT(*) OVER (PARTITION BY 1 + 1) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY LOWER('A')) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY ABS(1)) AS a FROM t",
+        "SELECT LAST_VALUE(x) OVER (PARTITION BY COALESCE(NULL, 1)) AS a FROM t",
+        "SELECT * REPLACE (SUM(x) OVER () AS x) FROM t",
+        "SELECT NTH_VALUE(x, 2) OVER () AS a FROM t",
+        # a window over aggregates makes the query an aggregation, with one row
+        "SELECT SUM(SUM(x)) OVER () AS a FROM t",
+        "SELECT NTH_VALUE(SUM(x), 1) OVER () AS a FROM t",
+        "SELECT AVG(MAX(x)) OVER () AS a FROM t",
+        "SELECT APPROX_QUANTILE(SUM(x), 0.5) OVER () AS a FROM t",
+        "SELECT CORR(SUM(x), SUM(x)) OVER () AS a FROM t",
+        # so does an aggregate next to a window, which then reads that one row
+        "SELECT SUM(x) AS s, COUNT(*) OVER () AS a FROM t",
+        "SELECT COUNT(*) AS c, ROW_NUMBER() OVER () AS a FROM t",
+        "SELECT RANK() OVER (ORDER BY SUM(x)) AS a FROM t",
+        "SELECT 1 AS one, MAX(x) AS m, LAG(MAX(x), 1, 0) OVER (ORDER BY MAX(x)) AS a FROM t",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_window_over_whole_frame_row_count(query: str, n_rows: int) -> None:
+    df = pl.DataFrame({"x": [7, 8, 9][:n_rows]}, schema={"x": pl.Int64})
+    assert_sql_matches(
+        {"t": df},
+        query=query,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "partition_by",
+    ["COUNT(*)", "COUNT(*) > 1", "1, COUNT(*)"],
+)
+def test_window_partition_by_aggregate_after_group_by(partition_by: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
+    assert_sql_matches(
+        df,
+        query=f"""
+            SELECT g, ROW_NUMBER() OVER (PARTITION BY {partition_by} ORDER BY g) AS r
+            FROM self GROUP BY g ORDER BY g
+        """,
+        compare_with="duckdb",
+    )
+
+
+@pytest.fixture
+def df_grouped() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3, 3, None],
+            "h": ["a", "b", "a", "a", "b", "a", None, "b"],
+            "x": [5, 3, None, 2, 4, 1, 1, 6],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "window",
+    [
+        # group keys
+        "SUM(g) OVER ()",
+        "MAX(g) OVER (ORDER BY g DESC)",
+        "COUNT(g) OVER (ORDER BY g ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)",
+        "LAST_VALUE(g) OVER (ORDER BY g ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)",
+        "COUNT(*) OVER ()",
+        "COUNT(*) FILTER (WHERE g > 1) OVER ()",
+        # aggregates
+        "SUM(COUNT(*)) OVER ()",
+        "SUM(COUNT(*)) OVER (PARTITION BY MAX(x) > 4)",
+        "SUM(SUM(x)) FILTER (WHERE COUNT(*) > 2) OVER ()",
+        "SUM(g * COUNT(*)) OVER (ORDER BY g)",
+        "SUM(x) * 100 / SUM(SUM(x)) OVER ()",
+        "AVG(SUM(x)) OVER (ORDER BY COUNT(*))",
+        "LAG(COUNT(*)) OVER (ORDER BY g)",
+        "LEAD(SUM(x), 1, 0) OVER (ORDER BY g)",
+        "FIRST_VALUE(g) OVER (ORDER BY COUNT(*) DESC, g)",
+        "NTH_VALUE(SUM(x), 2) OVER (ORDER BY g)",
+        # ties of an aggregate ORDER BY key
+        "RANK() OVER (ORDER BY COUNT(*) DESC)",
+        "DENSE_RANK() OVER (ORDER BY COUNT(*))",
+        "PERCENT_RANK() OVER (ORDER BY COUNT(*))",
+        "CUME_DIST() OVER (ORDER BY COUNT(*))",
+        "RANK() OVER (ORDER BY COUNT(*), MAX(h) DESC)",
+    ],
+)
+def test_window_over_grouped_rows(df_grouped: pl.DataFrame, window: str) -> None:
+    assert_sql_matches(
+        {"t": df_grouped},
+        query=f"SELECT g, {window} AS w FROM t GROUP BY g ORDER BY g",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        """
+        SELECT g, h, COUNT(*) AS c, SUM(COUNT(*)) OVER (PARTITION BY g) AS w
+        FROM t GROUP BY g, h ORDER BY g, h
+        """,
+        """
+        SELECT g, h, RANK() OVER (PARTITION BY h ORDER BY SUM(x) DESC) AS w
+        FROM t GROUP BY g, h ORDER BY g, h
+        """,
+        "SELECT g AS k, SUM(g) OVER (ORDER BY g) AS w FROM t GROUP BY k ORDER BY k",
+        "SELECT g % 2 AS k, SUM(g % 2) OVER () AS w FROM t GROUP BY g % 2 ORDER BY k",
+        """
+        SELECT g, RANK() OVER (ORDER BY SUM(x)) AS w
+        FROM t GROUP BY g HAVING COUNT(*) > 1 ORDER BY g
+        """,
+        """
+        SELECT g, h, SUM(g) OVER () AS w
+        FROM t GROUP BY GROUPING SETS ((g), (h)) ORDER BY g, h
+        """,
+        """
+        SELECT g, h, RANK() OVER (PARTITION BY GROUPING(g, h) ORDER BY SUM(x) DESC) AS w
+        FROM t GROUP BY ROLLUP(g, h) ORDER BY g, h, w
+        """,
+        # SELECT aliases of aggregates in a window of the ORDER BY
+        """
+        SELECT g, COUNT(*) AS n
+        FROM t GROUP BY g ORDER BY LAG(n, 1, 0) OVER (ORDER BY g) DESC, g
+        """,
+        """
+        SELECT g, SUM(x) AS s
+        FROM t GROUP BY g ORDER BY SUM(s) OVER (ORDER BY g DESC), g
+        """,
+    ],
+)
+def test_window_over_grouped_rows_queries(df_grouped: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"t": df_grouped},
+        query=query,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT SUM(SUM(x)) OVER () FROM t",
+        "SELECT COUNT(COUNT(*)) OVER () FROM t",
+        "SELECT g, SUM(SUM(x)) OVER () FROM t GROUP BY g ORDER BY g",
+        """
+        SELECT g, SUM(COUNT(*)) OVER (PARTITION BY GROUPING(g))
+        FROM t GROUP BY ROLLUP(g) ORDER BY g
+        """,
+    ],
+)
+def test_window_over_aggregates_unaliased(df_grouped: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"t": df_grouped},
+        query=query,
+        compare_with="duckdb",
+        check_column_names=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT x, SUM((SELECT 2)) OVER () AS w FROM t ORDER BY x",
+        "SELECT x, COUNT((SELECT 2)) OVER (ORDER BY x) AS w FROM t ORDER BY x",
+        "SELECT x, LAG((SELECT 2)) OVER (ORDER BY x) AS w FROM t ORDER BY x",
+        "SELECT g, SUM((SELECT 2)) OVER () AS w FROM t GROUP BY g ORDER BY g",
+        """
+        SELECT g, LAG((SELECT 2) + COUNT(*)) OVER (ORDER BY g) AS w
+        FROM t GROUP BY g ORDER BY g
+        """,
+        "SELECT COUNT(*) AS c, SUM((SELECT 2)) OVER () AS w FROM t",
+        "SELECT g, SUM(MAX(g + (SELECT 2))) OVER () AS w FROM t GROUP BY g ORDER BY g",
+        "SELECT SUM(MAX(g + (SELECT 2))) OVER () AS w FROM t",
+        """
+        SELECT g, SUM(MAX(g + ARRAY_LENGTH(ARRAY_REVERSE((SELECT ARRAY[1, 2])))))
+            OVER () AS w
+        FROM t GROUP BY g ORDER BY g
+        """,
+        "SELECT SUM(MAX(g + ARRAY_LENGTH(ARRAY_REVERSE((SELECT ARRAY[1, 2]))))) OVER () AS w FROM t",
+        "SELECT x, SUM(ABS(CAST(1 IN (SELECT x FROM t) AS INT))) OVER () AS w FROM t ORDER BY x",
+    ],
+)
+def test_window_of_scalar_subquery(query: str) -> None:
+    # A scalar subquery has its value on every row of the window.
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [3, 1, 2]})
+    assert_sql_matches(
+        {"t": df},
+        query=query,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        (
+            "SELECT g, SUM(x) OVER () FROM t GROUP BY g",
+            "'x' should participate in the GROUP BY clause",
+        ),
+        (
+            "SELECT g, RANK() OVER (ORDER BY x) FROM t GROUP BY g",
+            "'x' should participate in the GROUP BY clause",
+        ),
+        (
+            "SELECT SUM(x), SUM(x) OVER () FROM t",
+            "'x' should participate in the GROUP BY clause",
+        ),
+        (
+            "SELECT g, SUM(SUM(COUNT(*))) OVER () FROM t GROUP BY g",
+            "aggregate function calls cannot be nested",
+        ),
+        (
+            "SELECT g, SUM(MAX(ARRAY_LENGTH(ARRAY_REVERSE(ARRAY_AGG(x))))) OVER () FROM t GROUP BY g",
+            "aggregate function calls cannot be nested",
+        ),
+    ],
+)
+def test_window_over_grouped_rows_errors(
+    df_grouped: pl.DataFrame, query: str, error: str
+) -> None:
+    with pytest.raises(SQLSyntaxError, match=error):
+        df_grouped.sql(query.replace("FROM t", "FROM self"))
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "ROWS 2 PRECEDING",
+        "ROWS BETWEEN 1 PRECEDING AND CURRENT ROW",
+        "ROWS BETWEEN CURRENT ROW AND CURRENT ROW",
+        "RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
+        "GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW",
+    ],
+)
+def test_window_last_value_frame_ends_at_current_row(
+    df_window: pl.DataFrame, frame: str
+) -> None:
+    query = f"SELECT id, LAST_VALUE(x) OVER (PARTITION BY g ORDER BY id {frame}) AS a FROM t"
+    assert_sql_matches(
+        {"t": df_window}, query=query, compare_with="duckdb", check_row_order=False
+    )
+
+
+@pytest.mark.parametrize(
+    ("window_fn", "error"),
+    [
+        ("STDDEV(x) OVER (ORDER BY id)", "STDDEV with ORDER BY in OVER"),
+        ("VARIANCE(x) OVER w", "VARIANCE with ORDER BY in OVER"),
+        ("MEDIAN(x) OVER (w)", "MEDIAN with ORDER BY in OVER"),
+        ("STRING_AGG(x, ',') OVER (ORDER BY id)", "STRING_AGG with ORDER BY in OVER"),
+        ("LAST(x) OVER (ORDER BY id)", "LAST with ORDER BY in OVER"),
+        ("COUNT(DISTINCT x) OVER (ORDER BY id)", "COUNT with ORDER BY in OVER"),
+        (
+            "SUM(x) OVER (PARTITION BY g ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+            "SUM with a ROWS window frame but no ORDER BY is not supported",
+        ),
+        (
+            "SUM(DISTINCT x) OVER (PARTITION BY g)",
+            r"SUM\(DISTINCT ...\) is not supported with this OVER clause",
+        ),
+        ("AVG(DISTINCT x) OVER w", r"AVG\(DISTINCT ...\) is not supported"),
+        (
+            "COUNT(x) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)",
+            "COUNT with window frame 'ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING' "
+            "is not supported",
+        ),
+        (
+            "LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING)",
+            "LAST_VALUE with window frame 'RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING' "
+            "is not supported",
+        ),
+        (
+            "NTH_VALUE(x, 2) OVER (ORDER BY id GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW)",
+            "NTH_VALUE with window frame 'GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW' "
+            "is not supported",
+        ),
+        (
+            "FIRST_VALUE(x) OVER (PARTITION BY g ROWS 1 PRECEDING)",
+            "FIRST_VALUE with a ROWS window frame but no ORDER BY is not supported",
+        ),
+    ],
+)
+def test_window_unsupported_shapes(
+    df_window: pl.DataFrame, window_fn: str, error: str
+) -> None:
+    query = f"SELECT id, {window_fn} AS a FROM t WINDOW w AS (ORDER BY id)"
+    with pytest.raises(SQLInterfaceError, match=error):
+        pl.SQLContext(t=df_window).execute(query, eager=True)
+
+
+@pytest.fixture
+def df_frames() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "g": [1, 1, 1, 1, 2, 2, 2, None, None],
+            "o": [2, 1, 1, None, 5, 5, None, 1, 1],
+            "x": [10, None, 20, 5, 1, None, 4, None, 7],
+            "f": [1.5, 2.5, None, -1.0, 0.5, 2.0, None, None, 3.0],
+            "s": ["b", "a", None, "c", "z", None, "x", None, "q"],
+        }
+    )
+
+
+# Frames that start or end at the peers of the current row.
+PEER_FRAMES = [
+    "",
+    "RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
+    "GROUPS UNBOUNDED PRECEDING",
+    "RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING",
+    "GROUPS BETWEEN CURRENT ROW AND CURRENT ROW",
+    "RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING",
+]
+# ROWS frames depend on the order of peers, so they get an ORDER BY without ties.
+ROWS_FRAMES = [
+    "ROWS UNBOUNDED PRECEDING",
+    "ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING",
+    "ROWS BETWEEN CURRENT ROW AND CURRENT ROW",
+    "ROWS 2 PRECEDING",
+]
+
+
+@pytest.mark.parametrize(
+    ("frame", "order_by"),
+    [
+        *(
+            (frame, order_by)
+            for frame in PEER_FRAMES
+            for order_by in ("o", "o DESC, x")
+        ),
+        *(
+            (frame, order_by)
+            for frame in ROWS_FRAMES
+            for order_by in ("o, id", "o DESC, id DESC")
+        ),
+    ],
+)
+@pytest.mark.parametrize("partition_by", ["", "PARTITION BY g"])
+def test_window_aggregate_frames(
+    df_frames: pl.DataFrame, frame: str, order_by: str, partition_by: str
+) -> None:
+    aggs = ["SUM(x)", "COUNT(x)", "COUNT(*)", "MIN(x)", "MAX(x)", "AVG(x)", "AVG(f)"]
+    if frame not in ("ROWS BETWEEN CURRENT ROW AND CURRENT ROW", "ROWS 2 PRECEDING"):
+        # There is no rolling MIN/MAX of strings yet
+        aggs += ["MIN(s)", "MAX(s)"]
+    select = ", ".join(f"{agg} OVER w AS a{i}" for i, agg in enumerate(aggs))
+    assert_sql_matches(
+        {"t": df_frames},
+        query=f"""
+            SELECT id, {select} FROM t
+            WINDOW w AS ({partition_by} ORDER BY {order_by} {frame})
+            ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "window_fn",
+    [
+        "SUM(1) OVER (ORDER BY o)",
+        "SUM(2) OVER (PARTITION BY g ORDER BY o, id ROWS 1 PRECEDING)",
+        "COUNT(1) OVER (PARTITION BY g ORDER BY o)",
+        "MAX(1) OVER (ORDER BY o RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)",
+        "AVG(1) OVER (ORDER BY o)",
+        "SUM(x) OVER (ORDER BY 1)",
+        "SUM(x) OVER (PARTITION BY g ORDER BY 1, LOWER('A'))",
+        "COUNT(*) OVER (ORDER BY 1 RANGE BETWEEN CURRENT ROW AND CURRENT ROW)",
+        "SUM(x) OVER (PARTITION BY g RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)",
+        "AVG(DISTINCT x) OVER (PARTITION BY g)",
+        "MAX(DISTINCT x) OVER (ORDER BY o)",
+        "SUM(1) FILTER (WHERE TRUE) OVER ()",
+        "COUNT(*) FILTER (WHERE TRUE) OVER (PARTITION BY g)",
+        "SUM(1 + 1) OVER (ORDER BY o RANGE BETWEEN CURRENT ROW AND CURRENT ROW)",
+        "SUM(CAST(x AS DECIMAL(10, 2))) OVER (ORDER BY id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)",
+        "COUNT(*) OVER (ORDER BY id ROWS 9223372036854775807 PRECEDING)",
+        "SUM(x) OVER (ORDER BY id ROWS 9223372036854775807 PRECEDING)",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 9])
+def test_window_aggregate_shapes(
+    df_frames: pl.DataFrame, window_fn: str, n_rows: int
+) -> None:
+    assert_sql_matches(
+        {"t": df_frames.head(n_rows)},
+        query=f"SELECT id, {window_fn} AS a FROM t ORDER BY id",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "window_fn",
+    [
+        "SUM(1) OVER ()",
+        "SUM(1) FILTER (WHERE TRUE) OVER ()",
+        "COUNT(*) FILTER (WHERE TRUE) OVER ()",
+        "SUM(1 + 1) OVER ()",
+        "AVG(1 + 1) OVER ()",
+        "SUM(1) OVER (ORDER BY id)",
+        "SUM(x) OVER ()",
+        "SUM(SUM(x)) OVER ()",
+        "COUNT(COUNT(*)) OVER ()",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_window_aggregate_output_height(
+    df_frames: pl.DataFrame, window_fn: str, n_rows: int
+) -> None:
+    assert_sql_matches(
+        {"t": df_frames.head(n_rows)},
+        query=f"SELECT {window_fn} AS a FROM t",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_window_avg_of_large_integers() -> None:
+    df = pl.DataFrame(
+        {"id": [1, 2, 3], "x": [2_000_000_000, 2_000_000_000, 2_000_000_000]},
+        schema_overrides={"x": pl.Int32},
+    )
+    assert_sql_matches(
+        {"t": df},
+        query="""
+            SELECT
+              id,
+              AVG(x) OVER (ORDER BY id) AS a,
+              AVG(x) OVER (ORDER BY id ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS b,
+              AVG(x) OVER (ORDER BY id ROWS 1 PRECEDING) AS c
+            FROM t ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+# ROWS frames for FIRST_VALUE, LAST_VALUE and NTH_VALUE, including empty frames.
+VALUE_ROWS_FRAMES = [
+    "ROWS UNBOUNDED PRECEDING",
+    "ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING",
+    "ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING",
+    "ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING",
+    "ROWS BETWEEN 3 FOLLOWING AND 1 FOLLOWING",
+    "ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING",
+    "ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING",
+    "ROWS BETWEEN 9223372036854775807 PRECEDING AND 9223372036854775807 FOLLOWING",
+]
+
+
+@pytest.mark.parametrize(
+    ("frame", "order_by", "values"),
+    [
+        # With peers in the frame, read the ORDER BY key, which peers share.
+        *(
+            (frame, order_by, "o")
+            for frame in PEER_FRAMES
+            for order_by in ("o", "o DESC")
+        ),
+        *(
+            (frame, order_by, value)
+            for frame in VALUE_ROWS_FRAMES
+            for order_by in ("o, id", "o DESC, id DESC")
+            for value in ("x", "s")
+        ),
+    ],
+)
+@pytest.mark.parametrize("partition_by", ["", "PARTITION BY g"])
+def test_window_value_frames(
+    df_frames: pl.DataFrame, frame: str, order_by: str, values: str, partition_by: str
+) -> None:
+    funcs = [
+        f"FIRST_VALUE({values})",
+        f"LAST_VALUE({values})",
+        f"NTH_VALUE({values}, 2)",
+        f"NTH_VALUE({values}, 4)",
+    ]
+    select = ", ".join(f"{func} OVER w AS a{i}" for i, func in enumerate(funcs))
+    assert_sql_matches(
+        {"t": df_frames},
+        query=f"""
+            SELECT id, {select} FROM t
+            WINDOW w AS ({partition_by} ORDER BY {order_by} {frame})
+            ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW",
+        "RANGE BETWEEN 2 PRECEDING AND CURRENT ROW",
+    ],
+)
+def test_window_last_value_range_offset_start(
+    df_frames: pl.DataFrame, frame: str
+) -> None:
+    assert_sql_matches(
+        {"t": df_frames},
+        query=f"""
+            SELECT id, LAST_VALUE(o) OVER (PARTITION BY g ORDER BY o {frame}) AS a
+            FROM t ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "window_fn",
+    [
+        "FIRST_VALUE(1) OVER ()",
+        "LAST_VALUE(1) OVER (ORDER BY id)",
+        "LAST_VALUE('a') OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)",
+        "FIRST_VALUE(1 + 1) OVER (ORDER BY id ROWS BETWEEN 2 FOLLOWING AND 3 FOLLOWING)",
+        "NTH_VALUE(1, 2) OVER ()",
+        "NTH_VALUE(1, 2) OVER (ORDER BY id)",
+        "NTH_VALUE(1, 4) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)",
+        "LAG(1) OVER (ORDER BY id)",
+        "LAG(1, 1, 99) OVER (ORDER BY id)",
+        "LEAD('a', 2) OVER (ORDER BY id)",
+    ],
+)
+@pytest.mark.parametrize("n_rows", [0, 3])
+def test_window_value_of_scalar(
+    df_frames: pl.DataFrame, window_fn: str, n_rows: int
+) -> None:
+    assert_sql_matches(
+        {"t": df_frames.head(n_rows)},
+        query=f"SELECT {window_fn} AS a FROM t",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "error"),
+    [
+        ("SELECT NTH_VALUE(x, 2) FROM t", "NTH_VALUE requires an OVER clause"),
+        (
+            "SELECT NTH_VALUE(x, 0) OVER (ORDER BY id) FROM t",
+            "NTH_VALUE expects a positive integer literal as the position",
+        ),
+        (
+            "SELECT FIRST_VALUE(x) OVER (ORDER BY id ROWS BETWEEN 1 FOLLOWING AND CURRENT ROW) FROM t",
+            "invalid window frame 'ROWS BETWEEN 1 FOLLOWING AND CURRENT ROW'",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN CURRENT ROW AND 1 PRECEDING) FROM t",
+            "invalid window frame 'RANGE BETWEEN CURRENT ROW AND 1 PRECEDING'",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id GROUPS BETWEEN -1 PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative integer",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN -1.5 PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN x PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT FIRST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN CURRENT ROW AND NULL FOLLOWING) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN TRUE PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN DATE '2024-01-01' PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN (1 - 2) PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN CAST(-1 AS BIGINT) PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+        (
+            "SELECT LAST_VALUE(x) OVER (ORDER BY id RANGE BETWEEN -INTERVAL '1 day' PRECEDING AND CURRENT ROW) FROM t",
+            "window frame offset must be a non-negative literal",
+        ),
+    ],
+)
+def test_window_value_errors(df_frames: pl.DataFrame, query: str, error: str) -> None:
+    with pytest.raises(SQLSyntaxError, match=error):
+        pl.SQLContext(t=df_frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize("partition_by", ["", "PARTITION BY g"])
+@pytest.mark.parametrize("order_by", ["id", "o DESC, id DESC"])
+def test_window_lag_lead_default(
+    df_frames: pl.DataFrame, partition_by: str, order_by: str
+) -> None:
+    funcs = [
+        "LAG(x, 2, 0)",
+        "LEAD(x, 1, -1)",
+        "LAG(s, 1, 'none')",
+        "LEAD(x, 2, x)",
+        "LAG(x, 1, NULL)",
+        "LAG(x, 0)",
+        "LEAD(x, 0, 99)",
+        "LAG(x, -1)",
+        "LEAD(x, -2, 7)",
+        "LAG(x, 100, 3)",
+    ]
+    select = ", ".join(f"{func} OVER w AS a{i}" for i, func in enumerate(funcs))
+    assert_sql_matches(
+        {"t": df_frames},
+        query=f"""
+            SELECT id, {select} FROM t
+            WINDOW w AS ({partition_by} ORDER BY {order_by})
+            ORDER BY id
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_window_total(df_frames: pl.DataFrame) -> None:
+    assert_sql_matches(
+        {"t": df_frames},
+        query="""
+            SELECT
+              id,
+              TOTAL(x) OVER (ORDER BY o NULLS LAST) AS a,
+              TOTAL(x) OVER (PARTITION BY g) AS b,
+              TOTAL(x) OVER (ORDER BY o NULLS LAST, id ROWS 1 PRECEDING) AS c
+            FROM t ORDER BY id
+        """,
+        compare_with="sqlite",
+        check_dtypes=True,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_window_rolling_min_of_strings_unsupported(df_frames: pl.DataFrame) -> None:
+    query = "SELECT MIN(s) OVER (ORDER BY id ROWS 2 PRECEDING) FROM t"
+    with pytest.raises(InvalidOperationError, match="rolling_min"):
+        pl.SQLContext(t=df_frames).execute(query, eager=True)

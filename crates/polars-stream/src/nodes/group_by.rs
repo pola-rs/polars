@@ -501,8 +501,9 @@ impl GroupBySinkState {
 
     fn combine_locals(
         &mut self,
-        exec_state: &ExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<Vec<GroupByPartition>> {
+        let exec_state = &state.in_memory_exec_state;
         // Finalize pre-aggregations.
         RAYON.install(|| {
             self.locals
@@ -563,7 +564,7 @@ impl GroupBySinkState {
         let estimated_groups_metric = &self.estimated_groups.reporter();
         let actual_groups_metric = &self.actual_groups.reporter();
 
-        executor::task_scope(|s| {
+        executor::task_scope(state.task_metrics(), |s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local = Arc::new(morsels_per_local);
@@ -865,7 +866,10 @@ impl GroupByNode {
             num_inputs,
             num_pipelines,
             output_schema,
-            spill_ctx: MostRecentSpillContext::new("group-by".into()),
+            spill_ctx: MostRecentSpillContext::new(
+                "group-by".into(),
+                metrics_registry.task_metrics(),
+            ),
         }
     }
 }
@@ -873,6 +877,10 @@ impl GroupByNode {
 impl ComputeNode for GroupByNode {
     fn name(&self) -> &str {
         "group-by"
+    }
+
+    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
+        matches!(self.state, GroupByState::Sink { .. })
     }
 
     fn update_state(
@@ -896,7 +904,7 @@ impl ComputeNode for GroupByNode {
                 else {
                     unreachable!()
                 };
-                let partitions = sink.combine_locals(&state.in_memory_exec_state)?;
+                let partitions = sink.combine_locals(state)?;
                 let dfs = RAYON.install(|| {
                     partitions
                         .into_par_iter()

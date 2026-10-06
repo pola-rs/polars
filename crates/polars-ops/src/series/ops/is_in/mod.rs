@@ -67,6 +67,11 @@ enum Lookup {
     /// Only the null count of the haystack matters.
     NullNeedle,
     Primitive(Box<dyn PrimitiveProbe>),
+    #[cfg(feature = "dtype-categorical")]
+    Categorical {
+        mapping: Arc<CategoricalMapping>,
+        lookup: Box<dyn PrimitiveProbe>,
+    },
     Binary(BinaryLookup),
     RowEncoded(RowEncodedLookup),
     Boolean {
@@ -119,11 +124,15 @@ impl IsInHaystack {
 
         let lookup = match needle_dtype {
             #[cfg(feature = "dtype-categorical")]
-            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+            dt @ (DataType::Categorical(_, mapping) | DataType::Enum(_, mapping)) => {
+                let lookup = with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
                     let phys = categorical_haystack::<$C>(dt, haystack.dtype(), &flat)?;
-                    Lookup::Primitive(Box::new(PrimitiveLookup::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(&phys)))
-                })
+                    Box::new(PrimitiveLookup::<<$C as PolarsCategoricalType>::PolarsPhysical>::new(&phys)) as Box<dyn PrimitiveProbe>
+                });
+                Lookup::Categorical {
+                    mapping: mapping.clone(),
+                    lookup,
+                }
             },
             DataType::String => {
                 let flat = match flat.dtype() {
@@ -222,6 +231,20 @@ impl IsInHaystack {
             Lookup::Primitive(lookup) => {
                 lookup.probe_series(&needle.to_physical_repr(), nulls_equal, has_null)
             },
+            #[cfg(feature = "dtype-categorical")]
+            Lookup::Categorical { mapping, lookup } => {
+                let (DataType::Categorical(_, needle_mapping) | DataType::Enum(_, needle_mapping)) =
+                    needle.dtype()
+                else {
+                    unreachable!()
+                };
+                polars_ensure!(
+                    Arc::ptr_eq(mapping, needle_mapping),
+                    SchemaMismatch: "is_in: needle of dtype {} uses another category mapping",
+                    needle.dtype()
+                );
+                lookup.probe_series(&needle.to_physical_repr(), nulls_equal, has_null)
+            },
             Lookup::Binary(lookup) => match needle.dtype() {
                 DataType::String => {
                     lookup.probe(&needle.str().unwrap().as_binary(), nulls_equal, has_null)
@@ -280,11 +303,19 @@ fn categorical_haystack<T: PolarsCategoricalType>(
     let out = match (needle_dtype, flat.dtype()) {
         (DataType::Enum(_, mapping) | DataType::Categorical(_, mapping), DataType::String) => {
             let ca = flat.str().unwrap();
-            // Strings without a category can never match; only nulls stay null.
+            // Later batches can add these labels, so reserve their categories now.
+            let is_enum = needle_dtype.is_enum();
             ca.iter()
                 .filter_map(|opt_s| match opt_s {
                     None => Some(None),
-                    Some(s) => mapping.get_cat(s).map(|c| Some(T::Native::from_cat(c))),
+                    Some(s) => {
+                        let cat = if is_enum {
+                            mapping.get_cat(s)
+                        } else {
+                            mapping.insert_cat(s).ok()
+                        };
+                        cat.map(|c| Some(T::Native::from_cat(c)))
+                    },
                 })
                 .collect_ca(PlSmallStr::EMPTY)
         },
@@ -312,6 +343,7 @@ where
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     debug_assert_ne!(other.len(), 1);
+    let other = &other.rechunk();
     let offsets = other.offsets()?;
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();

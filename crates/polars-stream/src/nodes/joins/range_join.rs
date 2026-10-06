@@ -2,7 +2,7 @@ use std::mem;
 use std::ops::BitAnd;
 
 use polars_arrow::array::builder::ShareStrategy;
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -86,6 +86,7 @@ impl RangeJoinNode {
         descending: bool,
         args: JoinArgs,
         options: IEJoinOptions,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         let left_is_point = left_is_point(&left_on, &right_on, &args);
         let ops_n = if options.operator2.is_some() { 2 } else { 1 };
@@ -168,7 +169,7 @@ impl RangeJoinNode {
             args,
         };
         RangeJoinNode {
-            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema)),
+            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema, task_metrics)),
             params,
         }
     }

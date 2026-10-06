@@ -119,7 +119,7 @@ def test_clip_datetime(clip_exprs: list[pl.Expr]) -> None:
 
 
 def test_clip_non_numeric_dtype_fails() -> None:
-    msg = "`clip` only supports physical numeric types"
+    msg = "`clip` operation not supported for dtype `str`"
 
     s = pl.Series(["a", "b", "c"])
     with pytest.raises(InvalidOperationError, match=msg):

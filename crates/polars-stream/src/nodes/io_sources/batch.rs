@@ -220,7 +220,8 @@ impl FileReader for BatchFnReader {
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
-        let handle = spawn(TaskPriority::Low, async move {
+        let task_metrics = self.execution_state().task_metrics();
+        let handle = spawn(TaskPriority::Low, task_metrics, async move {
             if let Some(file_schema_tx) = file_schema_tx {
                 let opt_df;
 
