@@ -71,7 +71,7 @@ pub struct ControllerConfig {
     bdp_model: BdpModel,
     knee_gain: f64,
     knee_round_ticks: u32,
-    // Memory bound for the knee's in-flight byte budget.
+    // Ceiling for the knee's in-flight byte budget (per controller, i.e. per object store).
     knee_max_bytes: u64,
     knee_ramp_lifetime_ratio: f64,
 }
@@ -365,7 +365,7 @@ impl ConcurrencyController {
             let mut knee = (config.bdp_model != BdpModel::Ttfb).then(|| {
                 KneeController::new(KneeConfig {
                     init_budget: config.init_byte_budget,
-                    max_budget: Some(config.knee_max_bytes),
+                    max_budget: config.knee_max_bytes,
                     gain: config.knee_gain,
                     round_ticks: config.knee_round_ticks,
                     tick: config.control_interval,
