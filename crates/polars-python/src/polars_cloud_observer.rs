@@ -19,7 +19,7 @@ type PolarsCloudQueryObserver = Arc<Py<PyAny>>;
 /// Class returned by polars_cloud with a 'close' method, to be called when query ended.
 type PolarsCloudQueryFinishedGuard = Py<PyAny>;
 
-/// This wrapper is passed back to polars_cloud to expose the [CloudStreamingMetricsHandle::snapshot_query_metrics] function to allow for metric polling.
+/// This wrapper is passed back to polars_cloud to expose the [CloudStreamingMetricsHandle::snapshot_query_metrics] and [CloudStreamingMetricsHandle::snapshot_metrics] functions to allow for metric polling.
 #[pyclass(name = "CloudStreamingMetricsHandle")]
 pub struct CloudStreamingMetricsHandle {
     metrics: Box<dyn QueryMetricsSnapshotter>,
@@ -27,12 +27,23 @@ pub struct CloudStreamingMetricsHandle {
 
 #[pymethods]
 impl CloudStreamingMetricsHandle {
+    /// Only the node rows, in the format older polars_cloud versions decode.
     fn snapshot_query_metrics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let snapshot = self.metrics.snapshot();
-        let bytes = rmp_serde::to_vec_named(&snapshot)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(PyBytes::new(py, &bytes))
+        to_msgpack(py, &self.metrics.snapshot().nodes)
     }
+
+    fn snapshot_metrics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        to_msgpack(py, &self.metrics.snapshot())
+    }
+}
+
+fn to_msgpack<'py>(
+    py: Python<'py>,
+    value: &impl serde::Serialize,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let bytes =
+        rmp_serde::to_vec_named(value).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    Ok(PyBytes::new(py, &bytes))
 }
 
 struct CloudObserverFactory {
