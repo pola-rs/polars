@@ -1,7 +1,3 @@
-#[cfg(feature = "string_encoding")]
-use base64::Engine as _;
-#[cfg(feature = "string_encoding")]
-use base64::engine::general_purpose;
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
 use polars_arrow::array::ValueSize;
@@ -118,8 +114,7 @@ pub trait StringNameSpaceImpl: AsString {
     #[must_use]
     #[cfg(feature = "string_encoding")]
     fn hex_encode(&self) -> StringChunked {
-        let ca = self.as_string();
-        ca.apply_values(|s| hex::encode(s).into())
+        crate::chunked_array::binary::binary_to_hex(&self.as_string().as_binary())
     }
 
     #[cfg(not(feature = "binary_encoding"))]
@@ -136,8 +131,7 @@ pub trait StringNameSpaceImpl: AsString {
     #[must_use]
     #[cfg(feature = "string_encoding")]
     fn base64_encode(&self) -> StringChunked {
-        let ca = self.as_string();
-        ca.apply_values(|s| general_purpose::STANDARD.encode(s).into())
+        crate::chunked_array::binary::binary_to_base64(&self.as_string().as_binary())
     }
 
     #[cfg(feature = "string_to_integer")]

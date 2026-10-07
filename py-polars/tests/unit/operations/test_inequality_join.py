@@ -999,6 +999,51 @@ def test_join_where_decimal_vs_float() -> None:
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("a") > pl.col("b"),
+        pl.col("b") >= pl.col("a"),
+        pl.col("a") == pl.col("b"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("left_dtype", "right_dtype"),
+    [
+        # Both sides fit in Decimal(38, 4).
+        (pl.Decimal(10, 2), pl.Decimal(38, 4)),
+        # No Decimal holds both sides.
+        (pl.Decimal(38, 2), pl.Decimal(38, 12)),
+        (pl.Decimal(38, 12), pl.Decimal(38, 2)),
+    ],
+)
+def test_cross_join_filter_decimal_scales_29762(
+    engine: EngineType,
+    predicate: pl.Expr,
+    left_dtype: pl.Decimal,
+    right_dtype: pl.Decimal,
+) -> None:
+    def frame(name: str, dtype: pl.Decimal) -> pl.LazyFrame:
+        max_value = "9" * (dtype.precision - dtype.scale) + "." + "9" * dtype.scale
+        values = ["-2.5", "1", "3.25", max_value, f"-{max_value}", None]
+        if dtype.scale >= 4:
+            values.append("3.2501")
+        return pl.LazyFrame({name: values}).cast(dtype)
+
+    q = (
+        frame("a", left_dtype)
+        .join(frame("b", right_dtype), how="cross")
+        .filter(predicate)
+    )
+
+    expected = q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
+    assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+    plan = q.explain(engine=engine)
+    assert "CROSS JOIN" not in plan
+    assert "NESTED LOOP" not in plan
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("with_key", [False, True])
 @pytest.mark.parametrize("empty_left", [False, True])
 @pytest.mark.parametrize("empty_right", [False, True])
