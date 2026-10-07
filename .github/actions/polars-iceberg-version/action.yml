@@ -1,7 +1,7 @@
 name: polars-iceberg version
 description: >
   Read the polars-iceberg version from the lower bound of the
-  `polars-iceberg >= <version>, < <next major version>` requirement in the `polars_iceberg`
+  `polars-iceberg >= <version>, < <next major version>` requirement in the `iceberg`
   optional dependencies of py-polars/pyproject.toml, to install from PyPI and test against. Checks
   the upper bound is the next major version. Requires a checkout of Polars.
 
@@ -22,7 +22,7 @@ runs:
         import re, tomllib
 
         with open("py-polars/pyproject.toml", "rb") as f:
-            deps = tomllib.load(f)["project"]["optional-dependencies"]["polars_iceberg"]
+            deps = tomllib.load(f)["project"]["optional-dependencies"]["iceberg"]
         bounds = [
             m.groups()
             for d in deps
