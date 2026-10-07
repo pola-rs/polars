@@ -2294,3 +2294,24 @@ def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows(dead: pl.Expr) -> No
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("method", ["select", "with_columns"])
+def test_cspe_filter_on_redefined_column_not_pushed_into_cache_29788(
+    engine: EngineType, method: str
+) -> None:
+    base = pl.LazyFrame(
+        {"c": ["a", "b"], "d": ["x", "y"], "e": [1, 2], "v": [1, 2], "w": [3, 4]}
+    ).filter(pl.col("e") > 0)
+
+    def proj(v: str) -> pl.LazyFrame:
+        # Redefines "c" in terms of the original "c".
+        return getattr(base, method)(
+            (pl.col("c") + pl.col("d")).alias("c"), pl.col(v).alias("x")
+        ).select("c", "x")
+
+    q = pl.concat([proj("v"), proj("w")]).filter(pl.col("c") == "ax")
+
+    expected = pl.DataFrame({"c": ["ax", "ax"], "x": [1, 3]})
+    assert_frame_equal(q.collect(engine=engine), expected)
