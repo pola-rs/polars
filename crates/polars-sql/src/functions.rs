@@ -3,7 +3,7 @@ use std::ops::Sub;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
-    polars_err,
+    polars_ensure, polars_err,
 };
 use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
@@ -1277,11 +1277,22 @@ impl SQLFunctionVisitor<'_> {
             let pred = parse_sql_expr(filter_expr, self.ctx, self.active_schema)?;
             // As in WHERE, a condition that reads no input is accepted as any type that casts
             // to boolean.
-            self.filter = Some(if is_constant_key(&pred) {
+            let pred = if is_constant_key(&pred) {
                 pred.cast(DataType::Boolean)
             } else {
                 pred
-            });
+            };
+            // A constant aggregate counts the rows that pass, which needs a boolean.
+            if let Some(schema) = self.active_schema
+                && let Ok(field) = pred.to_field(schema)
+                && field.dtype.is_known()
+            {
+                polars_ensure!(
+                    field.dtype.is_bool(),
+                    InvalidOperation: "filter predicate must be of type `Boolean`, got `{}`", field.dtype
+                );
+            }
+            self.filter = Some(pred);
         }
         self.reads_rows = self.window.is_none() && function_name.is_builtin_aggregate();
         self.check_window_shape(&function_name)?;
@@ -2211,6 +2222,14 @@ impl SQLFunctionVisitor<'_> {
     /// [`ValueArg`]).
     fn parse_value_arg(&mut self, expr: &SQLExpr) -> PolarsResult<ValueArg> {
         let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        if self.reads_rows {
+            for e in &parsed {
+                if let Expr::SubPlan(_, names) = e {
+                    let read_per_row = &mut self.ctx.group_scope.subqueries_read_per_row;
+                    read_per_row.extend(names.iter().map(|(name, _)| name.clone()));
+                }
+            }
+        }
         Ok(if self.reads_rows && is_constant_key(&parsed) {
             ValueArg::Constant(parsed)
         } else {

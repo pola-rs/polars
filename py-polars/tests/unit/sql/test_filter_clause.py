@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import InvalidOperationError, SQLInterfaceError
 from tests.unit.sql import assert_sql_matches
 
 
@@ -172,3 +172,10 @@ def test_filter_clause_with_over_unsupported() -> None:
         pl.sql(
             "SELECT STDDEV(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df"
         ).collect()
+
+
+@pytest.mark.parametrize("agg", ["SUM(2)", "COUNT(*)", "SUM(x)"])
+def test_filter_clause_non_boolean_error(agg: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(InvalidOperationError, match="must be of type `Boolean`"):
+        df.sql(f"SELECT {agg} FILTER (WHERE x) FROM self")

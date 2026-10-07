@@ -996,3 +996,31 @@ def test_scalar_subquery_in_aggregate(query: str) -> None:
         "u": pl.DataFrame({"k": [1, 2, 3, 3], "y": [10, 20, 30, 40]}),
     }
     assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT STRING_AGG(x, (SELECT ',')) AS a FROM t",
+            {"a": ["a,b,c"]},
+        ),
+        (
+            "SELECT g, STRING_AGG(x, (SELECT '-')) AS a FROM t GROUP BY g ORDER BY g",
+            {"g": [1, 2], "a": ["a-b", "c"]},
+        ),
+    ],
+)
+def test_scalar_subquery_as_aggregate_parameter(
+    query: str, expected: dict[str, Sequence[Any]]
+) -> None:
+    # A parameter, as the separator, reads the subquery value once.
+    df = pl.DataFrame({"g": [1, 1, 2], "x": ["a", "b", "c"]})
+    assert_sql_matches(
+        {"t": df},
+        query=query,
+        compare_with=None,
+        check_dtypes=True,
+        expected=expected,
+        engines=["in-memory", "streaming"],
+    )

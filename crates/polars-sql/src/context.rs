@@ -264,6 +264,10 @@ pub(crate) struct GroupScope {
     /// Partition column standing for an empty `OVER ()` parsed in such a clause,
     /// until the window is separated from the aggregates.
     whole_frame_partition: Option<PlSmallStr>,
+    /// Placeholders of the scalar subqueries in the value arguments of aggregates, which are
+    /// read once per row (see `broadcast_subqueries_in_inputs`). A subquery in a parameter,
+    /// as the separator of STRING_AGG, is read once.
+    pub(crate) subqueries_read_per_row: PlHashSet<PlSmallStr>,
 }
 
 impl Default for SQLContext {
@@ -1903,7 +1907,11 @@ impl SQLContext {
             SubqueryShape::Scalar,
         )?;
         for (expr, _) in projections_with_flags.iter_mut() {
-            *expr = broadcast_subqueries_in_inputs(expr.clone(), &subquery_names);
+            *expr = broadcast_subqueries_in_inputs(
+                expr.clone(),
+                &subquery_names,
+                &self.group_scope.subqueries_read_per_row,
+            );
         }
         schema = self.get_frame_schema(&mut lf)?;
 
@@ -1958,7 +1966,11 @@ impl SQLContext {
                     subquery_names.extend(qualify_subquery_names);
                     schema = self.get_frame_schema(&mut lf)?;
                 }
-                let qualify = broadcast_subqueries_in_inputs(qualify, &subquery_names);
+                let qualify = broadcast_subqueries_in_inputs(
+                    qualify,
+                    &subquery_names,
+                    &self.group_scope.subqueries_read_per_row,
+                );
                 Some(qualify.alias(qualify_column.clone()))
             },
             None => None,
@@ -3387,8 +3399,11 @@ impl SQLContext {
                 let having_subquery_names;
                 (lf, having_subquery_names) =
                     self.process_subqueries(lf, vec![&mut having_expr], SubqueryShape::Scalar)?;
-                let having_expr =
-                    broadcast_subqueries_in_inputs(having_expr, &having_subquery_names);
+                let having_expr = broadcast_subqueries_in_inputs(
+                    having_expr,
+                    &having_subquery_names,
+                    &self.group_scope.subqueries_read_per_row,
+                );
                 subquery_names.extend(having_subquery_names);
                 Some(having_expr)
             },
@@ -4053,23 +4068,44 @@ enum SubqueryShape {
     Broadcast,
 }
 
-/// Read the resolved scalar subqueries in the inputs of the windows and aggregates of `expr`
-/// as their column, which holds the value on every row: these functions read one value per
-/// row.
-fn broadcast_subqueries_in_inputs(expr: Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
-    fn broadcast(expr: Expr, in_inputs: bool, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
+/// Read the resolved scalar subqueries in the inputs of the windows of `expr`, and those in
+/// `read_per_row` in its aggregates, as their column, which holds the value on every row:
+/// these functions read one value per row.
+fn broadcast_subqueries_in_inputs(
+    expr: Expr,
+    subquery_names: &PlHashSet<PlSmallStr>,
+    read_per_row: &PlHashSet<PlSmallStr>,
+) -> Expr {
+    fn broadcast(
+        expr: Expr,
+        in_window: bool,
+        in_aggregate: bool,
+        subquery_names: &PlHashSet<PlSmallStr>,
+        read_per_row: &PlHashSet<PlSmallStr>,
+    ) -> Expr {
         match expr {
             Expr::Agg(AggExpr::First(inner))
-                if in_inputs
-                    && matches!(inner.as_ref(), Expr::Column(name) if subquery_names.contains(name)) =>
+                if matches!(
+                    inner.as_ref(),
+                    Expr::Column(name) if subquery_names.contains(name)
+                        && (in_window || (in_aggregate && read_per_row.contains(name)))
+                ) =>
             {
                 Arc::unwrap_or_clone(inner)
             },
             e => {
-                let in_inputs =
-                    in_inputs || matches!(e, Expr::Over { .. }) || is_marked_aggregate(&e);
+                let in_window = in_window || matches!(e, Expr::Over { .. });
+                let in_aggregate = in_aggregate || is_marked_aggregate(&e);
                 e.map_children(
-                    &mut |c, _| Ok(broadcast(c, in_inputs, subquery_names)),
+                    &mut |c, _| {
+                        Ok(broadcast(
+                            c,
+                            in_window,
+                            in_aggregate,
+                            subquery_names,
+                            read_per_row,
+                        ))
+                    },
                     &mut (),
                 )
                 .unwrap()
@@ -4079,7 +4115,7 @@ fn broadcast_subqueries_in_inputs(expr: Expr, subquery_names: &PlHashSet<PlSmall
     if subquery_names.is_empty() {
         return expr;
     }
-    broadcast(expr, false, subquery_names)
+    broadcast(expr, false, false, subquery_names, read_per_row)
 }
 
 /// Replace every resolved scalar subquery in `expr` with a scalar literal, so the
