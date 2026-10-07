@@ -977,3 +977,50 @@ def test_derived_table_alias_does_not_replace_registered_table() -> None:
         assert_frame_equal(ctx.execute("SELECT * FROM t"), expected)
         assert_frame_equal(ctx.execute("SELECT * FROM s"), s)
         assert ctx.tables() == ["s", "t"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, SUM((SELECT MAX(x) FROM t)) AS s FROM t GROUP BY g ORDER BY g",
+        "SELECT SUM((SELECT MAX(x) FROM t)) AS s FROM t",
+        "SELECT g, COUNT((SELECT MAX(x) FROM t)) AS s FROM t GROUP BY g ORDER BY g",
+        "SELECT g FROM t GROUP BY g HAVING SUM((SELECT 2)) > 2 ORDER BY g",
+        "SELECT g, SUM((SELECT MAX(y) FROM u WHERE u.k = t.x)) AS s FROM t GROUP BY g ORDER BY g",
+    ],
+)
+def test_scalar_subquery_in_aggregate(query: str) -> None:
+    # The aggregate reads the subquery value once per row.
+    frames = {
+        "t": pl.DataFrame({"g": [1, 2, 2], "x": [1, 2, 3]}),
+        "u": pl.DataFrame({"k": [1, 2, 3, 3], "y": [10, 20, 30, 40]}),
+    }
+    assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT STRING_AGG(x, (SELECT ',')) AS a FROM t",
+            {"a": ["a,b,c"]},
+        ),
+        (
+            "SELECT g, STRING_AGG(x, (SELECT '-')) AS a FROM t GROUP BY g ORDER BY g",
+            {"g": [1, 2], "a": ["a-b", "c"]},
+        ),
+    ],
+)
+def test_scalar_subquery_as_aggregate_parameter(
+    query: str, expected: dict[str, Sequence[Any]]
+) -> None:
+    # A parameter, as the separator, reads the subquery value once.
+    df = pl.DataFrame({"g": [1, 1, 2], "x": ["a", "b", "c"]})
+    assert_sql_matches(
+        {"t": df},
+        query=query,
+        compare_with=None,
+        check_dtypes=True,
+        expected=expected,
+        engines=["in-memory", "streaming"],
+    )

@@ -173,6 +173,20 @@ impl GroupContextSplitter<'_> {
         }
     }
 
+    /// Read the group keys in `expr`, which runs in the group context, as one value per
+    /// group, as HAVING reads them.
+    pub(crate) fn read_keys_per_group(&self, expr: Expr) -> Expr {
+        if self.key_exprs.iter().any(|(key, _)| *key == expr) {
+            return expr.first();
+        }
+        match expr {
+            e if is_marked_aggregate(&e) || self.is_group_value(&e) => e,
+            e => e
+                .map_children(&mut |c, _| Ok(self.read_keys_per_group(c)), &mut ())
+                .unwrap(),
+        }
+    }
+
     /// Bind an input of a window function to the aggregated rows: an aggregate reads its
     /// hoisted output and a group key reads its key column.
     fn bind_window_input(&mut self, expr: Expr) -> PolarsResult<Expr> {
@@ -268,6 +282,49 @@ pub(crate) fn has_windows_over_aggregates(projections: &[Expr]) -> bool {
         && projections.iter().any(has_marked_aggregate)
 }
 
+/// Check that a block that aggregates without GROUP BY reads the input columns only in its
+/// aggregates: `x` has no single value in `SELECT SUM(x), x FROM t`.
+pub(crate) fn check_columns_in_aggregates(
+    projections: &[Expr],
+    subquery_names: &PlHashSet<PlSmallStr>,
+) -> PolarsResult<()> {
+    struct Finder<'a> {
+        subquery_names: &'a PlHashSet<PlSmallStr>,
+        column: Option<PlSmallStr>,
+    }
+    impl Visitor for Finder<'_> {
+        type Node = Expr;
+        type Arena = ();
+
+        fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
+            Ok(match node {
+                _ if is_marked_aggregate(node) => VisitRecursion::Skip,
+                Expr::Column(name)
+                    if !self.subquery_names.contains(name) && !is_correlated_result_col(name) =>
+                {
+                    self.column = Some(name.clone());
+                    VisitRecursion::Stop
+                },
+                _ => VisitRecursion::Continue,
+            })
+        }
+    }
+    if !projections.iter().any(has_marked_aggregate) {
+        return Ok(());
+    }
+    for expr in projections {
+        let mut finder = Finder {
+            subquery_names,
+            column: None,
+        };
+        expr.visit(&mut finder, &())?;
+        if let Some(name) = finder.column {
+            polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", name);
+        }
+    }
+    Ok(())
+}
+
 /// Marks the call of an aggregate function: a SQL aggregate, or a user-defined function that
 /// returns one value. The parser sets it in the clauses that run in the group context of a
 /// block (the SELECT list, QUALIFY, HAVING and the aggregates of ORDER BY), and in the inputs
@@ -301,6 +358,27 @@ pub(crate) fn has_marked_aggregate(expr: &Expr) -> bool {
 pub(crate) fn strip_aggregate_marks(expr: Expr) -> Expr {
     expr.map_expr(|e| match e {
         Expr::RenameAlias { expr, .. } if is_marked_aggregate(&e) => Arc::unwrap_or_clone(expr),
+        e => e,
+    })
+}
+
+/// `expr`, evaluated in the groups of a GROUP BY on a column, which have at least one row.
+/// There, the check `len() > 0` that the aggregate of a constant makes (see
+/// `SQLFunctionVisitor::rows_read`) is true, and the optimizer drops it.
+pub(crate) fn assume_groups_have_rows(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::BinaryExpr {
+            ref left,
+            op: Operator::Gt,
+            ref right,
+        } if matches!(**left, Expr::Len)
+            && matches!(
+                **right,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0)))
+            ) =>
+        {
+            lit(true)
+        },
         e => e,
     })
 }
