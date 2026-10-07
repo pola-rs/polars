@@ -369,6 +369,33 @@ def test_iceberg_plugin_not_installed_pyiceberg_planner_no_warning(
     assert_frame_equal(pl.scan_iceberg(metadata_path).collect(), TEST_DF)
 
 
+def _plugin_scan_unsupported(*args: Any, **kwargs: Any) -> Any:
+    msg = "polars_iceberg: iceberg: unsupported: equality delete files (x.parquet)"
+    raise NotImplementedError(msg)
+
+
+def test_iceberg_plugin_unsupported_default_planner_falls_back(
+    metadata_path: str, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setattr(plr, "_iceberg_plugin_scan", _plugin_scan_unsupported)
+    # Warnings are errors in the test suite.
+    assert_frame_equal(pl.scan_iceberg(metadata_path).collect(), TEST_DF)
+    assert (
+        "plugin planner unsupported, plan with PyIceberg: polars_iceberg: iceberg: "
+        "unsupported: equality delete files" in capfd.readouterr().err
+    )
+
+
+def test_iceberg_plugin_unsupported_plugin_planner_raises(
+    metadata_path: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setattr(plr, "_iceberg_plugin_scan", _plugin_scan_unsupported)
+    with pytest.raises(NotImplementedError, match="equality delete files"):
+        pl.scan_iceberg(metadata_path).collect()
+
+
 def test_iceberg_plugin_row_index(metadata_path: str) -> None:
     lf = pl.scan_iceberg(metadata_path).with_row_index()
     expected = TEST_DF.with_row_index()

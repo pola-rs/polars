@@ -11,7 +11,11 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars.exceptions import ComputeError
 from polars.io.iceberg._cache import get_metadata_file_cache
-from polars.io.iceberg._plugin import plugin_scan, use_plugin_planner
+from polars.io.iceberg._plugin import (
+    plugin_planner_required,
+    plugin_scan,
+    use_plugin_planner,
+)
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -403,20 +407,33 @@ class IcebergScanResolver:
                     "plan with the polars_iceberg plugin"
                 )
 
-            lf = plugin_scan(
-                tbl,
-                snapshot_id=self.snapshot_id,
-                from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
-                to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
-                projection=projection,
-                filter_columns=filter_columns,
-                iceberg_table_filter=iceberg_table_filter,
-                limit=limit,
-                use_metadata_statistics=self.use_metadata_statistics,
-                fast_deletion_count=self.fast_deletion_count,
-                user_storage_options=self.table.iceberg_storage_properties,
-            )
-            return _PluginIcebergScanData(lf=lf, snapshot_id_key=snapshot_id_key)
+            try:
+                lf = plugin_scan(
+                    tbl,
+                    snapshot_id=self.snapshot_id,
+                    from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
+                    to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
+                    projection=projection,
+                    filter_columns=filter_columns,
+                    iceberg_table_filter=iceberg_table_filter,
+                    limit=limit,
+                    use_metadata_statistics=self.use_metadata_statistics,
+                    fast_deletion_count=self.fast_deletion_count,
+                    user_storage_options=self.table.iceberg_storage_properties,
+                )
+            except NotImplementedError as e:
+                # A table feature the plugin does not support (e.g. equality deletes),
+                # which PyIceberg can plan.
+                if plugin_planner_required():
+                    raise
+
+                if verbose:
+                    eprint(
+                        "IcebergScanResolver: to_dataset_scan(): "
+                        f"plugin planner unsupported, plan with PyIceberg: {e}"
+                    )
+            else:
+                return _PluginIcebergScanData(lf=lf, snapshot_id_key=snapshot_id_key)
 
         fallback_reason = (
             "forced reader_override='pyiceberg'"

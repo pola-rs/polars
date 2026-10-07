@@ -39,6 +39,15 @@ fn ffi_to_polars_err(e: FfiError, plugin: &str) -> PolarsError {
         // plugin's message, like the parameter errors of the PyIceberg planner.
         return pyo3::exceptions::PyValueError::new_err(e.message()).into();
     }
+    if e.kind() == FfiErrorKind::NOT_IMPLEMENTED {
+        // Unsupported table features (e.g. equality deletes) are raised as `NotImplementedError`,
+        // on which `IcebergScanResolver` falls back to PyIceberg unless the plugin is required.
+        return pyo3::exceptions::PyNotImplementedError::new_err(format!(
+            "{plugin}: {}",
+            e.message()
+        ))
+        .into();
+    }
     polars_err!(
         ComputeError: "{} failed ({}): {}",
         plugin, e.kind().name(), e.message()

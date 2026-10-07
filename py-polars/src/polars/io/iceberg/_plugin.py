@@ -4,9 +4,11 @@ Iceberg scan planning with the `polars_iceberg` I/O plugin.
 Used by `IcebergScanResolver` in place of PyIceberg's `plan_files()`. Selected by
 `POLARS_ICEBERG_PLANNER`: `plugin` requires the plugin, `pyiceberg` never uses it, and
 unset uses it when available, otherwise falls back to PyIceberg with a
-`PerformanceWarning`. The plugin is called through the minimal FFI
-contract of the newest plugin ID shared by this Polars (`plr._IO_PLUGIN_IDS`) and the
-plugin (`polars_iceberg._polars_io_plugin_ids`); see `polars-io-ext-ffi`.
+`PerformanceWarning`. Unless the plugin is required, tables with features it does not
+support (e.g. equality deletes) are planned with PyIceberg. The plugin is called
+through the minimal FFI contract of the newest plugin ID shared by this Polars
+(`plr._IO_PLUGIN_IDS`) and the plugin (`polars_iceberg._polars_io_plugin_ids`); see
+`polars-io-ext-ffi`.
 
 The handshake (`_polars_io_plugin_ids`, `_capsule(id)`) never changes. Plugin IDs end
 in `.v<N>`, which only orders them for error messages.
@@ -57,14 +59,7 @@ def use_plugin_planner() -> bool:
     installed and compatible; otherwise a `PerformanceWarning` is issued and PyIceberg
     plans the scan.
     """
-    planner = os.getenv(PLANNER_ENV_VAR)
-
-    if planner not in (None, "", "plugin", "pyiceberg"):
-        msg = (
-            f"iceberg: unknown value for {PLANNER_ENV_VAR}: "
-            f"'{planner}', expected one of ('plugin', 'pyiceberg')"
-        )
-        raise ValueError(msg)
+    planner = _planner()
 
     if planner:
         return planner == "plugin"
@@ -86,6 +81,29 @@ def use_plugin_planner() -> bool:
         return False
 
     return True
+
+
+def plugin_planner_required() -> bool:
+    """
+    Whether `POLARS_ICEBERG_PLANNER=plugin` is set.
+
+    If not, scans of tables with features the plugin does not support (it raises
+    `NotImplementedError`) fall back to PyIceberg.
+    """
+    return _planner() == "plugin"
+
+
+def _planner() -> str | None:
+    planner = os.getenv(PLANNER_ENV_VAR)
+
+    if planner not in (None, "", "plugin", "pyiceberg"):
+        msg = (
+            f"iceberg: unknown value for {PLANNER_ENV_VAR}: "
+            f"'{planner}', expected one of ('plugin', 'pyiceberg')"
+        )
+        raise ValueError(msg)
+
+    return planner or None
 
 
 def plugin_scan(
