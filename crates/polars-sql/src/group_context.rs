@@ -361,3 +361,24 @@ pub(crate) fn strip_aggregate_marks(expr: Expr) -> Expr {
         e => e,
     })
 }
+
+/// `expr`, evaluated in the groups of a GROUP BY on a column, which have at least one row.
+/// There, the check `len() > 0` that the aggregate of a constant makes (see
+/// `SQLFunctionVisitor::rows_read`) is true, and the optimizer drops it.
+pub(crate) fn assume_groups_have_rows(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::BinaryExpr {
+            ref left,
+            op: Operator::Gt,
+            ref right,
+        } if matches!(**left, Expr::Len)
+            && matches!(
+                **right,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0)))
+            ) =>
+        {
+            lit(true)
+        },
+        e => e,
+    })
+}

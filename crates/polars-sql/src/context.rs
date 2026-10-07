@@ -26,8 +26,9 @@ use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::group_context::{
-    AggregateOutputs, GroupContextSplitter, OutputNames, check_columns_in_aggregates,
-    has_windows_over_aggregates, is_marked_aggregate, strip_aggregate_marks,
+    AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
+    check_columns_in_aggregates, has_windows_over_aggregates, is_marked_aggregate,
+    strip_aggregate_marks,
 };
 use crate::grouping_sets::{
     GroupingCall, GroupingSets, canonicalize_keys, contains_grouping_placeholder,
@@ -3520,14 +3521,33 @@ impl SQLContext {
         let aggregated = match grouping {
             None if group_by_keys.is_empty() => lf.select(splitter.aggregates.into_exprs()),
             None => {
+                // With a column key, every group has a row. A group-by on scalar keys only runs
+                // as a select over all rows, which may be none.
+                let has_column_key = group_by_keys
+                    .iter()
+                    .any(|key| matches!(strip_outer_alias(key), Expr::Column(_)));
+                let in_groups = |e: Expr| {
+                    if has_column_key {
+                        assume_groups_have_rows(e)
+                    } else {
+                        e
+                    }
+                };
                 let group_by = lf.group_by(group_by_keys);
                 match having {
-                    Some(having) => {
-                        group_by.having(strip_aggregate_marks(splitter.read_keys_per_group(having)))
-                    },
+                    Some(having) => group_by.having(in_groups(strip_aggregate_marks(
+                        splitter.read_keys_per_group(having),
+                    ))),
                     None => group_by,
                 }
-                .agg(strip_group_implode(splitter.aggregates.into_exprs()))
+                .agg(strip_group_implode(
+                    splitter
+                        .aggregates
+                        .into_exprs()
+                        .into_iter()
+                        .map(in_groups)
+                        .collect(),
+                ))
             },
             Some(grouping) => {
                 // HAVING runs on the combined rows, where it can also see `GROUPING()`.
