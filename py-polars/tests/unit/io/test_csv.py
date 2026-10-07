@@ -201,6 +201,57 @@ def test_csv_null_values() -> None:
     assert df.rows() == [(None, "b", "c"), ("a", None, "c"), (None, "b", None)]
 
 
+@pytest.mark.parametrize(
+    ("has_header", "null_names"),
+    [
+        (True, ["x", "y"]),
+        (True, ["a", "b"]),
+        (False, ["x", "y"]),
+        (False, ["column_0", "column_1"]),
+    ],
+)
+def test_csv_named_nulls_match_new_columns(
+    has_header: bool, null_names: list[str]
+) -> None:
+    # named null values can refer to the `new_columns` or the file's own names;
+    # schema inference has to match them the same way as the reader does
+    data = b"a,b\n1,NA\nNA,2\n" if has_header else b"1,NA\nNA,2\n"
+    df = pl.read_csv(
+        data,
+        has_header=has_header,
+        new_columns=["x", "y"],
+        null_values=dict.fromkeys(null_names, "NA"),
+    )
+    assert df.schema == {"x": pl.Int64, "y": pl.Int64}
+    assert df.rows() == [(1, None), (None, 2)]
+
+
+def test_csv_named_nulls_prefer_new_columns() -> None:
+    # "a" is both a file and a new column name; it refers to the new one
+    df = pl.read_csv(
+        b"a,b\n1,NA\nNA,2\n",
+        new_columns=["b", "a"],
+        null_values={"a": "NA"},
+    )
+    assert df.schema == {"b": pl.String, "a": pl.Int64}
+    assert df.rows() == [("1", None), ("NA", 2)]
+
+
+def test_csv_named_nulls_without_header() -> None:
+    # without a header, named null values match the generated column names
+    df = pl.read_csv(
+        b"1,NA,3\nNA,2,NA\n",
+        has_header=False,
+        null_values={"column_0": "NA", "column_1": "NA"},
+    )
+    assert df.schema == {
+        "column_0": pl.Int64,
+        "column_1": pl.Int64,
+        "column_2": pl.String,
+    }
+    assert df.rows() == [(1, None, "3"), (None, 2, "NA")]
+
+
 def test_csv_missing_is_empty_string(chunk_override: None) -> None:
     # validate 'empty_string_is_null=False' for missing fields that are...
     # >> ...leading
