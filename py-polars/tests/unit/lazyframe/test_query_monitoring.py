@@ -361,7 +361,7 @@ def test_planned_payload_decodes() -> None:
 
 
 def test_metrics_handle_snapshot() -> None:
-    """The metrics handle snapshots to msgpack rows after the query runs."""
+    """The handle snapshots query and node metrics to msgpack after the query."""
     msgpack = pytest.importorskip("msgpack")
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
@@ -370,8 +370,16 @@ def test_metrics_handle_snapshot() -> None:
 
     # The handle stays valid after the query, so snapshot reflects real work.
     handle = observer.on_query_planned.call_args.args[1]
-    rows = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
 
+    # An in-memory source does no IO.
+    assert snap["query"] == {
+        "io_total_active_ns": 0,
+        "io_rx_active_ns": 0,
+        "io_tx_active_ns": 0,
+    }
+
+    rows = snap["nodes"]
     assert isinstance(rows, list)
     assert len(rows) > 0
     expected_keys = {"phys_node_key", "rows_sent", "rows_received", "done"}
@@ -380,29 +388,8 @@ def test_metrics_handle_snapshot() -> None:
     assert sum(r["rows_sent"] for r in rows) > 0
 
 
-def test_metrics_handle_snapshot_metrics() -> None:
-    """`snapshot_metrics` returns query metrics next to the same node rows."""
-    msgpack = pytest.importorskip("msgpack")
-    module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
-        pl.Config.enable_monitoring()
-        _sample_lf().collect(engine="streaming")
-
-    handle = observer.on_query_planned.call_args.args[1]
-    snap = msgpack.unpackb(handle.snapshot_metrics(), raw=False)
-    rows = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
-
-    # An in-memory source does no IO.
-    assert snap["query"] == {
-        "io_total_active_ns": 0,
-        "io_rx_active_ns": 0,
-        "io_tx_active_ns": 0,
-    }
-    assert snap["nodes"] == rows
-
-
 def test_metrics_handle_snapshot_in_memory_engine() -> None:
-    """The in-memory engine snapshots no nodes and zeroed query metrics."""
+    """The in-memory engine snapshots zeroed query metrics and no nodes."""
     msgpack = pytest.importorskip("msgpack")
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
@@ -410,9 +397,9 @@ def test_metrics_handle_snapshot_in_memory_engine() -> None:
         _sample_lf().collect(engine="in-memory")
 
     handle = observer.on_query_planned.call_args.args[1]
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
 
-    assert msgpack.unpackb(handle.snapshot_query_metrics(), raw=False) == []
-    assert msgpack.unpackb(handle.snapshot_metrics(), raw=False) == {
+    assert snap == {
         "query": {
             "io_total_active_ns": 0,
             "io_rx_active_ns": 0,
@@ -444,7 +431,7 @@ def test_metrics_handle_snapshot_query_io(
         )
 
     handle = observer.on_query_planned.call_args.args[1]
-    snap = msgpack.unpackb(handle.snapshot_metrics(), raw=False)
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
     query = snap["query"]
     node_io = [r["io_total_active_ns"] for r in snap["nodes"]]
 
