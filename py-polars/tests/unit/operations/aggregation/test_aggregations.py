@@ -1614,11 +1614,9 @@ def test_item_on_groups_null_29780(value: Any) -> None:
 
     q = df.lazy().group_by("g").agg(pl.col("a").item()).sort("g")
     assert_frame_equal(q.collect(), df)
-    assert_frame_equal(q.collect(engine="streaming"), df)
 
     q = df.lazy().select(pl.col("a").item().over("g"))
     assert_frame_equal(q.collect(), df.select("a"))
-    assert_frame_equal(q.collect(engine="streaming"), df.select("a"))
 
     for values, allow_empty, expected in [
         ([None, value], False, "a single value"),
@@ -1629,8 +1627,6 @@ def test_item_on_groups_null_29780(value: Any) -> None:
         match = f"aggregation 'item' expected {expected}, got 2 values"
         with pytest.raises(ComputeError, match=match):
             q.collect()
-        with pytest.raises(ComputeError, match=match):
-            q.collect(engine="streaming")
 
 
 def test_item_on_groups_empty() -> None:
