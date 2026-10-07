@@ -2,18 +2,22 @@ name: Release polars-iceberg
 
 # Releases the `polars-iceberg` I/O plugin (https://github.com/pola-rs/polars-iceberg) to PyPI.
 #
-# The version is the `polars-iceberg >= <version>` requirement in the `polars_iceberg` optional
-# dependencies of py-polars/pyproject.toml, and the plugin is built from the polars-iceberg git tag
-# `py-<version>`, cloned to `crates/polars-iceberg` (a workspace member) of this Polars checkout. The
-# plugin is an abi3 wheel, so one wheel per target covers every supported Python version.
+# The version is the `project.version` in pyproject.toml of polars-iceberg at the given tag, which is
+# cloned to `crates/polars-iceberg` (a workspace member) of this Polars checkout. The plugin is an
+# abi3 wheel, so one wheel per target covers every supported Python version.
 
 on:
   workflow_dispatch:
     inputs:
-      # Polars commit providing the workspace (and `polars-io-ext-ffi`) and the version to release.
-      # If omitted, use the latest commit on the main branch.
+      # Tag of polars-iceberg to release. Its pyproject.toml gives the version.
+      tag:
+        description: polars-iceberg tag
+        type: string
+        required: true
+      # Polars commit providing the workspace (and `polars-io-ext-ffi`). If omitted, use the latest
+      # commit on the main branch.
       sha:
-        description: Commit SHA
+        description: Polars commit SHA
         type: string
       # Create the sdist and build the wheels, but do not publish to PyPI.
       dry-run:
@@ -41,20 +45,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
-      - name: Get polars-iceberg version
-        id: version
-        uses: ./.github/actions/polars-iceberg-version
-
       # `git clone -b` also accepts a branch, so make sure the release is built from a tag.
       - name: Check polars-iceberg tag exists
         env:
-          TAG: ${{ steps.version.outputs.tag }}
+          TAG: ${{ inputs.tag }}
         run: |
           if ! git ls-remote --exit-code --tags https://github.com/pola-rs/polars-iceberg "refs/tags/$TAG"; then
             echo "::error::polars-iceberg has no tag $TAG"
@@ -64,20 +63,14 @@ jobs:
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
         with:
-          ref: ${{ steps.version.outputs.tag }}
+          ref: ${{ inputs.tag }}
 
-      # The package version is taken from Cargo.toml by maturin.
-      - name: Check polars-iceberg Cargo.toml version matches tag
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
+      - name: Read polars-iceberg version
+        id: version
         run: |
-          CARGO_VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-iceberg/Cargo.toml", "rb"))["package"]["version"])')
-          CARGO_VERSION=$(echo "$CARGO_VERSION" | sed -e 's/-alpha\./a/' -e 's/-beta\./b/' -e 's/-rc\./rc/')
-          if [[ "$VERSION" != "$CARGO_VERSION" ]]; then
-            echo "::error::polars-iceberg tag $TAG has Cargo.toml version $CARGO_VERSION, expected $VERSION"
-            exit 1
-          fi
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-iceberg/pyproject.toml", "rb"))["project"]["version"])')
+          echo "polars-iceberg version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   create-sdist:
     needs: [version]
@@ -90,7 +83,7 @@ jobs:
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ inputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -156,7 +149,7 @@ jobs:
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ inputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -204,7 +197,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Check sdist and wheel versions match tag
+      - name: Check sdist and wheel versions match pyproject.toml
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |

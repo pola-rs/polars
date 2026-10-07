@@ -1,17 +1,14 @@
 name: polars-iceberg version
 description: >
-  Read the polars-iceberg version from the `polars-iceberg >= <version>` requirement in the
-  `polars_iceberg` optional dependencies of py-polars/pyproject.toml, and the corresponding
-  polars-iceberg git tag `py-<version>` to release from and to test against. Requires a checkout of
-  Polars.
+  Read the polars-iceberg version from the lower bound of the
+  `polars-iceberg >= <version>, < <next major version>` requirement in the `polars_iceberg`
+  optional dependencies of py-polars/pyproject.toml, to install from PyPI and test against. Checks
+  the upper bound is the next major version. Requires a checkout of Polars.
 
 outputs:
   version:
     description: polars-iceberg version
     value: ${{ steps.version.outputs.version }}
-  tag:
-    description: polars-iceberg git tag of the version (`py-<version>`)
-    value: ${{ steps.version.outputs.tag }}
 
 runs:
   using: composite
@@ -26,16 +23,33 @@ runs:
 
         with open("py-polars/pyproject.toml", "rb") as f:
             deps = tomllib.load(f)["project"]["optional-dependencies"]["polars_iceberg"]
-        versions = [
-            m.group(1)
+        bounds = [
+            m.groups()
             for d in deps
-            if (m := re.fullmatch(r"polars-iceberg\s*>=\s*([^\s,;]+)", d.strip()))
+            if (
+                m := re.fullmatch(
+                    r"polars-iceberg\s*>=\s*([^\s,;]+)\s*,\s*<\s*([^\s,;]+)", d.strip()
+                )
+            )
         ]
-        if len(versions) != 1:
-            raise SystemExit(f"expected one 'polars-iceberg >= <version>' requirement, found {deps}")
-        print(versions[0])
+        if len(bounds) != 1:
+            raise SystemExit(
+                "expected one 'polars-iceberg >= <version>, < <next major version>' "
+                f"requirement, found {deps}"
+            )
+        lower, upper = bounds[0]
+
+        m = re.match(r"\d+", lower)
+        if m is None:
+            raise SystemExit(f"cannot parse polars-iceberg version {lower}")
+        expected = f"{int(m.group()) + 1}.0.0"
+        if upper != expected:
+            raise SystemExit(
+                f"polars-iceberg upper bound {upper} is not the next major version {expected} "
+                f"of {lower}"
+            )
+        print(lower)
         EOF
         )
-        echo "polars-iceberg version: $VERSION (tag py-$VERSION)"
+        echo "polars-iceberg version: $VERSION"
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-        echo "tag=py-$VERSION" >> "$GITHUB_OUTPUT"
