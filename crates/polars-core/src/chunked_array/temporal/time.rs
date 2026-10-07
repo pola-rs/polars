@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use chrono::Timelike;
+use chrono::format::StrftimeItems;
 use polars_arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
 
 use super::*;
@@ -20,40 +21,30 @@ pub fn time_to_time64ns(time: &NaiveTime) -> i64 {
 impl TimeChunked {
     /// Convert from Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn to_string(&self, format: &str) -> StringChunked {
-        let mut ca: StringChunked = self.physical().apply_kernel_cast(&|arr| {
-            let mut buf = String::new();
-            let format = if format == "iso" || format == "iso:strict" {
-                "%T%.9f"
-            } else {
-                format
-            };
-            let mut mutarr = MutablePlString::with_capacity(arr.len());
-
-            for opt in arr.into_iter() {
-                match opt {
-                    None => mutarr.push_null(),
-                    Some(v) => {
-                        buf.clear();
-                        let timefmt = time64ns_to_time(*v).format(format);
-                        write!(buf, "{timefmt}").unwrap();
-                        mutarr.push_value(&buf)
-                    },
-                }
-            }
-
-            mutarr.freeze().boxed()
-        });
-
-        ca.rename(self.name().clone());
-        ca
+    pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
+        let format = if format == "iso" || format == "iso:strict" {
+            "%T%.9f"
+        } else {
+            format
+        };
+        let err = || polars_err!(ComputeError: "cannot format Time with format '{}'", format);
+        let items = StrftimeItems::new(format).parse().map_err(|_| err())?;
+        self.physical()
+            .try_apply_into_string_amortized(|val, buf| {
+                write!(
+                    buf,
+                    "{}",
+                    time64ns_to_time(val).format_with_items(items.iter())
+                )
+            })
+            .map_err(|_| err())
     }
 
     /// Convert from Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.
-    pub fn strftime(&self, format: &str) -> StringChunked {
+    pub fn strftime(&self, format: &str) -> PolarsResult<StringChunked> {
         self.to_string(format)
     }
 

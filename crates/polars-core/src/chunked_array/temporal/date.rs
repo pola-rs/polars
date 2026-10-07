@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use chrono::format::StrftimeItems;
 use polars_arrow::temporal_conversions::date32_to_date;
 
 use super::*;
@@ -39,13 +40,17 @@ impl DateChunked {
         } else {
             format
         };
-        let datefmt_f = |ndt: NaiveDate| ndt.format(format);
+        let err = || polars_err!(ComputeError: "cannot format Date with format '{}'", format);
+        let items = StrftimeItems::new(format).parse().map_err(|_| err())?;
         self.physical()
             .try_apply_into_string_amortized(|val, buf| {
-                let ndt = date32_to_date(val);
-                write!(buf, "{}", datefmt_f(ndt))
+                write!(
+                    buf,
+                    "{}",
+                    date32_to_date(val).format_with_items(items.iter())
+                )
             })
-            .map_err(|_| polars_err!(ComputeError: "cannot format Date with format '{}'", format))
+            .map_err(|_| err())
     }
 
     /// Convert from Date into String with the given format.

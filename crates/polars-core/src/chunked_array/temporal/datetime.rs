@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
+use chrono::format::StrftimeItems;
 
 use super::*;
 use crate::prelude::DataType::Datetime;
@@ -48,30 +49,31 @@ impl DatetimeChunked {
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
         let tu = self.time_unit();
         let format = get_strftime_format(format, self.dtype())?;
+        let err = || {
+            let kind = if self.time_zone().is_some() {
+                "timezone-aware"
+            } else {
+                "timezone-naive"
+            };
+            polars_err!(ComputeError: "cannot format {} Datetime with format '{}'", kind, format)
+        };
+        let items = StrftimeItems::new(&format).parse().map_err(|_| err())?;
         let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(time_zone) => {
                 let parsed_time_zone = time_zone.parse::<Tz>().expect("already validated");
-                let datefmt_f = |ndt| parsed_time_zone.from_utc_datetime(&ndt).format(&format);
                 self.physical().try_apply_into_string_amortized(|val, buf| {
                     let ndt = tu.timestamp_to_datetime(val);
-                    write!(buf, "{}", datefmt_f(ndt))
-                    }
-                ).map_err(
-                |_| polars_err!(ComputeError: "cannot format timezone-aware Datetime with format '{}'", format),
-                )?
+                    let dt = parsed_time_zone.from_utc_datetime(&ndt);
+                    write!(buf, "{}", dt.format_with_items(items.iter()))
+                })
             },
-            _ => {
-                let datefmt_f = |ndt: NaiveDateTime| ndt.format(&format);
-                self.physical().try_apply_into_string_amortized(|val, buf| {
-                    let ndt = tu.timestamp_to_datetime(val);
-                    write!(buf, "{}", datefmt_f(ndt))
-                    }
-                ).map_err(
-                |_| polars_err!(ComputeError: "cannot format timezone-naive Datetime with format '{}'", format),
-                )?
-            },
-        };
+            _ => self.physical().try_apply_into_string_amortized(|val, buf| {
+                let ndt = tu.timestamp_to_datetime(val);
+                write!(buf, "{}", ndt.format_with_items(items.iter()))
+            }),
+        }
+        .map_err(|_| err())?;
         ca.rename(self.name().clone());
         Ok(ca)
     }
