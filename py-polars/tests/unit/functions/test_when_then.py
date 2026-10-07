@@ -816,6 +816,21 @@ def test_when_then_simplification() -> None:
     )
 
 
+def test_when_then_simplification_scalar_branches() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    q = lf.group_by("g", maintain_order=True).agg(
+        pl.when(True).then(pl.col("a").max()).otherwise(pl.col("a").min())
+    )
+    assert "when" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"g": [1, 2], "a": [2, 3]}))
+
+    # A scalar branch next to a column branch is not folded, as it would change the
+    # height.
+    q = lf.select(pl.when(True).then(pl.col("a").max()).otherwise(pl.col("a")))
+    assert "when" in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [3, 3, 3]}))
+
+
 def test_when_then_in_group_by_aggregated_22922() -> None:
     df = pl.DataFrame({"group": ["x", "y", "x", "y"], "value": [1, 2, 3, 4]})
     out = df.group_by("group", maintain_order=True).agg(
