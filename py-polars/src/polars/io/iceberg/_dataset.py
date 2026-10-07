@@ -11,7 +11,7 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
-from polars.io.iceberg._cache import CachingFileIO
+from polars.io.iceberg._cache import CachingFileIO, caching_file_io
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -80,6 +80,43 @@ def _reusable_catalog(
 SerializedTableState: TypeAlias = str | IcebergCatalogTableDescriptor
 
 
+def _load_static_table(
+    metadata_location: str, properties: dict[str, Any]
+) -> pyiceberg.table.Table:
+    from pyiceberg.table import StaticTable
+
+    if not metadata_location.endswith(".metadata.json"):
+        return StaticTable.from_metadata(metadata_location, properties=properties)
+
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.io import load_file_io
+    from pyiceberg.serializers import FromInputFile
+
+    # `StaticTable.from_metadata` of PyIceberg 0.12, with the metadata file read
+    # through the cache.
+    file_io = load_file_io(properties, location=metadata_location)
+    cached = caching_file_io(file_io)
+    metadata = FromInputFile.table_metadata(
+        (cached or file_io).new_input(metadata_location)
+    )
+
+    if verbose() and cached is not None:
+        eprint(
+            "IcebergTableWrap: metadata file cache: "
+            f"hits: {cached.stats.hits}, misses: {cached.stats.misses}"
+        )
+
+    return StaticTable(
+        identifier=("static-table", metadata_location),
+        metadata_location=metadata_location,
+        metadata=metadata,
+        io=load_file_io(
+            {**properties, **metadata.properties}, location=metadata_location
+        ),
+        catalog=NoopCatalog("static-table"),
+    )
+
+
 @dataclass(kw_only=True)
 class IcebergTableWrap:
     table_: NoPickleOption[pyiceberg.table.Table]
@@ -117,11 +154,8 @@ class IcebergTableWrap:
 
                 table = catalog.load_table(self.table_descriptor_.table_identifier)
             else:
-                from pyiceberg.table import StaticTable
-
-                table = StaticTable.from_metadata(
-                    metadata_location=self.table_descriptor_,
-                    properties=self.iceberg_storage_properties or {},
+                table = _load_static_table(
+                    self.table_descriptor_, self.iceberg_storage_properties or {}
                 )
 
             self.table_.set(table)

@@ -1,8 +1,9 @@
 """Process-wide cache for immutable Iceberg metadata files.
 
-Manifest lists and manifests are immutable at a given path, so their bytes can
-be reused across scans of the same table within a process. The cache sits at
-the PyIceberg ``FileIO`` boundary: PyIceberg reads a metadata file by calling
+Manifest lists, manifests and table metadata files with a write-time UUID in
+their name are immutable at a given path, so their bytes can be reused across
+scans of the same table within a process. The cache sits at the PyIceberg
+``FileIO`` boundary: PyIceberg reads a metadata file by calling
 ``io.new_input(path).open().read()``, and the wrapping ``FileIO`` here serves
 that read from memory when the path was seen before.
 """
@@ -35,9 +36,13 @@ _UUID_PATTERN = re.compile(
 
 
 def _is_cacheable(location: str) -> bool:
-    # Manifest lists and manifests: Avro files with a write-time UUID in the name.
+    # Manifest lists, manifests and table metadata files with a write-time UUID in
+    # the name.
     name = location.rsplit("/", 1)[-1]
-    return name.endswith(".avro") and _UUID_PATTERN.search(name) is not None
+    return (
+        name.endswith((".avro", ".metadata.json"))
+        and _UUID_PATTERN.search(name) is not None
+    )
 
 
 # Set by REST catalogs, changes on every commit to the table.
@@ -350,6 +355,15 @@ def _wrap_file_io(inner: FileIO) -> CachingFileIO:
     return CachingFileIO(inner, get_metadata_file_cache())
 
 
+def caching_file_io(inner: FileIO) -> CachingFileIO | None:
+    """Wrap `inner`; None when the cache is disabled or `inner` cannot be scoped."""
+    cache = get_metadata_file_cache()
+    if not cache.enabled:
+        return None
+    file_io = CachingFileIO(inner, cache)
+    return file_io if file_io._scope is not None else None
+
+
 def with_metadata_file_cache(scan: Any) -> Any:
     """Route the metadata reads of a PyIceberg scan through the cache.
 
@@ -363,10 +377,6 @@ def with_metadata_file_cache(scan: Any) -> Any:
     if inner is None or isinstance(inner, CachingFileIO):
         return scan
 
-    cache = get_metadata_file_cache()
-
-    if not cache.enabled:
-        return scan
-
-    scan.io = CachingFileIO(inner, cache)
+    if (file_io := caching_file_io(inner)) is not None:
+        scan.io = file_io
     return scan

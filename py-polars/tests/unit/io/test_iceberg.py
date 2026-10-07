@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import gzip
 import io
 import itertools
 import json
@@ -5407,8 +5408,8 @@ def test_scan_iceberg_renamed_column_with_pruned_metadata(
     assert lf.select("new").collect().to_series().to_list() == [1, 2, 3]
 
 
-def _count_avro_opens(
-    monkeypatch: pytest.MonkeyPatch, tbl: pyiceberg.table.Table
+def _count_opens(
+    monkeypatch: pytest.MonkeyPatch, tbl: pyiceberg.table.Table, suffix: str = ".avro"
 ) -> list[str]:
     from polars.io.iceberg._cache import CachingFileIO
 
@@ -5419,7 +5420,7 @@ def _count_avro_opens(
     opened: list[str] = []
 
     def new_input(self: Any, location: str) -> Any:
-        if location.endswith(".avro"):
+        if location.endswith(suffix):
             opened.append(location)
         return original_new_input(self, location)
 
@@ -5442,7 +5443,7 @@ def test_scan_iceberg_metadata_file_cache(
         for i in range(3):
             pl.DataFrame({"a": [i]}).write_iceberg(tbl, mode="append")
 
-        opened = _count_avro_opens(monkeypatch, tbl)
+        opened = _count_opens(monkeypatch, tbl)
         expected = pl.DataFrame({"a": [0, 1, 2]})
 
         assert_frame_equal(
@@ -5486,7 +5487,7 @@ def test_scan_iceberg_metadata_file_cache_disabled(
         )
         pl.DataFrame({"a": [1]}).write_iceberg(tbl, mode="append")
 
-        opened = _count_avro_opens(monkeypatch, tbl)
+        opened = _count_opens(monkeypatch, tbl)
 
         assert pl.scan_iceberg(tbl).collect().item() == 1
         first_scan = len(opened)
@@ -5687,7 +5688,7 @@ def test_scan_iceberg_metadata_file_cache_incremental(
             pl.DataFrame({"a": [i]}).write_iceberg(tbl, mode="append")
 
         snapshots = tbl.snapshots()
-        opened = _count_avro_opens(monkeypatch, tbl)
+        opened = _count_opens(monkeypatch, tbl)
         expected = pl.DataFrame({"a": [1, 2]})
 
         def scan() -> pl.DataFrame:
@@ -5792,6 +5793,55 @@ def test_scan_iceberg_catalog_descriptor_without_instance(tmp_path: Path) -> Non
     assert (
         wrap.get().metadata_location == catalog.load_table(tbl.name()).metadata_location
     )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_metadata_path_file_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from polars.io.iceberg._cache import reset_metadata_file_cache
+
+    reset_metadata_file_cache()
+
+    try:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+        )
+        pl.DataFrame({"a": [1]}).write_iceberg(tbl, mode="append")
+        opened = _count_opens(monkeypatch, tbl, ".metadata.json")
+
+        for _ in range(2):
+            assert pl.scan_iceberg(tbl.metadata_location).collect().item() == 1
+        assert len(opened) == 1
+
+        metadata = Path(tbl.metadata_location.removeprefix("file://")).read_bytes()
+
+        # Compressed metadata files are cached as well.
+        gz = tmp_path / f"00002-{uuid.uuid4()}.gz.metadata.json"
+        gz.write_bytes(gzip.compress(metadata))
+        opened.clear()
+        for _ in range(2):
+            assert pl.scan_iceberg(format_file_uri_iceberg(gz)).collect().item() == 1
+        assert len(opened) == 1
+
+        # Metadata file names without a write-time UUID are read on every scan.
+        copied = tmp_path / "v1.metadata.json"
+        copied.write_bytes(metadata)
+        opened.clear()
+        for _ in range(2):
+            path = format_file_uri_iceberg(copied)
+            assert pl.scan_iceberg(path).collect().item() == 1
+        assert len(opened) == 2
+
+        # So is every metadata file when the cache is disabled.
+        plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "0")
+        reset_metadata_file_cache()
+        opened.clear()
+        for _ in range(2):
+            assert pl.scan_iceberg(tbl.metadata_location).collect().item() == 1
+        assert len(opened) == 2
+    finally:
+        reset_metadata_file_cache()
 
 
 def join_structure(lf: pl.LazyFrame) -> list[str]:
