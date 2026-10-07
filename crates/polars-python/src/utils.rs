@@ -150,7 +150,7 @@ impl EnterPolarsExt for Python<'_> {
             Ok(Err(err)) => Err(PyErr::from(err.into())),
             Err(QueryAborted::KeyboardInterrupt) => Err(PyKeyboardInterrupt::new_err("")),
             Err(QueryAborted::OocOutOfDisk) => Err(ComputeError::new_err(
-                "query aborted: spilled data exceeded the out-of-core disk budget, raise POLARS_OOC_DISK_BUDGET_MB",
+                "query aborted: spilled data exceeded the out-of-core disk budget, increase POLARS_OOC_DISK_BUDGET_MB",
             )),
         }
     }
