@@ -27,7 +27,7 @@ pub mod writers;
 pub struct IOSinkNode {
     name: PlSmallStr,
     state: IOSinkNodeState,
-    metrics_registry: NodeMetricsRegistry,
+    io_metrics: Option<Arc<IOMetrics>>,
     verbose: bool,
 }
 
@@ -54,7 +54,7 @@ impl IOSinkNode {
         IOSinkNode {
             name,
             state: IOSinkNodeState::Uninitialized { config },
-            metrics_registry,
+            io_metrics: metrics_registry.new_io_metrics(),
             verbose,
         }
     }
@@ -77,7 +77,7 @@ impl ComputeNode for IOSinkNode {
         recv[0] = if recv[0] == PortState::Done {
             // Ensure initialize / writes empty file for empty output.
             self.state
-                .initialize(&self.name, execution_state, &self.metrics_registry)?;
+                .initialize(&self.name, execution_state, self.io_metrics.clone())?;
 
             match std::mem::replace(&mut self.state, IOSinkNodeState::Finished) {
                 IOSinkNodeState::Initialized {
@@ -127,7 +127,7 @@ impl ComputeNode for IOSinkNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             self.state
-                .initialize(&self.name, execution_state, &self.metrics_registry)?;
+                .initialize(&self.name, execution_state, self.io_metrics.clone())?;
 
             let IOSinkNodeState::Initialized {
                 phase_channel_tx, ..
@@ -182,7 +182,7 @@ impl IOSinkNodeState {
         &mut self,
         node_name: &PlSmallStr,
         execution_state: &StreamingExecutionState,
-        metrics_registry: &NodeMetricsRegistry,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<()> {
         use IOSinkNodeState::*;
 
@@ -193,8 +193,6 @@ impl IOSinkNodeState {
         let Uninitialized { config } = std::mem::replace(self, Finished) else {
             unreachable!()
         };
-
-        let io_metrics: Option<Arc<IOMetrics>> = metrics_registry.new_io_metrics();
 
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();

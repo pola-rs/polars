@@ -31,7 +31,7 @@ use crate::pipe::PortSender;
 pub struct MultiScan {
     name: PlSmallStr,
     state: MultiScanState,
-    metrics_registry: NodeMetricsRegistry,
+    io_metrics: Option<Arc<IOMetrics>>,
     verbose: bool,
 }
 
@@ -47,7 +47,7 @@ impl MultiScan {
         MultiScan {
             name,
             state: MultiScanState::Uninitialized { config },
-            metrics_registry,
+            io_metrics: metrics_registry.new_io_metrics(),
             verbose,
         }
     }
@@ -107,7 +107,7 @@ impl ComputeNode for MultiScan {
             use MultiScanState::*;
 
             self.state
-                .initialize(state.clone(), &self.metrics_registry)?;
+                .initialize(state.clone(), self.io_metrics.clone())?;
 
             self.state.refresh(verbose).await?;
 
@@ -177,7 +177,7 @@ impl MultiScanState {
     fn initialize(
         &mut self,
         execution_state: StreamingExecutionState,
-        metrics_registry: &NodeMetricsRegistry,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<()> {
         use MultiScanState::*;
 
@@ -192,8 +192,6 @@ impl MultiScanState {
         config
             .file_reader_builder
             .set_execution_state(&execution_state);
-
-        let io_metrics: Option<Arc<IOMetrics>> = metrics_registry.new_io_metrics();
 
         if let Some(io_metrics) = io_metrics.clone() {
             config.file_reader_builder.set_io_metrics(io_metrics);
