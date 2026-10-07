@@ -251,7 +251,16 @@ def test_sum_avg_distinct_empty_table() -> None:
         "SUM(2000000000)",
         "SUM(DISTINCT 2000000000)",
         "SUM(2000000000) FILTER (WHERE g > 0)",
+        "SUM(1) FILTER (WHERE g > 5)",
         "SUM(TRUE)",
+        "SUM(NULL)",
+        "COUNT(-1)",
+        "COUNT(NULL)",
+        "COUNT(DISTINCT 1) FILTER (WHERE g > 1)",
+        "AVG(1) FILTER (WHERE g > 1)",
+        "STDDEV(1) FILTER (WHERE g > 1)",
+        "STDDEV(NULL)",
+        "MAX(NULL)",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 3])
@@ -268,6 +277,15 @@ def test_aggregate_of_constant(agg: str, n_rows: int) -> None:
             compare_with="duckdb",
             engines=["in-memory", "streaming"],
         )
+
+
+def test_aggregate_of_constant_not_read_per_row() -> None:
+    # The aggregate of a constant follows from the number of rows read, so the
+    # constant is not repeated for each row.
+    lf = pl.LazyFrame({"g": [1, 2, 2]})
+    for agg in ["MAX(1)", "STDDEV(1)", "COUNT(-1)", "SUM(1) FILTER (WHERE g > 1)"]:
+        plan = lf.sql(f"SELECT g, {agg} AS a FROM self GROUP BY g").explain()
+        assert "repeat" not in plan
 
 
 def test_sum_of_integer_literal() -> None:
