@@ -74,7 +74,7 @@ fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
     method: QuantileMethod,
 ) -> PolarsResult<Option<f64>> {
     polars_ensure!((0.0..=1.0).contains(&quantile),
-        ComputeError: "quantile should be between 0.0 and 1.0",
+        ComputeError: "quantile should be between 0.0 and 1.0, got {}", quantile,
     );
     if vals.is_empty() {
         return Ok(None);
@@ -125,7 +125,7 @@ fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
     for &q in quantiles {
         polars_ensure!(
             (0.0..=1.0).contains(&q),
-            ComputeError: "quantile should be between 0.0 and 1.0"
+            ComputeError: "quantile should be between 0.0 and 1.0, got {}", q
         );
     }
 
@@ -188,7 +188,7 @@ where
     for &q in quantiles {
         polars_ensure!(
             (0.0..=1.0).contains(&q),
-            ComputeError: "`quantile` should be between 0.0 and 1.0",
+            ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", q,
         );
     }
 

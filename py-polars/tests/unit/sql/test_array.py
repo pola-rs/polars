@@ -66,6 +66,7 @@ def test_array_literals() -> None:
                 ['a','b','c'] AS a2,
               FROM df
             ) tbl
+            GROUP BY a1, a2
             """
         )
         assert_frame_equal(

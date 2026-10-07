@@ -1116,6 +1116,7 @@ impl SQLExprVisitor<'_> {
             active_schema: self.active_schema,
             filter: None,
             window,
+            reads_rows: false,
         };
         let expr = visitor.visit_function();
         self.ctx.group_scope.in_window = in_window;

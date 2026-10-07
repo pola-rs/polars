@@ -145,7 +145,7 @@ impl ComputeNode for NegativeSliceNode {
                         spill_ctx.register(&sf).await;
                         buffer.frames.push_back(sf);
 
-                        if buffer.total_len - buffer.frames.front().unwrap().height()
+                        while buffer.total_len - buffer.frames.front().unwrap().height()
                             >= max_buffer_needed
                         {
                             buffer.total_len -= buffer.frames.pop_front().unwrap().height();
