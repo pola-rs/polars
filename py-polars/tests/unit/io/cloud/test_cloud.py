@@ -9,6 +9,7 @@ import sys
 import time
 from functools import partial
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import pytest
 
@@ -466,3 +467,48 @@ def test_sink_single_put_28356(
     for df, key in [(small, "small"), (large, "large")]:
         out = scan(f"s3://bucket/{key}", storage_options=s3.storage_options)
         assert_frame_equal(out.collect(), df)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("decoy", [False, True])
+def test_scan_csv_mixed_buckets_29758(s3: CountingS3, decoy: bool) -> None:
+    # Unique keys: file cache entries are keyed by URI and persist across runs.
+    x, y = f"x_{uuid4()}.csv", f"y_{uuid4()}.csv"
+    s3.client.create_bucket(Bucket="bucket-2")
+    s3.client.put_object(Bucket="bucket", Key=x, Body=b"a\n1\n")
+    s3.client.put_object(Bucket="bucket-2", Key=y, Body=b"a\n2\n3\n4\n")
+    if decoy:
+        s3.client.put_object(Bucket="bucket", Key=y, Body=b"a\n9\n9\n")
+
+    paths = [f"s3://bucket/{x}", f"s3://bucket-2/{y}"]
+    expected = pl.DataFrame({"a": [1, 2, 3, 4]})
+
+    lf = pl.scan_csv(paths, storage_options=s3.storage_options)
+    assert_frame_equal(lf.collect(), expected)
+    assert lf.select(pl.len()).collect().item() == 4
+
+    lf = pl.scan_csv(
+        paths, infer_schema_length=None, storage_options=s3.storage_options
+    )
+    assert_frame_equal(lf.collect(), expected)
+
+
+@pytest.mark.slow
+def test_scan_ndjson_mixed_buckets_29758(s3: CountingS3) -> None:
+    x, y = f"x_{uuid4()}.ndjson", f"y_{uuid4()}.ndjson"
+    s3.client.create_bucket(Bucket="bucket-2")
+    s3.client.put_object(Bucket="bucket", Key=x, Body=b'{"a":1}\n')
+    s3.client.put_object(Bucket="bucket-2", Key=y, Body=b'{"a":2}\n')
+    s3.client.put_object(Bucket="bucket", Key=y, Body=b'{"a":9}\n')
+
+    paths = [f"s3://bucket/{x}", f"s3://bucket-2/{y}"]
+    expected = pl.DataFrame({"a": [1, 2]})
+
+    lf = pl.scan_ndjson(paths, storage_options=s3.storage_options)
+    assert_frame_equal(lf.collect(), expected)
+    assert lf.select(pl.len()).collect().item() == 2
+
+    lf = pl.scan_ndjson(
+        paths, infer_schema_length=None, storage_options=s3.storage_options
+    )
+    assert_frame_equal(lf.collect(), expected)
