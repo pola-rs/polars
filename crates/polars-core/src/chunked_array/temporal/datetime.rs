@@ -1,5 +1,3 @@
-use std::fmt::Write;
-
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
 use chrono::format::StrftimeItems;
@@ -65,12 +63,12 @@ impl DatetimeChunked {
                 self.physical().try_apply_into_string_amortized(|val, buf| {
                     let ndt = tu.timestamp_to_datetime(val);
                     let dt = parsed_time_zone.from_utc_datetime(&ndt);
-                    write!(buf, "{}", dt.format_with_items(items.iter()))
+                    dt.format_with_items(items.iter()).write_to(buf)
                 })
             },
             _ => self.physical().try_apply_into_string_amortized(|val, buf| {
                 let ndt = tu.timestamp_to_datetime(val);
-                write!(buf, "{}", ndt.format_with_items(items.iter()))
+                ndt.format_with_items(items.iter()).write_to(buf)
             }),
         }
         .map_err(|_| err())?;

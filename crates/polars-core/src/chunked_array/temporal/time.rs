@@ -1,5 +1,3 @@
-use std::fmt::Write;
-
 use chrono::Timelike;
 use chrono::format::StrftimeItems;
 use polars_arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
@@ -31,11 +29,9 @@ impl TimeChunked {
         let items = StrftimeItems::new(format).parse().map_err(|_| err())?;
         self.physical()
             .try_apply_into_string_amortized(|val, buf| {
-                write!(
-                    buf,
-                    "{}",
-                    time64ns_to_time(val).format_with_items(items.iter())
-                )
+                time64ns_to_time(val)
+                    .format_with_items(items.iter())
+                    .write_to(buf)
             })
             .map_err(|_| err())
     }
