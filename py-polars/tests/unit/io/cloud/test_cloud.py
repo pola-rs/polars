@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import re
 import subprocess
@@ -259,32 +260,142 @@ def _scan_s3_endpoint(endpoint: str, **storage_options: Any) -> pl.LazyFrame:
     )
 
 
+def _parquet_bytes(df: pl.DataFrame) -> bytes:
+    buf = io.BytesIO()
+    df.write_parquet(buf)
+    return buf.getvalue()
+
+
 @contextlib.contextmanager
-def _http_server(delay: float = 0.0) -> Iterator[str]:
-    """Serve 404 for every request, after an optional delay."""
+def _http_file_server(
+    files: dict[str, bytes], delay: float = 0.0
+) -> Iterator[tuple[str, list[tuple[int, str]]]]:
+    """Serve `files` by raw request target, with ranges, after an optional delay.
+
+    Other targets get a 404. Logs (client port, target) per request.
+    """
     import threading
-    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    requests: list[tuple[int, str]] = []
 
     class Handler(BaseHTTPRequestHandler):
-        def _not_found(self) -> None:
-            time.sleep(delay)
-            self.send_response(404)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+        protocol_version = "HTTP/1.1"
 
-        do_GET = do_HEAD = _not_found
+        def _serve(self, *, body: bool) -> None:
+            requests.append((self.client_address[1], self.path))
+            time.sleep(delay)
+            data = files.get(self.path)
+            if data is None:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+
+            start, end = 0, len(data)
+            if (range_ := self.headers.get("Range")) is not None:
+                first, last = range_.removeprefix("bytes=").split("-")
+                if first:
+                    start = int(first)
+                    end = min(int(last) + 1, len(data)) if last else len(data)
+                else:
+                    start = max(len(data) - int(last), 0)
+                self.send_response(206)
+                self.send_header(
+                    "Content-Range", f"bytes {start}-{end - 1}/{len(data)}"
+                )
+            else:
+                self.send_response(200)
+            self.send_header("Content-Length", str(end - start))
+            self.end_headers()
+            if body:
+                self.wfile.write(data[start:end])
+
+        def do_GET(self) -> None:
+            self._serve(body=True)
+
+        def do_HEAD(self) -> None:
+            self._serve(body=False)
 
         def log_message(self, format: str, *args: Any) -> None:
             pass
 
-    with HTTPServer(("127.0.0.1", 0), Handler) as server:
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        # A short poll interval keeps `shutdown()` from waiting up to 0.5s.
+        thread = threading.Thread(
+            target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+        )
         thread.start()
         try:
-            yield f"http://127.0.0.1:{server.server_address[1]}"
+            yield f"http://127.0.0.1:{server.server_address[1]}", requests
         finally:
             server.shutdown()
             thread.join()
+
+
+@pytest.mark.slow
+def test_scan_http_same_host() -> None:
+    targets = [
+        "/a.parquet",
+        "/dir/b%2541.parquet",
+        "/c.parquet?X-Amz-Signature=x%2Fy&e=1",
+        "/d.parquet?q",
+        # Not representable as an object path; gets its own store.
+        "/x//e.parquet",
+    ]
+    dfs = [pl.DataFrame({"a": [i]}) for i in range(len(targets))]
+    files = {t: _parquet_bytes(df) for t, df in zip(targets, dfs, strict=True)}
+
+    with _http_file_server(files) as (endpoint, requests):
+        for target, df in zip(targets, dfs, strict=True):
+            assert_frame_equal(pl.scan_parquet(endpoint + target).collect(), df)
+
+    # URLs are requested verbatim.
+    assert {target for _, target in requests} == set(targets)
+    # Files on one host share the cached store's connection pool.
+    assert len({port for port, _ in requests}) < len(targets)
+
+
+@pytest.mark.slow
+def test_scan_http_same_host_error() -> None:
+    df = pl.DataFrame({"a": [1]})
+    files = {"/a.parquet?token=A": _parquet_bytes(df)}
+
+    with _http_file_server(files) as (endpoint, requests):
+        q = pl.scan_parquet(f"{endpoint}/a.parquet?token=A")
+        assert_frame_equal(q.collect(), df)
+        n = len(requests)
+
+        q = pl.scan_parquet(f"{endpoint}/missing.parquet")
+        with pytest.raises(FileNotFoundError, match=r"missing\.parquet") as exc:
+            q.collect()
+
+    # The error names the failing URL, not the one the host's store was built for.
+    assert "a.parquet" not in str(exc.value)
+    # An error does not drop the host's connection pool.
+    assert {port for port, _ in requests[n:]} <= {port for port, _ in requests[:n]}
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("cache_size", [0, 1, 2])
+def test_http_store_cache_size(cache_size: int, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_HTTP_STORE_CACHE_SIZE", str(cache_size))
+    df = pl.DataFrame({"a": [1]})
+    files = {"/a.parquet": _parquet_bytes(df)}
+
+    with (
+        _http_file_server(files) as (a, a_requests),
+        _http_file_server(files) as (b, _),
+    ):
+        assert_frame_equal(pl.scan_parquet(f"{a}/a.parquet").collect(), df)
+        n = len(a_requests)
+        for endpoint in [b, a]:
+            assert_frame_equal(pl.scan_parquet(f"{endpoint}/a.parquet").collect(), df)
+
+    # Host `a` keeps its store and connections only if the cache also fits `b`.
+    first = {port for port, _ in a_requests[:n]}
+    last = {port for port, _ in a_requests[n:]}
+    assert (last <= first) == (cache_size >= 2)
 
 
 @pytest.mark.slow
@@ -299,7 +410,7 @@ def test_cloud_connection_refused_error() -> None:
 
 @pytest.mark.slow
 def test_cloud_not_found_error() -> None:
-    with _http_server() as endpoint:
+    with _http_file_server({}) as (endpoint, _):
         q = _scan_s3_endpoint(endpoint)
         with pytest.raises(FileNotFoundError, match=re.escape("x.parquet")):
             q.collect()
@@ -307,7 +418,7 @@ def test_cloud_not_found_error() -> None:
 
 @pytest.mark.slow
 def test_cloud_timeout_error() -> None:
-    with _http_server(delay=2.0) as endpoint:
+    with _http_file_server({}, delay=2.0) as (endpoint, _):
         q = _scan_s3_endpoint(endpoint, timeout="100ms", max_retries=1)
         with pytest.raises(TimeoutError, match="after 1 retries") as exc:
             q.collect()

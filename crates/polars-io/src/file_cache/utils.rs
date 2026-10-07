@@ -74,7 +74,7 @@ async fn init_entries_from_uri_list_impl(
     if first_uri.has_scheme() {
         let shared_object_store = if !matches!(
             first_uri.scheme(),
-            Some(CloudScheme::Http | CloudScheme::Https) // Object stores for http are tied to the path.
+            Some(CloudScheme::Http | CloudScheme::Https) // Http URIs can differ in origin.
         ) {
             let (_, object_store) = build_object_store(first_uri, cloud_options, false).await?;
             Some(object_store)
