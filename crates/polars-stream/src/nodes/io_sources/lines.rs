@@ -89,6 +89,7 @@ impl FileReaderBuilder for LineReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         _scan_source_idx: usize,
+        _metrics_registry: &crate::metrics::NodeMetricsRegistry,
     ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::ndjson::ChunkPrefetchSync;

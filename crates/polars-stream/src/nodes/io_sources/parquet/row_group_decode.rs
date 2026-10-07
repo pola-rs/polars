@@ -123,11 +123,22 @@ pub(super) struct RowGroupDecoder {
     pub(super) target_values_per_thread: usize,
 }
 
+/// What decoding a row group read, for the scan metrics.
+#[derive(Clone, Copy)]
+pub(super) struct RowGroupRead {
+    /// Rows of the row group, after the slice.
+    pub(super) rows: usize,
+    /// Uncompressed size, per the file metadata, of its projected column chunks.
+    pub(super) uncompressed_bytes: u64,
+    /// The rows the predicate kept, when the row group was decoded prefiltered.
+    pub(super) rows_kept_prefiltered: Option<usize>,
+}
+
 impl RowGroupDecoder {
     pub(super) async fn row_group_data_to_df(
         &self,
         mut row_group_data: RowGroupData,
-    ) -> PolarsResult<DataFrame> {
+    ) -> PolarsResult<(DataFrame, RowGroupRead)> {
         row_group_data.fetched_bytes.fetch_if_evicted().await?;
 
         // If the slice consumes the entire row-group. Don't slice. This allows for prefiltering to
@@ -137,16 +148,30 @@ impl RowGroupDecoder {
         });
 
         let nothing_to_evaluate = self.nothing_to_evaluate();
-        if self.use_prefiltered
+        let prefiltered = self.use_prefiltered
             && row_group_data.slice.is_none()
             && !self.predicate_field_indices.is_empty()
-            && !nothing_to_evaluate
-        {
-            self.row_group_data_to_df_prefiltered(row_group_data).await
+            && !nothing_to_evaluate;
+
+        let rows = row_group_data
+            .slice
+            .map_or(row_group_data.row_group_metadata.num_rows(), |(_, len)| len);
+        let uncompressed_bytes = row_group_data.uncompressed_bytes;
+
+        let df = if prefiltered {
+            self.row_group_data_to_df_prefiltered(row_group_data)
+                .await?
         } else {
             self.row_group_data_to_df_impl(row_group_data, nothing_to_evaluate)
-                .await
-        }
+                .await?
+        };
+
+        let read = RowGroupRead {
+            rows,
+            uncompressed_bytes,
+            rows_kept_prefiltered: prefiltered.then(|| df.height()),
+        };
+        Ok((df, read))
     }
 
     /// Whether the predicate keeps every row for now: it has no static part

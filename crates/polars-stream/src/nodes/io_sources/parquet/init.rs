@@ -16,7 +16,9 @@ use polars_utils::IdxSize;
 use tokio::sync::Semaphore;
 
 use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher};
-use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
+use super::row_group_decode::{
+    DynamicConjunct, PredicateColumn, RowGroupDecoder, RowGroupRead, Source,
+};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -122,8 +124,9 @@ impl ParquetReadImpl {
             Option::take(&mut self.rg_prefetch_current_all_spawned);
 
         let task_metrics = self.task_metrics.clone();
-
+        let metrics = self.metrics.clone();
         let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
+            let row_groups_skipped = metrics.row_groups_skipped.reporter();
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
                 bigidx,
@@ -189,6 +192,10 @@ impl ParquetReadImpl {
                 task_metrics.as_deref(),
             )
             .await?;
+
+            let skipped = metadata.row_groups.len() - row_group_slice.len()
+                + row_group_mask.as_ref().map_or(0, |mask| mask.set_bits());
+            row_groups_skipped.add(skipped as i64);
 
             let defer_cached_reads = polars_config::config().file_defer_cached_reads();
             let mut row_group_data_fetcher = RowGroupDataFetcher {
@@ -297,14 +304,13 @@ impl ParquetReadImpl {
                                 TaskPriority::High,
                                 metrics,
                                 async move {
-                                    let df = row_group_decoder
+                                    let decoded = row_group_decoder
                                         .row_group_data_to_df(row_group_data)
                                         .await;
 
-                                    if !matches!(&df, Ok(df) if df.height() == 0) {
-                                        let fut = Either::Right(std::future::ready(df));
-                                        let _ = decode_send.send((fut, permits)).await;
-                                    }
+                                    // An empty result still counts for the metrics.
+                                    let fut = Either::Right(std::future::ready(decoded));
+                                    let _ = decode_send.send((fut, permits)).await;
                                     drop(slot);
                                 },
                             )));
@@ -326,10 +332,25 @@ impl ParquetReadImpl {
         let last_morsel_pipelines = self.config.last_morsel_pipelines;
         let disable_morsel_split = self.disable_morsel_split;
         let task_metrics = self.task_metrics.as_deref();
+        let metrics = self.metrics.clone();
         let distribute_task = executor::spawn(TaskPriority::High, task_metrics, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
+
+            // This task sees every decoded row group, so it alone reports them.
+            let rows_read = metrics.rows_read.reporter();
+            let rows_read_prefiltered = metrics.rows_read_prefiltered.reporter();
+            let rows_kept_prefiltered = metrics.rows_kept_prefiltered.reporter();
+            let uncompressed_bytes = metrics.uncompressed_bytes.reporter();
+            let report = |read: RowGroupRead| {
+                rows_read.add(read.rows as i64);
+                uncompressed_bytes.add(read.uncompressed_bytes as i64);
+                if let Some(kept) = read.rows_kept_prefiltered {
+                    rows_read_prefiltered.add(read.rows as i64);
+                    rows_kept_prefiltered.add(kept as i64);
+                }
+            };
 
             // Decode first non-empty morsel.
             let mut next = None;
@@ -337,7 +358,8 @@ impl ParquetReadImpl {
                 let Some((decode_fut, permits)) = decode_recv.recv().await else {
                     break;
                 };
-                let df = decode_fut.await?;
+                let (df, read) = decode_fut.await?;
+                report(read);
                 if df.height() == 0 {
                     continue;
                 }
@@ -375,7 +397,8 @@ impl ParquetReadImpl {
                     let Some((decode_fut, permit)) = decode_recv.recv().await else {
                         break;
                     };
-                    let next_df = decode_fut.await?;
+                    let (next_df, read) = decode_fut.await?;
+                    report(read);
                     if next_df.height() == 0 {
                         continue;
                     }
