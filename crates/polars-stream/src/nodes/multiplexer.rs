@@ -26,6 +26,7 @@ impl BufferedStream {
 #[derive(Default)]
 pub struct MultiplexerNode {
     buffers: Vec<BufferedStream>,
+    recv_done: bool,
 }
 
 impl MultiplexerNode {
@@ -57,6 +58,8 @@ impl ComputeNode for MultiplexerNode {
                 *b = BufferedStream::Closed;
             }
         }
+
+        self.recv_done = recv[0] == PortState::Done;
 
         // Check if either the input is done, or all outputs are done.
         let input_done = recv[0] == PortState::Done
@@ -99,6 +102,28 @@ impl ComputeNode for MultiplexerNode {
             PortState::Ready
         };
         Ok(())
+    }
+
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        let mut num_open = 0;
+        let mut any_buffered = false;
+        for b in &self.buffers {
+            match b {
+                BufferedStream::Open(v, _) => {
+                    num_open += 1;
+                    any_buffered |= !v.is_empty();
+                },
+                BufferedStream::Closed => {},
+            }
+        }
+
+        if !self.recv_done && num_open >= 2 {
+            NodeMemoryUsage::Unbounded
+        } else if any_buffered {
+            NodeMemoryUsage::Draining
+        } else {
+            NodeMemoryUsage::Bounded
+        }
     }
 
     fn spawn<'env, 's>(

@@ -879,8 +879,12 @@ impl ComputeNode for GroupByNode {
         "group-by"
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self.state, GroupByState::Sink { .. })
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            GroupByState::Sink(_) => NodeMemoryUsage::Accumulating,
+            GroupByState::Source(src) => src.memory_usage(),
+            GroupByState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn update_state(

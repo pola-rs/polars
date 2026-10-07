@@ -1232,10 +1232,11 @@ pub fn try_build_sorted_group_by(
     );
     for agg in aggs {
         let field = agg.field(schema.as_ref(), expr_arena)?;
+        let dtype = field.dtype.materialize_unknown(true)?;
         let dtype = if agg.is_scalar(expr_arena) {
-            field.dtype
+            dtype
         } else {
-            field.dtype.implode()
+            dtype.implode()
         };
         gb_output_schema.insert(field.name, dtype);
     }

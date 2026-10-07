@@ -9,7 +9,7 @@ use polars_io::metrics::IOMetrics;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{ComputeNode, PortState};
+use super::{ComputeNode, NodeMemoryUsage, PortState};
 use crate::execute::StreamingExecutionState;
 use crate::metrics::NodeMetricsRegistry;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -29,6 +29,7 @@ pub struct IOSinkNode {
     state: IOSinkNodeState,
     metrics_registry: NodeMetricsRegistry,
     verbose: bool,
+    partitioned_by_key: bool,
 }
 
 impl IOSinkNode {
@@ -38,11 +39,11 @@ impl IOSinkNode {
     ) -> Self {
         let config = config.into();
 
-        let target_type = match &config.target {
-            IOSinkTarget::File(_) => "single-file",
+        let (target_type, partitioned_by_key) = match &config.target {
+            IOSinkTarget::File(_) => ("single-file", false),
             IOSinkTarget::Partitioned(p) => match &p.partitioner {
-                Partitioner::Keyed(_) => "partition-keyed",
-                Partitioner::FileSize => "partition-file-size",
+                Partitioner::Keyed(_) => ("partition-keyed", true),
+                Partitioner::FileSize => ("partition-file-size", false),
             },
         };
 
@@ -56,6 +57,7 @@ impl IOSinkNode {
             state: IOSinkNodeState::Uninitialized { config },
             metrics_registry,
             verbose,
+            partitioned_by_key,
         }
     }
 }
@@ -111,6 +113,19 @@ impl ComputeNode for IOSinkNode {
         };
 
         Ok(())
+    }
+
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            IOSinkNodeState::Uninitialized { .. } | IOSinkNodeState::Initialized { .. } => {
+                if self.partitioned_by_key {
+                    NodeMemoryUsage::Unbounded
+                } else {
+                    NodeMemoryUsage::Bounded
+                }
+            },
+            IOSinkNodeState::Finished => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

@@ -584,6 +584,9 @@ impl Series {
                 })
             },
 
+            // Arrow `LargeBinary` arrays are read into a series as `Binary`.
+            (D::Binary, D::BinaryOffset) => self.cast(&D::BinaryOffset),
+
             (D::Int32, D::Date) => feature_gated!("dtype-date", Ok(self.clone().into_date())),
             (D::Int64, D::Datetime(tu, tz)) => feature_gated!(
                 "dtype-datetime",

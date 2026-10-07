@@ -257,8 +257,12 @@ impl ComputeNode for WindowNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self.state, WindowState::Sink { .. })
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            WindowState::Sink { .. } => NodeMemoryUsage::Accumulating,
+            WindowState::Source(src) => src.memory_usage(),
+            WindowState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

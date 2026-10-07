@@ -15,6 +15,7 @@ use tokio::task::JoinHandle;
 
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
 use crate::metrics::GraphMetrics;
+use crate::nodes::NodeMemoryUsage;
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -56,11 +57,11 @@ impl StreamingExecutionState {
     }
 }
 
-/// Finds all runnable pipeline blockers in the graph, that is, nodes which:
+/// Finds all runnable phase sinks, that is, nodes which:
 ///  - Only have blocked output ports.
 ///  - Have at least one ready input port connected to a ready output port.
-fn find_runnable_pipeline_blockers(graph: &Graph) -> Vec<GraphNodeKey> {
-    let mut blockers = Vec::new();
+fn find_runnable_phase_sinks(graph: &Graph) -> Vec<GraphNodeKey> {
+    let mut phase_sinks = Vec::new();
     for (node_key, node) in graph.nodes.iter() {
         // TODO: how does the multiplexer fit into this?
         let only_has_blocked_outputs = node
@@ -76,10 +77,10 @@ fn find_runnable_pipeline_blockers(graph: &Graph) -> Vec<GraphNodeKey> {
                 && graph.pipes[*i].recv_state == PortState::Ready
         });
         if has_input_ready {
-            blockers.push(node_key);
+            phase_sinks.push(node_key);
         }
     }
-    blockers
+    phase_sinks
 }
 
 /// Given a set of nodes expand this set with all nodes which are inputs to the
@@ -112,27 +113,24 @@ fn expand_ready_subgraph(
 
 /// Finds a part of the graph which we can run.
 fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<LogicalPipeKey>) {
-    // Find pipeline blockers, choose a subset with at most one memory intensive
-    // pipeline blocker, and return the subgraph needed to feed them.
-    let blockers = find_runnable_pipeline_blockers(graph);
-    let (expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
-        graph.nodes[*b]
-            .compute
-            .is_memory_intensive_pipeline_blocker()
-    });
+    // Find phase sinks, choose a subset with at most one accumulating node, and
+    // return the subgraph needed to feed them.
+    let phase_sinks = find_runnable_phase_sinks(graph);
+    let (accumulating, mut to_run): (Vec<_>, Vec<_>) = phase_sinks
+        .into_iter()
+        .partition(|n| graph.nodes[*n].compute.memory_usage() == NodeMemoryUsage::Accumulating);
 
-    // If all expensive pipeline blockers left are sinks (InMemorySink), we're not
-    // gaining anything by only running a subset.
-    let only_expensive_sinks_left = expensive
+    // If all accumulating nodes left are sinks (InMemorySink), we're not gaining
+    // anything by only running a subset.
+    let only_accumulating_sinks_left = accumulating
         .iter()
         .all(|node_key| graph.nodes[*node_key].outputs.is_empty());
 
-    let mut to_run = cheap;
-    if only_expensive_sinks_left {
-        to_run.extend(expensive);
+    if only_accumulating_sinks_left {
+        to_run.extend(accumulating);
     } else {
-        // TODO: choose which expensive pipeline blocker(s) to run more intelligently.
-        let best = expensive.into_iter().max_by_key(|node_key| {
+        // TODO: choose which accumulating node(s) to run more intelligently.
+        let best = accumulating.into_iter().max_by_key(|node_key| {
             // Prefer to run nodes whose outputs are ready to be consumed. Also
             // prefer to run nodes which have outputs over in-memory sinks.
             let num_outputs = graph.nodes[*node_key].outputs.len();
