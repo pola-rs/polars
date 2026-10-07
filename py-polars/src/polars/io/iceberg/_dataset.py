@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
+from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
-from polars.io.iceberg._cache import get_metadata_file_cache
+from polars.io.iceberg._cache import CachingFileIO
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -49,6 +50,31 @@ class IcebergScanTableSerializer(IcebergTableSerializer):
 class IcebergCatalogTableDescriptor:
     table_identifier: str | pyiceberg.typedef.Identifier
     catalog_config: IcebergCatalogConfig
+    # Used for table loads when set; `catalog_config` is the fallback after
+    # unpickling, and for descriptors pickled without this field.
+    catalog_: NoPickleOption[pyiceberg.catalog.Catalog] | None = None
+
+
+# Catalog classes whose instances, and those of their subclasses, can load tables
+# from concurrent threads.
+_REUSABLE_CATALOG_CLASSES: Final = frozenset(
+    (
+        "pyiceberg.catalog.glue.GlueCatalog",
+        "pyiceberg.catalog.rest.RestCatalog",
+        "pyiceberg.catalog.sql.SqlCatalog",
+    )
+)
+
+
+def _reusable_catalog(
+    catalog: pyiceberg.catalog.Catalog | None,
+) -> pyiceberg.catalog.Catalog | None:
+    if catalog is None or not any(
+        qualified_type_name(cls) in _REUSABLE_CATALOG_CLASSES
+        for cls in type(catalog).__mro__
+    ):
+        return None
+    return catalog
 
 
 SerializedTableState: TypeAlias = str | IcebergCatalogTableDescriptor
@@ -78,10 +104,16 @@ class IcebergTableWrap:
             assert self.table_descriptor_ is not None
 
             if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor):
-                catalog = self.table_descriptor_.catalog_config.class_(
-                    self.table_descriptor_.catalog_config.name,
-                    **self.table_descriptor_.catalog_config.properties,
-                )
+                catalog_ = self.table_descriptor_.catalog_
+                catalog = catalog_.get() if catalog_ is not None else None
+
+                if catalog is None:
+                    catalog = self.table_descriptor_.catalog_config.class_(
+                        self.table_descriptor_.catalog_config.name,
+                        **self.table_descriptor_.catalog_config.properties,
+                    )
+                elif verbose():
+                    eprint("IcebergTableWrap: reuse catalog instance")
 
                 table = catalog.load_table(self.table_descriptor_.table_identifier)
             else:
@@ -151,17 +183,21 @@ class IcebergCatalogConfig:
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None,
         *,
         fn_name: Literal["scan_iceberg", "sink_iceberg"],
-    ) -> IcebergCatalogConfig:
+    ) -> tuple[IcebergCatalogConfig, pyiceberg.catalog.Catalog | None]:
+        """Return the catalog config, and the catalog instance when one is known."""
         import pyiceberg.catalog
         from pyiceberg.catalog.noop import NoopCatalog
 
         import polars._utils.logging
         from polars._utils.logging import eprint
 
+        instance: pyiceberg.catalog.Catalog | None = None
+
         if isinstance(catalog, IcebergCatalogConfig):
             catalog_config = catalog
         elif isinstance(catalog, pyiceberg.catalog.Catalog):
             catalog_config = IcebergCatalogConfig.from_catalog(catalog)
+            instance = catalog
         elif catalog is not None:
             msg = f"unknown type for `catalog` parameter: {type(catalog)}"
             raise TypeError(msg)
@@ -193,12 +229,13 @@ class IcebergCatalogConfig:
                 raise ComputeError(msg) from error
 
             catalog_config = IcebergCatalogConfig.from_catalog(default_catalog)
+            instance = default_catalog
 
         if catalog_config.class_ == NoopCatalog:
             msg = f"cannot use NoopCatalog with {fn_name}()"
             raise TypeError(msg)
 
-        return catalog_config
+        return catalog_config, instance
 
 
 @dataclass(kw_only=True)
@@ -444,9 +481,6 @@ class IcebergScanResolver:
             if verbose:
                 eprint("IcebergScanResolver: to_dataset_scan(): begin path expansion")
 
-            metadata_file_cache = get_metadata_file_cache()
-            cache_hits = metadata_file_cache.hits
-            cache_misses = metadata_file_cache.misses
             start_time = perf_counter()
 
             scan = _new_pyiceberg_scan(
@@ -534,13 +568,13 @@ class IcebergScanResolver:
                     f"finish path expansion ({elapsed:.3f}s)"
                 )
 
-                if metadata_file_cache.enabled:
+                if isinstance(scan.io, CachingFileIO):
                     eprint(
                         "IcebergScanResolver: to_dataset_scan(): "
                         "metadata file cache: "
-                        f"hits: {metadata_file_cache.hits - cache_hits}, "
-                        f"misses: {metadata_file_cache.misses - cache_misses}, "
-                        f"cached bytes: {metadata_file_cache.total_bytes}"
+                        f"hits: {scan.io.stats.hits}, "
+                        f"misses: {scan.io.stats.misses}, "
+                        f"cached bytes: {scan.io.cache.total_bytes}"
                     )
 
         if not fallback_reason:
