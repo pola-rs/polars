@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
+from polars.meta import get_index_type
 from tests.unit.sql import assert_sql_matches
 
 
@@ -254,6 +256,11 @@ def test_sum_avg_distinct_empty_table() -> None:
         "SUM(1) FILTER (WHERE g > 5)",
         "SUM(TRUE)",
         "SUM(NULL)",
+        "SUM(CAST(NULL AS INT))",
+        "SUM(DISTINCT CAST(NULL AS INT))",
+        "MAX(CAST(NULL AS INT))",
+        "COUNT(CAST(NULL AS INT))",
+        "STDDEV(CAST(NULL AS DOUBLE))",
         "COUNT(-1)",
         "COUNT(NULL)",
         "COUNT(DISTINCT 1) FILTER (WHERE g > 1)",
@@ -261,6 +268,12 @@ def test_sum_avg_distinct_empty_table() -> None:
         "STDDEV(1) FILTER (WHERE g > 1)",
         "STDDEV(NULL)",
         "MAX(NULL)",
+        "SUM(2) FILTER (WHERE TRUE)",
+        "STDDEV(1) FILTER (WHERE TRUE)",
+        "MAX(1) FILTER (WHERE 1 = 2)",
+        "COUNT(*) FILTER (WHERE NULL)",
+        "SUM(DISTINCT CAST(20000 AS SMALLINT)) * 2",
+        "SUM(DISTINCT TRUE)",
     ],
 )
 @pytest.mark.parametrize("n_rows", [0, 3])
@@ -285,7 +298,7 @@ def test_aggregate_of_constant_not_read_per_row() -> None:
     lf = pl.LazyFrame({"g": [1, 2, 2]})
     for agg in ["MAX(1)", "STDDEV(1)", "COUNT(-1)", "SUM(1) FILTER (WHERE g > 1)"]:
         plan = lf.sql(f"SELECT g, {agg} AS a FROM self GROUP BY g").explain()
-        assert "repeat" not in plan
+        assert "repeat([len()])" not in plan
 
 
 @pytest.mark.parametrize(
@@ -313,6 +326,47 @@ def test_aggregate_of_constant_in_groups(group_by: str, has_check: bool) -> None
                 check_row_order=False,
                 engines=["in-memory", "streaming"],
             )
+
+
+def test_sum_of_constant_types() -> None:
+    # The sum of a constant has the dtype of SUM over a column of it.
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              SUM(CAST(20000 AS SMALLINT)) AS a,
+              SUM(DISTINCT TRUE) AS b,
+              SUM(CAST(1.5 AS REAL)) AS c
+            FROM self
+        """,
+        compare_with=None,
+        check_dtypes=True,
+        expected=pl.DataFrame(
+            {"a": [60000], "b": [1], "c": [4.5]},
+            schema={"a": pl.Int64, "b": get_index_type(), "c": pl.Float32},
+        ),
+        engines=["in-memory", "streaming"],
+    )
+    with pytest.raises(InvalidOperationError, match="`sum` operation not supported"):
+        df.sql("SELECT SUM(DISTINCT 'a') AS a FROM self")
+
+
+def test_spread_of_non_finite_constant() -> None:
+    # Over two or more rows, the spread of a constant is that of a column of it.
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+              STDDEV(CAST('NaN' AS DOUBLE)) AS a,
+              VARIANCE(CAST('Infinity' AS DOUBLE)) AS b
+            FROM self
+        """,
+        compare_with=None,
+        expected={"a": [float("nan")], "b": [float("nan")]},
+        engines=["in-memory", "streaming"],
+    )
 
 
 def test_sum_of_integer_literal() -> None:

@@ -11,6 +11,7 @@ use polars_defs::expr::{RankMethod, RankOptions};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
 use polars_lazy::prelude::ApproxQuantileMethod;
+use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
     coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal, min_horizontal,
     when,
@@ -1273,7 +1274,14 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLInterface: "'IGNORE|RESPECT NULLS' is not currently supported")
         }
         if let Some(filter_expr) = &function.filter {
-            self.filter = Some(parse_sql_expr(filter_expr, self.ctx, self.active_schema)?);
+            let pred = parse_sql_expr(filter_expr, self.ctx, self.active_schema)?;
+            // As in WHERE, a condition that reads no input is accepted as any type that casts
+            // to boolean.
+            self.filter = Some(if is_constant_key(&pred) {
+                pred.cast(DataType::Boolean)
+            } else {
+                pred
+            });
         }
         self.reads_rows = self.window.is_none() && function_name.is_builtin_aggregate();
         self.check_window_shape(&function_name)?;
@@ -2213,6 +2221,8 @@ impl SQLFunctionVisitor<'_> {
     /// The number of rows an aggregate reads: all rows, or those that pass FILTER.
     fn rows_read(&self) -> Expr {
         match &self.filter {
+            // A constant predicate holds for all rows or none.
+            Some(pred) if is_constant_key(pred) => when(pred.clone()).then(len()).otherwise(lit(0)),
             Some(pred) => pred.clone().sum(),
             None => len(),
         }
@@ -2297,8 +2307,8 @@ impl SQLFunctionVisitor<'_> {
         self.apply_window_spec(e)
     }
 
-    /// Like `visit_unary`, for STDDEV or VARIANCE: the sample spread of a constant is 0 when
-    /// two or more rows are read.
+    /// Like `visit_unary`, for STDDEV or VARIANCE: over two or more rows, the sample spread of
+    /// a constant is that of two copies of it (0, or NaN for a value that is not finite).
     fn visit_spread_aggregate(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
         let sql_expr = match args.as_slice() {
@@ -2308,8 +2318,8 @@ impl SQLFunctionVisitor<'_> {
         };
         let e = match self.parse_value_arg(sql_expr)? {
             ValueArg::Rows(e) => f(e),
-            ValueArg::Constant(c) => when(self.rows_read().gt(lit(1)).and(c.clone().is_not_null()))
-                .then(f(c).fill_null(lit(0.0)))
+            ValueArg::Constant(c) => when(self.rows_read().gt(lit(1)))
+                .then(f(polars_lazy::dsl::repeat(c, lit(2))))
                 .otherwise(Expr::Literal(LiteralValue::untyped_null())),
         };
         self.apply_window_spec(e)
@@ -2693,8 +2703,8 @@ impl SQLFunctionVisitor<'_> {
         Ok((self.parse_value_arg(sql_expr)?, is_distinct))
     }
 
-    /// SUM of a constant: the constant times the number of rows read, or the constant itself
-    /// with DISTINCT. NULL when no row is read.
+    /// SUM of a constant: the SUM of the constant alone, times the number of rows read without
+    /// DISTINCT, in the dtype of that SUM. NULL when no row is read or the constant is NULL.
     fn sum_of_constant(&self, c: Expr, is_distinct: bool) -> Expr {
         // Integer literals are summed as Int64, as in `literal_sum`.
         let c = match c {
@@ -2704,12 +2714,13 @@ impl SQLFunctionVisitor<'_> {
             e => e,
         };
         let rows = self.rows_read();
+        let sum = c.clone().sum();
         let total = if is_distinct {
-            c
+            sum
         } else {
-            c * rows.clone().cast(DataType::Int64)
+            (sum.clone() * rows.clone()).cast(DataTypeExpr::OfExpr(Box::new(sum)))
         };
-        when(rows.gt(lit(0)))
+        when(rows.gt(lit(0)).and(c.is_not_null()))
             .then(total)
             .otherwise(Expr::Literal(LiteralValue::untyped_null()))
     }
