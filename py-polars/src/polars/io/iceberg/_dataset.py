@@ -475,6 +475,9 @@ class IcebergScanResolver:
         deletion_vectors: dict[int, str] = {}
         total_physical_rows: int = 0
         total_deleted_rows: int = 0
+        # A position delete file may apply to several data files (partition-scoped),
+        # but its rows are counted once.
+        counted_position_delete_files: set[str] = set()
         total_position_delete_files = 0
         total_deletion_vectors = 0
 
@@ -510,7 +513,7 @@ class IcebergScanResolver:
 
                 if file_info.delete_files:
                     position_delete_files[i] = []
-                    position_delete_num_rows = 0
+                    position_delete_record_counts: dict[str, int] = {}
                     deletion_vector_num_rows = 0
 
                     for deletion_file in file_info.delete_files:
@@ -524,7 +527,9 @@ class IcebergScanResolver:
                         match deletion_file.file_format:
                             case FileFormat.PARQUET:
                                 position_delete_files[i].append(deletion_file.file_path)
-                                position_delete_num_rows += deletion_file.record_count
+                                position_delete_record_counts[
+                                    deletion_file.file_path
+                                ] = deletion_file.record_count
 
                             case FileFormat.PUFFIN:
                                 if i in deletion_vectors:
@@ -545,7 +550,10 @@ class IcebergScanResolver:
                         total_deletion_vectors += 1
                         del position_delete_files[i]
                     else:
-                        total_deleted_rows += position_delete_num_rows
+                        for path, count in position_delete_record_counts.items():
+                            if path not in counted_position_delete_files:
+                                counted_position_delete_files.add(path)
+                                total_deleted_rows += count
                         total_position_delete_files += len(position_delete_files[i])
 
                 if fallback_reason:

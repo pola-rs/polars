@@ -406,9 +406,14 @@ def test_iceberg_plugin_row_index(metadata_path: str) -> None:
     assert lf.select(pl.len()).collect().item() == TEST_DF.height
 
 
-def _add_position_deletes(tbl: Any, deletes: dict[str, list[int]]) -> Any:
+def _add_position_deletes(
+    tbl: Any, deletes: dict[str, list[int]], *, single_delete_file: bool = False
+) -> Any:
     """
     Commit a snapshot adding one position delete file per data file.
+
+    With `single_delete_file`, one delete file holds the deletes of all data files (it
+    is then scoped to the partition rather than to a data file).
 
     PyIceberg cannot write merge-on-read deletes, so the delete files, the delete
     manifest and the manifest list are written with its low-level writers.
@@ -462,13 +467,19 @@ def _add_position_deletes(tbl: Any, deletes: dict[str, list[int]]) -> Any:
     snapshot_id = uuid.uuid4().int >> 65
     sequence_number = tbl.metadata.last_sequence_number + 1
 
+    groups = (
+        [deletes]
+        if single_delete_file
+        else [{data_path: positions} for data_path, positions in deletes.items()]
+    )
     delete_files = []
-    for data_path, positions in deletes.items():
+    for group in groups:
         path = f"{tbl.location()}/data/delete-{uuid.uuid4()}.parquet"
         local_path = path.removeprefix("file://")
+        rows = [(p, pos) for p in sorted(group) for pos in group[p]]
         pq.write_table(
             pa.table(
-                {"file_path": [data_path] * len(positions), "pos": positions},
+                {"file_path": [p for p, _ in rows], "pos": [pos for _, pos in rows]},
                 schema=delete_schema,
             ),
             local_path,
@@ -478,10 +489,10 @@ def _add_position_deletes(tbl: Any, deletes: dict[str, list[int]]) -> Any:
             file_path=path,
             file_format=FileFormat.PARQUET,
             partition=Record(),
-            record_count=len(positions),
+            record_count=len(rows),
             file_size_in_bytes=Path(local_path).stat().st_size,
-            lower_bounds={path_field_id: data_path.encode()},
-            upper_bounds={path_field_id: data_path.encode()},
+            lower_bounds={path_field_id: min(group).encode()},
+            upper_bounds={path_field_id: max(group).encode()},
         )
         data_file.spec_id = tbl.spec().spec_id
         delete_files.append(data_file)
@@ -568,6 +579,58 @@ def test_iceberg_plugin_position_deletes(
     assert_frame_equal(pl.scan_iceberg(tbl, snapshot_id=first).collect(), TEST_DF)
 
 
+@pytest.mark.parametrize("planner", ["plugin", "pyiceberg"])
+def test_iceberg_plugin_partition_scoped_position_deletes_counted_once(
+    tmp_path: Path, planner: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
+
+    tbl = _new_table(tmp_path)
+    tbl.append(TEST_DF.to_arrow())
+    paths = _data_file_paths(tbl)
+    assert len(paths) == 2
+
+    # One delete file applying to both data files.
+    tbl = _add_position_deletes(
+        tbl, {paths[0]: [0, 2], paths[1]: [4]}, single_delete_file=True
+    )
+
+    # The row count comes from metadata only: reading delete files that reference
+    # several data files is not supported yet.
+    lf = pl.scan_iceberg(tbl, fast_deletion_count=True)
+    assert lf.select(pl.len()).collect().item() == 2 * TEST_DF.height - 3
+
+
+def test_iceberg_plugin_time_travel_filter_uses_snapshot_schema(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "x", LongType()),
+            NestedField(2, "y", LongType()),
+        ),
+    )
+    df = pl.DataFrame({"x": [1, 2, 3], "y": [100, 200, 300]})
+    tbl.append(df.to_arrow())
+    first = tbl.current_snapshot().snapshot_id
+
+    # Swap the names: in the current schema, `x` is field 2.
+    with tbl.update_schema() as update:
+        update.rename_column("x", "tmp")
+    with tbl.update_schema() as update:
+        update.rename_column("y", "x")
+    with tbl.update_schema() as update:
+        update.rename_column("tmp", "y")
+    tbl.append(pl.DataFrame({"y": [4], "x": [400]}).to_arrow())
+
+    # `x` refers to field 1 in the snapshot's schema; binding it to the current schema
+    # (field 2, with bounds [100, 300]) would prune the only file.
+    predicate = pl.col("x") == 2
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, snapshot_id=first).filter(predicate).collect(),
+        df.filter(predicate),
+    )
+
+
 def test_iceberg_plugin_prunes_partitions(tmp_path: Path) -> None:
     from pyiceberg.partitioning import PartitionField, PartitionSpec
     from pyiceberg.transforms import DayTransform, IdentityTransform
@@ -629,6 +692,61 @@ def test_iceberg_plugin_nan_is_not_pruned(tmp_path: Path) -> None:
         pl.col("v") < 0.5,
         pl.col("v").is_nan(),
         pl.col("v").is_not_nan(),
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
+@pytest.mark.parametrize("planner", ["plugin", "pyiceberg"])
+def test_iceberg_plugin_float_literals_are_exact(
+    tmp_path: Path, planner: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from decimal import Decimal
+
+    from pyiceberg.types import DecimalType, DoubleType, FloatType
+
+    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "d", DoubleType()),
+            NestedField(2, "f", FloatType()),
+            NestedField(3, "dec", DecimalType(20, 6)),
+        ),
+    )
+    df = pl.DataFrame(
+        {
+            # Values that lose precision when rounded to a few significant digits,
+            # or when parsed slightly inexactly.
+            "d": [0.123456789012345, 123456789.98765433, 1.0],
+            "f": pl.Series([0.1, 3.4e38, float("inf")], dtype=pl.Float32),
+            "dec": pl.Series(
+                [Decimal("12345678901234.123456"), Decimal("1"), Decimal("2")],
+                dtype=pl.Decimal(20, 6),
+            ),
+        }
+    )
+    # One file per row, so that each row is subject to pruning on its own.
+    for i in range(df.height):
+        tbl.append(df.slice(i, 1).to_arrow().cast(tbl.schema().as_arrow()))
+
+    for predicate in [
+        pl.col("d").is_in([0.123456789012345]),
+        pl.col("d").is_in([123456789.98765433]),
+        pl.col("d") == 123456789.98765433,
+        pl.col("f").is_in(pl.Series([0.1], dtype=pl.Float32).implode()),
+        pl.col("f").is_in(pl.Series([3.4e38], dtype=pl.Float32).implode()),
+        pl.col("f") == float("inf"),
+        pl.col("f").is_in(pl.Series([float("inf")], dtype=pl.Float32).implode()),
+        pl.col("dec").is_in(
+            pl.Series(
+                [Decimal("12345678901234.123456")], dtype=pl.Decimal(20, 6)
+            ).implode()
+        ),
     ]:
         assert_frame_equal(
             pl.scan_iceberg(tbl).filter(predicate).collect(),

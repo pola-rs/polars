@@ -133,9 +133,24 @@ fn series_to_pyarrow_list(s: &Series) -> Option<String> {
             AnyValue::Array(_, _) => return None,
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(_, _, _) => return None,
-            _ => {
+            // The `Display` impls round (floats to ~6 significant digits,
+            // decimals through `f64` on the Python side), so a value in the
+            // list would no longer match itself.
+            #[cfg(feature = "dtype-decimal")]
+            AnyValue::Decimal(_, _, _) => return None,
+            av if av.dtype().is_float() => {
+                // Same rendering as a scalar literal; NaN and inf have no
+                // Python literal.
+                let v = av.extract::<f64>()?;
+                if !v.is_finite() {
+                    return None;
+                }
+                write!(list_repr, "{v},").unwrap();
+            },
+            av if av.dtype().is_integer() => {
                 write!(list_repr, "{av},").unwrap();
             },
+            _ => return None,
         }
     }
     // pop last comma
@@ -222,6 +237,11 @@ pub fn predicate_to_pa(
                 av => {
                     if dtype.is_float() {
                         let val = av.extract::<f64>()?;
+                        // `inf` is not a Python literal (NaN is special-cased by
+                        // the consumers as a comparison operand).
+                        if val.is_infinite() {
+                            return None;
+                        }
                         Some(format!("{val}"))
                     } else if dtype.is_integer() {
                         let val = av.extract::<i64>()?;
