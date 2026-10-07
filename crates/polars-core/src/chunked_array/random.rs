@@ -67,7 +67,8 @@ fn ensure_shape(n: usize, len: usize, with_replacement: bool) -> PolarsResult<()
     polars_ensure!(
         with_replacement || n <= len,
         ShapeMismatch:
-        "cannot take a larger sample than the total population when `with_replacement=false`"
+        "cannot take a larger sample than the total population when `with_replacement=false` (sample size: {}, population: {})",
+        n, len
     );
     Ok(())
 }

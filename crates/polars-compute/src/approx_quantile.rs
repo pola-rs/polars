@@ -128,7 +128,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
     pub fn estimate_quantile(&self, quantile: f64) -> PolarsResult<Option<&T>> {
         polars_ensure!(
             (0.0..=1.0).contains(&quantile),
-            ComputeError: "`quantile` should be between 0.0 and 1.0",
+            ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", quantile,
         );
         // We round with ties toward ∞ for consistency with the regular quantile.
         let num_items = self.num_items();

@@ -497,3 +497,39 @@ def test_gather_scalar_with_interleaved_nulls(
     assert_frame_equal(
         result.sort("x", nulls_last=nulls_last), pl.DataFrame({"x": values})
     )
+
+
+def test_gather_null_on_oob_group_by() -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 2], "x": [1.0, 2.0, 3.0]})
+    # Indices outside the Int64 range.
+    wide_idx = pl.Series([0, 2**63, -(2**63) - 1], dtype=pl.Int128)
+    q = lf.group_by("g").agg(
+        pos=pl.col("x").gather([0, 5], null_on_oob=True),
+        neg=pl.col("x").gather([-1, -5], null_on_oob=True),
+        big=pl.col("x").gather([0, 2**32], null_on_oob=True),
+        wide=pl.col("x").gather(wide_idx, null_on_oob=True),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "pos": [[1.0, None], [2.0, None]],
+            "neg": [[1.0, None], [3.0, None]],
+            "big": [[1.0, None], [2.0, None]],
+            "wide": [[1.0, None, None], [2.0, None, None]],
+        }
+    )
+    for engine in ["in-memory", "streaming"]:
+        assert_frame_equal(
+            q.collect(engine=engine),  # type: ignore[call-overload]
+            expected,
+            check_row_order=False,
+        )
+    with pytest.raises(OutOfBoundsError):
+        lf.group_by("g").agg(pl.col("x").gather([0, 5])).collect()
+
+    assert_frame_equal(
+        lf.select(pl.col("x").gather(wide_idx, null_on_oob=True)).collect(),
+        pl.DataFrame({"x": [1.0, None, None]}),
+    )
+    with pytest.raises(OutOfBoundsError):
+        lf.select(pl.col("x").gather(wide_idx)).collect()

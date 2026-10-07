@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import InvalidOperationError
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -815,6 +816,21 @@ def test_when_then_simplification() -> None:
     )
 
 
+def test_when_then_simplification_scalar_branches() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    q = lf.group_by("g", maintain_order=True).agg(
+        pl.when(True).then(pl.col("a").max()).otherwise(pl.col("a").min())
+    )
+    assert "when" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"g": [1, 2], "a": [2, 3]}))
+
+    # A scalar branch next to a column branch is not folded, as it would change the
+    # height.
+    q = lf.select(pl.when(True).then(pl.col("a").max()).otherwise(pl.col("a")))
+    assert "when" in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [3, 3, 3]}))
+
+
 def test_when_then_in_group_by_aggregated_22922() -> None:
     df = pl.DataFrame({"group": ["x", "y", "x", "y"], "value": [1, 2, 3, 4]})
     out = df.group_by("group", maintain_order=True).agg(
@@ -879,6 +895,16 @@ def test_when_then_scalar_condition_on_empty_frame_with_cse() -> None:
     expected = pl.DataFrame(
         schema={"x": pl.Int64, "y": pl.Float64, "z": pl.Int64},
     )
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+@pytest.mark.parametrize("height", [0, 3])
+def test_when_then_scalar_condition_with_cse_scalar_branch(height: int) -> None:
+    n = (pl.col("x") > 5).sum()
+    q = pl.LazyFrame({"x": range(height)}, schema={"x": pl.Int64}).select(
+        pl.when(n > 0).then(n * 2)
+    )
+    expected = pl.DataFrame({"x": [None]}, schema={"x": get_index_type()})
     assert_frame_equal(q.collect(engine="in-memory"), expected)
 
 

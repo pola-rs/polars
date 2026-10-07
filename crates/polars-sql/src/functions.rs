@@ -3,7 +3,7 @@ use std::ops::Sub;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
-    polars_err,
+    polars_ensure, polars_err,
 };
 use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
@@ -11,6 +11,7 @@ use polars_defs::expr::{RankMethod, RankOptions};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
 use polars_lazy::prelude::ApproxQuantileMethod;
+use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
     coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal, min_horizontal,
     when,
@@ -44,6 +45,18 @@ pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) filter: Option<Expr>,
     /// The `OVER` clause, with named windows resolved.
     pub(crate) window: Option<WindowSpec>,
+    /// Whether the value arguments are read once per row, as by an aggregate without `OVER`
+    /// (see `parse_sql_arg`).
+    pub(crate) reads_rows: bool,
+}
+
+/// A parsed value argument. The constant argument of an aggregate without OVER is kept apart:
+/// the aggregate follows from the constant and the number of rows read, while reading the
+/// constant once per row would materialize it.
+enum ValueArg {
+    /// Read once per row, and subject to FILTER.
+    Rows(Expr),
+    Constant(Expr),
 }
 
 /// SQL functions that are supported by Polars
@@ -1220,8 +1233,18 @@ impl PolarsSQLFunctions {
         ctx: &SQLContext,
         call: &Expr,
     ) -> PolarsResult<bool> {
-        use PolarsSQLFunctions::*;
         Ok(match Self::try_from_sql(function, ctx)? {
+            Self::Udf(_) => {
+                matches!(call, Expr::AnonymousFunction { options, .. } if options.returns_scalar())
+            },
+            function => function.is_builtin_aggregate(),
+        })
+    }
+
+    /// Whether this is a SQL aggregate function when called without OVER.
+    fn is_builtin_aggregate(&self) -> bool {
+        use PolarsSQLFunctions::*;
+        match self {
             #[cfg(feature = "approx_quantile")]
             ApproxQuantile => true,
             ArrayAgg | Avg | Corr | Count | CovarPop | CovarSamp | First | Last | Max | Median
@@ -1230,11 +1253,8 @@ impl PolarsSQLFunctions {
             },
             // Without OVER, FIRST_VALUE is FIRST.
             FirstValue => true,
-            Udf(_) => {
-                matches!(call, Expr::AnonymousFunction { options, .. } if options.returns_scalar())
-            },
             _ => false,
-        })
+        }
     }
 }
 
@@ -1254,8 +1274,27 @@ impl SQLFunctionVisitor<'_> {
             polars_bail!(SQLInterface: "'IGNORE|RESPECT NULLS' is not currently supported")
         }
         if let Some(filter_expr) = &function.filter {
-            self.filter = Some(parse_sql_expr(filter_expr, self.ctx, self.active_schema)?);
+            let pred = parse_sql_expr(filter_expr, self.ctx, self.active_schema)?;
+            // As in WHERE, a condition that reads no input is accepted as any type that casts
+            // to boolean.
+            let pred = if is_constant_key(&pred) {
+                pred.cast(DataType::Boolean)
+            } else {
+                pred
+            };
+            // A constant aggregate counts the rows that pass, which needs a boolean.
+            if let Some(schema) = self.active_schema
+                && let Ok(field) = pred.to_field(schema)
+                && field.dtype.is_known()
+            {
+                polars_ensure!(
+                    field.dtype.is_bool(),
+                    InvalidOperation: "filter predicate must be of type `Boolean`, got `{}`", field.dtype
+                );
+            }
+            self.filter = Some(pred);
         }
+        self.reads_rows = self.window.is_none() && function_name.is_builtin_aggregate();
         self.check_window_shape(&function_name)?;
         if self.window.is_some() && is_frame_aggregate(&function_name, self.is_distinct()) {
             return self.visit_window_aggregate(&function_name);
@@ -1765,11 +1804,11 @@ impl SQLFunctionVisitor<'_> {
             Count => self.visit_count(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
-            First => self.visit_unary(Expr::first),
+            First => self.visit_unary_aggregate(Expr::first),
             Grouping | GroupingId => self.visit_grouping(),
-            Last => self.visit_unary(Expr::last),
+            Last => self.visit_unary_aggregate(Expr::last),
             Max => self.visit_min_max(Expr::max),
-            Median => self.visit_unary(Expr::median),
+            Median => self.visit_unary_aggregate(Expr::median),
             QuantileCont | QuantileDisc => {
                 let (fname, method) = if matches!(function_name, QuantileCont) {
                     ("QUANTILE_CONT", QuantileMethod::Linear)
@@ -1777,22 +1816,29 @@ impl SQLFunctionVisitor<'_> {
                     ("QUANTILE_DISC", QuantileMethod::Equiprobable)
                 };
                 let args = extract_args(function)?;
-                match args.len() {
-                    2 => self.try_visit_binary(|e, q| {
-                        let value = parse_quantile_literal(q, fname, args[1])?;
-                        Ok(e.quantile(value, method))
-                    }),
+                match args.as_slice() {
+                    [
+                        FunctionArgExpr::Expr(value),
+                        FunctionArgExpr::Expr(quantile),
+                    ] => {
+                        // Parameters are not subject to an active FILTER clause; only the values are.
+                        let quantile = parse_sql_expr(quantile, self.ctx, self.active_schema)?;
+                        let quantile = parse_quantile_literal(quantile, fname, args[1])?;
+                        let e =
+                            self.aggregate_value(value, |e| e.quantile(quantile.clone(), method))?;
+                        self.apply_window_spec(e)
+                    },
                     _ => {
                         polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len())
                     },
                 }
             },
             Min => self.visit_min_max(Expr::min),
-            StdDev => self.visit_unary(|e| e.std(1)),
+            StdDev => self.visit_spread_aggregate(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
             Sum => self.visit_sum(),
             Total => self.visit_total(),
-            Variance => self.visit_unary(|e| e.var(1)),
+            Variance => self.visit_spread_aggregate(|e| e.var(1)),
 
             // ----
             // Array functions
@@ -1868,7 +1914,7 @@ impl SQLFunctionVisitor<'_> {
             // Window functions
             // ----
             // With an OVER clause, see `visit_window_value`.
-            FirstValue => self.visit_unary(Expr::first),
+            FirstValue => self.visit_unary_aggregate(Expr::first),
             LastValue => self.visit_unary(|e| e),
             NthValue => polars_bail!(SQLSyntax: "NTH_VALUE requires an OVER clause"),
             Lag => self.visit_window_offset_function(1),
@@ -2159,13 +2205,61 @@ impl SQLFunctionVisitor<'_> {
         Ok(())
     }
 
-    /// Parse an argument of the function currently being visited.
+    /// Parse a value argument of the function currently being visited, as opposed to a
+    /// parameter.
     ///
     /// Behaves like [`parse_sql_expr`] but also accounts for any
     /// active `FILTER (WHERE …)` clause from the surrounding call.
     fn parse_sql_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        Ok(match self.parse_value_arg(expr)? {
+            ValueArg::Rows(e) => e,
+            // A function that reads its values once per row reads a constant once per row too.
+            ValueArg::Constant(c) => self.apply_filter(polars_lazy::dsl::repeat(c, len())),
+        })
+    }
+
+    /// Parse a value argument, keeping a constant that is read once per row apart (see
+    /// [`ValueArg`]).
+    fn parse_value_arg(&mut self, expr: &SQLExpr) -> PolarsResult<ValueArg> {
         let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
-        Ok(self.apply_filter(parsed))
+        if self.reads_rows {
+            for e in &parsed {
+                if let Expr::SubPlan(_, names) = e {
+                    let read_per_row = &mut self.ctx.group_scope.subqueries_read_per_row;
+                    read_per_row.extend(names.iter().map(|(name, _)| name.clone()));
+                }
+            }
+        }
+        Ok(if self.reads_rows && is_constant_key(&parsed) {
+            ValueArg::Constant(parsed)
+        } else {
+            ValueArg::Rows(self.apply_filter(parsed))
+        })
+    }
+
+    /// The number of rows an aggregate reads: all rows, or those that pass FILTER.
+    fn rows_read(&self) -> Expr {
+        match &self.filter {
+            // A constant predicate holds for all rows or none.
+            Some(pred) if is_constant_key(pred) => when(pred.clone()).then(len()).otherwise(lit(0)),
+            Some(pred) => pred.clone().sum(),
+            None => len(),
+        }
+    }
+
+    /// An aggregate whose value over a constant is that constant, if any row is read, as MIN
+    /// or AVG.
+    fn aggregate_value(
+        &mut self,
+        sql_expr: &SQLExpr,
+        f: impl Fn(Expr) -> Expr,
+    ) -> PolarsResult<Expr> {
+        Ok(match self.parse_value_arg(sql_expr)? {
+            ValueArg::Rows(e) => f(e),
+            ValueArg::Constant(c) => when(self.rows_read().gt(lit(0)))
+                .then(f(c))
+                .otherwise(Expr::Literal(LiteralValue::untyped_null())),
+        })
     }
 
     fn apply_filter(&self, expr: Expr) -> Expr {
@@ -2218,6 +2312,36 @@ impl SQLFunctionVisitor<'_> {
             _ => self.not_supported_error(),
         }
         .and_then(|e| self.apply_window_spec(e))
+    }
+
+    /// Like `visit_unary`, for an aggregate whose value over a constant is that constant.
+    fn visit_unary_aggregate(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let sql_expr = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => sql_expr,
+            [FunctionArgExpr::Wildcard] => &SQLExpr::Wildcard(AttachedToken::empty()),
+            _ => return self.not_supported_error(),
+        };
+        let e = self.aggregate_value(sql_expr, f)?;
+        self.apply_window_spec(e)
+    }
+
+    /// Like `visit_unary`, for STDDEV or VARIANCE: over two or more rows, the sample spread of
+    /// a constant is that of two copies of it (0, or NaN for a value that is not finite).
+    fn visit_spread_aggregate(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let sql_expr = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => sql_expr,
+            [FunctionArgExpr::Wildcard] => &SQLExpr::Wildcard(AttachedToken::empty()),
+            _ => return self.not_supported_error(),
+        };
+        let e = match self.parse_value_arg(sql_expr)? {
+            ValueArg::Rows(e) => f(e),
+            ValueArg::Constant(c) => when(self.rows_read().gt(lit(1)))
+                .then(f(polars_lazy::dsl::repeat(c, lit(2))))
+                .otherwise(Expr::Literal(LiteralValue::untyped_null())),
+        };
+        self.apply_window_spec(e)
     }
 
     fn visit_binary<Arg: FromSQLExpr>(
@@ -2387,7 +2511,6 @@ impl SQLFunctionVisitor<'_> {
             ),
         };
 
-        let expr = self.parse_sql_arg(value_arg)?;
         // Parameters are not subject to an active FILTER clause; only the values are.
         let quantile = parse_sql_expr(quantile_arg, self.ctx, self.active_schema)?;
         let quantile = parse_quantile_literal(quantile, "APPROX_QUANTILE", args[1])?;
@@ -2408,7 +2531,10 @@ impl SQLFunctionVisitor<'_> {
             None => ApproxQuantileMethod::Auto,
         };
 
-        self.apply_window_spec(expr.approx_quantile(quantile, error, false, method))
+        let expr = self.aggregate_value(value_arg, |e| {
+            e.approx_quantile(quantile.clone(), error, false, method.clone())
+        })?;
+        self.apply_window_spec(expr)
     }
 
     fn visit_string_agg(&mut self) -> PolarsResult<Expr> {
@@ -2516,54 +2642,49 @@ impl SQLFunctionVisitor<'_> {
 
     fn visit_avg(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
-        let mut arg = match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
-            [FunctionArgExpr::Wildcard] => {
-                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
-            },
+        let sql_expr = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => sql_expr,
+            [FunctionArgExpr::Wildcard] => &SQLExpr::Wildcard(AttachedToken::empty()),
             _ => return self.not_supported_error(),
         };
-        if is_distinct {
-            arg = arg.unique();
-        }
-        Ok(arg.mean())
+        self.aggregate_value(sql_expr, |arg| {
+            if is_distinct { arg.unique() } else { arg }.mean()
+        })
     }
 
     /// Like `visit_unary`, but also accepts a DISTINCT modifier, which is a no-op for MIN/MAX.
     fn visit_min_max(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         let (args, _) = extract_args_distinct(self.func)?;
-        match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr)] => Ok(f(self.parse_sql_arg(sql_expr)?)),
-            [FunctionArgExpr::Wildcard] => Ok(f(
-                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
-            )),
-            _ => self.not_supported_error(),
-        }
+        let sql_expr = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => sql_expr,
+            [FunctionArgExpr::Wildcard] => &SQLExpr::Wildcard(AttachedToken::empty()),
+            _ => return self.not_supported_error(),
+        };
+        self.aggregate_value(sql_expr, f)
     }
 
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
-        // COUNT(*), COUNT(1) with FILTER: count rows where the predicate is true.
-        let count_star = || match &self.filter {
-            Some(pred) => pred.clone().sum(),
-            None => len(),
-        };
+        let distinct_count = |e: Expr| e.clone().n_unique().sub(e.null_count().gt(lit(0)));
         let count_expr = match (is_distinct, args.as_slice()) {
             // COUNT(*), COUNT()
-            (false, [FunctionArgExpr::Wildcard] | []) => count_star(),
+            (false, [FunctionArgExpr::Wildcard] | []) => self.rows_read(),
             // COUNT(<non-null literal>) is equivalent to COUNT(*)
             (false, [FunctionArgExpr::Expr(sql_expr)]) if is_non_null_literal(sql_expr) => {
-                count_star()
+                self.rows_read()
             },
             // COUNT(col)
-            (false, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr = self.parse_sql_arg(sql_expr)?;
-                expr.count()
+            (false, [FunctionArgExpr::Expr(sql_expr)]) => match self.parse_value_arg(sql_expr)? {
+                ValueArg::Rows(e) => e.count(),
+                // A constant is counted once per row read, unless it is NULL.
+                ValueArg::Constant(c) => c.count() * self.rows_read(),
             },
             // COUNT(DISTINCT col)
-            (true, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr = self.parse_sql_arg(sql_expr)?;
-                expr.clone().n_unique().sub(expr.null_count().gt(lit(0)))
+            (true, [FunctionArgExpr::Expr(sql_expr)]) => match self.parse_value_arg(sql_expr)? {
+                ValueArg::Rows(e) => distinct_count(e),
+                ValueArg::Constant(c) => when(self.rows_read().gt(lit(0)))
+                    .then(distinct_count(c))
+                    .otherwise(lit(0)),
             },
             _ => self.not_supported_error()?,
         };
@@ -2571,36 +2692,56 @@ impl SQLFunctionVisitor<'_> {
     }
 
     fn visit_sum(&mut self) -> PolarsResult<Expr> {
-        let (args, is_distinct) = extract_args_distinct(self.func)?;
-        let mut arg = match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
-            [FunctionArgExpr::Wildcard] => {
-                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
-            },
-            _ => return self.not_supported_error(),
-        };
-        if is_distinct {
-            // Also bypasses the literal fast path, no longer matching a literal
-            // once wrapped.
-            arg = arg.unique();
-        }
-        Ok(sql_sum(arg))
+        let (arg, is_distinct) = self.parse_sum_arg()?;
+        Ok(match arg {
+            ValueArg::Rows(arg) => sql_sum(if is_distinct { arg.unique() } else { arg }),
+            ValueArg::Constant(c) => self.sum_of_constant(c, is_distinct),
+        })
     }
 
     fn visit_total(&mut self) -> PolarsResult<Expr> {
-        let (args, is_distinct) = extract_args_distinct(self.func)?;
-        let mut arg = match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
-            [FunctionArgExpr::Wildcard] => {
-                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+        let (arg, is_distinct) = self.parse_sum_arg()?;
+        let total = match arg {
+            ValueArg::Rows(arg) => {
+                let arg = if is_distinct { arg.unique() } else { arg };
+                literal_sum(&arg).unwrap_or_else(|| arg.sum())
             },
+            // TOTAL is 0 when no value is read.
+            ValueArg::Constant(c) => self.sum_of_constant(c, is_distinct).fill_null(lit(0)),
+        };
+        Ok(total.cast(DataType::Float64))
+    }
+
+    fn parse_sum_arg(&mut self) -> PolarsResult<(ValueArg, bool)> {
+        let (args, is_distinct) = extract_args_distinct(self.func)?;
+        let sql_expr = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => sql_expr,
+            [FunctionArgExpr::Wildcard] => &SQLExpr::Wildcard(AttachedToken::empty()),
             _ => return self.not_supported_error(),
         };
-        if is_distinct {
-            arg = arg.unique();
-        }
-        let total = literal_sum(&arg).unwrap_or_else(|| arg.sum());
-        Ok(total.cast(DataType::Float64))
+        Ok((self.parse_value_arg(sql_expr)?, is_distinct))
+    }
+
+    /// SUM of a constant: the SUM of the constant alone, times the number of rows read without
+    /// DISTINCT, in the dtype of that SUM. NULL when no row is read or the constant is NULL.
+    fn sum_of_constant(&self, c: Expr, is_distinct: bool) -> Expr {
+        // Integer literals are summed as Int64, as in `literal_sum`.
+        let c = match c {
+            e @ Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
+                e.cast(DataType::Int64)
+            },
+            e => e,
+        };
+        let rows = self.rows_read();
+        let sum = c.clone().sum();
+        let total = if is_distinct {
+            sum
+        } else {
+            (sum.clone() * rows.clone()).cast(DataTypeExpr::OfExpr(Box::new(sum)))
+        };
+        when(rows.gt(lit(0)).and(c.is_not_null()))
+            .then(total)
+            .otherwise(Expr::Literal(LiteralValue::untyped_null()))
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {
@@ -2709,7 +2850,7 @@ impl SQLFunctionVisitor<'_> {
         })
     }
 
-    pub(crate) fn not_supported_error(&self) -> PolarsResult<Expr> {
+    pub(crate) fn not_supported_error<T>(&self) -> PolarsResult<T> {
         polars_bail!(
             SQLInterface:
             "no function matches the given name and arguments: `{}`",
@@ -2870,7 +3011,7 @@ pub(crate) fn sql_sum(arg: Expr) -> Expr {
 fn literal_sum(arg: &Expr) -> Option<Expr> {
     match arg {
         Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
-            Some((arg.clone() * len()).cast(DataType::Int64))
+            Some(arg.clone() * len().cast(DataType::Int64))
         },
         Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))) => Some(arg.clone() * len()),
         _ if decimal_literal(arg).is_some() => Some(arg.clone() * len()),

@@ -151,33 +151,21 @@ pub(super) fn simplify_ternary(
 ) -> Option<AExpr> {
     let predicate = expr_arena.get(predicate);
 
-    if let AExpr::Literal(lv) = predicate {
-        match lv.bool() {
-            None => {},
-            Some(true) => {
-                // Only replace if both are scalar or both are not scalar and are the same length,
-                // the latter is tested by checking if they are elementwise.
-                let t_is_scalar = is_scalar_ae(truthy, expr_arena);
-                let f_is_scalar = is_scalar_ae(falsy, expr_arena);
+    if let AExpr::Literal(lv) = predicate
+        && let Some(predicate) = lv.bool()
+    {
+        // Only replace if both are scalar or both are not scalar and are the same length,
+        // the latter is tested by checking if they are elementwise.
+        let t_is_scalar = is_scalar_ae(truthy, expr_arena);
+        let f_is_scalar = is_scalar_ae(falsy, expr_arena);
 
-                if t_is_scalar == f_is_scalar
-                    && is_elementwise_rec(truthy, expr_arena)
-                    && is_elementwise_rec(falsy, expr_arena)
-                {
-                    return Some(expr_arena.get(truthy).clone());
-                }
-            },
-            Some(false) => {
-                let t_is_scalar = is_scalar_ae(truthy, expr_arena);
-                let f_is_scalar = is_scalar_ae(falsy, expr_arena);
-
-                if t_is_scalar == f_is_scalar
-                    && is_elementwise_rec(truthy, expr_arena)
-                    && is_elementwise_rec(falsy, expr_arena)
-                {
-                    return Some(expr_arena.get(falsy).clone());
-                }
-            },
+        if t_is_scalar == f_is_scalar
+            && (t_is_scalar
+                || (is_elementwise_rec(truthy, expr_arena)
+                    && is_elementwise_rec(falsy, expr_arena)))
+        {
+            let branch = if predicate { truthy } else { falsy };
+            return Some(expr_arena.get(branch).clone());
         }
     }
 
