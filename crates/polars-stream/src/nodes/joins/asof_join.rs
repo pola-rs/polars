@@ -221,6 +221,8 @@ impl ComputeNode for AsOfJoinNode {
             AsOfJoinState::Done => {
                 recv.fill(PortState::Done);
                 send[0] = PortState::Done;
+                self.left_buffer = VecDeque::new();
+                self.right_buffer = self.right_buffer.empty_clone();
             },
         }
 

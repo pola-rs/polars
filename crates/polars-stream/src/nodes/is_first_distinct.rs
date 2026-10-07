@@ -48,6 +48,11 @@ impl ComputeNode for IsFirstDistinctNode {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
         recv.swap_with_slice(send);
+        if recv[0] == PortState::Done || send[0] == PortState::Done {
+            self.grouper = self.grouper.new_empty();
+            self.subset = Vec::new();
+            self.group_idxs = Vec::new();
+        }
         Ok(())
     }
 
