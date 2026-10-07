@@ -151,8 +151,8 @@ pub fn set_query_monitoring(
 
     let module = py.import(POLARS_CLOUD_PACKAGE_NAME).map_err(|e| {
         PyRuntimeError::new_err(format!(
-            "query monitoring requires the `polars_cloud>=0.11.0` package, which could not be imported. \
-             Install it into this environment (e.g. `pip install 'polars-cloud>=0.11.0'`). ({e})",
+            "query monitoring requires the `polars_cloud>=0.13.0` package, which could not be imported. \
+             Install it into this environment (e.g. `pip install 'polars-cloud>=0.13.0'`). ({e})",
         ))
     })?;
     let cls = module

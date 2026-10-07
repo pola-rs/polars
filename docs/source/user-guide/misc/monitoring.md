@@ -17,7 +17,7 @@ source paths, and any literals you wrote into the query.
 - The `polars-cloud` package in the same environment as Polars:
 
 ```bash
-pip install 'polars-cloud>=0.11.0'
+pip install 'polars-cloud>=0.13.0'
 ```
 
 ## Enabling monitoring
