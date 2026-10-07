@@ -2307,9 +2307,12 @@ def test_cspe_filter_on_redefined_column_not_pushed_into_cache_29788(
 
     def proj(v: str) -> pl.LazyFrame:
         # Redefines "c" in terms of the original "c".
-        return getattr(base, method)(
-            (pl.col("c") + pl.col("d")).alias("c"), pl.col(v).alias("x")
-        ).select("c", "x")
+        exprs = [(pl.col("c") + pl.col("d")).alias("c"), pl.col(v).alias("x")]
+        if method == "select":
+            lf = base.select(exprs)
+        else:
+            lf = base.with_columns(exprs)
+        return lf.select("c", "x")
 
     q = pl.concat([proj("v"), proj("w")]).filter(pl.col("c") == "ax")
 
