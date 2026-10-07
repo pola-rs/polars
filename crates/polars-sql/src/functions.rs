@@ -19,6 +19,7 @@ use polars_plan::dsl::functions::{
 use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, RowEncodingVariant, typed_lit};
 use polars_plan::prelude::StrptimeOptions;
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
@@ -1280,20 +1281,25 @@ impl SQLFunctionVisitor<'_> {
             let typed_pred = self.with_typed_subqueries(&pred)?;
             // As in WHERE, a condition that reads no input is accepted as any type that casts
             // to boolean.
-            let pred = if is_constant_key(&typed_pred) {
+            let pred = if reads_no_input(&typed_pred) {
                 pred.cast(DataType::Boolean)
             } else {
                 // The rows that pass are counted, which needs a boolean.
-                if let Some(schema) = self.active_schema
-                    && let Ok(field) = typed_pred.to_field(schema)
-                    && field.dtype.is_known()
-                {
-                    polars_ensure!(
-                        field.dtype.is_bool(),
-                        InvalidOperation: "filter predicate must be of type `Boolean`, got `{}`", field.dtype
-                    );
+                let dtype = self
+                    .active_schema
+                    .and_then(|schema| Some(typed_pred.to_field(schema).ok()?.dtype))
+                    .filter(|dtype| dtype.is_known());
+                match dtype {
+                    Some(dtype) => {
+                        polars_ensure!(
+                            dtype.is_bool(),
+                            InvalidOperation: "filter predicate must be of type `Boolean`, got `{}`", dtype
+                        );
+                        pred
+                    },
+                    // Otherwise `when` checks for a boolean when it runs.
+                    None => when(pred).then(lit(true)).otherwise(lit(false)),
                 }
-                pred
             };
             self.filter = Some(pred);
         }
@@ -2246,17 +2252,28 @@ impl SQLFunctionVisitor<'_> {
         }
     }
 
-    /// `expr` with each scalar subquery replaced by a null of its dtype, so that it can be
-    /// typed before the subqueries are resolved.
+    /// `expr` with each subquery, and each read of its result, replaced by a null of its dtype,
+    /// so that it can be typed before the subqueries are resolved.
     fn with_typed_subqueries(&mut self, expr: &Expr) -> PolarsResult<Expr> {
-        expr.clone().try_map_expr(|e| match e {
-            Expr::SubPlan(lp, names) => {
-                let mut lf = LazyFrame::from((**lp).clone()).select([names[0].1.clone()]);
-                let schema = self.ctx.get_frame_schema(&mut lf)?;
-                Ok(lit(Scalar::null(schema.get_at_index(0).unwrap().1.clone())))
-            },
-            e => Ok(e),
-        })
+        let mut dtypes = PlHashMap::default();
+        for e in expr {
+            if let Expr::SubPlan(lp, names) = e {
+                for (name, select_expr) in names.iter() {
+                    let mut lf = LazyFrame::from((***lp).clone()).select([select_expr.clone()]);
+                    let schema = self.ctx.get_frame_schema(&mut lf)?;
+                    dtypes.insert(name.clone(), schema.get_at_index(0).unwrap().1.clone());
+                }
+            }
+        }
+        if dtypes.is_empty() {
+            return Ok(expr.clone());
+        }
+        let typed_null = |name: &PlSmallStr| lit(Scalar::null(dtypes[name].clone()));
+        Ok(expr.clone().map_expr(|e| match &e {
+            Expr::SubPlan(_, names) => typed_null(&names[0].0),
+            Expr::Column(name) if dtypes.contains_key(name) => typed_null(name),
+            _ => e,
+        }))
     }
 
     /// The number of rows an aggregate reads: all rows, or those that pass FILTER.
@@ -2884,6 +2901,14 @@ impl SQLFunctionVisitor<'_> {
 /// Whether a window key is a scalar that doesn't depend on the input, as `1` or `LOWER('A')`.
 pub(crate) fn is_constant_key(key: &Expr) -> bool {
     matches!(key.clone().meta().is_input_independent_scalar(), Ok(true))
+}
+
+/// Whether `expr` reads no column of the input. Unlike [`is_constant_key`], this also holds for
+/// an aggregate or membership test of constants, as `MAX(1)` or `1 IN (1, 2)`.
+fn reads_no_input(expr: &Expr) -> bool {
+    !expr
+        .into_iter()
+        .any(|e| matches!(e, Expr::Column(_) | Expr::Selector(_) | Expr::Len))
 }
 
 /// The sort key of a window ORDER BY. Several keys are row-encoded into one, so that each key

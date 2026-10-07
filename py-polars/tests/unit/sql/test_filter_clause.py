@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLInterfaceError
+from polars.exceptions import InvalidOperationError, SchemaError, SQLInterfaceError
 from tests.unit.sql import assert_sql_matches
 
 
@@ -177,9 +177,26 @@ def test_filter_clause_with_over_unsupported() -> None:
 @pytest.mark.parametrize("agg", ["SUM(2)", "COUNT(*)", "SUM(x)"])
 def test_filter_clause_non_boolean_error(agg: str) -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
-    for pred in ("x", "x + (SELECT 0)"):
+    for pred in (
+        "x",
+        "x + (SELECT 0)",
+        "x + CAST(x IN (SELECT x FROM self) AS INT)",
+        "x + CAST(x = ANY (SELECT x FROM self) AS INT)",
+    ):
         with pytest.raises(InvalidOperationError, match="must be of type `Boolean`"):
             df.sql(f"SELECT {agg} FILTER (WHERE {pred}) FROM self")
+    # Without a schema, the predicate is checked when it runs.
+    for engine in ("in-memory", "streaming"):
+        with pytest.raises(SchemaError, match="`Boolean`"):
+            df.lazy().select(pl.sql_expr(f"{agg} FILTER (WHERE x)")).collect(
+                engine=engine
+            )
+
+
+def test_filter_clause_subquery_non_boolean_cast_error() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(InvalidOperationError, match="casting from"):
+        df.sql("SELECT COUNT(*) FILTER (WHERE (SELECT 'abc')) FROM self")
 
 
 @pytest.mark.parametrize(
@@ -199,6 +216,16 @@ def test_filter_clause_non_boolean_error(agg: str) -> None:
           SUM(2) FILTER (WHERE (SELECT TRUE)) AS a,
           COUNT(*) FILTER (WHERE x > (SELECT 1)) AS b
         FROM self GROUP BY g ORDER BY g
+        """,
+        # A condition that reads no input is cast to boolean.
+        """
+        SELECT
+          COUNT(*) FILTER (WHERE (SELECT NULL)) AS a,
+          COUNT(*) FILTER (WHERE (SELECT 0)) AS b,
+          SUM(2) FILTER (WHERE (SELECT 1)) AS c,
+          SUM(2) FILTER (WHERE 1 + CAST(1 IN (SELECT x FROM self) AS INT)) AS d,
+          SUM(x) FILTER (WHERE 1 + CAST(1 = ANY (SELECT x FROM self) AS INT)) AS e
+        FROM self
         """,
     ],
 )
