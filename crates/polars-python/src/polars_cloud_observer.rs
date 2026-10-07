@@ -28,9 +28,9 @@ pub struct CloudStreamingMetricsHandle {
 #[pymethods]
 impl CloudStreamingMetricsHandle {
     fn snapshot_query_metrics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let rows = self.metrics.snapshot();
-        let bytes =
-            rmp_serde::to_vec_named(&rows).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let snapshot = self.metrics.snapshot();
+        let bytes = rmp_serde::to_vec_named(&snapshot)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(PyBytes::new(py, &bytes))
     }
 }

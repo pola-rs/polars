@@ -295,8 +295,12 @@ impl StreamingQuery {
             lines.sort_by_key(|(tot, _)| Reverse(*tot));
 
             let total_query_time = Duration::from_nanos(total_query_ns);
+            let query_metrics = m.query();
+            let io_total = Duration::from_nanos(query_metrics.io_total_active_ns);
+            let io_rx = Duration::from_nanos(query_metrics.io_rx_active_ns);
+            let io_tx = Duration::from_nanos(query_metrics.io_tx_active_ns);
             eprintln!(
-                "Streaming query took {query_elapsed:.2?} ({total_query_time:.2?} CPU), detailed breakdown:"
+                "Streaming query took {query_elapsed:.2?} ({total_query_time:.2?} CPU, {io_total:.2?} IO active: {io_rx:.2?} rx, {io_tx:.2?} tx), detailed breakdown:"
             );
             for (_tot, line) in lines {
                 eprintln!("{line}");

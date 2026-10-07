@@ -26,6 +26,23 @@ pub struct NodeMetricsDescription {
     pub custom: Vec<CustomMetricDescription>,
 }
 
+/// Metrics of the query as a whole, where summing node metrics would count concurrent work
+/// more than once.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct QueryMetricsDescription {
+    pub io_total_active_ns: u64,
+    pub io_rx_active_ns: u64,
+    pub io_tx_active_ns: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MetricsSnapshotDescription {
+    pub query: QueryMetricsDescription,
+    pub nodes: Vec<NodeMetricsDescription>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum MetricUnit {
     #[default]

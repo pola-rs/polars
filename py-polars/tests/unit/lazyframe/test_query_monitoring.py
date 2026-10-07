@@ -25,6 +25,8 @@ from tests.unit.conftest import mock_module_import
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from tests.conftest import PlMonkeyPatch
+
 
 def fake_cloud_observer() -> tuple[ModuleType, MagicMock]:
     module = ModuleType("polars_cloud")
@@ -359,7 +361,7 @@ def test_planned_payload_decodes() -> None:
 
 
 def test_metrics_handle_snapshot() -> None:
-    """The metrics handle snapshots to msgpack rows after the query runs."""
+    """The handle snapshots query and node metrics to msgpack after the query."""
     msgpack = pytest.importorskip("msgpack")
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
@@ -368,14 +370,78 @@ def test_metrics_handle_snapshot() -> None:
 
     # The handle stays valid after the query, so snapshot reflects real work.
     handle = observer.on_query_planned.call_args.args[1]
-    rows = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
 
+    # An in-memory source does no IO.
+    assert snap["query"] == {
+        "io_total_active_ns": 0,
+        "io_rx_active_ns": 0,
+        "io_tx_active_ns": 0,
+    }
+
+    rows = snap["nodes"]
     assert isinstance(rows, list)
     assert len(rows) > 0
     expected_keys = {"phys_node_key", "rows_sent", "rows_received", "done"}
     assert expected_keys <= set(rows[0].keys())
     assert any(r["done"] for r in rows)
     assert sum(r["rows_sent"] for r in rows) > 0
+
+
+def test_metrics_handle_snapshot_in_memory_engine() -> None:
+    """The in-memory engine snapshots zeroed query metrics and no nodes."""
+    msgpack = pytest.importorskip("msgpack")
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring()
+        _sample_lf().collect(engine="in-memory")
+
+    handle = observer.on_query_planned.call_args.args[1]
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
+
+    assert snap == {
+        "query": {
+            "io_total_active_ns": 0,
+            "io_rx_active_ns": 0,
+            "io_tx_active_ns": 0,
+        },
+        "nodes": [],
+    }
+
+
+@pytest.mark.write_disk
+def test_metrics_handle_snapshot_query_io(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    """Query IO time is the time any node had IO in flight, split by direction."""
+    msgpack = pytest.importorskip("msgpack")
+    # Same reader setup as the scan metrics tests in tests/unit/io/test_scan.py.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    left = tmp_path / "left.parquet"
+    right = tmp_path / "right.parquet"
+    pl.DataFrame({"k": range(10_000), "a": range(10_000)}).write_parquet(left)
+    pl.DataFrame({"k": range(10_000), "b": range(10_000)}).write_parquet(right)
+
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring()
+        pl.scan_parquet(left).join(pl.scan_parquet(right), on="k").collect(
+            engine="streaming"
+        )
+
+    handle = observer.on_query_planned.call_args.args[1]
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
+    query = snap["query"]
+    node_io = [r["io_total_active_ns"] for r in snap["nodes"]]
+
+    # Both scans read, and nothing was sent. Comparisons between timers only hold up to
+    # jitter when reads start concurrently on different threads; exact containment is
+    # covered by the single-threaded tests in polars-stream's metrics.rs.
+    assert sum(1 for t in node_io if t > 0) == 2
+    assert query["io_rx_active_ns"] > 0
+    assert query["io_tx_active_ns"] == 0
+    assert query["io_total_active_ns"] > 0
 
 
 def _observe_streaming(run: Callable[[], object]) -> MagicMock:

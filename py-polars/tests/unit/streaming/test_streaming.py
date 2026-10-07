@@ -453,3 +453,19 @@ def test_streaming_hconcat_strict_27372() -> None:
     result = lf.collect(engine="streaming")
     expected = lf.collect(engine="in-memory")
     assert_frame_equal(result, expected)
+
+
+def test_log_metrics_reports_query_io_time(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    plmonkeypatch.setenv("POLARS_LOG_METRICS", "1")
+    capfd.readouterr()
+    pl.LazyFrame({"a": [1, 2, 3]}).select(pl.col("a").sum()).collect(engine="streaming")
+    err = capfd.readouterr().err
+
+    [header] = (
+        line for line in err.splitlines() if line.startswith("Streaming query took")
+    )
+    assert " IO active: " in header
+    assert " rx, " in header
+    assert " tx), detailed breakdown:" in header
