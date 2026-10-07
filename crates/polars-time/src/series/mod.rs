@@ -287,7 +287,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Time => {
                 let format = get_strftime_format(format, s.dtype())?;
                 s.time()
-                    .map(|ca| ca.to_string(format.as_str()).into_series())
+                    .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
             },
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => s

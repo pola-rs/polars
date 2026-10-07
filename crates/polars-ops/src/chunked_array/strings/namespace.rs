@@ -6,6 +6,7 @@ use polars_core::prelude::arity::*;
 #[cfg(feature = "string_normalize")]
 use polars_defs::expr::UnicodeForm;
 use polars_utils::regex_cache::{compile_regex, with_regex_cache};
+use regex::{Regex, Replacer};
 
 use super::literal_chain::LiteralChain;
 use super::*;
@@ -19,6 +20,71 @@ where
     F: for<'a, 'b> FnMut(Option<&'a str>, Option<&'b str>) -> Option<bool>,
 {
     f
+}
+
+/// Write `s` into `buf` with the first `limit` matches of `reg` replaced by `rep` (all matches if
+/// `limit` is 0). Returns `false` if nothing matched; `buf` is then not filled.
+///
+/// This is [`Regex::replacen`] writing into a reused buffer.
+pub fn regex_replacen_into<R: Replacer>(
+    reg: &Regex,
+    s: &str,
+    limit: usize,
+    mut rep: R,
+    buf: &mut String,
+) -> bool {
+    buf.clear();
+    let mut last_match = 0;
+    if let Some(rep) = rep.no_expansion() {
+        let mut it = reg.find_iter(s).enumerate().peekable();
+        if it.peek().is_none() {
+            return false;
+        }
+        for (i, m) in it {
+            buf.push_str(&s[last_match..m.start()]);
+            buf.push_str(&rep);
+            last_match = m.end();
+            if limit > 0 && i >= limit - 1 {
+                break;
+            }
+        }
+        buf.push_str(&s[last_match..]);
+        return true;
+    }
+
+    let mut it = reg.captures_iter(s).enumerate().peekable();
+    if it.peek().is_none() {
+        return false;
+    }
+    for (i, cap) in it {
+        let m = cap.get(0).unwrap();
+        buf.push_str(&s[last_match..m.start()]);
+        rep.replace_append(&cap, buf);
+        last_match = m.end();
+        if limit > 0 && i >= limit - 1 {
+            break;
+        }
+    }
+    buf.push_str(&s[last_match..]);
+    true
+}
+
+fn regex_replacen<'a>(
+    ca: &'a StringChunked,
+    pat: &str,
+    val: &str,
+    limit: usize,
+) -> PolarsResult<StringChunked> {
+    let reg = compile_regex(pat)?;
+    let mut buf = String::new();
+    Ok(ca.apply_mut(|s: &'a str| {
+        if regex_replacen_into(&reg, s, limit, val, &mut buf) {
+            // SAFETY: `apply_mut` copies the returned value before the next call.
+            unsafe { std::mem::transmute::<&str, &'a str>(buf.as_str()) }
+        } else {
+            s
+        }
+    }))
 }
 
 #[cfg(feature = "string_to_integer")]
@@ -372,11 +438,8 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     /// Replace the leftmost regex-matched (sub)string with another string
-    fn replace<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
-        let reg = polars_utils::regex_cache::compile_regex(pat)?;
-        let f = |s: &'a str| reg.replace(s, val);
-        let ca = self.as_string();
-        Ok(ca.apply_values(f))
+    fn replace(&self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
+        regex_replacen(self.as_string(), pat, val, 1)
     }
 
     /// Replace the leftmost literal (sub)string with another string
@@ -422,9 +485,7 @@ pub trait StringNameSpaceImpl: AsString {
 
     /// Replace all regex-matched (sub)strings with another string
     fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
-        let ca = self.as_string();
-        let reg = polars_utils::regex_cache::compile_regex(pat)?;
-        Ok(ca.apply_values(|s| reg.replace_all(s, val)))
+        regex_replacen(self.as_string(), pat, val, 0)
     }
 
     /// Replace all matching literal (sub)strings with another string
