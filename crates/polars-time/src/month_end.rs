@@ -8,7 +8,13 @@ use polars_defs::time::duration::Duration;
 use crate::month_start::roll_backward;
 
 // roll forward to the last day of the month
-fn roll_forward(t: i64, time_zone: Option<&Tz>, tu: TimeUnit) -> PolarsResult<i64> {
+fn roll_forward(
+    t: i64,
+    time_zone: Option<&Tz>,
+    tu: TimeUnit,
+    one_month: &Duration,
+    minus_one_day: &Duration,
+) -> PolarsResult<i64> {
     // Use Ambiguous::Latest to roll back to the start of the month. It doesn't matter
     // if that timestamp lands on an ambiguous time as we then add 1 month anyway, we
     // could just as well use Ambiguous::Earliest.
@@ -18,11 +24,8 @@ fn roll_forward(t: i64, time_zone: Option<&Tz>, tu: TimeUnit) -> PolarsResult<i6
         _ => t,
     };
     let naive_month_start_t = roll_backward(naive_t, None, tu)?;
-    let naive_result = Duration::parse("-1d").add(
-        tu,
-        Duration::parse("1mo").add(tu, naive_month_start_t, None)?,
-        None,
-    )?;
+    let naive_result =
+        minus_one_day.add(tu, one_month.add(tu, naive_month_start_t, None)?, None)?;
     let result = match time_zone {
         #[cfg(feature = "timezones")]
         Some(tz) => tu.datetime_to_timestamp(
@@ -47,9 +50,13 @@ pub trait PolarsMonthEnd {
 
 impl PolarsMonthEnd for DatetimeChunked {
     fn month_end(&self, time_zone: Option<&Tz>) -> PolarsResult<Self> {
+        let one_month = Duration::parse("1mo");
+        let minus_one_day = Duration::parse("-1d");
         Ok(self
             .phys
-            .try_apply_nonnull_values_generic(|t| roll_forward(t, time_zone, self.time_unit()))?
+            .try_apply_nonnull_values_generic(|t| {
+                roll_forward(t, time_zone, self.time_unit(), &one_month, &minus_one_day)
+            })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }
@@ -57,8 +64,16 @@ impl PolarsMonthEnd for DatetimeChunked {
 impl PolarsMonthEnd for DateChunked {
     fn month_end(&self, _time_zone: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
+        let one_month = Duration::parse("1mo");
+        let minus_one_day = Duration::parse("-1d");
         let ret = self.phys.try_apply_nonnull_values_generic(|t| {
-            let fwd = roll_forward(MSECS_IN_DAY * t as i64, None, TimeUnit::Milliseconds)?;
+            let fwd = roll_forward(
+                MSECS_IN_DAY * t as i64,
+                None,
+                TimeUnit::Milliseconds,
+                &one_month,
+                &minus_one_day,
+            )?;
             PolarsResult::Ok((fwd / MSECS_IN_DAY) as i32)
         })?;
         Ok(ret.into_date())

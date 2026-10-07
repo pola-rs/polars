@@ -37,6 +37,8 @@ use super::credential_provider::PlCredentialProvider;
 use crate::cloud::ObjectStoreErrorContext;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use crate::cloud::dns::{CachingResolver, DnsResolverConfig};
+#[cfg(feature = "http")]
+use crate::cloud::http_origin_store::HttpOriginStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use crate::cloud::http_rate_limit::PacedHttpConnector;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
@@ -732,25 +734,38 @@ impl CloudOptions {
     }
 
     #[cfg(feature = "http")]
+    fn http_client_options(&self, url: &PlRefPath) -> PolarsResult<object_store::ClientOptions> {
+        let mut opts = super::get_client_options();
+        if url.scheme() == Some(CloudScheme::Http)
+            && polars_config::config().http_skip_system_certificates()
+        {
+            opts = opts.with_no_system_certificates(true);
+        }
+        if let Some(CloudConfig::Http { headers }) = &self.config {
+            opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
+                headers.as_slice(),
+            )?);
+        }
+        Ok(opts)
+    }
+
+    /// Builds a store for `url` only.
+    #[cfg(feature = "http")]
     pub fn build_http(&self, url: PlRefPath) -> PolarsResult<impl object_store::ObjectStore> {
         let out = object_store::http::HttpBuilder::new()
             .with_url(url.to_string())
-            .with_client_options({
-                let mut opts = super::get_client_options();
-                if url.scheme() == Some(CloudScheme::Http)
-                    && polars_config::config().http_skip_system_certificates()
-                {
-                    opts = opts.with_no_system_certificates(true);
-                }
-                if let Some(CloudConfig::Http { headers }) = &self.config {
-                    opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
-                        headers.as_slice(),
-                    )?);
-                }
-                opts
-            })
+            .with_client_options(self.http_client_options(&url)?)
             .build()
             .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
+
+        Ok(out)
+    }
+
+    /// Builds a store for all URLs on `base_url` (`scheme://authority`).
+    #[cfg(feature = "http")]
+    pub(crate) fn build_http_origin(&self, base_url: PlRefPath) -> PolarsResult<HttpOriginStore> {
+        let out = HttpOriginStore::new(base_url.as_str(), self.http_client_options(&base_url)?)
+            .map_err(|e| ObjectStoreErrorContext::new(base_url).attach_err_info(e))?;
 
         Ok(out)
     }
