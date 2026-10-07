@@ -230,19 +230,27 @@ mod inner {
                 Err(e) => e,
             };
 
+            let rebuild = self.inner.builder.rebuild_on_error();
+
             if config::verbose() {
                 eprintln!(
-                    "[PolarsObjectStore]: got error: {}, will rebuild store and retry",
-                    orig_err
+                    "[PolarsObjectStore]: got error: {}, will {}retry",
+                    orig_err,
+                    if rebuild { "rebuild store and " } else { "" }
                 );
             }
 
-            let store = self
-                .rebuild_inner(&store)
-                .await
-                .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
+            let store = if rebuild {
+                let store = self
+                    .rebuild_inner(&store)
+                    .await
+                    .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
+                Cow::Owned(store)
+            } else {
+                store
+            };
 
-            func(Cow::Owned(store)).await.map_err(|e| {
+            func(store).await.map_err(|e| {
                 let e: PolarsError = self.error_context().attach_err_info(e).into();
 
                 if self.inner.builder.is_azure()

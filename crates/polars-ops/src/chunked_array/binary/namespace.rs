@@ -1,18 +1,76 @@
-#[cfg(feature = "binary_encoding")]
-use std::borrow::Cow;
-
-#[cfg(feature = "binary_encoding")]
+#[cfg(any(
+    feature = "binary_encoding",
+    all(feature = "strings", feature = "string_encoding")
+))]
 use base64::Engine as _;
-#[cfg(feature = "binary_encoding")]
+#[cfg(any(
+    feature = "binary_encoding",
+    all(feature = "strings", feature = "string_encoding")
+))]
 use base64::engine::general_purpose;
 use memchr::memmem::find;
 #[cfg(feature = "binary_encoding")]
-use polars_arrow::array::Array;
+use polars_arrow::array::{Array, MutablePlBinary};
 use polars_compute::cast::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 
 use super::*;
+
+#[cfg(any(
+    feature = "binary_encoding",
+    all(feature = "strings", feature = "string_encoding")
+))]
+pub(crate) fn binary_to_hex(ca: &BinaryChunked) -> StringChunked {
+    ca.apply_into_string_amortized(|s, buf| {
+        // SAFETY: hex output is ASCII.
+        let out = unsafe { buf.as_mut_vec() };
+        out.resize(s.len() * 2, 0);
+        hex::encode_to_slice(s, out).unwrap();
+    })
+}
+
+#[cfg(any(
+    feature = "binary_encoding",
+    all(feature = "strings", feature = "string_encoding")
+))]
+pub(crate) fn binary_to_base64(ca: &BinaryChunked) -> StringChunked {
+    ca.apply_into_string_amortized(|s, buf| general_purpose::STANDARD.encode_string(s, buf))
+}
+
+/// Decode every value into a reused buffer. `decode` returns `false` on invalid input.
+#[cfg(feature = "binary_encoding")]
+fn decode_amortized(
+    ca: &BinaryChunked,
+    strict: bool,
+    encoding: &str,
+    mut decode: impl FnMut(&[u8], &mut Vec<u8>) -> bool,
+) -> PolarsResult<BinaryChunked> {
+    let mut buf = Vec::new();
+    let chunks = ca.downcast_iter().map(|arr| {
+        let mut out = MutablePlBinary::with_capacity(arr.len());
+        for opt_s in arr.iter() {
+            match opt_s {
+                None => out.push_null(),
+                Some(s) => {
+                    buf.clear();
+                    if decode(s, &mut buf) {
+                        out.push_value(&buf);
+                    } else if strict {
+                        polars_bail!(
+                            ComputeError:
+                            "invalid `{encoding}` encoding found; try setting `strict=false` to ignore"
+                        );
+                    } else {
+                        out.push_null();
+                    }
+                },
+            }
+        }
+        Ok(out.freeze())
+    });
+    ChunkedArray::try_from_chunk_iter(ca.name().clone(), chunks)
+}
 
 pub trait BinaryNameSpaceImpl: AsBinary {
     /// Slice the binary values.
@@ -134,58 +192,27 @@ pub trait BinaryNameSpaceImpl: AsBinary {
 
     #[cfg(feature = "binary_encoding")]
     fn hex_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
-        let ca = self.as_binary();
-        if strict {
-            ca.try_apply_nonnull_values_generic(|s| {
-                hex::decode(s).map_err(|_| {
-                    polars_err!(
-                        ComputeError:
-                        "invalid `hex` encoding found; try setting `strict=false` to ignore"
-                    )
-                })
-            })
-        } else {
-            Ok(ca.apply(|opt_s| opt_s.and_then(|s| hex::decode(s).ok().map(Cow::Owned))))
-        }
+        decode_amortized(self.as_binary(), strict, "hex", |s, buf| {
+            buf.resize(s.len() / 2, 0);
+            hex::decode_to_slice(s, buf).is_ok()
+        })
     }
 
     #[cfg(feature = "binary_encoding")]
     fn hex_encode(&self) -> Series {
-        let ca = self.as_binary();
-        unsafe {
-            ca.apply_values(|s| hex::encode(s).into_bytes().into())
-                .cast_unchecked(&DataType::String)
-                .unwrap()
-        }
+        binary_to_hex(self.as_binary()).into_series()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn base64_decode(&self, strict: bool) -> PolarsResult<BinaryChunked> {
-        let ca = self.as_binary();
-        if strict {
-            ca.try_apply_nonnull_values_generic(|s| {
-                general_purpose::STANDARD.decode(s).map_err(|_e| {
-                    polars_err!(
-                        ComputeError:
-                        "invalid `base64` encoding found; try setting `strict=false` to ignore"
-                    )
-                })
-            })
-        } else {
-            Ok(ca.apply(|opt_s| {
-                opt_s.and_then(|s| general_purpose::STANDARD.decode(s).ok().map(Cow::Owned))
-            }))
-        }
+        decode_amortized(self.as_binary(), strict, "base64", |s, buf| {
+            general_purpose::STANDARD.decode_vec(s, buf).is_ok()
+        })
     }
 
     #[cfg(feature = "binary_encoding")]
     fn base64_encode(&self) -> Series {
-        let ca = self.as_binary();
-        unsafe {
-            ca.apply_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
-                .cast_unchecked(&DataType::String)
-                .unwrap()
-        }
+        binary_to_base64(self.as_binary()).into_series()
     }
 
     #[cfg(feature = "binary_encoding")]
