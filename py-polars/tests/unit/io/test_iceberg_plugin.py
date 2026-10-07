@@ -432,7 +432,7 @@ def _add_position_deletes(tbl: Any, deletes: dict[str, list[int]]) -> Any:
     from pyiceberg.table.update import AddSnapshotUpdate, SetSnapshotRefUpdate
     from pyiceberg.typedef import Record
 
-    class DeleteManifestWriter(ManifestWriterV2):
+    class DeleteManifestWriter(ManifestWriterV2):  # type: ignore[misc]
         def content(self) -> ManifestContent:
             return ManifestContent.DELETES
 
