@@ -82,16 +82,26 @@ pub(super) fn push_down_join_condition(
     Ok(())
 }
 
-/// Casts that give both sides of a join key the same dtype.
+/// Changes that give both sides of a join key the same dtype.
 #[derive(Default)]
 struct JoinKeyCasts {
-    lhs: Option<DataType>,
-    rhs: Option<DataType>,
+    lhs: Option<KeyCast>,
+    rhs: Option<KeyCast>,
+}
+
+#[cfg_attr(not(feature = "dtype-decimal"), allow(dead_code))]
+enum KeyCast {
+    Dtype(DataType),
+    /// Use the raw Int128 value of a Decimal, scaled up by `10^upscale`.
+    #[cfg(all(feature = "dtype-decimal", feature = "round_series"))]
+    DecimalPhysical {
+        upscale: usize,
+    },
 }
 
 impl JoinKeyCasts {
     /// Comparisons accept Decimals of different scales, but join keys must have the same dtype.
-    /// Returns `None` if no dtype holds both sides without loss.
+    /// Returns `None` if the sides can't be given the same dtype.
     fn new(lhs: &DataType, rhs: &DataType) -> Option<Self> {
         if lhs == rhs {
             return Some(Self::default());
@@ -102,12 +112,23 @@ impl JoinKeyCasts {
                 let scale = *lhs_scale.max(rhs_scale);
                 let prec = (lhs_prec - lhs_scale).max(rhs_prec - rhs_scale) + scale;
                 if prec > polars_compute::decimal::DEC128_MAX_PREC {
+                    // No Decimal holds both sides, so join on the raw values at the larger scale.
+                    #[cfg(feature = "round_series")]
+                    return Some(Self {
+                        lhs: Some(KeyCast::DecimalPhysical {
+                            upscale: scale - lhs_scale,
+                        }),
+                        rhs: Some(KeyCast::DecimalPhysical {
+                            upscale: scale - rhs_scale,
+                        }),
+                    });
+                    #[cfg(not(feature = "round_series"))]
                     return None;
                 }
                 let dtype = DataType::Decimal(prec, scale);
                 Some(Self {
-                    lhs: (*lhs != dtype).then(|| dtype.clone()),
-                    rhs: (*rhs != dtype).then_some(dtype),
+                    lhs: (*lhs != dtype).then(|| KeyCast::Dtype(dtype.clone())),
+                    rhs: (*rhs != dtype).then_some(KeyCast::Dtype(dtype)),
                 })
             },
             _ => None,
@@ -115,16 +136,58 @@ impl JoinKeyCasts {
     }
 
     fn apply(self, lhs: &mut Node, rhs: &mut Node, expr_arena: &mut Arena<AExpr>) {
-        for (node, dtype) in [(lhs, self.lhs), (rhs, self.rhs)] {
-            if let Some(dtype) = dtype {
-                *node = expr_arena.add(AExpr::Cast {
+        for (node, cast) in [(lhs, self.lhs), (rhs, self.rhs)] {
+            let Some(cast) = cast else {
+                continue;
+            };
+            *node = match cast {
+                KeyCast::Dtype(dtype) => expr_arena.add(AExpr::Cast {
                     expr: *node,
                     dtype,
                     options: CastOptions::Overflowing,
-                });
-            }
+                }),
+                #[cfg(all(feature = "dtype-decimal", feature = "round_series"))]
+                KeyCast::DecimalPhysical { upscale } => {
+                    decimal_physical_key(*node, upscale, expr_arena)
+                },
+            };
         }
     }
+}
+
+/// The raw Int128 value of a Decimal, scaled up by `10^upscale`. Values that would need more
+/// than 38 digits are larger than any Decimal on the other side, so they are capped there
+/// instead of overflowing.
+#[cfg(all(feature = "dtype-decimal", feature = "round_series"))]
+fn decimal_physical_key(node: Node, upscale: usize, expr_arena: &mut Arena<AExpr>) -> Node {
+    use polars_compute::decimal::DEC128_MAX_PREC;
+
+    let physical = AExprBuilder::function(
+        vec![ExprIR::from_node(node, expr_arena)],
+        IRFunctionExpr::ToPhysical,
+        expr_arena,
+    );
+    if upscale == 0 {
+        return physical.node();
+    }
+    let bound = 10i128.pow((DEC128_MAX_PREC - upscale) as u32);
+    let min = AExprBuilder::lit_scalar(Scalar::from(-bound), expr_arena);
+    let max = AExprBuilder::lit_scalar(Scalar::from(bound), expr_arena);
+    let factor = AExprBuilder::lit_scalar(Scalar::from(10i128.pow(upscale as u32)), expr_arena);
+    AExprBuilder::function(
+        vec![
+            physical.expr_ir_retain_name(expr_arena),
+            min.expr_ir_retain_name(expr_arena),
+            max.expr_ir_retain_name(expr_arena),
+        ],
+        IRFunctionExpr::Clip {
+            has_min: true,
+            has_max: true,
+        },
+        expr_arena,
+    )
+    .multiply(factor, expr_arena)
+    .node()
 }
 
 #[cfg(feature = "iejoin")]

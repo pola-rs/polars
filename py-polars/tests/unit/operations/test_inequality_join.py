@@ -1008,12 +1008,13 @@ def test_join_where_decimal_vs_float() -> None:
     ],
 )
 @pytest.mark.parametrize(
-    ("left_dtype", "right_dtype", "max_left"),
+    ("left_dtype", "right_dtype"),
     [
         # Both sides fit in Decimal(38, 4).
-        (pl.Decimal(10, 2), pl.Decimal(38, 4), "99999999.99"),
-        # No decimal holds both sides.
-        (pl.Decimal(38, 2), pl.Decimal(38, 12), "9" * 36 + ".99"),
+        (pl.Decimal(10, 2), pl.Decimal(38, 4)),
+        # No Decimal holds both sides.
+        (pl.Decimal(38, 2), pl.Decimal(38, 12)),
+        (pl.Decimal(38, 12), pl.Decimal(38, 2)),
     ],
 )
 def test_cross_join_filter_decimal_scales_29762(
@@ -1021,20 +1022,25 @@ def test_cross_join_filter_decimal_scales_29762(
     predicate: pl.Expr,
     left_dtype: pl.Decimal,
     right_dtype: pl.Decimal,
-    max_left: str,
 ) -> None:
-    left = pl.LazyFrame({"a": ["-2.50", "1.00", "3.25", max_left, None]})
-    right = pl.LazyFrame({"b": ["-2.5001", "1.0000", "3.2500"]})
+    def frame(name: str, dtype: pl.Decimal) -> pl.LazyFrame:
+        max_value = "9" * (dtype.precision - dtype.scale) + "." + "9" * dtype.scale
+        values = ["-2.5", "1", "3.25", max_value, f"-{max_value}", None]
+        if dtype.scale >= 4:
+            values.append("3.2501")
+        return pl.LazyFrame({name: values}).cast(dtype)
+
     q = (
-        left.cast(left_dtype)
-        .join(right.cast(right_dtype), how="cross")
+        frame("a", left_dtype)
+        .join(frame("b", right_dtype), how="cross")
         .filter(predicate)
     )
 
     expected = q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
     assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
-    if left_dtype.precision == 10:
-        assert "CROSS JOIN" not in q.explain(engine=engine)
+    plan = q.explain(engine=engine)
+    assert "CROSS JOIN" not in plan
+    assert "NESTED LOOP" not in plan
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
