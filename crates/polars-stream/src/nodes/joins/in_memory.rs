@@ -89,8 +89,12 @@ impl ComputeNode for InMemoryJoinNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self.state, InMemoryJoinState::Sink { .. })
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            InMemoryJoinState::Sink { .. } => NodeMemoryUsage::Accumulating,
+            InMemoryJoinState::Source(src) => src.memory_usage(),
+            InMemoryJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

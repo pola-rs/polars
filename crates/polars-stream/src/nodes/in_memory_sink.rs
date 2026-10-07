@@ -48,8 +48,8 @@ impl ComputeNode for InMemorySinkNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        true
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        NodeMemoryUsage::Accumulating
     }
 
     fn spawn<'env, 's>(

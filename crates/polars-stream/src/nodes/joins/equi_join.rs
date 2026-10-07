@@ -1743,11 +1743,16 @@ impl ComputeNode for EquiJoinNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(
-            self.state,
-            EquiJoinState::Sample { .. } | EquiJoinState::Build { .. }
-        )
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            EquiJoinState::Sample(_) => NodeMemoryUsage::WillAccumulate,
+            EquiJoinState::Build(_) => NodeMemoryUsage::Accumulating,
+            EquiJoinState::Probe(_) | EquiJoinState::EmitUnmatchedBuild(_) => {
+                NodeMemoryUsage::HoldingUntilDone
+            },
+            EquiJoinState::EmitUnmatchedBuildInOrder(src) => src.memory_usage(),
+            EquiJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(
