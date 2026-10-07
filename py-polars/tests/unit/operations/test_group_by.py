@@ -2939,6 +2939,20 @@ def test_sorted_group_by() -> None:
     )
 
 
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_group_by_clipped_key(maintain_order: bool) -> None:
+    # Clipping can make different values equal, the next key is then not sorted.
+    lf = pl.LazyFrame({"a": [-3, -2, -1], "b": [1, 2, 1]}).set_sorted("a", "b")
+    q = lf.group_by(pl.col("a").clip(0, 10), "b", maintain_order=maintain_order).len()
+    expected = pl.DataFrame(
+        {"a": [0, 0], "b": [1, 2], "len": [2, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"), expected, check_row_order=maintain_order
+    )
+
+
 def test_sorted_group_by_slice() -> None:
     lf = (
         pl.DataFrame({"a": [0, 5, 2, 1, 3] * 50})

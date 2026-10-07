@@ -1236,8 +1236,31 @@ fn lower_ir_inner(
             };
 
             #[cfg(feature = "iejoin")]
+            let mut range_point_descending = None;
+            #[cfg(feature = "iejoin")]
             if args.how.is_range() {
+                use polars_core::prelude::SortMultipleOptions;
+
                 use crate::nodes::joins::range_join;
+
+                // Check this before adding the key columns, the new nodes have no known sortedness.
+                let left_is_point = range_join::left_is_point(&left_on, &right_on, &args);
+                range_point_descending = if left_is_point {
+                    ctx.sortedness.is_expr_sorted(
+                        input_left,
+                        &left_on[0],
+                        expr_arena,
+                        &input_left_schema,
+                    )
+                } else {
+                    ctx.sortedness.is_expr_sorted(
+                        input_right,
+                        &right_on[0],
+                        expr_arena,
+                        &input_right_schema,
+                    )
+                }
+                .and_then(|s| s.descending);
 
                 let key_expr_is_trivial = |c: &ExprIR, ea: &mut Arena<AExpr>| {
                     matches!(ea.get(c.node()), AExpr::Column(_))
@@ -1276,26 +1299,19 @@ fn lower_ir_inner(
                 }
 
                 // The streaming range join node needs its point side to be sorted
-                if range_join::left_is_point(&left_on, &right_on, &args) {
-                    input_left = insert_sort_node_if_not_sorted(
-                        input_left,
-                        &left_on[0],
-                        RANGE_JOIN_PREFER_DESCENDING,
-                        ir_arena,
-                        expr_arena,
-                        schema_cache,
-                        ctx.sortedness,
-                    );
-                } else {
-                    input_right = insert_sort_node_if_not_sorted(
-                        input_right,
-                        &right_on[0],
-                        RANGE_JOIN_PREFER_DESCENDING,
-                        ir_arena,
-                        expr_arena,
-                        schema_cache,
-                        ctx.sortedness,
-                    );
+                if range_point_descending.is_none() {
+                    let (input, on) = if left_is_point {
+                        (&mut input_left, &left_on[0])
+                    } else {
+                        (&mut input_right, &right_on[0])
+                    };
+                    *input = ir_arena.add(IR::Sort {
+                        input: *input,
+                        by_column: vec![on.clone()],
+                        slice: None,
+                        sort_options: SortMultipleOptions::default()
+                            .with_order_descending(RANGE_JOIN_PREFER_DESCENDING),
+                    });
                 }
             }
 
@@ -1467,8 +1483,6 @@ fn lower_ir_inner(
                     },
                     #[cfg(feature = "iejoin")]
                     _ if args.how.is_range() => {
-                        use crate::nodes::joins::range_join::left_is_point;
-
                         let JoinTypeOptionsIR::Range {
                             ie_options: range_options,
                             ..
@@ -1477,23 +1491,9 @@ fn lower_ir_inner(
                             unreachable!()
                         };
 
-                        let descending = match left_is_point(&left_on, &right_on, &args) {
-                            true => ctx.sortedness.is_expr_sorted(
-                                input_left,
-                                &left_on[0],
-                                expr_arena,
-                                &input_left_schema,
-                            ),
-                            false => ctx.sortedness.is_expr_sorted(
-                                input_right,
-                                &right_on[0],
-                                expr_arena,
-                                &input_right_schema,
-                            ),
-                        }
-                        .and_then(|s| s.descending)
                         // If the join key is not sorted, then we added a Sort IR node to sort it
-                        .unwrap_or(RANGE_JOIN_PREFER_DESCENDING);
+                        let descending =
+                            range_point_descending.unwrap_or(RANGE_JOIN_PREFER_DESCENDING);
                         phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::RangeJoin {
@@ -2007,35 +2007,6 @@ fn is_scalar_window(exprs: &[ExprIR], has_order_by: bool, expr_arena: &Arena<AEx
             AExpr::Over { function, .. } => is_scalar_ae(*function, expr_arena),
             _ => false,
         })
-}
-
-#[cfg(feature = "iejoin")]
-fn insert_sort_node_if_not_sorted(
-    input: Node,
-    on: &ExprIR,
-    descending: bool,
-    ir_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-    schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
-    sortedness: &IRPlanSorted,
-) -> Node {
-    use polars_core::prelude::SortMultipleOptions;
-
-    let input_schema = IR::schema_with_cache(input, ir_arena, schema_cache);
-    if sortedness
-        .is_expr_sorted(input, on, expr_arena, &input_schema)
-        .and_then(|s| s.descending)
-        .is_none()
-    {
-        ir_arena.add(IR::Sort {
-            input,
-            by_column: vec![on.clone()],
-            slice: None,
-            sort_options: SortMultipleOptions::default().with_order_descending(descending),
-        })
-    } else {
-        input
-    }
 }
 
 /// Append a sorted key column to the DataFrame.
