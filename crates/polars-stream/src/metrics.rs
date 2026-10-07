@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use polars_async::executor::{TaskMetricAggregator, TaskMetricsSnapshot};
 pub use polars_descriptions::MetricUnit;
+use polars_io::metrics::QueryIOTimers;
 pub use polars_io::metrics::{IOMetrics, OptIOMetrics};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -95,9 +96,24 @@ impl NodeMetrics {
     }
 }
 
+/// Metrics of the query as a whole, where summing node metrics would count concurrent work
+/// more than once.
+#[derive(Default, Clone)]
+pub struct QueryMetrics {
+    /// Time during which any node had IO in flight.
+    pub io_total_active_ns: u64,
+    /// Time during which any node had a read in flight.
+    pub io_rx_active_ns: u64,
+    /// Time during which any node had a send in flight.
+    pub io_tx_active_ns: u64,
+}
+
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
+    query_metrics: QueryMetrics,
+    /// Shared with the [`IOMetrics`] of every node.
+    query_io_timers: QueryIOTimers,
     in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
     in_progress_custom_metrics: SecondaryMap<GraphNodeKey, Arc<CustomMetrics>>,
     task_metrics: SecondaryMap<GraphNodeKey, Arc<TaskMetricAggregator>>,
@@ -142,6 +158,17 @@ impl GraphMetrics {
             this_node_metrics.add_io(io_metrics);
         }
 
+        // Read after the node timers, and the total after rx/tx: each timer's intervals
+        // contain those of the timers read before it, so a later reading is never below theirs
+        // (up to the cross-thread jitter described on `IOSession`).
+        let io_rx_active_ns = self.query_io_timers.rx.total_time_live_ns();
+        let io_tx_active_ns = self.query_io_timers.tx.total_time_live_ns();
+        self.query_metrics = QueryMetrics {
+            io_total_active_ns: self.query_io_timers.total.total_time_live_ns(),
+            io_rx_active_ns,
+            io_tx_active_ns,
+        };
+
         for (key, custom_metrics) in self.in_progress_custom_metrics.iter() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.custom = custom_metrics.snapshot_and_compact();
@@ -168,6 +195,10 @@ impl GraphMetrics {
         self.node_metrics.get(key)
     }
 
+    pub fn query(&self) -> &QueryMetrics {
+        &self.query_metrics
+    }
+
     pub fn iter(&self) -> slotmap::secondary::Iter<'_, GraphNodeKey, NodeMetrics> {
         self.node_metrics.iter()
     }
@@ -190,32 +221,25 @@ impl NodeMetricsRegistry {
             .map(|m| m.lock().node_task_metrics(self.graph_key))
     }
 
-    /// Registers this node's IO metrics.
-    ///
-    /// Nodes call this once per phase with the same [`IOMetrics`] each time, so
-    /// repeat calls are expected and do nothing.
+    /// Creates and registers this node's [`IOMetrics`], or returns `None` if metrics are not
+    /// tracked.
     ///
     /// # Panics
-    /// If called with a different [`IOMetrics`] than this node registered before.
-    pub fn register_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
-        let Some(registry) = &self.graph_metrics else {
-            return;
-        };
+    /// If this node already created its [`IOMetrics`].
+    pub fn new_io_metrics(&self) -> Option<Arc<IOMetrics>> {
+        let mut guard = self.graph_metrics.as_ref()?.lock();
 
-        let mut guard = registry.lock();
+        let io_metrics = Arc::new(IOMetrics {
+            query_io_timers: Some(guard.query_io_timers.clone()),
+            ..Default::default()
+        });
 
-        use slotmap::secondary::Entry;
+        let prev = guard
+            .in_progress_io_metrics
+            .insert(self.graph_key, io_metrics.clone());
+        assert!(prev.is_none(), "node created its IOMetrics twice");
 
-        match guard.in_progress_io_metrics.entry(self.graph_key).unwrap() {
-            Entry::Occupied(e) => {
-                // Each node should only have 1 set of metrics, identified by the Arc address.
-                // But the registration can be called multiple times (per phase).
-                assert!(Arc::ptr_eq(&io_metrics, e.get()));
-            },
-            Entry::Vacant(e) => {
-                e.insert(io_metrics);
-            },
-        };
+        Some(io_metrics)
     }
 
     /// Registers a metric of the given [`MetricKind`].
@@ -910,5 +934,127 @@ mod tests {
         assert_eq!(registry.value(ROWS), TASKS * PER_TASK);
         assert_eq!(registry.value(PEAK), TASKS - 1);
         assert_eq!(registry.live_cells(ROWS_IDX), 0);
+    }
+
+    const IO_TIME: Duration = Duration::from_millis(50);
+
+    /// Registries for two nodes of the same graph.
+    fn two_nodes() -> (
+        Arc<parking_lot::Mutex<GraphMetrics>>,
+        NodeMetricsRegistry,
+        NodeMetricsRegistry,
+    ) {
+        let mut nodes: SlotMap<GraphNodeKey, ()> = SlotMap::with_key();
+        let graph_metrics = Arc::new(parking_lot::Mutex::new(GraphMetrics::default()));
+        let mut registry = || NodeMetricsRegistry {
+            graph_key: nodes.insert(()),
+            graph_metrics: Some(graph_metrics.clone()),
+        };
+        let (a, b) = (registry(), registry());
+        (graph_metrics, a, b)
+    }
+
+    fn io(registry: &NodeMetricsRegistry) -> OptIOMetrics {
+        OptIOMetrics(registry.new_io_metrics())
+    }
+
+    fn flushed(graph_metrics: &parking_lot::Mutex<GraphMetrics>) -> GraphMetrics {
+        let mut metrics = graph_metrics.lock().clone();
+        metrics.flush(&SlotMap::with_key());
+        metrics
+    }
+
+    fn node_io_ns(metrics: &GraphMetrics, registry: &NodeMetricsRegistry) -> u64 {
+        metrics.get(registry.graph_key).unwrap().io_total_active_ns
+    }
+
+    #[test]
+    fn query_rx_time_counts_overlapping_reads_once() {
+        let (graph_metrics, a, b) = two_nodes();
+        let (io_a, io_b) = (io(&a), io(&b));
+
+        let read_a = io_a.start_rx_session();
+        let read_b = io_b.start_rx_session();
+        std::thread::sleep(IO_TIME);
+        drop(read_b);
+        drop(read_a);
+
+        let metrics = flushed(&graph_metrics);
+        let (node_a, node_b) = (node_io_ns(&metrics, &a), node_io_ns(&metrics, &b));
+        let query = metrics.query();
+        assert!(query.io_rx_active_ns >= node_a.max(node_b));
+        assert!(query.io_rx_active_ns < node_a + node_b);
+        assert_eq!(query.io_tx_active_ns, 0);
+        assert!(query.io_total_active_ns >= query.io_rx_active_ns);
+    }
+
+    #[test]
+    fn query_rx_time_adds_up_disjoint_reads() {
+        let (graph_metrics, a, b) = two_nodes();
+        let (io_a, io_b) = (io(&a), io(&b));
+
+        let read_a = io_a.start_rx_session();
+        std::thread::sleep(IO_TIME);
+        drop(read_a);
+        let read_b = io_b.start_rx_session();
+        std::thread::sleep(IO_TIME);
+        drop(read_b);
+
+        let metrics = flushed(&graph_metrics);
+        let (node_a, node_b) = (node_io_ns(&metrics, &a), node_io_ns(&metrics, &b));
+        assert!(metrics.query().io_rx_active_ns >= node_a + node_b);
+    }
+
+    #[test]
+    fn query_total_time_counts_overlapping_reads_and_sends_once() {
+        let (graph_metrics, a, b) = two_nodes();
+        let (io_a, io_b) = (io(&a), io(&b));
+
+        let read = io_a.start_rx_session();
+        let send = io_b.start_tx_session();
+        std::thread::sleep(IO_TIME);
+        drop(send);
+        drop(read);
+
+        let query = flushed(&graph_metrics).query().clone();
+        assert!(query.io_total_active_ns >= query.io_rx_active_ns.max(query.io_tx_active_ns));
+        assert!(query.io_total_active_ns < query.io_rx_active_ns + query.io_tx_active_ns);
+    }
+
+    #[test]
+    fn a_flush_during_a_read_still_bounds_the_node_time() {
+        let (graph_metrics, a, _) = two_nodes();
+        let io_a = io(&a);
+
+        let read = io_a.start_rx_session();
+        std::thread::sleep(IO_TIME);
+        let metrics = flushed(&graph_metrics);
+        drop(read);
+
+        let node_a = node_io_ns(&metrics, &a);
+        let query = metrics.query();
+        assert!(node_a > 0);
+        assert!(query.io_rx_active_ns >= node_a);
+        assert!(query.io_total_active_ns >= query.io_rx_active_ns);
+    }
+
+    #[test]
+    fn untracked_nodes_get_no_io_metrics() {
+        let mut nodes: SlotMap<GraphNodeKey, ()> = SlotMap::with_key();
+        let registry = NodeMetricsRegistry {
+            graph_key: nodes.insert(()),
+            graph_metrics: None,
+        };
+
+        assert!(registry.new_io_metrics().is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "created its IOMetrics twice")]
+    fn a_node_creates_its_io_metrics_once() {
+        let (_graph_metrics, a, _) = two_nodes();
+
+        a.new_io_metrics();
+        a.new_io_metrics();
     }
 }

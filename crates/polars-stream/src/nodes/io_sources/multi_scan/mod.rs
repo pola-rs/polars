@@ -107,14 +107,7 @@ impl ComputeNode for MultiScan {
             use MultiScanState::*;
 
             self.state
-                .initialize(state.clone(), self.metrics_registry.is_some())?;
-
-            if let Initialized { io_metrics, .. } = &self.state {
-                if let Some(io_metrics) = io_metrics.as_ref() {
-                    self.metrics_registry
-                        .register_io_metrics(io_metrics.clone())
-                }
-            }
+                .initialize(state.clone(), &self.metrics_registry)?;
 
             self.state.refresh(verbose).await?;
 
@@ -174,7 +167,6 @@ enum MultiScanState {
         bridge_state: Arc<Mutex<BridgeState>>,
         /// Single join handle for all background tasks. Note, this does not include the bridge.
         task_handle: AbortOnDropHandle<PolarsResult<()>>,
-        io_metrics: Option<Arc<IOMetrics>>,
     },
 
     Finished,
@@ -185,7 +177,7 @@ impl MultiScanState {
     fn initialize(
         &mut self,
         execution_state: StreamingExecutionState,
-        track_io_metrics: bool,
+        metrics_registry: &NodeMetricsRegistry,
     ) -> PolarsResult<()> {
         use MultiScanState::*;
 
@@ -201,7 +193,7 @@ impl MultiScanState {
             .file_reader_builder
             .set_execution_state(&execution_state);
 
-        let io_metrics: Option<Arc<IOMetrics>> = track_io_metrics.then(Default::default);
+        let io_metrics: Option<Arc<IOMetrics>> = metrics_registry.new_io_metrics();
 
         if let Some(io_metrics) = io_metrics.clone() {
             config.file_reader_builder.set_io_metrics(io_metrics);
@@ -226,7 +218,7 @@ impl MultiScanState {
             task_handle,
             phase_channel_tx,
             bridge_state,
-        } = initialize_multi_scan_pipeline(config, execution_state, io_metrics.clone())?;
+        } = initialize_multi_scan_pipeline(config, execution_state, io_metrics)?;
 
         let wait_group = WaitGroup::default();
 
@@ -235,7 +227,6 @@ impl MultiScanState {
             wait_group,
             bridge_state,
             task_handle,
-            io_metrics,
         };
 
         Ok(())
@@ -257,7 +248,6 @@ impl MultiScanState {
                 wait_group,
                 bridge_state,
                 task_handle,
-                io_metrics,
             } => {
                 // Separate variable to avoid borrowing bridge_state for entire match.
                 let state = *bridge_state.lock().unwrap();
@@ -267,7 +257,6 @@ impl MultiScanState {
                         wait_group,
                         bridge_state,
                         task_handle,
-                        io_metrics,
                     },
 
                     // Never the case: holding `phase_channel_tx` guarantees this.

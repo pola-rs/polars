@@ -77,13 +77,12 @@ impl ComputeNode for IOSinkNode {
         recv[0] = if recv[0] == PortState::Done {
             // Ensure initialize / writes empty file for empty output.
             self.state
-                .initialize(&self.name, execution_state, self.metrics_registry.is_some())?;
+                .initialize(&self.name, execution_state, &self.metrics_registry)?;
 
             match std::mem::replace(&mut self.state, IOSinkNodeState::Finished) {
                 IOSinkNodeState::Initialized {
                     phase_channel_tx,
                     task_handle,
-                    io_metrics: _,
                 } => {
                     if self.verbose {
                         eprintln!(
@@ -128,27 +127,19 @@ impl ComputeNode for IOSinkNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             self.state
-                .initialize(&self.name, execution_state, self.metrics_registry.is_some())?;
+                .initialize(&self.name, execution_state, &self.metrics_registry)?;
 
             let IOSinkNodeState::Initialized {
-                phase_channel_tx,
-                io_metrics,
-                ..
+                phase_channel_tx, ..
             } = &mut self.state
             else {
                 unreachable!()
             };
 
-            if let Some(io_metrics) = io_metrics.as_ref() {
-                self.metrics_registry
-                    .register_io_metrics(io_metrics.clone())
-            }
-
             if phase_channel_tx.send(phase_morsel_rx).await.is_err() {
                 let IOSinkNodeState::Initialized {
                     phase_channel_tx,
                     task_handle,
-                    io_metrics: _,
                 } = std::mem::replace(&mut self.state, IOSinkNodeState::Finished)
                 else {
                     unreachable!()
@@ -180,7 +171,6 @@ enum IOSinkNodeState {
         phase_channel_tx: connector::Sender<PortReceiver>,
         /// Join handle for all background tasks.
         task_handle: AbortOnDropHandle<PolarsResult<()>>,
-        io_metrics: Option<Arc<IOMetrics>>,
     },
 
     Finished,
@@ -192,7 +182,7 @@ impl IOSinkNodeState {
         &mut self,
         node_name: &PlSmallStr,
         execution_state: &StreamingExecutionState,
-        track_io_metrics: bool,
+        metrics_registry: &NodeMetricsRegistry,
     ) -> PolarsResult<()> {
         use IOSinkNodeState::*;
 
@@ -204,7 +194,7 @@ impl IOSinkNodeState {
             unreachable!()
         };
 
-        let io_metrics: Option<Arc<IOMetrics>> = track_io_metrics.then(Default::default);
+        let io_metrics: Option<Arc<IOMetrics>> = metrics_registry.new_io_metrics();
 
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();
@@ -237,7 +227,7 @@ impl IOSinkNodeState {
                 multi_phase_rx,
                 *config,
                 execution_state,
-                io_metrics.clone(),
+                io_metrics,
             )?,
 
             IOSinkTarget::Partitioned { .. } => start_partition_sink_pipeline(
@@ -245,14 +235,13 @@ impl IOSinkNodeState {
                 multi_phase_rx,
                 *config,
                 execution_state,
-                io_metrics.clone(),
+                io_metrics,
             )?,
         };
 
         *self = Initialized {
             phase_channel_tx,
             task_handle,
-            io_metrics,
         };
 
         Ok(())
