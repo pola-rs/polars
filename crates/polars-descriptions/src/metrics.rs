@@ -26,8 +26,6 @@ pub struct NodeMetricsDescription {
     pub custom: Vec<CustomMetricDescription>,
 }
 
-/// Metrics of the query as a whole, where summing node metrics would count concurrent work
-/// more than once.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct QueryMetricsDescription {

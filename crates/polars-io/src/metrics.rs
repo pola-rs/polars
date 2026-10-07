@@ -6,15 +6,12 @@ use polars_utils::relaxed_cell::RelaxedCell;
 #[derive(Debug, Default, Clone)]
 pub struct IOMetrics {
     pub io_timer: LiveTimer,
-    /// Shared by every node of the query; `None` when the query isn't tracked.
     pub query_io_timers: Option<QueryIOTimers>,
     pub bytes_requested: RelaxedCell<u64>,
     pub bytes_received: RelaxedCell<u64>,
     pub bytes_sent: RelaxedCell<u64>,
 }
 
-/// Query-wide IO timers, each live while any node of the query has IO of its kind in flight.
-/// Unlike a sum of node timers, they count concurrent IO once.
 #[derive(Debug, Default, Clone)]
 pub struct QueryIOTimers {
     pub total: LiveTimer,
@@ -22,19 +19,12 @@ pub struct QueryIOTimers {
     pub tx: LiveTimer,
 }
 
-/// Keeps the timers of one IO request live until dropped.
 pub struct IOSession {
-    // Fields drop in declaration order, so the node session stops before the query sessions,
-    // which were started before it: every query interval contains the node interval, so query
-    // time >= node time. Across threads this holds only up to jitter: `LiveTimer` takes its
-    // start timestamp after publishing the session, so a containing timer that another thread
-    // is starting at the same moment can begin slightly late.
     _node: LiveTimerSession,
     _query: Option<QueryIOSession>,
 }
 
 struct QueryIOSession {
-    // Started after `_total` and dropped before it, for the same reason as above.
     _direction: LiveTimerSession,
     _total: LiveTimerSession,
 }

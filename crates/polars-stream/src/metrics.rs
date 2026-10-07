@@ -96,15 +96,10 @@ impl NodeMetrics {
     }
 }
 
-/// Metrics of the query as a whole, where summing node metrics would count concurrent work
-/// more than once.
 #[derive(Default, Clone)]
 pub struct QueryMetrics {
-    /// Time during which any node had IO in flight.
     pub io_total_active_ns: u64,
-    /// Time during which any node had a read in flight.
     pub io_rx_active_ns: u64,
-    /// Time during which any node had a send in flight.
     pub io_tx_active_ns: u64,
 }
 
@@ -112,7 +107,6 @@ pub struct QueryMetrics {
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
     query_metrics: QueryMetrics,
-    /// Shared with the [`IOMetrics`] of every node.
     query_io_timers: QueryIOTimers,
     in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
     in_progress_custom_metrics: SecondaryMap<GraphNodeKey, Arc<CustomMetrics>>,
@@ -158,9 +152,6 @@ impl GraphMetrics {
             this_node_metrics.add_io(io_metrics);
         }
 
-        // Read after the node timers, and the total after rx/tx: each timer's intervals
-        // contain those of the timers read before it, so a later reading is never below theirs
-        // (up to the cross-thread jitter described on `IOSession`).
         let io_rx_active_ns = self.query_io_timers.rx.total_time_live_ns();
         let io_tx_active_ns = self.query_io_timers.tx.total_time_live_ns();
         self.query_metrics = QueryMetrics {
