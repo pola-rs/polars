@@ -1,0 +1,41 @@
+name: polars-iceberg version
+description: >
+  Read the polars-iceberg version from the `polars-iceberg >= <version>` requirement in the
+  `polars_iceberg` optional dependencies of py-polars/pyproject.toml, and the corresponding
+  polars-iceberg git tag `py-<version>` to release from and to test against. Requires a checkout of
+  Polars.
+
+outputs:
+  version:
+    description: polars-iceberg version
+    value: ${{ steps.version.outputs.version }}
+  tag:
+    description: polars-iceberg git tag of the version (`py-<version>`)
+    value: ${{ steps.version.outputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read polars-iceberg version
+      id: version
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        VERSION=$(python3 - <<'EOF'
+        import re, tomllib
+
+        with open("py-polars/pyproject.toml", "rb") as f:
+            deps = tomllib.load(f)["project"]["optional-dependencies"]["polars_iceberg"]
+        versions = [
+            m.group(1)
+            for d in deps
+            if (m := re.fullmatch(r"polars-iceberg\s*>=\s*([^\s,;]+)", d.strip()))
+        ]
+        if len(versions) != 1:
+            raise SystemExit(f"expected one 'polars-iceberg >= <version>' requirement, found {deps}")
+        print(versions[0])
+        EOF
+        )
+        echo "polars-iceberg version: $VERSION (tag py-$VERSION)"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "tag=py-$VERSION" >> "$GITHUB_OUTPUT"

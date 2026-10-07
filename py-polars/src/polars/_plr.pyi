@@ -2383,6 +2383,19 @@ def _bench_parquet_metadata_bincode_size(
 def _parquet_metadata_pruned_json(
     path: str, projection: pylist[str], predicate: pylist[str]
 ) -> str: ...
+
+# I/O plugin IDs (capsule names) this build can call.
+_IO_PLUGIN_IDS: pylist[str]
+
+def _iceberg_plugin_scan(
+    capsule: Any,
+    request_json: str,
+    *,
+    source_url: str,
+    storage_options: Any,
+    credential_provider: Any,
+    cast_options: Any,
+) -> PyLazyFrame: ...
 def read_clipboard_string() -> str: ...
 def write_clipboard_string(s: str) -> None: ...
 

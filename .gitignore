@@ -61,3 +61,6 @@ site/
 
 .claude/
 CLAUDE.md
+
+# `polars_iceberg` I/O plugin: a clone or worktree of https://github.com/pola-rs/polars-iceberg.
+/crates/polars-iceberg

@@ -154,6 +154,10 @@ build-dist-release: update-cargo-env  ## Compile and install Python Polars binar
 	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile dist-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
+.PHONY: build-polars-iceberg
+build-polars-iceberg: .venv  ## Compile and install the `polars_iceberg` I/O plugin (crates/polars-iceberg)
+	@$(MAKE) -s -C crates $@ VENV=$(abspath $(VENV))
+
 .PHONY: check
 check: update-cargo-env ## Run cargo check with all features
 	cargo check --workspace --all-targets --all-features
