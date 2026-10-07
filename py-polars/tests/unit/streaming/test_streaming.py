@@ -466,6 +466,7 @@ def test_log_metrics_reports_query_io_time(
     [header] = (
         line for line in err.splitlines() if line.startswith("Streaming query took")
     )
+    assert f" CPU on {pl.thread_pool_size()} threads, " in header
     assert " IO active: " in header
     assert " rx, " in header
     assert " tx), detailed breakdown:" in header

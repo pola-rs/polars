@@ -57,6 +57,7 @@ fn query_row(m: &QueryMetrics) -> QueryMetricsDescription {
         io_total_active_ns: m.io_total_active_ns,
         io_rx_active_ns: m.io_rx_active_ns,
         io_tx_active_ns: m.io_tx_active_ns,
+        num_threads: m.num_threads,
     }
 }
 

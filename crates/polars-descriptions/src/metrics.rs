@@ -32,6 +32,7 @@ pub struct QueryMetricsDescription {
     pub io_total_active_ns: u64,
     pub io_rx_active_ns: u64,
     pub io_tx_active_ns: u64,
+    pub num_threads: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

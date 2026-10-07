@@ -377,6 +377,7 @@ def test_metrics_handle_snapshot() -> None:
         "io_total_active_ns": 0,
         "io_rx_active_ns": 0,
         "io_tx_active_ns": 0,
+        "num_threads": pl.thread_pool_size(),
     }
 
     rows = snap["nodes"]
@@ -404,6 +405,7 @@ def test_metrics_handle_snapshot_in_memory_engine() -> None:
             "io_total_active_ns": 0,
             "io_rx_active_ns": 0,
             "io_tx_active_ns": 0,
+            "num_threads": 0,
         },
         "nodes": [],
     }

@@ -101,6 +101,7 @@ pub struct QueryMetrics {
     pub io_total_active_ns: u64,
     pub io_rx_active_ns: u64,
     pub io_tx_active_ns: u64,
+    pub num_threads: u64,
 }
 
 #[derive(Default, Clone)]
@@ -115,6 +116,16 @@ pub struct GraphMetrics {
 }
 
 impl GraphMetrics {
+    pub fn new(num_threads: usize) -> Self {
+        Self {
+            query_metrics: QueryMetrics {
+                num_threads: num_threads as u64,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
     /// The aggregator for the metrics of all tasks spawned by this node.
     pub fn node_task_metrics(&mut self, key: GraphNodeKey) -> Arc<TaskMetricAggregator> {
         self.task_metrics.entry(key).unwrap().or_default().clone()
@@ -152,13 +163,9 @@ impl GraphMetrics {
             this_node_metrics.add_io(io_metrics);
         }
 
-        let io_rx_active_ns = self.query_io_timers.rx.total_time_live_ns();
-        let io_tx_active_ns = self.query_io_timers.tx.total_time_live_ns();
-        self.query_metrics = QueryMetrics {
-            io_total_active_ns: self.query_io_timers.total.total_time_live_ns(),
-            io_rx_active_ns,
-            io_tx_active_ns,
-        };
+        self.query_metrics.io_rx_active_ns = self.query_io_timers.rx.total_time_live_ns();
+        self.query_metrics.io_tx_active_ns = self.query_io_timers.tx.total_time_live_ns();
+        self.query_metrics.io_total_active_ns = self.query_io_timers.total.total_time_live_ns();
 
         for (key, custom_metrics) in self.in_progress_custom_metrics.iter() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
@@ -1027,6 +1034,13 @@ mod tests {
         assert!(node_a > 0);
         assert!(query.io_rx_active_ns >= node_a);
         assert!(query.io_total_active_ns >= query.io_rx_active_ns);
+    }
+
+    #[test]
+    fn num_threads_survives_a_flush() {
+        let graph_metrics = parking_lot::Mutex::new(GraphMetrics::new(7));
+
+        assert_eq!(flushed(&graph_metrics).query().num_threads, 7);
     }
 
     #[test]
