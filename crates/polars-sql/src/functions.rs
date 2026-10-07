@@ -11,7 +11,7 @@ use polars_defs::expr::{RankMethod, RankOptions};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
 use polars_lazy::prelude::ApproxQuantileMethod;
-use polars_lazy::prelude::DataTypeExpr;
+use polars_lazy::prelude::{DataTypeExpr, LazyFrame};
 use polars_plan::dsl::functions::{
     coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal, min_horizontal,
     when,
@@ -1275,23 +1275,26 @@ impl SQLFunctionVisitor<'_> {
         }
         if let Some(filter_expr) = &function.filter {
             let pred = parse_sql_expr(filter_expr, self.ctx, self.active_schema)?;
+            // The predicate is read once per row.
+            self.read_subqueries_per_row(&pred);
+            let typed_pred = self.with_typed_subqueries(&pred)?;
             // As in WHERE, a condition that reads no input is accepted as any type that casts
             // to boolean.
-            let pred = if is_constant_key(&pred) {
+            let pred = if is_constant_key(&typed_pred) {
                 pred.cast(DataType::Boolean)
             } else {
+                // The rows that pass are counted, which needs a boolean.
+                if let Some(schema) = self.active_schema
+                    && let Ok(field) = typed_pred.to_field(schema)
+                    && field.dtype.is_known()
+                {
+                    polars_ensure!(
+                        field.dtype.is_bool(),
+                        InvalidOperation: "filter predicate must be of type `Boolean`, got `{}`", field.dtype
+                    );
+                }
                 pred
             };
-            // A constant aggregate counts the rows that pass, which needs a boolean.
-            if let Some(schema) = self.active_schema
-                && let Ok(field) = pred.to_field(schema)
-                && field.dtype.is_known()
-            {
-                polars_ensure!(
-                    field.dtype.is_bool(),
-                    InvalidOperation: "filter predicate must be of type `Boolean`, got `{}`", field.dtype
-                );
-            }
             self.filter = Some(pred);
         }
         self.reads_rows = self.window.is_none() && function_name.is_builtin_aggregate();
@@ -2223,17 +2226,36 @@ impl SQLFunctionVisitor<'_> {
     fn parse_value_arg(&mut self, expr: &SQLExpr) -> PolarsResult<ValueArg> {
         let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
         if self.reads_rows {
-            for e in &parsed {
-                if let Expr::SubPlan(_, names) = e {
-                    let read_per_row = &mut self.ctx.group_scope.subqueries_read_per_row;
-                    read_per_row.extend(names.iter().map(|(name, _)| name.clone()));
-                }
-            }
+            self.read_subqueries_per_row(&parsed);
         }
         Ok(if self.reads_rows && is_constant_key(&parsed) {
             ValueArg::Constant(parsed)
         } else {
             ValueArg::Rows(self.apply_filter(parsed))
+        })
+    }
+
+    /// Record the scalar subqueries in `expr` as read once per row (see
+    /// `GroupScope::subqueries_read_per_row`).
+    fn read_subqueries_per_row(&mut self, expr: &Expr) {
+        for e in expr {
+            if let Expr::SubPlan(_, names) = e {
+                let read_per_row = &mut self.ctx.group_scope.subqueries_read_per_row;
+                read_per_row.extend(names.iter().map(|(name, _)| name.clone()));
+            }
+        }
+    }
+
+    /// `expr` with each scalar subquery replaced by a null of its dtype, so that it can be
+    /// typed before the subqueries are resolved.
+    fn with_typed_subqueries(&mut self, expr: &Expr) -> PolarsResult<Expr> {
+        expr.clone().try_map_expr(|e| match e {
+            Expr::SubPlan(lp, names) => {
+                let mut lf = LazyFrame::from((**lp).clone()).select([names[0].1.clone()]);
+                let schema = self.ctx.get_frame_schema(&mut lf)?;
+                Ok(lit(Scalar::null(schema.get_at_index(0).unwrap().1.clone())))
+            },
+            e => Ok(e),
         })
     }
 

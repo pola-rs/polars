@@ -264,9 +264,9 @@ pub(crate) struct GroupScope {
     /// Partition column standing for an empty `OVER ()` parsed in such a clause,
     /// until the window is separated from the aggregates.
     whole_frame_partition: Option<PlSmallStr>,
-    /// Placeholders of the scalar subqueries in the value arguments of aggregates, which are
-    /// read once per row (see `broadcast_subqueries_in_inputs`). A subquery in a parameter,
-    /// as the separator of STRING_AGG, is read once.
+    /// Placeholders of the scalar subqueries in the value arguments and the FILTER of
+    /// aggregates, which are read once per row (see `broadcast_subqueries_in_inputs`). A
+    /// subquery in a parameter, as the separator of STRING_AGG, is read once.
     pub(crate) subqueries_read_per_row: PlHashSet<PlSmallStr>,
 }
 

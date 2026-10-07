@@ -177,5 +177,34 @@ def test_filter_clause_with_over_unsupported() -> None:
 @pytest.mark.parametrize("agg", ["SUM(2)", "COUNT(*)", "SUM(x)"])
 def test_filter_clause_non_boolean_error(agg: str) -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
-    with pytest.raises(InvalidOperationError, match="must be of type `Boolean`"):
-        df.sql(f"SELECT {agg} FILTER (WHERE x) FROM self")
+    for pred in ("x", "x + (SELECT 0)"):
+        with pytest.raises(InvalidOperationError, match="must be of type `Boolean`"):
+            df.sql(f"SELECT {agg} FILTER (WHERE {pred}) FROM self")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        """
+        SELECT
+          SUM(2) FILTER (WHERE (SELECT TRUE)) AS a,
+          COUNT(*) FILTER (WHERE (SELECT TRUE)) AS b,
+          STDDEV(1) FILTER (WHERE (SELECT TRUE)) AS c,
+          SUM(x) FILTER (WHERE x > (SELECT 1)) AS d
+        FROM self
+        """,
+        """
+        SELECT
+          g,
+          SUM(2) FILTER (WHERE (SELECT TRUE)) AS a,
+          COUNT(*) FILTER (WHERE x > (SELECT 1)) AS b
+        FROM self GROUP BY g ORDER BY g
+        """,
+    ],
+)
+def test_filter_clause_subquery(query: str) -> None:
+    # The predicate reads a subquery value once per row.
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+    assert_sql_matches(
+        df, query=query, compare_with="duckdb", engines=["in-memory", "streaming"]
+    )
