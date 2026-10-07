@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import InvalidOperationError
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -879,6 +880,16 @@ def test_when_then_scalar_condition_on_empty_frame_with_cse() -> None:
     expected = pl.DataFrame(
         schema={"x": pl.Int64, "y": pl.Float64, "z": pl.Int64},
     )
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+@pytest.mark.parametrize("height", [0, 3])
+def test_when_then_scalar_condition_with_cse_scalar_branch(height: int) -> None:
+    n = (pl.col("x") > 5).sum()
+    q = pl.LazyFrame({"x": range(height)}, schema={"x": pl.Int64}).select(
+        pl.when(n > 0).then(n * 2)
+    )
+    expected = pl.DataFrame({"x": [None]}, schema={"x": get_index_type()})
     assert_frame_equal(q.collect(engine="in-memory"), expected)
 
 
