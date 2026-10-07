@@ -76,6 +76,7 @@ pub enum PhysicalPropsDescription {
         maintain_order: bool,
     },
     InMemorySink,
+    Reverse,
     InMemorySource {
         n_rows: usize,
         schema_names: Vec<String>,

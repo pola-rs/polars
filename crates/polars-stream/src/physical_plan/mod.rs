@@ -204,6 +204,10 @@ pub enum PhysNodeKind {
         length: usize,
     },
 
+    Reverse {
+        input: PhysStream,
+    },
+
     NegativeSlice {
         input: PhysStream,
         offset: i64,
@@ -660,6 +664,7 @@ fn _visit_nodes_impl(
             | PhysNodeKind::WithRowIndex { input, .. }
             | PhysNodeKind::Reduce { input, .. }
             | PhysNodeKind::StreamingSlice { input, .. }
+            | PhysNodeKind::Reverse { input }
             | PhysNodeKind::NegativeSlice { input, .. }
             | PhysNodeKind::Filter { input, .. }
             | PhysNodeKind::SimpleProjection { input, .. }
