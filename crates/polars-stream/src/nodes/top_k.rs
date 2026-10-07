@@ -659,6 +659,15 @@ impl ComputeNode for TopKNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            TopKState::WaitingForK(_) | TopKState::Sink { .. } | TopKState::Done => {
+                NodeMemoryUsage::Bounded
+            },
+            TopKState::Source(src) => src.memory_usage(),
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
