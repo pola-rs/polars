@@ -31,6 +31,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.10'
+  PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
   MANIFEST_PATH: crates/polars-iceberg/Cargo.toml
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
@@ -116,8 +117,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TODO: win-arm64 needs the manual toolchain setup from release-python.yml.
-        job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64]
+        job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
         include:
           - job_config: linux-x64
             os: ubuntu-latest
@@ -140,21 +140,30 @@ jobs:
           - job_config: win-x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
+          - job_config: win-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
+      # After the checkout, which the local action needs, and before cloning, which needs git.
+      - name: Setup build environment (ARM64 Windows)
+        if: matrix.os == 'windows-11-arm'
+        uses: ./.github/actions/setup-windows-arm64
+
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
         with:
           ref: ${{ inputs.tag }}
 
+      # The wheel is abi3 for Python 3.10+ whichever Python builds it.
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.os == 'windows-11-arm' && env.PYTHON_VERSION_WIN_ARM64 || env.PYTHON_VERSION }}
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
