@@ -999,6 +999,45 @@ def test_join_where_decimal_vs_float() -> None:
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("a") > pl.col("b"),
+        pl.col("b") >= pl.col("a"),
+        pl.col("a") == pl.col("b"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("left_dtype", "right_dtype", "max_left"),
+    [
+        # Both sides fit in Decimal(38, 4).
+        (pl.Decimal(10, 2), pl.Decimal(38, 4), "99999999.99"),
+        # No decimal holds both sides.
+        (pl.Decimal(38, 2), pl.Decimal(38, 12), "9" * 36 + ".99"),
+    ],
+)
+def test_cross_join_filter_decimal_scales_29762(
+    engine: EngineType,
+    predicate: pl.Expr,
+    left_dtype: pl.Decimal,
+    right_dtype: pl.Decimal,
+    max_left: str,
+) -> None:
+    left = pl.LazyFrame({"a": ["-2.50", "1.00", "3.25", max_left, None]})
+    right = pl.LazyFrame({"b": ["-2.5001", "1.0000", "3.2500"]})
+    q = (
+        left.cast(left_dtype)
+        .join(right.cast(right_dtype), how="cross")
+        .filter(predicate)
+    )
+
+    expected = q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
+    assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+    if left_dtype.precision == 10:
+        assert "CROSS JOIN" not in q.explain(engine=engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("with_key", [False, True])
 @pytest.mark.parametrize("empty_left", [False, True])
 @pytest.mark.parametrize("empty_right", [False, True])
