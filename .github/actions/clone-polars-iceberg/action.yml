@@ -6,7 +6,7 @@ description: >
 inputs:
   ref:
     description: Branch or tag of polars-iceberg to clone
-    default: dev
+    default: main
 
 runs:
   using: composite
