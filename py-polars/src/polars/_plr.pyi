@@ -996,6 +996,7 @@ class PyLazyFrame:
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption_properties: PyFileEncryptionProperties | None = None,
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,
