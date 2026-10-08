@@ -311,3 +311,51 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(all(feature = "lazy", feature = "parquet"))]
+fn test_empty_parquet_scan_group_by_join_29732() -> PolarsResult<()> {
+    // An empty parquet scan used to panic during cardinality estimation: `IR::Scan`
+    // did not floor its row count at `MIN_CARDINALITY`, so a downstream `group_by`
+    // over an empty file called `0.0_f64.clamp(1.0, 0.0)`, which panics because
+    // `min > max`.
+    // https://github.com/pola-rs/polars/issues/29732
+    use polars_io::prelude::ParquetWriter;
+
+    // An empty frame with a single Int64 column.
+    let mut empty = DataFrame::new(
+        0,
+        vec![Column::new(
+            "k".into(),
+            Series::new("k".into(), Vec::<i64>::new()),
+        )],
+    )?;
+
+    let path = std::env::temp_dir().join(format!("polars_29732_{}.parquet", std::process::id()));
+    let f = std::fs::File::create(&path)?;
+    ParquetWriter::new(f).finish(&mut empty)?;
+
+    let grouped = LazyFrame::scan_parquet(path.to_str().unwrap().into(), Default::default())?
+        .group_by([col("k")])
+        .agg([len()]);
+
+    let out = df!["k" => [1i64]]?
+        .lazy()
+        .join(
+            grouped,
+            [col("k")],
+            [col("k")],
+            JoinArgs::new(JoinType::Left),
+        )?
+        .collect();
+
+    let _ = std::fs::remove_file(&path);
+
+    // The left side has one row; the right (group-by over an empty file) has no
+    // groups, so `len` must be null rather than the query panicking.
+    let out = out?;
+    assert_eq!(out.shape(), (1, 2));
+    assert_eq!(out.column("k")?.i64()?.cont_slice()?, &[1]);
+    assert!(out.column("len").is_ok_and(|s| s.is_null().any()));
+    Ok(())
+}
