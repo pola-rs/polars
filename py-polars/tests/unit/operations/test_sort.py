@@ -1608,11 +1608,10 @@ def test_sort_by_first_last_to_min_max_by(
     )
 
     q = df.lazy().group_by("g").agg(first=e.first(), last=e.last())
-    plan = q.explain()
-    assert "min_by" in plan
-    assert "max_by" in plan
-    assert "sort_by" not in plan
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "min_by" in dot
+    assert "max_by" in dot
+    assert "sort_by" not in dot
     assert "in-memory-map" not in dot
     assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
 
@@ -1638,7 +1637,8 @@ def test_sort_by_first_maintain_order(engine: EngineType) -> None:
     for by in [["a"], ["a", "g"]]:
         e = pl.col("x").sort_by(by, maintain_order=True)
         q = df.lazy().group_by("g").agg(first=e.first(), last=e.last())
-        assert "min_by" not in q.explain()
+        dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+        assert "min_by" not in dot
         assert_frame_equal(
             q.collect(engine=engine),
             pl.DataFrame({"g": [1, 2], "first": [2, 4], "last": [1, 5]}),

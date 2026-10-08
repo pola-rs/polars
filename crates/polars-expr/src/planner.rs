@@ -382,6 +382,11 @@ fn create_physical_expr_inner(
             )))
         },
         Agg(agg) => {
+            if let Some(min_max_by) =
+                sort_by_first_last_to_min_max_by(expression, expr_arena, schema)
+            {
+                return create_physical_expr_inner(min_max_by, expr_arena, schema, state);
+            }
             let mut expr = agg.get_input().first();
             if let IRAggExpr::First(_) = agg {
                 expr = sort_with_limit(expr, 1, expr_arena).unwrap_or(expr);

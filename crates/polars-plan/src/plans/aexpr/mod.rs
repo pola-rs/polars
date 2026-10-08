@@ -11,7 +11,7 @@ pub(crate) mod or_factoring;
 pub mod predicates;
 mod scalar;
 mod schema;
-mod sort_limit;
+mod sort_lowering;
 mod traverse;
 
 use std::hash::{Hash, Hasher};
@@ -39,7 +39,7 @@ pub use properties::*;
 pub use schema::ToFieldContext;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use schema::get_struct_numeric_dtype;
-pub use sort_limit::{slice_head_len, sort_with_limit};
+pub use sort_lowering::{slice_head_len, sort_by_first_last_to_min_max_by, sort_with_limit};
 
 use crate::constants::LEN;
 use crate::prelude::*;

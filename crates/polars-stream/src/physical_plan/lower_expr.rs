@@ -2183,15 +2183,23 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(trans_expr);
             },
             AExpr::Agg(agg) => match agg {
-                IRAggExpr::First(inner)
+                IRAggExpr::First(inner) | IRAggExpr::Last(inner)
                     if matches!(
                         ctx.expr_arena.get(inner),
                         AExpr::Sort { .. } | AExpr::SortBy { .. }
                     ) =>
                 {
-                    let inner = sort_with_limit(inner, 1, ctx.expr_arena).unwrap();
-                    let first = ctx.expr_arena.add(AExpr::Agg(IRAggExpr::First(inner)));
-                    let (trans_stream, trans_expr) = lower_reduce_node(input, first, ctx)?;
+                    let schema = input.output_schema(ctx.phys_sm).clone();
+                    let reduce =
+                        match sort_by_first_last_to_min_max_by(expr, ctx.expr_arena, &schema) {
+                            Some(min_max_by) => min_max_by,
+                            None if matches!(agg, IRAggExpr::First(_)) => {
+                                let inner = sort_with_limit(inner, 1, ctx.expr_arena).unwrap();
+                                ctx.expr_arena.add(AExpr::Agg(IRAggExpr::First(inner)))
+                            },
+                            None => expr,
+                        };
+                    let (trans_stream, trans_expr) = lower_reduce_node(input, reduce, ctx)?;
                     input_streams.insert(trans_stream);
                     transformed_exprs.push(trans_expr);
                 },

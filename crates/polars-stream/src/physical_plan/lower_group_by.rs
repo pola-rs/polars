@@ -292,6 +292,10 @@ fn try_lower_elementwise_scalar_agg_expr(
         }
     }
 
+    if let Some(min_max_by) = sort_by_first_last_to_min_max_by(expr, expr_arena, input_schema) {
+        return lower_rec!(min_max_by);
+    }
+
     match expr_arena.get(expr) {
         // Should be handled separately in `Eval`.
         AExpr::Element => unreachable!(),
