@@ -36,6 +36,21 @@ fn skew_reduction(
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
     Ok(match dtype {
+        // `finish` ignores the input type, so one reducer merges the states of every numeric input.
+        #[cfg(feature = "serde")]
+        _ if matches!(stage, SplitStage::Merge)
+            && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
+        {
+            split_reduction(
+                dtype,
+                SkewReducer::<Float64Type> {
+                    bias,
+                    needs_cast: false,
+                    _phantom: PhantomData,
+                },
+                stage,
+            )
+        },
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 split_reduction(dtype, SkewReducer::<$T> {
@@ -99,6 +114,22 @@ fn kurtosis_reduction(
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
     Ok(match dtype {
+        // `finish` ignores the input type, so one reducer merges the states of every numeric input.
+        #[cfg(feature = "serde")]
+        _ if matches!(stage, SplitStage::Merge)
+            && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
+        {
+            split_reduction(
+                dtype,
+                KurtosisReducer::<Float64Type> {
+                    fisher,
+                    bias,
+                    needs_cast: false,
+                    _phantom: PhantomData,
+                },
+                stage,
+            )
+        },
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 split_reduction(dtype, KurtosisReducer::<$T> {

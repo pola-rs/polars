@@ -45,6 +45,22 @@ fn var_std_reduction(
     let op_name = if is_std { "std" } else { "var" };
     Ok(match dtype {
         Boolean => split_reduction(dtype, BoolVarStdReducer { is_std, ddof }, stage),
+        // `finish` ignores the input type, so one reducer merges the states of every numeric input.
+        #[cfg(feature = "serde")]
+        _ if matches!(stage, SplitStage::Merge)
+            && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
+        {
+            split_reduction(
+                dtype,
+                VarStdReducer::<Float64Type> {
+                    is_std,
+                    ddof,
+                    needs_cast: false,
+                    _phantom: PhantomData,
+                },
+                stage,
+            )
+        },
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 split_reduction(dtype, VarStdReducer::<$T> {
