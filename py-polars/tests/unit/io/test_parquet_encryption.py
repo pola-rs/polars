@@ -318,3 +318,46 @@ def test_serialize_with_decryption_properties(encrypted_file_path: Path) -> None
         match="cannot serialize parquet decryption properties",
     ):
         lf.serialize()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"footer_key": FOOTER_KEY},
+        {
+            "footer_key": FOOTER_KEY,
+            "column_keys": {"x": b"1234567890123450", "y.z": b"1234567890123451"},
+        },
+        {"footer_key": FOOTER_KEY, "plaintext_footer": True},
+        {"footer_key": FOOTER_KEY, "aad_prefix": AAD_PREFIX},
+        {"footer_key": FOOTER_KEY, "aad_prefix": AAD_PREFIX, "store_aad_prefix": True},
+    ],
+)
+def test_encryption_properties(kwargs: dict[str, Any]) -> None:
+    pl.ParquetEncryptionProperties(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"footer_key": "0123456789012345"}, "footer_key must be bytes, got 'str'"),
+        (
+            {"footer_key": FOOTER_KEY, "column_keys": {"x": "1234567890123450"}},
+            "key for column 'x' must be bytes, got 'str'",
+        ),
+        (
+            {"footer_key": FOOTER_KEY, "aad_prefix": "prefix"},
+            "aad_prefix must be bytes, got 'str'",
+        ),
+    ],
+)
+def test_encryption_properties_keys_must_be_bytes(
+    kwargs: dict[str, Any], match: str
+) -> None:
+    with pytest.raises(TypeError, match=match):
+        pl.ParquetEncryptionProperties(**kwargs)
+
+
+def test_encryption_properties_store_aad_prefix_requires_aad_prefix() -> None:
+    with pytest.raises(ValueError, match="store_aad_prefix requires aad_prefix"):
+        pl.ParquetEncryptionProperties(footer_key=FOOTER_KEY, store_aad_prefix=True)

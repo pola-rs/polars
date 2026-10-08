@@ -15,6 +15,7 @@ from polars.io.lines import read_lines, scan_lines
 from polars.io.ndjson import read_ndjson, scan_ndjson
 from polars.io.parquet import (
     ParquetDecryptionProperties,
+    ParquetEncryptionProperties,
     read_parquet,
     read_parquet_metadata,
     read_parquet_schema,
@@ -33,6 +34,7 @@ __all__ = [
     "defer",
     "FileProviderArgs",
     "ParquetDecryptionProperties",
+    "ParquetEncryptionProperties",
     "PartitionBy",
     "read_avro",
     "read_clipboard",
