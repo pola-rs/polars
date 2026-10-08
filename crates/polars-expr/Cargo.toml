@@ -94,7 +94,7 @@ approx_unique = ["polars-plan/approx_unique", "polars-ops/approx_unique"]
 approx_quantile = [
   "polars-plan/approx_quantile",
   "polars-ops/approx_quantile",
-  "dep:serde",
+  "serde",
 ]
 is_in = ["polars-plan/is_in", "polars-ops/is_in"]
 is_first_distinct = ["polars-plan/is_first_distinct", "polars-ops/is_first_distinct"]
