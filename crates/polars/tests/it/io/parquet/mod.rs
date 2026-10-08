@@ -331,7 +331,16 @@ fn test_empty_parquet_scan_group_by_join_29732() -> PolarsResult<()> {
         )],
     )?;
 
-    let path = std::env::temp_dir().join(format!("polars_29732_{}.parquet", std::process::id()));
+    // A fresh file per (process, invocation). The PID is unique across processes; the
+    // atomic counter keeps concurrent test threads in one process from sharing a path,
+    // which the PID alone would not. `tempfile` is not a dev-dependency of this crate.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "polars_29732_{}_{}.parquet",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed),
+    ));
     let f = std::fs::File::create(&path)?;
     ParquetWriter::new(f).finish(&mut empty)?;
 
