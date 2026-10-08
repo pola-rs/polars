@@ -168,6 +168,7 @@ pub(super) fn expand_datasets_for_join_order(
         let ir = ir_arena.get(node).clone();
         let mut args = DatasetScanArgs::new(&ir, expr_arena);
         args.request.statistics_columns = statistics_columns(&ir, &key_and_filter_names);
+        args.derive_stats = true;
 
         expansion_tasks.push(spawn_expansion(
             node,
@@ -179,29 +180,14 @@ pub(super) fn expand_datasets_for_join_order(
 
     ASYNC.block_in_place_on(async {
         while let Some((node, ir)) = expansion_tasks.next().await {
-            let mut ir = ir?;
-            let IR::Scan {
-                sources,
-                scan_type,
-                file_info,
-                unified_scan_args,
-                ..
-            } = &mut ir
-            else {
+            let ir = ir?;
+            let IR::Scan { scan_type, .. } = &ir else {
                 unreachable!()
             };
 
-            if matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) {
-                continue;
+            if !matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) {
+                ir_arena.replace(node, ir);
             }
-
-            file_info.stats = dataset_scan_stats(
-                sources.len(),
-                file_info.stats.rows,
-                unified_scan_args,
-                &file_info.schema,
-            );
-            ir_arena.replace(node, ir);
         }
 
         PolarsResult::Ok(())
@@ -258,6 +244,8 @@ struct DatasetScanRequest {
 struct DatasetScanArgs {
     request: DatasetScanRequest,
     row_index_in_live_filter: bool,
+    /// Derive the scan statistics of a native expansion from its table statistics.
+    derive_stats: bool,
 }
 
 #[cfg(feature = "python")]
@@ -349,6 +337,7 @@ impl DatasetScanArgs {
                 pyarrow_predicate,
             },
             row_index_in_live_filter,
+            derive_stats: false,
         }
     }
 }
@@ -710,6 +699,7 @@ fn expand_python_dataset(
     let DatasetScanArgs {
         request,
         row_index_in_live_filter,
+        derive_stats,
     } = args;
 
     let IR::Scan { scan_type, .. } = &mut scan_ir else {
@@ -795,6 +785,8 @@ fn expand_python_dataset(
     };
 
     let IR::Scan {
+        sources,
+        scan_type,
         unified_scan_args,
         file_info,
         ..
@@ -805,6 +797,15 @@ fn expand_python_dataset(
 
     if let Some((physical, deleted)) = unified_scan_args.row_count {
         file_info.stats.rows = Card::Exact(u64::saturating_sub(physical, deleted));
+    }
+
+    if derive_stats && !matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) {
+        file_info.stats = dataset_scan_stats(
+            sources.len(),
+            file_info.stats.rows,
+            unified_scan_args,
+            &file_info.schema,
+        );
     }
 
     Ok(scan_ir)
