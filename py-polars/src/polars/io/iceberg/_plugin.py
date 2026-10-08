@@ -27,7 +27,11 @@ from polars.exceptions import ComputeError, PerformanceWarning
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
-from polars.io.iceberg._cache import get_metadata_file_cache, plugin_storage_scope
+from polars.io.iceberg._cache import (
+    _BUILTIN_FILE_IO_CLASSES,
+    get_metadata_file_cache,
+    plugin_storage_scope,
+)
 from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
@@ -129,6 +133,13 @@ def plugin_scan(
 
     plr = _plr()
     capsule = _plugin_capsule(plr._IO_PLUGIN_IDS)
+
+    # The plugin reads metadata with Polars' storage, configured from the FileIO's
+    # properties; a custom FileIO may read from storage that Polars cannot access.
+    file_io_class = f"{type(tbl.io).__module__}.{type(tbl.io).__qualname__}"
+    if file_io_class not in _BUILTIN_FILE_IO_CLASSES:
+        msg = f"iceberg: unsupported: custom PyIceberg FileIO ({file_io_class})"
+        raise NotImplementedError(msg)
 
     metadata_location = tbl.metadata_location
 

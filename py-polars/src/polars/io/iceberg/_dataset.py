@@ -512,9 +512,6 @@ class IcebergScanResolver:
         deletion_vectors: dict[int, str] = {}
         total_physical_rows: int = 0
         total_deleted_rows: int = 0
-        # A position delete file may apply to several data files (partition-scoped),
-        # but its rows are counted once.
-        counted_position_delete_files: set[str] = set()
         total_position_delete_files = 0
         total_deletion_vectors = 0
 
@@ -547,7 +544,7 @@ class IcebergScanResolver:
 
                 if file_info.delete_files:
                     position_delete_files[i] = []
-                    position_delete_record_counts: dict[str, int] = {}
+                    position_delete_num_rows = 0
                     deletion_vector_num_rows = 0
 
                     for deletion_file in file_info.delete_files:
@@ -560,10 +557,20 @@ class IcebergScanResolver:
 
                         match deletion_file.file_format:
                             case FileFormat.PARQUET:
+                                # The native reader reads position delete files of
+                                # one data file only. This also keeps the deleted row
+                                # count exact: the rows of a delete file scoped to a
+                                # partition may belong to data files that are no
+                                # longer live.
+                                if not _references_one_data_file(deletion_file):
+                                    fallback_reason = (
+                                        "position delete file not limited to one "
+                                        f"data file: {deletion_file.file_path}"
+                                    )
+                                    break
+
                                 position_delete_files[i].append(deletion_file.file_path)
-                                position_delete_record_counts[
-                                    deletion_file.file_path
-                                ] = deletion_file.record_count
+                                position_delete_num_rows += deletion_file.record_count
 
                             case FileFormat.PUFFIN:
                                 if i in deletion_vectors:
@@ -584,10 +591,7 @@ class IcebergScanResolver:
                         total_deletion_vectors += 1
                         del position_delete_files[i]
                     else:
-                        for path, count in position_delete_record_counts.items():
-                            if path not in counted_position_delete_files:
-                                counted_position_delete_files.add(path)
-                                total_deleted_rows += count
+                        total_deleted_rows += position_delete_num_rows
                         total_position_delete_files += len(position_delete_files[i])
 
                 if fallback_reason:
@@ -785,6 +789,20 @@ class _PluginIcebergScanData(_ResolvedScanDataBase):
 
     def to_lazyframe(self) -> pl.LazyFrame:
         return self.lf
+
+
+# Reserved field ID of `file_path` in position delete files.
+_DELETE_FILE_PATH_FIELD_ID = 2147483546
+
+
+def _references_one_data_file(deletion_file: Any) -> bool:
+    """Whether a position delete file only holds deletes of one data file."""
+    if getattr(deletion_file, "referenced_data_file", None) is not None:
+        return True
+
+    lower = (deletion_file.lower_bounds or {}).get(_DELETE_FILE_PATH_FIELD_ID)
+    upper = (deletion_file.upper_bounds or {}).get(_DELETE_FILE_PATH_FIELD_ID)
+    return lower is not None and lower == upper
 
 
 def _redact_dict_values(obj: Any) -> Any:

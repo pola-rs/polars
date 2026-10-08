@@ -407,13 +407,21 @@ def test_iceberg_plugin_row_index(metadata_path: str) -> None:
 
 
 def _add_position_deletes(
-    tbl: Any, deletes: dict[str, list[int]], *, single_delete_file: bool = False
+    tbl: Any,
+    deletes: dict[str, list[int]],
+    *,
+    single_delete_file: bool = False,
+    partition: Any = None,
+    path_bounds: bool = True,
 ) -> Any:
     """
     Commit a snapshot adding one position delete file per data file.
 
     With `single_delete_file`, one delete file holds the deletes of all data files (it
-    is then scoped to the partition rather than to a data file).
+    is then scoped to the partition rather than to a data file). `partition` is the
+    partition tuple of the delete files (default: unpartitioned). Without
+    `path_bounds`, the delete files have no `file_path` bounds, so they are scoped to
+    the partition even when they reference one data file.
 
     PyIceberg cannot write merge-on-read deletes, so the delete files, the delete
     manifest and the manifest list are written with its low-level writers.
@@ -488,11 +496,11 @@ def _add_position_deletes(
             content=DataFileContent.POSITION_DELETES,
             file_path=path,
             file_format=FileFormat.PARQUET,
-            partition=Record(),
+            partition=Record() if partition is None else partition,
             record_count=len(rows),
             file_size_in_bytes=Path(local_path).stat().st_size,
-            lower_bounds={path_field_id: min(group).encode()},
-            upper_bounds={path_field_id: max(group).encode()},
+            lower_bounds={path_field_id: min(group).encode()} if path_bounds else {},
+            upper_bounds={path_field_id: max(group).encode()} if path_bounds else {},
         )
         data_file.spec_id = tbl.spec().spec_id
         delete_files.append(data_file)
@@ -579,14 +587,23 @@ def test_iceberg_plugin_position_deletes(
     assert_frame_equal(pl.scan_iceberg(tbl, snapshot_id=first).collect(), TEST_DF)
 
 
-@pytest.mark.parametrize("planner", ["plugin", "pyiceberg"])
-def test_iceberg_plugin_partition_scoped_position_deletes_counted_once(
-    tmp_path: Path, planner: str, plmonkeypatch: PlMonkeyPatch
+@pytest.mark.parametrize("planner", [None, "pyiceberg"])
+@pytest.mark.parametrize("remove_data_file", [False, True])
+def test_iceberg_plugin_partition_scoped_position_deletes(
+    tmp_path: Path,
+    planner: str | None,
+    remove_data_file: bool,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
+    # Delete files referencing several data files are read by PyIceberg (the plugin
+    # raises `NotImplementedError`, the PyIceberg planner falls back).
+    if planner is None:
+        plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER")
+    else:
+        plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
 
     tbl = _new_table(tmp_path)
-    tbl.append(TEST_DF.to_arrow())
+    tbl.append(TEST_DF.with_columns(pl.col("a") + 10).to_arrow())
     paths = _data_file_paths(tbl)
     assert len(paths) == 2
 
@@ -594,11 +611,211 @@ def test_iceberg_plugin_partition_scoped_position_deletes_counted_once(
     tbl = _add_position_deletes(
         tbl, {paths[0]: [0, 2], paths[1]: [4]}, single_delete_file=True
     )
+    if remove_data_file:
+        # The delete file stays live, with deletes of a data file that is not.
+        tbl.delete("a < 10")
+        assert len(_data_file_paths(tbl)) == 1
 
-    # The row count comes from metadata only: reading delete files that reference
-    # several data files is not supported yet.
-    lf = pl.scan_iceberg(tbl, fast_deletion_count=True)
-    assert lf.select(pl.len()).collect().item() == 2 * TEST_DF.height - 3
+    expected = pl.DataFrame(tbl.scan().to_arrow())
+    if remove_data_file:
+        assert expected.height < TEST_DF.height
+    else:
+        assert expected.height == 2 * TEST_DF.height - 3
+
+    for fast_deletion_count in [False, True]:
+        lf = pl.scan_iceberg(tbl, fast_deletion_count=fast_deletion_count)
+        assert_frame_equal(lf.collect(), expected, check_row_order=False)
+        assert lf.select(pl.len()).collect().item() == expected.height
+
+
+def test_iceberg_plugin_partition_scoped_position_deletes_plugin_planner_raises(
+    tmp_path: Path,
+) -> None:
+    tbl = _new_table(tmp_path)
+    tbl.append(TEST_DF.to_arrow())
+    paths = _data_file_paths(tbl)
+    tbl = _add_position_deletes(tbl, {paths[0]: [0]}, path_bounds=False)
+
+    with pytest.raises(
+        NotImplementedError,
+        match="position delete file not limited to one data file",
+    ):
+        pl.scan_iceberg(tbl).collect()
+
+
+@pytest.mark.parametrize("planner", ["plugin", "pyiceberg"])
+def test_iceberg_plugin_decimal_partition_deletes_after_precision_widening(
+    tmp_path: Path, planner: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from decimal import Decimal
+
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.typedef import Record
+    from pyiceberg.types import DecimalType
+
+    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "d", DecimalType(9, 2)),
+        ),
+        partition_spec=PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "d")),
+    )
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "d": pl.Series([Decimal("1.00")] * 3, dtype=pl.Decimal(9, 2))}
+    )
+    tbl.append(df.to_arrow())
+    [path] = _data_file_paths(tbl)
+
+    # The partition value of the data file is 4 bytes, the one of the delete file 5.
+    with tbl.update_schema() as update:
+        update.update_column("d", DecimalType(10, 2))
+    tbl = tbl.catalog.load_table(tbl.name())
+
+    # Matched to the data file by partition only.
+    tbl = _add_position_deletes(
+        tbl, {path: [1]}, partition=Record(Decimal("1.00")), path_bounds=False
+    )
+
+    expected = pl.DataFrame(tbl.scan().to_arrow())
+    assert expected.height == 2
+
+    if planner == "plugin":
+        # The delete file is matched (so the plugin reports it as unsupported, instead
+        # of ignoring it).
+        with pytest.raises(NotImplementedError, match="not limited to one data file"):
+            pl.scan_iceberg(tbl).collect()
+    else:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).collect(), expected, check_row_order=False
+        )
+
+    plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER")
+    lf = pl.scan_iceberg(tbl)
+    assert_frame_equal(lf.collect(), expected, check_row_order=False)
+    assert lf.select(pl.len()).collect().item() == 2
+
+
+def test_iceberg_plugin_gzip_metadata(metadata_path: str) -> None:
+    import gzip
+
+    # As written with `write.metadata.compression-codec=gzip`.
+    local_path = Path(metadata_path.removeprefix("file://"))
+    gz_path = local_path.with_name(
+        local_path.name.removesuffix(".metadata.json") + ".gz.metadata.json"
+    )
+    gz_path.write_bytes(gzip.compress(local_path.read_bytes()))
+
+    assert_frame_equal(pl.scan_iceberg(str(gz_path)).collect(), TEST_DF)
+
+
+@pytest.mark.parametrize("planner", [None, "plugin"])
+def test_iceberg_plugin_unsupported_avro_codec(
+    tmp_path: Path, planner: str | None, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    if planner is None:
+        plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER")
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        properties={"write.avro.compression-codec": "bzip2"},
+    )
+    tbl.append(TEST_DF.select("a").to_arrow())
+
+    if planner == "plugin":
+        with pytest.raises(NotImplementedError, match="Avro codec 'bzip2'"):
+            pl.scan_iceberg(tbl).collect()
+    else:
+        # Planned with PyIceberg.
+        assert_frame_equal(pl.scan_iceberg(tbl).collect(), TEST_DF.select("a"))
+
+
+@pytest.mark.parametrize("planner", [None, "plugin"])
+def test_iceberg_plugin_custom_file_io(
+    tmp_path: Path, planner: str | None, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+    from pyiceberg.table import Table
+
+    if planner is None:
+        plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER")
+
+    class CustomFileIO(PyArrowFileIO):  # type: ignore[misc]
+        pass
+
+    tbl = _new_table(tmp_path)
+    tbl = Table(
+        identifier=tbl.name(),
+        metadata=tbl.metadata,
+        metadata_location=tbl.metadata_location,
+        io=CustomFileIO(tbl.io.properties),
+        catalog=tbl.catalog,
+    )
+
+    if planner == "plugin":
+        with pytest.raises(NotImplementedError, match="custom PyIceberg FileIO"):
+            pl.scan_iceberg(tbl).collect()
+    else:
+        # Planned with PyIceberg, through the table's FileIO.
+        assert_frame_equal(pl.scan_iceberg(tbl).collect(), TEST_DF)
+
+
+def test_iceberg_plugin_decimal_initial_default_exponent(tmp_path: Path) -> None:
+    from decimal import Decimal
+
+    from pyiceberg.types import DecimalType
+
+    tbl = _new_table(tmp_path)
+    with tbl.update_schema() as update:
+        update.add_column("x", DecimalType(8, 7), default_value=Decimal("1E-7"))
+        update.add_column("z", DecimalType(8, 7), default_value=Decimal("0E-7"))
+    tbl = tbl.catalog.load_table(tbl.name())
+
+    expected = pl.DataFrame(tbl.scan().to_arrow())
+    assert expected["x"].to_list() == [Decimal("0.0000001")] * TEST_DF.height
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), expected)
+
+
+def test_iceberg_plugin_prunes_buckets(tmp_path: Path) -> None:
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import BucketTransform
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "b", StringType())
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, BucketTransform(16), "a_bucket"),
+            PartitionField(2, 1001, BucketTransform(4), "b_bucket"),
+        ),
+    )
+    df = pl.DataFrame({"a": range(100), "b": [str(i % 7) for i in range(100)]})
+    tbl.append(df.to_arrow())
+    n_files = len(_data_file_paths(tbl))
+
+    def check(predicate: pl.Expr, iceberg_filter: str) -> None:
+        lf = pl.scan_iceberg(tbl).filter(predicate)
+        assert_frame_equal(lf.collect(), df.filter(predicate), check_row_order=False)
+        # Same candidate files as PyIceberg.
+        expected = len(list(tbl.scan(row_filter=iceberg_filter).plan_files()))
+        assert _num_sources(lf) == expected < n_files
+
+    check(pl.col("a") == 50, "a = 50")
+    check(pl.col("a").is_in([1, 2, 50]), "a in (1, 2, 50)")
+    check(pl.col("b") == "3", "b = '3'")
+    check((pl.col("a") == 50) & (pl.col("b") == "1"), "a = 50 and b = '1'")
+
+
+def _num_sources(lf: pl.LazyFrame) -> int:
+    plan = lf.explain()
+    if m := re.search(r"\.\.\. (\d+) other sources", plan):
+        return 1 + int(m.group(1))
+    return plan.count(".parquet")
 
 
 def test_iceberg_plugin_time_travel_filter_uses_snapshot_schema(tmp_path: Path) -> None:
