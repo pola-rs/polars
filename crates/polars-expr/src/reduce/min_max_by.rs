@@ -652,7 +652,13 @@ where
                 .select_one(&mut self.values[group_idx as usize], val);
             if better || !self.mask.get(group_idx as usize) {
                 self.mask.set(group_idx as usize, true);
-                let selected_val = payload_values.new_from_index(selected, 1);
+                // A scalar payload, such as a literal, arrives as a unit-length column.
+                let payload_idx = if payload_values.len() == 1 {
+                    0
+                } else {
+                    selected
+                };
+                let selected_val = payload_values.new_from_index(payload_idx, 1);
                 self.payload.update_group(&[&selected_val], group_idx, 0)?;
             }
         }

@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ApproxQuantileMethod,
-        EngineType,
         PolarsDataType,
         TimeUnit,
     )
@@ -1983,6 +1982,44 @@ def test_min_max_by_extreme_keys_29760(
     lf = pl.LazyFrame({"v": [1, 1], "by": by})
     out = lf.select(agg(pl.col("v"), pl.col("by"))).collect()
     assert_frame_equal(out, pl.DataFrame({"v": [1]}))
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+def test_min_max_by_scalar_inputs_29760(agg: Callable[..., pl.Expr]) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2, 2], "a": list(range(5))})
+    a = pl.col("a")
+
+    def select(e: pl.Expr, lf: pl.LazyFrame = lf) -> Any:
+        return lf.select(e).collect().item()
+
+    def agg_by_group(e: pl.Expr) -> list[Any]:
+        q = lf.group_by("g", maintain_order=True).agg(e)
+        return q.collect()["a"].to_list()
+
+    # A scalar `by` ties every row, so any row of the input may be returned.
+    assert select(agg(a, pl.lit(1))) in range(5)
+    assert select(agg(a, a.max())) in range(5)
+    assert select(agg(a, pl.lit(None, pl.Int64))) is None
+    first, second = agg_by_group(agg(a, a.max()))
+    assert first in range(3)
+    assert second in range(3, 5)
+    assert agg_by_group(agg(a, pl.lit(None, pl.Int64))) == [None, None]
+
+    # A scalar value is the result whenever `by` has a non-null key.
+    assert select(agg(pl.lit(7), a).alias("a")) == 7
+    assert select(agg(a.max(), a)) == 4
+    assert select(agg(pl.lit(7), a), lf.clear()) is None
+    assert agg_by_group(agg(pl.lit(7), a).alias("a")) == [7, 7]
+    assert agg_by_group(agg(a.max(), a)) == [2, 4]
+
+    # A unit-length group of a non-scalar expression is not broadcast.
+    for e in [agg(a, a.head(1)), agg(a.head(1), a)]:
+        with pytest.raises(pl.exceptions.ShapeError):
+            agg_by_group(e)
+
+    # The rolling kernel can't gather a scalar value with the key's positions.
+    q = lf.rolling("a", period="3i").agg(agg(pl.col("g").sum(), a).alias("s"))
+    assert q.collect()["s"].to_list() == [1, 2, 3, 4, 5]
 
 
 @pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
