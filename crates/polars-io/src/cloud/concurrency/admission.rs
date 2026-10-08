@@ -225,6 +225,9 @@ pub struct InFlightBudget {
     request_budget: Arc<RequestBudget>,
     // Byte acquires that parked since the last `take_bytes_parked()`.
     bytes_parked: AtomicU64,
+    // Admission numbers: last issued, and the highest one whose permit was released.
+    admitted_seq: AtomicU64,
+    completed_seq: Arc<AtomicU64>,
 }
 
 impl InFlightBudget {
@@ -241,6 +244,8 @@ impl InFlightBudget {
                 floor_request_budget,
             )),
             bytes_parked: AtomicU64::new(0),
+            admitted_seq: AtomicU64::new(0),
+            completed_seq: Arc::new(AtomicU64::new(0)),
         };
 
         if polars_config::config().verbose() {
@@ -286,7 +291,21 @@ impl InFlightBudget {
         InFlightPermit {
             _bytes_reservation: bytes,
             _req_permit: request,
+            _completion: CompletionMark {
+                seq: self.admitted_seq.fetch_add(1, Relaxed) + 1,
+                completed: self.completed_seq.clone(),
+            },
         }
+    }
+
+    /// Number of the last admission.
+    pub fn admitted_seq(&self) -> u64 {
+        self.admitted_seq.load(Relaxed)
+    }
+
+    /// Highest admission number whose permit was released.
+    pub fn completed_seq(&self) -> u64 {
+        self.completed_seq.load(Relaxed)
     }
 
     pub fn current_byte_budget(&self) -> u64 {
@@ -363,4 +382,17 @@ impl Drop for RequestReservation {
 pub struct InFlightPermit {
     _bytes_reservation: BytesReservation,
     _req_permit: RequestReservation,
+    _completion: CompletionMark,
+}
+
+/// Records the permit's admission number as completed on release.
+struct CompletionMark {
+    seq: u64,
+    completed: Arc<AtomicU64>,
+}
+
+impl Drop for CompletionMark {
+    fn drop(&mut self) {
+        self.completed.fetch_max(self.seq, Relaxed);
+    }
 }
