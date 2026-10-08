@@ -63,6 +63,13 @@ def _route_engine_scans_to_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
         "use_plugin_planner",
         lambda: getattr(_in_engine_call, "value", False),
     )
+    # Fail instead of silently planning unsupported tables with PyIceberg, so that
+    # passing tests are known to use the plugin.
+    monkeypatch.setattr(
+        iceberg_dataset,
+        "plugin_planner_required",
+        lambda: getattr(_in_engine_call, "value", False),
+    )
     monkeypatch.setattr(
         iceberg_dataset.IcebergScanResolver,
         "to_dataset_scan",

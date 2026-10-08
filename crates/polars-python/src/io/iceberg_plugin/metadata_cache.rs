@@ -149,6 +149,12 @@ impl MetadataFileCache {
             .entry(key.to_owned())
             .or_default()
             .clone();
+        // Removes the cell once done, also if this future is dropped mid-fetch.
+        let _in_flight = InFlightGuard {
+            in_flight: &self.in_flight,
+            key,
+            cell: &cell,
+        };
 
         let mut fetched = false;
         let result = cell
@@ -165,18 +171,29 @@ impl MetadataFileCache {
             .await
             .cloned();
 
-        {
-            let mut in_flight = self.in_flight.lock();
-            // A newer cell for the same key may have replaced this one.
-            if in_flight.get(key).is_some_and(|c| Arc::ptr_eq(c, &cell)) {
-                in_flight.remove(key);
-            }
-        }
-
         let counter = if fetched { &stats.misses } else { &stats.hits };
         counter.fetch_add(1, Ordering::Relaxed);
 
         result
+    }
+}
+
+struct InFlightGuard<'a> {
+    in_flight: &'a Mutex<PlHashMap<String, Arc<OnceCell<Bytes>>>>,
+    key: &'a str,
+    cell: &'a Arc<OnceCell<Bytes>>,
+}
+
+impl Drop for InFlightGuard<'_> {
+    fn drop(&mut self) {
+        let mut in_flight = self.in_flight.lock();
+        // A newer cell for the same key may have replaced this one.
+        if in_flight
+            .get(self.key)
+            .is_some_and(|c| Arc::ptr_eq(c, self.cell))
+        {
+            in_flight.remove(self.key);
+        }
     }
 }
 

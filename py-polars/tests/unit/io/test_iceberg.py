@@ -5865,3 +5865,21 @@ def test_scan_iceberg_catalog_descriptor_without_instance(tmp_path: Path) -> Non
     assert (
         wrap.get().metadata_location == catalog.load_table(tbl.name()).metadata_location
     )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_row_index_filter_without_statistics(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    tbl.append(pl.DataFrame({"a": [1, 2, 3]}).to_arrow())
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, use_metadata_statistics=False)
+        .with_row_index()
+        .filter(pl.col("index") > 0)
+        .collect(),
+        pl.DataFrame(
+            {"index": pl.Series([1, 2], dtype=pl.get_index_type()), "a": [2, 3]}
+        ),
+    )

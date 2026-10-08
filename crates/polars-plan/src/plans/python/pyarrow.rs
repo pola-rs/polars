@@ -145,7 +145,8 @@ fn series_to_pyarrow_list(s: &Series) -> Option<String> {
                 if !v.is_finite() {
                     return None;
                 }
-                write!(list_repr, "{v},").unwrap();
+                // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
+                write!(list_repr, "{v:?},").unwrap();
             },
             av if av.dtype().is_integer() => {
                 write!(list_repr, "{av},").unwrap();
@@ -242,7 +243,8 @@ pub fn predicate_to_pa(
                         if val.is_infinite() {
                             return None;
                         }
-                        Some(format!("{val}"))
+                        // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
+                        Some(format!("{val:?}"))
                     } else if dtype.is_integer() {
                         let val = av.extract::<i64>()?;
                         Some(format!("{val}"))

@@ -77,7 +77,9 @@ def use_plugin_planner() -> bool:
 
     try:
         _plugin_capsule(plr._IO_PLUGIN_IDS)
-    except (ModuleNotFoundError, ComputeError) as e:
+    # Not only a missing or incompatible plugin: a broken install (e.g. an extension
+    # module that fails to load) must not fail scans that PyIceberg can plan.
+    except Exception as e:
         issue_warning(
             f"{e}. Planning the Iceberg scan with PyIceberg instead, which is slower. "
             f"Set {PLANNER_ENV_VAR}=pyiceberg to silence this warning.",
@@ -128,6 +130,7 @@ def plugin_scan(
     """Plan the scan of `tbl` with the plugin; returns the native parquet scan."""
     from polars.io.iceberg._dataset import (
         ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP,
+        _convert_iceberg_property_value,
         _convert_iceberg_to_object_store_storage_options,
     )
 
@@ -146,14 +149,26 @@ def plugin_scan(
     # Catalog-provided IO properties (e.g. vended credentials) with known object store
     # equivalents, overridden by the user's storage options.
     storage_options: dict[str, Any] = {
-        ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP[k]: v
+        (key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP[k]): (
+            _convert_iceberg_property_value(key, v)
+        )
         for k, v in tbl.io.properties.items()
         if k in ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP
     }
     if user_storage_options is not None:
-        storage_options.update(
-            _convert_iceberg_to_object_store_storage_options(user_storage_options)
+        user_options = _convert_iceberg_to_object_store_storage_options(
+            user_storage_options
         )
+        # The user's credentials replace the catalog's as a whole: mixing them
+        # (e.g. a profile with vended keys) is ambiguous, and rejected by the
+        # credential provider.
+        if any(_is_credential_key(k) for k in user_options):
+            storage_options = {
+                k: v
+                for k, v in storage_options.items()
+                if k not in _CATALOG_CREDENTIAL_KEYS
+            }
+        storage_options.update(user_options)
 
     credential_provider = _init_credential_provider_builder(
         "auto", metadata_location, storage_options, "scan_iceberg"
@@ -236,6 +251,51 @@ def _plugin_capsule(supported_ids: list[str]) -> Any:
         )
 
     return polars_iceberg._capsule(max(shared, key=_id_version))
+
+
+# Object store keys of catalog-provided credentials
+# (`ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP` values).
+_CATALOG_CREDENTIAL_KEYS = frozenset(
+    [
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "aws_session_token",
+        "azure_storage_account_key",
+        "azure_storage_sas_key",
+        "azure_storage_tenant_id",
+        "azure_storage_client_id",
+        "azure_storage_client_secret",
+        "azure_storage_token",
+        "bearer_token",
+        "token",
+    ]
+)
+
+# Storage option keys that configure the client or location, not credentials.
+_NON_CREDENTIAL_KEYS = frozenset(
+    [
+        "region",
+        "default_region",
+        "endpoint",
+        "endpoint_url",
+        "endpoint_url_s3",
+        "virtual_hosted_style_request",
+        "azure_storage_account_name",
+        "account_name",
+        "azure_storage_authority_host",
+        "authority_host",
+    ]
+)
+
+
+def _is_credential_key(key: str) -> bool:
+    from polars.io.cloud.credential_provider._builder import AUTOINIT_IGNORED_KEYS
+
+    key = key.lower()
+    return not any(
+        k in AUTOINIT_IGNORED_KEYS or k in _NON_CREDENTIAL_KEYS
+        for k in (key, key.removeprefix("aws_"))
+    )
 
 
 def _id_version(id: str) -> int:

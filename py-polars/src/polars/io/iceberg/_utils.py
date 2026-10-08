@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
+import re
 import uuid
 from _ast import GtE, Lt, LtE
 from ast import (
@@ -86,7 +87,9 @@ def _new_pyiceberg_scan(
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
 def _normalize_windows_iceberg_file_uri(path: str) -> str:
-    if path.startswith("file://") and not path.startswith("file:///"):
+    # `file://C:/x` has the drive letter as its authority. Other authorities (UNC hosts,
+    # `localhost`) are kept.
+    if re.match(r"file://[A-Za-z]:", path):
         return f"file:///{path.removeprefix('file://')}"
 
     return path

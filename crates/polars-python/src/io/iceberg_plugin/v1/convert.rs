@@ -190,6 +190,8 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
     // Statistics: `len`, then `<col>_nc` / `_min` / `_max`.
     let table_statistics = if has_statistics {
         let len = match &record_counts {
+            // As the PyIceberg planner's statistics; a record count that does not fit
+            // becomes null (unknown), which only disables skipping that file.
             Some(rc) => rc.cast(&DataType::UInt32)?.with_name("len".into()),
             None => Column::new_empty("len".into(), &DataType::UInt32),
         };

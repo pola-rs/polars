@@ -331,8 +331,9 @@ impl DeletionFilesProvider {
                                 let mut tasks = deletion_load_tasks.lock();
                                 Arc::clone(tasks.entry(path.clone()).or_default())
                             };
+                            let dv_path = path.clone();
 
-                            Ok(deletions
+                            deletions
                                 .get_or_try_init(|| async move {
                                     let fetch_bytes_handle =
                                         tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn({
@@ -359,7 +360,14 @@ impl DeletionFilesProvider {
                                 .await?
                                 .get(&data_path)
                                 .cloned()
-                                .unwrap_or_default())
+                                .ok_or_else(|| {
+                                    polars_err!(
+                                        ComputeError:
+                                        "iceberg: deletion vector file {} has no deletion vector \
+                                        for data file {}",
+                                        dv_path, data_path
+                                    )
+                                })
                         })
                     },
                 };
@@ -655,6 +663,18 @@ fn nth_set_bit_extend(mask: &Bitmap, n: usize) -> usize {
     }
 }
 
+/// `file://C:/x` → `file:///C:/x`, as data file paths are normalized when the scan is
+/// resolved, so that deletion vectors are found by their referenced data file.
+#[cfg(feature = "python")]
+fn normalize_windows_file_uri(path: &str) -> std::borrow::Cow<'_, str> {
+    match path.strip_prefix("file://") {
+        Some(rest) if matches!(rest.as_bytes(), [d, b':', ..] if d.is_ascii_alphabetic()) => {
+            format!("file:///{rest}").into()
+        },
+        _ => path.into(),
+    }
+}
+
 fn load_iceberg_puffin_deletes(
     puffin_bytes: Buffer<u8>,
 ) -> PolarsResult<PlHashMap<PlRefPath, ExternalFilterMask>> {
@@ -683,7 +703,7 @@ fn load_iceberg_puffin_deletes(
                 .zip(dict.call_method0("values")?.try_iter()?)
                 .map(|(k, v)| {
                     Ok((
-                        PlRefPath::new(&*k?.extract::<PyBackedStr>()?),
+                        PlRefPath::new(&*normalize_windows_file_uri(&k?.extract::<PyBackedStr>()?)),
                         *(polars_utils::python_convert_registry::get_python_convert_registry()
                             .from_py
                             .series)(v?.getattr("_s")?.into())

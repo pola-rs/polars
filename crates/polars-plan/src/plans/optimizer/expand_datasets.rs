@@ -429,12 +429,14 @@ fn rebuild_scan_from_expanded(
     unified_scan_args.table_statistics = table_statistics.clone();
     unified_scan_args.row_count = *row_count;
 
-    if row_index_in_live_filter {
+    // Without statistics (e.g. `use_metadata_statistics=False`) no files are skipped.
+    if row_index_in_live_filter
+        && let Some(table_statistics) = unified_scan_args.table_statistics.as_mut()
+    {
         use polars_core::prelude::{Column, DataType, IdxCa, IntoColumn};
         use polars_core::series::IntoSeries;
 
         let row_index_name = &unified_scan_args.row_index.as_ref().unwrap().name;
-        let table_statistics = unified_scan_args.table_statistics.as_mut().unwrap();
 
         let statistics_df = Arc::make_mut(&mut table_statistics.0);
         assert!(

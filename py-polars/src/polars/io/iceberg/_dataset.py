@@ -828,7 +828,9 @@ def _convert_iceberg_to_object_store_storage_options(
         if (
             translated_key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP.get(k)
         ) is not None:
-            storage_options[translated_key] = v
+            storage_options[translated_key] = _convert_iceberg_property_value(
+                translated_key, v
+            )
         elif "." not in k or k.startswith(HDFS_KEY_PREFIX):
             # Pass-through non-Iceberg config keys, as they may be native config
             # keys. We identify Iceberg keys by checking for a dot - from
@@ -841,6 +843,20 @@ def _convert_iceberg_to_object_store_storage_options(
         # unknown keys.
 
     return storage_options
+
+
+def _convert_iceberg_property_value(object_store_key: str, value: Any) -> Any:
+    """Iceberg FileIO property value → object store config value."""
+    # PyIceberg timeouts are (fractional) seconds, whereas object store parses
+    # durations with a unit.
+    if object_store_key in {"connect_timeout", "timeout"}:
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            return value
+        return f"{round(seconds * 1000)}ms"
+
+    return value
 
 
 # https://py.iceberg.apache.org/configuration/#fileio

@@ -360,6 +360,20 @@ def test_iceberg_plugin_incompatible_default_planner_warns(
         assert_frame_equal(pl.scan_iceberg(metadata_path).collect(), TEST_DF)
 
 
+def test_iceberg_plugin_broken_default_planner_warns(
+    metadata_path: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER")
+
+    def broken_capsule(*args: Any) -> Any:
+        msg = "undefined symbol: foo"
+        raise ImportError(msg)
+
+    plmonkeypatch.setattr(polars_iceberg, "_capsule", broken_capsule)
+    with pytest.warns(pl.exceptions.PerformanceWarning, match="undefined symbol"):
+        assert_frame_equal(pl.scan_iceberg(metadata_path).collect(), TEST_DF)
+
+
 def test_iceberg_plugin_not_installed_pyiceberg_planner_no_warning(
     metadata_path: str, plmonkeypatch: PlMonkeyPatch
 ) -> None:
@@ -891,6 +905,42 @@ def test_iceberg_plugin_prunes_partitions(tmp_path: Path) -> None:
     check((pl.col("b") == "x") & (pl.col("ts") < pl.datetime(2025, 1, 2)), 1)
 
 
+def test_iceberg_plugin_negated_predicates_keep_nulls(tmp_path: Path) -> None:
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "p", LongType(), required=False),
+            NestedField(2, "a", LongType(), required=False),
+        ),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "p")),
+    )
+    # A null partition value, and a file whose `a` is only null.
+    tbl.append(pl.DataFrame({"p": [None, 1], "a": [5, 6]}).to_arrow())
+    tbl.append(
+        pl.DataFrame(
+            {"p": [7], "a": [None]}, schema={"p": pl.Int64, "a": pl.Int64}
+        ).to_arrow()
+    )
+
+    df = pl.DataFrame({"p": [None, 1, 7], "a": [5, 6, None]})
+    for predicate in [
+        # Null rows are kept: `is_in` is false for them.
+        ~pl.col("p").is_in([1, 2], nulls_equal=True),
+        ~pl.col("a").is_in([1, 2], nulls_equal=True),
+        (~pl.col("p").is_in([1], nulls_equal=True)) | (pl.col("a") > 100),
+        pl.col("p") != 1,
+        pl.col("a") != 6,
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
 def test_iceberg_plugin_nan_is_not_pruned(tmp_path: Path) -> None:
     from pyiceberg.types import DoubleType
 
@@ -1142,3 +1192,66 @@ def test_iceberg_plugin_storage_scope() -> None:
     # Options that cannot be fingerprinted are not cached.
     assert plugin_storage_scope(io, {"key": object()}) is None
     assert plugin_storage_scope(PyArrowFileIO({"key": object()}), None) is None  # type: ignore[dict-item]
+
+
+class _ScanArgs(Exception):
+    pass
+
+
+def _capture_plugin_scan_storage_options(
+    table: Any, plmonkeypatch: PlMonkeyPatch, storage_options: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    def capture(*args: Any, **kwargs: Any) -> Any:
+        raise _ScanArgs(kwargs["storage_options"])
+
+    plmonkeypatch.setattr(plr, "_iceberg_plugin_scan", capture)
+    with pytest.raises(_ScanArgs) as e:
+        pl.scan_iceberg(table, storage_options=storage_options).collect()
+    return e.value.args[0]  # type: ignore[no-any-return]
+
+
+def test_iceberg_plugin_catalog_storage_options(
+    table: Any, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setattr(
+        table.io,
+        "properties",
+        {
+            "s3.region": "eu-west-1",
+            "s3.access-key-id": "vended-key",
+            "s3.secret-access-key": "vended-secret",
+            # PyIceberg timeouts are in seconds.
+            "s3.connect-timeout": "60",
+            "s3.request-timeout": "1.5",
+        },
+    )
+
+    assert _capture_plugin_scan_storage_options(table, plmonkeypatch, None) == {
+        "aws_region": "eu-west-1",
+        "aws_access_key_id": "vended-key",
+        "aws_secret_access_key": "vended-secret",
+        "connect_timeout": "60000ms",
+        "timeout": "1500ms",
+    }
+
+    # The user's credentials replace the catalog's.
+    assert _capture_plugin_scan_storage_options(
+        table, plmonkeypatch, {"aws_profile": "p"}
+    ) == {
+        "aws_region": "eu-west-1",
+        "connect_timeout": "60000ms",
+        "timeout": "1500ms",
+        "aws_profile": "p",
+    }
+
+    # Other options keep them.
+    assert _capture_plugin_scan_storage_options(
+        table, plmonkeypatch, {"aws_region": "us-east-1", "max_retries": "3"}
+    ) == {
+        "aws_region": "us-east-1",
+        "aws_access_key_id": "vended-key",
+        "aws_secret_access_key": "vended-secret",
+        "connect_timeout": "60000ms",
+        "timeout": "1500ms",
+        "max_retries": "3",
+    }
