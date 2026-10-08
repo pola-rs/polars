@@ -1,26 +1,21 @@
-//! A reduction split in two, so that its states can be moved between them: the first outputs the
-//! state of each group serialized into a `Binary` column, and the second merges those states and
-//! finalizes them as the whole reduction would.
+//! Reductions split into a stage that serializes per-group states and one that merges them.
 
 #[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
 
 use super::*;
 
-/// What a reduction that can be split runs.
 #[derive(Clone, Copy)]
 pub(super) enum SplitStage {
-    /// The whole reduction.
     Whole,
-    /// Its states, serialized.
     #[cfg(feature = "serde")]
     State,
-    /// The merge of serialized states into the finalized reduction.
+    /// Merges serialized states and finalizes them as `Whole` would.
     #[cfg(feature = "serde")]
     Merge,
 }
 
-/// A state that can be serialized, when the states of split reductions can be.
+/// `Serialize + DeserializeOwned` under `serde`, so that `Whole` builds without it.
 #[cfg(feature = "serde")]
 pub(super) trait SplitState: serde::Serialize + serde::de::DeserializeOwned {}
 #[cfg(feature = "serde")]
@@ -30,7 +25,7 @@ pub(super) trait SplitState {}
 #[cfg(not(feature = "serde"))]
 impl<T> SplitState for T {}
 
-/// `stage` of the reduction `reducer` makes of values of `dtype`.
+/// Builds `stage` of `reducer`'s reduction over values of `dtype`.
 pub(super) fn split_reduction<R>(
     dtype: DataType,
     reducer: R,
@@ -55,7 +50,7 @@ where
     }
 }
 
-/// Reduces as `R` does, but outputs the serialized states rather than finalizing them.
+/// Reduces as `R` does, but outputs the serialized states.
 #[cfg(feature = "serde")]
 #[derive(Clone)]
 struct StateReducer<R>(R);
@@ -114,8 +109,7 @@ where
     }
 }
 
-/// Merges the serialized states of `R` and finalizes them as `R` does the values of
-/// `values_dtype`. A state that does not deserialize fails its group.
+/// Merges the serialized states of `R` and finalizes them as `R` does for `values_dtype`.
 #[cfg(feature = "serde")]
 #[derive(Clone)]
 struct MergeReducer<R> {
@@ -133,6 +127,7 @@ where
         let Ok(state) = acc else {
             return;
         };
+        // Blobs come from other processes, so a bad one errors rather than panics.
         match pl_serialize::deserialize_from_reader::<R::Value, _, false>(blob) {
             Ok(other) => self.inner.combine(state, &other),
             Err(e) => *acc = Err(e),
