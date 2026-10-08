@@ -617,8 +617,16 @@ class IcebergScanResolver:
                                     )
                                 )
 
+                                # Read by Polars, which does not accept PyIceberg's
+                                # Windows `file://C:/` URIs.
+                                deletion_vector_path = (
+                                    _normalize_windows_iceberg_file_uri(
+                                        deletion_file.file_path
+                                    )
+                                )
+
                                 if num_rows is None or (
-                                    deletion_vectors.get(i) == deletion_file.file_path
+                                    deletion_vectors.get(i) == deletion_vector_path
                                 ):
                                     # Not of this data file, or a deletion vector of
                                     # this data file in the same Puffin file.
@@ -628,7 +636,7 @@ class IcebergScanResolver:
                                     fallback_reason = "multiple deletion vectors associated with one data file"
                                     break
 
-                                deletion_vectors[i] = deletion_file.file_path
+                                deletion_vectors[i] = deletion_vector_path
                                 deletion_vector_num_rows += num_rows
 
                             case x:
