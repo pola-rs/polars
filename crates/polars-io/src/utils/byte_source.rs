@@ -126,7 +126,7 @@ pub struct FileReadContext {
 }
 
 impl FileReadContext {
-    pub fn from_config() -> Self {
+    pub fn from_config(name: &str) -> Self {
         let cfg = polars_config::config();
         let enable_o_direct = cfg.direct_io();
         let concurrency = cfg.file_read_concurrency().max(1) as usize;
@@ -137,7 +137,7 @@ impl FileReadContext {
 
         if cfg.verbose() {
             eprintln!(
-                "[FileReadContext]: file read_context as configured: \
+                "[{name}]: file read_context as configured: \
                     read_concurrency: {concurrency}, \
                     posix_fadv: {fadv}, \
                     o_direct: {enable_o_direct}"

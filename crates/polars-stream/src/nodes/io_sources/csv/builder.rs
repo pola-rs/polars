@@ -113,7 +113,7 @@ impl FileReaderBuilder for CsvReaderBuilder {
             } else {
                 let read_context = self
                     .file_read_context
-                    .get_or_init(FileReadContext::from_config);
+                    .get_or_init(|| FileReadContext::from_config("CsvReaderBuilder"));
                 DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
