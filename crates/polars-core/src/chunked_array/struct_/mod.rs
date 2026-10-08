@@ -476,7 +476,7 @@ impl StructChunked {
             assert_eq!(self.len(), v.len());
         }
         let mut offset = 0;
-        
+
         // SAFETY: We keep length and dtypes the same.
         unsafe {
             for arr in self.chunks_mut() {
