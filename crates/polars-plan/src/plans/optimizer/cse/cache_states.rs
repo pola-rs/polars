@@ -595,11 +595,17 @@ fn get_filter_predicate(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<&Ex
     Some(predicate)
 }
 
+/// The filter directly above the cache, with only a `SimpleProjection` allowed in between. A
+/// filter above any other node may refer to columns that node computes or redefines.
 fn get_filter_node(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<Node> {
-    parents
-        .into_iter()
-        .flatten()
-        .find(|&parent| matches!(lp_arena.get(parent), IR::Filter { .. }))
+    for parent in parents.into_iter().flatten() {
+        match lp_arena.get(parent) {
+            IR::Filter { .. } => return Some(parent),
+            IR::SimpleProjection { .. } => {},
+            _ => return None,
+        }
+    }
+    None
 }
 
 /// Determine whether `predicate` was pushed down when running predicate pushdown on a cache-free

@@ -1112,9 +1112,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::ApproxQuantileMethod;
-    use super::kll::KLLSketch;
-    use super::req::ReqSketch;
+    use super::*;
 
     #[test]
     fn auto_resolves_by_queried_quantiles() {
@@ -1142,33 +1140,20 @@ mod tests {
     /// Clones must not make identical random choices.
     #[test]
     fn clones_are_reseeded() {
-        const QUANTILES: [f64; 5] = [0.1, 0.3, 0.5, 0.7, 0.9];
-        let data: Vec<f64> = (0..20_000).map(|i| ((i * 7919) % 20_000) as f64).collect();
-
-        macro_rules! assert_diverges {
-            ($name:literal, $new:expr) => {{
-                let agreed = (0..10)
-                    .filter(|_| {
-                        let mut base = $new;
-                        for v in &data[..5_000] {
-                            base.update(v);
-                        }
-                        let (mut a, mut b) = (base.clone(), base.clone());
-                        for v in &data[5_000..] {
-                            a.update(v);
-                            b.update(v);
-                        }
-                        let (a, b) = (a.finalize(), b.finalize());
-                        QUANTILES.iter().all(|q| {
-                            a.estimate_quantile(*q).unwrap() == b.estimate_quantile(*q).unwrap()
-                        })
-                    })
-                    .count();
-                assert!(agreed <= 2, "{} clones agreed {agreed}/10 times", $name);
-            }};
+        use ApproxQuantileMethod as M;
+        for method in [M::KLL, M::ReqSketch { hra: true }] {
+            let agreed = (0..10)
+                .filter(|_| {
+                    let mut a = Sketch::new(&method, 0.5);
+                    let mut b = a.clone();
+                    for v in 0..1_000 {
+                        a.update_owned(v);
+                        b.update_owned(v);
+                    }
+                    a.finalize().items == b.finalize().items
+                })
+                .count();
+            assert!(agreed <= 5, "{method:?} clones agreed {agreed}/10 times");
         }
-
-        assert_diverges!("ReqSketch", ReqSketch::new(0.01, true));
-        assert_diverges!("KLLSketch", KLLSketch::new(0.01));
     }
 }

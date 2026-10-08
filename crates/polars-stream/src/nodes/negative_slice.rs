@@ -123,6 +123,13 @@ impl ComputeNode for NegativeSliceNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            NegativeSliceState::Buffering(_) | NegativeSliceState::Done => NodeMemoryUsage::Bounded,
+            NegativeSliceState::Source(src) => src.memory_usage(),
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
