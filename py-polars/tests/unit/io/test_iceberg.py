@@ -4768,6 +4768,48 @@ def test_scan_iceberg_equal_negative_decimal_29462(
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
+def test_scan_iceberg_decimal_precision_promotion(
+    tmp_path: Path, reader_override: Any
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "d", DecimalType(9, 2)),
+        ),
+    )
+
+    tbl.append(
+        pl.DataFrame(
+            {"a": [1], "d": pl.Series([D("1.00")], dtype=pl.Decimal(9, 2))}
+        ).to_arrow()
+    )
+
+    with tbl.update_schema() as u:
+        u.update_column("d", DecimalType(10, 2))
+
+    tbl = tbl.catalog.load_table(tbl.name())
+
+    tbl.append(
+        pl.DataFrame(
+            {"a": [2], "d": pl.Series([D("12345678.90")], dtype=pl.Decimal(10, 2))}
+        ).to_arrow()
+    )
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override=reader_override).collect(),
+        pl.DataFrame(
+            {
+                "a": [1, 2],
+                "d": pl.Series([D("1.00"), D("12345678.90")], dtype=pl.Decimal(10, 2)),
+            }
+        ),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",

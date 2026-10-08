@@ -62,6 +62,8 @@ class ScanCastOptions:
             Configuration for casting from integer types:
 
             * `upcast`: Allow lossless casting to wider integer types.
+              This also allows widening the precision of decimal types
+              with equal scale.
             * `allow-float`: Allow casting integers to float types.
             * `forbid`: Raises an error if dtypes do not match.
 
