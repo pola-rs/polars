@@ -645,10 +645,10 @@ def _deletion_vector_blob(positions: list[int]) -> bytes:
     """A `deletion-vector-v1` Puffin blob deleting `positions` (< 2**32)."""
     import zlib
 
-    from pyroaring import BitMap
+    from pyroaring import BitMap  # type: ignore[import-not-found]
 
     # One 32-bit Roaring bitmap, of key 0 (the upper 32 bits of the positions).
-    vector = (
+    vector: bytes = (
         (1).to_bytes(8, "little")
         + (0).to_bytes(4, "little")
         + BitMap(positions).serialize()
@@ -1234,9 +1234,9 @@ def test_iceberg_plugin_metadata_file_cache(
     expected = pl.DataFrame({"a": [0, 1, 2]})
 
     # Table metadata, manifest list and 3 manifests.
-    hits, misses, cached_bytes = _scan_cache_stats(
-        capfd, pl.scan_iceberg(tbl), expected
-    )  # type: ignore[misc]
+    stats = _scan_cache_stats(capfd, pl.scan_iceberg(tbl), expected)
+    assert stats is not None
+    hits, misses, cached_bytes = stats
     assert (hits, misses) == (0, 5)
     assert cached_bytes > 0
     assert cached_bytes == get_metadata_file_cache().plugin_cache().total_bytes
