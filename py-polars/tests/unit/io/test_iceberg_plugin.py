@@ -715,6 +715,60 @@ def test_iceberg_plugin_deletion_vector_scoped_to_partition(
         assert lf.select(pl.len()).collect().item() == expected.height
 
 
+def test_iceberg_referenced_data_file() -> None:
+    from types import SimpleNamespace
+
+    from polars.io.iceberg._dataset import (
+        _DELETE_FILE_PATH_FIELD_ID,
+        _referenced_data_file,
+    )
+
+    def delete_file(**kw: Any) -> Any:
+        return SimpleNamespace(**{"lower_bounds": {}, "upper_bounds": {}, **kw})
+
+    f = _DELETE_FILE_PATH_FIELD_ID
+    assert _referenced_data_file(delete_file(referenced_data_file="a")) == "a"
+    assert (
+        _referenced_data_file(
+            delete_file(lower_bounds={f: b"a"}, upper_bounds={f: b"a"})
+        )
+        == "a"
+    )
+    assert (
+        _referenced_data_file(
+            delete_file(lower_bounds={f: b"a"}, upper_bounds={f: b"b"})
+        )
+        is None
+    )
+    assert _referenced_data_file(delete_file()) is None
+
+
+@pytest.mark.parametrize(
+    ("flags", "properties"),
+    [
+        (b"\x01\x00\x00\x00", {"referenced-data-file": "a", "cardinality": "1"}),
+        (bytes(4), {"referenced-data-file": "a"}),
+        (bytes(4), {"cardinality": "1"}),
+    ],
+)
+def test_iceberg_unsupported_puffin_footer(
+    flags: bytes, properties: dict[str, str]
+) -> None:
+    # The PyIceberg planner falls back to the PyIceberg reader on these.
+    from types import SimpleNamespace
+
+    from polars.io.iceberg._dataset import _read_puffin_deletion_vector_counts
+
+    footer = json.dumps(
+        {"blobs": [{"type": "deletion-vector-v1", "properties": properties}]}
+    ).encode()
+    puffin = b"PFA1" + footer + len(footer).to_bytes(4, "little") + flags + b"PFA1"
+    file_io = SimpleNamespace(
+        new_input=lambda _: SimpleNamespace(open=lambda: io.BytesIO(puffin))
+    )
+    assert _read_puffin_deletion_vector_counts(file_io, "p", len(puffin)) is None
+
+
 @pytest.mark.parametrize("planner", [None, "pyiceberg"])
 @pytest.mark.parametrize("remove_data_file", [False, True])
 def test_iceberg_plugin_partition_scoped_position_deletes(

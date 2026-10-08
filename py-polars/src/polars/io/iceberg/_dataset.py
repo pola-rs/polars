@@ -511,7 +511,7 @@ class IcebergScanResolver:
         position_delete_files: dict[int, list[str]] = {}
         deletion_vectors: dict[int, str] = {}
         # Deleted row counts of the deletion vectors of each Puffin file, by data file.
-        puffin_deletion_vectors: dict[str, dict[str, int]] = {}
+        puffin_deletion_vectors: dict[str, dict[str, int] | None] = {}
         total_physical_rows: int = 0
         total_deleted_rows: int = 0
         total_position_delete_files = 0
@@ -564,12 +564,20 @@ class IcebergScanResolver:
                                 # count exact: the rows of a delete file scoped to a
                                 # partition may belong to data files that are no
                                 # longer live.
-                                if not _references_one_data_file(deletion_file):
+                                referenced = _referenced_data_file(deletion_file)
+
+                                if referenced is None:
                                     fallback_reason = (
                                         "position delete file not limited to one "
                                         f"data file: {deletion_file.file_path}"
                                     )
                                     break
+
+                                if referenced != file_info.file.file_path:
+                                    # PyIceberg associates a delete file without
+                                    # `file_path` bounds with every data file of its
+                                    # partition.
+                                    continue
 
                                 position_delete_files[i].append(deletion_file.file_path)
                                 position_delete_num_rows += deletion_file.record_count
@@ -592,9 +600,18 @@ class IcebergScanResolver:
                                         )
                                     )
 
-                                num_rows = puffin_deletion_vectors[
-                                    deletion_file.file_path
-                                ].get(
+                                if (
+                                    counts := puffin_deletion_vectors[
+                                        deletion_file.file_path
+                                    ]
+                                ) is None:
+                                    fallback_reason = (
+                                        "unsupported Puffin footer: "
+                                        f"{deletion_file.file_path}"
+                                    )
+                                    break
+
+                                num_rows = counts.get(
                                     _normalize_windows_iceberg_file_uri(
                                         file_info.file.file_path
                                     )
@@ -829,11 +846,11 @@ class _PluginIcebergScanData(_ResolvedScanDataBase):
 
 def _read_puffin_deletion_vector_counts(
     io: Any, path: str, file_size: int
-) -> dict[str, int]:
+) -> dict[str, int] | None:
     """
     Deleted row counts of the deletion vectors of a Puffin file, by data file.
 
-    Only the footer is read.
+    Only the footer is read. Returns `None` if the footer is not supported.
     """
     import json
 
@@ -842,34 +859,42 @@ def _read_puffin_deletion_vector_counts(
         f.seek(file_size - 12)
         tail = f.read(12)
         payload_size = int.from_bytes(tail[:4], "little", signed=True)
-        if tail[8:] != b"PFA1" or payload_size < 0 or tail[4] & 1:
-            msg = f"unsupported Puffin footer: {path}"
-            raise ComputeError(msg)
+        # Flag bit 0: compressed footer payload.
+        if len(tail) != 12 or tail[8:] != b"PFA1" or payload_size < 0 or tail[4] & 1:
+            return None
 
         f.seek(file_size - 12 - payload_size)
         footer = json.loads(f.read(payload_size))
 
-    return {
-        _normalize_windows_iceberg_file_uri(
-            blob["properties"]["referenced-data-file"]
-        ): int(blob["properties"]["cardinality"])
-        for blob in footer["blobs"]
-        if blob["type"] == "deletion-vector-v1"
-    }
+    try:
+        return {
+            _normalize_windows_iceberg_file_uri(
+                blob["properties"]["referenced-data-file"]
+            ): int(blob["properties"]["cardinality"])
+            for blob in footer["blobs"]
+            if blob["type"] == "deletion-vector-v1"
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 # Reserved field ID of `file_path` in position delete files.
 _DELETE_FILE_PATH_FIELD_ID = 2147483546
 
 
-def _references_one_data_file(deletion_file: Any) -> bool:
-    """Whether a position delete file only holds deletes of one data file."""
-    if getattr(deletion_file, "referenced_data_file", None) is not None:
-        return True
+def _referenced_data_file(deletion_file: Any) -> str | None:
+    """The data file a position delete file holds deletes of, if it is only one."""
+    if (path := getattr(deletion_file, "referenced_data_file", None)) is not None:
+        return path
 
     lower = (deletion_file.lower_bounds or {}).get(_DELETE_FILE_PATH_FIELD_ID)
     upper = (deletion_file.upper_bounds or {}).get(_DELETE_FILE_PATH_FIELD_ID)
-    return lower is not None and lower == upper
+    if lower is None or lower != upper:
+        return None
+    try:
+        return lower.decode() if isinstance(lower, bytes) else str(lower)
+    except UnicodeDecodeError:
+        return None
 
 
 def _redact_dict_values(obj: Any) -> Any:
