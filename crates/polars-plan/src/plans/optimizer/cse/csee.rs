@@ -15,8 +15,8 @@ use crate::plans::visitor::{
     Visitor,
 };
 use crate::plans::{
-    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue,
-    OutputName,
+    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr,
+    LiteralValue, OutputName, slice_head_len,
 };
 use crate::prelude::ProjectionOptions;
 use crate::prelude::visitor::AexprNode;
@@ -178,6 +178,28 @@ fn classify(ae: &AExpr, is_group_by: bool) -> NodeRole {
     }
 }
 
+/// The sort that `ae` reads with `first()`, `last()` or `head(k)`, if the planner can evaluate
+/// that without a full sort (see `sort_lowering.rs`).
+fn partially_read_sort(ae: &AExpr, arena: &Arena<AExpr>) -> Option<Node> {
+    let (input, is_last) = match ae {
+        AExpr::Agg(IRAggExpr::First(input)) => (*input, false),
+        AExpr::Agg(IRAggExpr::Last(input)) => (*input, true),
+        AExpr::Slice {
+            input,
+            offset,
+            length,
+        } if slice_head_len(*offset, *length, arena).is_some() => (*input, false),
+        _ => return None,
+    };
+    match arena.get(input) {
+        AExpr::Sort { .. } if !is_last => Some(input),
+        AExpr::SortBy { sort_options, .. } if !is_last || !sort_options.maintain_order => {
+            Some(input)
+        },
+        _ => None,
+    }
+}
+
 impl Visitor for ExprCandidateVisitor<'_> {
     type Node = AexprNode;
     type Arena = Arena<AExpr>;
@@ -219,6 +241,15 @@ impl Visitor for ExprCandidateVisitor<'_> {
         if subtree_is_valid && role == NodeRole::Candidate {
             let id = self.canonical_map.resolve(node.node(), arena);
             *self.se_count.entry(id).or_insert(0) += 1;
+        }
+
+        // Don't count this use of the sort, as extracting the sort would force a full sort.
+        if subtree_is_valid
+            && let Some(sort) = partially_read_sort(ae, arena)
+            && let Some(id) = self.canonical_map.cached_id(sort)
+            && let Some(count) = self.se_count.get_mut(&id)
+        {
+            *count -= 1;
         }
 
         Ok(VisitRecursion::Continue)

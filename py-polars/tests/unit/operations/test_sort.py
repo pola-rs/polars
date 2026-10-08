@@ -1647,6 +1647,23 @@ def test_sort_by_first_maintain_order(engine: EngineType) -> None:
         assert df.lazy().select(e.first()).collect(engine=engine).item() == 4
 
 
+def test_sort_read_by_first_last_head_not_extracted_by_cse() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "a": [2, None, 1], "b": [1.0, 2.0, 3.0]})
+    e = pl.col("x").sort_by("a", "b")
+
+    for q, expected in [
+        (df.lazy().select(first=e.first(), last=e.last()), {"first": 2, "last": 1}),
+        (df.lazy().select(h2=e.head(2).sum(), h3=e.head(3).sum()), {"h2": 5, "h3": 6}),
+    ]:
+        assert "__POLARS_CSER" not in q.explain(engine="in-memory")
+        assert q.collect(engine="in-memory").row(0, named=True) == expected
+
+    # Other uses still need the full sort, so it is shared.
+    q = df.lazy().select(c=e.cum_sum().last(), m=e.cum_max().last(), f=e.first())
+    assert "__POLARS_CSER" in q.explain(engine="in-memory")
+    assert q.collect(engine="in-memory").row(0) == (6, 3, 2)
+
+
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("maintain_order", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
