@@ -4164,9 +4164,8 @@ def test_scan_parquet_skip_row_groups_missing_struct_field(
 def test_scan_parquet_skip_row_groups_struct_cast_keeps_null_count(
     plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # A cast-only Mapped struct (same fields, no insertion) must keep its
-    # real null_count stats rather than fall back to "unknown" - confirmed
-    # via full row-group pruning on a field that's never null.
+    # A cast-only struct (same fields) must keep its real null_count stats,
+    # not fall back to "unknown".
     f = io.BytesIO()
     pl.DataFrame(
         {"s": [{"a": 1}, {"a": 2}]}, schema={"s": pl.Struct({"a": pl.Int8})}
