@@ -201,8 +201,8 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
 ///
 /// Returns the inferred schema and leftover bytes not yet consumed, which may be empty. The
 /// leftover bytes + `reader.read_next_slice` is guaranteed to start at first real content row.
-/// With `column_names_overwrite`, also returns the named null values re-keyed to the new column
-/// names, which the reader must use instead.
+/// Also returns the named null values re-keyed to the `column_names_overwrite` names, if that
+/// changed any key; the reader must use those instead.
 ///
 /// `inspect_first_content_row_fn` allows looking at the first content row, this is where parsing
 /// will start. Beware even if the function is provided it's *not* guaranteed that the returned
@@ -371,7 +371,7 @@ pub fn read_until_start_and_infer_schema(
 
     let infer_all_as_str = infer_schema_length == Some(0);
 
-    let (inferred_schema, renamed_null_values) = infer_schema(
+    let (inferred_schema, rekeyed_null_values) = infer_schema(
         &header_line,
         &content_lines,
         infer_all_as_str,
@@ -381,7 +381,7 @@ pub fn read_until_start_and_infer_schema(
         insert_missing_columns,
     )?;
 
-    Ok((inferred_schema, leftover, renamed_null_values))
+    Ok((inferred_schema, leftover, rekeyed_null_values))
 }
 
 enum LineUse {
@@ -783,7 +783,7 @@ fn infer_schema(
         polars_bail!(NoData: "empty CSV");
     }
 
-    let (mut inferred_schema, renamed_null_values) = if has_no_inference_data {
+    let (mut inferred_schema, rekeyed_null_values) = if has_no_inference_data {
         (Schema::default(), None)
     } else {
         infer_file_schema_impl(
@@ -895,5 +895,5 @@ fn infer_schema(
         }
     }
 
-    Ok((inferred_schema, renamed_null_values))
+    Ok((inferred_schema, rekeyed_null_values))
 }
