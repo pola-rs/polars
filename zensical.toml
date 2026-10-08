@@ -190,10 +190,6 @@ primary = "custom"
 toggle.icon = "material/brightness-4"
 toggle.name = "Switch to light mode"
 
-[project.extra.analytics]
-provider = "plausible"
-domain = "guide.pola.rs,combined.pola.rs"
-
 # Formatting options
 [project.markdown_extensions]
 admonition = {}
