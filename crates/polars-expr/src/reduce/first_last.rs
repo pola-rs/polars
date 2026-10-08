@@ -177,7 +177,7 @@ where
             a.value = b;
             a.seq = seq_id;
         }
-        P::add_count(&mut a.count, b.is_some() as usize);
+        P::add_count(&mut a.count, 1);
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
@@ -254,7 +254,7 @@ where
             replace_opt_bytes(&mut a.value, b);
             a.seq = seq_id;
         }
-        P::add_count(&mut a.count, b.is_some() as usize);
+        P::add_count(&mut a.count, 1);
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
@@ -310,7 +310,7 @@ where
             a.value = b;
             a.seq = seq_id;
         }
-        P::add_count(&mut a.count, b.is_some() as usize);
+        P::add_count(&mut a.count, 1);
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {

@@ -123,6 +123,13 @@ impl ComputeNode for NegativeSliceNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            NegativeSliceState::Buffering(_) | NegativeSliceState::Done => NodeMemoryUsage::Bounded,
+            NegativeSliceState::Source(src) => src.memory_usage(),
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
@@ -145,7 +152,7 @@ impl ComputeNode for NegativeSliceNode {
                         spill_ctx.register(&sf).await;
                         buffer.frames.push_back(sf);
 
-                        if buffer.total_len - buffer.frames.front().unwrap().height()
+                        while buffer.total_len - buffer.frames.front().unwrap().height()
                             >= max_buffer_needed
                         {
                             buffer.total_len -= buffer.frames.pop_front().unwrap().height();

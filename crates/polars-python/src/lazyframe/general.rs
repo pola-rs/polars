@@ -292,7 +292,8 @@ impl PyLazyFrame {
                         .extract::<Vec<String>>(py)
                         .expect("python function should return List[str]");
                     polars_ensure!(new_names.len() == schema.len(),
-                        ShapeMismatch: "The length of the new names list should be equal to or less than the original column length",
+                        ShapeMismatch: "The length of the new names list ({}) should be equal to the original column length ({})",
+                        new_names.len(), schema.len(),
                     );
                     Ok(schema
                         .iter_values()

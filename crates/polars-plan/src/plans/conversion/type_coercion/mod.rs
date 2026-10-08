@@ -615,7 +615,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 polars_ensure!(
                     (0.0..=1.0).contains(&ewm_options.alpha),
-                    ComputeError: "alpha must be in [0; 1]"
+                    ComputeError: "alpha must be in [0; 1], got {}", ewm_options.alpha
                 );
 
                 let input_expr = match &input.as_slice() {

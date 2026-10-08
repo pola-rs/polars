@@ -1043,6 +1043,61 @@ def test_cross_join_filter_decimal_scales_29762(
     assert "NESTED LOOP" not in plan
 
 
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize(
+    ("predicates", "join_node"),
+    [
+        ([pl.col("p") > pl.col("lo"), pl.col("p") <= pl.col("hi")], "range-join"),
+        ([pl.col("p") == pl.col("lo")], "merge-join"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("left_dtype", "right_dtype"),
+    [
+        # Both sides fit in Decimal(38, 4).
+        (pl.Decimal(10, 2), pl.Decimal(38, 4)),
+        # No Decimal holds both sides.
+        (pl.Decimal(38, 2), pl.Decimal(38, 12)),
+        (pl.Decimal(38, 12), pl.Decimal(38, 2)),
+    ],
+)
+def test_cross_join_filter_decimal_scales_sorted_input(
+    descending: bool,
+    predicates: list[pl.Expr],
+    join_node: str,
+    left_dtype: pl.Decimal,
+    right_dtype: pl.Decimal,
+) -> None:
+    def values(dtype: pl.Decimal) -> list[str | None]:
+        max_value = "9" * (dtype.precision - dtype.scale) + "." + "9" * dtype.scale
+        return ["-2.5", "1", "3.25", max_value, f"-{max_value}", None]
+
+    left = (
+        pl.DataFrame({"p": values(left_dtype)})
+        .cast(left_dtype)
+        .sort("p", descending=descending)
+        .lazy()
+    )
+    right_values = values(right_dtype)
+    right = (
+        pl.DataFrame({"lo": right_values, "hi": right_values[::-1]})
+        .cast(right_dtype)
+        .sort("lo", descending=descending)
+        .lazy()
+    )
+    q = left.join(right, how="cross").filter(*predicates)
+
+    # The join keys keep the order of the sorted inputs, so no sort is added.
+    graph = str(
+        q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
+    )
+    assert f"{join_node}\\n" in graph
+    assert r"sort\n" not in graph
+
+    expected = q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("with_key", [False, True])
 @pytest.mark.parametrize("empty_left", [False, True])

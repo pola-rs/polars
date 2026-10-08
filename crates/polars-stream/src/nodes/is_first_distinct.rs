@@ -51,6 +51,11 @@ impl ComputeNode for IsFirstDistinctNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        // The grouper grows with the number of distinct keys.
+        NodeMemoryUsage::Unbounded
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
