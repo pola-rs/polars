@@ -121,6 +121,7 @@ def plugin_scan(
     to_snapshot_id_inclusive: int | None,
     projection: list[str] | None,
     filter_columns: list[str] | None,
+    statistics_columns: list[str] | None,
     iceberg_table_filter: pyiceberg.expressions.BooleanExpression | None,
     limit: int | None,
     use_metadata_statistics: bool,
@@ -193,6 +194,7 @@ def plugin_scan(
             to_snapshot_id_inclusive=to_snapshot_id_inclusive,
             projection=projection,
             filter_columns=filter_columns,
+            statistics_columns=statistics_columns,
             row_filter=(
                 iceberg_table_filter.model_dump_json()
                 if iceberg_table_filter is not None

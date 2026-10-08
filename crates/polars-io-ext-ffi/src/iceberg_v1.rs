@@ -23,8 +23,8 @@
 //! * `constants: struct{<field id>: <value>}` (only if non-empty): identity-partition values of
 //!   projected fields, per data file; null if the file has no value.
 //! * `stats: struct{<col>_nc: u64, <col>_min, <col>_max}` (only if statistics were requested
-//!   and there are filter columns): per-file null counts and bounds of the filter columns, null
-//!   if unknown. Struct columns have per-leaf struct statistics.
+//!   and there are filter or statistics columns): per-file null counts and bounds of the filter
+//!   and statistics columns, null if unknown. Struct columns have per-leaf struct statistics.
 //!
 //! `table_values` columns:
 //! * `initial_defaults: struct{<field id>: <value>}` (only if non-empty): `initial-default`s of
@@ -99,6 +99,7 @@ pub struct FfiRequest<'a> {
     pub to_snapshot_id_inclusive: FfiOption<i64>,
     pub projection: FfiOption<FfiSlice<'a, FfiStr<'a>>>,
     pub filter_columns: FfiOption<FfiSlice<'a, FfiStr<'a>>>,
+    pub statistics_columns: FfiOption<FfiSlice<'a, FfiStr<'a>>>,
     pub row_filter: FfiOption<FfiStr<'a>>,
     pub limit: FfiOption<u64>,
     pub max_threads: FfiOption<u64>,
@@ -124,6 +125,10 @@ pub struct Request {
     /// Names of the columns referenced by the predicate. Statistics are returned if this is
     /// set (even if empty) and `use_metadata_statistics` is set.
     pub filter_columns: Option<Vec<String>>,
+    /// Names of further columns whose statistics are returned if `use_metadata_statistics` is
+    /// set (e.g. for cardinality estimation). Best effort: their statistics are null if they
+    /// cannot be loaded.
+    pub statistics_columns: Option<Vec<String>>,
     /// Iceberg expression in the REST catalog JSON format, used for pruning only: the host
     /// applies the full predicate to the scanned rows.
     pub row_filter: Option<String>,
@@ -152,6 +157,7 @@ impl Request {
         }
         let projection = strs(&self.projection);
         let filter_columns = strs(&self.filter_columns);
+        let statistics_columns = strs(&self.statistics_columns);
 
         f(&FfiRequest {
             metadata_location: FfiStr::new(&self.metadata_location),
@@ -160,6 +166,7 @@ impl Request {
             to_snapshot_id_inclusive: self.to_snapshot_id_inclusive.into(),
             projection: projection.as_deref().map(FfiSlice::new).into(),
             filter_columns: filter_columns.as_deref().map(FfiSlice::new).into(),
+            statistics_columns: statistics_columns.as_deref().map(FfiSlice::new).into(),
             row_filter: opt_str(&self.row_filter),
             limit: self.limit.into(),
             max_threads: self.max_threads.into(),
@@ -187,6 +194,7 @@ impl Request {
             to_snapshot_id_inclusive: r.to_snapshot_id_inclusive.into_option(),
             projection: strings(r.projection)?,
             filter_columns: strings(r.filter_columns)?,
+            statistics_columns: strings(r.statistics_columns)?,
             row_filter: opt_string(r.row_filter)?,
             limit: r.limit.into_option(),
             max_threads: r.max_threads.into_option(),
@@ -283,7 +291,7 @@ const _: () = {
     assert!(size_of::<FfiOption<i64>>() == 16);
     assert!(size_of::<FfiOption<u64>>() == 16);
     assert!(size_of::<FfiOption<FfiStr>>() == 3 * ptr);
-    assert!(size_of::<FfiRequest>() == 2 * ptr + 5 * 16 + 4 * 3 * ptr + 8);
+    assert!(size_of::<FfiRequest>() == 2 * ptr + 5 * 16 + 5 * 3 * ptr + 8);
     assert!(size_of::<RowCount>() == 16);
     assert!(size_of::<ConstantError>() == 5 * ptr);
     assert!(size_of::<FfiOutputHeader>() == 24 + 4 * ptr + 8);

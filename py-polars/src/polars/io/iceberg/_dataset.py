@@ -456,6 +456,7 @@ class IcebergScanResolver:
                     to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
                     projection=projection,
                     filter_columns=filter_columns,
+                    statistics_columns=statistics_columns,
                     iceberg_table_filter=iceberg_table_filter,
                     limit=limit,
                     use_metadata_statistics=self.use_metadata_statistics,

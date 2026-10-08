@@ -70,7 +70,7 @@ fn dispatch(capsule: &Bound<'_, PyCapsule>) -> PolarsResult<Dispatch> {
 #[pyfunction]
 #[pyo3(signature = (
     capsule, *, metadata_location, snapshot_id, from_snapshot_id_exclusive,
-    to_snapshot_id_inclusive, projection, filter_columns, row_filter, limit,
+    to_snapshot_id_inclusive, projection, filter_columns, statistics_columns, row_filter, limit,
     use_metadata_statistics, fast_deletion_count, verbose, testing_fail,
     source_url, storage_options, credential_provider, cast_options,
     metadata_cache, metadata_cache_scope
@@ -85,6 +85,7 @@ pub fn _iceberg_plugin_scan(
     to_snapshot_id_inclusive: Option<i64>,
     projection: Option<Vec<String>>,
     filter_columns: Option<Vec<String>>,
+    statistics_columns: Option<Vec<String>>,
     row_filter: Option<String>,
     limit: Option<u64>,
     use_metadata_statistics: bool,
@@ -130,6 +131,7 @@ pub fn _iceberg_plugin_scan(
                 to_snapshot_id_inclusive,
                 projection,
                 filter_columns,
+                statistics_columns,
                 row_filter,
                 limit,
                 max_threads: Some(polars_config::config().max_threads() as u64),
