@@ -343,6 +343,23 @@ impl ColumnSelectorBuilder {
             };
         }
 
+        // Decimal precision widening with equal scale (allowed Iceberg type promotion).
+        #[cfg(feature = "dtype-decimal")]
+        if let (
+            DataType::Decimal(target_precision, target_scale),
+            DataType::Decimal(incoming_precision, incoming_scale),
+        ) = (target_dtype, incoming_dtype)
+        {
+            return if target_scale != incoming_scale || target_precision < incoming_precision {
+                mismatch_err("incoming dtype cannot safely cast to target dtype")
+            } else if self.cast_columns_policy.integer_upcast {
+                // Lossless, so use overflowing to elide validation.
+                attach_cast(CastOptions::Overflowing)
+            } else {
+                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')")
+            };
+        }
+
         if target_dtype.is_float() && incoming_dtype.is_float() {
             match (target_dtype, incoming_dtype) {
                 (DataType::Float64, DataType::Float32)
