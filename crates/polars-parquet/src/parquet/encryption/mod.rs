@@ -3,7 +3,7 @@
 
 mod ciphers;
 pub mod decrypt;
-// TODO: Remove once encrypted writing is implemented.
-#[allow(dead_code)]
 pub mod encrypt;
 mod modules;
+#[cfg(test)]
+mod write_tests;

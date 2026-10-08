@@ -1,14 +1,19 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 use polars_parquet_format::{
-    ColumnCryptoMetaData, EncryptionWithColumnKey, EncryptionWithFooterKey,
+    AesGcmV1, ColumnCryptoMetaData, EncryptionAlgorithm, EncryptionWithColumnKey,
+    EncryptionWithFooterKey, FileCryptoMetaData,
 };
 use polars_utils::aliases::{PlHashMap, PlHashSet};
 
-use super::ciphers::{AesGcmBlockEncryptor, BlockEncryptor};
+use super::ciphers::{AesGcmBlockEncryptor, BlockEncryptor, NONCE_LEN, SIZE_LEN, TAG_LEN};
+use super::modules::{ModuleType, create_footer_aad, create_module_aad};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::{ColumnDescriptor, SchemaDescriptor};
+use crate::parquet::page::ParquetPageHeader;
+use crate::parquet::write::WriteThrift;
 
 #[derive(Clone, PartialEq)]
 struct EncryptionKey {
@@ -139,7 +144,7 @@ impl FileEncryptionProperties {
         let column_paths = schema
             .columns()
             .iter()
-            .map(column_path_string)
+            .map(|column| column_path_string(column).into_owned())
             .collect::<PlHashSet<_>>();
         let encryption_columns = self
             .column_keys
@@ -287,19 +292,6 @@ impl FileEncryptor {
         &self.properties
     }
 
-    /// Combined AAD prefix and suffix for the file generated
-    pub fn file_aad(&self) -> &[u8] {
-        &self.file_aad
-    }
-
-    /// Unique file identifier part of AAD suffix. The full AAD suffix is generated per module by
-    /// concatenating aad_file_unique, module type, row group ordinal (all except
-    /// footer), column ordinal (all except footer) and page ordinal (data page and
-    /// header only).
-    pub fn aad_file_unique(&self) -> &Vec<u8> {
-        &self.aad_file_unique
-    }
-
     /// Returns whether data for the specified column should be encrypted
     pub fn is_column_encrypted(&self, column_path: &str) -> bool {
         if self.properties.column_keys.is_empty() {
@@ -331,6 +323,218 @@ impl FileEncryptor {
             Some(column_key) => Ok(Box::new(AesGcmBlockEncryptor::new(column_key.key())?)),
         }
     }
+
+    /// Create a [`FileEncryptor`] for writing a file with the given schema.
+    ///
+    /// This checks that all columns with keys are in the schema, and that all keys are
+    /// valid, so that errors are raised before any data is written.
+    pub(crate) fn try_new_for_schema(
+        properties: Arc<FileEncryptionProperties>,
+        schema: &SchemaDescriptor,
+    ) -> ParquetResult<Self> {
+        properties.validate_encrypted_column_names(schema)?;
+        let encryptor = Self::new(properties)?;
+        encryptor.get_footer_encryptor()?;
+        for column_path in encryptor.properties.column_keys.keys() {
+            encryptor.get_column_encryptor(column_path)?;
+        }
+        Ok(encryptor)
+    }
+
+    /// The encryption algorithm to store in the file.
+    pub(crate) fn encryption_algorithm(&self) -> EncryptionAlgorithm {
+        let properties = &self.properties;
+        let supply_aad_prefix = properties
+            .aad_prefix()
+            .map(|_| !properties.store_aad_prefix());
+        let aad_prefix = if properties.store_aad_prefix() {
+            properties.aad_prefix().cloned()
+        } else {
+            None
+        };
+        EncryptionAlgorithm::AESGCMV1(AesGcmV1::new(
+            aad_prefix,
+            self.aad_file_unique.clone(),
+            supply_aad_prefix,
+        ))
+    }
+
+    /// The crypto metadata stored before an encrypted footer.
+    pub(crate) fn file_crypto_metadata(&self) -> FileCryptoMetaData {
+        FileCryptoMetaData::new(
+            self.encryption_algorithm(),
+            self.properties.footer_key_metadata().cloned(),
+        )
+    }
+
+    /// Encrypt a serialized footer.
+    pub(crate) fn encrypt_footer(&self, footer: &[u8]) -> ParquetResult<Vec<u8>> {
+        let aad = create_footer_aad(&self.file_aad)?;
+        self.get_footer_encryptor()?.encrypt(footer, &aad)
+    }
+
+    /// Compute the signature of a serialized plaintext footer, which is the nonce and
+    /// authentication tag from encrypting the footer.
+    pub(crate) fn sign_footer(&self, footer: &[u8]) -> ParquetResult<Vec<u8>> {
+        let encrypted = self.encrypt_footer(footer)?;
+        let nonce = &encrypted[SIZE_LEN..SIZE_LEN + NONCE_LEN];
+        let tag = &encrypted[encrypted.len() - TAG_LEN..];
+        Ok([nonce, tag].concat())
+    }
+
+    /// Encrypt the serialized metadata of an encrypted column.
+    pub(crate) fn encrypt_column_metadata(
+        &self,
+        column: &ColumnDescriptor,
+        row_group_idx: usize,
+        column_ordinal: usize,
+        metadata: &[u8],
+    ) -> ParquetResult<Vec<u8>> {
+        self.encrypt_column_module(
+            column,
+            ModuleType::ColumnMetaData,
+            row_group_idx,
+            column_ordinal,
+            metadata,
+        )
+    }
+
+    /// Encrypt the serialized column index of an encrypted column.
+    pub(crate) fn encrypt_column_index(
+        &self,
+        column: &ColumnDescriptor,
+        row_group_idx: usize,
+        column_ordinal: usize,
+        index: &[u8],
+    ) -> ParquetResult<Vec<u8>> {
+        self.encrypt_column_module(
+            column,
+            ModuleType::ColumnIndex,
+            row_group_idx,
+            column_ordinal,
+            index,
+        )
+    }
+
+    /// Encrypt the serialized offset index of an encrypted column.
+    pub(crate) fn encrypt_offset_index(
+        &self,
+        column: &ColumnDescriptor,
+        row_group_idx: usize,
+        column_ordinal: usize,
+        index: &[u8],
+    ) -> ParquetResult<Vec<u8>> {
+        self.encrypt_column_module(
+            column,
+            ModuleType::OffsetIndex,
+            row_group_idx,
+            column_ordinal,
+            index,
+        )
+    }
+
+    fn encrypt_column_module(
+        &self,
+        column: &ColumnDescriptor,
+        module_type: ModuleType,
+        row_group_idx: usize,
+        column_ordinal: usize,
+        plaintext: &[u8],
+    ) -> ParquetResult<Vec<u8>> {
+        let aad = create_module_aad(
+            &self.file_aad,
+            module_type,
+            row_group_idx,
+            column_ordinal,
+            None,
+        )?;
+        self.get_column_encryptor(&column_path_string(column))?
+            .encrypt(plaintext, &aad)
+    }
+
+    /// Whether data for the column should be encrypted
+    pub(crate) fn is_column_descriptor_encrypted(&self, column: &ColumnDescriptor) -> bool {
+        self.is_column_encrypted(&column_path_string(column))
+    }
+
+    /// Get a [`PageEncryptor`] for writing the pages of a column chunk, or `None` if the
+    /// column isn't encrypted.
+    pub(crate) fn page_encryptor(
+        &self,
+        column: &ColumnDescriptor,
+        row_group_idx: usize,
+        column_ordinal: usize,
+    ) -> ParquetResult<Option<PageEncryptor<'_>>> {
+        let column_path = column_path_string(column);
+        if !self.is_column_encrypted(&column_path) {
+            return Ok(None);
+        }
+        Ok(Some(PageEncryptor {
+            file_aad: &self.file_aad,
+            block_encryptor: self.get_column_encryptor(&column_path)?,
+            row_group_idx,
+            column_ordinal,
+            page_ordinal: 0,
+        }))
+    }
+}
+
+/// Encrypts the pages and page headers of a single column chunk.
+pub(crate) struct PageEncryptor<'a> {
+    file_aad: &'a [u8],
+    block_encryptor: Box<dyn BlockEncryptor>,
+    row_group_idx: usize,
+    column_ordinal: usize,
+    /// Ordinal of the current data page. Dictionary pages don't have an ordinal.
+    page_ordinal: usize,
+}
+
+impl PageEncryptor<'_> {
+    /// Encrypt the (possibly compressed) data of a page.
+    pub(crate) fn encrypt_page(
+        &mut self,
+        page: &[u8],
+        is_dictionary: bool,
+    ) -> ParquetResult<Vec<u8>> {
+        let module_type = if is_dictionary {
+            ModuleType::DictionaryPage
+        } else {
+            ModuleType::DataPage
+        };
+        let aad = self.create_aad(module_type)?;
+        self.block_encryptor.encrypt(page, &aad)
+    }
+
+    /// Serialize and encrypt a page header.
+    pub(crate) fn encrypt_page_header(
+        &mut self,
+        header: &ParquetPageHeader,
+        is_dictionary: bool,
+    ) -> ParquetResult<Vec<u8>> {
+        let module_type = if is_dictionary {
+            ModuleType::DictionaryPageHeader
+        } else {
+            ModuleType::DataPageHeader
+        };
+        let aad = self.create_aad(module_type)?;
+        self.block_encryptor
+            .encrypt(&header.to_thrift_bytes()?, &aad)
+    }
+
+    /// Move to the next data page. Must be called after writing each data page.
+    pub(crate) fn increment_page(&mut self) {
+        self.page_ordinal += 1;
+    }
+
+    fn create_aad(&self, module_type: ModuleType) -> ParquetResult<Vec<u8>> {
+        create_module_aad(
+            self.file_aad,
+            module_type,
+            self.row_group_idx,
+            self.column_ordinal,
+            Some(self.page_ordinal),
+        )
+    }
 }
 
 /// Get the crypto metadata for a column from the file encryption properties
@@ -346,7 +550,7 @@ pub(crate) fn get_column_crypto_metadata(
     } else {
         properties
             .column_keys
-            .get(&column_path_string(column))
+            .get(column_path_string(column).as_ref())
             .map(|encryption_key| {
                 // Column is encrypted with a column specific key
                 ColumnCryptoMetaData::ENCRYPTIONWITHCOLUMNKEY(EncryptionWithColumnKey {
@@ -362,11 +566,83 @@ pub(crate) fn get_column_crypto_metadata(
 }
 
 /// The dot-separated path of a column, as used to identify columns in encryption properties.
-fn column_path_string(column: &ColumnDescriptor) -> String {
-    column
-        .path_in_schema
-        .iter()
-        .map(|s| s.as_str())
-        .collect::<Vec<_>>()
-        .join(".")
+fn column_path_string(column: &ColumnDescriptor) -> Cow<'_, str> {
+    match column.path_in_schema.as_slice() {
+        [name] => Cow::Borrowed(name.as_str()),
+        path => Cow::Owned(
+            path.iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join("."),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parquet::encryption::ciphers::{AesGcmBlockDecryptor, BlockDecryptor};
+
+    const FOOTER_KEY: &[u8] = b"0123456789012345";
+
+    fn aes_gcm_v1(builder: EncryptionPropertiesBuilder) -> (AesGcmV1, Vec<u8>) {
+        let encryptor = FileEncryptor::new(builder.build().unwrap()).unwrap();
+        let EncryptionAlgorithm::AESGCMV1(algorithm) = encryptor.encryption_algorithm() else {
+            panic!("expected AES_GCM_V1");
+        };
+        (algorithm, encryptor.aad_file_unique)
+    }
+
+    #[test]
+    fn test_encryption_algorithm() {
+        let builder = FileEncryptionProperties::builder(FOOTER_KEY.to_vec());
+        let (algorithm, aad_file_unique) = aes_gcm_v1(builder);
+        assert_eq!(algorithm.aad_file_unique, Some(aad_file_unique));
+        assert_eq!(algorithm.aad_prefix, None);
+        assert_eq!(algorithm.supply_aad_prefix, None);
+
+        let builder = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+            .with_aad_prefix(b"prefix".to_vec());
+        let (algorithm, _) = aes_gcm_v1(builder);
+        assert_eq!(algorithm.aad_prefix, None);
+        assert_eq!(algorithm.supply_aad_prefix, Some(true));
+
+        let builder = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+            .with_aad_prefix(b"prefix".to_vec())
+            .with_aad_prefix_storage(true);
+        let (algorithm, _) = aes_gcm_v1(builder);
+        assert_eq!(algorithm.aad_prefix, Some(b"prefix".to_vec()));
+        assert_eq!(algorithm.supply_aad_prefix, Some(false));
+    }
+
+    #[test]
+    fn test_unique_aad_per_file() {
+        let properties = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+            .build()
+            .unwrap();
+        let a = FileEncryptor::new(properties.clone()).unwrap();
+        let b = FileEncryptor::new(properties).unwrap();
+        assert_ne!(a.aad_file_unique, b.aad_file_unique);
+    }
+
+    #[test]
+    fn test_footer_signature() {
+        let properties = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+            .with_plaintext_footer(true)
+            .build()
+            .unwrap();
+        let encryptor = FileEncryptor::new(properties).unwrap();
+        let footer = b"plaintext footer".to_vec();
+        let signature = encryptor.sign_footer(&footer).unwrap();
+        assert_eq!(signature.len(), NONCE_LEN + TAG_LEN);
+
+        // The reader verifies the signature by recomputing the tag from the nonce
+        let decryptor = AesGcmBlockDecryptor::new(FOOTER_KEY).unwrap();
+        let aad = create_footer_aad(&encryptor.file_aad).unwrap();
+        let signed_footer = [footer.as_slice(), &signature].concat();
+        let tag = decryptor
+            .compute_plaintext_tag(&aad, &signed_footer)
+            .unwrap();
+        assert_eq!(tag, signature[NONCE_LEN..]);
+    }
 }

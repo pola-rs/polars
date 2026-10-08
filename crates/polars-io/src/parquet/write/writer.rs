@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use polars_buffer::Buffer;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
+use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::write::{
     CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
     get_dtype_encoding, to_parquet_schema,
@@ -25,6 +26,11 @@ impl ParquetWriteOptions {
             .with_row_group_size(self.row_group_size)
             .with_data_page_size(self.data_page_size)
             .with_key_value_metadata(self.key_value_metadata.clone())
+            .with_encryption_properties(
+                self.encryption_properties
+                    .as_ref()
+                    .map(|properties| Arc::clone(&properties.0)),
+            )
     }
 }
 
@@ -46,6 +52,8 @@ pub struct ParquetWriter<W> {
     key_value_metadata: Option<KeyValueMetadata>,
     /// Context info for the Parquet file being written.
     context_info: Option<PlHashMap<String, String>>,
+    /// Properties for writing files encrypted with Parquet modular encryption
+    encryption_properties: Option<Arc<FileEncryptionProperties>>,
 }
 
 impl<W> ParquetWriter<W>
@@ -66,6 +74,7 @@ where
             parallel: true,
             key_value_metadata: None,
             context_info: None,
+            encryption_properties: None,
         }
     }
 
@@ -115,12 +124,24 @@ where
         self
     }
 
+    /// Set the properties for encrypting the file with Parquet modular encryption.
+    pub fn with_encryption_properties(
+        mut self,
+        encryption_properties: Option<Arc<FileEncryptionProperties>>,
+    ) -> Self {
+        self.encryption_properties = encryption_properties;
+        self
+    }
+
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
         let options = self.materialize_options();
-        let writer = Mutex::new(FileWriter::try_new(self.writer, schema, options)?);
+        let writer = Mutex::new(
+            FileWriter::try_new(self.writer, schema, options)?
+                .with_encryption_properties(self.encryption_properties)?,
+        );
 
         Ok(BatchedWriter {
             writer,

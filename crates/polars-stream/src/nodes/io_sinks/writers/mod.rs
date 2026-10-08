@@ -31,11 +31,6 @@ pub fn create_file_writer_starter(
 
             use crate::nodes::io_sinks::writers::parquet::ParquetWriterStarter;
 
-            // TODO: Remove once encrypted writing is implemented.
-            if options.encryption_properties.is_some() {
-                polars_error::polars_bail!(nyi = "writing encrypted Parquet files");
-            }
-
             let arrow_schema = if let Some(arrow_schema) = options.arrow_schema.clone() {
                 arrow_schema
             } else {

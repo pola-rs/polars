@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::sync::Arc;
 
 use polars_arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
@@ -8,6 +9,7 @@ use polars_utils::version::{
 
 use super::schema::schema_to_metadata_key;
 use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
+use crate::parquet::encryption::encrypt::FileEncryptionProperties;
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
 
@@ -42,8 +44,6 @@ impl<W: Write> FileWriter<W> {
 
 impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
-    /// # Error
-    /// If it is unable to derive a parquet schema from [`ArrowSchema`].
     pub fn new_with_parquet_schema(
         writer: W,
         schema: ArrowSchema,
@@ -83,6 +83,20 @@ impl<W: Write> FileWriter<W> {
             parquet_schema,
             options,
         ))
+    }
+
+    /// Encrypt the file with Parquet modular encryption.
+    /// # Error
+    /// If data has been written to the file, or the encryption properties are not valid
+    /// for the file schema.
+    pub fn with_encryption_properties(
+        mut self,
+        encryption_properties: Option<Arc<FileEncryptionProperties>>,
+    ) -> PolarsResult<Self> {
+        self.writer = self
+            .writer
+            .with_encryption_properties(encryption_properties)?;
+        Ok(self)
     }
 
     /// Writes a row group to the file.

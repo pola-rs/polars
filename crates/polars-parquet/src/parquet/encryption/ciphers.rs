@@ -5,7 +5,6 @@ use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 
 use crate::parquet::error::ParquetResult;
 
-#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 const RIGHT_TWELVE: u128 = 0x0000_0000_ffff_ffff_ffff_ffff_ffff_ffff;
 pub(crate) const NONCE_LEN: usize = 12;
 pub(crate) const TAG_LEN: usize = 16;
@@ -80,12 +79,10 @@ impl BlockDecryptor for AesGcmBlockDecryptor {
     }
 }
 
-#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 pub(crate) trait BlockEncryptor: Debug + Send + Sync {
     fn encrypt(&mut self, plaintext: &[u8], aad: &[u8]) -> ParquetResult<Vec<u8>>;
 }
 
-#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 #[derive(Debug, Clone)]
 struct CounterNonce {
     start: u128,
@@ -106,7 +103,6 @@ impl CounterNonce {
     }
 
     /// One accessor for the nonce bytes to avoid potentially flipping endianness
-    #[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
     #[inline]
     pub fn get_bytes(&self) -> [u8; NONCE_LEN] {
         self.counter.to_le_bytes()[0..NONCE_LEN].try_into().unwrap()
@@ -127,7 +123,6 @@ impl NonceSequence for CounterNonce {
     }
 }
 
-#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 #[derive(Debug)]
 pub(crate) struct AesGcmBlockEncryptor {
     key: LessSafeKey,
