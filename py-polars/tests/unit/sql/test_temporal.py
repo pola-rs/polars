@@ -221,6 +221,14 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
             "dtm = '2024-01-07 01:02:03.123456000' OR dtm = '2020-12-30 10:30:45.987654'",
             [0, 2],
         ),
+        # string on the left
+        ("'2020-12-30T10:30:45.987' <= dtm", [0, 2]),
+        ("'2006-01-01' < dtm::date", [0, 2]),
+        ("'2006-01-01' < dtm", [0, 1, 2]),
+        ("'2006-01-01' >= dtm", []),
+        ("'1960-01-07' <> dt", [0, 1]),
+        ("'22:10:30' != tm", [0, 2]),
+        ("'1960-01-07 00:00' = dt::datetime", [2]),
     ],
 )
 def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None:
@@ -268,6 +276,11 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
         match=r"(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE dt = '{dtval}'")
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"(conversion.*failed)|(cannot compare.*string.*temporal)",
+    ):
+        df.sql(f"SELECT * FROM self WHERE '{dtval}' = dt")
 
 
 def test_strftime() -> None:
