@@ -86,6 +86,7 @@ class DeltaDataset:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
@@ -101,6 +102,7 @@ class DeltaDataset:
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
+                f"statistics_columns: {statistics_columns}, "
                 f"use_pyarrow: {self.use_pyarrow}"
             )
 
@@ -201,14 +203,19 @@ class DeltaDataset:
                 "cannot pair add file sizes with file_uris(), skipping sizes"
             )
 
+        # Statistics of columns that are not filtered on are best effort.
+        best_effort_statistics_columns = [
+            c for c in statistics_columns or [] if c not in (filter_columns or [])
+        ]
         table_statistics = (
             _extract_table_statistics_from_delta_add_actions(
                 pl.DataFrame(table.get_add_actions()),
-                filter_columns=filter_columns,
+                filter_columns=filter_columns or [],
+                best_effort_columns=best_effort_statistics_columns,
                 schema=schema,
                 verbose=verbose,
             )
-            if filter_columns is not None
+            if filter_columns is not None or best_effort_statistics_columns
             else None
         )
 

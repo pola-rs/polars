@@ -538,7 +538,9 @@ class IcebergStatisticsLoader:
     def __init__(
         self,
         table: Table,
-        projected_filter_schema: pyiceberg.schema.Schema,
+        statistics_schema: pyiceberg.schema.Schema,
+        *,
+        best_effort_columns: Sequence[str] = (),
     ) -> None:
         import polars._utils.logging
 
@@ -547,9 +549,11 @@ class IcebergStatisticsLoader:
         self.file_column_statistics: dict[int, IcebergColumnStatisticsLoader] = {}
         self.load_as_empty_statistics: list[str] = []
         self.file_lengths: list[int] = []
-        self.projected_filter_schema = projected_filter_schema
+        self.statistics_schema = statistics_schema
+        # Columns whose statistics are loaded as nulls when they cannot be loaded.
+        self.best_effort_columns = set(best_effort_columns)
 
-        for field in projected_filter_schema.fields:
+        for field in statistics_schema.fields:
             field_all_types = set()
 
             for schema in table.schemas().values():
@@ -603,18 +607,31 @@ class IcebergStatisticsLoader:
         identity_transformed_values: dict[int, pl.Series | str],
     ) -> pl.DataFrame:
         import polars as pl
+        import polars._utils.logging
+
+        verbose = polars._utils.logging.verbose()
 
         out: list[pl.DataFrame] = [
             pl.Series("len", self.file_lengths, dtype=pl.UInt32).to_frame()
         ]
 
         for field_id, stat_builder in self.file_column_statistics.items():
-            if (p := identity_transformed_values.get(field_id)) is not None:
-                if isinstance(p, str):
-                    msg = f"statistics load failure for filter column: {p}"
-                    raise ComputeError(msg)
+            try:
+                column_stats_df = stat_builder.finish(
+                    expected_height, identity_transformed_values.get(field_id)
+                )
+            except Exception as e:
+                if stat_builder.column_name not in self.best_effort_columns:
+                    raise
 
-            column_stats_df = stat_builder.finish(expected_height, p)
+                if verbose:
+                    eprint(
+                        "IcebergStatisticsLoader: statistics load failed for column "
+                        f"{stat_builder.column_name!r}: {e!r}"
+                    )
+
+                column_stats_df = stat_builder.null_statistics(expected_height)
+
             out.append(column_stats_df)
 
         return pl.concat(out, how="horizontal")
@@ -637,12 +654,29 @@ class IcebergColumnStatisticsLoader:
             self.min_values.append(file.lower_bounds.get(self.field_id))
             self.max_values.append(file.upper_bounds.get(self.field_id))
 
+    def null_statistics(self, height: int) -> pl.DataFrame:
+        import polars as pl
+
+        c = self.column_name
+
+        return pl.DataFrame(
+            schema={
+                f"{c}_nc": null_count_dtype(self.column_dtype),
+                f"{c}_min": self.column_dtype,
+                f"{c}_max": self.column_dtype,
+            }
+        ).clear(height)
+
     def finish(
         self,
         expected_height: int,
-        identity_transformed_values: pl.Series | None,
+        identity_transformed_values: pl.Series | str | None,
     ) -> pl.DataFrame:
         import polars as pl
+
+        if isinstance(identity_transformed_values, str):
+            msg = f"statistics load failure for filter column: {identity_transformed_values}"
+            raise ComputeError(msg)
 
         c = self.column_name
         assert len(self.null_count) == expected_height
