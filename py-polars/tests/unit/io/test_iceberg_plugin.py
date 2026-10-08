@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import io
+import json
 import pickle
 import re
 import sys
@@ -427,6 +428,7 @@ def _add_position_deletes(
     single_delete_file: bool = False,
     partition: Any = None,
     path_bounds: bool = True,
+    deletion_vectors: bool = False,
 ) -> Any:
     """
     Commit a snapshot adding one position delete file per data file.
@@ -437,6 +439,9 @@ def _add_position_deletes(
     `path_bounds`, the delete files have no `file_path` bounds, so they are scoped to
     the partition even when they reference one data file.
 
+    With `deletion_vectors`, each data file gets a deletion vector (Puffin file) with
+    `referenced_data_file` set and no `file_path` bounds, as Iceberg Java writes them.
+
     PyIceberg cannot write merge-on-read deletes, so the delete files, the delete
     manifest and the manifest list are written with its low-level writers.
     """
@@ -444,6 +449,7 @@ def _add_position_deletes(
 
     import pyarrow as pa
     import pyarrow.parquet as pq
+    from pyiceberg.avro.file import AvroOutputFile
     from pyiceberg.manifest import (
         DataFile,
         DataFileContent,
@@ -462,6 +468,20 @@ def _add_position_deletes(
     class DeleteManifestWriter(ManifestWriterV2):  # type: ignore[misc]
         def content(self) -> ManifestContent:
             return ManifestContent.DELETES
+
+        @property
+        def version(self) -> Any:
+            # Format version 3 data files hold `referenced_data_file`.
+            return 3 if deletion_vectors else 2
+
+        def new_writer(self) -> Any:
+            return AvroOutputFile[ManifestEntry](
+                output_file=self._output_file,
+                file_schema=self._with_partition(self.version),
+                record_schema=self._with_partition(self.version),
+                schema_name="manifest_entry",
+                metadata=self._meta,
+            )
 
         @property
         def _meta(self) -> dict[str, str]:
@@ -495,6 +515,58 @@ def _add_position_deletes(
         else [{data_path: positions} for data_path, positions in deletes.items()]
     )
     delete_files = []
+    if deletion_vectors:
+        assert not single_delete_file
+        for data_path, positions in deletes.items():
+            path = f"{tbl.location()}/data/dv-{uuid.uuid4()}.puffin"
+            local_path = path.removeprefix("file://")
+            blob = _deletion_vector_blob(positions)
+            footer = json.dumps(
+                {
+                    "blobs": [
+                        {
+                            "type": "deletion-vector-v1",
+                            "fields": [pos_field_id - 1],
+                            "snapshot-id": -1,
+                            "sequence-number": -1,
+                            "offset": 4,
+                            "length": len(blob),
+                            "properties": {
+                                "referenced-data-file": data_path,
+                                "cardinality": str(len(positions)),
+                            },
+                        }
+                    ]
+                }
+            ).encode()
+            puffin = b"".join(
+                [
+                    b"PFA1",
+                    blob,
+                    b"PFA1",
+                    footer,
+                    len(footer).to_bytes(4, "little"),
+                    bytes(4),
+                    b"PFA1",
+                ]
+            )
+            Path(local_path).write_bytes(puffin)
+            data_file = DataFile.from_args(
+                _table_format_version=3,
+                content=DataFileContent.POSITION_DELETES,
+                file_path=path,
+                file_format=FileFormat.PUFFIN,
+                partition=Record() if partition is None else partition,
+                record_count=len(positions),
+                file_size_in_bytes=len(puffin),
+                referenced_data_file=data_path,
+                content_offset=4,
+                content_size_in_bytes=len(blob),
+            )
+            data_file.spec_id = tbl.spec().spec_id
+            delete_files.append(data_file)
+        groups = []
+
     for group in groups:
         path = f"{tbl.location()}/data/delete-{uuid.uuid4()}.parquet"
         local_path = path.removeprefix("file://")
@@ -569,6 +641,22 @@ def _add_position_deletes(
     return tbl.catalog.load_table(tbl.name())
 
 
+def _deletion_vector_blob(positions: list[int]) -> bytes:
+    """A `deletion-vector-v1` Puffin blob deleting `positions` (< 2**32)."""
+    import zlib
+
+    from pyroaring import BitMap
+
+    # One 32-bit Roaring bitmap, of key 0 (the upper 32 bits of the positions).
+    vector = (
+        (1).to_bytes(8, "little")
+        + (0).to_bytes(4, "little")
+        + BitMap(positions).serialize()
+    )
+    body = b"\xd1\xd3\x39\x64" + vector
+    return len(body).to_bytes(4, "big") + body + zlib.crc32(body).to_bytes(4, "big")
+
+
 def _data_file_paths(tbl: Any) -> list[str]:
     return [task.file.file_path for task in tbl.scan().plan_files()]
 
@@ -599,6 +687,32 @@ def test_iceberg_plugin_position_deletes(
     # Deletes from a later snapshot do not apply to an earlier one.
     first = tbl.snapshots()[0].snapshot_id
     assert_frame_equal(pl.scan_iceberg(tbl, snapshot_id=first).collect(), TEST_DF)
+
+
+@pytest.mark.filterwarnings("ignore:Call to to_vector:DeprecationWarning")
+@pytest.mark.parametrize("planner", ["plugin", "pyiceberg"])
+def test_iceberg_plugin_deletion_vector_scoped_to_partition(
+    tmp_path: Path, planner: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # PyIceberg associates a deletion vector without `file_path` bounds with every
+    # data file of its partition, not only with its `referenced_data_file`.
+    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
+
+    tbl = _new_table(tmp_path)
+    tbl.append(TEST_DF.to_arrow())
+    paths = _data_file_paths(tbl)
+    assert len(paths) == 2
+
+    tbl = _add_position_deletes(tbl, {paths[0]: [0, 2]}, deletion_vectors=True)
+    assert len(next(iter(tbl.scan().plan_files())).delete_files) == 1
+
+    expected = pl.DataFrame(tbl.scan().to_arrow())
+    assert expected.height == 2 * TEST_DF.height - 2
+
+    for fast_deletion_count in [False, True]:
+        lf = pl.scan_iceberg(tbl, fast_deletion_count=fast_deletion_count)
+        assert_frame_equal(lf.collect(), expected, check_row_order=False)
+        assert lf.select(pl.len()).collect().item() == expected.height
 
 
 @pytest.mark.parametrize("planner", [None, "pyiceberg"])
