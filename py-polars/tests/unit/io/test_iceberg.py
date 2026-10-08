@@ -6018,6 +6018,8 @@ def test_scan_iceberg_runtime_join_filter(
     assert 'col("x").dynamic_predicate()' in q.explain(engine="streaming")
 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
     capfd.readouterr()
     out = q.collect(engine="streaming")
     err = capfd.readouterr().err
