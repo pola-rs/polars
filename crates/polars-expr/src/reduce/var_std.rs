@@ -19,7 +19,7 @@ pub fn new_var_std_reduction(
 /// by [`new_var_std_merge_reduction`].
 #[cfg(feature = "serde")]
 pub fn new_var_std_state_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
-    // The state is the same for `var` and `std` and any `ddof`, which only finalizing uses.
+    // `is_std` and `ddof` only matter when finalizing.
     var_std_reduction(dtype, false, 0, SplitStage::State)
 }
 
