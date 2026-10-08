@@ -1584,3 +1584,125 @@ def test_sort_multiple_keys_maintain_order_reversed_input(engine: EngineType) ->
         lf.sort("a", "b", maintain_order=True).collect(engine=engine),
         pl.DataFrame({"a": [1, 1, 2, 3], "b": [4, 4, 5, 6]}),
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sort_by_first_last_to_min_max_by(
+    engine: EngineType, descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3],
+            "x": [1, 2, 3, 4, 5, 6],
+            "a": [2, None, 2, 1, 1, None],
+            "b": ["q", "p", "o", "s", "r", "t"],
+        }
+    )
+    e = pl.col("x").sort_by("a", "b", descending=descending, nulls_last=nulls_last)
+    expected = (
+        df.group_by("g")
+        .agg(e)
+        .select("g", first=pl.col("x").list.first(), last=pl.col("x").list.last())
+    )
+
+    q = df.lazy().group_by("g").agg(first=e.first(), last=e.last())
+    plan = q.explain()
+    assert "min_by" in plan
+    assert "max_by" in plan
+    assert "sort_by" not in plan
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "in-memory-map" not in dot
+    assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+    q = df.lazy().select(first=e.first(), last=e.last())
+    sorted_x = df.select(e)["x"]
+    assert_frame_equal(
+        q.collect(engine=engine),
+        pl.DataFrame({"first": sorted_x[0], "last": sorted_x[-1]}),
+    )
+
+    q = df.lazy().select(first=e.first().over("g"), last=e.last().over("g"))
+    assert_frame_equal(
+        q.collect(engine=engine),
+        df.select("g").join(expected, on="g", maintain_order="left").drop("g"),
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sort_by_first_maintain_order(engine: EngineType) -> None:
+    df = pl.DataFrame(
+        {"g": [1, 1, 1, 2, 2], "x": [1, 2, 3, 4, 5], "a": [1, 0, 0, None, None]}
+    )
+    for by in [["a"], ["a", "g"]]:
+        e = pl.col("x").sort_by(by, maintain_order=True)
+        q = df.lazy().group_by("g").agg(first=e.first(), last=e.last())
+        assert "min_by" not in q.explain()
+        assert_frame_equal(
+            q.collect(engine=engine),
+            pl.DataFrame({"g": [1, 2], "first": [2, 4], "last": [1, 5]}),
+            check_row_order=False,
+        )
+        assert df.lazy().select(e.first()).collect(engine=engine).item() == 4
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize(
+    ("offset", "length"), [(0, 0), (0, 1), (0, 3), (2, 2), (0, 20)]
+)
+def test_sort_head_uses_limit(
+    engine: EngineType,
+    maintain_order: bool,
+    nulls_last: bool,
+    offset: int,
+    length: int,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1, 1, 2, 2, 2],
+            "x": [1, 2, 3, 4, 5, 6, 7, 8],
+            "a": [None, 2, None, 2, 1, None, None, 3],
+            "b": [5, 1, 3, 2, 4, 0, 6, 7],
+        }
+    )
+    exprs = [
+        pl.col("a").sort(nulls_last=nulls_last),
+        pl.col("x").sort_by(
+            "a", "b", nulls_last=nulls_last, maintain_order=maintain_order
+        ),
+    ]
+    if maintain_order:
+        # Without a tie breaker, only a stable sort gives a known result.
+        exprs.append(
+            pl.col("x").sort_by("a", nulls_last=nulls_last, maintain_order=True)
+        )
+
+    for e in exprs:
+        q = df.lazy().select(e.slice(offset, length))
+        expected = df.select(e).slice(offset, length)
+        assert_frame_equal(q.collect(engine=engine), expected)
+
+        q = df.lazy().group_by("g").agg(e.slice(offset, length))
+        expected = df.group_by("g").agg(e.implode().list.slice(offset, length))
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+        if offset == 0 and length == 1:
+            q = df.lazy().group_by("g").agg(e.first())
+            expected = df.group_by("g").agg(e.implode().list.first())
+            assert_frame_equal(
+                q.collect(engine=engine), expected, check_row_order=False
+            )
+
+
+def test_sort_head_streaming_top_k() -> None:
+    lf = pl.LazyFrame({"x": [3, 1, 2], "a": [1, 2, 3], "b": [3, 2, 1]})
+    for q in [
+        lf.select(pl.col("x").sort().head(2)),
+        lf.select(pl.col("x").sort_by("a", "b").head(2)),
+        lf.select(pl.col("x").sort_by("a", maintain_order=True).first()),
+    ]:
+        dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+        assert "top-k" in dot or "bottom-k" in dot

@@ -1,6 +1,7 @@
 mod simplify_functions;
 
 use num_traits::Zero;
+use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
@@ -24,6 +25,72 @@ fn integer_literal_value(ae: &AExpr) -> Option<i64> {
         AExpr::Literal(lv) => lv.extract_i64().ok(),
         _ => None,
     }
+}
+
+/// `x.sort_by(by).first()` -> `x.min_by(row_encode(by))`
+/// `x.sort_by(by).last()` -> `x.max_by(row_encode(by))`
+///
+/// The ordered row encoding sorts like `by`, nulls included. Only done if the sort does not keep
+/// the order of equal rows, as `min_by` and `max_by` may pick any of them.
+fn sort_by_first_last_to_min_max_by(
+    input: Node,
+    is_last: bool,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Schema,
+) -> Option<AExpr> {
+    let AExpr::SortBy {
+        expr,
+        by,
+        sort_options,
+    } = expr_arena.get(input)
+    else {
+        return None;
+    };
+    if sort_options.maintain_order
+        || by.is_empty()
+        || !is_length_preserving_ae(*expr, expr_arena)
+        || !by.iter().all(|e| is_length_preserving_ae(*e, expr_arena))
+    {
+        return None;
+    }
+
+    let expr = *expr;
+    let by = by.clone();
+    let mut descending = sort_options.descending.clone();
+    let mut nulls_last = sort_options.nulls_last.clone();
+    _broadcast_bools(by.len(), &mut descending);
+    _broadcast_bools(by.len(), &mut nulls_last);
+
+    let ctx = ToFieldContext::new(expr_arena, schema);
+    let dtypes = by
+        .iter()
+        .map(|e| expr_arena.get(*e).to_dtype(&ctx).ok())
+        .collect::<Option<Vec<_>>>()?;
+    if dtypes.iter().any(|dt| dt.is_object()) {
+        return None;
+    }
+
+    let by = by
+        .into_iter()
+        .map(|e| ExprIR::from_node(e, expr_arena))
+        .collect();
+    let encoded = AExprBuilder::row_encode(
+        by,
+        dtypes,
+        RowEncodingVariant::Ordered {
+            descending: Some(descending),
+            nulls_last: Some(nulls_last),
+            broadcast_nulls: None,
+        },
+        expr_arena,
+    );
+    let expr = AExprBuilder::new_from_node(expr);
+    let out = if is_last {
+        expr.max_by(encoded, expr_arena)
+    } else {
+        expr.min_by(encoded, expr_arena)
+    };
+    Some(expr_arena.get(out.node()).clone())
 }
 
 enum CountCmpInput {
@@ -658,25 +725,31 @@ impl OptimizationRule for SimplifyExprRule {
             },
             // drop_nulls().first() -> first(ignore_nulls=True)
             AExpr::Agg(IRAggExpr::First(input)) => {
-                let input_node = expr_arena.get(*input);
-                match input_node {
+                let input = *input;
+                match expr_arena.get(input) {
                     AExpr::Function {
                         input,
                         function: IRFunctionExpr::DropNulls,
                         options: _,
                     } => Some(AExpr::Agg(IRAggExpr::FirstNonNull(input[0].node()))),
+                    AExpr::SortBy { .. } => {
+                        sort_by_first_last_to_min_max_by(input, false, expr_arena, schema)
+                    },
                     _ => None,
                 }
             },
             // drop_nulls().last()  -> last(ignore_nulls=True)
             AExpr::Agg(IRAggExpr::Last(input)) => {
-                let input_node = expr_arena.get(*input);
-                match input_node {
+                let input = *input;
+                match expr_arena.get(input) {
                     AExpr::Function {
                         input,
                         function: IRFunctionExpr::DropNulls,
                         options: _,
                     } => Some(AExpr::Agg(IRAggExpr::LastNonNull(input[0].node()))),
+                    AExpr::SortBy { .. } => {
+                        sort_by_first_last_to_min_max_by(input, true, expr_arena, schema)
+                    },
                     _ => None,
                 }
             },

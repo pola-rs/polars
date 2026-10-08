@@ -382,7 +382,10 @@ fn create_physical_expr_inner(
             )))
         },
         Agg(agg) => {
-            let expr = agg.get_input().first();
+            let mut expr = agg.get_input().first();
+            if let IRAggExpr::First(_) = agg {
+                expr = sort_with_limit(expr, 1, expr_arena).unwrap_or(expr);
+            }
             let input = create_physical_expr_inner(expr, expr_arena, schema, state)?;
             let allow_threading = state.allow_threading;
 
@@ -674,6 +677,9 @@ fn create_physical_expr_inner(
             offset,
             length,
         } => {
+            let input = slice_head_len(offset, length, expr_arena)
+                .and_then(|limit| sort_with_limit(input, limit, expr_arena))
+                .unwrap_or(input);
             let input = create_physical_expr_inner(input, expr_arena, schema, state)?;
             let offset = create_physical_expr_inner(offset, expr_arena, schema, state)?;
             let length = create_physical_expr_inner(length, expr_arena, schema, state)?;
