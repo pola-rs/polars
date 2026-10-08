@@ -475,18 +475,22 @@ impl StructChunked {
         if let Some(v) = &validity {
             assert_eq!(self.len(), v.len());
         }
-        let mut offset = 0;
+
+        let validity = validity.filter(|v| v.unset_bits() > 0);
 
         // SAFETY: We keep length and dtypes the same.
         unsafe {
-            for arr in self.chunks_mut() {
-                let len = arr.len();
-                let chunk_validity = validity.as_ref().and_then(|v| {
-                    let v = v.clone().sliced(offset, len);
-                    (v.unset_bits() > 0).then_some(v)
-                });
-                *arr = arr.with_validity(chunk_validity);
-                offset += len;
+            let chunks = self.chunks_mut();
+            if chunks.len() == 1 {
+                chunks[0] = chunks[0].with_validity(validity);
+            } else {
+                let mut offset = 0;
+                for arr in chunks {
+                    let len = arr.len();
+                    *arr =
+                        arr.with_validity(validity.as_ref().map(|v| v.clone().sliced(offset, len)));
+                    offset += len;
+                }
             }
         }
         self.compute_len();
