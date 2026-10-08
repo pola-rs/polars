@@ -100,6 +100,14 @@ pub(crate) fn sql_in_membership(membership: Expr, value_set: Expr, set_is_empty:
         .otherwise(membership.or(set_has_null.and(sql_unknown())))
 }
 
+/// `needle` in the list `set`, compared as SQL compares them (see [`SqlFunction::IsIn`]).
+pub(crate) fn sql_is_in(needle: Expr, set: Expr) -> Expr {
+    needle.map_binary(
+        FunctionExpr::Sql(SqlFunction::IsIn { nulls_equal: false }),
+        set,
+    )
+}
+
 /// `reduce_expr`, which must give one row, over the column of the subquery `lf`.
 fn reduced_subquery(lf: LazyFrame, reduce_expr: Expr) -> Expr {
     let new_name = unique_column_name();
@@ -441,17 +449,7 @@ impl SQLExprVisitor<'_> {
                     Some(elems) => {
                         let elems = self.cast_array_elements_for(elems, Some(&expr))?;
                         let set_has_null = elems.null_count() > 0;
-                        let decimal_set = elems.dtype().is_decimal();
-                        let set = lit(elems.implode()?.into_series());
-                        // Decimal literals tested against a float take its type when planned.
-                        let membership = if decimal_set {
-                            expr.map_binary(
-                                FunctionExpr::Sql(SqlFunction::IsIn { nulls_equal: false }),
-                                set,
-                            )
-                        } else {
-                            expr.is_in(set, false)
-                        };
+                        let membership = sql_is_in(expr, lit(elems.implode()?.into_series()));
                         let is_in = if set_has_null {
                             // Non-match against sets containing NULL is unknown, not FALSE
                             membership.or(sql_unknown())
@@ -1199,8 +1197,8 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::Lt => Ok(left.lt(right.max())),
             SQLBinaryOperator::GtEq => Ok(left.gt_eq(right.min())),
             SQLBinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
-            SQLBinaryOperator::Eq => Ok(left.is_in(right, false)),
-            SQLBinaryOperator::NotEq => Ok(left.is_in(right, false).not()),
+            SQLBinaryOperator::Eq => Ok(sql_is_in(left, right)),
+            SQLBinaryOperator::NotEq => Ok(sql_is_in(left, right).not()),
             _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
     }
@@ -1691,7 +1689,7 @@ impl SQLExprVisitor<'_> {
         };
         let value_set = col(cols[0].0.clone()).first();
         let is_in = sql_in_membership(
-            expr.is_in(subquery_result, false),
+            sql_is_in(expr, subquery_result),
             value_set.clone(),
             value_set.list().len().eq(lit(0u32)),
         );
