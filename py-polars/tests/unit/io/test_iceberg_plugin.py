@@ -1010,7 +1010,9 @@ def test_iceberg_plugin_time_travel_filter_uses_snapshot_schema(tmp_path: Path) 
     )
     df = pl.DataFrame({"x": [1, 2, 3], "y": [100, 200, 300]})
     tbl.append(df.to_arrow())
-    first = tbl.current_snapshot().snapshot_id
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    first = snapshot.snapshot_id
 
     # Swap the names: in the current schema, `x` is field 2.
     with tbl.update_schema() as update:
