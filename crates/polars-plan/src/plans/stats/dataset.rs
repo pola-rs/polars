@@ -29,9 +29,9 @@ pub(crate) fn dataset_scan_stats(
         return ScanStats::new(rows);
     };
 
-    let lengths = u64_values(statistics.column("len").ok(), num_sources);
+    let lengths = counts(statistics, "len");
     let rows = match rows {
-        Card::Unknown => sum(&lengths).map_or(Card::Unknown, Card::approx),
+        Card::Unknown => sum_if_all_known(&lengths).map_or(Card::Unknown, Card::approx),
         rows => rows,
     };
     // Any values in the file statistics then belong to deleted rows.
@@ -43,8 +43,8 @@ pub(crate) fn dataset_scan_stats(
     let row_index = unified_scan_args.row_index.as_ref().map(|ri| &ri.name);
 
     let mut columns = ScanColumnStatsMap::default();
-    for column in statistics.columns() {
-        let Some(name) = column.name().strip_suffix("_min") else {
+    for min in statistics.columns() {
+        let Some(name) = min.name().strip_suffix("_min") else {
             continue;
         };
         let Some(dtype) = schema.get(name) else {
@@ -54,16 +54,16 @@ pub(crate) fn dataset_scan_stats(
             continue;
         }
 
-        let null_counts = u64_values(
-            statistics.column(&format_pl_smallstr!("{name}_nc")).ok(),
-            num_sources,
-        );
-        let null_count = match sum(&null_counts) {
+        let null_counts = counts(statistics, &format_pl_smallstr!("{name}_nc"));
+        let null_count = match sum_if_all_known(&null_counts) {
             Some(n) if exact => Card::Exact(n),
             Some(n) => Card::approx(n),
             None => Card::Unknown,
         };
-        let int_range = int_range(statistics, name, dtype, &lengths, &null_counts);
+        let int_range = statistics
+            .column(&format_pl_smallstr!("{name}_max"))
+            .ok()
+            .and_then(|max| int_range(min, max, dtype, &lengths, &null_counts));
 
         if null_count == Card::Unknown && int_range.is_none() {
             continue;
@@ -88,31 +88,28 @@ pub(crate) fn dataset_scan_stats(
 /// A file is left out only when it is known to hold no values. Any other file without
 /// both bounds makes the range unknown.
 fn int_range(
-    statistics: &DataFrame,
-    name: &str,
+    min: &Column,
+    max: &Column,
     dtype: &DataType,
-    lengths: &[Option<u64>],
-    null_counts: &[Option<u64>],
+    lengths: &UInt64Chunked,
+    null_counts: &UInt64Chunked,
 ) -> Option<(i128, i128)> {
     if !(dtype.is_integer() || dtype.is_temporal() || dtype.is_decimal()) {
         return None;
     }
-    let min = int_values(
-        statistics.column(&format_pl_smallstr!("{name}_min")).ok()?,
-        dtype,
-    )?;
-    let max = int_values(
-        statistics.column(&format_pl_smallstr!("{name}_max")).ok()?,
-        dtype,
-    )?;
+    let (min, max) = (physical(min, dtype)?, physical(max, dtype)?);
 
     let mut range: Option<(i128, i128)> = None;
-    for (i, (min, max)) in min.into_iter().zip(max).enumerate() {
-        let len = lengths[i];
-        if len == Some(0) || (len.is_some() && null_counts[i] == len) {
+    let files = min
+        .iter()
+        .zip(max.iter())
+        .zip(lengths.iter())
+        .zip(null_counts.iter());
+    for (((min, max), len), null_count) in files {
+        if len == Some(0) || (len.is_some() && null_count == len) {
             continue;
         }
-        let (Some(min), Some(max)) = (min, max) else {
+        let (Some(min), Some(max)) = (min.extract::<i128>(), max.extract::<i128>()) else {
             return None;
         };
         range = Some(match range {
@@ -123,26 +120,25 @@ fn int_range(
     range
 }
 
-fn int_values(column: &Column, dtype: &DataType) -> Option<Vec<Option<i128>>> {
-    let s = column.as_materialized_series().cast(dtype).ok()?;
-    let s = s.to_physical_repr().rechunk();
-    Some(s.iter().map(|v| v.extract::<i128>()).collect())
+/// The bounds in `bounds` as physical values of `dtype`.
+fn physical(bounds: &Column, dtype: &DataType) -> Option<Series> {
+    let s = bounds.as_materialized_series().cast(dtype).ok()?;
+    Some(s.to_physical_repr().rechunk())
 }
 
-/// The values of a count column, all unknown if the column is missing or is not an
-/// integer count.
-fn u64_values(column: Option<&Column>, len: usize) -> Vec<Option<u64>> {
-    let Some(values) = column.and_then(|c| c.cast(&DataType::UInt64).ok()) else {
-        return vec![None; len];
-    };
-    values.u64().unwrap().iter().collect()
+/// A count column, all unknown if it is missing or does not hold integer counts.
+fn counts(statistics: &DataFrame, name: &str) -> UInt64Chunked {
+    statistics
+        .column(name)
+        .ok()
+        .and_then(|c| c.cast(&DataType::UInt64).ok())
+        .and_then(|c| c.u64().ok().cloned())
+        .unwrap_or_else(|| UInt64Chunked::full_null(name.into(), statistics.height()))
 }
 
-/// The sum, if every value is known.
-fn sum(values: &[Option<u64>]) -> Option<u64> {
-    values
-        .iter()
-        .try_fold(0u64, |acc, v| Some(acc.saturating_add((*v)?)))
+/// The sum of `counts`, unless any count is unknown.
+fn sum_if_all_known(counts: &UInt64Chunked) -> Option<u64> {
+    (counts.null_count() == 0).then(|| counts.into_no_null_iter().fold(0, u64::saturating_add))
 }
 
 #[cfg(test)]

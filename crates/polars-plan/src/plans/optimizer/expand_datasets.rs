@@ -167,7 +167,7 @@ pub(super) fn expand_datasets_for_join_order(
     for node in dataset_scans {
         let ir = ir_arena.get(node).clone();
         let mut args = DatasetScanArgs::new(&ir, expr_arena);
-        args.statistics_columns = statistics_columns(&ir, &key_and_filter_names);
+        args.request.statistics_columns = statistics_columns(&ir, &key_and_filter_names);
 
         expansion_tasks.push(spawn_expansion(
             node,
@@ -224,7 +224,7 @@ fn statistics_columns(
         unreachable!()
     };
 
-    let mut columns: Vec<PlSmallStr> = file_info
+    let columns: Arc<[PlSmallStr]> = file_info
         .schema
         .iter_names()
         .filter(|name| {
@@ -237,24 +237,27 @@ fn statistics_columns(
         .cloned()
         .collect();
 
-    if columns.is_empty() {
-        return None;
-    }
-
-    columns.sort_unstable();
-    Some(columns.into())
+    (!columns.is_empty()).then_some(columns)
 }
 
-/// What a dataset provider is asked to expand.
-#[cfg(feature = "python")]
-struct DatasetScanArgs {
-    projection: Option<Arc<[PlSmallStr]>>,
+/// What a dataset provider is asked to expand. A cached expansion is reused only for
+/// an equal request.
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+struct DatasetScanRequest {
     limit: Option<usize>,
+    projection: Option<Arc<[PlSmallStr]>>,
     live_filter_columns: Option<Arc<[PlSmallStr]>>,
-    row_index_in_live_filter: bool,
     /// Columns to load statistics for, in addition to `live_filter_columns`.
     statistics_columns: Option<Arc<[PlSmallStr]>>,
     pyarrow_predicate: Option<String>,
+}
+
+#[cfg(feature = "python")]
+struct DatasetScanArgs {
+    request: DatasetScanRequest,
+    row_index_in_live_filter: bool,
 }
 
 #[cfg(feature = "python")]
@@ -338,12 +341,14 @@ impl DatasetScanArgs {
         };
 
         DatasetScanArgs {
-            projection,
-            limit,
-            live_filter_columns,
+            request: DatasetScanRequest {
+                limit,
+                projection,
+                live_filter_columns,
+                statistics_columns: None,
+                pyarrow_predicate,
+            },
             row_index_in_live_filter,
-            statistics_columns: None,
-            pyarrow_predicate,
         }
     }
 }
@@ -703,12 +708,8 @@ fn expand_python_dataset(
     py_scan_resolve_threadpool: &PyScanResolveThreadPool,
 ) -> PolarsResult<IR> {
     let DatasetScanArgs {
-        projection,
-        limit,
-        live_filter_columns,
+        request,
         row_index_in_live_filter,
-        statistics_columns,
-        pyarrow_predicate,
     } = args;
 
     let IR::Scan { scan_type, .. } = &mut scan_ir else {
@@ -730,56 +731,31 @@ fn expand_python_dataset(
         eprintln!(
             "expand_datasets(): python[{}]: limit: {:?}, project: {}",
             dataset_object.name(),
-            limit,
-            projection
-                .as_ref()
-                .map_or(PlSmallStr::from_static("all"), |x| format_pl_smallstr!(
-                    "{}",
-                    x.len()
-                ))
+            request.limit,
+            request.projection.as_ref().map_or(
+                PlSmallStr::from_static("all"),
+                |x| format_pl_smallstr!("{}", x.len())
+            )
         )
     }
 
-    let existing_resolved_version_key = match guard.as_ref() {
-        Some(resolved) => {
-            let ExpandedDataset {
-                version,
-                limit: cached_limit,
-                projection: cached_projection,
-                live_filter_columns: cached_live_filter_columns,
-                statistics_columns: cached_statistics_columns,
-                pyarrow_predicate: cached_pyarrow_predicate,
-                expanded_dsl: _,
-                python_scan: _,
-            } = resolved;
-
-            (&limit == cached_limit
-                && &projection == cached_projection
-                && &live_filter_columns == cached_live_filter_columns
-                && &statistics_columns == cached_statistics_columns
-                && &pyarrow_predicate == cached_pyarrow_predicate)
-                .then_some(version.as_str())
-        },
-
-        None => None,
-    };
+    let existing_resolved_version_key = guard
+        .as_ref()
+        .filter(|resolved| resolved.request == request)
+        .map(|resolved| resolved.version.as_str());
 
     if let Some((expanded_dsl, version)) = dataset_object.to_dataset_scan(
         existing_resolved_version_key,
-        limit,
-        projection.as_deref(),
-        live_filter_columns.as_deref(),
-        statistics_columns.as_deref(),
-        pyarrow_predicate.as_deref(),
+        request.limit,
+        request.projection.as_deref(),
+        request.live_filter_columns.as_deref(),
+        request.statistics_columns.as_deref(),
+        request.pyarrow_predicate.as_deref(),
         py_scan_resolve_threadpool,
     )? {
         *guard = Some(ExpandedDataset {
             version,
-            limit,
-            projection,
-            live_filter_columns,
-            statistics_columns,
-            pyarrow_predicate,
+            request,
             expanded_dsl,
             python_scan: None,
         })
@@ -790,11 +766,7 @@ fn expand_python_dataset(
 
     let ExpandedDataset {
         version: _,
-        limit: _,
-        projection: _,
-        live_filter_columns: _,
-        statistics_columns: _,
-        pyarrow_predicate: _,
+        request: _,
         expanded_dsl,
         python_scan,
     } = guard.as_mut().unwrap();
@@ -843,11 +815,7 @@ fn expand_python_dataset(
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ExpandedDataset {
     version: PlSmallStr,
-    limit: Option<usize>,
-    projection: Option<Arc<[PlSmallStr]>>,
-    live_filter_columns: Option<Arc<[PlSmallStr]>>,
-    statistics_columns: Option<Arc<[PlSmallStr]>>,
-    pyarrow_predicate: Option<String>,
+    request: DatasetScanRequest,
     expanded_dsl: DslPlan,
 
     /// Fallback python scan
@@ -876,11 +844,14 @@ impl Debug for ExpandedDataset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ExpandedDataset {
             version,
-            limit,
-            projection,
-            live_filter_columns,
-            statistics_columns,
-            pyarrow_predicate,
+            request:
+                DatasetScanRequest {
+                    limit,
+                    projection,
+                    live_filter_columns,
+                    statistics_columns,
+                    pyarrow_predicate,
+                },
             expanded_dsl,
 
             #[cfg(feature = "python")]

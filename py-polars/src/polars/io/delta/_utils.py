@@ -189,7 +189,12 @@ def _extract_table_statistics_from_delta_add_actions(
     def best_effort_column_statistics(col_name: str) -> dict[str, Series]:
         try:
             return column_statistics(col_name)
-        except Exception:
+        except Exception as e:
+            if verbose:
+                eprint(
+                    f"scan_delta: statistics load failed for column {col_name!r}: {e!r}"
+                )
+
             dtype = schema[col_name]
             return {
                 f"{col_name}_nc": null_col(null_count_dtype(dtype)),
