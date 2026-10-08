@@ -432,6 +432,8 @@ impl ConcurrencyController {
                         bytes_budget: admission.current_byte_budget(),
                         limiter_rate: limiter.map(|(rate, _)| rate),
                         limiter_admitted: limiter.map_or(0, |(_, admitted)| admitted),
+                        admitted_seq: admission.admitted_seq(),
+                        completed_seq: admission.completed_seq(),
                     })
                 });
 
@@ -487,12 +489,13 @@ impl ConcurrencyController {
                     if let Some(k) = &knee {
                         eprintln!(
                             "[KneeBudget {}] kphase={}, knee={:.1} MB, knee_budget={:.1} MB, \
-                            bw_round={:.1} MB/s, braking={}",
+                            bw_round={:.1} MB/s, round_ms={:.0}, braking={}",
                             chrono::Utc::now(),
                             k.phase().label(),
                             k.knee().unwrap_or(0) as f64 / 1e6,
                             k.budget() as f64 / 1e6,
                             k.last_bw_round() / 1e6,
+                            k.last_round_secs() * 1e3,
                             u8::from(k.braking()),
                         );
                     }
