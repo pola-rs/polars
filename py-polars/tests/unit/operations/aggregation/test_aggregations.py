@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ApproxQuantileMethod,
+        EngineType,
         PolarsDataType,
         TimeUnit,
     )
@@ -1963,6 +1964,25 @@ def test_min_max_by_all_null_by_group(agg: Callable[..., pl.Expr]) -> None:
         .collect(engine="streaming")
     )
     assert_frame_equal(streaming, expected)
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+@pytest.mark.parametrize(
+    "by",
+    [
+        pl.Series([float("nan")] * 2),
+        pl.Series([0] * 2, dtype=pl.UInt8),
+        pl.Series([-128] * 2, dtype=pl.Int8),
+        pl.Series([127] * 2, dtype=pl.Int8),
+        pl.Series([""] * 2),
+    ],
+)
+def test_min_max_by_extreme_keys_29760(
+    agg: Callable[..., pl.Expr], by: pl.Series
+) -> None:
+    lf = pl.LazyFrame({"v": [1, 1], "by": by})
+    out = lf.select(agg(pl.col("v"), pl.col("by"))).collect()
+    assert_frame_equal(out, pl.DataFrame({"v": [1]}))
 
 
 @pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
