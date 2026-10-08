@@ -1244,9 +1244,7 @@ impl SQLExprVisitor<'_> {
             {
                 // The comparison casts the values to this type, and those out of its range
                 // compare as null.
-                if let Ok(supertype) = try_get_supertype(dtype, values_dtype)
-                    && supertype != *values_dtype
-                {
+                if let Ok(supertype) = try_get_supertype(dtype, values_dtype) {
                     values = values.cast(supertype);
                 }
             }

@@ -869,34 +869,24 @@ def test_quantified_subquery_uncorrelated_ordering(op: str, quantifier: str) -> 
         "SELECT y FROM t2 WHERE y > 99",
         "SELECT z FROM t3",
         "SELECT z FROM t3 WHERE z IS NULL",
+        # NaN is equal to itself and larger than any other value.
+        "SELECT f FROM t4",
+        "SELECT f FROM t5",
     ],
 )
 def test_quantified_subquery_uncorrelated(
     op: str, quantifier: str, subquery: str
 ) -> None:
-    assert_sql_matches(
-        frames={
-            "t1": pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 10, 15, 30, None]}),
-            "t2": pl.DataFrame({"y": [5, 15, 25]}),
-            "t3": pl.DataFrame({"z": [5, None, 25]}),
-        },
-        query=f"SELECT a, b {op} {quantifier} ({subquery}) AS r FROM t1 ORDER BY a",
-        compare_with="duckdb",
-        engines=["in-memory", "streaming"],
-    )
-
-
-@pytest.mark.parametrize("op", [">", "<", ">=", "<=", "=", "<>"])
-@pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
-@pytest.mark.parametrize("subquery", ["SELECT y FROM t2", "SELECT y FROM t3"])
-def test_quantified_subquery_nan(op: str, quantifier: str, subquery: str) -> None:
-    # NaN is equal to itself and larger than any other value.
     nan = float("nan")
     assert_sql_matches(
         frames={
-            "t1": pl.DataFrame({"a": [1, 2, 3, 4], "b": [1.0, 2.0, nan, None]}),
-            "t2": pl.DataFrame({"y": [1.0, nan]}),
-            "t3": pl.DataFrame({"y": [nan, nan]}),
+            "t1": pl.DataFrame(
+                {"a": [1, 2, 3, 4, 5, 6], "b": [1.0, 10.0, 15.0, 30.0, nan, None]}
+            ),
+            "t2": pl.DataFrame({"y": [5.0, 15.0, 25.0]}),
+            "t3": pl.DataFrame({"z": [5.0, None, 25.0]}),
+            "t4": pl.DataFrame({"f": [1.0, nan]}),
+            "t5": pl.DataFrame({"f": [nan, nan]}),
         },
         query=f"SELECT a, b {op} {quantifier} ({subquery}) AS r FROM t1 ORDER BY a",
         compare_with="duckdb",
