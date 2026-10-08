@@ -125,6 +125,34 @@ pub struct FileReadContext {
     pub advice: FileAdvice,
 }
 
+impl FileReadContext {
+    pub fn from_config() -> Self {
+        let cfg = polars_config::config();
+        let enable_o_direct = cfg.direct_io();
+        let concurrency = cfg.file_read_concurrency().max(1) as usize;
+
+        // TODO: Posix_fadv should follow the access-pattern, which varies
+        // by file type and projection.
+        let fadv = cfg.file_posix_fadv();
+
+        if cfg.verbose() {
+            eprintln!(
+                "[FileReadContext]: file read_context as configured: \
+                    read_concurrency: {concurrency}, \
+                    posix_fadv: {fadv}, \
+                    o_direct: {enable_o_direct}"
+            );
+        }
+
+        Self {
+            enable_o_direct,
+            concurrency,
+            permits: global_read_permits(),
+            advice: fadv,
+        }
+    }
+}
+
 impl std::fmt::Debug for FileReadContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FileReadContext")
