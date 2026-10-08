@@ -62,11 +62,11 @@ pub fn node_stats(
     node_stats_with_cache(node, ir_arena, expr_arena, &mut StatsCache::new())
 }
 
-/// [`node_stats`], reusing what `cache` already holds.
+/// [`node_stats`], reusing the `cache` already holds.
 ///
 /// Every node is estimated from its inputs, so a caller asking about many nodes of
-/// one subplan would otherwise re-walk the same descendants once per ancestor. The
-/// cache is keyed on [`Node`] and is only valid while the arenas are unchanged.
+/// one subplan would otherwise re-walk the same descendants once per ancestor.
+/// The cache is keyed on [`Node`] and is only valid while the arenas are unchanged.
 #[recursive]
 pub(crate) fn node_stats_with_cache(
     node: Node,
@@ -86,7 +86,10 @@ pub(crate) fn node_stats_with_cache(
             ..
         } => {
             let rows = leaf_row_count(ir);
-            let unfiltered = rows.value()? as f64;
+            // Floor at `MIN_CARDINALITY`, mirroring `DataFrameScan`: an empty scan
+            // reports 0 rows, but downstream heuristics such as `n_groups` clamp an
+            // estimate to `[MIN_CARDINALITY, rows]`, which panics when `rows == 0`.
+            let unfiltered = (rows.value()? as f64).max(MIN_CARDINALITY);
             let mut max_rows = match rows {
                 Card::Exact(rows) => Some(rows as f64),
                 _ => None,
@@ -1012,7 +1015,7 @@ mod tests {
         let backwards = key_domain(&wide, Some(&key("k")), &narrow, Some(&key("k")));
 
         assert_eq!(forwards, backwards);
-        // The domain holds both sides, so the join reproduces its input.
+        // The domain holds both sides, so the join reproduces the input.
         assert_eq!(forwards, 1_000_000.0);
     }
 
