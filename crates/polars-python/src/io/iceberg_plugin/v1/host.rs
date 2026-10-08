@@ -19,10 +19,13 @@ use polars_io_ext_ffi::iceberg_v1::{Host, StorageHandle};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
 use polars_utils::pl_path::PlRefPath;
 
+use crate::io::iceberg_plugin::metadata_cache::{ScopedMetadataCache, is_cacheable};
+
 /// State shared with the plugin for the duration of one `plan` call; [`Host::ctx`] points to it.
 pub(super) struct HostCtx {
     /// `storage_options` and credential provider of the scan.
     pub cloud_options: Option<CloudOptions>,
+    pub metadata_cache: Option<ScopedMetadataCache>,
 }
 
 impl HostCtx {
@@ -117,6 +120,7 @@ unsafe extern "C" fn host_get_storage(
 
             let storage = Arc::new(HostStorage {
                 cloud_options: ctx.cloud_options.clone(),
+                metadata_cache: ctx.metadata_cache.clone(),
             });
             Ok(StorageHandle(Arc::into_raw(storage) as *const c_void))
         })())
@@ -132,6 +136,7 @@ unsafe extern "C" fn host_log(_ctx: *const c_void, msg: FfiStr) {
 
 struct HostStorage {
     cloud_options: Option<CloudOptions>,
+    metadata_cache: Option<ScopedMetadataCache>,
 }
 
 struct ResolvedLocation {
@@ -173,14 +178,26 @@ unsafe extern "C" fn storage_get(
         let url = str_arg(url);
 
         spawn_io(async move {
-            let loc = storage.resolve(&url?).await.map_err(polars_to_ffi_err)?;
-            let path = &loc.path;
+            let url = url?;
+            let fetch = || async {
+                let loc = storage.resolve(&url).await.map_err(polars_to_ffi_err)?;
+                let path = &loc.path;
 
-            let bytes = loc
-                .store
-                .exec_with_rebuild_retry_on_err(|s| async move { s.get(path).await?.bytes().await })
-                .await
-                .map_err(polars_to_ffi_err)?;
+                loc.store
+                    .exec_with_rebuild_retry_on_err(
+                        |s| async move { s.get(path).await?.bytes().await },
+                    )
+                    .await
+                    .map_err(polars_to_ffi_err)
+            };
+
+            let bytes = match &storage.metadata_cache {
+                Some(c) if is_cacheable(&url) => {
+                    let key = format!("{}:{url}", c.scope);
+                    c.cache.get_or_fetch(&key, &c.stats, fetch).await?
+                },
+                _ => fetch().await?,
+            };
 
             Ok(FfiBuf::from_owner(bytes))
         })

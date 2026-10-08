@@ -2,6 +2,8 @@
 mod convert;
 mod host;
 
+use std::sync::atomic::Ordering;
+
 use polars::prelude::{CastColumnsPolicy, DslPlan};
 use polars_error::{PolarsError, PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
@@ -9,6 +11,7 @@ use polars_io_ext_ffi::common::{FfiError, FfiErrorKind};
 use polars_io_ext_ffi::iceberg_v1::{Plugin, Request};
 
 use self::host::HostCtx;
+use super::metadata_cache::ScopedMetadataCache;
 
 /// Plan the scan with the plugin. Blocks; must be called without the GIL.
 pub(super) fn scan(
@@ -16,10 +19,12 @@ pub(super) fn scan(
     plugin_name: &str,
     request: &Request,
     cloud_options: Option<CloudOptions>,
+    metadata_cache: Option<ScopedMetadataCache>,
     cast_columns_policy: CastColumnsPolicy,
 ) -> PolarsResult<DslPlan> {
     let ctx = HostCtx {
         cloud_options: cloud_options.clone(),
+        metadata_cache,
     };
     let host = ctx.host();
 
@@ -28,6 +33,19 @@ pub(super) fn scan(
         .with_ffi(|request| unsafe { (plugin.plan)(&host, request) })
         .into_result()
         .map_err(|e| ffi_to_polars_err(e, plugin_name))?;
+
+    if request.verbose
+        && let Some(c) = &ctx.metadata_cache
+    {
+        // Same message as the PyIceberg planner.
+        eprintln!(
+            "IcebergScanResolver: to_dataset_scan(): metadata file cache: hits: {}, misses: {}, \
+            cached bytes: {}",
+            c.stats.hits.load(Ordering::Relaxed),
+            c.stats.misses.load(Ordering::Relaxed),
+            c.cache.total_bytes(),
+        );
+    }
 
     let scan = convert::import_output(output)?;
     convert::build_scan(scan, cloud_options, cast_columns_policy)

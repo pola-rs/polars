@@ -297,6 +297,9 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     ))
     .unwrap();
     #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_class::<crate::io::iceberg_plugin::metadata_cache::PyIcebergMetadataFileCache>()
+        .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
     m.add(
         "_IO_PLUGIN_IDS",
         crate::io::iceberg_plugin::SUPPORTED_IDS

@@ -27,6 +27,7 @@ from polars.exceptions import ComputeError, PerformanceWarning
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
+from polars.io.iceberg._cache import get_metadata_file_cache, plugin_storage_scope
 from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
@@ -147,6 +148,15 @@ def plugin_scan(
         "auto", metadata_location, storage_options, "scan_iceberg"
     )
 
+    # Immutable metadata files are cached across scans with the same storage
+    # configuration, as with the PyIceberg planner.
+    metadata_cache = get_metadata_file_cache()
+    metadata_cache_scope = (
+        plugin_storage_scope(tbl.io, user_storage_options)
+        if metadata_cache.enabled
+        else None
+    )
+
     return wrap_ldf(
         plr._iceberg_plugin_scan(
             capsule,
@@ -171,6 +181,12 @@ def plugin_scan(
             storage_options=storage_options or None,
             credential_provider=credential_provider,
             cast_options=ScanCastOptions._default_iceberg(),
+            metadata_cache=(
+                metadata_cache.plugin_cache()
+                if metadata_cache_scope is not None
+                else None
+            ),
+            metadata_cache_scope=metadata_cache_scope,
         )
     )
 

@@ -753,3 +753,175 @@ def test_iceberg_plugin_float_literals_are_exact(
             df.filter(predicate),
             check_row_order=False,
         )
+
+
+_CACHE_STATS = re.compile(
+    r"metadata file cache: hits: (\d+), misses: (\d+), cached bytes: (\d+)"
+)
+
+
+@pytest.fixture
+def _fresh_metadata_file_cache() -> Any:
+    from polars.io.iceberg._cache import reset_metadata_file_cache
+
+    reset_metadata_file_cache()
+    yield
+    reset_metadata_file_cache()
+
+
+def _scan_cache_stats(
+    capfd: pytest.CaptureFixture[str], lf: pl.LazyFrame, expected: pl.DataFrame
+) -> tuple[int, int, int] | None:
+    """Collect `lf` and return its metadata file cache (hits, misses, cached bytes)."""
+    capfd.readouterr()
+    assert_frame_equal(lf.collect(), expected, check_row_order=False)
+    m = _CACHE_STATS.findall(capfd.readouterr().err)
+    assert len(m) <= 1
+    return tuple(map(int, m[0])) if m else None  # type: ignore[return-value]
+
+
+@pytest.mark.usefixtures("_fresh_metadata_file_cache")
+def test_iceberg_plugin_metadata_file_cache(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    from polars.io.iceberg._cache import get_metadata_file_cache
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    for i in range(3):
+        tbl.append(pl.DataFrame({"a": [i]}).to_arrow())
+
+    expected = pl.DataFrame({"a": [0, 1, 2]})
+
+    # Table metadata, manifest list and 3 manifests.
+    hits, misses, cached_bytes = _scan_cache_stats(
+        capfd, pl.scan_iceberg(tbl), expected
+    )  # type: ignore[misc]
+    assert (hits, misses) == (0, 5)
+    assert cached_bytes > 0
+    assert cached_bytes == get_metadata_file_cache().plugin_cache().total_bytes
+    assert len(get_metadata_file_cache().plugin_cache()) == 5
+
+    stats = _scan_cache_stats(capfd, pl.scan_iceberg(tbl), expected)
+    assert stats == (5, 0, cached_bytes)
+
+    # After a commit, only the new files are fetched.
+    tbl.append(pl.DataFrame({"a": [3]}).to_arrow())
+    stats = _scan_cache_stats(
+        capfd, pl.scan_iceberg(tbl), pl.DataFrame({"a": [0, 1, 2, 3]})
+    )
+    assert stats is not None
+    assert stats[:2] == (3, 3)
+
+    # Dropped with the PyIceberg planner's cache.
+    from polars.io.iceberg._cache import reset_metadata_file_cache
+
+    reset_metadata_file_cache()
+    stats = _scan_cache_stats(
+        capfd, pl.scan_iceberg(tbl), pl.DataFrame({"a": [0, 1, 2, 3]})
+    )
+    assert stats is not None
+    assert stats[:2] == (0, 6)
+
+
+@pytest.mark.usefixtures("_fresh_metadata_file_cache")
+def test_iceberg_plugin_metadata_file_cache_incremental(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    for i in range(3):
+        tbl.append(pl.DataFrame({"a": [i]}).to_arrow())
+
+    snapshots = tbl.snapshots()
+
+    def scan() -> pl.LazyFrame:
+        return pl.scan_iceberg(
+            tbl,
+            from_snapshot_id_exclusive=snapshots[0].snapshot_id,
+            to_snapshot_id_inclusive=snapshots[-1].snapshot_id,
+        )
+
+    expected = pl.DataFrame({"a": [1, 2]})
+    first = _scan_cache_stats(capfd, scan(), expected)
+    assert first is not None
+    assert first[1] > 0
+
+    second = _scan_cache_stats(capfd, scan(), expected)
+    assert second is not None
+    assert second[:2] == (first[0] + first[1], 0)
+
+
+@pytest.mark.usefixtures("_fresh_metadata_file_cache")
+def test_iceberg_plugin_metadata_file_cache_disabled(
+    table: Any, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    from polars.io.iceberg._cache import reset_metadata_file_cache
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "0")
+    reset_metadata_file_cache()
+
+    for _ in range(2):
+        assert _scan_cache_stats(capfd, pl.scan_iceberg(table), TEST_DF) is None
+
+
+@pytest.mark.usefixtures("_fresh_metadata_file_cache")
+def test_iceberg_plugin_metadata_file_cache_scoped_to_storage_options(
+    table: Any, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    metadata_path = table.metadata_location
+
+    stats = _scan_cache_stats(capfd, pl.scan_iceberg(metadata_path), TEST_DF)
+    assert stats is not None
+    assert stats[:2] == (0, 3)
+
+    # Other storage options: not shared.
+    storage_options = {"max_retries": 3}
+    stats = _scan_cache_stats(
+        capfd,
+        pl.scan_iceberg(metadata_path, storage_options=storage_options),
+        TEST_DF,
+    )
+    assert stats is not None
+    assert stats[:2] == (0, 3)
+
+    stats = _scan_cache_stats(
+        capfd,
+        pl.scan_iceberg(metadata_path, storage_options=storage_options),
+        TEST_DF,
+    )
+    assert stats is not None
+    assert stats[:2] == (3, 0)
+
+
+def test_iceberg_plugin_storage_scope() -> None:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    from polars.io.iceberg._cache import plugin_storage_scope
+
+    io = PyArrowFileIO({"s3.region": "us-east-1"})
+    scope = plugin_storage_scope(io, None)
+    assert scope is not None
+    assert plugin_storage_scope(io, {}) == scope
+    assert (
+        plugin_storage_scope(PyArrowFileIO({"s3.region": "us-east-1"}), None) == scope
+    )
+    assert (
+        plugin_storage_scope(PyArrowFileIO({"s3.region": "eu-west-1"}), None) != scope
+    )
+
+    with_options = plugin_storage_scope(io, {"s3.region": "eu-west-1"})
+    assert with_options is not None
+    assert with_options != scope
+
+    # Options that cannot be fingerprinted are not cached.
+    assert plugin_storage_scope(io, {"key": object()}) is None
+    assert plugin_storage_scope(PyArrowFileIO({"key": object()}), None) is None  # type: ignore[dict-item]

@@ -5,6 +5,10 @@ be reused across scans of the same table within a process. The cache sits at
 the PyIceberg ``FileIO`` boundary: PyIceberg reads a metadata file by calling
 ``io.new_input(path).open().read()``, and the wrapping ``FileIO`` here serves
 that read from memory when the path was seen before.
+
+Scans planned by the ``polars_iceberg`` plugin read metadata files through
+Polars' storage instead; those reads are cached on the Rust side, in a cache of
+the same size owned by the process-wide cache here (see ``plugin_cache``).
 """
 
 from __future__ import annotations
@@ -130,6 +134,28 @@ def _file_io_scope(file_io: FileIO) -> str | None:
         return None
 
 
+def plugin_storage_scope(
+    file_io: FileIO, storage_options: Mapping[str, Any] | None
+) -> str | None:
+    """Cache scope of a scan planned by the plugin.
+
+    The plugin reads with storage configured from the FileIO's properties and
+    the user's storage options, so both are fingerprinted. None when either
+    cannot be.
+    """
+    if (io_scope := _file_io_scope(file_io)) is None:
+        return None
+    if not storage_options:
+        return io_scope
+    try:
+        options_scope = _properties_fingerprint(storage_options)
+    except Exception:
+        return None
+    if options_scope is None:
+        return None
+    return hashlib.sha256(f"{io_scope}:{options_scope}".encode()).hexdigest()
+
+
 @dataclass
 class CacheStats:
     """Hit and miss counts."""
@@ -148,6 +174,7 @@ class IcebergMetadataFileCache:
         self._total_bytes = 0
         # Per-path locks so concurrent misses on one path fetch once.
         self._fetch_locks: dict[str, threading.Lock] = {}
+        self._plugin_cache: Any = None
 
     @property
     def enabled(self) -> bool:
@@ -161,6 +188,18 @@ class IcebergMetadataFileCache:
     def total_bytes(self) -> int:
         with self._lock:
             return self._total_bytes
+
+    def plugin_cache(self) -> Any:
+        """Rust-side cache of the reads of scans planned by the plugin.
+
+        Of the same size as this cache, and dropped with it.
+        """
+        with self._lock:
+            if self._plugin_cache is None:
+                import polars._plr as plr
+
+                self._plugin_cache = plr.PyIcebergMetadataFileCache(self.max_bytes)
+            return self._plugin_cache
 
     def _get_locked(self, location: str) -> bytes | None:
         data = self._entries.get(location)

@@ -3,6 +3,7 @@
 //! `IcebergScanResolver` (Python) obtains the capsule of the newest plugin ID shared with
 //! [`SUPPORTED_IDS`] and calls [`_iceberg_plugin_scan`]. Dispatch is by exact capsule name; any
 //! other name is refused.
+pub mod metadata_cache;
 mod v1;
 
 use polars::prelude::{CastColumnsPolicy, CloudScheme};
@@ -11,6 +12,7 @@ use polars_io_ext_ffi::{PluginId, iceberg_v1};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyCapsuleMethods};
 
+use self::metadata_cache::{PyIcebergMetadataFileCache, ScopedMetadataCache};
 use crate::error::PyPolarsErr;
 use crate::io::cloud_options::OptPyCloudOptions;
 use crate::lazyframe::PyLazyFrame;
@@ -63,13 +65,15 @@ fn dispatch(capsule: &Bound<'_, PyCapsule>) -> PolarsResult<Dispatch> {
 /// Plan an Iceberg scan with the plugin and return it as a parquet scan.
 ///
 /// The keyword arguments up to `testing_fail` are the plugin request (see
-/// `polars_io_ext_ffi::iceberg_v1::Request`); `max_threads` is set by the host.
+/// `polars_io_ext_ffi::iceberg_v1::Request`); `max_threads` is set by the host. Immutable
+/// metadata files are read through `metadata_cache` when `metadata_cache_scope` is given.
 #[pyfunction]
 #[pyo3(signature = (
     capsule, *, metadata_location, snapshot_id, from_snapshot_id_exclusive,
     to_snapshot_id_inclusive, projection, filter_columns, row_filter, limit,
     use_metadata_statistics, fast_deletion_count, verbose, testing_fail,
-    source_url, storage_options, credential_provider, cast_options
+    source_url, storage_options, credential_provider, cast_options,
+    metadata_cache, metadata_cache_scope
 ))]
 #[allow(clippy::too_many_arguments)]
 pub fn _iceberg_plugin_scan(
@@ -91,6 +95,8 @@ pub fn _iceberg_plugin_scan(
     storage_options: OptPyCloudOptions,
     credential_provider: Option<Py<PyAny>>,
     cast_options: Wrap<CastColumnsPolicy>,
+    metadata_cache: Option<PyRef<'_, PyIcebergMetadataFileCache>>,
+    metadata_cache_scope: Option<String>,
 ) -> PyResult<PyLazyFrame> {
     let capsule = capsule.cast::<PyCapsule>().map_err(|_| {
         pyo3::exceptions::PyTypeError::new_err(format!(
@@ -106,6 +112,14 @@ pub fn _iceberg_plugin_scan(
     let cloud_options = storage_options
         .extract_opt_cloud_options(CloudScheme::from_path(source_url), credential_provider)?;
     let cast_columns_policy = cast_options.0;
+    // Metadata files are cached only for a scan whose storage configuration has a scope.
+    let metadata_cache = metadata_cache
+        .zip(metadata_cache_scope)
+        .map(|(cache, scope)| ScopedMetadataCache {
+            cache: cache.0.clone(),
+            scope,
+            stats: Default::default(),
+        });
 
     let dsl = match dispatch {
         Dispatch::V1(plugin) => {
@@ -131,6 +145,7 @@ pub fn _iceberg_plugin_scan(
                     PLUGIN_NAME,
                     &request,
                     cloud_options,
+                    metadata_cache,
                     cast_columns_policy,
                 )
             })?

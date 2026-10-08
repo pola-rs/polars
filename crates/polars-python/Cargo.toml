@@ -59,6 +59,7 @@ rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["sync"] }
 uuid = { workspace = true }
 
 [dependencies.polars]
@@ -207,6 +208,7 @@ cloud = [
   "dep:object_store",
   "dep:polars-io-ext-ffi",
   "polars-io-ext-ffi/iceberg",
+  "dep:tokio",
 ]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]

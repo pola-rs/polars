@@ -20,7 +20,9 @@ pytest.importorskip("polars_iceberg")
 import polars.io.iceberg._dataset as iceberg_dataset
 from tests.unit.io.test_iceberg import *  # noqa: F403
 
-# The plugin planner does not use the PyIceberg metadata file cache.
+# These tests count the reads of PyIceberg's FileIO, which the plugin planner does not
+# use: it reads through Polars' storage, cached on the Rust side (tested in
+# `test_iceberg_plugin.py`).
 _XFAIL_METADATA_FILE_CACHE = [
     "test_scan_iceberg_metadata_file_cache",
     "test_scan_iceberg_metadata_file_cache_disabled",
@@ -39,7 +41,7 @@ def _xfail_copy(f: Any, reason: str) -> Any:
 
 for _name in _XFAIL_METADATA_FILE_CACHE:
     globals()[_name] = _xfail_copy(
-        globals()[_name], "metadata file cache is not used by the plugin planner"
+        globals()[_name], "plugin planner does not read through the PyIceberg FileIO"
     )
 
 _in_engine_call = threading.local()
