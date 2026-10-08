@@ -2961,6 +2961,37 @@ def test_sorted_group_by_clipped_key(maintain_order: bool) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.col("a").forward_fill().alias("k"),
+        pl.col("c").set_sorted(),
+        pl.len().alias("k"),
+        pl.col("c").sort().alias("k"),
+        pl.col("c").rle_id().alias("k"),
+    ],
+)
+def test_sorted_group_by_key_merges_values(key: pl.Expr) -> None:
+    # The first key makes different values of "a" equal, so "b" is not sorted within it.
+    lf = pl.LazyFrame(
+        {"a": [1, 1, None, None], "b": [1, 2, 1, 2], "c": [0, 0, 0, 0]}
+    ).set_sorted("a", "b", nulls_last=True)
+    q = lf.group_by(key, "b").agg(pl.col("a").sum())
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_sorted_group_by_more_keys_than_sorted_columns() -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "c": [0, 0]}).set_sorted("a")
+    keys = [pl.col("c").set_sorted().alias(name) for name in ["x", "y", "z"]]
+    q = lf.group_by(keys).agg(pl.col("a").sum())
+    expected = pl.DataFrame({"x": [0], "y": [0], "z": [0], "a": [3]})
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
 def test_sorted_group_by_slice() -> None:
     lf = (
         pl.DataFrame({"a": [0, 5, 2, 1, 3] * 50})
