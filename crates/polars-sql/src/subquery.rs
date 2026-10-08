@@ -26,7 +26,7 @@ use sqlparser::ast::{
 };
 
 use crate::context::{CORRELATED_COL_PREFIX, FilterMode, combine_conditions, get_table_name};
-use crate::sql_expr::{parse_sql_expr, sql_in_membership};
+use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
 use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
 use crate::{SQLContext, unique_column_name};
 
@@ -1000,7 +1000,7 @@ impl SQLContext {
         // empty candidate set rather than an unknown one.
         let set = col(set_name.clone());
         let is_in = sql_in_membership(
-            needle.is_in(set.clone(), false),
+            sql_is_in(needle, set.clone()),
             set.clone(),
             set.clone().is_null().or(set.list().len().eq(lit(0u32))),
         );

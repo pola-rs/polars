@@ -16,7 +16,9 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
-use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
+use super::{
+    Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count, range_width,
+};
 use crate::plans::aexpr::filter_constraint::{ColumnBounds, and_chain_bounds};
 use crate::plans::{
     AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, into_column,
@@ -436,19 +438,10 @@ fn join_columns(left: &NodeStats, right: &NodeStats) -> Option<Arc<ScanColumnSta
 }
 
 /// Column statistics of a scan, keyed on its output names.
-///
-/// A scan with a column mapping reports nothing: resolving file names to output
-/// names needs the physical-id lookup in the multi-scan reader.
 fn scan_columns(ir: &IR) -> Option<Arc<ScanColumnStatsMap>> {
-    let IR::Scan {
-        file_info,
-        unified_scan_args,
-        ..
-    } = ir
-    else {
+    let IR::Scan { file_info, .. } = ir else {
         return None;
     };
-    unified_scan_args.column_mapping.is_none().then_some(())?;
     file_info.stats.columns.clone()
 }
 
@@ -675,11 +668,11 @@ fn column_selectivity(
 ) -> Option<f64> {
     let (min, max, dtype) = int_range(&bounds.name, columns, schema)?;
     let lower = match &bounds.lower {
-        Some((value, inclusive)) => int_value(value, dtype)? + i128::from(!inclusive),
+        Some((value, inclusive)) => int_value(value, dtype)?.saturating_add(i128::from(!inclusive)),
         None => min,
     };
     let upper = match &bounds.upper {
-        Some((value, inclusive)) => int_value(value, dtype)? - i128::from(!inclusive),
+        Some((value, inclusive)) => int_value(value, dtype)?.saturating_sub(i128::from(!inclusive)),
         None => max,
     };
     let (lower, upper) = (lower.max(min), upper.min(max));
@@ -699,12 +692,12 @@ fn column_selectivity(
         Some(allowed) => {
             let mut allowed = kept_values(allowed)?;
             allowed.retain(|v| excluded.binary_search(v).is_err());
-            allowed.len() as i128
+            allowed.len() as f64
         },
-        None => (upper - lower + 1).max(0) - excluded.len() as i128,
+        None => range_width(lower, upper).max(0.0) - excluded.len() as f64,
     };
     let non_null = 1.0 - null_fraction(&bounds.name, columns, rows).unwrap_or(0.0);
-    Some(kept.max(0) as f64 / (max - min + 1) as f64 * non_null)
+    Some(kept.max(0.0) / range_width(min, max) * non_null)
 }
 
 /// Fraction of rows one conjunct keeps, or `None` when nothing describes it.
