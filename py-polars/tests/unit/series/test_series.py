@@ -1125,6 +1125,27 @@ def test_diff() -> None:
     )
 
 
+def test_diff_drop_when_n_exceeds_length() -> None:
+    # https://github.com/pola-rs/polars/issues/29738
+    empty = pl.Series(dtype=pl.Float64)
+    assert_series_equal(
+        pl.Series([1.0, 2.0]).diff(3, null_behavior="drop"),
+        empty,
+    )
+    assert_series_equal(
+        pl.Series([1.0, 2.0]).diff(-3, null_behavior="drop"),
+        empty,
+    )
+    assert_series_equal(
+        pl.Series([], dtype=pl.Float64).diff(1, null_behavior="drop"),
+        empty,
+    )
+    assert_series_equal(
+        pl.Series([[1.0, 2.0], []]).list.diff(null_behavior="drop"),
+        pl.Series([[1.0], []], dtype=pl.List(pl.Float64)),
+    )
+
+
 def test_diff_negative() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
