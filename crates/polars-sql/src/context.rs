@@ -512,6 +512,30 @@ impl SQLContext {
         frame.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
     }
 
+    /// `expr` with each subquery, and each read of its result, replaced by a null of its dtype,
+    /// so that it can be typed before the subqueries are resolved.
+    pub(crate) fn with_typed_subqueries(&mut self, expr: &Expr) -> PolarsResult<Expr> {
+        let mut dtypes = PlHashMap::default();
+        for e in expr {
+            if let Expr::SubPlan(lp, names) = e {
+                for (name, select_expr) in names.iter() {
+                    let mut lf = LazyFrame::from((***lp).clone()).select([select_expr.clone()]);
+                    let schema = self.get_frame_schema(&mut lf)?;
+                    dtypes.insert(name.clone(), schema.get_at_index(0).unwrap().1.clone());
+                }
+            }
+        }
+        if dtypes.is_empty() {
+            return Ok(expr.clone());
+        }
+        let typed_null = |name: &PlSmallStr| lit(Scalar::null(dtypes[name].clone()));
+        Ok(expr.clone().map_expr(|e| match &e {
+            Expr::SubPlan(_, names) => typed_null(&names[0].0),
+            Expr::Column(name) if dtypes.contains_key(name) => typed_null(name),
+            _ => e,
+        }))
+    }
+
     /// Whether `name` may be used as a table qualifier. Nothing is known before
     /// a `FROM` is processed, so anything is allowed until then.
     pub(super) fn relation_in_scope(&self, name: &str) -> bool {
