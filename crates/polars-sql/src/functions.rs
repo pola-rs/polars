@@ -11,7 +11,7 @@ use polars_defs::expr::{RankMethod, RankOptions};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "approx_quantile")]
 use polars_lazy::prelude::ApproxQuantileMethod;
-use polars_lazy::prelude::{DataTypeExpr, LazyFrame};
+use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
     coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal, min_horizontal,
     when,
@@ -19,7 +19,6 @@ use polars_plan::dsl::functions::{
 use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, RowEncodingVariant, typed_lit};
 use polars_plan::prelude::StrptimeOptions;
-use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
@@ -1278,7 +1277,7 @@ impl SQLFunctionVisitor<'_> {
             let pred = parse_sql_expr(filter_expr, self.ctx, self.active_schema)?;
             // The predicate is read once per row.
             self.read_subqueries_per_row(&pred);
-            let typed_pred = self.with_typed_subqueries(&pred)?;
+            let typed_pred = self.ctx.with_typed_subqueries(&pred)?;
             // As in WHERE, a condition that reads no input is accepted as any type that casts
             // to boolean.
             let pred = if reads_no_input(&typed_pred) {
@@ -2250,30 +2249,6 @@ impl SQLFunctionVisitor<'_> {
                 read_per_row.extend(names.iter().map(|(name, _)| name.clone()));
             }
         }
-    }
-
-    /// `expr` with each subquery, and each read of its result, replaced by a null of its dtype,
-    /// so that it can be typed before the subqueries are resolved.
-    fn with_typed_subqueries(&mut self, expr: &Expr) -> PolarsResult<Expr> {
-        let mut dtypes = PlHashMap::default();
-        for e in expr {
-            if let Expr::SubPlan(lp, names) = e {
-                for (name, select_expr) in names.iter() {
-                    let mut lf = LazyFrame::from((***lp).clone()).select([select_expr.clone()]);
-                    let schema = self.ctx.get_frame_schema(&mut lf)?;
-                    dtypes.insert(name.clone(), schema.get_at_index(0).unwrap().1.clone());
-                }
-            }
-        }
-        if dtypes.is_empty() {
-            return Ok(expr.clone());
-        }
-        let typed_null = |name: &PlSmallStr| lit(Scalar::null(dtypes[name].clone()));
-        Ok(expr.clone().map_expr(|e| match &e {
-            Expr::SubPlan(_, names) => typed_null(&names[0].0),
-            Expr::Column(name) if dtypes.contains_key(name) => typed_null(name),
-            _ => e,
-        }))
     }
 
     /// The number of rows an aggregate reads: all rows, or those that pass FILTER.

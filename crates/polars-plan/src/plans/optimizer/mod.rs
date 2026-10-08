@@ -229,6 +229,12 @@ pub fn optimize(
         )?;
     }
 
+    // Gives the dataset scans the statistics that the join passes need.
+    #[cfg(feature = "python")]
+    if opt_flags.join_order() && get_or_init_members!().has_joins {
+        expand_datasets::expand_datasets_for_join_order(root, ir_arena, expr_arena)?;
+    }
+
     // Needs the filters that predicate pushdown places on the scans, and must come
     // before projection pushdown so projections follow the final join order.
     if opt_flags.join_order() && get_or_init_members!().has_preserving_join {

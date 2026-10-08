@@ -294,6 +294,7 @@ class IcebergScanResolver:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
@@ -303,6 +304,7 @@ class IcebergScanResolver:
                 limit=limit,
                 projection=projection,
                 filter_columns=filter_columns,
+                statistics_columns=statistics_columns,
                 pyarrow_predicate=pyarrow_predicate,
             )
         ) is None:
@@ -317,6 +319,7 @@ class IcebergScanResolver:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> _NativeIcebergScanData | _PyIcebergScanData | _PluginIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -350,6 +353,7 @@ class IcebergScanResolver:
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
+                f"statistics_columns: {statistics_columns}, "
                 f"pyarrow_predicate: {pyarrow_predicate_display}, "
                 f"iceberg_table_filter: {iceberg_table_filter_display}, "
                 f"self.use_metadata_statistics: {self.use_metadata_statistics}"
@@ -503,9 +507,20 @@ class IcebergScanResolver:
             tbl,
             projected_iceberg_schema,
         )
+        # Statistics of columns that are not filtered on are best effort.
+        best_effort_statistics_columns = [
+            c for c in statistics_columns or [] if c not in (filter_columns or [])
+        ]
         statistics_loader: IcebergStatisticsLoader | None = (
-            IcebergStatisticsLoader(tbl, iceberg_schema.select(*filter_columns))
-            if self.use_metadata_statistics and filter_columns is not None
+            IcebergStatisticsLoader(
+                tbl,
+                iceberg_schema.select(
+                    *(filter_columns or []), *best_effort_statistics_columns
+                ),
+                best_effort_columns=best_effort_statistics_columns,
+            )
+            if self.use_metadata_statistics
+            and (filter_columns is not None or best_effort_statistics_columns)
             else None
         )
         position_delete_files: dict[int, list[str]] = {}
