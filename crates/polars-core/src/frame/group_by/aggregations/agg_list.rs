@@ -193,6 +193,12 @@ impl AggList for BinaryChunked {
     }
 }
 
+impl AggList for BinaryOffsetChunked {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
+        agg_list_by_gather_and_offsets(self, groups)
+    }
+}
+
 impl AggList for ListChunked {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         agg_list_by_gather_and_offsets(self, groups)

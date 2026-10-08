@@ -27,7 +27,7 @@ from polars.testing.parametric import column, dataframes, series
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from polars._typing import PolarsDataType, TimeUnit
+    from polars._typing import EngineType, PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1099,6 +1099,14 @@ def test_group_by_double_on_empty_12194() -> None:
     assert df.group_by("group").agg(squared_deviation_sum).schema == OrderedDict(
         [("group", pl.Int64), ("x", pl.Float64)]
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_group_by_repeat_literal_on_empty(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": []}, schema={"g": pl.Int64})
+    q = lf.group_by("g").agg(pl.repeat(1, pl.len()).min())
+    expected = pl.DataFrame(schema={"g": pl.Int64, "literal": pl.Int32})
+    assert_frame_equal(q.collect(engine=engine), expected)
 
 
 def test_group_by_when_then_no_aggregation_predicate() -> None:
@@ -2936,6 +2944,20 @@ def test_sorted_group_by() -> None:
             for q in (lf1, lf2)
         ],
         check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_group_by_clipped_key(maintain_order: bool) -> None:
+    # Clipping can make different values equal, the next key is then not sorted.
+    lf = pl.LazyFrame({"a": [-3, -2, -1], "b": [1, 2, 1]}).set_sorted("a", "b")
+    q = lf.group_by(pl.col("a").clip(0, 10), "b", maintain_order=maintain_order).len()
+    expected = pl.DataFrame(
+        {"a": [0, 0], "b": [1, 2], "len": [2, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"), expected, check_row_order=maintain_order
     )
 
 

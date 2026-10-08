@@ -117,6 +117,23 @@ def test_join_cross_11927() -> None:
     assert res.collect().is_empty()
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_cross_join_filter_decimal_scales_29762(engine: Any) -> None:
+    pv = pl.DataFrame(
+        {"ps_partkey": [1, 2, 3], "value": ["10.50", "2.25", "7.00"]},
+        schema_overrides={"value": pl.Decimal(38, 2)},
+    )
+    src = pl.DataFrame({"v": ["100.00"]}, schema_overrides={"v": pl.Decimal(38, 2)})
+    res = pl.SQLContext(pv=pv, src=src).execute(
+        """
+        WITH gv AS (SELECT SUM(v) * (0.0001 / 30) AS threshold FROM src)
+        SELECT pv.ps_partkey FROM pv CROSS JOIN gv
+        WHERE pv.value > gv.threshold ORDER BY pv.value DESC
+        """
+    )
+    assert res.collect(engine=engine)["ps_partkey"].to_list() == [1, 3, 2]
+
+
 def test_cross_join_unnest_from_table() -> None:
     df = pl.DataFrame({"id": [1, 2], "items": [[100, 200], [300, 400, 500]]})
     assert_sql_matches(

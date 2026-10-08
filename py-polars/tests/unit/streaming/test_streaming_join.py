@@ -847,3 +847,24 @@ def test_streaming_join_unmatched_build_order_coalesce_29362(
     expected = q.collect(engine="in-memory")
     assert expected["row"].to_list() == list(range(9))
     assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize(
+    ("left_on", "merge_join"),
+    [
+        # Clipping can make different values equal, the next key is then not sorted.
+        ([pl.col("a").clip(0, 10), "b"], False),
+        ([pl.col("a").clip(0, 10) * 3, "b"], False),
+        (["a", pl.col("b").clip(0, 10)], True),
+    ],
+)
+def test_merge_join_clipped_key(left_on: list[pl.Expr | str], merge_join: bool) -> None:
+    left = pl.LazyFrame({"a": [-2, -1, 0, 0], "b": [2, 1, -2, -1]}).set_sorted("a", "b")
+    right = pl.LazyFrame({"a": [0, 0], "b": [0, 1]}).set_sorted("a", "b")
+    q = left.join(right, left_on=left_on, right_on=["a", "b"])
+
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert ("merge-join" in str(dot)) == merge_join
+    expected = q.collect(engine="in-memory")
+    assert expected.height > 0
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)

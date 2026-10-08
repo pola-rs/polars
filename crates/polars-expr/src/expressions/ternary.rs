@@ -130,20 +130,26 @@ impl PhysicalExpr for TernaryExpr {
         });
 
         let masked_df = |names: &[PlSmallStr], mask: &Bitmap| -> PolarsResult<DataFrame> {
-            let columns = names
-                .iter()
+            let columns: Vec<&Column> = names.iter().map(|c| df.column(c).unwrap()).collect();
+            // Common subexpression elimination can add a scalar column of one row to a frame
+            // with another height. A branch that only reads such columns under a scalar
+            // predicate is a scalar too.
+            let height = if mask.len() == 1 && columns.iter().all(|c| c.len() == 1) {
+                1
+            } else {
+                df.height()
+            };
+            let columns = columns
+                .into_iter()
                 .map(|c| {
-                    let c = df.column(c).unwrap();
-                    // Common subexpression elimination can add a scalar column of one row to a
-                    // frame with another height.
-                    if c.len() == 1 && df.height() != 1 {
-                        c.new_from_index(0, df.height()).mask(mask)
+                    if c.len() != height {
+                        c.new_from_index(0, height).mask(mask)
                     } else {
                         c.mask(mask)
                     }
                 })
                 .collect();
-            DataFrame::new(df.height(), columns)
+            DataFrame::new(height, columns)
         };
         let op_truthy = || {
             if self.truthy_mask_columns.is_empty() || false_count == 0 {

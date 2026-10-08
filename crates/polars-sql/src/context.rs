@@ -26,8 +26,9 @@ use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::group_context::{
-    AggregateOutputs, GroupContextSplitter, OutputNames, has_windows_over_aggregates,
-    is_marked_aggregate, strip_aggregate_marks,
+    AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
+    check_columns_in_aggregates, has_windows_over_aggregates, is_marked_aggregate,
+    strip_aggregate_marks,
 };
 use crate::grouping_sets::{
     GroupingCall, GroupingSets, canonicalize_keys, contains_grouping_placeholder,
@@ -263,6 +264,10 @@ pub(crate) struct GroupScope {
     /// Partition column standing for an empty `OVER ()` parsed in such a clause,
     /// until the window is separated from the aggregates.
     whole_frame_partition: Option<PlSmallStr>,
+    /// Placeholders of the scalar subqueries in the value arguments and the FILTER of
+    /// aggregates, which are read once per row (see `broadcast_subqueries_in_inputs`). A
+    /// subquery in a parameter, as the separator of STRING_AGG, is read once.
+    pub(crate) subqueries_read_per_row: PlHashSet<PlSmallStr>,
 }
 
 impl Default for SQLContext {
@@ -1902,7 +1907,11 @@ impl SQLContext {
             SubqueryShape::Scalar,
         )?;
         for (expr, _) in projections_with_flags.iter_mut() {
-            *expr = broadcast_subqueries_in_windows(expr.clone(), &subquery_names);
+            *expr = broadcast_subqueries_in_inputs(
+                expr.clone(),
+                &subquery_names,
+                &self.group_scope.subqueries_read_per_row,
+            );
         }
         schema = self.get_frame_schema(&mut lf)?;
 
@@ -1957,7 +1966,11 @@ impl SQLContext {
                     subquery_names.extend(qualify_subquery_names);
                     schema = self.get_frame_schema(&mut lf)?;
                 }
-                let qualify = broadcast_subqueries_in_windows(qualify, &subquery_names);
+                let qualify = broadcast_subqueries_in_inputs(
+                    qualify,
+                    &subquery_names,
+                    &self.group_scope.subqueries_read_per_row,
+                );
                 Some(qualify.alias(qualify_column.clone()))
             },
             None => None,
@@ -2117,6 +2130,9 @@ impl SQLContext {
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
             self.group_scope.mark_whole_frame_windows = false;
             projections = all_projections;
+            // Aggregates are marked only until the projections are resolved below.
+            let marked_projections = projections.clone();
+            let marked_replace = select_modifiers.replace.clone();
             explicit_aliases.extend(qualify.is_some().then_some(true));
             // A window over the whole frame has one value per row, so for the output
             // height it counts like a literal.
@@ -2142,6 +2158,7 @@ impl SQLContext {
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
+            let mut retained_marked = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
 
             // Initialize containing InheritsContext to handle empty projection case.
@@ -2151,12 +2168,23 @@ impl SQLContext {
             // and new projections) and *then* select the final cols; the retained cols
             // are used to ensure a correct final projection. If there's no 'order by',
             // clause then we can project the final column *expressions* directly.
-            for (p, height_expr) in projections.iter().zip(&height_exprs) {
+            for ((p, height_expr), marked) in projections
+                .iter()
+                .zip(&height_exprs)
+                .zip(&marked_projections)
+            {
                 let name = p.to_field(schema.deref())?.name.to_string();
                 if name == qualify_column
                     || (select_modifiers.matches_ilike(&name)
                         && !select_modifiers.exclude.contains(&name))
                 {
+                    let replacement = match marked {
+                        Expr::Column(name) => marked_replace
+                            .iter()
+                            .find(|e| expr_output_name(e) == Some(name)),
+                        _ => None,
+                    };
+                    retained_marked.push(replacement.unwrap_or(marked).clone());
                     projection_heights |= ExprSqlProjectionHeightBehavior::identify_from_expr(
                         &without_resolved_subqueries(height_expr, &subquery_names),
                     );
@@ -2169,6 +2197,7 @@ impl SQLContext {
                     retained_names.push(col(name));
                 }
             }
+            check_columns_in_aggregates(&retained_marked, &subquery_names)?;
 
             // Apply the remaining modifiers and establish the final projection
             if have_order_by {
@@ -3370,6 +3399,11 @@ impl SQLContext {
                 let having_subquery_names;
                 (lf, having_subquery_names) =
                     self.process_subqueries(lf, vec![&mut having_expr], SubqueryShape::Scalar)?;
+                let having_expr = broadcast_subqueries_in_inputs(
+                    having_expr,
+                    &having_subquery_names,
+                    &self.group_scope.subqueries_read_per_row,
+                );
                 subquery_names.extend(having_subquery_names);
                 Some(having_expr)
             },
@@ -3502,12 +3536,33 @@ impl SQLContext {
         let aggregated = match grouping {
             None if group_by_keys.is_empty() => lf.select(splitter.aggregates.into_exprs()),
             None => {
+                // With a column key, every group has a row. A group-by on scalar keys only runs
+                // as a select over all rows, which may be none.
+                let has_column_key = group_by_keys
+                    .iter()
+                    .any(|key| matches!(strip_outer_alias(key), Expr::Column(_)));
+                let in_groups = |e: Expr| {
+                    if has_column_key {
+                        assume_groups_have_rows(e)
+                    } else {
+                        e
+                    }
+                };
                 let group_by = lf.group_by(group_by_keys);
                 match having {
-                    Some(having) => group_by.having(strip_aggregate_marks(having)),
+                    Some(having) => group_by.having(in_groups(strip_aggregate_marks(
+                        splitter.read_keys_per_group(having),
+                    ))),
                     None => group_by,
                 }
-                .agg(strip_group_implode(splitter.aggregates.into_exprs()))
+                .agg(strip_group_implode(
+                    splitter
+                        .aggregates
+                        .into_exprs()
+                        .into_iter()
+                        .map(in_groups)
+                        .collect(),
+                ))
             },
             Some(grouping) => {
                 // HAVING runs on the combined rows, where it can also see `GROUPING()`.
@@ -3989,12 +4044,18 @@ pub(crate) fn strip_outer_alias(expr: &Expr) -> Expr {
 }
 
 /// Reduce decorrelated correlated-subquery columns, which hold one value per input row,
-/// to the single value they take within a group.
+/// to the single value they take within a group. An aggregate reads them per row.
 fn reduce_correlated_cols_in_group_context(expr: Expr) -> Expr {
-    expr.map_expr(|e| match e {
+    match expr {
         Expr::Column(name) if is_correlated_result_col(&name) => Expr::Column(name).first(),
-        e => e,
-    })
+        e if is_marked_aggregate(&e) => e,
+        e => e
+            .map_children(
+                &mut |c, _| Ok(reduce_correlated_cols_in_group_context(c)),
+                &mut (),
+            )
+            .unwrap(),
+    }
 }
 
 /// How a resolved subquery placeholder column should be referenced.
@@ -4007,23 +4068,44 @@ enum SubqueryShape {
     Broadcast,
 }
 
-/// Read the resolved scalar subqueries in the inputs of the windows of `expr` as their
-/// column, which holds the value on every row: a window function reads one value per row.
-fn broadcast_subqueries_in_windows(expr: Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
-    fn broadcast(expr: Expr, in_window: bool, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
+/// Read the resolved scalar subqueries in the inputs of the windows of `expr`, and those in
+/// `read_per_row` in its aggregates, as their column, which holds the value on every row:
+/// these functions read one value per row.
+fn broadcast_subqueries_in_inputs(
+    expr: Expr,
+    subquery_names: &PlHashSet<PlSmallStr>,
+    read_per_row: &PlHashSet<PlSmallStr>,
+) -> Expr {
+    fn broadcast(
+        expr: Expr,
+        in_window: bool,
+        in_aggregate: bool,
+        subquery_names: &PlHashSet<PlSmallStr>,
+        read_per_row: &PlHashSet<PlSmallStr>,
+    ) -> Expr {
         match expr {
             Expr::Agg(AggExpr::First(inner))
-                if in_window
-                    && matches!(inner.as_ref(), Expr::Column(name) if subquery_names.contains(name)) =>
+                if matches!(
+                    inner.as_ref(),
+                    Expr::Column(name) if subquery_names.contains(name)
+                        && (in_window || (in_aggregate && read_per_row.contains(name)))
+                ) =>
             {
                 Arc::unwrap_or_clone(inner)
             },
-            // A marked aggregate is computed per group, where the subquery is one value.
-            e if is_marked_aggregate(&e) => e,
             e => {
                 let in_window = in_window || matches!(e, Expr::Over { .. });
+                let in_aggregate = in_aggregate || is_marked_aggregate(&e);
                 e.map_children(
-                    &mut |c, _| Ok(broadcast(c, in_window, subquery_names)),
+                    &mut |c, _| {
+                        Ok(broadcast(
+                            c,
+                            in_window,
+                            in_aggregate,
+                            subquery_names,
+                            read_per_row,
+                        ))
+                    },
                     &mut (),
                 )
                 .unwrap()
@@ -4033,7 +4115,7 @@ fn broadcast_subqueries_in_windows(expr: Expr, subquery_names: &PlHashSet<PlSmal
     if subquery_names.is_empty() {
         return expr;
     }
-    broadcast(expr, false, subquery_names)
+    broadcast(expr, false, false, subquery_names, read_per_row)
 }
 
 /// Replace every resolved scalar subquery in `expr` with a scalar literal, so the

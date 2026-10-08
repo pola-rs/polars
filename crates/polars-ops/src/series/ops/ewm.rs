@@ -5,7 +5,7 @@ use polars_compute::ewm::{ewm_std as kernel_ewm_std, ewm_var as kernel_ewm_var};
 use polars_core::prelude::*;
 
 fn check_alpha(alpha: f64) -> PolarsResult<()> {
-    polars_ensure!((0.0..=1.0).contains(&alpha), ComputeError: "alpha must be in [0; 1]");
+    polars_ensure!((0.0..=1.0).contains(&alpha), ComputeError: "alpha must be in [0; 1], got {}", alpha);
     Ok(())
 }
 
