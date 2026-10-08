@@ -151,6 +151,7 @@ pub fn create_scan_predicate(
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_min"), dtype.clone());
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_max"), dtype.clone());
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), null_count_dtype(dtype));
+                skip_batch_schema.insert(format_pl_smallstr!("{col}_nan"), null_count_dtype(dtype));
             }
 
             skip_batch_predicate = Some(create_physical_expr(

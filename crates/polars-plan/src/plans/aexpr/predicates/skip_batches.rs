@@ -61,6 +61,9 @@ impl StatTarget {
     fn null_count(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
         self.stat("nc", arena)
     }
+    fn nan_count(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
+        self.stat("nan", arena)
+    }
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -170,8 +173,8 @@ pub fn aexpr_to_skip_batch_predicate(
 ///
 /// Rejects nested, null, and categorical types. For floats, Parquet stats exclude NaN
 /// but data may contain it. Since NaN is largest under TotalOrd, `col < x` is safe
-/// (NaN never matches) but `col > x` is not (NaN always matches).
-/// col >= NaN matches NaN == NaN, but stats exclude NaN so max < NaN can't detect them -> unsafe
+/// (NaN never matches) and so is `col > NaN` (nothing matches), but `col > x` and
+/// `col >= x` match NaN, so the caller only skips a batch whose `nan_count` is 0.
 fn can_use_min_max_stats(
     dtype: &DataType,
     op: Option<&Operator>,
@@ -191,7 +194,7 @@ fn can_use_min_max_stats(
     match op {
         Some(O::Lt | O::LtEq) => true,
         None | Some(O::Eq | O::EqValidity) => !lv_is_nan && lv.is_some(),
-        Some(O::Gt) => lv_is_nan,
+        Some(O::Gt | O::GtEq) => true,
         _ => false,
     }
 }
@@ -417,6 +420,12 @@ fn aexpr_to_skip_batch_predicate_rec(
                         }
 
                         let op = *op;
+                        // `col > NaN` matches nothing, every other float `>`/`>=` may match NaN.
+                        let nan_may_match = match effective_op {
+                            O::GtEq => true,
+                            O::Gt => !lv.as_deref().is_some_and(|lv| lv.is_nan()),
+                            _ => false,
+                        };
                         let lv_may_be_null = lv.is_none_or(|lv| lv.is_null());
 
                         // If B is null, this is always true.
@@ -451,6 +460,14 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let stat_is_defined = is_stat_defined(stat, dtype, arena);
                         let cmp_op = stat.binary_op(lv_node, cmp_op, arena);
                         let mut expr = stat_is_defined.and(cmp_op, arena);
+
+                        // NaN is largest under TotalOrd but excluded from `max`: only skip if
+                        // `nan_count` is 0. A missing `nan_count` is null and never skips.
+                        if dtype.is_float() && nan_may_match {
+                            let col_nan = target.nan_count(arena);
+                            let no_nans = col_nan.eq(lv!(idx: 0), arena);
+                            expr = expr.and(no_nans, arena);
+                        }
 
                         if lv_may_be_null {
                             let has_nulls = lv_node.into_aexpr_builder().has_nulls(arena);

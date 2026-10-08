@@ -391,6 +391,7 @@ mod tests {
         );
         let stats = CompactStatistics {
             null_count: Some(1),
+            nan_count: None,
             distinct_count: None,
             max_value: Some(super::super::compact::ByteRange { offset: 4, len: 4 }),
             min_value: Some(super::super::compact::ByteRange { offset: 0, len: 4 }),

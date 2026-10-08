@@ -484,6 +484,7 @@ fn read_statistics(
     origin_ptr: *const u8,
 ) -> ParquetResult<CompactStatistics> {
     let mut null_count: Option<i64> = None;
+    let mut nan_count: Option<i64> = None;
     let mut distinct_count: Option<i64> = None;
     let mut max_value: Option<ByteRange> = None;
     let mut min_value: Option<ByteRange> = None;
@@ -512,10 +513,12 @@ fn read_statistics(
         },
         7 => is_max_value_exact = Some(bool_field(&f, "is_max_value_exact")?),
         8 => is_min_value_exact = Some(bool_field(&f, "is_min_value_exact")?),
+        9 => nan_count = Some(prot.read_i64()?),
     });
 
     Ok(CompactStatistics {
         null_count,
+        nan_count,
         distinct_count,
         max_value,
         min_value,

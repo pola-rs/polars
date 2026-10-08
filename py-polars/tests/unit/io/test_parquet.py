@@ -4060,6 +4060,60 @@ def test_skip_row_groups_without_bounds_uses_null_count(
 
 
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
+@pytest.mark.parametrize("col", ["f64", "f32"])
+@pytest.mark.parametrize(
+    ("predicate", "reading"),
+    [
+        pytest.param(lambda c: pl.col(c) >= 5.0, "2 / 4", id="ge"),
+        pytest.param(lambda c: pl.col(c) > 3.0, "2 / 4", id="gt"),
+        pytest.param(lambda c: pl.col(c) >= float("nan"), "1 / 4", id="ge_nan"),
+        pytest.param(lambda c: pl.col(c) < 2.0, "1 / 4", id="lt"),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_skip_float_row_groups_with_nan_count_27860(
+    col: str,
+    predicate: Callable[[str], pl.Expr],
+    reading: str,
+    engine: EngineType,
+    io_files_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Written by arrow-rs 60, which records `nan_count`. Row groups: [0, 1], [2, 3],
+    # [4, NaN] and [6, 7]; the third has a max of 4 and a `nan_count` of 1.
+    path = io_files_path / "float_nan_count.parquet"
+    expr = predicate(col)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_parquet(path).filter(expr).collect(engine=engine)
+
+    assert_frame_equal(out, pl.read_parquet(path).filter(expr))
+    assert f"Predicate pushdown: reading {reading} row groups" in capfd.readouterr().err
+
+
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
+def test_float_row_groups_without_nan_count_are_read_27860(
+    io_files_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Without a `nan_count` a NaN cannot be ruled out, so no row group is skipped.
+    df = pl.read_parquet(io_files_path / "float_nan_count.parquet")
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2, statistics="full")
+    f.seek(0)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_parquet(f).filter(pl.col("f64") >= 5.0).collect()
+
+    assert_frame_equal(out, df.filter(pl.col("f64") >= 5.0))
+    assert "Predicate pushdown: reading 4 / 4 row groups" in capfd.readouterr().err
+
+
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
 def test_is_in_string_pushdown_27416(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],

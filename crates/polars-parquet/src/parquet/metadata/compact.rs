@@ -56,6 +56,7 @@ impl ByteRange {
 #[derive(Debug, Clone)]
 pub(crate) struct CompactStatistics {
     pub null_count: Option<i64>,
+    pub nan_count: Option<i64>,
     pub distinct_count: Option<i64>,
     pub max_value: Option<ByteRange>,
     pub min_value: Option<ByteRange>,

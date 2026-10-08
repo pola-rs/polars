@@ -29,6 +29,7 @@ pub(super) fn fill_missing_statistics<'a>(
         fill(format_pl_smallstr!("{name}_min"), dtype)?;
         fill(format_pl_smallstr!("{name}_max"), dtype)?;
         fill(format_pl_smallstr!("{name}_nc"), &null_count_dtype(dtype))?;
+        fill(format_pl_smallstr!("{name}_nan"), &null_count_dtype(dtype))?;
     }
     Ok(out)
 }
