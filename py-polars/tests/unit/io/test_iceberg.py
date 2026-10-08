@@ -5500,9 +5500,10 @@ def test_scan_iceberg_metadata_file_cache_disabled(
 
 
 def test_iceberg_metadata_file_cache_eviction() -> None:
-    from polars.io.iceberg._cache import IcebergMetadataFileCache
+    from polars.io.iceberg._cache import CacheStats, IcebergMetadataFileCache
 
     cache = IcebergMetadataFileCache(max_bytes=10)
+    stats = CacheStats()
 
     cache.put("a", b"123456")
     cache.put("b", b"123456")
@@ -5519,17 +5520,18 @@ def test_iceberg_metadata_file_cache_eviction() -> None:
         fetches.append("fetch")
         return b"1234"
 
-    assert cache.get_or_fetch("d", fetch) == b"1234"
-    assert cache.get_or_fetch("d", fetch) == b"1234"
+    assert cache.get_or_fetch("d", fetch, stats) == b"1234"
+    assert cache.get_or_fetch("d", fetch, stats) == b"1234"
     assert len(fetches) == 1
+    assert (stats.hits, stats.misses) == (1, 1)
 
     def fetch_fail() -> bytes:
         raise OSError
 
     # A failed fetch is not cached.
     with pytest.raises(OSError):
-        cache.get_or_fetch("e", fetch_fail)
-    assert cache.get_or_fetch("e", fetch) == b"1234"
+        cache.get_or_fetch("e", fetch_fail, stats)
+    assert cache.get_or_fetch("e", fetch, stats) == b"1234"
     assert len(fetches) == 2
 
 
@@ -5557,6 +5559,7 @@ def test_iceberg_metadata_file_cache_invalid_size(
 
 @pytest.mark.write_disk
 def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
+    from pyiceberg.catalog.rest.auth import NoopAuthManager
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
     from polars.io.iceberg._cache import CachingFileIO, IcebergMetadataFileCache
@@ -5568,49 +5571,67 @@ def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
     no_uuid = tmp_path / "manifest.avro"
     no_uuid.write_bytes(b"data")
 
-    def read(properties: dict[str, Any], path: Path) -> bytes:
-        file_io = CachingFileIO(PyArrowFileIO(properties), cache)
-        with file_io.new_input(format_file_uri_iceberg(path)).open() as f:
-            return f.read()  # type: ignore[no-any-return]
+    # (hits, misses) of one read.
+    miss, hit, bypass = (0, 1), (1, 0), (0, 0)
 
-    assert read({"s3.access-key-id": "a"}, manifest) == b"data"
-    assert (cache.hits, cache.misses) == (0, 1)
+    def read(
+        properties: dict[str, Any], path: Path = manifest, file_io_cls: Any = None
+    ) -> tuple[int, int]:
+        file_io = CachingFileIO((file_io_cls or PyArrowFileIO)(properties), cache)
+        with file_io.new_input(format_file_uri_iceberg(path)).open() as f:
+            assert f.read() == b"data"
+        return file_io.stats.hits, file_io.stats.misses
+
+    assert read({"s3.access-key-id": "a"}) == miss
 
     # Table metadata pointers do not change the scope.
     pointers = {"metadata_location": "v2", "previous_metadata_location": "v1"}
-    assert read({"s3.access-key-id": "a", **pointers}, manifest) == b"data"
-    assert (cache.hits, cache.misses) == (1, 1)
+    assert read({"s3.access-key-id": "a", **pointers}) == hit
 
     # Entries are not shared across credentials.
-    assert read({"s3.access-key-id": "b"}, manifest) == b"data"
-    assert (cache.hits, cache.misses) == (1, 2)
+    assert read({"s3.access-key-id": "b"}) == miss
 
-    # Values that are not of a plain type bypass the cache.
+    # Values that are not plain bypass the cache.
     class Redacted(str):
         def __repr__(self) -> str:
             return "'***'"
 
+    class CustomAuthManager(NoopAuthManager):  # type: ignore[misc]
+        pass
+
+    cyclic: dict[str, Any] = {}
+    cyclic["self"] = cyclic
+
     for opaque in (
-        {"auth": {"type": "basic", "basic": {"username": "a", "password": "x"}}},
-        {"auth.manager": object()},
         {"s3.secret-access-key": Redacted("x")},
+        {"auth": cyclic},
+        {"auth": {"type": "basic", "basic": {"password": Redacted("x")}}},
+        {"auth": {1: "x"}},
+        {"auth": [[0] * 200] * 200},
+        {"auth.manager": CustomAuthManager()},
     ):
-        assert read({"s3.access-key-id": "a", **opaque}, manifest) == b"data"
-    assert (cache.hits, cache.misses) == (1, 2)
+        assert read({"s3.access-key-id": "a", **opaque}) == bypass
+
+    # Nested settings are scoped by content.
+    basic_a = {"auth": {"type": "basic", "basic": {"username": "a", "password": "x"}}}
+    basic_b = {"auth": {"type": "basic", "basic": {"username": "b", "password": "y"}}}
+    assert read({"s3.access-key-id": "a", **basic_a}) == miss
+    assert read({"s3.access-key-id": "a", **basic_a}) == hit
+    assert read({"s3.access-key-id": "a", **basic_b}) == miss
+
+    # PyIceberg's built-in REST auth managers do not change the scope.
+    for m in (NoopAuthManager(), NoopAuthManager()):
+        assert read({"s3.access-key-id": "a", "auth.manager": m}) == hit
 
     # FileIO classes other than PyIceberg's built-in ones bypass the cache.
     class CustomFileIO(PyArrowFileIO):  # type: ignore[misc]
         pass
 
-    custom = CachingFileIO(CustomFileIO({"s3.access-key-id": "a"}), cache)
-    with custom.new_input(format_file_uri_iceberg(manifest)).open() as f:
-        assert f.read() == b"data"
-    assert (cache.hits, cache.misses) == (1, 2)
+    assert read({"s3.access-key-id": "a"}, file_io_cls=CustomFileIO) == bypass
 
     # File names without a UUID are not cached.
-    assert read({"s3.access-key-id": "a"}, no_uuid) == b"data"
-    assert (cache.hits, cache.misses) == (1, 2)
-    assert len(cache) == 2
+    assert read({"s3.access-key-id": "a"}, no_uuid) == bypass
+    assert len(cache) == 4
 
 
 @pytest.mark.write_disk
@@ -5684,3 +5705,90 @@ def test_scan_iceberg_metadata_file_cache_incremental(
         assert opened == []
     finally:
         reset_metadata_file_cache()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_reuses_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    import polars.io.iceberg._dataset as dataset_module
+
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.DataFrame({"a": [1, 2]}).write_iceberg(tbl, mode="append")
+    name = ".".join(tbl.name())
+    expected = pl.DataFrame({"a": [1, 2]})
+
+    constructed = 0
+    original_init = SqlCatalog.__init__
+
+    def init(self: Any, *args: Any, **kwargs: Any) -> None:
+        nonlocal constructed
+        constructed += 1
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(SqlCatalog, "__init__", init)
+
+    def scan_twice(catalog: Any) -> None:
+        lfs = [pl.scan_iceberg(name, catalog=catalog) for _ in range(2)]
+        assert_frame_equal(
+            pl.concat(lfs).collect(),
+            pl.concat([expected, expected]),
+            check_row_order=False,
+        )
+
+    # The passed catalog is used for table loads, also by several scans in one query.
+    scan_twice(catalog)
+    assert constructed == 0
+
+    # The catalog is not pickled; the config is the fallback.
+    lf = pickle.loads(pickle.dumps(pl.scan_iceberg(name, catalog=catalog)))
+    assert_frame_equal(lf.collect(), expected, check_row_order=False)
+    assert constructed == 1
+
+    # Subclasses are used directly as well.
+    class SubCatalog(SqlCatalog):  # type: ignore[misc]
+        pass
+
+    sub = SubCatalog(catalog.name, **catalog.properties)
+    constructed = 0
+    scan_twice(sub)
+    assert constructed == 0
+
+    # Other catalog classes get a new catalog per scan.
+    monkeypatch.setattr(dataset_module, "_REUSABLE_CATALOG_CLASSES", frozenset())
+    scan_twice(catalog)
+    assert constructed == 2
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_catalog_descriptor_without_instance(tmp_path: Path) -> None:
+    from polars.io.iceberg._dataset import (
+        IcebergCatalogConfig,
+        IcebergCatalogTableDescriptor,
+    )
+
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.DataFrame({"a": [1]}).write_iceberg(tbl, mode="append")
+
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier=".".join(tbl.name()),
+        catalog_config=IcebergCatalogConfig.from_catalog(catalog),
+    )
+    # Descriptors pickled by earlier versions have no `catalog_`.
+    del descriptor.catalog_
+
+    wrap = IcebergTableWrap(
+        table_=NoPickleOption(),
+        table_descriptor_=descriptor,
+        serializer=IcebergScanTableSerializer(),
+        iceberg_storage_properties=None,
+    )
+    assert (
+        wrap.get().metadata_location == catalog.load_table(tbl.name()).metadata_location
+    )
