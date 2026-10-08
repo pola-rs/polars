@@ -5792,3 +5792,240 @@ def test_scan_iceberg_catalog_descriptor_without_instance(tmp_path: Path) -> Non
     assert (
         wrap.get().metadata_location == catalog.load_table(tbl.name()).metadata_location
     )
+
+
+def join_structure(lf: pl.LazyFrame) -> list[str]:
+    return [
+        line.strip()
+        for line in lf.explain().splitlines()
+        if "JOIN" in line or "ON:" in line or "SCAN" in line
+    ]
+
+
+def small_build_side(*keys: int, key: str) -> pl.LazyFrame:
+    # Only a filtered build side publishes a runtime filter.
+    lf = pl.LazyFrame({key: list(keys), "e": list(range(len(keys)))})
+    return lf.filter(pl.col("e") >= 0)
+
+
+def write_iceberg_tables(
+    tmp_path: Path, frames: dict[str, pl.DataFrame]
+) -> tuple[dict[str, pyiceberg.table.Table], dict[str, list[str]]]:
+    """Write each frame to its own table; return the tables and their data files."""
+    iceberg_types = {pl.Int64: LongType(), pl.Boolean: BooleanType()}
+    tables = {}
+    for name, df in frames.items():
+        fields = (
+            NestedField(i + 1, column, iceberg_types[dtype])  # type: ignore[index]
+            for i, (column, dtype) in enumerate(df.schema.items())
+        )
+        tbl, _ = new_iceberg_table(tmp_path, schema=IcebergSchema(*fields), name=name)
+        df.write_iceberg(tbl, mode="append")
+        tables[name] = tbl
+
+    files = {
+        name: [
+            _normalize_windows_iceberg_file_uri(f.file.file_path)
+            for f in tbl.scan().plan_files()
+        ]
+        for name, tbl in tables.items()
+    }
+    return tables, files
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_join_order_matches_parquet(tmp_path: Path) -> None:
+    n = 1000
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "a": pl.DataFrame({"k": [i % 5 for i in range(n)], "x": range(n)}),
+            "b": pl.DataFrame({"k": [i % 5 for i in range(n)], "y": range(n)}),
+            "d": pl.DataFrame({"k": range(5), "flag": [True] + 4 * [False]}),
+        },
+    )
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        return (
+            scan("a")
+            .join(scan("b"), on="k")
+            .join(scan("d").filter(pl.col("flag")), on="k")
+        )
+
+    iceberg = query(lambda name: pl.scan_iceberg(tables[name]))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+
+    structure = join_structure(iceberg)
+    assert structure == join_structure(parquet)
+
+    # The filtered dimension is joined before the other fact.
+    plan = "\n".join(structure)
+    assert plan.index(files["d"][0]) < plan.index(files["b"][0])
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_join_order_with_a_filter_above_a_shared_scan(
+    tmp_path: Path,
+) -> None:
+    n = 1000
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "a": pl.DataFrame(
+                {
+                    "k": [i % 5 for i in range(n)],
+                    "dk": range(n),
+                    "ek": range(n),
+                    "y": range(n),
+                }
+            ),
+            "b": pl.DataFrame({"k": [i % 5 for i in range(n)]}),
+            "d": pl.DataFrame(
+                {"dk": range(n), "year": [1900 + i // 5 for i in range(n)]}
+            ),
+            "e": pl.DataFrame({"ek": range(n), "flag": [i % 20 for i in range(n)]}),
+        },
+    )
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        # `d` is read twice, so its filter stays above the shared scan instead of
+        # being pushed into it.
+        d = scan("d")
+        return (
+            scan("a")
+            .join(scan("b"), on="k")
+            .join(d.filter(pl.col("year") == 1999), on="dk")
+            .join(scan("e").filter(pl.col("flag") == 0), on="ek")
+            .join(d.select(y="dk"), on="y")
+        )
+
+    iceberg = query(lambda name: pl.scan_iceberg(tables[name]))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+    assert 'FILTER col("year") == 1999' in iceberg.explain()
+
+    structure = join_structure(iceberg)
+    assert structure == join_structure(parquet)
+
+    # The statistics of `year` show the filter keeps far fewer rows than the one on
+    # `flag`.
+    plan = "\n".join(structure)
+    assert plan.index(files["d"][0]) < plan.index(files["e"][0])
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_join_on_full_range_decimal_keys(tmp_path: Path) -> None:
+    big = 10**38 - 1
+    df = pl.from_arrow(
+        pa.table({"k": pa.array([D(-big), D(big)], pa.decimal128(38, 0))})
+    )
+    assert isinstance(df, pl.DataFrame)
+
+    scans = []
+    for name in "abc":
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(NestedField(1, "k", DecimalType(38, 0))),
+            name=name,
+        )
+        df.write_iceberg(tbl, mode="append")
+        scans.append(pl.scan_iceberg(tbl))
+
+    a, b, c = scans
+    q = a.join(b, on="k").join(c, on="k")
+    assert_frame_equal(q.collect(), df, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_join_planning_reads_no_data_files(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "b", LongType())
+        ),
+    )
+    pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_iceberg(tbl, mode="append")
+
+    for f in tbl.scan().plan_files():
+        Path(f.file.file_path.removeprefix("file://")).unlink()
+
+    lf = pl.scan_iceberg(tbl)
+    plan = lf.join(lf.select("a", c="b"), on="a").explain()
+    assert "ESTIMATED ROWS: 3" in plan
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_fallback_join_keeps_projection(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "b", LongType()),
+            NestedField(3, "c", LongType()),
+        ),
+    )
+    pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]}).write_iceberg(
+        tbl, mode="append"
+    )
+
+    q = (
+        pl.scan_iceberg(tbl, reader_override="pyiceberg")
+        .select("a", "b")
+        .join(pl.LazyFrame({"a": [2, 3]}), on="a")
+    )
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    calls = [
+        line
+        for line in capfd.readouterr().err.splitlines()
+        if line.startswith("IcebergScanResolver: to_dataset_scan(): snapshot ID")
+    ]
+
+    # The Python scan is built with the final projection.
+    assert "projection: ['a', 'b']" in calls[-1]
+    assert_frame_equal(
+        out, pl.DataFrame({"a": [2, 3], "b": [5, 6]}), check_row_order=False
+    )
+
+
+@pytest.mark.parametrize("renamed", [False, True])
+@pytest.mark.write_disk
+def test_scan_iceberg_runtime_join_filter(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    renamed: bool,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "x", LongType()), NestedField(2, "f", LongType())
+        ),
+    )
+    # One file per append.
+    for i in range(3):
+        pl.DataFrame(
+            {"x": range(100 * i, 100 * i + 100), "f": range(100)}
+        ).write_iceberg(tbl, mode="append")
+
+    # The table statistics hold `f`. They only hold `x` if the join key has its name.
+    probe = pl.scan_iceberg(tbl).filter(pl.col("f") >= 0)
+    key = "k" if renamed else "x"
+    q = probe.rename({"x": key}).join(small_build_side(150, 160, key=key), on=key)
+    assert 'col("x").dynamic_predicate()' in q.explain(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+
+    assert err.count("reading 0 / 1 row groups") == 2
+    assert err.count("reading 1 / 1 row groups") == 1
+    assert_frame_equal(
+        out,
+        pl.DataFrame({key: [150, 160], "f": [50, 60], "e": [0, 1]}),
+        check_row_order=False,
+    )

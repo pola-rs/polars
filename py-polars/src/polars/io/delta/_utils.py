@@ -13,6 +13,8 @@ from polars.io._utils import null_count_dtype
 from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType, Series
@@ -111,6 +113,7 @@ def _extract_table_statistics_from_delta_add_actions(
     add_actions_df: DataFrame,
     *,
     filter_columns: list[str],
+    best_effort_columns: Sequence[str] = (),
     schema: SchemaDict,
     verbose: bool,
 ) -> DataFrame | None:
@@ -147,7 +150,7 @@ def _extract_table_statistics_from_delta_add_actions(
     def null_col(dt: PolarsDataType) -> Series:
         return pl.Series([None], dtype=dt).new_from_index(0, height)
 
-    for col_name in filter_columns:
+    def column_statistics(col_name: str) -> dict[str, Series]:
         dtype = schema[col_name]
         # The skip-batch predicate expects `<col>_nc` in the index type (a per-field
         # struct of index counts for struct columns), so normalise the counts here.
@@ -156,23 +159,48 @@ def _extract_table_statistics_from_delta_add_actions(
         col_min = min_cols.get(col_name)
         col_max = max_cols.get(col_name)
 
-        out[f"{col_name}_nc"] = (
-            col_nc.cast(nc_dtype) if col_nc is not None else null_col(nc_dtype)
-        )
+        stats: dict[str, Series] = {
+            f"{col_name}_nc": (
+                col_nc.cast(nc_dtype) if col_nc is not None else null_col(nc_dtype)
+            )
+        }
 
         if isinstance(dtype, pl.Struct):
             # Delta records struct min/max field-wise as a struct mirroring the column
             # schema. Cast to the column dtype so every schema field is present and
             # resolvable, letting the skip-batch predicate prune on an individual struct
             # field via `col("<c>_min").struct.field(..)`.
-            out[f"{col_name}_min"] = (
+            stats[f"{col_name}_min"] = (
                 col_min.cast(dtype) if col_min is not None else null_col(dtype)
             )
-            out[f"{col_name}_max"] = (
+            stats[f"{col_name}_max"] = (
                 col_max.cast(dtype) if col_max is not None else null_col(dtype)
             )
         else:
-            out[f"{col_name}_min"] = col_min if col_min is not None else null_col(dtype)
-            out[f"{col_name}_max"] = col_max if col_max is not None else null_col(dtype)
+            stats[f"{col_name}_min"] = (
+                col_min if col_min is not None else null_col(dtype)
+            )
+            stats[f"{col_name}_max"] = (
+                col_max if col_max is not None else null_col(dtype)
+            )
+
+        return stats
+
+    def best_effort_column_statistics(col_name: str) -> dict[str, Series]:
+        try:
+            return column_statistics(col_name)
+        except Exception:
+            dtype = schema[col_name]
+            return {
+                f"{col_name}_nc": null_col(null_count_dtype(dtype)),
+                f"{col_name}_min": null_col(dtype),
+                f"{col_name}_max": null_col(dtype),
+            }
+
+    for col_name in filter_columns:
+        out.update(column_statistics(col_name))
+
+    for col_name in best_effort_columns:
+        out.update(best_effort_column_statistics(col_name))
 
     return pl.DataFrame(out, height=height)

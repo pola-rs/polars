@@ -539,6 +539,8 @@ class IcebergStatisticsLoader:
         self,
         table: Table,
         projected_filter_schema: pyiceberg.schema.Schema,
+        *,
+        best_effort_columns: Sequence[str] = (),
     ) -> None:
         import polars._utils.logging
 
@@ -548,6 +550,8 @@ class IcebergStatisticsLoader:
         self.load_as_empty_statistics: list[str] = []
         self.file_lengths: list[int] = []
         self.projected_filter_schema = projected_filter_schema
+        # Columns whose statistics are loaded as nulls when they cannot be loaded.
+        self.best_effort_columns = set(best_effort_columns)
 
         for field in projected_filter_schema.fields:
             field_all_types = set()
@@ -609,12 +613,25 @@ class IcebergStatisticsLoader:
         ]
 
         for field_id, stat_builder in self.file_column_statistics.items():
+            best_effort = stat_builder.column_name in self.best_effort_columns
+
             if (p := identity_transformed_values.get(field_id)) is not None:
                 if isinstance(p, str):
-                    msg = f"statistics load failure for filter column: {p}"
-                    raise ComputeError(msg)
+                    if not best_effort:
+                        msg = f"statistics load failure for filter column: {p}"
+                        raise ComputeError(msg)
 
-            column_stats_df = stat_builder.finish(expected_height, p)
+                    out.append(stat_builder.null_statistics(expected_height))
+                    continue
+
+            try:
+                column_stats_df = stat_builder.finish(expected_height, p)
+            except Exception:
+                if not best_effort:
+                    raise
+
+                column_stats_df = stat_builder.null_statistics(expected_height)
+
             out.append(column_stats_df)
 
         return pl.concat(out, how="horizontal")
@@ -636,6 +653,25 @@ class IcebergColumnStatisticsLoader:
         if self.load_from_bytes_impl is not None:
             self.min_values.append(file.lower_bounds.get(self.field_id))
             self.max_values.append(file.upper_bounds.get(self.field_id))
+
+    def null_statistics(self, height: int) -> pl.DataFrame:
+        import polars as pl
+
+        c = self.column_name
+
+        return pl.DataFrame(
+            [
+                pl.repeat(
+                    None, height, dtype=null_count_dtype(self.column_dtype), eager=True
+                ).alias(f"{c}_nc"),
+                pl.repeat(None, height, dtype=self.column_dtype, eager=True).alias(
+                    f"{c}_min"
+                ),
+                pl.repeat(None, height, dtype=self.column_dtype, eager=True).alias(
+                    f"{c}_max"
+                ),
+            ]
+        )
 
     def finish(
         self,
