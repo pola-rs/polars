@@ -472,10 +472,22 @@ impl StructChunked {
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
-        assert_eq!(self.chunks().len(), 1);
+        if let Some(v) = &validity {
+            assert_eq!(self.len(), v.len());
+        }
+        let mut offset = 0;
+        
+        // SAFETY: We keep length and dtypes the same.
         unsafe {
-            let arr = self.chunks_mut().iter_mut().next().unwrap();
-            *arr = arr.with_validity(validity);
+            for arr in self.chunks_mut() {
+                let len = arr.len();
+                let chunk_validity = validity.as_ref().and_then(|v| {
+                    let v = v.clone().sliced(offset, len);
+                    (v.unset_bits() > 0).then_some(v)
+                });
+                *arr = arr.with_validity(chunk_validity);
+                offset += len;
+            }
         }
         self.compute_len();
         self.propagate_nulls_mut();
