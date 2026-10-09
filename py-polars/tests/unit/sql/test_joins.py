@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
@@ -2261,3 +2262,151 @@ def test_join_on_repeated_key(query: str) -> None:
     assert_sql_matches(
         frames, query=query, compare_with="duckdb", check_row_order=False
     )
+
+
+@pytest.fixture
+def asof_frames() -> dict[str, pl.DataFrame]:
+    # neither frame is sorted on `ts`
+    return {
+        "trades": pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4, 5],
+                "sym": ["a", "b", "a", "b", None],
+                "ts": [5, 5, 2, 12, 5],
+            }
+        ),
+        "quotes": pl.DataFrame(
+            {
+                "sym": ["a", "b", "a", "b", "a", None],
+                "ts": [6, 1, 2, 9, 4, 5],
+                "px": [60, 10, 20, 90, 40, 50],
+            }
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("match_condition", "px"),
+    [
+        ("t.ts >= q.ts", [40, 10, 20, 90, None]),
+        ("q.ts <= t.ts", [40, 10, 20, 90, None]),
+        ("t.ts > q.ts", [40, 10, None, 90, None]),
+        ("q.ts < t.ts", [40, 10, None, 90, None]),
+        ("t.ts <= q.ts", [60, 90, 20, None, None]),
+        ("q.ts >= t.ts", [60, 90, 20, None, None]),
+        ("(t.ts < q.ts)", [60, 90, 40, None, None]),
+        ("q.ts > t.ts", [60, 90, 40, None, None]),
+    ],
+)
+@pytest.mark.parametrize("constraint", ["ON t.sym = q.sym", "USING (sym)"])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_asof_join(
+    asof_frames: dict[str, pl.DataFrame],
+    match_condition: str,
+    px: list[int | None],
+    constraint: str,
+    engine: Literal["in-memory", "streaming"],
+) -> None:
+    query = f"""
+        SELECT t.id, q.px
+        FROM trades t ASOF JOIN quotes q MATCH_CONDITION ({match_condition})
+        {constraint}
+        ORDER BY t.id
+    """
+    result = pl.SQLContext(asof_frames).execute(query).collect(engine=engine)
+    expected = pl.DataFrame({"id": [1, 2, 3, 4, 5], "px": px})
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_without_keys(asof_frames: dict[str, pl.DataFrame]) -> None:
+    query = """
+        SELECT t.id, q.px
+        FROM trades t ASOF JOIN quotes q MATCH_CONDITION (t.ts >= q.ts)
+        ORDER BY t.id
+    """
+    result = pl.SQLContext(asof_frames, eager=True).execute(query)
+    expected = pl.DataFrame({"id": [1, 2, 3, 4, 5], "px": [50, 50, 20, 90, 50]})
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_select_star() -> None:
+    population = pl.DataFrame(
+        {
+            "date": [date(2019, 1, 1), date(2015, 6, 1), date(2018, 8, 1)],
+            "population": [83.12, 81.5, 82.66],
+        }
+    )
+    gdp = pl.DataFrame(
+        {
+            "date": pl.date_range(date(2016, 1, 1), date(2020, 1, 1), "1y", eager=True),
+            "gdp": [4164, 4411, 4566, 4696, 4827],
+        }
+    )
+    query = """
+        SELECT * FROM population p
+        ASOF JOIN gdp g MATCH_CONDITION (p.date >= g.date)
+        ORDER BY p.date
+    """
+    result = pl.SQLContext(population=population, gdp=gdp, eager=True).execute(query)
+    expected = pl.DataFrame(
+        {
+            "date": [date(2015, 6, 1), date(2018, 8, 1), date(2019, 1, 1)],
+            "population": [81.5, 82.66, 83.12],
+            "date:g": [None, date(2018, 1, 1), date(2019, 1, 1)],
+            "gdp": [None, 4566, 4696],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_key_expressions_and_dtypes() -> None:
+    left = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "sym": ["A", "b", "a"],
+            "region": pl.Series([1, 2, 1], dtype=pl.Int8),
+            "d": [date(2024, 1, 2), date(2024, 1, 2), date(2024, 1, 1)],
+        }
+    )
+    right = pl.DataFrame(
+        {
+            "sym": ["a", "b", "a"],
+            "region": pl.Series([1, 2, 1], dtype=pl.Int64),
+            "ts": [
+                datetime(2024, 1, 1, 12),
+                datetime(2024, 1, 1, 6),
+                datetime(2024, 1, 2, 0),
+            ],
+            "v": [10, 20, 30],
+        }
+    )
+    query = """
+        SELECT l.id, r.v, r.sym
+        FROM l ASOF JOIN r MATCH_CONDITION (l.d > r.ts - INTERVAL '1 hour')
+        ON LOWER(l.sym) = r.sym AND l.region = r.region
+        ORDER BY l.id
+    """
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    expected = pl.DataFrame(
+        {"id": [1, 2, 3], "v": [30, 20, None], "sym": ["a", "b", None]}
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("join", "error"),
+    [
+        ("MATCH_CONDITION (t.ts = q.ts)", "single `>=`, `>`, `<=` or `<` comparison"),
+        ("MATCH_CONDITION (t.ts >= 5)", "must compare a column of each table"),
+        (
+            "MATCH_CONDITION (t.ts >= q.ts) ON t.sym = q.sym AND t.id > q.px",
+            "only supports `=` conditions in ON",
+        ),
+    ],
+)
+def test_asof_join_errors(
+    asof_frames: dict[str, pl.DataFrame], join: str, error: str
+) -> None:
+    query = f"SELECT * FROM trades t ASOF JOIN quotes q {join}"
+    with pytest.raises(SQLSyntaxError, match=error):
+        pl.SQLContext(asof_frames).execute(query).collect()
