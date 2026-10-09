@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - docs/**
-      - mkdocs.yml
+      - zensical.toml
       - .github/workflows/docs-global.yml
   push:
     branches:
@@ -106,10 +106,33 @@ jobs:
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2
 
-      - name: Build documentation
+      # zensical has no hooks; whatever used to run as mkdocs on_startup hook below
+      - name: Generate contributor list
+        run: python docs/source/_build/scripts/people.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mkdocs build
+
+      - name: Build documentation
+        run: |
+          set -o pipefail
+
+          # zensical renders traceback in the page; error out if any code block failed
+          zensical build 2>&1 | tee zensical-build.log
+          if grep -q 'Execution of python code block exited with errors' zensical-build.log; then
+            echo '::error::A Python code block failed to execute, see the build log above'
+            exit 1
+          fi
+          rm zensical-build.log
+
+          # prune build files befer publishing to avoid dragging that with us
+          rm -rf \
+            site/_build/API_REFERENCE_LINKS.yml \
+            site/_build/overrides \
+            site/_build/scripts \
+            site/_build/snippets \
+            site/pyproject.toml \
+            site/requirements.txt \
+            site/src
 
       - name: Add .nojekyll
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'

@@ -11,12 +11,16 @@ use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "round_series")]
+use crate::dsl::Operator;
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::plans::IRStringFunction;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
+#[cfg(feature = "round_series")]
+use crate::plans::{DynLiteralValue, LiteralValue};
 
 /// Container for sortedness state at each stage in an IR plan.
 #[derive(Debug)]
@@ -144,6 +148,7 @@ pub fn are_keys_sorted_any(
             expr_arena,
             input_schema,
             Some(&ir_sorted?.0[idx..]),
+            idx + 1 < keys.len(),
         )?;
         sortedness.push(s);
     }
@@ -164,6 +169,7 @@ pub fn expr_is_sorted(
         expr_arena,
         input_schema,
         ir_sorted.map(|s| s.0.as_ref()),
+        false,
     )
 }
 
@@ -633,7 +639,7 @@ fn first_expr_ir_sorted(
     input_sorted: Option<&[Sorted]>,
 ) -> Option<Sorted> {
     exprs.iter().find_map(|e| {
-        aexpr_sortedness(arena.get(e.node()), arena, schema, input_sorted).map(|s| Sorted {
+        aexpr_sortedness(arena.get(e.node()), arena, schema, input_sorted, false).map(|s| Sorted {
             column: e.output_name().clone(),
             descending: s.descending,
             nulls_last: s.nulls_last,
@@ -641,12 +647,16 @@ fn first_expr_ir_sorted(
     })
 }
 
+/// With `keep_distinct`, the expression must also keep different values different. This is needed
+/// for all but the last of several sort keys, as a key is only sorted among equal values of the
+/// keys before it.
 #[recursive::recursive]
 pub fn aexpr_sortedness(
     aexpr: &AExpr,
     arena: &Arena<AExpr>,
     schema: &Schema,
     input_sorted: Option<&[Sorted]>,
+    keep_distinct: bool,
 ) -> Option<AExprSorted> {
     match aexpr {
         AExpr::Element => None,
@@ -676,12 +686,31 @@ pub fn aexpr_sortedness(
             options: CastOptions::Strict,
         } if dtype.is_integer() => {
             let expr = arena.get(*expr);
-            let expr_sortedness = aexpr_sortedness(expr, arena, schema, input_sorted)?;
+            let expr_sortedness =
+                aexpr_sortedness(expr, arena, schema, input_sorted, keep_distinct)?;
             let input_dtype = expr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?;
             if !input_dtype.is_integer() {
                 return None;
             }
             Some(expr_sortedness)
+        },
+        // A cast to a wider Decimal keeps all values, so it can't fail or add nulls.
+        #[cfg(feature = "dtype-decimal")]
+        AExpr::Cast {
+            expr,
+            dtype: DataType::Decimal(prec, scale),
+            options: _,
+        } => {
+            let expr = arena.get(*expr);
+            let DataType::Decimal(input_prec, input_scale) =
+                expr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?
+            else {
+                return None;
+            };
+            if *scale < input_scale || prec - scale < input_prec - input_scale {
+                return None;
+            }
+            aexpr_sortedness(expr, arena, schema, input_sorted, keep_distinct)
         },
         AExpr::Cast { .. } => None, // @TODO: More casts are allowed
         AExpr::Sort { expr: _, options } => Some(AExprSorted {
@@ -692,14 +721,57 @@ pub fn aexpr_sortedness(
             input,
             function,
             options: _,
-        } => function_expr_sortedness(function, input, arena, schema, input_sorted),
+        } => function_expr_sortedness(function, input, arena, schema, input_sorted, keep_distinct),
         AExpr::Filter { input, by: _ }
         | AExpr::Slice {
             input,
             offset: _,
             length: _,
-        } => aexpr_sortedness(arena.get(*input), arena, schema, input_sorted),
+        } => aexpr_sortedness(
+            arena.get(*input),
+            arena,
+            schema,
+            input_sorted,
+            keep_distinct,
+        ),
 
+        #[cfg(feature = "round_series")]
+        AExpr::BinaryExpr {
+            left,
+            op: Operator::Multiply,
+            right,
+        } => {
+            let (input, factor) = match (int_literal(*left, arena), int_literal(*right, arena)) {
+                (None, Some(factor)) => (*left, factor),
+                (Some(factor), None) => (*right, factor),
+                _ => return None,
+            };
+            // Integer multiplication wraps on overflow, so only allow it if the input has bounds
+            // that can't overflow.
+            let AExpr::Function {
+                input: clip_inputs,
+                function:
+                    IRFunctionExpr::Clip {
+                        has_min: true,
+                        has_max: true,
+                    },
+                ..
+            } = arena.get(input)
+            else {
+                return None;
+            };
+            let (min, max) = int_clip_bounds(clip_inputs, arena)?;
+            let dtype = aexpr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?;
+            if factor <= 0 || !dtype.is_integer() {
+                return None;
+            }
+            let dtype_min = dtype.min().ok()?.value().extract::<i128>()?;
+            let dtype_max = dtype.max().ok()?.value().extract::<i128>()?;
+            if min.checked_mul(factor)? < dtype_min || max.checked_mul(factor)? > dtype_max {
+                return None;
+            }
+            aexpr_sortedness(arena.get(input), arena, schema, input_sorted, keep_distinct)
+        },
         AExpr::BinaryExpr { .. }
         | AExpr::Gather { .. }
         | AExpr::SortBy { .. }
@@ -724,9 +796,10 @@ pub fn function_expr_sortedness(
     arena: &Arena<AExpr>,
     schema: &Schema,
     input_sorted: Option<&[Sorted]>,
+    keep_distinct: bool,
 ) -> Option<AExprSorted> {
     macro_rules! rec_ae {
-        ($node:expr) => {{ aexpr_sortedness(arena.get($node), arena, schema, input_sorted) }};
+        ($node:expr) => {{ aexpr_sortedness(arena.get($node), arena, schema, input_sorted, keep_distinct) }};
     }
 
     match function {
@@ -781,6 +854,42 @@ pub fn function_expr_sortedness(
             }
         },
 
+        IRFunctionExpr::ToPhysical => {
+            let [e] = inputs else {
+                return None;
+            };
+            // Categoricals don't sort by their physical value.
+            let dtype = arena
+                .get(e.node())
+                .to_dtype(&ToFieldContext::new(arena, schema))
+                .ok()?;
+            if !(dtype.is_primitive_numeric() || dtype.is_decimal() || dtype.is_temporal()) {
+                return None;
+            }
+            rec_ae!(e.node())
+        },
+
+        #[cfg(feature = "round_series")]
+        IRFunctionExpr::Clip {
+            has_min: true,
+            has_max: true,
+        } => {
+            // Clipping can make different values equal.
+            if keep_distinct {
+                return None;
+            }
+            int_clip_bounds(inputs, arena)?;
+            let e = inputs[0].node();
+            let dtype = arena
+                .get(e)
+                .to_dtype(&ToFieldContext::new(arena, schema))
+                .ok()?;
+            if !dtype.is_integer() {
+                return None;
+            }
+            rec_ae!(e)
+        },
+
         IRFunctionExpr::Reverse => {
             let [e] = inputs else {
                 return None;
@@ -804,4 +913,27 @@ pub fn function_expr_sortedness(
 
         _ => None,
     }
+}
+
+/// The value of an integer scalar literal.
+#[cfg(feature = "round_series")]
+fn int_literal(node: Node, arena: &Arena<AExpr>) -> Option<i128> {
+    match arena.get(node) {
+        AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))) => Some(*v),
+        AExpr::Literal(LiteralValue::Scalar(sc)) if sc.dtype().is_integer() => sc.value().extract(),
+        _ => None,
+    }
+}
+
+/// The bounds of `clip(x, min, max)` with integer literal bounds.
+#[cfg(feature = "round_series")]
+fn int_clip_bounds(inputs: &[ExprIR], arena: &Arena<AExpr>) -> Option<(i128, i128)> {
+    let [_, min, max] = inputs else {
+        return None;
+    };
+    let (min, max) = (
+        int_literal(min.node(), arena)?,
+        int_literal(max.node(), arena)?,
+    );
+    (min <= max).then_some((min, max))
 }

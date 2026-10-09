@@ -1116,11 +1116,15 @@ impl ComputeNode for SemiAntiJoinNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(
-            self.state,
-            SemiAntiJoinState::Sample { .. } | SemiAntiJoinState::Build { .. }
-        )
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            SemiAntiJoinState::Sample(_) => NodeMemoryUsage::WillAccumulate,
+            SemiAntiJoinState::Build(_) => NodeMemoryUsage::Accumulating,
+            SemiAntiJoinState::Probe(_) | SemiAntiJoinState::EmitBuild(_) => {
+                NodeMemoryUsage::HoldingUntilDone
+            },
+            SemiAntiJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

@@ -15,7 +15,10 @@ import os
 import re
 import threading
 from collections import OrderedDict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+from polars._utils.various import qualified_type_name
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -51,28 +54,88 @@ _BUILTIN_FILE_IO_CLASSES = frozenset(
 )
 
 
-def _properties_fingerprint(properties: Mapping[str, Any]) -> str | None:
-    # None when a key or value is not of an exact plain type: nested settings,
-    # objects and subclasses, such as REST catalog auth or secret wrappers, can
-    # carry identity that their repr does not show.
-    items = []
-    for k, v in properties.items():
-        if type(k) is not str:
-            return None
-        if k in _FINGERPRINT_EXCLUDED_KEYS:
-            continue
-        if type(v) not in _PLAIN_TYPES:
-            return None
-        items.append((k, repr(v)))
+# Set by the REST catalog: the auth manager for catalog requests and remote signing.
+_AUTH_MANAGER_KEY = "auth.manager"
 
-    return hashlib.sha256(repr(sorted(items)).encode()).hexdigest()
+# PyIceberg's own auth managers, built from the `auth`, `token` and `credential`
+# properties or from credentials taken from the environment. Other auth managers
+# can hold identity outside the properties.
+_BUILTIN_AUTH_MANAGER_CLASSES = frozenset(
+    (
+        "pyiceberg.catalog.rest.auth.BasicAuthManager",
+        "pyiceberg.catalog.rest.auth.EntraAuthManager",
+        "pyiceberg.catalog.rest.auth.GoogleAuthManager",
+        "pyiceberg.catalog.rest.auth.LegacyOAuth2AuthManager",
+        "pyiceberg.catalog.rest.auth.NoopAuthManager",
+        "pyiceberg.catalog.rest.auth.OAuth2AuthManager",
+    )
+)
+
+
+_MAX_FINGERPRINT_DEPTH = 8
+_MAX_FINGERPRINT_VALUES = 10_000
+
+
+def _is_plain(value: Any) -> bool:
+    # Exact plain types only: objects and subclasses, such as secret wrappers, can
+    # carry identity that their repr does not show. Containers nested deeper than
+    # `_MAX_FINGERPRINT_DEPTH`, which includes self-referencing ones, or holding more
+    # than `_MAX_FINGERPRINT_VALUES` values in total are not plain.
+    pending = [(value, 0)]
+    budget = _MAX_FINGERPRINT_VALUES
+    while pending:
+        v, depth = pending.pop()
+        t = type(v)
+        if t in _PLAIN_TYPES:
+            continue
+        if t is not dict and t is not list and t is not tuple:
+            return False
+        if depth >= _MAX_FINGERPRINT_DEPTH or len(v) > budget:
+            return False
+        budget -= len(v)
+        if t is dict:
+            if any(type(k) is not str for k in v):
+                return False
+            pending.extend((x, depth + 1) for x in v.values())
+        else:
+            pending.extend((x, depth + 1) for x in v)
+    return True
+
+
+def _properties_fingerprint(properties: Mapping[str, Any]) -> str | None:
+    # None when a property is not plain. A built-in REST auth manager is left out:
+    # the properties it is built from are fingerprinted.
+    kept = {
+        k: v
+        for k, v in properties.items()
+        if k not in _FINGERPRINT_EXCLUDED_KEYS
+        and not (
+            k == _AUTH_MANAGER_KEY
+            and qualified_type_name(type(v)) in _BUILTIN_AUTH_MANAGER_CLASSES
+        )
+    }
+    if not _is_plain(kept):
+        return None
+    return hashlib.sha256(repr(sorted(kept.items())).encode()).hexdigest()
 
 
 def _file_io_scope(file_io: FileIO) -> str | None:
-    cls = type(file_io)
-    if f"{cls.__module__}.{cls.__qualname__}" not in _BUILTIN_FILE_IO_CLASSES:
+    # `type()`, not `__class__`, which mocks and proxies can override.
+    if qualified_type_name(type(file_io)) not in _BUILTIN_FILE_IO_CLASSES:
         return None
-    return _properties_fingerprint(file_io.properties)
+    try:
+        return _properties_fingerprint(file_io.properties)
+    except Exception:
+        # Properties that cannot be fingerprinted bypass the cache.
+        return None
+
+
+@dataclass
+class CacheStats:
+    """Hit and miss counts."""
+
+    hits: int = 0
+    misses: int = 0
 
 
 class IcebergMetadataFileCache:
@@ -85,8 +148,6 @@ class IcebergMetadataFileCache:
         self._total_bytes = 0
         # Per-path locks so concurrent misses on one path fetch once.
         self._fetch_locks: dict[str, threading.Lock] = {}
-        self.hits = 0
-        self.misses = 0
 
     @property
     def enabled(self) -> bool:
@@ -112,7 +173,9 @@ class IcebergMetadataFileCache:
             return self._get_locked(location)
 
     def put(self, location: str, data: bytes) -> None:
-        if len(data) > self.max_bytes:
+        # Keys count towards the budget, so empty entries are bounded too.
+        size = len(location) + len(data)
+        if size > self.max_bytes:
             return
 
         with self._lock:
@@ -120,16 +183,19 @@ class IcebergMetadataFileCache:
                 return
 
             self._entries[location] = data
-            self._total_bytes += len(data)
+            self._total_bytes += size
 
             while self._total_bytes > self.max_bytes:
-                _, evicted = self._entries.popitem(last=False)
-                self._total_bytes -= len(evicted)
+                key, evicted = self._entries.popitem(last=False)
+                self._total_bytes -= len(key) + len(evicted)
 
-    def get_or_fetch(self, location: str, fetch: Callable[[], bytes]) -> bytes:
+    def get_or_fetch(
+        self, location: str, fetch: Callable[[], bytes], stats: CacheStats
+    ) -> bytes:
+        """Return the cached bytes, fetching on a miss; `stats` counts it."""
         with self._lock:
             if (data := self._get_locked(location)) is not None:
-                self.hits += 1
+                stats.hits += 1
                 return data
 
             fetch_lock = self._fetch_locks.setdefault(location, threading.Lock())
@@ -138,10 +204,10 @@ class IcebergMetadataFileCache:
             with fetch_lock:
                 with self._lock:
                     if (data := self._get_locked(location)) is not None:
-                        self.hits += 1
+                        stats.hits += 1
                         return data
 
-                    self.misses += 1
+                    stats.misses += 1
 
                 data = fetch()
                 self.put(location, data)
@@ -207,11 +273,13 @@ class CachedInputFile:
         location: str,
         cache: IcebergMetadataFileCache,
         scope: str,
+        stats: CacheStats,
     ) -> None:
         self._inner = inner
         self._location = location
         self._cache = cache
         self._key = f"{scope}:{location}"
+        self._stats = stats
 
     @property
     def location(self) -> str:
@@ -222,7 +290,7 @@ class CachedInputFile:
             return f.read()
 
     def _bytes(self) -> bytes:
-        return self._cache.get_or_fetch(self._key, self._fetch)
+        return self._cache.get_or_fetch(self._key, self._fetch, self._stats)
 
     def __len__(self) -> int:
         if (data := self._cache.get(self._key)) is not None:
@@ -243,9 +311,10 @@ class CachingFileIO:
 
     Reads of cacheable paths go through the cache. Everything else is
     forwarded to the wrapped FileIO. Cache entries are scoped to the
-    properties of the wrapped FileIO. Nothing is cached when a property is not
-    of a plain type, or when the wrapped FileIO is not one of PyIceberg's
-    built-in classes.
+    properties of the wrapped FileIO. Nothing is cached when a property holds a
+    value that is not of a plain type, other than one of PyIceberg's built-in
+    REST auth managers, or when the wrapped FileIO is not one of PyIceberg's
+    built-in classes. `stats` counts the cache reads through this wrapper.
     """
 
     def __init__(self, inner: FileIO, cache: IcebergMetadataFileCache) -> None:
@@ -253,12 +322,17 @@ class CachingFileIO:
         self._cache = cache
         self.properties = inner.properties
         self._scope = _file_io_scope(inner)
+        self.stats = CacheStats()
+
+    @property
+    def cache(self) -> IcebergMetadataFileCache:
+        return self._cache
 
     def new_input(self, location: str) -> InputFile:
         scope = self._scope
         if scope is not None and self._cache.enabled and _is_cacheable(location):
             return CachedInputFile(  # type: ignore[return-value]
-                self._inner, location, self._cache, scope
+                self._inner, location, self._cache, scope, self.stats
             )
         return self._inner.new_input(location)
 
