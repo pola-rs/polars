@@ -5641,3 +5641,33 @@ def test_enum_table_statistics_prune() -> None:
         .collect(engine="streaming")
     )
     assert_frame_equal(out, pl.DataFrame(schema={"e": dtype}))
+
+
+@pytest.mark.parametrize(
+    ("dtype", "values"),
+    [
+        (pl.Decimal(9, 2), [Decimal("1.25"), Decimal("-3.00")]),
+        (pl.Date, [date(2000, 1, 1), date(1960, 1, 1)]),
+        (pl.Datetime("us", "UTC"), [datetime(2000, 1, 1), datetime(1960, 1, 1)]),
+        (pl.Time, [time(1), time(2)]),
+    ],
+)
+def test_filter_struct_field_with_logical_type_sibling(
+    dtype: pl.DataType, values: list[Any]
+) -> None:
+    df = pl.DataFrame(
+        {"s": [{"u": 5, "v": values[0]}, {"u": 1, "v": values[1]}, None]},
+        schema={"s": pl.Struct({"u": pl.Int32, "v": dtype})},
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    for predicate in [
+        pl.col("s").struct.field("u") > 1,
+        pl.col("s").struct.field("v") == pl.lit(values[0], dtype=dtype),
+        pl.col("s").struct.field("v") < pl.lit(values[0], dtype=dtype),
+    ]:
+        f.seek(0)
+        assert_frame_equal(
+            pl.scan_parquet(f).filter(predicate).collect(), df.filter(predicate)
+        )

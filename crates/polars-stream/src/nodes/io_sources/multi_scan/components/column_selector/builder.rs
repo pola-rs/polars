@@ -486,16 +486,9 @@ impl ColumnSelectorBuilder {
         input_selector: ColumnSelector,
         incoming_column: &IcebergColumn,
         target_column: &IcebergColumn,
-        mut iceberg_default_value_provider: Option<IcebergDefaultValueProviderRef>,
+        iceberg_default_value_provider: Option<IcebergDefaultValueProviderRef>,
     ) -> PolarsResult<ColumnSelector> {
         use IcebergColumnType as ICT;
-
-        match &target_column.type_ {
-            ICT::FixedSizeList(..) | ICT::List(_) | ICT::Map(..) => {
-                iceberg_default_value_provider = None
-            },
-            ICT::Struct(_) | ICT::Primitive { .. } => {},
-        }
 
         let selector = (|| {
             let target_dtype = &target_column.type_;
@@ -562,7 +555,7 @@ impl ColumnSelectorBuilder {
                                     ColumnSelector::Constant(Box::new((
                                         output_column.name.clone(),
                                         iceberg_default_value_provider
-                                            .map(|x| build_iceberg_default_value(x, target_column))
+                                            .map(|x| build_iceberg_default_value(x, output_column))
                                             .transpose()?
                                             .flatten()
                                             .unwrap_or_else(|| {

@@ -6453,6 +6453,83 @@ def test_scan_iceberg_reader_pyiceberg_filter_nested_columns(tmp_path: Path) -> 
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_v3_nested_field_initial_default(tmp_path: Path) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "s", StructType(NestedField(2, "a", LongType()))),
+            NestedField(
+                3,
+                "ls",
+                ListType(
+                    4,
+                    StructType(NestedField(5, "a", LongType())),
+                    element_required=False,
+                ),
+            ),
+            NestedField(
+                6,
+                "m",
+                MapType(
+                    7,
+                    StringType(),
+                    8,
+                    StructType(NestedField(9, "a", LongType())),
+                    value_required=False,
+                ),
+            ),
+        ),
+    )
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"s": {"a": 1}, "ls": [{"a": 1}, None], "m": [("k", {"a": 1})]}],
+            schema=tbl.schema().as_arrow(),
+        )
+    )
+
+    md_path = Path(
+        tbl.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+    md_object["format-version"] = 3
+    fields = md_object["schemas"][-1]["fields"]
+
+    def new_field(field_id: int, default: int) -> dict[str, Any]:
+        return {
+            "id": field_id,
+            "name": "b",
+            "required": False,
+            "type": "long",
+            "initial-default": default,
+        }
+
+    fields[0]["type"]["fields"].append(new_field(10, 5))
+    fields[1]["type"]["element"]["fields"].append(new_field(11, 6))
+    fields[2]["type"]["value"]["fields"].append(new_field(12, 7))
+    md_object["last-column-id"] = 12
+    md_path.write_text(json.dumps(md_object))
+    tbl = catalog.load_table(tbl.name())
+
+    struct = pl.Struct({"a": pl.Int64, "b": pl.Int64})
+    expect = pl.DataFrame(
+        {
+            "s": [{"a": 1, "b": 5}],
+            "ls": [[{"a": 1, "b": 6}, None]],
+            "m": [{"k": {"a": 1, "b": 7}}],
+        },
+        schema={"s": struct, "ls": pl.List(struct), "m": pl.Map(pl.String, struct)},
+    )
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), expect)
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).filter(pl.col("s").struct.field("b") == 5).collect(),
+        expect,
+    )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_reader_pyiceberg_time_travel_filter(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
         tmp_path,

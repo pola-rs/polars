@@ -1667,3 +1667,30 @@ def test_iceberg_plugin_unsupported_io_properties(
         _catalog_storage_options(properties, location)
     # Properties of other storage are ignored.
     _catalog_storage_options(properties, "file:///t.metadata.json")
+
+
+@pytest.mark.filterwarnings("ignore:Call to to_vector:DeprecationWarning")
+@pytest.mark.parametrize("deletion_vectors", [False, True])
+def test_iceberg_plugin_top_k_with_deletes(
+    tmp_path: Path, deletion_vectors: bool
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "id", LongType())),
+        properties={"write.parquet.row-group-limit": "10"},
+    )
+    tbl.append(pl.DataFrame({"id": range(22)}).to_arrow())
+    tbl.append(pl.DataFrame({"id": range(22, 29)}).to_arrow())
+    small = next(
+        p
+        for p in _data_file_paths(tbl)
+        if pl.scan_parquet(p).select(pl.len()).collect().item() == 7
+    )
+    tbl = _add_position_deletes(tbl, {small: [3, 6]}, deletion_vectors=deletion_vectors)
+    df = pl.DataFrame(tbl.scan().to_arrow())
+
+    for _ in range(5):
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).bottom_k(3, by="id").collect(engine="streaming"),
+            df.bottom_k(3, by="id"),
+        )
