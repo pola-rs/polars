@@ -7,7 +7,7 @@
 //!  1. `statx(STATX_DIOALIGN)` (Linux 6.1+) - authoritative, per-file, and
 //!     distinguishes memory alignment from offset/length alignment. It can
 //!     also say *definitively* that a file does not support direct I/O.
-//!     Only available on glibc: `libc` does not expose `statx` on musl.
+//!     glibc only for now (see comments below for musl)
 //!  2. `/sys/dev/block/<major>:<minor>/queue/logical_block_size` - the device
 //!     sector size. Right for most filesystems, but misses cases where the
 //!     filesystem imposes something stricter.
@@ -107,21 +107,34 @@ fn normalize(v: usize) -> usize {
     }
 }
 
+/// `statx(2)` on an open file, as a raw syscall: glibc's wrapper needs glibc 2.28,
+/// manylinux2014 is 2.17.
+// TODO: also probe on musl (needs our own `struct statx`, #29306); musl uses sysfs meanwhile.
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
-fn statx_dioalign(file: &std::fs::File) -> StatxAlign {
+fn statx(file: &std::fs::File, mask: u32) -> Option<libc::statx> {
     let mut stx: libc::statx = unsafe { std::mem::zeroed() };
+    // Safety: `stx` matches the kernel's layout and outlives the call. `syscall` reads every
+    // integer argument as a `c_long`.
     let rc = unsafe {
-        libc::statx(
-            file.as_raw_fd(),
+        libc::syscall(
+            libc::SYS_statx,
+            file.as_raw_fd() as libc::c_long,
             c"".as_ptr(),
-            libc::AT_EMPTY_PATH,
-            libc::STATX_DIOALIGN,
-            &mut stx,
+            libc::AT_EMPTY_PATH as libc::c_long,
+            mask as libc::c_long,
+            &mut stx as *mut libc::statx,
         )
     };
-    if rc != 0 || stx.stx_mask & libc::STATX_DIOALIGN == 0 {
+    (rc == 0).then_some(stx)
+}
+
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn statx_dioalign(file: &std::fs::File) -> StatxAlign {
+    let Some(stx) =
+        statx(file, libc::STATX_DIOALIGN).filter(|stx| stx.stx_mask & libc::STATX_DIOALIGN != 0)
+    else {
         return StatxAlign::Unknown;
-    }
+    };
 
     let offset = stx.stx_dio_offset_align as usize;
     let memory = stx.stx_dio_mem_align as usize;
@@ -135,9 +148,9 @@ fn statx_dioalign(file: &std::fs::File) -> StatxAlign {
 
 /// `/sys/dev/block/<major>:<minor>/queue/logical_block_size`.
 ///
-/// Keyed by device number, so this needs no device-name lookup. Used when the
-/// kernel predates `STATX_DIOALIGN`, or when `statx` is unavailable at all
-/// (musl).
+/// Keyed by device number, so this needs no device-name lookup. Used when
+/// `statx` cannot answer: kernels before 6.1, filesystems that do not report
+/// `STATX_DIOALIGN`, and musl.
 #[cfg(target_os = "linux")]
 fn sysfs_logical_block_size(file: &std::fs::File) -> Option<DioAlign> {
     use std::os::unix::fs::MetadataExt;
@@ -174,5 +187,18 @@ mod tests {
                 assert!(pad + len <= (hi - lo) as usize, "pad + len exceeds span");
             }
         }
+    }
+
+    /// A wrong argument order fails the call; a wrong struct layout misreads the size.
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    #[test]
+    fn statx_reads_the_file_29800() {
+        use std::io::Write;
+
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&[0; 1234]).unwrap();
+        let stx = statx(&file, libc::STATX_SIZE).unwrap();
+        assert_ne!(stx.stx_mask & libc::STATX_SIZE, 0);
+        assert_eq!(stx.stx_size, 1234);
     }
 }
