@@ -35,11 +35,11 @@ impl ColumnOffsetsMetadata {
 
     pub fn from_column_chunk_metadata(
         column_chunk_metadata: &ColumnChunkMetadata,
-    ) -> ColumnOffsetsMetadata {
-        ColumnOffsetsMetadata {
-            dictionary_page_offset: column_chunk_metadata.dictionary_page_offset(),
-            data_page_offset: Some(column_chunk_metadata.data_page_offset()),
-        }
+    ) -> ParquetResult<ColumnOffsetsMetadata> {
+        Ok(ColumnOffsetsMetadata {
+            dictionary_page_offset: column_chunk_metadata.dictionary_page_offset()?,
+            data_page_offset: Some(column_chunk_metadata.data_page_offset()?),
+        })
     }
 
     pub fn calc_row_group_file_offset(&self) -> Option<i64> {

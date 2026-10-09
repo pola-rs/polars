@@ -34,6 +34,8 @@ use crate::expr::selector::PySelector;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
+#[cfg(feature = "parquet")]
+use crate::io::parquet_encryption::PyFileDecryptionProperties;
 use crate::io::scan_options::PyScanOptions;
 use crate::io::sink_options::PySinkOptions;
 use crate::io::sink_output::PyFileSinkDestination;
@@ -311,7 +313,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (
-        sources, schema, scan_options, parallel, low_memory, use_statistics
+        sources, schema, scan_options, parallel, low_memory, use_statistics, decryption_properties
     ))]
     fn new_from_parquet(
         sources: Wrap<ScanSources>,
@@ -320,6 +322,7 @@ impl PyLazyFrame {
         parallel: Wrap<ParallelStrategy>,
         low_memory: bool,
         use_statistics: bool,
+        decryption_properties: Option<PyFileDecryptionProperties>,
     ) -> PyResult<Self> {
         use crate::utils::to_py_err;
 
@@ -330,6 +333,8 @@ impl PyLazyFrame {
             parallel,
             low_memory,
             use_statistics,
+            decryption_properties: decryption_properties
+                .map(|p| PlFileDecryptionProperties(p.inner)),
         };
 
         let sources = sources.0;

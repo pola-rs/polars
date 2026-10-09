@@ -3580,6 +3580,7 @@ name = "polars-parquet"
 version = "0.55.1"
 dependencies = [
  "async-stream",
+ "aws-lc-rs",
  "base64 0.22.1",
  "brotli",
  "bytemuck",

@@ -7,10 +7,11 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unitvec;
 
-use super::column_chunk_metadata::{ColumnChunkMetadata, column_metadata_byte_range_compact};
+use super::column_chunk_metadata::ColumnChunkMetadata;
 use super::column_descriptor::ColumnDescriptorRef;
 use super::compact::CompactRowGroup;
 use super::schema_descriptor::SchemaDescriptor;
+use crate::parquet::encryption::decrypt::{ColumnChunkDecryption, FileDecryptor};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
 type ColumnLookup = PlHashMap<PlSmallStr, UnitVec<usize>>;
@@ -86,19 +87,25 @@ impl RowGroupMetadata {
     /// Per-chunk sizes are clamped at zero before summing so a malformed
     /// file with a negative `compressed_size` cannot underflow into a huge
     /// `usize`.
+    ///
+    /// Columns without metadata (encrypted columns whose key is unavailable) are excluded.
     pub fn compressed_size(&self) -> usize {
         self.columns
             .iter()
-            .map(|c| c.compressed_size().max(0) as usize)
+            .filter_map(|c| c.compressed_size().ok())
+            .map(|size| size.max(0) as usize)
             .sum::<usize>()
     }
 
+    /// The byte range covering all columns that have metadata.
     pub fn full_byte_range(&self) -> core::ops::Range<u64> {
         self.full_byte_range.clone()
     }
 
-    pub fn byte_ranges_iter(&self) -> impl ExactSizeIterator<Item = core::ops::Range<u64>> + '_ {
-        self.columns.iter().map(|x| x.byte_range())
+    /// The byte ranges of all columns that have metadata. Columns without metadata
+    /// (encrypted columns whose key is unavailable) are excluded.
+    pub fn byte_ranges_iter(&self) -> impl Iterator<Item = core::ops::Range<u64>> + '_ {
+        self.columns.iter().filter_map(|c| c.byte_range().ok())
     }
 
     pub fn sorting_columns(&self) -> Option<&[SortingColumn]> {
@@ -107,9 +114,13 @@ impl RowGroupMetadata {
 
     /// Build a `RowGroupMetadata` from a [`CompactRowGroup`], joining each
     /// chunk to its descriptor in the schema.
+    ///
+    /// For encrypted files, `decryption` holds the file decryptor and the index of this row
+    /// group within the file, which are needed to decrypt encrypted column chunks.
     pub(crate) fn from_compact(
         schema_descr: &SchemaDescriptor,
         rg: CompactRowGroup,
+        decryption: Option<(&Arc<FileDecryptor>, usize)>,
     ) -> ParquetResult<RowGroupMetadata> {
         if schema_descr.columns().len() != rg.columns.len() {
             return Err(ParquetError::oos(format!(
@@ -122,10 +133,9 @@ impl RowGroupMetadata {
         let num_rows = rg.num_rows.try_into()?;
 
         let mut column_lookup = ColumnLookup::with_capacity(rg.columns.len());
-        let mut full_byte_range = match rg.columns.first() {
-            Some(first) => column_metadata_byte_range_compact(&first.meta_data),
-            None => 0..0,
-        };
+        // Chunks may lack metadata if they're encrypted with an unavailable column key.
+        // These can't be read, so are excluded from the full byte range.
+        let mut full_byte_range: Option<core::ops::Range<u64>> = None;
 
         let sorting_columns = rg.sorting_columns;
 
@@ -139,17 +149,33 @@ impl RowGroupMetadata {
             .into_iter()
             .enumerate()
             .map(|(i, column_chunk)| {
+                let chunk_decryption = decryption.filter(|_| column_chunk.crypto.is_some()).map(
+                    |(file_decryptor, row_group_idx)| {
+                        Box::new(ColumnChunkDecryption {
+                            file_decryptor: Arc::clone(file_decryptor),
+                            row_group_idx,
+                            column_ordinal: i,
+                        })
+                    },
+                );
                 let column = ColumnChunkMetadata::from_compact(
                     ColumnDescriptorRef::new(Arc::clone(&column_descrs), i),
                     column_chunk,
+                    chunk_decryption,
                 );
                 add_column(&mut column_lookup, i, &column);
-                let byte_range = column.byte_range();
-                full_byte_range = full_byte_range.start.min(byte_range.start)
-                    ..full_byte_range.end.max(byte_range.end);
+                if let Ok(byte_range) = column.byte_range() {
+                    full_byte_range = Some(match full_byte_range.take() {
+                        Some(range) => {
+                            range.start.min(byte_range.start)..range.end.max(byte_range.end)
+                        },
+                        None => byte_range,
+                    });
+                }
                 column
             })
             .collect::<Vec<_>>();
+        let full_byte_range = full_byte_range.unwrap_or(0..0);
         let columns = Arc::new(columns);
 
         Ok(RowGroupMetadata {
