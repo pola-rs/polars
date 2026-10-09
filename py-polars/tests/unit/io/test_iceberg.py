@@ -5572,6 +5572,7 @@ def test_iceberg_metadata_file_cacheable(location: str, cacheable: bool) -> None
 def test_iceberg_load_static_table(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
     from pyiceberg.table import StaticTable
 
     from polars.io.iceberg._cache import load_static_table, reset_metadata_file_cache
@@ -5609,6 +5610,21 @@ def test_iceberg_load_static_table(
         relative = os.path.relpath(location.removeprefix("file://"))
         _, stats = load_static_table(relative, properties)
         assert stats.bypass == "relative path"
+
+        # A FileIO that writes to its properties, as adlfs does, changes neither
+        # the caller's properties nor the cache scope.
+        original_new_input = PyArrowFileIO.new_input
+
+        def new_input(self: Any, location: str) -> Any:
+            self.properties.setdefault("adls.account-name", "onelake")
+            return original_new_input(self, location)
+
+        monkeypatch.setattr(PyArrowFileIO, "new_input", new_input)
+        reset_metadata_file_cache()
+        load_static_table(location, properties)
+        _, stats = load_static_table(location, properties)
+        assert (stats.hits, stats.misses) == (1, 0)
+        assert properties == {"s3.region": "eu-central-1"}
     finally:
         reset_metadata_file_cache()
 

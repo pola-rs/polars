@@ -343,7 +343,8 @@ def load_static_table(
         table = StaticTable.from_metadata(metadata_location, properties=properties)
         return table, CacheStats(bypass="not a .metadata.json path")
 
-    inner = load_file_io(properties, location=metadata_location)
+    # A FileIO can write to the properties it is given: adlfs adds the account name.
+    inner = load_file_io(dict(properties), location=metadata_location)
     caching = CachingFileIO(inner, get_metadata_file_cache())
     stats = caching.stats
     if stats.bypass is None:
