@@ -98,31 +98,32 @@ fn cast_impl_inner(
         _ => cast_chunks(chunks, &dtype.to_physical(), options)?,
     };
 
-    // `Series::try_from` reads `LargeBinary` arrays as `Binary`.
-    if dtype == &DataType::BinaryOffset {
-        return Ok(unsafe { BinaryOffsetChunked::from_chunks(name, chunks) }.into_series());
-    }
-
-    let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
-        Date => out.into_date(),
-        Datetime(tu, tz) => match tz {
-            #[cfg(feature = "timezones")]
-            Some(tz) => {
-                TimeZone::validate_time_zone(tz)?;
-                out.into_datetime(*tu, Some(tz.clone()))
-            },
-            _ => out.into_datetime(*tu, None),
+        // `Series::try_from` reads `LargeBinary` arrays as `Binary`.
+        BinaryOffset => unsafe { BinaryOffsetChunked::from_chunks(name, chunks) }.into_series(),
+        _ => {
+            let out = Series::try_from((name, chunks))?;
+            match dtype {
+                Date => out.into_date(),
+                Datetime(tu, tz) => match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        TimeZone::validate_time_zone(tz)?;
+                        out.into_datetime(*tu, Some(tz.clone()))
+                    },
+                    _ => out.into_datetime(*tu, None),
+                },
+                Duration(tu) => out.into_duration(*tu),
+                #[cfg(feature = "dtype-time")]
+                Time => out.into_time(),
+                #[cfg(feature = "dtype-decimal")]
+                Decimal(precision, scale) => out.into_decimal(*precision, *scale)?,
+                #[cfg(feature = "dtype-extension")]
+                Extension(typ, _) => out.into_extension(typ.clone()),
+                _ => out,
+            }
         },
-        Duration(tu) => out.into_duration(*tu),
-        #[cfg(feature = "dtype-time")]
-        Time => out.into_time(),
-        #[cfg(feature = "dtype-decimal")]
-        Decimal(precision, scale) => out.into_decimal(*precision, *scale)?,
-        #[cfg(feature = "dtype-extension")]
-        Extension(typ, _) => out.into_extension(typ.clone()),
-        _ => out,
     };
 
     Ok(out)
