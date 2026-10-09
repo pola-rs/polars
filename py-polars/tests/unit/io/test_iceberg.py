@@ -564,6 +564,16 @@ class TestIcebergExpressions:
         expr = _to_ast("(pa.compute.field('ts') <= '2023-08-08')")
         assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
 
+    def test_parse_negative_literal(self) -> None:
+        expr = _to_ast("(pa.compute.field('id') > -5)")
+        assert _convert_predicate(expr) == GreaterThan("id", -5)
+
+        expr = _to_ast("(pa.compute.field('id')).isin([-1,2])")
+        assert _convert_predicate(expr) == In("id", {literal(-1), literal(2)})
+
+        expr = _to_ast("(pa.compute.field('ts') < to_py_datetime(-123,'us'))")
+        assert _convert_predicate(expr) == LessThan("ts", "1969-12-31T23:59:59.999877")
+
     def test_compare_boolean(self) -> None:
         expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(True))")
         assert _convert_predicate(expr) == EqualTo("ts", True)

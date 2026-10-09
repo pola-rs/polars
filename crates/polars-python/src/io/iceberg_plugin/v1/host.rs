@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use object_store::ObjectStoreExt;
 use polars_core::runtime::ASYNC;
@@ -26,6 +26,25 @@ pub(super) struct HostCtx {
     /// `storage_options` and credential provider of the scan.
     pub cloud_options: Option<CloudOptions>,
     pub metadata_cache: Option<ScopedMetadataCache>,
+    pub last_io_error: LastIoError,
+}
+
+/// Kind of the last IO error of the scan's storage calls. The contract only distinguishes
+/// `NOT_FOUND` and `IO`; this restores e.g. `PermissionDenied` when the plugin fails with it.
+#[derive(Clone, Default)]
+pub(super) struct LastIoError(Arc<Mutex<Option<std::io::ErrorKind>>>);
+
+impl LastIoError {
+    pub fn get(&self) -> Option<std::io::ErrorKind> {
+        *self.0.lock().unwrap()
+    }
+
+    fn to_ffi_err(&self, e: PolarsError) -> FfiError {
+        if let PolarsError::IO { error, .. } = &e {
+            *self.0.lock().unwrap() = Some(error.kind());
+        }
+        polars_to_ffi_err(e)
+    }
 }
 
 impl HostCtx {
@@ -121,6 +140,7 @@ unsafe extern "C" fn host_get_storage(
             let storage = Arc::new(HostStorage {
                 cloud_options: ctx.cloud_options.clone(),
                 metadata_cache: ctx.metadata_cache.clone(),
+                last_io_error: ctx.last_io_error.clone(),
             });
             Ok(StorageHandle(Arc::into_raw(storage) as *const c_void))
         })())
@@ -137,6 +157,7 @@ unsafe extern "C" fn host_log(_ctx: *const c_void, msg: FfiStr) {
 struct HostStorage {
     cloud_options: Option<CloudOptions>,
     metadata_cache: Option<ScopedMetadataCache>,
+    last_io_error: LastIoError,
 }
 
 struct ResolvedLocation {
@@ -180,7 +201,8 @@ unsafe extern "C" fn storage_get(
         spawn_io(async move {
             let url = url?;
             let fetch = || async {
-                let loc = storage.resolve(&url).await.map_err(polars_to_ffi_err)?;
+                let to_ffi_err = |e| storage.last_io_error.to_ffi_err(e);
+                let loc = storage.resolve(&url).await.map_err(to_ffi_err)?;
                 let path = &loc.path;
 
                 loc.store
@@ -188,7 +210,7 @@ unsafe extern "C" fn storage_get(
                         |s| async move { s.get(path).await?.bytes().await },
                     )
                     .await
-                    .map_err(polars_to_ffi_err)
+                    .map_err(to_ffi_err)
             };
 
             let bytes = match &storage.metadata_cache {
@@ -213,13 +235,14 @@ unsafe extern "C" fn storage_head(
         let url = str_arg(url);
 
         spawn_io(async move {
-            let loc = storage.resolve(&url?).await.map_err(polars_to_ffi_err)?;
+            let to_ffi_err = |e| storage.last_io_error.to_ffi_err(e);
+            let loc = storage.resolve(&url?).await.map_err(to_ffi_err)?;
 
             let meta = loc
                 .store
                 .head(&loc.path, ConcurrencyStrategy::BytesBased)
                 .await
-                .map_err(polars_to_ffi_err)?;
+                .map_err(to_ffi_err)?;
 
             Ok(meta.size)
         })

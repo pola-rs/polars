@@ -21,6 +21,7 @@ from ast import (
     Name,
     NotEq,
     UnaryOp,
+    USub,
 )
 from dataclasses import dataclass
 from functools import cache, singledispatch
@@ -266,6 +267,14 @@ def _(a: UnaryOp) -> Any:
     if isinstance(a.op, Invert):
         operand = _ensure_boolean_expression(_convert_predicate(a.operand))
         return pyiceberg.expressions.Not(operand)
+    elif (
+        isinstance(a.op, USub)
+        and isinstance(a.operand, Constant)
+        and isinstance(a.operand.value, (int, float))
+        and not isinstance(a.operand.value, bool)
+    ):
+        # Negative literals, e.g. `-5` or `to_py_datetime(-123, 'us')`.
+        return -a.operand.value
     else:
         msg = f"Unexpected UnaryOp: {a}"
         raise TypeError(msg)

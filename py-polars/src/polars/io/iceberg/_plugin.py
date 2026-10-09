@@ -146,6 +146,10 @@ def plugin_scan(
         raise NotImplementedError(msg)
 
     metadata_location = tbl.metadata_location
+    if metadata_location is None:
+        # E.g. loaded from a REST catalog that does not return it.
+        msg = "iceberg: unsupported: table without a metadata location"
+        raise NotImplementedError(msg)
 
     # Catalog-provided IO properties (e.g. vended credentials) with known object store
     # equivalents, overridden by the user's storage options.
@@ -321,31 +325,50 @@ _CATALOG_CREDENTIAL_KEYS = frozenset(
     ]
 )
 
-# Storage option keys that configure the client or location, not credentials.
-_NON_CREDENTIAL_KEYS = frozenset(
+# Storage option keys (without the `aws_` / `azure_storage_` / `azure_` / `google_`
+# prefixes) of user-provided credentials, which replace the catalog's. Other keys
+# configure the client or location.
+_USER_CREDENTIAL_KEYS = frozenset(
     [
-        "region",
-        "default_region",
-        "endpoint",
-        "endpoint_url",
-        "endpoint_url_s3",
-        "virtual_hosted_style_request",
-        "azure_storage_account_name",
-        "account_name",
-        "azure_storage_authority_host",
-        "authority_host",
+        "access_key_id",
+        "secret_access_key",
+        "session_token",
+        "token",
+        "bearer_token",
+        "profile",
+        "skip_signature",
+        "role_arn",
+        "role_session_name",
+        "web_identity_token_file",
+        "container_credentials_relative_uri",
+        "container_credentials_full_uri",
+        "access_key",
+        "account_key",
+        "master_key",
+        "sas_key",
+        "sas_token",
+        "client_id",
+        "client_secret",
+        "tenant_id",
+        "authority_id",
+        "federated_token_file",
+        "msi_endpoint",
+        "msi_resource_id",
+        "object_id",
+        "use_azure_cli",
+        "service_account",
+        "service_account_key",
+        "service_account_path",
+        "application_credentials",
     ]
 )
 
 
 def _is_credential_key(key: str) -> bool:
-    from polars.io.cloud.credential_provider._builder import AUTOINIT_IGNORED_KEYS
-
     key = key.lower()
-    return not any(
-        k in AUTOINIT_IGNORED_KEYS or k in _NON_CREDENTIAL_KEYS
-        for k in (key, key.removeprefix("aws_"))
-    )
+    for prefix in ("aws_", "azure_storage_", "azure_", "google_"):
+        key = key.removeprefix(prefix)
+    return key in _USER_CREDENTIAL_KEYS
 
 
 def _id_version(id: str) -> int:

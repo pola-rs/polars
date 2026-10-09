@@ -13,6 +13,7 @@ import importlib.metadata
 import io
 import json
 import operator
+import os
 import pickle
 import re
 import sys
@@ -221,10 +222,47 @@ def test_iceberg_plugin_io_error(
     metadata_path: str, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_ICEBERG_PLUGIN_TESTING_FAIL", "io")
-    with pytest.raises(
-        pl.exceptions.ComputeError, match=r"polars-iceberg-testing-missing"
-    ):
+    with pytest.raises(FileNotFoundError, match=r"polars-iceberg-testing-missing"):
         pl.scan_iceberg(metadata_path).collect()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="file permissions",
+)
+def test_iceberg_plugin_permission_error(table: Any) -> None:
+    manifest_list = Path(table.current_snapshot().manifest_list.removeprefix("file://"))
+    manifest_list.chmod(0)
+    try:
+        # As with the PyIceberg planner.
+        with pytest.raises(PermissionError):
+            pl.scan_iceberg(table).collect()
+    finally:
+        manifest_list.chmod(0o644)
+
+
+@pytest.mark.parametrize("planner", [None, "plugin"])
+def test_iceberg_plugin_no_metadata_location(
+    table: Any, planner: str | None, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from pyiceberg.table import Table
+
+    if planner is None:
+        plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER")
+
+    tbl = Table(
+        table.name(),
+        metadata=table.metadata,
+        # Optional in REST catalog responses, despite the annotation.
+        metadata_location=None,  # type: ignore[arg-type]
+        io=table.io,
+        catalog=table.catalog,
+    )
+    if planner == "plugin":
+        with pytest.raises(NotImplementedError, match="metadata location"):
+            pl.scan_iceberg(tbl).collect()
+    else:
+        assert_frame_equal(pl.scan_iceberg(tbl).collect(), TEST_DF)
 
 
 def test_iceberg_plugin_panic_is_error(
@@ -961,6 +999,36 @@ def test_iceberg_plugin_deeply_nested_row_filter(metadata_path: str) -> None:
     )
 
 
+def test_iceberg_plugin_filter_identity_partition_decimal_widened(
+    tmp_path: Path,
+) -> None:
+    from decimal import Decimal
+
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import DecimalType
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "d", DecimalType(9, 2))),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "d")),
+    )
+    tbl.append(
+        pl.DataFrame(
+            {"d": [Decimal("1.00"), Decimal("2.50")]}, schema={"d": pl.Decimal(9, 2)}
+        ).to_arrow()
+    )
+    with tbl.update_schema() as update:
+        update.update_column("d", DecimalType(18, 2))
+    tbl = tbl.catalog.load_table(tbl.name())
+
+    predicate = pl.col("d") == pl.lit(Decimal("1.00"), pl.Decimal(18, 2))
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).filter(predicate).collect(),
+        pl.DataFrame({"d": [Decimal("1.00")]}, schema={"d": pl.Decimal(18, 2)}),
+    )
+
+
 def test_iceberg_plugin_gzip_metadata(metadata_path: str) -> None:
     import gzip
 
@@ -1496,7 +1564,14 @@ def test_iceberg_plugin_catalog_storage_options(
 
     # Other options keep them.
     assert _capture_plugin_scan_storage_options(
-        table, plmonkeypatch, {"aws_region": "us-east-1", "max_retries": "3"}
+        table,
+        plmonkeypatch,
+        {
+            "aws_region": "us-east-1",
+            "max_retries": "3",
+            "aws_server_side_encryption": "aws:kms",
+            "aws_unsigned_payload": "true",
+        },
     ) == {
         "aws_region": "us-east-1",
         "aws_access_key_id": "vended-key",
@@ -1504,4 +1579,6 @@ def test_iceberg_plugin_catalog_storage_options(
         "connect_timeout": "60000ms",
         "timeout": "1500ms",
         "max_retries": "3",
+        "aws_server_side_encryption": "aws:kms",
+        "aws_unsigned_payload": "true",
     }
