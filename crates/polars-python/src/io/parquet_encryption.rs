@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use polars::prelude::PolarsError;
+use polars_io::parquet::encryption::{ParquetDecryption, ParquetEncryption};
 use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use pyo3::prelude::*;
@@ -10,7 +9,7 @@ use crate::error::PyPolarsErr;
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyFileDecryptionProperties {
-    pub inner: Arc<FileDecryptionProperties>,
+    pub inner: ParquetDecryption,
 }
 
 #[pymethods]
@@ -33,17 +32,19 @@ impl PyFileDecryptionProperties {
         if !verify_footer_signature {
             builder = builder.disable_footer_signature_verification();
         }
-        let inner = builder
+        let properties = builder
             .build()
             .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: properties.into(),
+        })
     }
 }
 
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyFileEncryptionProperties {
-    pub inner: Arc<FileEncryptionProperties>,
+    pub inner: ParquetEncryption,
 }
 
 #[pymethods]
@@ -67,9 +68,11 @@ impl PyFileEncryptionProperties {
                 .with_aad_prefix(aad_prefix)
                 .with_aad_prefix_storage(store_aad_prefix);
         }
-        let inner = builder
+        let properties = builder
             .build()
             .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: properties.into(),
+        })
     }
 }

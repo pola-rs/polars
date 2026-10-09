@@ -742,9 +742,7 @@ def scan_parquet(
         parallel=parallel,
         low_memory=low_memory,
         use_statistics=use_statistics,
-        decryption_properties=(
-            decryption._pydecryptionproperties if decryption is not None else None
-        ),
+        decryption=(decryption._pydecryption if decryption is not None else None),
         scan_options=ScanOptions(
             row_index=(
                 (row_index_name, row_index_offset)

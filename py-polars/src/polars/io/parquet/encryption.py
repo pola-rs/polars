@@ -75,7 +75,7 @@ class ParquetEncryptionProperties:
             msg = "store_aad_prefix requires aad_prefix to be set"
             raise ValueError(msg)
 
-        self._pyencryptionproperties = PyFileEncryptionProperties(
+        self._pyencryption = PyFileEncryptionProperties(
             footer_key,
             column_keys_list,
             plaintext_footer,

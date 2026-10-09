@@ -158,9 +158,7 @@ def _sink_parquet_plan(
         data_page_size=data_page_size,
         metadata=metadata,
         arrow_schema=arrow_schema,
-        encryption_properties=(
-            encryption._pyencryptionproperties if encryption is not None else None
-        ),
+        encryption=(encryption._pyencryption if encryption is not None else None),
     )
     return wrap_ldf(ldf_py)
 

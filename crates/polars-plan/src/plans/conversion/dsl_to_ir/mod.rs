@@ -1568,8 +1568,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         }
 
                         if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
-                            && let Some(encryption_properties) =
-                                &parquet_options.encryption_properties
+                            && let Some(encryption) = &parquet_options.encryption
                             && let PartitionStrategyIR::Keyed {
                                 keys,
                                 include_keys: _,
@@ -1577,7 +1576,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             } = &options.partition_strategy
                         {
                             validate_encrypted_partition_keys(
-                                &encryption_properties.0,
+                                &encryption.encrypted_column_names(),
                                 keys.iter().map(|e| e.output_name().as_str()),
                             )?;
                         }
@@ -1903,21 +1902,18 @@ pub(crate) fn maybe_init_projection_excluding_hive(
 /// unencrypted in the file paths.
 #[cfg(feature = "parquet")]
 fn validate_encrypted_partition_keys<'a>(
-    encryption_properties: &polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties,
+    encrypted_columns: &[String],
     key_names: impl Iterator<Item = &'a str>,
 ) -> PolarsResult<()> {
     for key_name in key_names {
         // Column keys are for Parquet column paths, which are nested under the key name
         // for a struct key.
-        if let Some(column) = encryption_properties
-            .encrypted_column_names()
-            .find(|column| {
-                *column == key_name
-                    || column
-                        .strip_prefix(key_name)
-                        .is_some_and(|rest| rest.starts_with('.'))
-            })
-        {
+        if let Some(column) = encrypted_columns.iter().map(String::as_str).find(|column| {
+            *column == key_name
+                || column
+                    .strip_prefix(key_name)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        }) {
             let reason = if column == key_name {
                 "it is a partition key".to_string()
             } else {

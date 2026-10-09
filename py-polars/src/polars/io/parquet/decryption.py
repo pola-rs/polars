@@ -58,7 +58,7 @@ class ParquetDecryptionProperties:
         if aad_prefix is not None:
             _check_bytes(aad_prefix, "aad_prefix")
 
-        self._pydecryptionproperties = PyFileDecryptionProperties(
+        self._pydecryption = PyFileDecryptionProperties(
             footer_key,
             column_keys_list,
             aad_prefix,
