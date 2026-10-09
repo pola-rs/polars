@@ -91,8 +91,6 @@ impl FilterExec {
         Ok(accumulate_dataframes_vertical_unchecked(df))
     }
 
-    /// Evaluate the predicate in parallel over row slices, but filter horizontally so the
-    /// output keeps a single chunk per column (as the sequential path does).
     fn execute_vertical_mask(
         &mut self,
         df: DataFrame,
