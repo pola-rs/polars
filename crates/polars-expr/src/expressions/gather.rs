@@ -3,7 +3,6 @@ use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_ops::prelude::lst_get;
 use polars_ops::series::convert_and_bound_index;
-use polars_utils::index::ToIdx;
 
 use super::*;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
@@ -59,54 +58,36 @@ impl PhysicalExpr for GatherExpr {
         }
 
         // Cast the indices to
-        // - IdxSize, if the idx only contains positive integers.
-        // - Int64,   if the idx contains negative numbers.
-        // This may give false positives if there are masked out elements.
-        // With `null_on_oob`, the indices are not cast, as a cast could wrap a large index
-        // into the bounds.
+        // - IdxSize, if they all fit.
+        // - Int64,   if they all fit, e.g. if some are negative.
+        // Else they keep their type. Masked out elements may give a slower path.
         let idx = idx.aggregated_as_list();
         let idx = if self.null_on_oob {
             idx.into_owned()
         } else {
-            idx.apply_to_inner(&|s| match s.dtype() {
-                dtype if dtype == &IDX_DTYPE => Ok(s),
-                dtype if dtype.is_unsigned_integer() => {
-                    s.cast_with_options(&IDX_DTYPE, CastOptions::Strict)
-                },
-
-                dtype if dtype.is_signed_integer() => {
-                    let has_negative_integers = s.lt(0)?.any();
-                    if has_negative_integers && dtype == &DataType::Int64 {
-                        Ok(s)
-                    } else if has_negative_integers {
-                        s.cast_with_options(&DataType::Int64, CastOptions::Strict)
-                    } else {
-                        s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
-                    }
-                },
-                _ => polars_bail!(
+            idx.apply_to_inner(&|s| {
+                polars_ensure!(
+                    s.dtype().is_integer(),
                     op = "gather/get",
                     got = s.dtype(),
                     expected = "integer type"
-                ),
+                );
+                // The range is checked first, so the casts don't wrap.
+                let min_max = s.min::<i128>()?.zip(s.max::<i128>()?);
+                let fits =
+                    |lo: i128, hi: i128| min_max.is_some_and(|(min, max)| lo <= min && max <= hi);
+                if fits(0, IdxSize::MAX as i128) {
+                    s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
+                } else if fits(i64::MIN as i128, i64::MAX as i128) {
+                    s.cast_with_options(&DataType::Int64, CastOptions::Overflowing)
+                } else {
+                    Ok(s)
+                }
             })?
         };
 
-        let taken = if self.null_on_oob {
-            ac_list
-                .amortized_iter()
-                .zip(idx.amortized_iter())
-                .map(|(s, idx)| {
-                    let s = s?;
-                    let idx = convert_and_bound_index(idx?.as_ref(), s.as_ref().len(), true);
-                    Some(idx.and_then(|idx| s.as_ref().take(&idx)))
-                })
-                .map(|opt_res| opt_res.transpose())
-                .collect::<PolarsResult<ListChunked>>()?
-                .with_name(ac.get_values().name().clone())
-        } else if idx.inner_dtype() == &IDX_DTYPE {
+        let taken = if !self.null_on_oob && idx.inner_dtype() == &IDX_DTYPE {
             // Fast path: all indices are positive.
-
             ac_list
                 .amortized_iter()
                 .zip(idx.amortized_iter())
@@ -114,10 +95,8 @@ impl PhysicalExpr for GatherExpr {
                 .map(|opt_res| opt_res.transpose())
                 .collect::<PolarsResult<ListChunked>>()?
                 .with_name(ac.get_values().name().clone())
-        } else {
-            // Slower path: some indices may be negative.
-            assert!(idx.inner_dtype() == &DataType::Int64);
-
+        } else if !self.null_on_oob && idx.inner_dtype() == &DataType::Int64 {
+            // Slower path: some indices are negative.
             ac_list
                 .amortized_iter()
                 .zip(idx.amortized_iter())
@@ -125,9 +104,26 @@ impl PhysicalExpr for GatherExpr {
                     let s = s?;
                     let idx = idx?;
                     let idx = idx.as_ref().i64().unwrap();
-                    let target_len = s.as_ref().len() as u64;
-                    let idx = unary_elementwise_values(idx, |v| v.to_idx(target_len));
+                    let len = s.as_ref().len() as i64;
+                    // An index that is out of bounds becomes `len`, so `take` raises.
+                    let idx = unary_elementwise_values(idx, |v| {
+                        let v = if v < 0 { v + len } else { v };
+                        (if (0..len).contains(&v) { v } else { len }) as IdxSize
+                    });
                     Some(s.as_ref().take(&idx))
+                })
+                .map(|opt_res| opt_res.transpose())
+                .collect::<PolarsResult<ListChunked>>()?
+                .with_name(ac.get_values().name().clone())
+        } else {
+            ac_list
+                .amortized_iter()
+                .zip(idx.amortized_iter())
+                .map(|(s, idx)| {
+                    let s = s?;
+                    let idx =
+                        convert_and_bound_index(idx?.as_ref(), s.as_ref().len(), self.null_on_oob);
+                    Some(idx.and_then(|idx| s.as_ref().take(&idx)))
                 })
                 .map(|opt_res| opt_res.transpose())
                 .collect::<PolarsResult<ListChunked>>()?

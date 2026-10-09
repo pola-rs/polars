@@ -98,6 +98,11 @@ fn cast_impl_inner(
         _ => cast_chunks(chunks, &dtype.to_physical(), options)?,
     };
 
+    // `Series::try_from` reads `LargeBinary` arrays as `Binary`.
+    if dtype == &DataType::BinaryOffset {
+        return Ok(unsafe { BinaryOffsetChunked::from_chunks(name, chunks) }.into_series());
+    }
+
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
