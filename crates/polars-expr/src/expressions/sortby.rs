@@ -65,7 +65,7 @@ fn check_groups(groups_in: &GroupsType, groups_by: &GroupsType) -> PolarsResult<
         .find(|(g_in, g_by)| g_in.len() != g_by.len())
     {
         polars_bail!(
-            ShapeMismatch: "{ERR_MSG} (got a group with {} values to sort but {} values in `by`)",
+            ShapeMismatch: "{ERR_MSG} (got a group of length {} to sort but length {} in `by`)",
             g_in.len(), g_by.len()
         );
     }
