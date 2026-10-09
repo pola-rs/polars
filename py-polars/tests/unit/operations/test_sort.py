@@ -1388,6 +1388,35 @@ def test_sort_by_empty_list_eval_25433() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_sort_by_empty_list_eval_multiple_by_25433() -> None:
+    some_list = [2, 1, 3]
+    df = pl.DataFrame({"a": [some_list, []]})
+    out = df.select(
+        pl.col.a.list.eval(pl.element().sort_by(pl.element(), pl.element() * 2))
+    )
+    expected = pl.DataFrame({"a": [sorted(some_list), []]})
+    assert_frame_equal(out, expected)
+
+
+def test_sort_by_empty_group_multiple_by_25433() -> None:
+    df = pl.DataFrame(
+        {
+            "k": [0, 0, 1, 1],
+            "a": [11, 10, 20, 21],
+            "b": [1, 1, None, None],
+        }
+    )
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.col("a")
+        .filter(pl.col("b").is_not_null())
+        .sort_by(
+            pl.col("b").filter(pl.col("b").is_not_null()),
+            pl.col("a").filter(pl.col("b").is_not_null()),
+        )
+    )
+    assert out["a"].to_list() == [[10, 11], []]
+
+
 def test_sort_already_sorted_no_rechunk_25733() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     df2 = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
