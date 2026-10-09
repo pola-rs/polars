@@ -6328,6 +6328,131 @@ def test_scan_iceberg_initial_default_identity_partition_added_later(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_filter_struct_fields_swapped(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(
+                1,
+                "st",
+                StructType(
+                    NestedField(2, "x", IntegerType()),
+                    NestedField(3, "y", IntegerType()),
+                ),
+            )
+        ),
+    )
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"st": {"x": 1, "y": None}}, {"st": {"x": 2, "y": None}}],
+            schema=tbl.schema().as_arrow(),
+        )
+    )
+    # Swap the names: the file's null counts of `x` are those of the table's `y`.
+    with tbl.update_schema() as update:
+        update.rename_column("st.x", "tmp")
+    with tbl.update_schema() as update:
+        update.rename_column("st.y", "x")
+    with tbl.update_schema() as update:
+        update.rename_column("st.tmp", "y")
+
+    df = pl.DataFrame(
+        {"st": [{"y": 1, "x": None}, {"y": 2, "x": None}]},
+        schema={"st": pl.Struct({"y": pl.Int32, "x": pl.Int32})},
+    )
+    f = pl.col("st").struct.field
+    for predicate in [
+        f("x").is_null(),
+        f("y").is_not_null(),
+        f("y") == 1,
+        f("x").is_not_null(),
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(), df.filter(predicate)
+        )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_filter_float_identity_partition_changed(tmp_path: Path) -> None:
+    from pyiceberg.types import DoubleType
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "f", DoubleType()), NestedField(2, "i", LongType())
+        ),
+    )
+    tbl.append(pl.DataFrame({"f": [1.0], "i": [1]}).to_arrow())
+    with tbl.update_spec() as update:
+        update.add_identity("f")
+    tbl.append(pl.DataFrame({"f": [100.0], "i": [2]}).to_arrow())
+    with tbl.update_spec() as update:
+        update.remove_field("f")
+    tbl.append(pl.DataFrame({"f": [200.0], "i": [3]}).to_arrow())
+
+    df = pl.DataFrame({"f": [1.0, 100.0, 200.0], "i": [1, 2, 3]})
+    for predicate in [pl.col("f") > 50, (pl.col("f") == 1.0) | (pl.col("i") == 3)]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_scan_iceberg_reader_pyiceberg_negative_slice(
+    tmp_path: Path, engine: EngineType
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    for i in range(3):
+        tbl.append(pl.DataFrame({"a": [i]}).to_arrow())
+
+    lf = pl.scan_iceberg(tbl, reader_override="pyiceberg")
+    df = lf.collect()
+    assert df.height == 3
+
+    assert_frame_equal(lf.tail(2).collect(engine=engine), df.tail(2))
+    assert_frame_equal(lf.slice(-2, 1).collect(engine=engine), df.slice(-2, 1))
+    assert lf.tail(2).select(pl.len()).collect(engine=engine).item() == 2
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_reader_pyiceberg_filter_nested_columns(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(
+                2, "m", MapType(3, StringType(), 4, LongType(), value_required=False)
+            ),
+            NestedField(5, "li", ListType(6, LongType(), element_required=False)),
+        ),
+    )
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"a": 1, "m": None, "li": None}, {"a": 2, "m": [("k", 1)], "li": [1]}],
+            schema=tbl.schema().as_arrow(),
+        )
+    )
+    df = pl.DataFrame(tbl.scan().to_arrow())
+
+    for predicate in [
+        pl.col("m").is_null(),
+        pl.col("li").is_null(),
+        pl.col("li").is_not_null() & (pl.col("a") > 0),
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override="pyiceberg")
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+        )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_reader_pyiceberg_time_travel_filter(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
         tmp_path,

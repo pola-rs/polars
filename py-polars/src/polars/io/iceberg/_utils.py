@@ -489,6 +489,9 @@ def filter_for_pyiceberg_reader(
                 field = schema.find_field(e.term.name, case_sensitive=True)
             except ValueError:
                 return None
+            if not field.field_type.is_primitive:
+                # PyIceberg cannot project list / map columns for row filters.
+                return None
             if isinstance(field.field_type, (FloatType, DoubleType)):
                 literals = [
                     *getattr(e, "literals", ()),
@@ -898,10 +901,15 @@ class IcebergColumnStatisticsLoader:
         ).to_frame()
 
         if self.load_from_bytes_impl is None:
+            # Can be shorter if the identity partition field was removed.
             s = (
-                identity_transformed_values
+                identity_transformed_values.extend_constant(
+                    None, expected_height - identity_transformed_values.len()
+                )
                 if identity_transformed_values is not None
-                else pl.repeat(None, expected_height, dtype=self.column_dtype)
+                else pl.repeat(
+                    None, expected_height, dtype=self.column_dtype, eager=True
+                )
             )
 
             return out.with_columns(s.alias(f"{c}_min"), s.alias(f"{c}_max"))

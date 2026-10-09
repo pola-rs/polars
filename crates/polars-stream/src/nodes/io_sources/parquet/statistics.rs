@@ -188,6 +188,18 @@ async fn static_skip_mask(
             // that it may set the column name.
             statistics.min = projection.apply_transform(statistics.min)?;
             statistics.max = projection.apply_transform(statistics.max)?;
+            // The null counts of struct fields have the file's field layout. The transform may
+            // reorder, rename or insert fields (e.g. by field ID), and casts the leaves, so it
+            // does not apply to them: use unknown null counts.
+            if let ArrowFieldProjection::Mapped { output_dtype, .. } = projection
+                && matches!(projection.arrow_field().dtype(), ArrowDataType::Struct(_))
+            {
+                statistics.null_count = Column::full_null(
+                    PlSmallStr::EMPTY,
+                    statistics.null_count.len(),
+                    &null_count_dtype(output_dtype),
+                );
+            }
 
             let statistics = statistics.with_base_column_name(c);
 
