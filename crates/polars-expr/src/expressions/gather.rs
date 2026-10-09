@@ -1,3 +1,4 @@
+use num_traits::Zero;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
@@ -80,23 +81,32 @@ impl PhysicalExpr for GatherExpr {
                 // The range is checked first, so the casts don't wrap. Only scan for the
                 // bounds that the dtype doesn't already give.
                 let dtype_max = dtype.max()?.value().extract::<u128>().unwrap();
-                let (min, max) = match (dtype.is_signed_integer(), dtype_max > IdxSize::MAX as u128)
-                {
-                    (false, false) => (0, dtype_max as i128),
-                    (true, false) => (s.min::<i128>()?.unwrap_or(0), dtype_max as i128),
-                    (false, true) => {
-                        let max = s.max::<u128>()?.unwrap_or(0);
-                        (0, i128::try_from(max).unwrap_or(i128::MAX))
-                    },
-                    (true, true) => with_match_physical_integer_polars_type!(dtype, |$T| {
+                let has_negative = dtype.is_signed_integer()
+                    && with_match_physical_integer_polars_type!(dtype, |$T| {
+                        has_negative::<$T>(s.as_ref().as_ref())
+                    });
+                if !has_negative {
+                    let max = if dtype_max <= IdxSize::MAX as u128 {
+                        dtype_max
+                    } else {
+                        s.max::<u128>()?.unwrap_or(0)
+                    };
+                    return if max <= IdxSize::MAX as u128 {
+                        s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
+                    } else if max <= i64::MAX as u128 {
+                        s.cast_with_options(&DataType::Int64, CastOptions::Overflowing)
+                    } else {
+                        Ok(s)
+                    };
+                }
+                let fits_i64 = dtype_max <= i64::MAX as u128
+                    || with_match_physical_integer_polars_type!(dtype, |$T| {
                         let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
-                        ca.min_max().map_or((0, 0), |(min, max)| (min as i128, max as i128))
-                    }),
-                };
-                let fits = |lo: i128, hi: i128| lo <= min && max <= hi;
-                if fits(0, IdxSize::MAX as i128) {
-                    s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
-                } else if fits(i64::MIN as i128, i64::MAX as i128) {
+                        ca.min_max().is_some_and(|(min, max)| {
+                            i64::try_from(min).is_ok() && i64::try_from(max).is_ok()
+                        })
+                    });
+                if fits_i64 {
                     s.cast_with_options(&DataType::Int64, CastOptions::Overflowing)
                 } else {
                     Ok(s)
@@ -160,4 +170,14 @@ impl PhysicalExpr for GatherExpr {
     fn is_scalar(&self) -> bool {
         self.returns_scalar
     }
+}
+
+/// Also checks masked out values. Stops at the first block that has a negative value.
+fn has_negative<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> bool {
+    let zero = T::Native::zero();
+    ca.downcast_iter().any(|arr| {
+        arr.values()
+            .chunks(1024)
+            .any(|block| block.iter().fold(false, |acc, v| acc | (*v < zero)))
+    })
 }
