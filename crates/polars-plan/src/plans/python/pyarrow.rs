@@ -162,7 +162,10 @@ fn series_to_pyarrow_list(s: &Series) -> Option<String> {
                 write!(list_repr, "{v:?},").unwrap();
             },
             av if any_value_dtype(&av).is_some_and(|dt| dt.is_integer()) => {
-                write!(list_repr, "{av},").unwrap();
+                // Not `{av}`: `AnyValue`'s `Display` inserts the configured
+                // thousands separator (`1,000`).
+                let v = av.extract::<i128>()?;
+                write!(list_repr, "{v},").unwrap();
             },
             _ => return None,
         }

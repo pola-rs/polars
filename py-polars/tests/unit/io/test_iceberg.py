@@ -5238,6 +5238,28 @@ def test_scan_iceberg_is_in_pushdown(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_is_in_pushdown_thousands_separator(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+    catalog.create_table(
+        "namespace.table", IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    tbl = catalog.load_table("namespace.table")
+    for v in [1000, 2000, 5]:
+        pl.DataFrame({"a": [v]}).write_iceberg(tbl, mode="append")
+
+    # The pushed-down list must not be rendered as `[1,000,2,000]`.
+    with pl.Config(thousands_separator=","):
+        result = pl.scan_iceberg(tbl).filter(pl.col("a").is_in([1000, 2000])).collect()
+
+    assert sorted(result["a"].to_list()) == [1000, 2000]
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_row_estimate(
     tmp_path: Path,
     write_position_deletes: WritePositionDeletes,  # noqa: F811
@@ -6325,6 +6347,57 @@ def test_scan_iceberg_initial_default_identity_partition_added_later(
     assert_frame_equal(
         pl.scan_iceberg(tbl).filter(pl.col("region") == "EU").collect(), expect
     )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_initial_default_null_identity_partition_value(
+    tmp_path: Path,
+) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "old", StringType())
+        ),
+    )
+    tbl.append(pa.table({"a": [1], "old": ["x"]}, schema=tbl.schema().as_arrow()))
+    with tbl.update_spec() as update:
+        update.add_identity("old")
+    tbl = catalog.load_table(tbl.name())
+    tbl.append(pa.table({"a": [2], "old": [None]}, schema=tbl.schema().as_arrow()))
+
+    md_path = Path(
+        tbl.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+    md_object["format-version"] = 3
+    # Replace `old` by a new field `region`, which no file has. Its identity
+    # partition (moved over) is null for the second file.
+    md_object["schemas"][-1]["fields"][1] = {
+        "id": 3,
+        "name": "region",
+        "required": False,
+        "type": "string",
+        "initial-default": "EU",
+    }
+    md_object["last-column-id"] = 3
+    for spec in md_object["partition-specs"]:
+        for field in spec["fields"]:
+            field["source-id"] = 3
+            field["name"] = "region"
+    md_path.write_text(json.dumps(md_object))
+    tbl = catalog.load_table(tbl.name())
+
+    # The file of the unpartitioned spec takes the `initial-default`, and the
+    # file with a null identity partition value is null.
+    expect = pl.DataFrame({"a": [1, 2], "region": ["EU", None]})
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("a"), expect)
+    for predicate in [pl.col("region").is_null(), pl.col("region") == "EU"]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(),
+            expect.filter(predicate),
+        )
 
 
 @pytest.mark.write_disk

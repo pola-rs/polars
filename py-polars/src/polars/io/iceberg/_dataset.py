@@ -781,7 +781,15 @@ class IcebergScanResolver:
                 source_sizes=source_sizes,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
-                default_values=(identity_transformed_values, initial_defaults),
+                default_values=(
+                    IdentityTransformedPartitionValuesBuilder.fill_absent_with_initial_defaults(
+                        identity_transformed_values,
+                        missing_field_defaults.present_indices,
+                        initial_defaults,
+                        len(sources),
+                    ),
+                    initial_defaults,
+                ),
                 position_delete_files=position_delete_files,
                 deletion_vectors=deletion_vectors,
                 min_max_statistics=min_max_statistics,

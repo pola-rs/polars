@@ -700,6 +700,8 @@ class IdentityTransformedPartitionValuesBuilder:
         # Logical types will have length-2 list [<constructor type>, <cast type>].
         # E.g. for Datetime it will be [Int64, Datetime]
         self.partition_values_dtypes: dict[int, pl.DataType] = {}
+        # {source_field_id: indices of files whose spec has the identity field}
+        self.present_indices: dict[int, list[int]] = {}
 
         # {spec_id: [partition_value_index, source_field_id]}
         self.partition_spec_id_to_identity_transforms: dict[
@@ -785,6 +787,7 @@ class IdentityTransformedPartitionValuesBuilder:
 
         for i, source_field_id in identity_transforms:
             partition_value = partition_values[i]
+            self.present_indices.setdefault(source_field_id, []).append(current_index)
 
             if isinstance(values := self.partition_values[source_field_id], list):
                 # extend() - there can be gaps from partitions being
@@ -839,6 +842,45 @@ class IdentityTransformedPartitionValuesBuilder:
 
                 except Exception as e:
                     out[field_id] = f"failed to load partition values: {e}"
+
+        return out
+
+    @staticmethod
+    def fill_absent_with_initial_defaults(
+        values: dict[int, pl.Series | str],
+        present_indices: dict[int, list[int]],
+        initial_defaults: dict[int, pl.Series],
+        num_sources: int,
+    ) -> dict[int, pl.Series | str]:
+        """
+        Fill the values of files whose spec lacks the identity field.
+
+        A null value of a spec with the identity field is a null, and files of
+        specs without it take the `initial-default`.
+        """
+        import polars as pl
+
+        out = dict(values)
+
+        for field_id, v in values.items():
+            if not isinstance(v, pl.Series) or (
+                (default := initial_defaults.get(field_id)) is None
+            ):
+                continue
+
+            present = pl.Series([False] * num_sources, dtype=pl.Boolean).scatter(
+                present_indices.get(field_id, []), True
+            )
+
+            out[field_id] = (
+                pl.select(
+                    pl.when(present)
+                    .then(v.extend_constant(None, num_sources - v.len()))
+                    .otherwise(pl.lit(default.cast(v.dtype)))
+                )
+                .to_series()
+                .rename(v.name)
+            )
 
         return out
 
