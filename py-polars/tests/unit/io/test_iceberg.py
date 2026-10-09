@@ -6482,6 +6482,45 @@ def test_scan_iceberg_filter_not_in_one_value_nulls_equal(
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("reader_override", [None, "pyiceberg"])
+@pytest.mark.parametrize("width", [3, 10])
+def test_scan_iceberg_filter_truncate_partition_type_minimum(
+    tmp_path: Path, reader_override: Literal["pyiceberg"] | None, width: int
+) -> None:
+    # The truncated value of the type's minimum wraps to a large positive value.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "x", IntegerType())),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, TruncateTransform(width), "x_trunc")
+        ),
+    )
+    for v in [-(2**31), -1, 0, 15]:
+        tbl.append(pl.DataFrame({"x": [v]}, schema={"x": pl.Int32}).to_arrow())
+    with tbl.update_schema() as update:
+        update.update_column("x", LongType())
+    tbl.append(pl.DataFrame({"x": [-(2**63), 5]}).to_arrow())
+
+    df = pl.DataFrame({"x": [-(2**31), -1, 0, 15, -(2**63), 5]})
+
+    for predicate in [
+        pl.col("x") < 0,
+        pl.col("x") <= -5,
+        pl.col("x") == -(2**31),
+        pl.col("x") == -(2**63),
+        pl.col("x").is_in([-(2**31), 15]),
+        pl.col("x") >= 10,
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override=reader_override)
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", [None, "pyiceberg"])
 def test_scan_iceberg_filter_categorical_literal(
     tmp_path: Path, reader_override: Literal["pyiceberg"] | None
 ) -> None:

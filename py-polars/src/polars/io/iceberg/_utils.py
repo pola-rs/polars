@@ -543,6 +543,98 @@ def filter_for_scan_schema(
     return None
 
 
+def filter_for_truncate_overflow(
+    expr: pyiceberg.expressions.BooleanExpression,
+    table: Table,
+) -> pyiceberg.expressions.BooleanExpression | None:
+    """
+    The filter to plan a scan with PyIceberg, or None.
+
+    Writers (Java, PyIceberg) truncate integers within the width of the type's minimum
+    with a wrapping subtraction, giving a large positive partition value, which
+    PyIceberg prunes for predicates on these integers. Such predicates on columns with
+    `truncate` partition fields are left out.
+    """
+    from pyiceberg.expressions import (
+        AlwaysTrue,
+        And,
+        EqualTo,
+        GreaterThan,
+        GreaterThanOrEqual,
+        In,
+        IsNull,
+        NotNull,
+        Or,
+        Reference,
+        UnboundPredicate,
+    )
+    from pyiceberg.expressions.literals import Literal
+    from pyiceberg.expressions.visitors import rewrite_not
+    from pyiceberg.transforms import TruncateTransform
+    from pyiceberg.types import IntegerType, LongType
+
+    # Field ID → smallest value whose truncated value is not wrapped.
+    min_unwrapped: dict[int, int] = {}
+
+    for spec in table.specs().values():
+        for partition_field in spec.fields:
+            if not isinstance(partition_field.transform, TruncateTransform):
+                continue
+
+            for schema in table.schemas().values():
+                try:
+                    field_type = schema.find_field(partition_field.source_id).field_type
+                except ValueError:
+                    continue
+
+                if isinstance(field_type, (IntegerType, LongType)):
+                    bits = 32 if isinstance(field_type, IntegerType) else 64
+                    min_unwrapped[partition_field.source_id] = max(
+                        min_unwrapped.get(partition_field.source_id, -(2**63)),
+                        -(2 ** (bits - 1)) + partition_field.transform.width,
+                    )
+
+    if not min_unwrapped:
+        return expr
+
+    current_schema = table.schema()
+
+    def matches_only_unwrapped(e: UnboundPredicate, min_value: int) -> bool:
+        if isinstance(e, (IsNull, NotNull)):
+            return True
+        if not isinstance(e, (EqualTo, In, GreaterThan, GreaterThanOrEqual)):
+            return False
+        literals = [
+            *getattr(e, "literals", ()),
+            *([e.literal] if hasattr(e, "literal") else []),
+        ]
+        return all(
+            isinstance(v := (lit.value if isinstance(lit, Literal) else lit), int)
+            and v >= min_value
+            for lit in literals
+        )
+
+    def visit(
+        e: pyiceberg.expressions.BooleanExpression,
+    ) -> pyiceberg.expressions.BooleanExpression:
+        if isinstance(e, (And, Or)):
+            return type(e)(visit(e.left), visit(e.right))
+        if isinstance(e, UnboundPredicate) and isinstance(e.term, Reference):
+            try:
+                field_id = current_schema.find_field(
+                    e.term.name, case_sensitive=True
+                ).field_id
+            except ValueError:
+                return e
+            min_value = min_unwrapped.get(field_id)
+            if min_value is not None and not matches_only_unwrapped(e, min_value):
+                return AlwaysTrue()
+        return e
+
+    out = visit(rewrite_not(expr))
+    return None if isinstance(out, AlwaysTrue) else out
+
+
 def filter_with_nan_ordering(
     expr: pyiceberg.expressions.BooleanExpression,
     schema: pyiceberg.schema.Schema,

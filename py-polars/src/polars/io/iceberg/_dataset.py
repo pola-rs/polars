@@ -26,6 +26,7 @@ from polars.io.iceberg._utils import (
     extract_field_initial_default,
     filter_for_pyiceberg_reader,
     filter_for_scan_schema,
+    filter_for_truncate_overflow,
     filter_with_nan_ordering,
     try_convert_pyarrow_predicate,
 )
@@ -486,6 +487,11 @@ class IcebergScanResolver:
         ):
             iceberg_table_filter = filter_for_scan_schema(
                 iceberg_table_filter, iceberg_schema, tbl.schema()
+            )
+
+        if iceberg_table_filter is not None:
+            iceberg_table_filter = filter_for_truncate_overflow(
+                iceberg_table_filter, tbl
             )
 
         fallback_reason = (
