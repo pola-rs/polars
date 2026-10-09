@@ -404,3 +404,15 @@ def test_filter_zero_width_input_29320() -> None:
         empty.filter(pl.lit(pl.Series([True, False, True]))).collect(),
         zero_width(2),
     )
+
+
+def test_filter_wide_frame_single_chunk() -> None:
+    # Wide frames are filtered with vertical parallelism; the output must not be
+    # fragmented into one chunk per thread.
+    width = pl.thread_pool_size() + 1
+    df = pl.DataFrame({f"c{i}": range(1_000) for i in range(width)}).with_columns(
+        m=pl.col("c0") % 2 == 0
+    )
+    out = df.filter(pl.col("m"))
+    assert out.n_chunks("all") == [1] * (width + 1)
+    assert_frame_equal(out, df.filter(df.get_column("m")))
