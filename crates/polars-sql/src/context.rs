@@ -3,6 +3,10 @@ use std::ops::{ControlFlow, Deref};
 use std::sync::{Arc, RwLock};
 
 use polars_core::prelude::*;
+#[cfg(feature = "asof_join")]
+use polars_core::utils::try_get_supertype;
+#[cfg(feature = "asof_join")]
+use polars_defs::join::{AsOfOptions, AsofStrategy};
 use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
 use polars_plan::dsl::function_expr::StructFunction;
@@ -10,6 +14,8 @@ use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
+#[cfg(feature = "asof_join")]
+use sqlparser::ast::visit_expressions;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -1329,6 +1335,24 @@ impl SQLContext {
                             },
                         )?
                     },
+                    #[cfg(feature = "asof_join")]
+                    JoinOperator::AsOf {
+                        match_condition,
+                        constraint,
+                    } => self.process_asof_join(
+                        &TableInfo {
+                            frame: lf,
+                            name: (&l_name).into(),
+                            schema: left_schema.clone(),
+                        },
+                        &TableInfo {
+                            frame: rf,
+                            name: (&r_name).into(),
+                            schema: right_schema.clone(),
+                        },
+                        match_condition,
+                        constraint,
+                    )?,
                     JoinOperator::CrossJoin(JoinConstraint::None) => {
                         lf.cross_join(rf, Some(format_pl_smallstr!(":{}", r_name)))
                     },
@@ -2674,6 +2698,214 @@ impl SQLContext {
         Ok(joined)
     }
 
+    /// Which input an `ASOF JOIN` match operand reads: `Some(true)` for the left input,
+    /// `Some(false)` for the right one, and `None` if all its columns are in both.
+    #[cfg(feature = "asof_join")]
+    fn asof_operand_is_left(
+        &self,
+        expr: &SQLExpr,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> PolarsResult<Option<bool>> {
+        let column_side = |name: &str| match (
+            tbl_left.schema.contains(name),
+            tbl_right.schema.contains(name),
+        ) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            _ => None,
+        };
+        let (mut reads_left, mut reads_right) = (false, false);
+        let _ = visit_expressions(expr, |e| {
+            let side = match e {
+                SQLExpr::Identifier(ident) => column_side(&ident.value),
+                // A table qualifier takes precedence over a struct column of the same name. The
+                // right input is a single relation, so any other relation is in the left input.
+                SQLExpr::CompoundIdentifier(idents) if self.relation_in_scope(&idents[0].value) => {
+                    let name = idents[0].value.as_str();
+                    let is_right = name == tbl_right.name
+                        || (!self.active_relations.contains(name)
+                            && name.eq_ignore_ascii_case(&tbl_right.name));
+                    Some(!is_right)
+                },
+                SQLExpr::CompoundIdentifier(idents) => column_side(&idents[0].value),
+                _ => None,
+            };
+            match side {
+                Some(true) => reads_left = true,
+                Some(false) => reads_right = true,
+                None => {},
+            }
+            ControlFlow::<()>::Continue(())
+        });
+        polars_ensure!(
+            !(reads_left && reads_right),
+            SQLSyntax: "ASOF JOIN MATCH_CONDITION operand {} reads both tables", expr
+        );
+        Ok(match (reads_left, reads_right) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        })
+    }
+
+    /// `ASOF JOIN r MATCH_CONDITION (l.t >= r.t) [ON l.k = r.k AND ... | USING (k, ...)]`.
+    ///
+    /// Every left row is kept, paired with the closest right row that satisfies the match
+    /// condition and has equal keys, or with nulls if there is none.
+    #[cfg(feature = "asof_join")]
+    fn process_asof_join(
+        &mut self,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+        match_condition: &SQLExpr,
+        constraint: &JoinConstraint,
+    ) -> PolarsResult<LazyFrame> {
+        let mut condition = match_condition;
+        while let SQLExpr::Nested(inner) = condition {
+            condition = inner;
+        }
+        let SQLExpr::BinaryOp { left, op, right } = condition else {
+            polars_bail!(
+                SQLSyntax: "ASOF JOIN MATCH_CONDITION must be a single `>=`, `>`, `<=` or `<` comparison, found {}",
+                match_condition
+            )
+        };
+        polars_ensure!(
+            matches!(
+                op,
+                SQLBinaryOperator::GtEq
+                    | SQLBinaryOperator::Gt
+                    | SQLBinaryOperator::LtEq
+                    | SQLBinaryOperator::Lt
+            ),
+            SQLSyntax: "ASOF JOIN MATCH_CONDITION must be a single `>=`, `>`, `<=` or `<` comparison, found {}",
+            match_condition
+        );
+        polars_ensure!(
+            expr_references_any_column(left) && expr_references_any_column(right),
+            SQLSyntax: "ASOF JOIN MATCH_CONDITION must compare a column of each table, found {}",
+            match_condition
+        );
+        let left_is_left = match (
+            self.asof_operand_is_left(left, tbl_left, tbl_right)?,
+            self.asof_operand_is_left(right, tbl_left, tbl_right)?,
+        ) {
+            (Some(l), Some(r)) if l != r => l,
+            (Some(l), None) => l,
+            (None, Some(r)) => !r,
+            (Some(_), Some(_)) => polars_bail!(
+                SQLSyntax: "ASOF JOIN MATCH_CONDITION must compare a column of each table, found {}",
+                match_condition
+            ),
+            (None, None) => polars_bail!(
+                SQLSyntax: "ASOF JOIN MATCH_CONDITION is ambiguous, qualify its columns with their table name: {}",
+                match_condition
+            ),
+        };
+        let swapped = !left_is_left;
+        let (left_operand, right_operand) = if swapped {
+            (right, left)
+        } else {
+            (left, right)
+        };
+        let left_on =
+            strip_join_aliases(parse_sql_expr(left_operand, self, Some(&tbl_left.schema))?);
+        let right_on = strip_join_aliases(parse_sql_expr(
+            right_operand,
+            self,
+            Some(&tbl_right.schema),
+        )?);
+        let (strategy, allow_eq) = match (op, swapped) {
+            (SQLBinaryOperator::GtEq, false) | (SQLBinaryOperator::LtEq, true) => {
+                (AsofStrategy::Backward, true)
+            },
+            (SQLBinaryOperator::Gt, false) | (SQLBinaryOperator::Lt, true) => {
+                (AsofStrategy::Backward, false)
+            },
+            (SQLBinaryOperator::LtEq, false) | (SQLBinaryOperator::GtEq, true) => {
+                (AsofStrategy::Forward, true)
+            },
+            _ => (AsofStrategy::Forward, false),
+        };
+
+        let (left_by, right_by) = match constraint {
+            JoinConstraint::None => (vec![], vec![]),
+            _ => {
+                let (left_by, right_by, predicates) =
+                    process_join_constraint(constraint, tbl_left, tbl_right, self)?;
+                polars_ensure!(
+                    predicates.is_empty(),
+                    SQLSyntax: "ASOF JOIN only supports `=` conditions in ON; the inequality goes in MATCH_CONDITION"
+                );
+                (left_by, right_by)
+            },
+        };
+        for e in [&left_on, &right_on]
+            .into_iter()
+            .chain(&left_by)
+            .chain(&right_by)
+        {
+            reject_unresolved_subquery(e, "ASOF JOIN")?;
+        }
+
+        let to_supertype = |l: Expr, r: Expr| -> PolarsResult<(Expr, Expr)> {
+            let l_dtype = l.to_field(&tbl_left.schema)?.dtype;
+            let r_dtype = r.to_field(&tbl_right.schema)?.dtype;
+            asof_key_pair(l, &l_dtype, r, &r_dtype)
+        };
+
+        // `by` keys are column names, so each key pair is computed into a temporary column
+        // that is dropped after the join.
+        let mut left = tbl_left.frame.clone();
+        let mut right = tbl_right.frame.clone();
+        let mut by_names = Vec::with_capacity(left_by.len());
+        for (l, r) in left_by.into_iter().zip(right_by) {
+            let (l, r) = to_supertype(l, r)?;
+            let name = loop {
+                let name = unique_column_name();
+                if !tbl_left.schema.contains(&name) && !tbl_right.schema.contains(&name) {
+                    break name;
+                }
+            };
+            left = left.with_column(l.alias(name.clone()));
+            right = right.with_column(r.alias(name.clone()));
+            by_names.push(name);
+        }
+
+        // Both inputs must be sorted on the match key.
+        let (left_on, right_on) = to_supertype(left_on, right_on)?;
+        let left = left.sort_by_exprs([left_on.clone()], SortMultipleOptions::default());
+        let right = right.sort_by_exprs([right_on.clone()], SortMultipleOptions::default());
+
+        let has_by = !by_names.is_empty();
+        let joined = left
+            .join_builder()
+            .with(right)
+            .left_on([left_on])
+            .right_on([right_on])
+            .how(JoinType::AsOf(Box::new(AsOfOptions {
+                strategy,
+                tolerance: None,
+                tolerance_str: None,
+                left_by: has_by.then(|| by_names.clone()),
+                right_by: has_by.then(|| by_names.clone()),
+                allow_eq,
+                check_sortedness: false,
+            })))
+            .suffix(format!(":{}", tbl_right.name))
+            .coalesce(JoinCoalesce::KeepColumns)
+            .finish()?;
+        Ok(if has_by {
+            joined.drop(Selector::ByName {
+                names: Arc::from(by_names),
+                strict: true,
+            })
+        } else {
+            joined
+        })
+    }
+
     /// Process implicit (comma-separated) joins from `FROM t1, t2, ...` syntax.
     ///
     /// Extracts join predicates from the WHERE clause, joining each additional table with
@@ -3989,6 +4221,56 @@ fn object_name_to_string(name: &ObjectName) -> String {
         .join(".")
 }
 
+/// Casts an `ASOF JOIN` key pair to one dtype. Temporal keys of different dtypes become Int128
+/// counts of the finest time unit: a common temporal dtype would lose either precision (with the
+/// coarser unit) or range (with the finer unit).
+#[cfg(feature = "asof_join")]
+fn asof_key_pair(
+    l: Expr,
+    l_dtype: &DataType,
+    r: Expr,
+    r_dtype: &DataType,
+) -> PolarsResult<(Expr, Expr)> {
+    if l_dtype == r_dtype {
+        return Ok((l, r));
+    }
+    let supertype = try_get_supertype(l_dtype, r_dtype)?;
+    if !matches!(supertype, DataType::Datetime(..) | DataType::Duration(_)) {
+        return Ok((l.cast(supertype.clone()), r.cast(supertype)));
+    }
+    let ticks_per_second = |tu: TimeUnit| -> i64 {
+        match tu {
+            TimeUnit::Nanoseconds => 1_000_000_000,
+            TimeUnit::Microseconds => 1_000_000,
+            TimeUnit::Milliseconds => 1_000,
+        }
+    };
+    let unit = [l_dtype, r_dtype]
+        .into_iter()
+        .filter_map(|dtype| match dtype {
+            DataType::Datetime(tu, _) | DataType::Duration(tu) => Some(*tu),
+            _ => None,
+        })
+        .max_by_key(|tu| ticks_per_second(*tu))
+        .unwrap_or(TimeUnit::Milliseconds);
+    let to_ticks = |e: Expr, dtype: &DataType| -> Expr {
+        let (e, ticks_per_value) = match (dtype, &supertype) {
+            (DataType::Datetime(tu, _) | DataType::Duration(tu), _) => {
+                (e, ticks_per_second(unit) / ticks_per_second(*tu))
+            },
+            // Milliseconds hold every date without overflow.
+            (DataType::Date, DataType::Datetime(_, tz)) => (
+                e.cast(DataType::Datetime(TimeUnit::Milliseconds, tz.clone())),
+                ticks_per_second(unit) / ticks_per_second(TimeUnit::Milliseconds),
+            ),
+            (_, DataType::Datetime(_, tz)) => (e.cast(DataType::Datetime(unit, tz.clone())), 1),
+            _ => (e.cast(DataType::Duration(unit)), 1),
+        };
+        e.to_physical().cast(DataType::Int128) * lit(ticks_per_value)
+    };
+    Ok((to_ticks(l, l_dtype), to_ticks(r, r_dtype)))
+}
+
 /// Extract column names from a USING clause in a JoinOperator (if present).
 fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_> {
     use JoinOperator::*;
@@ -4005,7 +4287,11 @@ fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_
         | LeftSemi(JoinConstraint::Using(cols))
         | LeftAnti(JoinConstraint::Using(cols))
         | RightSemi(JoinConstraint::Using(cols))
-        | RightAnti(JoinConstraint::Using(cols)) => Some(cols.iter().filter_map(|c| {
+        | RightAnti(JoinConstraint::Using(cols))
+        | AsOf {
+            constraint: JoinConstraint::Using(cols),
+            ..
+        } => Some(cols.iter().filter_map(|c| {
             c.0.first()
                 .and_then(|p| p.as_ident())
                 .map(|i| i.value.clone())
