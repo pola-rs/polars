@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -150,10 +150,54 @@ def test_series_init_np_temporal_with_nat_15518() -> None:
     assert_series_equal(result, expected)
 
 
-def test_series_init_pandas_timestamp_18127() -> None:
-    result = pl.Series([pd.Timestamp("2000-01-01T00:00:00.123456789", tz="UTC")])
-    # Note: time unit is not (yet) respected, it should be Datetime('ns', 'UTC').
-    assert result.dtype == pl.Datetime("us", "UTC")
+@pytest.mark.parametrize(
+    ("date_string", "tz"),
+    [
+        ("1969-12-31T23:59:59.123456789", None),
+        ("2024-06-01T12:34:56.123456789", "Pacific/Auckland"),
+    ],
+)
+def test_series_init_pandas_timestamp_18127(date_string: str, tz: str | None) -> None:
+    value = pd.Timestamp(date_string, tz=tz)
+    result = pl.Series([None, value])
+
+    assert result.dtype == pl.Datetime("ns", tz)
+    assert result.dt.timestamp("ns").to_list() == [None, value.value]
+
+
+@pytest.mark.skipif(
+    not hasattr(pd.Timestamp, "as_unit"),
+    reason="pandas version does not support Timestamp.as_unit",
+)
+@pytest.mark.parametrize(
+    ("unit", "expected_dtype"),
+    [
+        ("us", pl.Datetime("us", "UTC")),
+        ("ms", pl.Datetime("ms", "UTC")),
+        ("s", pl.Datetime("ms", "UTC")),
+        ("ns", pl.Datetime("ns", "UTC")),
+    ],
+)
+def test_series_init_timestamp_mixed_units_28869(
+    unit: Literal["s", "ms", "us", "ns"], expected_dtype: pl.DataType
+) -> None:
+    value = pd.Timestamp("1969-12-31 23:59:59.123456789", tz="UTC")
+    timestamp = value.as_unit(unit)
+    result = pl.Series([timestamp])
+    assert result.dtype == expected_dtype
+    assert result.dt.timestamp("ns").item() == timestamp.value
+
+
+def test_series_init_timestamp_seconds_overflow_28869() -> None:
+    try:
+        value = pd.Timestamp(2**63 - 1, unit="s")
+        if getattr(value, "unit", None) != "s":
+            pytest.skip("requires a more recent version of pandas")
+    except Exception:
+        pytest.skip("requires a more recent version of pandas")
+
+    with pytest.raises(OverflowError, match="does not fit into milliseconds"):
+        pl.Series([value])
 
 
 def test_series_init_np_2d_zero_zero_shape() -> None:
