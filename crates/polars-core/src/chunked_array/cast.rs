@@ -540,7 +540,8 @@ impl ChunkCast for ArrayChunked {
             Array(child_type, width) => {
                 polars_ensure!(
                     *width == ca.width(),
-                    InvalidOperation: "cannot cast Array to a different width"
+                    InvalidOperation: "cannot cast Array to a different width (from {} to {})",
+                    ca.width(), width
                 );
 
                 match (ca.inner_dtype(), &**child_type) {

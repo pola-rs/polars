@@ -130,6 +130,11 @@ pub(super) async fn dsl_to_ir(
                 .await?
         };
 
+        // Footer statistics are keyed on the file column names.
+        if unified_scan_args.column_mapping.is_some() {
+            file_info.stats = ScanStats::new(file_info.stats.rows);
+        }
+
         if unified_scan_args.hive_options.enabled.is_none() {
             // We expect this to be `Some(_)` after this point. If it hasn't been auto-enabled
             // we explicitly set it to disabled.

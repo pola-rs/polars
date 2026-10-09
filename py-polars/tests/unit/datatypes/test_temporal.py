@@ -1801,6 +1801,29 @@ def test_to_string_invalid_format() -> None:
         tz_naive.dt.to_string("%z")
 
 
+@pytest.mark.parametrize(
+    ("dtype", "match"),
+    [
+        (pl.Date, "cannot format Date"),
+        (pl.Datetime("us"), "cannot format timezone-naive Datetime"),
+        (pl.Datetime("us", "UTC"), "cannot format timezone-aware Datetime"),
+        (pl.Time, "cannot format Time"),
+    ],
+)
+@pytest.mark.parametrize("values", [[], [None]])
+def test_to_string_invalid_format_without_values(
+    dtype: PolarsTemporalType, match: str, values: list[None]
+) -> None:
+    s = pl.Series(values, dtype=dtype)
+    with pytest.raises(ComputeError, match=match):
+        s.dt.to_string("%Q")
+
+
+def test_time_to_string_invalid_format() -> None:
+    with pytest.raises(ComputeError, match="cannot format Time with format '%Q'"):
+        pl.Series([time(1)]).dt.to_string("%Q")
+
+
 def test_tz_aware_to_string() -> None:
     df = pl.DataFrame(
         {

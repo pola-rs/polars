@@ -463,3 +463,39 @@ def test_python_dataset_rejects_zero_heavy_sources() -> None:
         PyLazyFrame.new_from_dataset_object(
             ParquetDataset([], pl.Schema({"x": pl.Int64})), resolve_heavy_sources=0
         )
+
+
+class AllRowsDeletedDataset:
+    """Dataset provider over a file whose rows are all deleted."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.path = tmp_path / "data.parquet"
+        pl.DataFrame({"k": [1, 2]}).write_parquet(self.path)
+        self.deletes = tmp_path / "deletes.parquet"
+        pl.DataFrame({"file_path": ["", ""], "pos": [0, 1]}).write_parquet(self.deletes)
+
+    def schema(self) -> pa.Schema:
+        return pa.schema([("k", pa.int64())])
+
+    def to_dataset_scan(self, **_kwargs: Any) -> tuple[pl.LazyFrame, str]:
+        idx = pl.get_index_type()
+        statistics = pl.DataFrame(
+            {"len": [2], "k_nc": [0], "k_min": [1], "k_max": [2]},
+            schema={"len": idx, "k_nc": idx, "k_min": pl.Int64, "k_max": pl.Int64},
+        )
+        lf = pl.scan_parquet(
+            self.path,
+            _deletion_files=("iceberg", ({0: [str(self.deletes)]}, {})),
+            _row_count=(2, 2),
+            _table_statistics=statistics,
+        )
+        return lf, "v1"
+
+
+@pytest.mark.write_disk
+def test_python_dataset_join_with_every_row_deleted(tmp_path: Path) -> None:
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(AllRowsDeletedDataset(tmp_path)))
+    q = lf.join(pl.LazyFrame({"k": [1, 2, 3]}), on="k").join(
+        pl.LazyFrame({"k": [1, 2]}), on="k"
+    )
+    assert q.collect().height == 0

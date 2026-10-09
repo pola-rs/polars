@@ -1,6 +1,5 @@
 pub mod functions;
 pub mod skip_files_mask;
-#[cfg(feature = "dtype-categorical")]
 mod table_statistics;
 use core::fmt;
 use std::sync::Arc;

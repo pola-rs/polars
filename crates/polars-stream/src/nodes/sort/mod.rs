@@ -29,8 +29,8 @@ use self::flush::{Flush, PendingBucket};
 use self::sample::{KeySample, split_keys};
 use self::split_tree::BucketClassifier;
 use self::tuning::SortTuning;
-use super::ComputeNode;
 use super::in_memory_source::InMemorySourceNode;
+use super::{ComputeNode, NodeMemoryUsage};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, get_ideal_morsel_size};
@@ -364,8 +364,13 @@ impl ComputeNode for SortNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self.state, SortState::BufferAndSample(_))
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            SortState::BufferAndSample(_) => NodeMemoryUsage::Accumulating,
+            SortState::Flush(_) => NodeMemoryUsage::Draining,
+            SortState::Source(src) => src.memory_usage(),
+            SortState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

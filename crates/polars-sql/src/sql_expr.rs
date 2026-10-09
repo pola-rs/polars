@@ -16,7 +16,7 @@ use polars_compute::cast::temporal::{
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
-use polars_core::utils::any_values_to_supertype;
+use polars_core::utils::{any_values_to_supertype, try_get_supertype};
 use polars_defs::time::duration::Duration;
 use polars_lazy::prelude::*;
 use polars_plan::constants::get_literal_name;
@@ -98,6 +98,23 @@ pub(crate) fn sql_in_membership(membership: Expr, value_set: Expr, set_is_empty:
     when(set_is_empty)
         .then(lit(false))
         .otherwise(membership.or(set_has_null.and(sql_unknown())))
+}
+
+/// `needle` in the list `set`, compared as SQL compares them (see [`SqlFunction::IsIn`]).
+pub(crate) fn sql_is_in(needle: Expr, set: Expr) -> Expr {
+    needle.map_binary(
+        FunctionExpr::Sql(SqlFunction::IsIn { nulls_equal: false }),
+        set,
+    )
+}
+
+/// `reduce_expr`, which must give one row, over the column of the subquery `lf`.
+fn reduced_subquery(lf: LazyFrame, reduce_expr: Expr) -> Expr {
+    let new_name = unique_column_name();
+    Expr::SubPlan(
+        SpecialEq::new(Arc::new(lf.logical_plan)),
+        vec![(new_name.clone(), reduce_expr.alias(new_name))],
+    )
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -432,17 +449,7 @@ impl SQLExprVisitor<'_> {
                     Some(elems) => {
                         let elems = self.cast_array_elements_for(elems, Some(&expr))?;
                         let set_has_null = elems.null_count() > 0;
-                        let decimal_set = elems.dtype().is_decimal();
-                        let set = lit(elems.implode()?.into_series());
-                        // Decimal literals tested against a float take its type when planned.
-                        let membership = if decimal_set {
-                            expr.map_binary(
-                                FunctionExpr::Sql(SqlFunction::IsIn { nulls_equal: false }),
-                                set,
-                            )
-                        } else {
-                            expr.is_in(set, false)
-                        };
+                        let membership = sql_is_in(expr, lit(elems.implode()?.into_series()));
                         let is_in = if set_has_null {
                             // Non-match against sets containing NULL is unknown, not FALSE
                             membership.or(sql_unknown())
@@ -569,21 +576,18 @@ impl SQLExprVisitor<'_> {
         subquery: &Subquery,
         restriction: SubqueryRestriction,
     ) -> PolarsResult<Expr> {
-        // note: we have to execute subqueries in an isolated scope to prevent
-        // propagating any context/arena mutation into the rest of the query
-        let lf = self
-            .ctx
-            .execute_isolated(|ctx| ctx.execute_query(subquery))?;
-
-        let new_name = unique_column_name();
+        let lf = self.execute_subquery(subquery)?;
         let reduce_expr = match restriction {
             SubqueryRestriction::SingleColumn => first().as_expr().implode(true),
             SubqueryRestriction::SingleValue => first().as_expr().item(true),
         };
-        Ok(Expr::SubPlan(
-            SpecialEq::new(Arc::new(lf.logical_plan)),
-            vec![(new_name.clone(), reduce_expr.alias(new_name))],
-        ))
+        Ok(reduced_subquery(lf, reduce_expr))
+    }
+
+    fn execute_subquery(&mut self, subquery: &Subquery) -> PolarsResult<LazyFrame> {
+        // note: we have to execute subqueries in an isolated scope to prevent
+        // propagating any context/arena mutation into the rest of the query
+        self.ctx.execute_isolated(|ctx| ctx.execute_query(subquery))
     }
 
     /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed,
@@ -1116,6 +1120,7 @@ impl SQLExprVisitor<'_> {
             active_schema: self.active_schema,
             filter: None,
             window,
+            reads_rows: false,
         };
         let expr = visitor.visit_function();
         self.ctx.group_scope.in_window = in_window;
@@ -1144,6 +1149,19 @@ impl SQLExprVisitor<'_> {
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
         quantified_subquery_unsupported(compare_op, right)?;
+        if let SQLExpr::Subquery(subquery) = right {
+            // `x > ALL (S)` is `NOT (x <= ANY (S))`.
+            let any_op = match compare_op {
+                SQLBinaryOperator::Gt => SQLBinaryOperator::LtEq,
+                SQLBinaryOperator::Lt => SQLBinaryOperator::GtEq,
+                SQLBinaryOperator::GtEq => SQLBinaryOperator::Lt,
+                SQLBinaryOperator::LtEq => SQLBinaryOperator::Gt,
+                SQLBinaryOperator::Eq => SQLBinaryOperator::NotEq,
+                SQLBinaryOperator::NotEq => SQLBinaryOperator::Eq,
+                _ => polars_bail!(SQLInterface: "invalid comparison operator"),
+            };
+            return Ok(self.visit_any_subquery(left, &any_op, subquery)?.not());
+        }
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
@@ -1168,6 +1186,9 @@ impl SQLExprVisitor<'_> {
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
         quantified_subquery_unsupported(compare_op, right)?;
+        if let SQLExpr::Subquery(subquery) = right {
+            return self.visit_any_subquery(left, compare_op, subquery);
+        }
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
@@ -1176,10 +1197,100 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::Lt => Ok(left.lt(right.max())),
             SQLBinaryOperator::GtEq => Ok(left.gt_eq(right.min())),
             SQLBinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
-            SQLBinaryOperator::Eq => Ok(left.is_in(right, false)),
-            SQLBinaryOperator::NotEq => Ok(left.is_in(right, false).not()),
+            SQLBinaryOperator::Eq => Ok(sql_is_in(left, right)),
+            SQLBinaryOperator::NotEq => Ok(sql_is_in(left, right).not()),
             _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
+    }
+
+    /// Visit `left <op> ANY (subquery)`: true if the comparison holds for a value of the
+    /// subquery, false if it holds for none, and null if that depends on a null.
+    fn visit_any_subquery(
+        &mut self,
+        left: &SQLExpr,
+        compare_op: &SQLBinaryOperator,
+        subquery: &Subquery,
+    ) -> PolarsResult<Expr> {
+        if *compare_op == SQLBinaryOperator::Eq {
+            return self.visit_in_subquery(left, subquery, false);
+        }
+        let mut lf = self.execute_subquery(subquery)?;
+        let schema = self.ctx.get_frame_schema(&mut lf)?;
+        polars_ensure!(schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
+        let values_dtype = schema.get_at_index(0).unwrap().1;
+        let left = self.visit_expr(left)?;
+        let empty_schema = Schema::default();
+        let left_dtype = self
+            .ctx
+            .with_typed_subqueries(&left)?
+            .to_field(self.active_schema.unwrap_or(&empty_schema))
+            .ok()
+            .map(|field| field.dtype)
+            .filter(|dtype| dtype.is_known());
+
+        // The comparison casts keep the order of the values, except as handled here.
+        let mut values = first().as_expr();
+        if let Some(dtype) = &left_dtype {
+            if dtype.is_enum()
+                && values_dtype.is_string()
+                && *compare_op != SQLBinaryOperator::NotEq
+            {
+                // A string orders with an Enum in the order of the Enum.
+                values = values.strict_cast(dtype.clone());
+            } else if (dtype.is_integer() && values_dtype.is_integer())
+                || (dtype.is_datetime() && values_dtype.is_date())
+            {
+                // The comparison casts the values to this type, and those out of its range
+                // compare as null.
+                if let Ok(supertype) = try_get_supertype(dtype, values_dtype) {
+                    values = values.cast(supertype);
+                }
+            }
+        }
+        let mut fields = vec![
+            values.clone().null_count().gt(lit(0)).alias("has_null"),
+            values.clone().len().eq(lit(0)).alias("is_empty"),
+        ];
+        let compare_nested = *compare_op == SQLBinaryOperator::NotEq && values_dtype.is_nested();
+        if compare_nested {
+            // Values that differ can be equal once cast to the type of the other side.
+            polars_ensure!(
+                left_dtype.as_ref() == Some(values_dtype),
+                SQLInterface: "ANY/ALL equality on nested values of different types is not supported; found {} and {}",
+                left_dtype.map_or_else(|| "an unknown type".to_string(), |dtype| dtype.to_string()),
+                values_dtype
+            );
+            let non_null = values.drop_nulls();
+            fields.push(non_null.clone().n_unique().gt(lit(1)).alias("has_other"));
+            fields.push(non_null.first().alias("value"));
+        } else {
+            // NaN is the largest value.
+            fields.push(values.clone().min().alias("min"));
+            fields.push(values.nan_max().alias("max"));
+        }
+        let summary = reduced_subquery(lf, as_struct(fields));
+        let Expr::SubPlan(_, cols) = &summary else {
+            unreachable!("a subquery must lower to a SubPlan");
+        };
+        let name = cols[0].0.clone();
+        let field = |field: &str| col(name.clone()).first().struct_().field_by_name(field);
+
+        // Whether the comparison holds for a value that is not null.
+        let holds = match compare_op {
+            SQLBinaryOperator::Gt => left.gt(field("min")),
+            SQLBinaryOperator::GtEq => left.gt_eq(field("min")),
+            SQLBinaryOperator::Lt => left.lt(field("max")),
+            SQLBinaryOperator::LtEq => left.lt_eq(field("max")),
+            SQLBinaryOperator::NotEq if compare_nested => {
+                let has_other = field("has_other").and(left.clone().is_not_null());
+                left.neq(field("value")).or(has_other)
+            },
+            SQLBinaryOperator::NotEq => left.clone().neq(field("min")).or(left.neq(field("max"))),
+            _ => polars_bail!(SQLInterface: "invalid comparison operator"),
+        };
+        Ok(when(summary.struct_().field_by_name("is_empty"))
+            .then(lit(false))
+            .otherwise(holds.or(field("has_null").and(sql_unknown()))))
     }
 
     /// Fallback for `[NOT] IN (e1, e2, ...)` when the element list contains
@@ -1578,7 +1689,7 @@ impl SQLExprVisitor<'_> {
         };
         let value_set = col(cols[0].0.clone()).first();
         let is_in = sql_in_membership(
-            expr.is_in(subquery_result, false),
+            sql_is_in(expr, subquery_result),
             value_set.clone(),
             value_set.list().len().eq(lit(0u32)),
         );

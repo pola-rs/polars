@@ -1,9 +1,10 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, handle_casting_failures};
+use polars_core::utils::handle_casting_failures;
+#[cfg(feature = "regex")]
+use polars_ops::chunked_array::strings::regex_replacen_into;
 #[cfg(feature = "regex")]
 use polars_ops::chunked_array::strings::split_regex_helper;
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
@@ -595,22 +596,20 @@ fn get_pat(pat: &StringChunked) -> PolarsResult<&str> {
 
 // used only if feature="regex"
 #[allow(dead_code)]
-fn iter_and_replace<'a, F>(ca: &'a StringChunked, val: &'a StringChunked, f: F) -> StringChunked
+fn iter_and_replace<F>(ca: &StringChunked, val: &StringChunked, mut f: F) -> StringChunked
 where
-    F: Fn(&'a str, &'a str) -> Cow<'a, str>,
+    F: FnMut(&str, &str, &mut String) -> bool,
 {
-    let mut out: StringChunked = ca
-        .iter()
-        .zip(val.iter())
-        .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-            (Some(src), Some(val)) => Some(f(src, val)),
-            (Some(src), None) => Some(Cow::from(src)),
-            _ => None,
-        })
-        .collect_trusted();
-
-    out.rename(ca.name().clone());
-    out
+    let mut buf = String::new();
+    let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
+    for (opt_src, opt_val) in ca.iter().zip(val.iter()) {
+        match (opt_src, opt_val) {
+            (Some(src), Some(val)) if f(src, val, &mut buf) => builder.append_value(&buf),
+            (Some(src), _) => builder.append_value(src),
+            _ => builder.append_null(),
+        }
+    }
+    builder.finish()
 }
 
 #[cfg(feature = "regex")]
@@ -619,10 +618,10 @@ fn is_literal_pat(pat: &str) -> bool {
 }
 
 #[cfg(feature = "regex")]
-fn replace_n<'a>(
-    ca: &'a StringChunked,
-    pat: &'a StringChunked,
-    val: &'a StringChunked,
+fn replace_n(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
     literal: bool,
     n: usize,
 ) -> PolarsResult<StringChunked> {
@@ -670,11 +669,11 @@ fn replace_n<'a>(
 
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| {
+            let f = |s: &str, val: &str, buf: &mut String| {
                 if literal {
-                    reg.replace(s, NoExpand(val))
+                    regex_replacen_into(&reg, s, 1, NoExpand(val), buf)
                 } else {
-                    reg.replace(s, val)
+                    regex_replacen_into(&reg, s, 1, val, buf)
                 }
             };
 
@@ -687,10 +686,10 @@ fn replace_n<'a>(
 }
 
 #[cfg(feature = "regex")]
-fn replace_all<'a>(
-    ca: &'a StringChunked,
-    pat: &'a StringChunked,
-    val: &'a StringChunked,
+fn replace_all(
+    ca: &StringChunked,
+    pat: &StringChunked,
+    val: &StringChunked,
     literal: bool,
 ) -> PolarsResult<StringChunked> {
     match (pat.len(), val.len()) {
@@ -723,13 +722,13 @@ fn replace_all<'a>(
 
             let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
-            let f = |s: &'a str, val: &'a str| {
+            let f = |s: &str, val: &str, buf: &mut String| {
                 // According to the docs for replace_all
                 // when literal = True then capture groups are ignored.
                 if literal {
-                    reg.replace_all(s, NoExpand(val))
+                    regex_replacen_into(&reg, s, 0, NoExpand(val), buf)
                 } else {
-                    reg.replace_all(s, val)
+                    regex_replacen_into(&reg, s, 0, val, buf)
                 }
             };
 

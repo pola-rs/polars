@@ -62,31 +62,49 @@ impl PhysicalExpr for GatherExpr {
         // - IdxSize, if the idx only contains positive integers.
         // - Int64,   if the idx contains negative numbers.
         // This may give false positives if there are masked out elements.
+        // With `null_on_oob`, the indices are not cast, as a cast could wrap a large index
+        // into the bounds.
         let idx = idx.aggregated_as_list();
-        let idx = idx.apply_to_inner(&|s| match s.dtype() {
-            dtype if dtype == &IDX_DTYPE => Ok(s),
-            dtype if dtype.is_unsigned_integer() => {
-                s.cast_with_options(&IDX_DTYPE, CastOptions::Strict)
-            },
+        let idx = if self.null_on_oob {
+            idx.into_owned()
+        } else {
+            idx.apply_to_inner(&|s| match s.dtype() {
+                dtype if dtype == &IDX_DTYPE => Ok(s),
+                dtype if dtype.is_unsigned_integer() => {
+                    s.cast_with_options(&IDX_DTYPE, CastOptions::Strict)
+                },
 
-            dtype if dtype.is_signed_integer() => {
-                let has_negative_integers = s.lt(0)?.any();
-                if has_negative_integers && dtype == &DataType::Int64 {
-                    Ok(s)
-                } else if has_negative_integers {
-                    s.cast_with_options(&DataType::Int64, CastOptions::Strict)
-                } else {
-                    s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
-                }
-            },
-            _ => polars_bail!(
-                op = "gather/get",
-                got = s.dtype(),
-                expected = "integer type"
-            ),
-        })?;
+                dtype if dtype.is_signed_integer() => {
+                    let has_negative_integers = s.lt(0)?.any();
+                    if has_negative_integers && dtype == &DataType::Int64 {
+                        Ok(s)
+                    } else if has_negative_integers {
+                        s.cast_with_options(&DataType::Int64, CastOptions::Strict)
+                    } else {
+                        s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
+                    }
+                },
+                _ => polars_bail!(
+                    op = "gather/get",
+                    got = s.dtype(),
+                    expected = "integer type"
+                ),
+            })?
+        };
 
-        let taken = if idx.inner_dtype() == &IDX_DTYPE {
+        let taken = if self.null_on_oob {
+            ac_list
+                .amortized_iter()
+                .zip(idx.amortized_iter())
+                .map(|(s, idx)| {
+                    let s = s?;
+                    let idx = convert_and_bound_index(idx?.as_ref(), s.as_ref().len(), true);
+                    Some(idx.and_then(|idx| s.as_ref().take(&idx)))
+                })
+                .map(|opt_res| opt_res.transpose())
+                .collect::<PolarsResult<ListChunked>>()?
+                .with_name(ac.get_values().name().clone())
+        } else if idx.inner_dtype() == &IDX_DTYPE {
             // Fast path: all indices are positive.
 
             ac_list
