@@ -3409,6 +3409,20 @@ def test_group_by_filtered_agg_missing_group_29322() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_group_by_arg_min_max_single_null_slice_group() -> None:
+    df = pl.DataFrame(
+        {"g": [1, 2, 2], "v": [1, 2, 3], "by": pl.Series([None, 5, 4], dtype=pl.Int64)}
+    ).set_sorted("g")
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("by").arg_min().alias("arg_min"),
+        pl.col("by").arg_max().alias("arg_max"),
+        pl.col("v").min_by("by").alias("min_by"),
+        pl.col("v").max_by("by").alias("max_by"),
+    )
+    assert out.row(0) == (1, None, None, None, None)
+    assert out.row(1) == (2, 1, 0, 3, 2)
+
+
 def test_group_by_arg_min_max_by_scalar_column_29504() -> None:
     idx_dtype = pl.get_index_type()
     df = pl.DataFrame({"k": [1], "v": [1.0], "p": [2]})
