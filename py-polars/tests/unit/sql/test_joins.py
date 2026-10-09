@@ -2393,11 +2393,32 @@ def test_asof_join_key_expressions_and_dtypes() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_asof_join_keeps_finest_time_unit() -> None:
+    left = pl.DataFrame(
+        {"ts": pl.Series([datetime(2024, 1, 1, 0, 0, 2)], dtype=pl.Datetime("ms"))}
+    )
+    right = pl.DataFrame(
+        {
+            "ts": pl.Series(
+                [datetime(2024, 1, 1, 0, 0, 1, 2), datetime(2024, 1, 1, 0, 0, 1, 1)],
+                dtype=pl.Datetime("us"),
+            ),
+            "v": [2, 1],
+        }
+    )
+    query = "SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION (l.ts >= r.ts)"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [2]
+
+
 @pytest.mark.parametrize(
     ("join", "error"),
     [
         ("MATCH_CONDITION (t.ts = q.ts)", "single `>=`, `>`, `<=` or `<` comparison"),
         ("MATCH_CONDITION (t.ts >= 5)", "must compare a column of each table"),
+        ("MATCH_CONDITION (t.ts >= t.ts)", "must compare a column of each table"),
+        ("MATCH_CONDITION (q.ts < q.ts)", "must compare a column of each table"),
+        ("MATCH_CONDITION (ts >= ts)", "MATCH_CONDITION is ambiguous"),
         (
             "MATCH_CONDITION (t.ts >= q.ts) ON t.sym = q.sym AND t.id > q.px",
             "only supports `=` conditions in ON",

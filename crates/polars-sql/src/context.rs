@@ -2745,6 +2745,20 @@ impl SQLContext {
             SQLSyntax: "ASOF JOIN MATCH_CONDITION must compare a column of each table, found {}",
             match_condition
         );
+        match (
+            asof_operand_is_left(left, tbl_left, tbl_right),
+            asof_operand_is_left(right, tbl_left, tbl_right),
+        ) {
+            (Some(l), Some(r)) if l == r => polars_bail!(
+                SQLSyntax: "ASOF JOIN MATCH_CONDITION must compare a column of each table, found {}",
+                match_condition
+            ),
+            (None, None) => polars_bail!(
+                SQLSyntax: "ASOF JOIN MATCH_CONDITION is ambiguous, qualify its columns with their table name: {}",
+                match_condition
+            ),
+            _ => {},
+        }
         let join_schema = build_join_schema(tbl_left, tbl_right)?;
         let (left_on, right_on, swapped) =
             determine_left_right_join_on(self, left, right, tbl_left, tbl_right, &join_schema)?;
@@ -2788,7 +2802,7 @@ impl SQLContext {
             if l_dtype == r_dtype {
                 return Ok((l, r));
             }
-            let dtype = try_get_supertype(&l_dtype, &r_dtype)?;
+            let dtype = asof_key_supertype(&l_dtype, &r_dtype)?;
             Ok((l.cast(dtype.clone()), r.cast(dtype)))
         };
 
@@ -2797,9 +2811,14 @@ impl SQLContext {
         let mut left = tbl_left.frame.clone();
         let mut right = tbl_right.frame.clone();
         let mut by_names = Vec::with_capacity(left_by.len());
-        for (i, (l, r)) in left_by.into_iter().zip(right_by).enumerate() {
+        for (l, r) in left_by.into_iter().zip(right_by) {
             let (l, r) = to_supertype(l, r)?;
-            let name = format_pl_smallstr!("__POLARS_ASOF_BY_{i}");
+            let name = loop {
+                let name = unique_column_name();
+                if !tbl_left.schema.contains(&name) && !tbl_right.schema.contains(&name) {
+                    break name;
+                }
+            };
             left = left.with_column(l.alias(name.clone()));
             right = right.with_column(r.alias(name.clone()));
             by_names.push(name);
@@ -4100,6 +4119,55 @@ fn object_name_to_string(name: &ObjectName) -> String {
         .map(|i| i.value.as_str())
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// Which input an `ASOF JOIN` match operand reads: `Some(true)` for the left input,
+/// `Some(false)` for the right one and `None` if the table names and schemas don't tell.
+#[cfg(feature = "asof_join")]
+fn asof_operand_is_left(
+    expr: &SQLExpr,
+    tbl_left: &TableInfo,
+    tbl_right: &TableInfo,
+) -> Option<bool> {
+    match (
+        expr_refers_to_table(expr, &tbl_left.name),
+        expr_refers_to_table(expr, &tbl_right.name),
+    ) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        (true, true) => None,
+        (false, false) => match (
+            sql_expr_cols_all_in_schema(expr, &tbl_left.schema),
+            sql_expr_cols_all_in_schema(expr, &tbl_right.schema),
+        ) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            _ => None,
+        },
+    }
+}
+
+/// The dtype both keys of an `ASOF JOIN` key pair are cast to. Unlike `try_get_supertype`, it
+/// keeps the finest time unit: a coarser one can make distinct keys equal, which changes the
+/// closest match.
+#[cfg(feature = "asof_join")]
+fn asof_key_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
+    let finest_unit = [l, r]
+        .into_iter()
+        .filter_map(|dtype| match dtype {
+            DataType::Datetime(tu, _) | DataType::Duration(tu) => Some(*tu),
+            _ => None,
+        })
+        .min_by_key(|tu| match tu {
+            TimeUnit::Nanoseconds => 0,
+            TimeUnit::Microseconds => 1,
+            TimeUnit::Milliseconds => 2,
+        });
+    Ok(match (try_get_supertype(l, r)?, finest_unit) {
+        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz),
+        (DataType::Duration(_), Some(tu)) => DataType::Duration(tu),
+        (dtype, _) => dtype,
+    })
 }
 
 /// Extract column names from a USING clause in a JoinOperator (if present).
