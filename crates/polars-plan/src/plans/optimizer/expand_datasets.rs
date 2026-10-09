@@ -130,11 +130,37 @@ pub(super) enum EarlyExpansion {
     /// projection pushdown and the runtime join filters. A scan that falls back to a
     /// Python scan stays unexpanded, as that scan binds its projection when it is built.
     ForJoinOrder,
-    /// Only give the dataset scans below caches the statistics of their expansion, so
-    /// that the cache decision can weigh the cached subplans. The scans stay
+    /// Only give the dataset scans the statistics of their expansion, so that
+    /// estimates can be made before the scans are expanded. The scans stay
     /// unexpanded, as the filters that let their expansion skip files are pushed into
-    /// them only after that decision.
-    ForCacheDecision,
+    /// them later. Scans that already have a row count are left alone.
+    ///
+    /// With `below_caches`, only the scans below caches, for the cache decision.
+    StatisticsOnly { below_caches: bool },
+}
+
+/// Give the dataset scans below `root` the statistics of their expansion, so that
+/// [`node_stats`](crate::plans::node_stats) can estimate a plan before it is
+/// optimized. The scans stay unexpanded.
+pub fn attach_dataset_scan_statistics(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<()> {
+    #[cfg(feature = "python")]
+    return expand_datasets_early(
+        root,
+        ir_arena,
+        expr_arena,
+        EarlyExpansion::StatisticsOnly {
+            below_caches: false,
+        },
+    );
+    #[cfg(not(feature = "python"))]
+    {
+        let _ = (root, ir_arena, expr_arena);
+        Ok(())
+    }
 }
 
 #[cfg(feature = "python")]
@@ -147,9 +173,15 @@ pub(super) fn expand_datasets_early(
     let mut key_and_filter_names: PlIndexSet<PlSmallStr> = PlIndexSet::new();
     let mut dataset_scans: PlIndexSet<Node> = PlIndexSet::new();
 
+    let statistics_only = matches!(mode, EarlyExpansion::StatisticsOnly { .. });
     let is_dataset_scan = |ir: &IR| match ir {
-        IR::Scan { scan_type, .. } => {
+        IR::Scan {
+            scan_type,
+            file_info,
+            ..
+        } => {
             matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. })
+                && !(statistics_only && file_info.stats.rows.value().is_some())
         },
         _ => false,
     };
@@ -166,7 +198,9 @@ pub(super) fn expand_datasets_early(
                 key_and_filter_names
                     .extend(aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned());
             },
-            IR::Cache { input, .. } if mode == EarlyExpansion::ForCacheDecision => {
+            IR::Cache { input, .. }
+                if mode == (EarlyExpansion::StatisticsOnly { below_caches: true }) =>
+            {
                 dataset_scans.extend(
                     ir_arena
                         .iter(*input)
@@ -174,7 +208,9 @@ pub(super) fn expand_datasets_early(
                         .map(|(node, _)| node),
                 );
             },
-            ir if mode == EarlyExpansion::ForJoinOrder && is_dataset_scan(ir) => {
+            ir if mode != (EarlyExpansion::StatisticsOnly { below_caches: true })
+                && is_dataset_scan(ir) =>
+            {
                 dataset_scans.insert(node);
             },
             _ => {},
@@ -218,7 +254,7 @@ pub(super) fn expand_datasets_early(
                 EarlyExpansion::ForJoinOrder => {
                     ir_arena.replace(node, ir);
                 },
-                EarlyExpansion::ForCacheDecision => {
+                EarlyExpansion::StatisticsOnly { .. } => {
                     let IR::Scan { file_info, .. } = ir else {
                         unreachable!()
                     };

@@ -27,6 +27,7 @@ pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
 mod extract_window;
+pub use expand_datasets::attach_dataset_scan_statistics;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
@@ -211,7 +212,7 @@ pub fn optimize(
                 root,
                 ir_arena,
                 expr_arena,
-                expand_datasets::EarlyExpansion::ForCacheDecision,
+                expand_datasets::EarlyExpansion::StatisticsOnly { below_caches: true },
             )?;
         }
         cse::set_cache_states(

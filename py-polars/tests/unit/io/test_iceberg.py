@@ -5973,6 +5973,35 @@ def test_scan_iceberg_shared_scan_is_read_twice(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_sql_correlated_aggregate_restricted_like_parquet(
+    tmp_path: Path,
+) -> None:
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "o": pl.DataFrame({"k": range(10), "s": range(10)}),
+            "i": pl.DataFrame({"k": [i % 20 for i in range(100)], "v": range(100)}),
+        },
+    )
+    query = "SELECT k FROM o WHERE s < (SELECT SUM(v) FROM i WHERE i.k = o.k)"
+
+    def plan_and_result(
+        scan: Callable[[str], pl.LazyFrame],
+    ) -> tuple[str, pl.DataFrame]:
+        lf = pl.SQLContext({name: scan(name) for name in tables}).execute(query)
+        return lf.explain(), lf.collect()
+
+    iceberg_plan, iceberg = plan_and_result(lambda n: pl.scan_iceberg(tables[n]))
+    parquet_plan, parquet = plan_and_result(lambda n: pl.scan_parquet(files[n]))
+
+    # The inner table is over twice the outer one, so the aggregate is restricted to
+    # the outer keys.
+    assert "SEMI JOIN" in parquet_plan
+    assert "SEMI JOIN" in iceberg_plan
+    assert_frame_equal(iceberg, parquet, check_row_order=False)
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_join_on_full_range_decimal_keys(tmp_path: Path) -> None:
     big = 10**38 - 1
     df = pl.from_arrow(
