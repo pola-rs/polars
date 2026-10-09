@@ -6229,3 +6229,136 @@ def test_scan_iceberg_filter_float_nan_ordering(
             df.filter(predicate),
             check_row_order=False,
         )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", [None, "pyiceberg"])
+def test_scan_iceberg_reader_filter_float_nan(
+    tmp_path: Path, reader_override: Literal["pyiceberg"] | None
+) -> None:
+    from pyiceberg.types import DoubleType
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "x", DoubleType()), NestedField(2, "i", LongType())
+        ),
+    )
+    df = pl.DataFrame({"x": [1.0, float("nan"), 3.0, None], "i": [1, 2, 3, 4]})
+    tbl.append(df.to_arrow())
+
+    for predicate in [
+        pl.col("x") > 2.0,
+        pl.col("x") != 1.0,
+        ~(pl.col("x") <= 1.0),
+        pl.col("x").is_nan(),
+        ~pl.col("x").is_in([1.0]),
+        (pl.col("x") > 2.0) & (pl.col("i") > 1),
+        pl.col("x") < 2.0,
+        pl.col("x") < float("nan"),
+        pl.col("x").is_in([3.0]),
+        (pl.col("x") <= 1.0) | (pl.col("i") == 2),
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override=reader_override)
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_reader_pyiceberg_time_travel_filter(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "b", StringType())
+        ),
+    )
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    tbl.append(df.to_arrow())
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    with tbl.update_schema() as update:
+        update.delete_column("b")
+    with tbl.update_schema() as update:
+        update.rename_column("a", "c")
+    with tbl.update_schema() as update:
+        update.add_column("a", StringType())
+    tbl = tbl.catalog.load_table(tbl.name())
+
+    for predicate in [pl.col("a") >= 2, pl.col("b") == "x"]:
+        assert_frame_equal(
+            pl.scan_iceberg(
+                tbl, snapshot_id=snapshot.snapshot_id, reader_override="pyiceberg"
+            )
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+        )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_time_travel_filter_identity_partition_before_promotion(
+    tmp_path: Path,
+) -> None:
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import IntegerType
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "p", IntegerType())),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "p")),
+    )
+    tbl.append(pl.DataFrame({"p": [1, 2]}, schema={"p": pl.Int32}).to_arrow())
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    with tbl.update_schema() as update:
+        update.update_column("p", LongType())
+    tbl = tbl.catalog.load_table(tbl.name())
+    tbl.append(pl.DataFrame({"p": [3]}).to_arrow())
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, snapshot_id=snapshot.snapshot_id)
+        .filter(pl.col("p") == 1)
+        .collect(),
+        pl.DataFrame({"p": [1]}, schema={"p": pl.Int32}),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_reader_pyiceberg_incremental_len(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    snapshot_ids = []
+    for i in range(3):
+        tbl.append(pl.DataFrame({"a": [i, i]}).to_arrow())
+        snapshot = tbl.current_snapshot()
+        assert snapshot is not None
+        snapshot_ids.append(snapshot.snapshot_id)
+
+    lf = pl.scan_iceberg(
+        tbl,
+        reader_override="pyiceberg",
+        from_snapshot_id_exclusive=snapshot_ids[0],
+        to_snapshot_id_inclusive=snapshot_ids[2],
+    )
+    assert lf.select(pl.len()).collect().item() == 4
+    assert lf.head(3).select(pl.len()).collect().item() == 3
+
+
+@pytest.mark.ci_only
+def test_convert_predicate_nanosecond_literal() -> None:
+    # Truncating to microseconds would narrow the predicate.
+    assert (
+        try_convert_pyarrow_predicate(
+            "(pa.compute.field('t') < to_py_datetime(1500,'ns'))"
+        )
+        is None
+    )
+    assert try_convert_pyarrow_predicate(
+        "(pa.compute.field('t') < to_py_datetime(2000,'ns'))"
+    ) == LessThan("t", "1970-01-01T00:00:00.000002")

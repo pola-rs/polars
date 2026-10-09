@@ -1608,12 +1608,50 @@ def test_iceberg_plugin_catalog_storage_options_by_scheme() -> None:
         "aws_region": "us-east-1",
     }
 
+    # As PyIceberg: empty values are unset, booleans as `strtobool`; a signer URI
+    # alone does not enable remote signing.
+    assert _catalog_storage_options(
+        {
+            "s3.region": "",
+            "client.region": "eu-west-1",
+            "s3.anonymous": "yes",
+            "s3.role-arn": "",
+            "s3.signer.uri": "https://signer",
+        },
+        "s3://bucket/t.metadata.json",
+    ) == {"aws_region": "eu-west-1", "aws_skip_signature": "true"}
+
+
+@pytest.mark.parametrize(
+    ("key", "is_credential"),
+    [
+        ("aws_access_key_id", True),
+        ("AWS_SESSION_TOKEN", True),
+        ("aws_token", True),
+        ("aws_profile", True),
+        ("azure_storage_sas_token", True),
+        ("azure_identity_endpoint", True),
+        ("azure_storage_use_emulator", True),
+        ("google_service_account_key", True),
+        ("aws_region", False),
+        ("aws_endpoint_url", False),
+        ("aws_server_side_encryption", False),
+        ("aws_unsigned_payload", False),
+        ("max_retries", False),
+        ("py-io-impl", False),
+    ],
+)
+def test_iceberg_plugin_is_credential_key(key: str, is_credential: bool) -> None:
+    from polars.io.iceberg._plugin import _is_credential_key
+
+    assert _is_credential_key(key) == is_credential
+
 
 @pytest.mark.parametrize(
     ("properties", "location"),
     [
-        ({"s3.signer.uri": "https://signer"}, "s3://b/t.metadata.json"),
-        ({"s3.remote-signing-enabled": "true"}, "s3://b/t.metadata.json"),
+        ({"s3.signer": "S3V4RestSigner"}, "s3://b/t.metadata.json"),
+        ({"s3.remote-signing-enabled": "1"}, "s3://b/t.metadata.json"),
         ({"client.role-arn": "arn:aws:iam::1:role/r"}, "s3a://b/t.metadata.json"),
         ({"s3.profile-name": "p"}, "s3://b/t.metadata.json"),
         ({"adls.connection-string": "..."}, "abfss://c@a/t.metadata.json"),

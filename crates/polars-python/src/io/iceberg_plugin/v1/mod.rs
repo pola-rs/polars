@@ -25,7 +25,7 @@ pub(super) fn scan(
     let ctx = HostCtx {
         cloud_options: cloud_options.clone(),
         metadata_cache,
-        last_io_error: Default::default(),
+        io_error_kinds: Default::default(),
     };
     let host = ctx.host();
 
@@ -33,7 +33,10 @@ pub(super) fn scan(
     let output = request
         .with_ffi(|request| unsafe { (plugin.plan)(&host, request) })
         .into_result()
-        .map_err(|e| ffi_to_polars_err(e, plugin_name, ctx.last_io_error.get()))?;
+        .map_err(|e| {
+            let io_kind = ctx.io_error_kinds.kind_of(&e.message());
+            ffi_to_polars_err(e, plugin_name, io_kind)
+        })?;
 
     if request.verbose
         && let Some(c) = &ctx.metadata_cache
@@ -55,7 +58,7 @@ pub(super) fn scan(
 fn ffi_to_polars_err(
     e: FfiError,
     plugin: &str,
-    last_io_error: Option<std::io::ErrorKind>,
+    io_kind: Option<std::io::ErrorKind>,
 ) -> PolarsError {
     if e.kind() == FfiErrorKind::INVALID_INPUT {
         // Invalid user input (e.g. an unknown snapshot ID) is reported as a `ValueError` with the
@@ -76,7 +79,7 @@ fn ffi_to_polars_err(
         // Storage errors keep their Python exception type (e.g. `PermissionError`), as with the
         // PyIceberg planner.
         FfiErrorKind::IO => Some(
-            last_io_error
+            io_kind
                 .filter(|k| *k != std::io::ErrorKind::NotFound)
                 .unwrap_or(std::io::ErrorKind::Other),
         ),

@@ -23,6 +23,7 @@ from polars.io.iceberg._utils import (
     _new_pyiceberg_scan,
     _normalize_windows_iceberg_file_uri,
     extract_field_initial_default,
+    filter_for_pyiceberg_reader,
     filter_for_scan_schema,
     filter_with_nan_ordering,
     try_convert_pyarrow_predicate,
@@ -479,6 +480,13 @@ class IcebergScanResolver:
             else:
                 return _PluginIcebergScanData(lf=lf, snapshot_id_key=snapshot_id_key)
 
+        if iceberg_table_filter is not None and schema_id != (
+            tbl.metadata.current_schema_id
+        ):
+            iceberg_table_filter = filter_for_scan_schema(
+                iceberg_table_filter, iceberg_schema, tbl.schema()
+            )
+
         fallback_reason = (
             "forced reader_override='pyiceberg'"
             if reader_override == "pyiceberg"
@@ -551,13 +559,6 @@ class IcebergScanResolver:
                 limit=limit,
                 selected_fields=selected_fields,
             )
-
-            if iceberg_table_filter is not None and schema_id != (
-                tbl.metadata.current_schema_id
-            ):
-                iceberg_table_filter = filter_for_scan_schema(
-                    iceberg_table_filter, iceberg_schema, tbl.schema()
-                )
 
             if iceberg_table_filter is not None:
                 scan = scan.filter(
@@ -791,7 +792,11 @@ class IcebergScanResolver:
             to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
             n_rows=limit,
             with_columns=projection,
-            iceberg_table_filter=iceberg_table_filter,
+            iceberg_table_filter=(
+                filter_for_pyiceberg_reader(iceberg_table_filter, iceberg_schema)
+                if iceberg_table_filter is not None
+                else None
+            ),
         )
 
         arrow_schema = schema_to_pyarrow(tbl.schema())

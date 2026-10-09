@@ -127,11 +127,16 @@ def _properties_fingerprint(properties: Mapping[str, Any]) -> str | None:
 
 # Environment variables from which object store clients take credentials.
 _CREDENTIAL_ENV_PREFIXES = ("AWS_", "AZURE_", "GOOGLE_", "GCS_", "GCP_")
+_CREDENTIAL_ENV_VARS = frozenset(
+    ("IDENTITY_ENDPOINT", "IDENTITY_HEADER", "MSI_ENDPOINT")
+)
 
 
 def _credential_env_fingerprint() -> str:
     env = sorted(
-        (k, v) for k, v in os.environ.items() if k.startswith(_CREDENTIAL_ENV_PREFIXES)
+        (k, v)
+        for k, v in os.environ.items()
+        if k.startswith(_CREDENTIAL_ENV_PREFIXES) or k in _CREDENTIAL_ENV_VARS
     )
     return hashlib.sha256(repr(env).encode()).hexdigest()
 

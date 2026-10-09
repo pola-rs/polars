@@ -223,9 +223,8 @@ _AZURE_SCHEMES = ("abfs", "abfss", "adl", "az", "azure", "wasb", "wasbs")
 # by URL scheme.
 _UNSUPPORTED_IO_PROPERTIES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("s3", "s3a", "s3n"): (
+        # Remote signing (PyIceberg only signs with `s3.signer` set).
         "s3.signer",
-        "s3.signer.uri",
-        "s3.signer.endpoint",
         "s3.role-arn",
         "s3.role-session-name",
         "s3.profile-name",
@@ -269,6 +268,8 @@ def _catalog_storage_options(
     )
 
     scheme = location.split("://", 1)[0].lower() if "://" in location else ""
+    # Empty values are unset, as in PyIceberg.
+    properties = {k: v for k, v in properties.items() if v not in ("", None)}
     for schemes, keys in _UNSUPPORTED_IO_PROPERTIES.items():
         if scheme in schemes and (
             unsupported := sorted(k for k in keys if k in properties)
@@ -276,7 +277,7 @@ def _catalog_storage_options(
             msg = f"iceberg: unsupported: FileIO properties: {unsupported}"
             raise NotImplementedError(msg)
     if scheme in ("s3", "s3a", "s3n"):
-        if str(properties.get("s3.remote-signing-enabled", "")).lower() == "true":
+        if _property_is_true(properties, "s3.remote-signing-enabled"):
             msg = "iceberg: unsupported: S3 remote signing"
             raise NotImplementedError(msg)
         properties = {
@@ -300,12 +301,17 @@ def _catalog_storage_options(
         (("s3", "s3a", "s3n"), "s3.anonymous", "aws_skip_signature"),
         (_AZURE_SCHEMES, "adls.anon", "azure_skip_signature"),
     ):
-        if (
-            scheme in schemes
-            and str(properties.get(anonymous_key, "")).lower() == "true"
-        ):
+        if scheme in schemes and _property_is_true(properties, anonymous_key):
             storage_options[skip_signature_key] = "true"
     return storage_options
+
+
+def _property_is_true(properties: Mapping[str, Any], key: str) -> bool:
+    # As PyIceberg's `property_as_bool` (`strtobool`); invalid values are false.
+    value = properties.get(key)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("y", "yes", "t", "true", "on", "1")
 
 
 def _row_filter_json(expr: pyiceberg.expressions.BooleanExpression) -> str:
@@ -440,6 +446,13 @@ _USER_CREDENTIAL_KEYS = frozenset(
         "authority_id",
         "federated_token_file",
         "msi_endpoint",
+        "identity_endpoint",
+        "fabric_session_token",
+        "fabric_token_service_url",
+        "credential_type",
+        "use_emulator",
+        "metadata_endpoint",
+        "imdsv1_fallback",
         "msi_resource_id",
         "object_id",
         "use_azure_cli",

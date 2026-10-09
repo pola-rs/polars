@@ -26,25 +26,7 @@ pub(super) struct HostCtx {
     /// `storage_options` and credential provider of the scan.
     pub cloud_options: Option<CloudOptions>,
     pub metadata_cache: Option<ScopedMetadataCache>,
-    pub last_io_error: LastIoError,
-}
-
-/// Kind of the last IO error of the scan's storage calls. The contract only distinguishes
-/// `NOT_FOUND` and `IO`; this restores e.g. `PermissionDenied` when the plugin fails with it.
-#[derive(Clone, Default)]
-pub(super) struct LastIoError(Arc<Mutex<Option<std::io::ErrorKind>>>);
-
-impl LastIoError {
-    pub fn get(&self) -> Option<std::io::ErrorKind> {
-        *self.0.lock().unwrap()
-    }
-
-    fn to_ffi_err(&self, e: PolarsError) -> FfiError {
-        if let PolarsError::IO { error, .. } = &e {
-            *self.0.lock().unwrap() = Some(error.kind());
-        }
-        polars_to_ffi_err(e)
-    }
+    pub io_error_kinds: IoErrorKinds,
 }
 
 impl HostCtx {
@@ -61,15 +43,53 @@ impl HostCtx {
     }
 }
 
+/// Kinds of the IO errors of the scan's storage calls, by message. The contract only
+/// distinguishes `NOT_FOUND` and `IO`; this restores e.g. `PermissionDenied` when the plugin
+/// fails with one of them.
+#[derive(Clone, Default)]
+pub(super) struct IoErrorKinds(Arc<Mutex<Vec<(String, std::io::ErrorKind)>>>);
+
+impl IoErrorKinds {
+    /// The kind of the storage error a plugin error message was made from: the plugin adds
+    /// context around the message.
+    pub fn kind_of(&self, plugin_msg: &str) -> Option<std::io::ErrorKind> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(msg, _)| plugin_msg.contains(msg.as_str()))
+            .max_by_key(|(msg, _)| msg.len())
+            .map(|(_, kind)| *kind)
+    }
+
+    fn to_ffi_err(&self, e: PolarsError) -> FfiError {
+        let e = polars_to_ffi_err_kind(e);
+        if let Some(kind) = e.1 {
+            self.0
+                .lock()
+                .unwrap()
+                .push((e.0.message().to_string(), kind));
+        }
+        e.0
+    }
+}
+
 fn polars_to_ffi_err(e: PolarsError) -> FfiError {
-    let kind = match &e {
-        PolarsError::IO { error, .. } if error.kind() == std::io::ErrorKind::NotFound => {
-            FfiErrorKind::NOT_FOUND
-        },
-        PolarsError::IO { .. } => FfiErrorKind::IO,
-        _ => FfiErrorKind::OTHER,
+    polars_to_ffi_err_kind(e).0
+}
+
+/// Also returns the kind of an IO error.
+fn polars_to_ffi_err_kind(e: PolarsError) -> (FfiError, Option<std::io::ErrorKind>) {
+    let io_kind = match &e {
+        PolarsError::IO { error, .. } => Some(error.kind()),
+        _ => None,
     };
-    FfiError::new(kind, e.to_string())
+    let kind = match io_kind {
+        Some(std::io::ErrorKind::NotFound) => FfiErrorKind::NOT_FOUND,
+        Some(_) => FfiErrorKind::IO,
+        None => FfiErrorKind::OTHER,
+    };
+    (FfiError::new(kind, e.to_string()), io_kind)
 }
 
 fn str_arg(s: FfiStr) -> Result<String, FfiError> {
@@ -140,7 +160,7 @@ unsafe extern "C" fn host_get_storage(
             let storage = Arc::new(HostStorage {
                 cloud_options: ctx.cloud_options.clone(),
                 metadata_cache: ctx.metadata_cache.clone(),
-                last_io_error: ctx.last_io_error.clone(),
+                io_error_kinds: ctx.io_error_kinds.clone(),
             });
             Ok(StorageHandle(Arc::into_raw(storage) as *const c_void))
         })())
@@ -157,7 +177,7 @@ unsafe extern "C" fn host_log(_ctx: *const c_void, msg: FfiStr) {
 struct HostStorage {
     cloud_options: Option<CloudOptions>,
     metadata_cache: Option<ScopedMetadataCache>,
-    last_io_error: LastIoError,
+    io_error_kinds: IoErrorKinds,
 }
 
 struct ResolvedLocation {
@@ -201,7 +221,7 @@ unsafe extern "C" fn storage_get(
         spawn_io(async move {
             let url = url?;
             let fetch = || async {
-                let to_ffi_err = |e| storage.last_io_error.to_ffi_err(e);
+                let to_ffi_err = |e| storage.io_error_kinds.to_ffi_err(e);
                 let loc = storage.resolve(&url).await.map_err(to_ffi_err)?;
                 let path = &loc.path;
 
@@ -235,7 +255,7 @@ unsafe extern "C" fn storage_head(
         let url = str_arg(url);
 
         spawn_io(async move {
-            let to_ffi_err = |e| storage.last_io_error.to_ffi_err(e);
+            let to_ffi_err = |e| storage.io_error_kinds.to_ffi_err(e);
             let loc = storage.resolve(&url?).await.map_err(to_ffi_err)?;
 
             let meta = loc
