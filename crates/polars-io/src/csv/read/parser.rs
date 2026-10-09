@@ -664,6 +664,7 @@ impl<'a> Iterator for SplitLines<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct CountLines {
     quote_char: u8,
     eol_char: u8,
@@ -704,6 +705,10 @@ impl CountLines {
             quoting,
             comment_prefix,
         }
+    }
+
+    pub fn has_comment_prefix(&self) -> bool {
+        self.comment_prefix.is_some()
     }
 
     /// Analyzes a chunk of CSV data.

@@ -10,7 +10,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
-use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
+use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -137,31 +137,9 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
             } else {
-                let read_context = self.file_read_context.get_or_init(|| {
-                    let cfg = polars_config::config();
-                    let enable_o_direct = cfg.direct_io();
-                    let concurrency = cfg.file_read_concurrency().max(1) as usize;
-
-                    // TODO: Posix_fadv should follow the access-pattern, which varies
-                    // by file type and projection.
-                    let fadv = cfg.file_posix_fadv();
-
-                    if config::verbose() {
-                        eprintln!(
-                            "[ParquetReaderBuilder]: file read_context as configured: \
-                                read_concurrency: {concurrency}, \
-                                posix_fadv: {fadv}, \
-                                o_direct: {enable_o_direct}"
-                        );
-                    }
-
-                    FileReadContext {
-                        enable_o_direct,
-                        concurrency,
-                        permits: byte_source::global_read_permits(),
-                        advice: fadv,
-                    }
-                });
+                let read_context = self
+                    .file_read_context
+                    .get_or_init(|| FileReadContext::from_config("ParquetReaderBuilder"));
                 DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
