@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ApproxQuantileMethod,
+        EngineType,
         PolarsDataType,
         TimeUnit,
     )
@@ -1988,6 +1989,30 @@ def test_min_max_by_all_null_by_group_slice(agg: Callable[..., pl.Expr]) -> None
         .collect()
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("agg", "by"),
+    [
+        (pl.Expr.min_by, pl.Series([2**63 - 1], dtype=pl.Int64)),
+        (pl.Expr.max_by, pl.Series([-(2**63)], dtype=pl.Int64)),
+        (pl.Expr.max_by, pl.Series([0], dtype=pl.UInt64)),
+        (pl.Expr.min_by, pl.Series([float("nan")])),
+        (pl.Expr.max_by, pl.Series([float("nan")])),
+        (pl.Expr.max_by, pl.Series([float("-inf")])),
+        (pl.Expr.max_by, pl.Series([""])),
+    ],
+)
+def test_min_max_by_on_extreme_by_value(
+    agg: Callable[..., pl.Expr], by: pl.Series, engine: EngineType
+) -> None:
+    df = pl.DataFrame({"g": [1], "x": [7], "by": by})
+    lf = pl.concat([df, df], rechunk=False).lazy()
+    e = agg(pl.col("x"), pl.col("by"))
+    assert lf.select(e).collect(engine=engine).item() == 7
+    out = lf.group_by("g").agg(e).collect(engine=engine)
+    assert out["x"].item() == 7
 
 
 @pytest.mark.parametrize(
