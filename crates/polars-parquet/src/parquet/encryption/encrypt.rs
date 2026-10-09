@@ -106,26 +106,6 @@ impl FileEncryptionProperties {
         self.footer_key.key_metadata.as_ref()
     }
 
-    /// Retrieval of key used for encryption of footer and (possibly) columns
-    pub fn footer_key(&self) -> &Vec<u8> {
-        &self.footer_key.key
-    }
-
-    /// Get the column names, keys, and metadata for columns to be encrypted
-    pub fn column_keys(&self) -> (Vec<String>, Vec<Vec<u8>>, Vec<Vec<u8>>) {
-        let mut column_names: Vec<String> = Vec::with_capacity(self.column_keys.len());
-        let mut keys: Vec<Vec<u8>> = Vec::with_capacity(self.column_keys.len());
-        let mut meta: Vec<Vec<u8>> = Vec::with_capacity(self.column_keys.len());
-        for (key, value) in &self.column_keys {
-            column_names.push(key.clone());
-            keys.push(value.key.clone());
-            if let Some(metadata) = value.key_metadata.as_ref() {
-                meta.push(metadata.clone());
-            }
-        }
-        (column_names, keys, meta)
-    }
-
     /// AAD prefix string uniquely identifies the file and prevents file swapping
     pub fn aad_prefix(&self) -> Option<&Vec<u8>> {
         self.aad_prefix.as_ref()
