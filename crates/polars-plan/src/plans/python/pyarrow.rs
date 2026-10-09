@@ -100,6 +100,19 @@ fn sanitize(name: &str) -> Option<&str> {
     }
 }
 
+/// `AnyValue::dtype`, which panics for categorical values (their mapping is not
+/// a data type).
+fn any_value_dtype(av: &AnyValue<'_>) -> Option<DataType> {
+    match av {
+        #[cfg(feature = "dtype-categorical")]
+        AnyValue::Categorical(..)
+        | AnyValue::CategoricalOwned(..)
+        | AnyValue::Enum(..)
+        | AnyValue::EnumOwned(..) => None,
+        av => Some(av.dtype()),
+    }
+}
+
 /// Render a flat `Series` as a Python list literal, e.g. `[1,2,3]`.
 ///
 /// Returns `None` for values we cannot faithfully (or safely) write out as
@@ -138,7 +151,7 @@ fn series_to_pyarrow_list(s: &Series) -> Option<String> {
             // list would no longer match itself.
             #[cfg(feature = "dtype-decimal")]
             AnyValue::Decimal(_, _, _) => return None,
-            av if av.dtype().is_float() => {
+            av if any_value_dtype(&av).is_some_and(|dt| dt.is_float()) => {
                 // Same rendering as a scalar literal; NaN and inf have no
                 // Python literal.
                 let v = av.extract::<f64>()?;
@@ -148,7 +161,7 @@ fn series_to_pyarrow_list(s: &Series) -> Option<String> {
                 // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
                 write!(list_repr, "{v:?},").unwrap();
             },
-            av if av.dtype().is_integer() => {
+            av if any_value_dtype(&av).is_some_and(|dt| dt.is_integer()) => {
                 write!(list_repr, "{av},").unwrap();
             },
             _ => return None,
@@ -213,7 +226,7 @@ pub fn predicate_to_pa(
         AExpr::Literal(LiteralValue::Series(_)) => None,
         AExpr::Literal(lv) => {
             let av = lv.to_any_value()?;
-            let dtype = av.dtype();
+            let dtype = any_value_dtype(&av)?;
             match av.as_borrowed() {
                 AnyValue::String(s) => {
                     let s = sanitize(s)?;
@@ -551,7 +564,7 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
 fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, PyAny>> {
     use pyo3::IntoPyObjectExt;
 
-    let dtype = av.dtype();
+    let dtype = any_value_dtype(&av)?;
     match av.as_borrowed() {
         AnyValue::Null => Some(py.None().into_bound(py)),
         AnyValue::Boolean(v) => v.into_bound_py_any(py).ok(),

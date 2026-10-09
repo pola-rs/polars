@@ -863,3 +863,17 @@ def test_pyarrow_dataset_is_in_other_time_zone(
     assert "value_set=timestamp[us, tz=UTC]" in capture
     assert "residual predicate: None" in capture
     assert_frame_equal(result, df)
+
+
+def test_pyarrow_dataset_categorical_literal() -> None:
+    df = pl.DataFrame({"s": ["a", "b"]})
+    dataset = pl.scan_pyarrow_dataset(
+        ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+    )
+
+    for dtype in [pl.Categorical(), pl.Enum(["a", "b"])]:
+        for predicate in [
+            pl.col("s") == pl.lit("a", dtype),
+            pl.col("s") < pl.lit("b", dtype),
+        ]:
+            assert_frame_equal(dataset.filter(predicate).collect(), df.head(1))

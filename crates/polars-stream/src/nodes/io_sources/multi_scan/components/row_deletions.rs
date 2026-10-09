@@ -237,6 +237,8 @@ impl DeletionFilesProvider {
                                     },
                                 };
 
+                                let projected_schema = projected_schema.clone();
+
                                 handles.push(AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
                                     read_task_metrics.as_deref(),
@@ -251,6 +253,13 @@ impl DeletionFilesProvider {
                                         }
 
                                         handle.await?;
+
+                                        // An empty file sends no morsels.
+                                        if dfs.is_empty() {
+                                            dfs.push(DataFrame::empty_with_schema(
+                                                &projected_schema,
+                                            ));
+                                        }
 
                                         let df = accumulate_dataframes_vertical_unchecked(dfs);
 

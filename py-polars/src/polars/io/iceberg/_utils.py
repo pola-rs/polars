@@ -413,7 +413,10 @@ def load_puffin_deletion_file(puffin_bytes: bytes) -> dict[str, pl.Series]:
 
     positions = pyiceberg.table.puffin.PuffinFile(puffin_bytes).to_vector()
 
-    return {k: pl.Series(v).reinterpret(dtype=pl.UInt64) for k, v in positions.items()}
+    return {
+        k: pl.Series(v, dtype=pl.Int64).reinterpret(dtype=pl.UInt64)
+        for k, v in positions.items()
+    }
 
 
 def filter_for_pyiceberg_reader(
@@ -439,6 +442,7 @@ def filter_for_pyiceberg_reader(
         LessThan,
         LessThanOrEqual,
         Not,
+        NotEqualTo,
         NotNaN,
         NotNull,
         Or,
@@ -505,6 +509,10 @@ def filter_for_pyiceberg_reader(
                     or (isinstance(e, In) and any(is_zero_literal(v) for v in literals))
                 ):
                     return None
+            if isinstance(e, NotEqualTo):
+                # PyIceberg drops nulls, but e.g. `~is_in([x], nulls_equal=True)`
+                # (`In` of one value becomes `EqualTo`) keeps them.
+                return Or(e, IsNull(e.term))  # type: ignore[call-arg]
         return e
 
     return visit(rewrite_not(expr))
@@ -863,11 +871,12 @@ class IcebergColumnStatisticsLoader:
     max_values: list[bytes | None]
 
     def push_file_statistics(self, file: DataFile) -> None:
-        self.null_count.append(file.null_value_counts.get(self.field_id))
+        # The metric maps are optional.
+        self.null_count.append((file.null_value_counts or {}).get(self.field_id))
 
         if self.load_from_bytes_impl is not None:
-            self.min_values.append(file.lower_bounds.get(self.field_id))
-            self.max_values.append(file.upper_bounds.get(self.field_id))
+            self.min_values.append((file.lower_bounds or {}).get(self.field_id))
+            self.max_values.append((file.upper_bounds or {}).get(self.field_id))
 
     def null_statistics(self, height: int) -> pl.DataFrame:
         import polars as pl

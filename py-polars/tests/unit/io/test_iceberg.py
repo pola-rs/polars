@@ -6453,6 +6453,104 @@ def test_scan_iceberg_reader_pyiceberg_filter_nested_columns(tmp_path: Path) -> 
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", [None, "pyiceberg"])
+def test_scan_iceberg_filter_not_in_one_value_nulls_equal(
+    tmp_path: Path, reader_override: Literal["pyiceberg"] | None
+) -> None:
+    # PyIceberg turns `In` of one value into `EqualTo`, whose negation drops nulls.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()), NestedField(2, "p", StringType())
+        ),
+    )
+    df = pl.DataFrame({"id": [1, 2, 3], "p": ["a", None, "b"]})
+    tbl.append(df.to_arrow())
+
+    for predicate in [
+        ~pl.col("p").is_in(["a"], nulls_equal=True),
+        ~(pl.col("p").is_in(["a"], nulls_equal=True) & (pl.col("id") > 0)),
+        pl.col("p") != "a",
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override=reader_override)
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", [None, "pyiceberg"])
+def test_scan_iceberg_filter_categorical_literal(
+    tmp_path: Path, reader_override: Literal["pyiceberg"] | None
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "s", StringType()))
+    )
+    df = pl.DataFrame({"s": ["a", "b"]})
+    tbl.append(df.to_arrow())
+
+    for dtype in [pl.Categorical(), pl.Enum(["a", "b"])]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, reader_override=reader_override)
+            .filter(pl.col("s") == pl.lit("a", dtype))
+            .collect(),
+            df.head(1),
+        )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_reader_pyiceberg_collect_after_schema_update(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    tbl.append(pl.DataFrame({"a": [1, 2]}).to_arrow())
+
+    lf = pl.scan_iceberg(tbl, reader_override="pyiceberg")
+    expected = lf.collect()
+
+    # No new snapshot, so the scan is not planned again.
+    with tbl.update_schema() as update:
+        update.add_column("b", StringType())
+
+    assert_frame_equal(lf.collect(), expected)
+
+
+def test_scan_iceberg_statistics_without_metrics() -> None:
+    from types import SimpleNamespace
+
+    from pyiceberg.types import LongType
+
+    from polars.io.iceberg._utils import (
+        IcebergColumnStatisticsLoader,
+        LoadFromBytesImpl,
+    )
+
+    # The metric maps of data files are optional.
+    loader = IcebergColumnStatisticsLoader(
+        column_name="a",
+        column_dtype=pl.Int64(),
+        field_id=1,
+        load_from_bytes_impl=LoadFromBytesImpl.init_for_field_type(
+            LongType(), {LongType()}, pl.Int64()
+        ),
+        null_count=[],
+        min_values=[],
+        max_values=[],
+    )
+    loader.push_file_statistics(
+        SimpleNamespace(  # type: ignore[arg-type]
+            null_value_counts=None, lower_bounds=None, upper_bounds=None
+        )
+    )
+
+    assert loader.finish(1, None).row(0) == (None, None, None)
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_v3_nested_field_initial_default(tmp_path: Path) -> None:
     tbl, catalog = new_iceberg_table(
         tmp_path,

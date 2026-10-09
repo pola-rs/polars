@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -786,7 +787,9 @@ class IcebergScanResolver:
 
         func = partial(
             polars.io.iceberg._utils._scan_pyarrow_dataset_impl,
-            tbl,
+            # The scan is reused while the snapshot is unchanged, but PyIceberg
+            # replaces the metadata of `tbl` on e.g. schema updates.
+            copy.copy(tbl),
             snapshot_id=snapshot_id,
             from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
             to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,

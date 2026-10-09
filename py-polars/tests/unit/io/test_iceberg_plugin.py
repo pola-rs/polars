@@ -27,6 +27,7 @@ import polars._plr as plr
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 pytest.importorskip("polars_iceberg")
@@ -727,6 +728,28 @@ def test_iceberg_plugin_position_deletes(
     # Deletes from a later snapshot do not apply to an earlier one.
     first = tbl.snapshots()[0].snapshot_id
     assert_frame_equal(pl.scan_iceberg(tbl, snapshot_id=first).collect(), TEST_DF)
+
+
+@pytest.mark.filterwarnings("ignore:Call to to_vector:DeprecationWarning")
+@pytest.mark.parametrize("deletion_vectors", [False, True])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_iceberg_plugin_empty_position_deletes(
+    tmp_path: Path, deletion_vectors: bool, engine: EngineType
+) -> None:
+    tbl = _new_table(tmp_path)
+    tbl.append(TEST_DF.to_arrow())
+    paths = _data_file_paths(tbl)
+
+    tbl = _add_position_deletes(
+        tbl, {paths[0]: [], paths[1]: [1]}, deletion_vectors=deletion_vectors
+    )
+
+    expected = pl.DataFrame(tbl.scan().to_arrow())
+    assert expected.height == 2 * TEST_DF.height - 1
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(engine=engine), expected, check_row_order=False
+    )
 
 
 @pytest.mark.filterwarnings("ignore:Call to to_vector:DeprecationWarning")
