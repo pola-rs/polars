@@ -16,6 +16,7 @@ from polars.testing.asserts.series import assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -2019,3 +2020,20 @@ def test_predicate_pushdown_fallible_inside_list_eval() -> None:
     assert plan.index("list.eval") < plan.index('FILTER col("k")')
 
     assert_frame_equal(q.collect(), pl.DataFrame({"k": [1], "a": [["1"]]}))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_predicate_not_pushed_below_scalar_select(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 2], "x": [1, 2]})
+
+    q = lf.select(pl.lit(None).alias("g")).filter(pl.lit(False))
+    assert q.collect(engine=engine).height == 0
+
+    q = lf.select(pl.len()).select(pl.lit(1).alias("g")).filter(pl.lit(False))
+    assert q.collect(engine=engine).height == 0
+
+    q = pl.sql(
+        "SELECT g, SUM(x) AS s FROM lf GROUP BY GROUPING SETS ((g), ()) HAVING FALSE",
+        eager=False,
+    )
+    assert q.collect(engine=engine).height == 0
