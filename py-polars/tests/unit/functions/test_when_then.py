@@ -956,6 +956,25 @@ def test_when_then_masks_multichunk_struct_29799(engine: EngineType) -> None:
     )
     assert out.to_series().to_list() == [1, None]
 
+    # Three uneven chunks, masked out only inside the middle one. Uses vstack, not
+    # concat: concat can leave a stale null-propagation flag (#29815).
+    df = (
+        pl.DataFrame({"m": [True, True], "s": [{"a": "0"}, {"a": "1"}]})
+        .vstack(
+            pl.DataFrame(
+                {"m": [True, False, True], "s": [{"a": "2"}, {"a": "bad"}, {"a": "4"}]}
+            )
+        )
+        .vstack(pl.DataFrame({"m": [True], "s": [{"a": "5"}]}))
+    )
+    assert [len(c) for c in df["s"].get_chunks()] == [2, 3, 1]
+    out = (
+        df.lazy()
+        .select(pl.when("m").then(pl.col.s.struct.field("a").cast(pl.Int64)))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [0, 1, 2, None, 4, 5]
+
     # Original reproducer.
     df = pl.DataFrame({"v": [1.0] + [0.0] * 16}).with_columns(
         pl.struct(pl.col("v").alias("ma")).alias("symbol"),
