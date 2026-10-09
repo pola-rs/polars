@@ -5933,7 +5933,7 @@ def test_scan_iceberg_metadata_path_file_cache(
             path = format_file_uri_iceberg(copied)
             assert pl.scan_iceberg(path).collect().item() == 1
         assert len(opened) == 2
-        assert metadata_file_reads() == ["bypassed: no UUID in metadata file name"] * 2
+        assert metadata_file_reads() == ["bypassed: no UUID in file name"] * 2
 
         # So is every metadata file when the cache is disabled.
         plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_FILE_CACHE_MB", "0")

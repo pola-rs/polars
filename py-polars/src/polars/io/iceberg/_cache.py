@@ -47,15 +47,22 @@ def _is_absolute_location(location: str) -> bool:
     )
 
 
-def _is_cacheable_metadata_file(location: str) -> bool:
-    # Manifest lists, manifests and table metadata files with a write-time UUID in
-    # the name. A Windows path can have a UUID in a directory name.
+def _uncacheable_reason(location: str) -> str | None:
+    # Cacheable: manifest lists, manifests and table metadata files with a
+    # write-time UUID in the name, at an absolute location. A Windows path can
+    # have a UUID in a directory name.
     name = re.split(r"[/\\]", location)[-1]
-    return (
-        _is_absolute_location(location)
-        and name.endswith((".avro", ".metadata.json"))
-        and _UUID_PATTERN.search(name) is not None
-    )
+    if not name.endswith((".avro", ".metadata.json")):
+        return "not a manifest or metadata file"
+    if _UUID_PATTERN.search(name) is None:
+        return "no UUID in file name"
+    if not _is_absolute_location(location):
+        return "relative path"
+    return None
+
+
+def _is_cacheable_metadata_file(location: str) -> bool:
+    return _uncacheable_reason(location) is None
 
 
 # Set by REST catalogs, changes on every commit to the table.
@@ -268,7 +275,7 @@ def _bypass_reason(
     if scope is None:
         if qualified_type_name(type(file_io)) not in _BUILTIN_FILE_IO_CLASSES:
             return "custom FileIO"
-        return "FileIO property that is not plain"
+        return "FileIO properties cannot be fingerprinted"
     return None
 
 
@@ -334,17 +341,15 @@ def load_static_table(
 
     if not metadata_location.endswith(".metadata.json"):
         table = StaticTable.from_metadata(metadata_location, properties=properties)
-        return table, CacheStats(bypass="version hint")
+        return table, CacheStats(bypass="not a .metadata.json path")
 
-    file_io = CachingFileIO(
-        load_file_io(properties, location=metadata_location),
-        get_metadata_file_cache(),
-    )
-    stats = file_io.stats
-    if stats.bypass is None and not _is_absolute_location(metadata_location):
-        stats.bypass = "relative path"
-    if stats.bypass is None and not _is_cacheable_metadata_file(metadata_location):
-        stats.bypass = "no UUID in metadata file name"
+    inner = load_file_io(properties, location=metadata_location)
+    caching = CachingFileIO(inner, get_metadata_file_cache())
+    stats = caching.stats
+    if stats.bypass is None:
+        stats.bypass = _uncacheable_reason(metadata_location)
+    # An uncacheable read does not go through the wrapper.
+    file_io: FileIO | CachingFileIO = inner if stats.bypass is not None else caching
 
     # `StaticTable.from_metadata` of PyIceberg 0.12, with the metadata file read
     # through the cache.
