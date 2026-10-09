@@ -243,7 +243,7 @@ pub trait SkipBatchPredicate: Send + Sync {
                 None => (
                     Scalar::null(dtype.clone()),
                     Scalar::null(dtype.clone()),
-                    Scalar::null(IDX_DTYPE),
+                    Scalar::null(null_count_dtype(dtype)),
                 ),
                 Some(stat) => (
                     Scalar::new(dtype.clone(), stat.min),
@@ -268,6 +268,21 @@ pub trait SkipBatchPredicate: Send + Sync {
         Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
     }
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
+}
+
+/// Dtype of a column's `<col>_nc` statistic: per field for structs (see
+/// `polars_plan::plans::predicates::null_count_dtype`).
+fn null_count_dtype(dtype: &DataType) -> DataType {
+    match dtype {
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => DataType::Struct(
+            fields
+                .iter()
+                .map(|f| Field::new(f.name().clone(), null_count_dtype(f.dtype())))
+                .collect(),
+        ),
+        _ => IDX_DTYPE,
+    }
 }
 
 /// The conjuncts of a row predicate that read one column, conjoined.
@@ -510,13 +525,15 @@ impl ScanIOPredicate {
             for (c, v) in constant_columns.iter() {
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_min"), v.clone()));
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_max"), v.clone()));
-                let nc = if v.is_null() {
+                let nc_dtype = null_count_dtype(v.dtype());
+                // Struct null counts are per field, and unknown here.
+                let nc = if v.is_null() || nc_dtype != IDX_DTYPE {
                     AnyValue::Null
                 } else {
                     (0 as IdxSize).into()
                 };
                 sbp_constant_columns
-                    .push((format_pl_smallstr!("{c}_nc"), Scalar::new(IDX_DTYPE, nc)));
+                    .push((format_pl_smallstr!("{c}_nc"), Scalar::new(nc_dtype, nc)));
             }
             self.skip_batch_predicate = Some(Arc::new(PhysicalExprWithConstCols {
                 constants: sbp_constant_columns,

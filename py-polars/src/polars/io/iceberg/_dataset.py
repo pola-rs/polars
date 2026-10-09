@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
@@ -264,6 +264,11 @@ class IcebergScanResolver:
     use_metadata_statistics: bool
     fast_deletion_count: bool
     use_pyiceberg_filter: bool
+    # The table schema of the scan's output schema (without `snapshot_id`). Scans are
+    # resolved by column name when collected, so they must not see another schema.
+    schema_at_creation: pyiceberg.schema.Schema | None = field(
+        default=None, init=False, repr=False
+    )
 
     #
     # PythonDatasetProvider interface functions
@@ -274,7 +279,10 @@ class IcebergScanResolver:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         if self.snapshot_id is None:
-            return self.table.arrow_schema()
+            if self.schema_at_creation is None:
+                self.schema_at_creation = self.table.get().schema()
+
+            return schema_to_pyarrow(self.schema_at_creation)
 
         snapshot = self.table.get().snapshot_by_id(self.snapshot_id)
 
@@ -406,6 +414,17 @@ class IcebergScanResolver:
         else:
             iceberg_schema = tbl.schema()
             schema_id = tbl.metadata.current_schema_id
+
+            if (
+                self.schema_at_creation is not None
+                and self.schema_at_creation.as_struct() != iceberg_schema.as_struct()
+            ):
+                msg = (
+                    "iceberg: the table schema changed after the scan was created "
+                    f"(schema ID {self.schema_at_creation.schema_id} -> {schema_id}); "
+                    "create a new scan"
+                )
+                raise ComputeError(msg)
 
             current_snapshot_id = (
                 v.snapshot_id if (v := tbl.current_snapshot()) is not None else None

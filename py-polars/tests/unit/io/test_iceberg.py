@@ -6540,22 +6540,72 @@ def test_scan_iceberg_filter_categorical_literal(
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_reader_pyiceberg_collect_after_schema_update(
-    tmp_path: Path,
+@pytest.mark.parametrize("reader_override", [None, "pyiceberg"])
+def test_scan_iceberg_collect_after_schema_change(
+    tmp_path: Path, reader_override: Literal["pyiceberg"] | None
 ) -> None:
     tbl, _ = new_iceberg_table(
-        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "b", LongType())
+        ),
     )
-    tbl.append(pl.DataFrame({"a": [1, 2]}).to_arrow())
+    tbl.append(pl.DataFrame({"a": [1, 2], "b": [10, 20]}).to_arrow())
+    first_snapshot_id = tbl.current_snapshot().snapshot_id  # type: ignore[union-attr]
 
-    lf = pl.scan_iceberg(tbl, reader_override="pyiceberg")
+    lf = pl.scan_iceberg(tbl, reader_override=reader_override)
+    lf_snapshot = pl.scan_iceberg(
+        tbl, snapshot_id=first_snapshot_id, reader_override=reader_override
+    )
     expected = lf.collect()
+    assert_frame_equal(lf_snapshot.collect(), expected)
 
-    # No new snapshot, so the scan is not planned again.
+    # Swap the column names, without a new snapshot. Scans are resolved by name, so
+    # the scan must not mix the fields.
     with tbl.update_schema() as update:
-        update.add_column("b", StringType())
+        update.rename_column("a", "tmp")
+    with tbl.update_schema() as update:
+        update.rename_column("b", "a")
+    with tbl.update_schema() as update:
+        update.rename_column("tmp", "b")
 
-    assert_frame_equal(lf.collect(), expected)
+    for q in [
+        lf,
+        lf.filter(pl.col("a") > 0),
+        pl.concat([lf.filter(pl.col("a") > 0), lf.filter(pl.col("b") > 0)]),
+    ]:
+        with pytest.raises(pl.exceptions.ComputeError, match="table schema changed"):
+            q.collect()
+
+    assert_frame_equal(lf_snapshot.collect(), expected)
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override=reader_override).collect(),
+        pl.DataFrame({"b": [1, 2], "a": [10, 20]}),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_filter_struct_column_added_later(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "id", LongType()))
+    )
+    tbl.append(pl.DataFrame({"id": [1]}).to_arrow())
+    with tbl.update_schema() as update:
+        update.add_column("st", StructType(NestedField(3, "x", LongType())))
+    df = pl.DataFrame(
+        {"id": [1, 2], "st": [None, {"x": 9}]},
+        schema={"id": pl.Int64, "st": pl.Struct({"x": pl.Int64})},
+    )
+    tbl.append(df.tail(1).to_arrow())
+
+    for predicate in [
+        pl.col("st").struct.field("x") == 9,
+        pl.col("st").is_null(),
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(),
+            df.filter(predicate),
+        )
 
 
 def test_scan_iceberg_statistics_without_metrics() -> None:

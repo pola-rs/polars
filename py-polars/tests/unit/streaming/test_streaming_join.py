@@ -868,3 +868,14 @@ def test_merge_join_clipped_key(left_on: list[pl.Expr | str], merge_join: bool) 
     expected = q.collect(engine="in-memory")
     assert expected.height > 0
     assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("how", ["inner", "semi"])
+def test_streaming_join_empty_build_side_after_repeat(how: JoinStrategy) -> None:
+    # The join stops reading its probe side, which `repeat` must pass on.
+    lf = pl.LazyFrame({"a": [1, None, 3], "c": ["x", None, "y"]})
+    empty = pl.LazyFrame({"k": pl.Series([], dtype=pl.String)})
+    q = lf.filter(pl.repeat(True, pl.col("a").len())).join(
+        empty, left_on="c", right_on="k", how=how
+    )
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

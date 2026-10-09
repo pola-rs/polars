@@ -5671,3 +5671,32 @@ def test_filter_struct_field_with_logical_type_sibling(
         assert_frame_equal(
             pl.scan_parquet(f).filter(predicate).collect(), df.filter(predicate)
         )
+
+
+@pytest.mark.write_disk
+def test_filter_struct_column_missing_in_file(tmp_path: Path) -> None:
+    schema: dict[str, pl.DataType] = {
+        "id": pl.Int64(),
+        "st": pl.Struct({"x": pl.Int64}),
+    }
+    pl.DataFrame({"id": [1]}).write_parquet(tmp_path / "a.parquet")
+    pl.DataFrame({"id": [2], "st": [{"x": 1}]}, schema=schema).write_parquet(
+        tmp_path / "b.parquet"
+    )
+    df = pl.DataFrame({"id": [1, 2], "st": [None, {"x": 1}]}, schema=schema)
+
+    for predicate in [
+        pl.col("st").struct.field("x") == 1,
+        pl.col("st").is_null(),
+        pl.col("st").is_not_null(),
+    ]:
+        assert_frame_equal(
+            pl.scan_parquet(
+                [tmp_path / "a.parquet", tmp_path / "b.parquet"],
+                schema=schema,
+                missing_columns="insert",
+            )
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+        )
