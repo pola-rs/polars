@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use polars::prelude::sink::SinkedPathsCallback;
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars::prelude::{CloudScheme, UnifiedSinkArgs};
+use polars::prelude::{CloudScheme, PlanCallback, SpecialEq, UnifiedSinkArgs};
+use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 
 use crate::io::cloud_options::OptPyCloudOptions;
@@ -30,6 +32,7 @@ impl PySinkOptions<'_> {
             sync_on_close: Option<Wrap<SyncOnCloseType>>,
             storage_options: OptPyCloudOptions<'a>,
             credential_provider: Option<Py<PyAny>>,
+            sinked_paths_callback: Option<Py<PyAny>>,
         }
 
         let Extract {
@@ -38,6 +41,7 @@ impl PySinkOptions<'_> {
             sync_on_close,
             storage_options,
             credential_provider,
+            sinked_paths_callback,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -50,6 +54,11 @@ impl PySinkOptions<'_> {
             maintain_order,
             sync_on_close,
             cloud_options: cloud_options.map(Arc::new),
+            sinked_paths_callback: sinked_paths_callback.map(|x| {
+                SinkedPathsCallback::Callback(PlanCallback::Python(SpecialEq::new(Arc::new(
+                    PythonObject(x),
+                ))))
+            }),
         };
 
         Ok(unified_sink_args)

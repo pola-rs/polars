@@ -1,5 +1,5 @@
-use arrow::array::Array;
-use arrow::trusted_len::TrustedLen;
+use polars_arrow::array::Array;
+use polars_arrow::trusted_len::TrustedLen;
 
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
 

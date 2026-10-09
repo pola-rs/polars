@@ -2,7 +2,7 @@
 
 use std::hint::unreachable_unchecked;
 
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DecimalFmtBuffer;
 #[cfg(feature = "dtype-struct")]
@@ -49,7 +49,7 @@ pub enum AnyValueBuffer<'a> {
 
 impl<'a> AnyValueBuffer<'a> {
     #[inline]
-    pub fn add(&mut self, val: AnyValue<'a>) -> Option<()> {
+    pub fn add(&mut self, val: AnyValue<'_>) -> Option<()> {
         use AnyValueBuffer::*;
         match (self, val) {
             (Boolean(builder), AnyValue::Null) => builder.append_null(),
@@ -154,8 +154,8 @@ impl<'a> AnyValueBuffer<'a> {
         Some(())
     }
 
-    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
-        self.add(val.clone()).ok_or_else(|| {
+    pub fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
+        self.add(val.as_borrowed()).ok_or_else(|| {
             polars_err!(
                 ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
                 have the same schema or consider increasing `infer_schema_length`\n\
@@ -277,8 +277,8 @@ impl<'a> AnyValueBuffer<'a> {
         Ok(out)
     }
 
-    pub fn into_series(mut self) -> Series {
-        self.reset(0, false).unwrap()
+    pub fn into_series(mut self) -> PolarsResult<Series> {
+        self.reset(0, false)
     }
 
     pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'a> {
@@ -670,8 +670,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 let old_outer_validity = core::mem::take(outer_validity);
                 outer_validity.reserve(capacity);
 
-                StructChunked::from_series(PlSmallStr::EMPTY, length, v.iter())
-                    .unwrap()
+                StructChunked::from_series(PlSmallStr::EMPTY, length, v.iter())?
                     .with_outer_validity(Some(old_outer_validity.freeze()))
                     .into_series()
             },
@@ -683,8 +682,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
             All(dtype, vals) => {
                 let mut swap_vals = Vec::with_capacity(capacity);
                 std::mem::swap(vals, &mut swap_vals);
-                Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &swap_vals, dtype, false)
-                    .unwrap()
+                Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &swap_vals, dtype, false)?
             },
         };
 

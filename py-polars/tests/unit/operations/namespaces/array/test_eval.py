@@ -256,7 +256,7 @@ def test_arr_eval_with_filter_in_agg_25384(
 
     # group_by
     q = df.lazy().group_by(keys, maintain_order=True).agg(q_inner)
-    out = q.collect().select(pl.col.a).explode("a")
+    out = q.collect().select(pl.col.a).explode("a", empty_as_null=True)
     assert_series_equal(out.to_series(), result)
 
 
@@ -309,7 +309,7 @@ def test_arr_agg_with_filter_in_agg_25384(
 
     # group_by
     q = df.lazy().group_by(keys, maintain_order=True).agg(q_inner)
-    out = q.collect().select(pl.col.a).explode("a")
+    out = q.collect().select(pl.col.a).explode("a", empty_as_null=True)
     assert_series_equal(out.to_series(), result)
 
 

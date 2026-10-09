@@ -40,10 +40,30 @@ import asyncio.events as events
 import os
 import sys
 import threading
+from collections import deque
 from contextlib import contextmanager, suppress
 from heapq import heappop
 
 _run_close_loop = True
+
+
+class _CancelledHandle:
+    """Placeholder for a ready callback that a nested loop run already executed."""
+
+    _cancelled = True
+
+    def _run(self):
+        pass
+
+
+class _ReentrantReady(deque):
+    """A queue that returns a dummy cancelled handle on empty pop rather than erroring."""
+
+    def popleft(self):
+        try:
+            return super().popleft()
+        except IndexError:
+            return _CancelledHandle()
 
 
 class _NestAsyncio2:
@@ -268,14 +288,13 @@ def _patch_loop(loop):
         Simplified re-implementation of asyncio's _run_once that
         runs handles as they become ready.
         """
-        ready = self._ready
         scheduled = self._scheduled
         while scheduled and scheduled[0]._cancelled:
             heappop(scheduled)
 
         timeout = (
             0
-            if ready or self._stopping
+            if self._ready or self._stopping
             else min(max(scheduled[0]._when - self.time(), 0), 86400)
             if scheduled
             else None
@@ -286,12 +305,12 @@ def _patch_loop(loop):
         end_time = self.time() + self._clock_resolution
         while scheduled and scheduled[0]._when < end_time:
             handle = heappop(scheduled)
-            ready.append(handle)
+            self._ready.append(handle)
 
-        for _ in range(len(ready)):
-            if not ready:
+        for _ in range(len(self._ready)):
+            if not self._ready:
                 break
-            handle = ready.popleft()
+            handle = self._ready.popleft()
             if not handle._cancelled:
                 # preempt the current task so that that checks in
                 # Task.__step do not raise
@@ -369,10 +388,14 @@ def _patch_loop(loop):
         """Do not throw exception if loop is already running."""
         pass
 
-    if hasattr(loop, "_nest_patched"):
-        return
     if not isinstance(loop, asyncio.BaseEventLoop):
         raise ValueError("Can't patch loop of type %s" % type(loop))
+    if not isinstance(loop._ready, _ReentrantReady):
+        old_ready, loop._ready = loop._ready, _ReentrantReady()
+        while old_ready:
+            loop._ready.append(old_ready.popleft())
+    if hasattr(loop, "_nest_patched"):
+        return
     cls = loop.__class__
     cls.run_forever = run_forever
     cls.run_until_complete = run_until_complete

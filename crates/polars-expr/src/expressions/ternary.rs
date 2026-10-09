@@ -1,6 +1,8 @@
-use polars_core::POOL;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
+use recursive::recursive;
 
 use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
@@ -13,9 +15,15 @@ pub struct TernaryExpr {
     // Can be expensive on small data to run literals in parallel.
     run_par: bool,
     returns_scalar: bool,
+    truthy_mask_columns: Vec<PlSmallStr>,
+    falsy_mask_columns: Vec<PlSmallStr>,
+    // The dtype of this expression, which is the supertype of the arms and thus
+    // can differ from the dtype of an individual arm.
+    output_dtype: Option<DataType>,
 }
 
 impl TernaryExpr {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         predicate: Arc<dyn PhysicalExpr>,
         truthy: Arc<dyn PhysicalExpr>,
@@ -23,6 +31,9 @@ impl TernaryExpr {
         expr: Expr,
         run_par: bool,
         returns_scalar: bool,
+        truthy_mask_columns: Vec<PlSmallStr>,
+        falsy_mask_columns: Vec<PlSmallStr>,
+        output_dtype: Option<DataType>,
     ) -> Self {
         Self {
             predicate,
@@ -31,6 +42,17 @@ impl TernaryExpr {
             expr,
             run_par,
             returns_scalar,
+            truthy_mask_columns,
+            falsy_mask_columns,
+            output_dtype,
+        }
+    }
+
+    /// Casts an arm we return directly to the output dtype of this expression.
+    fn cast_arm(&self, arm: Column) -> PolarsResult<Column> {
+        match &self.output_dtype {
+            Some(dtype) if arm.dtype() != dtype => arm.cast(dtype),
+            _ => Ok(arm),
         }
     }
 }
@@ -84,22 +106,99 @@ impl PhysicalExpr for TernaryExpr {
         Some(&self.expr)
     }
 
+    #[recursive]
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let mut state = state.split();
         // Don't cache window functions as they run in parallel.
         state.remove_cache_window_flag();
         let mask_series = self.predicate.evaluate(df, &state)?;
-        let mask = mask_series.bool()?.clone();
+        let mut mask = mask_series.bool()?.clone();
 
-        let op_truthy = || self.truthy.evaluate(df, &state);
-        let op_falsy = || self.falsy.evaluate(df, &state);
-        let (truthy, falsy) = if self.run_par {
-            POOL.install(|| rayon::join(op_truthy, op_falsy))
-        } else {
-            (op_truthy(), op_falsy())
+        // Nulls count as false.
+        let true_count = mask.num_trues();
+        let false_count = mask.len() - true_count;
+
+        let mask_bitmap = (!self.truthy_mask_columns.is_empty()
+            || !self.falsy_mask_columns.is_empty())
+        .then(|| {
+            mask.rechunk_mut();
+            let arr = mask.downcast_as_array();
+            match arr.validity() {
+                Some(validity) => arr.values() & validity,
+                None => arr.values().clone(),
+            }
+        });
+
+        let masked_df = |names: &[PlSmallStr], mask: &Bitmap| -> PolarsResult<DataFrame> {
+            let columns: Vec<&Column> = names.iter().map(|c| df.column(c).unwrap()).collect();
+            // Common subexpression elimination can add a scalar column of one row to a frame
+            // with another height. A branch that only reads such columns under a scalar
+            // predicate is a scalar too.
+            let height = if mask.len() == 1 && columns.iter().all(|c| c.len() == 1) {
+                1
+            } else {
+                df.height()
+            };
+            let columns = columns
+                .into_iter()
+                .map(|c| {
+                    if c.len() != height {
+                        c.new_from_index(0, height).mask(mask)
+                    } else {
+                        c.mask(mask)
+                    }
+                })
+                .collect();
+            DataFrame::new(height, columns)
         };
-        let truthy = truthy?;
-        let falsy = falsy?;
+        let op_truthy = || {
+            if self.truthy_mask_columns.is_empty() || false_count == 0 {
+                return self.truthy.evaluate(df, &state);
+            }
+            let mask_df = masked_df(&self.truthy_mask_columns, mask_bitmap.as_ref().unwrap())?;
+            self.truthy.evaluate(&mask_df, &state)
+        };
+        let op_falsy = || {
+            if self.falsy_mask_columns.is_empty() || true_count == 0 {
+                return self.falsy.evaluate(df, &state);
+            }
+            let mask_df = masked_df(&self.falsy_mask_columns, &!mask_bitmap.as_ref().unwrap())?;
+            self.falsy.evaluate(&mask_df, &state)
+        };
+
+        let (truthy, falsy);
+        if true_count == 0 {
+            falsy = op_falsy()?;
+            match (mask.len(), falsy.len()) {
+                (l, 1) if l != 1 => return self.cast_arm(falsy.new_from_index(0, l)),
+                (1, r) if r != 1 => return self.cast_arm(falsy),
+                (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
+                (l, r) => {
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and falsy height ({}) in when/then/otherwise", l, r);
+                    return self.cast_arm(falsy);
+                },
+            }
+            truthy = op_truthy()?;
+        } else if false_count == 0 {
+            truthy = op_truthy()?;
+            match (mask.len(), truthy.len()) {
+                (l, 1) if l != 1 => return self.cast_arm(truthy.new_from_index(0, l)),
+                (1, r) if r != 1 => return self.cast_arm(truthy),
+                (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
+                (l, r) => {
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height ({}) and truthy height ({}) in when/then/otherwise", l, r);
+                    return self.cast_arm(truthy);
+                },
+            }
+            falsy = op_falsy()?; // Forced to evaluate truthy to resolve broadcast height.
+        } else if self.run_par {
+            let (t, f) = RAYON.install(|| rayon::join(op_truthy, op_falsy));
+            truthy = t?;
+            falsy = f?;
+        } else {
+            truthy = op_truthy()?;
+            falsy = op_falsy()?;
+        };
 
         truthy.zip_with(&mask, &falsy)
     }
@@ -109,6 +208,7 @@ impl PhysicalExpr for TernaryExpr {
     }
 
     #[allow(clippy::ptr_arg)]
+    #[recursive]
     fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
@@ -119,7 +219,7 @@ impl PhysicalExpr for TernaryExpr {
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
         let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);
         let (ac_mask, (ac_truthy, ac_falsy)) = if self.run_par {
-            POOL.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)))
+            RAYON.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)))
         } else {
             (op_mask(), (op_truthy(), op_falsy()))
         };
@@ -135,9 +235,8 @@ impl PhysicalExpr for TernaryExpr {
         // - AggregatedScalar or AggregatedList
         let mut has_non_unit_literal = false;
         let mut has_aggregated = false;
-        // If the length has changed then we must not apply on the flat values
-        // as ternary broadcasting is length-sensitive.
-        let mut non_aggregated_len_modified = false;
+        // Unknown groups (rows and their positions do not match initial groups).
+        let mut non_aggregated_unknown_groups = false;
 
         for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
             match ac.agg_state() {
@@ -149,7 +248,7 @@ impl PhysicalExpr for TernaryExpr {
                     }
                 },
                 NotAggregated(_) => {
-                    non_aggregated_len_modified |= !ac.original_len;
+                    non_aggregated_unknown_groups |= !ac.original_groups;
                 },
                 AggregatedScalar(_) | AggregatedList(_) => {
                     has_aggregated = true;
@@ -166,7 +265,7 @@ impl PhysicalExpr for TernaryExpr {
             return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
         }
 
-        if !has_aggregated && !non_aggregated_len_modified {
+        if !has_aggregated && !non_aggregated_unknown_groups {
             // Everything is flat (either NotAggregated or a unit literal).
             if state.verbose() {
                 eprintln!("ternary agg: finish all not-aggregated or unit literal");
@@ -184,7 +283,7 @@ impl PhysicalExpr for TernaryExpr {
                         state: NotAggregated(out),
                         groups: ac_target.groups.clone(),
                         update_groups: ac_target.update_groups,
-                        original_len: ac_target.original_len,
+                        original_groups: ac_target.original_groups,
                     });
                 }
             }
@@ -326,7 +425,7 @@ impl PhysicalExpr for TernaryExpr {
             state: agg_state_out,
             groups: ac_target.groups.clone(),
             update_groups: ac_target.update_groups,
-            original_len: ac_target.original_len,
+            original_groups: ac_target.original_groups,
         })
     }
 

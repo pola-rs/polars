@@ -1,3 +1,4 @@
+use pyo3::BoundObject;
 use pyo3::prelude::*;
 #[cfg(feature = "serde")]
 pub use serde_wrap::{
@@ -26,6 +27,12 @@ impl std::ops::DerefMut for PythonObject {
     }
 }
 
+impl std::hash::Hash for PythonObject {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        usize::hash(&(self.0.as_ptr() as _), state)
+    }
+}
+
 impl Clone for PythonObject {
     fn clone(&self) -> Self {
         Python::attach(|py| Self(self.0.clone_ref(py)))
@@ -35,6 +42,14 @@ impl Clone for PythonObject {
 impl From<Py<PyAny>> for PythonObject {
     fn from(value: Py<PyAny>) -> Self {
         Self(value)
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for PythonObject {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        Ok(PythonObject(ob.into_bound().unbind()))
     }
 }
 

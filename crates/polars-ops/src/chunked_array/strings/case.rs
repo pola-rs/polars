@@ -47,48 +47,45 @@ fn to_lowercase_helper(s: &str, buf: &mut Vec<u8>) {
 
     // SAFETY: we know this is a valid char boundary since
     // out.len() is only progressed if ASCII bytes are found.
-    let rest = unsafe { s.get_unchecked(buf.len()..) };
+    let ascii_len = buf.len();
+    let rest = unsafe { s.get_unchecked(ascii_len..) };
 
     // SAFETY: We have written only valid ASCII to our vec.
-    let mut s = unsafe { String::from_utf8_unchecked(std::mem::take(buf)) };
+    let mut out = unsafe { String::from_utf8_unchecked(std::mem::take(buf)) };
 
-    for (i, c) in rest[..].char_indices() {
+    for (i, c) in rest.char_indices() {
         if c == 'Σ' {
             // Σ maps to σ, except at the end of a word where it maps to ς.
             // This is the only conditional (contextual) but language-independent mapping
             // in `SpecialCasing.txt`,
             // so hard-code it rather than have a generic "condition" mechanism.
             // See https://github.com/rust-lang/rust/issues/26035
-            map_uppercase_sigma(rest, i, &mut s)
+            map_uppercase_sigma(s, ascii_len + i, &mut out)
         } else {
-            s.extend(c.to_lowercase());
-        }
-    }
-
-    fn map_uppercase_sigma(from: &str, i: usize, to: &mut String) {
-        // See https://www.unicode.org/versions/Unicode7.0.0/ch03.pdf#G33992
-        // for the definition of `Final_Sigma`.
-        debug_assert!('Σ'.len_utf8() == 2);
-        let is_word_final = case_ignorable_then_cased(from[..i].chars().rev())
-            && !case_ignorable_then_cased(from[i + 2..].chars());
-        to.push_str(if is_word_final { "ς" } else { "σ" });
-    }
-
-    fn case_ignorable_then_cased<I: Iterator<Item = char>>(iter: I) -> bool {
-        #[cfg(feature = "nightly")]
-        use core::unicode::{Case_Ignorable, Cased};
-
-        #[cfg(not(feature = "nightly"))]
-        use super::unicode_internals::{Case_Ignorable, Cased};
-        #[allow(clippy::skip_while_next)]
-        match iter.skip_while(|&c| Case_Ignorable(c)).next() {
-            Some(c) => Cased(c),
-            None => false,
+            out.extend(c.to_lowercase());
         }
     }
 
     // Put buf back for next iteration.
-    *buf = s.into_bytes();
+    *buf = out.into_bytes();
+}
+
+fn map_uppercase_sigma(from: &str, i: usize, to: &mut String) {
+    // See https://www.unicode.org/versions/Unicode7.0.0/ch03.pdf#G33992
+    // for the definition of `Final_Sigma`.
+    debug_assert!('Σ'.len_utf8() == 2);
+    let is_word_final = case_ignorable_then_cased(from[..i].chars().rev())
+        && !case_ignorable_then_cased(from[i + 2..].chars());
+    to.push_str(if is_word_final { "ς" } else { "σ" });
+}
+
+fn case_ignorable_then_cased<I: Iterator<Item = char>>(iter: I) -> bool {
+    use super::unicode_internals::{Case_Ignorable, Cased};
+    #[allow(clippy::skip_while_next)]
+    match iter.skip_while(|&c| Case_Ignorable(c)).next() {
+        Some(c) => Cased(c),
+        None => false,
+    }
 }
 
 pub(super) fn to_lowercase<'a>(ca: &'a StringChunked) -> StringChunked {
@@ -135,30 +132,25 @@ pub(super) fn to_uppercase<'a>(ca: &'a StringChunked) -> StringChunked {
 pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
     // Amortize allocation.
     let mut buf = Vec::new();
-
-    // Temporary scratch space.
-    // We have a double copy as we first convert to lowercase and then copy to `buf`.
-    let mut scratch = Vec::new();
     let f = |s: &'a str| -> &'a str {
-        to_lowercase_helper(s, &mut scratch);
-        let lowercased = unsafe { std::str::from_utf8_unchecked(&scratch) };
-
         // SAFETY: the buffer is clear, empty string is valid UTF-8.
         buf.clear();
-        let mut s = unsafe { String::from_utf8_unchecked(std::mem::take(&mut buf)) };
+        let mut out = unsafe { String::from_utf8_unchecked(std::mem::take(&mut buf)) };
 
         let mut next_is_upper = true;
-        for c in lowercased.chars() {
+        for (i, c) in s.char_indices() {
             if next_is_upper {
-                s.extend(c.to_uppercase());
+                out.extend(c.to_titlecase());
+            } else if c == 'Σ' {
+                map_uppercase_sigma(s, i, &mut out);
             } else {
-                s.push(c);
+                out.extend(c.to_lowercase());
             }
             next_is_upper = !c.is_alphabetic();
         }
 
         // Put buf back for next iteration.
-        buf = s.into_bytes();
+        buf = out.into_bytes();
 
         // SAFETY: apply_mut will copy value from buf before next iteration.
         let slice = unsafe { std::str::from_utf8_unchecked(&buf) };

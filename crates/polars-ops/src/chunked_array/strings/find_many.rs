@@ -1,5 +1,5 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use arrow::array::Utf8ViewArray;
+use polars_arrow::array::Utf8ViewArray;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
@@ -118,13 +118,10 @@ pub fn replace_all(
     })?;
     let replace_with = replace_with.str()?;
 
-    let replace_with = if replace_with.len() == 1 && patterns.len() > 1 {
-        replace_with.new_from_index(0, patterns.len())
-    } else {
-        replace_with.clone()
-    };
+    let replace_with = replace_with
+        .broadcast_to(patterns.len())
+        .context("expected the same amount of patterns as replacement strings")?;
 
-    polars_ensure!(patterns.len() == replace_with.len(), InvalidOperation: "expected the same amount of patterns as replacement strings");
     polars_ensure!(patterns.null_count() == 0 && replace_with.null_count() == 0, InvalidOperation: "'patterns'/'replace_with' should not have nulls");
     let replace_with = replace_with
         .downcast_iter()
@@ -134,8 +131,11 @@ pub fn replace_all(
 
     let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
 
-    Ok(unary_elementwise(ca, |opt_val| {
-        opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))
+    Ok(ca.apply_into_string_amortized(|val, buf| {
+        ac.replace_all_with(val, buf, |m, _, dst| {
+            dst.push_str(replace_with[m.pattern().as_usize()]);
+            true
+        })
     }))
 }
 
@@ -219,7 +219,7 @@ pub fn extract_many(
             let (ca, patterns) = align_chunks_binary(ca, patterns);
 
             for (arr, pat_arr) in ca.downcast_iter().zip(patterns.downcast_iter()) {
-                for z in arr.into_iter().zip(pat_arr.into_iter()) {
+                for z in arr.into_iter().zip(pat_arr) {
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
@@ -311,7 +311,7 @@ pub fn find_many(
             let (ca, patterns) = align_chunks_binary(ca, patterns);
 
             for (arr, pat_arr) in ca.downcast_iter().zip(patterns.downcast_iter()) {
-                for z in arr.into_iter().zip(pat_arr.into_iter()) {
+                for z in arr.into_iter().zip(pat_arr) {
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {

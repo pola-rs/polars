@@ -1,9 +1,13 @@
+use std::num::NonZeroUsize;
+
 use bytes::Bytes;
 use object_store::PutPayload;
 
 use crate::configs::{cloud_writer_coalesce_run_length, cloud_writer_copy_buffer_size};
 
-/// Utility for byte buffering logic. Accepts both owned [`Bytes`] and borrowed `&[u8]` incoming
+/// Buffers bytes to a configured target size.
+///
+/// Accepts both owned [`Bytes`] and borrowed `&[u8]` incoming
 /// bytes. Buffered bytes can be flushed to a [`PutPayload`].
 pub(super) struct BytesBufferer {
     /// Buffer until this many bytes. If set to `0`, buffering is disabled.
@@ -19,7 +23,8 @@ pub(super) struct BytesBufferer {
 }
 
 impl BytesBufferer {
-    pub(super) fn new(target_output_size: usize) -> Self {
+    pub(super) fn new(target_output_size: Option<NonZeroUsize>) -> Self {
+        let target_output_size = target_output_size.map_or(0, |x| x.get());
         let copy_buffer_reserve_size =
             usize::min(target_output_size, cloud_writer_copy_buffer_size().get());
 
@@ -189,7 +194,7 @@ impl BytesBufferer {
     }
 
     fn available_capacity_current_chunk(&self, incoming_len: usize) -> usize {
-        if self.target_output_size > 0 {
+        if self.target_output_size != 0 {
             self.target_output_size - self.num_bytes_buffered
         } else if self.is_empty() {
             incoming_len

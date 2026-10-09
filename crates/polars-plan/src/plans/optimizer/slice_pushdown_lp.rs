@@ -1,48 +1,46 @@
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::index::{idxsize_to_u64, idxsize_try_from};
+use polars_utils::scratch_vec::{ScratchUnitVec, ScratchVec};
 use polars_utils::slice_enum::Slice;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
+use crate::plans::optimizer::slice_pushdown_expr;
 use crate::prelude::*;
 
-mod inner {
-    use polars_utils::arena::Node;
-    use polars_utils::idx_vec::UnitVec;
-    use polars_utils::unitvec;
+pub(super) struct SlicePushDown {
+    nodes_scratch: ScratchUnitVec<Node>,
+    maintain_errors: bool,
+    pub(super) slice_node_in_optimized_plan: bool,
+    pub(super) ae_nodes_scratch: ScratchVec<Node>,
+    pub(super) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
+    pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchIndexSet<Node>,
+    optimized_cache_inputs: PlIndexMap<UniqueId, Node>,
+}
 
-    pub struct SlicePushDown {
-        scratch: UnitVec<Node>,
-        pub(super) maintain_errors: bool,
-        pub(crate) slice_node_in_optimized_plan: bool,
-    }
-
-    impl SlicePushDown {
-        pub fn new() -> Self {
-            Self {
-                scratch: unitvec![],
-                // We don't maintain errors on slice to make the behavior predictable across engines.
-                //
-                // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
-                // the new-streaming engine still may not error due to early-stopping.
-                maintain_errors: false,
-                slice_node_in_optimized_plan: false,
-            }
-        }
-
-        /// Returns shared scratch space after clearing.
-        pub fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
-            self.scratch.clear();
-            &mut self.scratch
+impl SlicePushDown {
+    pub(super) fn new() -> Self {
+        Self {
+            nodes_scratch: ScratchUnitVec::default(),
+            // We don't maintain errors on slice to make the behavior predictable across engines.
+            //
+            // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
+            // the new-streaming engine still may not error due to early-stopping.
+            maintain_errors: false,
+            slice_node_in_optimized_plan: false,
+            ae_nodes_scratch: ScratchVec::default(),
+            ae_slice_pd_state_scratch: ScratchVec::default(),
+            ae_slice_pd_direct_col_slice_nodes: ScratchIndexSet::default(),
+            optimized_cache_inputs: PlIndexMap::default(),
         }
     }
 }
 
-pub(super) use inner::SlicePushDown;
-
-#[derive(Copy, Clone, Debug)]
-struct State {
-    offset: i64,
-    len: IdxSize,
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) struct State {
+    pub(crate) offset: i64,
+    pub(crate) len: IdxSize,
 }
 
 impl State {
@@ -55,7 +53,7 @@ impl State {
 }
 
 /// Returns a combined slice if the 2 slices can be combined.
-fn combine_outer_inner_slice(outer_slice: State, inner_slice: State) -> Option<State> {
+pub(crate) fn combine_outer_inner_slice(outer_slice: State, inner_slice: State) -> Option<State> {
     // Both are positive, can combine into a single slice.
     if outer_slice.offset >= 0 && inner_slice.offset >= 0 {
         return Some(State {
@@ -235,15 +233,109 @@ impl SlicePushDown {
     ) -> PolarsResult<IR> {
         use IR::*;
 
-        // Don't take this, the node can be referenced multiple times in the tree.
-        if let IR::Cache { .. } = lp_arena.get(ir_node) {
-            return self.no_pushdown_restart_opt(
-                lp_arena.get(ir_node).clone(),
-                state,
-                lp_arena,
+        // Cache nodes with the same cache id share one logical input.
+        // Optimize that input once, then reuse it for later cache nodes
+        // to avoid traversing a subtree that may already have been taken
+        // from the arena.
+        if let IR::Cache { input, id } = lp_arena.get(ir_node) {
+            let (mut input, id) = (*input, *id);
+            input = if let Some(input) = self.optimized_cache_inputs.get(&id) {
+                *input
+            } else {
+                let alp = self.pushdown(input, None, lp_arena, expr_arena)?;
+                lp_arena.replace(input, alp);
+                self.optimized_cache_inputs.insert(id, input);
+                input
+            };
+
+            return self.no_pushdown_finish_opt(IR::Cache { input, id }, state, lp_arena);
+        }
+
+        let maintain_errors = self.maintain_errors;
+
+        let ir = lp_arena.get_mut(ir_node);
+
+        let mut common_expr_col_slice = None;
+        let mut col_hit_count: Option<usize> = Some(0);
+        let mut ae_slice_pd_direct_col_slice_nodes =
+            std::mem::take(self.ae_slice_pd_direct_col_slice_nodes.get());
+
+        for eir in ir.exprs() {
+            self.aexpr_slice_pushdown_rec(
+                eir.node(),
                 expr_arena,
+                &mut common_expr_col_slice,
+                &mut col_hit_count,
+                &mut ae_slice_pd_direct_col_slice_nodes,
+                maintain_errors,
             );
         }
+
+        if col_hit_count != Some(0) {
+            common_expr_col_slice = None;
+        }
+
+        'add_common_ir_slice: {
+            let IR::Select { input, .. } = ir else {
+                break 'add_common_ir_slice;
+            };
+
+            let Some((limit, 0)) = common_expr_col_slice.zip(col_hit_count) else {
+                break 'add_common_ir_slice;
+            };
+
+            let (ir_slice, offset_correction) = limit.to_slice_with_correction();
+
+            let input = *input;
+            let new_input_node = lp_arena.add(IR::Slice {
+                input,
+                offset: ir_slice.offset,
+                len: ir_slice.len,
+            });
+
+            let IR::Select { input, .. } = lp_arena.get_mut(ir_node) else {
+                unreachable!()
+            };
+
+            *input = new_input_node;
+
+            for node in ae_slice_pd_direct_col_slice_nodes.drain(..) {
+                use slice_pushdown_expr::Slice;
+                let AExpr::Slice {
+                    input: input_node,
+                    offset: offset_node,
+                    length,
+                } = expr_arena.get(node)
+                else {
+                    unreachable!()
+                };
+
+                let input_node = *input_node;
+                let offset_node = *offset_node;
+
+                let Slice::Extracted(ae_slice) =
+                    Slice::from_nodes(offset_node, *length, expr_arena)
+                else {
+                    unreachable!()
+                };
+
+                if ae_slice.len == ir_slice.len {
+                    assert_eq!(ae_slice.offset, ir_slice.offset);
+                    expr_arena.replace(node, expr_arena.get(input_node).clone());
+                } else if offset_correction != 0 {
+                    let new_offset = ae_slice.offset.checked_sub(offset_correction).unwrap();
+                    expr_arena.replace(
+                        offset_node,
+                        AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+                            DataType::Int64,
+                            AnyValue::Int64(new_offset),
+                        ))),
+                    );
+                }
+            }
+        }
+
+        *self.ae_slice_pd_direct_col_slice_nodes.get() = ae_slice_pd_direct_col_slice_nodes;
 
         match (lp_arena.take(ir_node), state) {
             #[cfg(feature = "python")]
@@ -268,6 +360,7 @@ impl SlicePushDown {
                     predicate,
                     predicate_file_skip_applied,
                     scan_type,
+                    maintain_order,
                 },
                 Some(state),
             ) if predicate.is_none()
@@ -292,6 +385,8 @@ impl SlicePushDown {
 
                     FileScanIR::ExpandedPaths { .. } => false,
 
+                    FileScanIR::ExternalReaderBuilder { .. } => true,
+
                     // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                     FileScanIR::Anonymous { .. } => state.offset == 0,
                 } =>
@@ -313,6 +408,7 @@ impl SlicePushDown {
                             unified_scan_args,
                             predicate,
                             predicate_file_skip_applied,
+                            maintain_order,
                         };
 
                         lp_arena.replace(ir_node, lp);
@@ -327,6 +423,7 @@ impl SlicePushDown {
                             unified_scan_args,
                             predicate,
                             predicate_file_skip_applied,
+                            maintain_order,
                         };
 
                         self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
@@ -344,6 +441,7 @@ impl SlicePushDown {
                     unified_scan_args,
                     predicate,
                     predicate_file_skip_applied,
+                    maintain_order,
                 };
 
                 Ok(lp)
@@ -408,15 +506,11 @@ impl SlicePushDown {
                     input_left,
                     input_right,
                     schema,
-                    left_on,
-                    right_on,
                     mut options,
                 },
                 Some(state),
-            ) if !matches!(
-                options.options,
-                Some(JoinTypeOptionsIR::CrossAndFilter { .. })
-            ) =>
+            ) if !matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. })
+                && !options.options.has_fused_predicate() =>
             {
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).args.slice {
                     return if let Some(combined) = combine_outer_inner_slice(
@@ -431,8 +525,6 @@ impl SlicePushDown {
                             input_left,
                             input_right,
                             schema,
-                            left_on,
-                            right_on,
                             options,
                         };
                         self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
@@ -441,33 +533,83 @@ impl SlicePushDown {
                             input_left,
                             input_right,
                             schema,
-                            left_on,
-                            right_on,
                             options,
                         };
                         self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
                     };
                 }
 
-                // first restart optimization in both inputs and get the updated LP
-                let lp_left = self.pushdown(input_left, None, lp_arena, expr_arena)?;
+                // For left/right/full joins we can push a limit.
+                let input_limit_slice = if state.offset < 0 {
+                    IdxSize::try_from(-state.offset).ok().map(|len| State {
+                        offset: state.offset,
+                        len,
+                    })
+                } else {
+                    IdxSize::try_from(state.offset)
+                        .ok()
+                        .and_then(|offset| offset.checked_add(state.len))
+                        .map(|limit| State {
+                            offset: 0,
+                            len: limit,
+                        })
+                };
+
+                let order = options.args.maintain_order;
+                let non_negative_offset = state.offset >= 0;
+                let can_limit_left = match options.args.how {
+                    JoinType::Left => !matches!(
+                        order,
+                        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+                    ),
+                    JoinType::Full => {
+                        non_negative_offset
+                            && matches!(
+                                order,
+                                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+                            )
+                    },
+                    _ => false,
+                };
+                let can_limit_right = match options.args.how {
+                    JoinType::Right => !matches!(
+                        order,
+                        MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+                    ),
+                    JoinType::Full => {
+                        non_negative_offset
+                            && matches!(
+                                order,
+                                MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+                            )
+                    },
+                    _ => false,
+                };
+
+                let lp_left = self.pushdown(
+                    input_left,
+                    input_limit_slice.filter(|_| can_limit_left),
+                    lp_arena,
+                    expr_arena,
+                )?;
                 let input_left = lp_arena.add(lp_left);
 
-                let lp_right = self.pushdown(input_right, None, lp_arena, expr_arena)?;
+                let lp_right = self.pushdown(
+                    input_right,
+                    input_limit_slice.filter(|_| can_limit_right),
+                    lp_arena,
+                    expr_arena,
+                )?;
                 let input_right = lp_arena.add(lp_right);
 
                 // then assign the slice state to the join operation
 
-                let mut_options = Arc::make_mut(&mut options);
-
-                mut_options.args.slice = Some((state.offset, state.len as usize));
+                Arc::make_mut(&mut options).args.slice = Some((state.offset, state.len as usize));
 
                 Ok(Join {
                     input_left,
                     input_right,
                     schema,
-                    left_on,
-                    right_on,
                     options,
                 })
             },
@@ -716,7 +858,7 @@ impl SlicePushDown {
                 if can_pushdown_slice_past_projections(
                     &expr,
                     expr_arena,
-                    self.empty_nodes_scratch_mut(),
+                    self.nodes_scratch.get(),
                     maintain_errors,
                 )
                 .1
@@ -754,7 +896,7 @@ impl SlicePushDown {
                     can_pushdown_slice_past_projections(
                         &exprs,
                         expr_arena,
-                        self.empty_nodes_scratch_mut(),
+                        self.nodes_scratch.get(),
                         maintain_errors,
                     );
 
@@ -790,9 +932,26 @@ impl SlicePushDown {
                     schema,
                     options,
                 },
+                Some(inner_state),
+            ) if inner_state.offset < 0 => {
+                // Negative offset cannot push through hconcat, as this would
+                // cause misalignment on inputs with non-equal lengths.
+                // https://github.com/pola-rs/polars/issues/27552
+                let lp = HConcat {
+                    inputs,
+                    schema,
+                    options,
+                };
+                self.no_pushdown_finish_opt(lp, Some(inner_state), lp_arena)
+            },
+            (
+                HConcat {
+                    inputs,
+                    schema,
+                    options,
+                },
                 _,
             ) => {
-                // Slice can always be pushed down for horizontal concatenation
                 let lp = HConcat {
                     inputs,
                     schema,
@@ -803,6 +962,72 @@ impl SlicePushDown {
             (lp @ Sink { .. }, _) | (lp @ SinkMultiple { .. }, _) => {
                 // Slice can always be pushed down for sinks
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
+            },
+            // Already resolved: `resolved_ir` is the single input of this node, so we
+            // push the state into it through the normal input dispatch. Note that this
+            // must go through `pushdown()` on the resolved node itself, so that node's
+            // own rules apply (e.g. a `Sort` or `Filter` root must not be crossed).
+            (
+                lp @ Resolver {
+                    resolved_ir: Some(_),
+                    ..
+                },
+                state,
+            ) => self.pushdown_and_continue(lp, state, lp_arena, expr_arena),
+            (
+                Resolver {
+                    resolver,
+                    resolver_schema,
+                    projection,
+                    mut slice,
+                    filters,
+                    filter_drop_columns_idx,
+                    resolved_dsl,
+                    resolved_ir,
+                },
+                Some(mut state),
+            ) if filters.is_empty() => {
+                state = if let Some((offset, len)) = slice {
+                    let Some(State { offset, len }) = combine_outer_inner_slice(
+                        state,
+                        State {
+                            offset,
+                            len: idxsize_try_from(len).unwrap_or(IdxSize::MAX),
+                        },
+                    ) else {
+                        return self.no_pushdown_restart_opt(
+                            Resolver {
+                                resolver,
+                                resolver_schema,
+                                projection,
+                                slice,
+                                filters,
+                                filter_drop_columns_idx,
+                                resolved_dsl,
+                                resolved_ir,
+                            },
+                            Some(state),
+                            lp_arena,
+                            expr_arena,
+                        );
+                    };
+                    State { offset, len }
+                } else {
+                    state
+                };
+
+                slice = Some((state.offset, idxsize_to_u64(state.len)));
+
+                Ok(Resolver {
+                    resolver,
+                    resolver_schema,
+                    projection,
+                    slice,
+                    filters,
+                    filter_drop_columns_idx,
+                    resolved_dsl,
+                    resolved_ir,
+                })
             },
             (catch_all, state) => self.no_pushdown_finish_opt(catch_all, state, lp_arena),
         }

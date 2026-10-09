@@ -11,6 +11,8 @@ mod find_many;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
 #[cfg(feature = "strings")]
+mod literal_chain;
+#[cfg(feature = "strings")]
 mod namespace;
 #[cfg(feature = "string_normalize")]
 mod normalize;
@@ -24,7 +26,7 @@ mod split;
 mod strip;
 #[cfg(feature = "strings")]
 mod substring;
-#[cfg(all(not(feature = "nightly"), feature = "strings"))]
+#[cfg(feature = "strings")]
 mod unicode_internals;
 
 #[cfg(feature = "strings")]

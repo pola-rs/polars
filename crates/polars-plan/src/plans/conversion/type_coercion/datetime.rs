@@ -1,6 +1,6 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_time::Duration;
+use polars_defs::time::duration::Duration;
 use polars_utils::arena::Arena;
 
 use crate::plans::{AExpr, ExprIR, IRFunctionExpr, IRTemporalFunction, LiteralValue};
@@ -23,7 +23,8 @@ macro_rules! ensure_int {
         )
     }
 }
-pub use {ensure_datetime, ensure_int};
+pub use ensure_datetime;
+pub use ensure_int;
 
 /// Cast a date or datetime node to a supertype.
 ///

@@ -2,11 +2,11 @@ use std::fmt;
 use std::sync::Mutex;
 
 use polars_buffer::{Buffer, SharedStorage};
-use polars_core::POOL;
+#[cfg(feature = "temporal")]
+use polars_core::chunked_array::temporal::string::StringMethods;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
-#[cfg(feature = "polars-time")]
-use polars_time::prelude::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
@@ -66,7 +66,7 @@ pub fn cast_columns(
     };
 
     if parallel {
-        let cols = POOL.install(|| {
+        let cols = RAYON.install(|| {
             df.columns()
                 .into_par_iter()
                 .map(|s| {
@@ -219,6 +219,8 @@ impl<'a> CoreReader<'a> {
         let (inferred_schema, leftover) = read_until_start_and_infer_schema_from_compressed_reader(
             &read_options,
             None,
+            false,
+            false,
             None,
             &mut compressed_reader,
         )?;
@@ -350,7 +352,9 @@ impl<'a> CoreReader<'a> {
             return Ok(df);
         }
 
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
+        let n_threads = self
+            .n_threads
+            .unwrap_or_else(|| RAYON.current_num_threads());
 
         // This is chosen by benchmarking on ny city trip csv dataset.
         // We want small enough chunks such that threads start working as soon as possible
@@ -396,7 +400,7 @@ impl<'a> CoreReader<'a> {
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
-        POOL.scope(|s| {
+        RAYON.scope(|s| {
             // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };

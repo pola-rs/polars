@@ -1,8 +1,8 @@
 use std::io::Write;
 
-use arrow::datatypes::Metadata;
-use arrow::io::ipc::IpcField;
-use arrow::io::ipc::write::{self, EncodedData, WriteOptions};
+use polars_arrow::datatypes::Metadata;
+use polars_arrow::io::ipc::IpcField;
+use polars_arrow::io::ipc::write::{self, EncodedData, WriteOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -218,6 +218,10 @@ impl<W: Write> BatchedWriter<W> {
         encoded_dictionaries: &[EncodedData],
     ) -> PolarsResult<()> {
         self.writer.write_encoded_dictionaries(encoded_dictionaries)
+    }
+
+    pub fn set_custom_metadata(&mut self, custom_metadata: Vec<(String, String)>) {
+        self.writer.set_custom_metadata(custom_metadata)
     }
 
     /// Writes the footer of the IPC file.

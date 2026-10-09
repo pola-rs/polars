@@ -3,24 +3,25 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use components::row_deletions::ExternalFilterMask;
+use polars_async::executor::{AbortOnDropHandle, TaskMetricAggregator};
+use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::prelude::PlHashMap;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::async_executor::AbortOnDropHandle;
-use crate::async_primitives::connector;
-use crate::async_primitives::wait_group::WaitToken;
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
+use crate::nodes::io_sources::multi_scan::components::predicate::Predicate;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_scan::reader_interface::{FileReader, FileReaderCallbacks};
@@ -45,7 +46,7 @@ pub struct ExtraOperations {
     pub include_file_paths: Option<PlSmallStr>,
     /// Index of the file path column in the final output.
     pub file_path_col_idx: usize,
-    pub predicate: Option<ScanIOPredicate>,
+    pub predicate: Option<Predicate>,
 }
 
 impl ExtraOperations {
@@ -80,11 +81,17 @@ pub(super) struct StartReaderArgsConstant {
     pub(super) reader_capabilities: ReaderCapabilities,
     pub(super) file_projection_builder: ProjectionBuilder,
     pub(super) cast_columns_policy: CastColumnsPolicy,
+    pub(super) extra_columns_policy: ExtraColumnsPolicy,
     pub(super) missing_columns_policy: MissingColumnsPolicy,
     pub(super) forbid_extra_columns: Option<ForbidExtraColumns>,
     pub(super) num_pipelines: usize,
+    pub(super) max_concurrent_scans: usize,
     pub(super) disable_morsel_split: bool,
+    pub(super) maintain_order: bool,
+    /// Precomputed last-morsel split factor; see `BeginReadArgs::last_morsel_pipelines`.
+    pub(super) last_morsel_pipelines: usize,
     pub(super) verbose: bool,
+    pub(super) task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 pub(super) struct StartReaderArgsPerFile {
@@ -95,6 +102,23 @@ pub(super) struct StartReaderArgsPerFile {
     pub(super) extra_ops_this_file: ExtraOperations,
     pub(super) callbacks: FileReaderCallbacks,
     pub(super) external_filter_mask: Option<ExternalFilterMask>,
+}
+
+/// Files are emitted in the order their morsels are ready: readers run concurrently, bounded by
+/// `reader_slots`, and their morsels merge through a channel of `merge_capacity`.
+#[derive(Clone)]
+pub(super) struct UnorderedFiles {
+    pub(super) reader_slots: Arc<Semaphore>,
+    pub(super) merge_capacity: usize,
+}
+
+/// A reader that has been started but not yet attached to the bridge.
+pub(super) struct StartedReader {
+    pub(super) handle: AbortOnDropHandle<PolarsResult<StartedReaderState>>,
+    /// Dropped once attached; the starter waits on it with a single concurrent scan.
+    pub(super) wait_token: WaitToken,
+    /// Held until the reader is done when files are emitted unordered.
+    pub(super) slot: Option<OwnedSemaphorePermit>,
 }
 
 /// State for a reader that has been started.

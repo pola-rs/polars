@@ -1,4 +1,4 @@
-use arrow::offset::Offsets;
+use polars_arrow::offset::Offsets;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::chunked_array::object::extension::create_extension;
@@ -40,7 +40,7 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
     fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
         let arr = s.as_any().downcast_ref::<ObjectChunked<T>>().unwrap();
 
-        for v in arr.into_iter() {
+        for v in arr.iter() {
             self.values_builder.append_option(v.cloned())
         }
         if arr.is_empty() {

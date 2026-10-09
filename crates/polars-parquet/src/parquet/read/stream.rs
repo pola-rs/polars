@@ -1,6 +1,7 @@
 use std::io::SeekFrom;
 
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use polars_buffer::Buffer;
 
 use super::super::metadata::FileMetadata;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAGIC};
@@ -31,7 +32,7 @@ pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>
 
     if file_size < HEADER_SIZE + FOOTER_SIZE {
         return Err(ParquetError::oos(
-            "A parquet file must contain a header and footer with at least 12 bytes",
+            "A Parquet file must contain a header and footer with at least 12 bytes",
         ));
     }
 
@@ -50,10 +51,10 @@ pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>
 
     // check this is indeed a parquet file
     if buffer[default_end_len - 4..] != PARQUET_MAGIC {
-        return Err(ParquetError::oos("Invalid Parquet file. Corrupt footer"));
+        return Err(ParquetError::oos("The file must end with PAR1"));
     }
 
-    let metadata_len: u32 = metadata_len(&buffer, default_end_len);
+    let metadata_len: u32 = metadata_len(&buffer);
     let metadata_len: u64 = metadata_len as u64;
 
     let footer_len = FOOTER_SIZE + metadata_len;
@@ -63,26 +64,24 @@ pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>
         ));
     }
 
-    let reader = if (footer_len as usize) < buffer.len() {
-        // the whole metadata is in the bytes we already read
+    // Footer bytes need to outlive the FileMetadata so stats `ByteRange`s
+    // stay resolvable, wrap in a `Buffer`. Both branches end with a
+    // zero-copy move from the source `Vec<u8>` into the buffer.
+    let footer_buf: Buffer<u8> = if (footer_len as usize) <= buffer.len() {
+        // The full footer is already in the bytes we prefetched, slice into
+        // the existing buffer.
         let remaining = buffer.len() - footer_len as usize;
-        &buffer[remaining..]
+        Buffer::from_vec(buffer).sliced(remaining..)
     } else {
-        // the end of file read by default is not long enough, read again including the metadata.
+        // the end of file read by default is not long enough, read again
+        // including the metadata.
         reader.seek(SeekFrom::End(-(footer_len as i64))).await?;
 
         buffer.clear();
         buffer.try_reserve(footer_len as usize)?;
-        reader
-            .take(footer_len as u64)
-            .read_to_end(&mut buffer)
-            .await?;
+        reader.take(footer_len).read_to_end(&mut buffer).await?;
 
-        &buffer
+        Buffer::from_vec(buffer)
     };
-
-    // a highly nested but sparse struct could result in many allocations
-    let max_size = reader.len() * 2 + 1024;
-
-    deserialize_metadata(reader, max_size)
+    deserialize_metadata(footer_buf)
 }

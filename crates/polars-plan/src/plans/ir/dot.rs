@@ -1,13 +1,14 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use polars_core::prelude::{InitHashMaps, PlHashSet};
+use polars_core::prelude::{InitHashMaps, PlIndexSet};
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use super::format::ExprIRSliceDisplay;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::*;
 
@@ -77,7 +78,7 @@ impl<'a> IRDotDisplay<'a> {
         f: &mut fmt::Formatter<'_>,
         parent: Option<DotNode>,
         last: &mut usize,
-        visited_caches: &mut PlHashSet<UniqueId>,
+        visited_caches: &mut PlIndexSet<UniqueId>,
     ) -> std::fmt::Result {
         use fmt::Write;
 
@@ -102,12 +103,16 @@ impl<'a> IRDotDisplay<'a> {
 
         use IR::*;
         match root {
-            Union { inputs, .. } => {
+            Union {
+                inputs, options, ..
+            } => {
                 for input in inputs {
                     recurse!(*input);
                 }
 
-                write_label(f, id, |f| f.write_str("UNION"))?;
+                write_label(f, id, |f| {
+                    write!(f, "UNION[maintain_order: {0}]", options.maintain_order)
+                })?;
             },
             HConcat { inputs, .. } => {
                 for input in inputs {
@@ -139,7 +144,9 @@ impl<'a> IRDotDisplay<'a> {
             PythonScan { options } => {
                 let predicate = match &options.predicate {
                     PythonPredicate::Polars(e) => format!("{}", self.display_expr(e)),
-                    PythonPredicate::PyArrow(s) => s.clone(),
+                    PythonPredicate::PyArrow(p) => {
+                        format!("predicate: {:?}, has_residual: {}", p, p.has_residual)
+                    },
                     PythonPredicate::None => "none".to_string(),
                 };
                 let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_ref()));
@@ -180,6 +187,25 @@ impl<'a> IRDotDisplay<'a> {
                 let exprs = self.display_exprs(exprs);
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
+            },
+            Window {
+                input,
+                partition_by,
+                order_by,
+                exprs,
+                maintain_order,
+                ordered_eval,
+                ..
+            } => {
+                let header = super::format::WindowHeaderDisplay {
+                    partition_by,
+                    order_by: order_by.as_ref(),
+                    maintain_order: *maintain_order,
+                    ordered_eval: *ordered_eval,
+                };
+                let exprs = self.display_exprs(exprs);
+                recurse!(*input);
+                write_label(f, id, |f| write!(f, "{header}\n{exprs}"))?;
             },
             Slice { input, offset, len } => {
                 recurse!(*input);
@@ -229,6 +255,7 @@ impl<'a> IRDotDisplay<'a> {
                 scan_type,
                 unified_scan_args,
                 output_schema: _,
+                maintain_order: _,
             } => {
                 let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);
@@ -241,7 +268,23 @@ impl<'a> IRDotDisplay<'a> {
                     file_info.schema.len() - usize::from(unified_scan_args.row_index.is_some());
 
                 write_label(f, id, |f| {
-                    write!(f, "{name} SCAN {path}\nπ {with_columns}/{total_columns};",)?;
+                    write!(f, "{name} SCAN {path}")?;
+
+                    if let FileScanIR::ExternalReaderBuilder { external } = &**scan_type {
+                        let props = match external.explain_properties() {
+                            Ok(x) => x,
+                            Err(e) => polars_utils::aliases::PlIndexMap::from_iter([(
+                                "Error:".into(),
+                                format!("failed explain_properties(): {e:?}"),
+                            )]),
+                        };
+
+                        for (k, v) in props {
+                            write!(f, "\n{k}: {v}").unwrap();
+                        }
+                    }
+
+                    write!(f, "\nπ {with_columns}/{total_columns};")?;
 
                     if let Some(predicate) = predicate.as_ref() {
                         write!(f, "\nσ {}", self.display_expr(predicate))?;
@@ -257,34 +300,39 @@ impl<'a> IRDotDisplay<'a> {
             Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 options,
                 ..
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
+                let (left_keys, right_keys) = options.options.key_vecs();
+
                 write_label(f, id, |f| {
                     write!(f, "JOIN {}", options.args.how)?;
 
-                    if !left_on.is_empty() {
-                        let left_on = self.display_exprs(left_on);
-                        let right_on = self.display_exprs(right_on);
+                    if !left_keys.is_empty() {
+                        let left_on = self.display_exprs(&left_keys);
+                        let right_on = self.display_exprs(&right_keys);
                         write!(f, "\nleft: {left_on};\nright: {right_on}")?
                     }
                     Ok(())
                 })?;
+            },
+            Gather {
+                input,
+                idxs,
+                null_on_oob,
+            } => {
+                recurse!(*input);
+                recurse!(*idxs);
+                write_label(f, id, |f| write!(f, "GATHER[null_on_oob: {null_on_oob}]"))?;
             },
             MapFunction {
                 input, function, ..
             } => {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "{function}"))?;
-            },
-            ExtContext { input, .. } => {
-                recurse!(*input);
-                write_label(f, id, |f| f.write_str("EXTERNAL_CONTEXT"))?;
             },
             Sink { input, payload, .. } => {
                 recurse!(*input);
@@ -320,11 +368,54 @@ impl<'a> IRDotDisplay<'a> {
                 input_left,
                 input_right,
                 key,
+                maintain_order,
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
-                write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
+                let key = key
+                    .iter()
+                    .map(|k| format!("'{k}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write_label(f, id, |f| {
+                    write!(
+                        f,
+                        "MERGE_SORTED[maintain_order: {maintain_order}] ON [{key}]",
+                    )
+                })?;
+            },
+            UnoptimizedDispatch {
+                inputs,
+                operation,
+                arg_map,
+            } => {
+                for input in arg_map.iter().map(|(i, _c, _n)| &inputs[i]) {
+                    recurse!(*input);
+                }
+                write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;
+            },
+            Resolver {
+                resolver,
+                resolved_dsl,
+                resolved_ir,
+                ..
+            } => {
+                if let Some(node) = *resolved_ir {
+                    recurse!(node);
+                };
+
+                write_label(f, id, |f| {
+                    write!(
+                        f,
+                        "{}",
+                        ResolverExplainHeadingDisplay {
+                            indent: 0,
+                            resolver,
+                            resolved_dsl
+                        }
+                    )
+                })?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
@@ -437,7 +528,7 @@ impl fmt::Display for IRDotDisplay<'_> {
         writeln!(f, "{INDENT}node [fontname=\"Monospace\", shape=\"box\"]")?;
 
         let mut last = 0;
-        let mut visited_caches = PlHashSet::new();
+        let mut visited_caches = PlIndexSet::new();
         self._format(f, None, &mut last, &mut visited_caches)?;
 
         writeln!(f, "}}")?;

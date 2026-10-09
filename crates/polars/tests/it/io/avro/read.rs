@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use apache_avro::types::{Record, Value};
-use apache_avro::{Codec, Days, Duration, Millis, Months, Schema as AvroSchema, Writer};
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::io::avro::avro_schema::read::read_metadata;
-use arrow::io::avro::read;
-use arrow::record_batch::RecordBatchT;
+use apache_avro::{
+    Codec, Days, DeflateSettings, Duration, Millis, Months, Schema as AvroSchema, Writer,
+};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::io::avro::avro_schema::read::read_metadata;
+use polars_arrow::io::avro::read;
+use polars_arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 
 pub(super) fn schema() -> (AvroSchema, ArrowSchema) {
@@ -243,7 +245,7 @@ fn read_without_codec() -> PolarsResult<()> {
 
 #[test]
 fn read_deflate() -> PolarsResult<()> {
-    test(Codec::Deflate)
+    test(Codec::Deflate(DeflateSettings::default()))
 }
 
 #[test]

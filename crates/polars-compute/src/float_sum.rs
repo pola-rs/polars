@@ -2,11 +2,11 @@ use std::ops::{Add, IndexMut};
 #[cfg(feature = "simd")]
 use std::simd::{prelude::*, *};
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::NativeType;
 #[cfg(feature = "simd")]
 use polars_utils::float16::pf16;
 
@@ -23,6 +23,7 @@ macro_rules! impl_cast_custom {
     ($_type:ty) => {
         #[cfg(feature = "simd")]
         impl<const N: usize> SimdCastGeneric<N> for Simd<$_type, N> {
+            #[inline]
             fn cast_generic<U: SimdCast>(self) -> Simd<U, N> {
                 self.cast::<U>()
             }
@@ -78,7 +79,9 @@ where
 {
     fn sum_block_vectorized(&self) -> F {
         let vsum = self
-            .chunks_exact(STRIPE)
+            .as_chunks::<STRIPE>()
+            .0
+            .iter()
             .map(|a| Simd::<T, STRIPE>::from_slice(a).cast_generic::<F>())
             .sum::<Simd<F, STRIPE>>();
         vector_horizontal_sum(vsum)
@@ -87,7 +90,9 @@ where
     fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
         let zero = Simd::default();
         let vsum = self
-            .chunks_exact(STRIPE)
+            .as_chunks::<STRIPE>()
+            .0
+            .iter()
             .enumerate()
             .map(|(i, a)| {
                 let m: Mask<T::Mask, STRIPE> = mask.get_simd(i * STRIPE);
@@ -160,7 +165,7 @@ where
 {
     fn sum_block_vectorized(&self) -> F {
         let mut vsum = [F::default(); STRIPE];
-        for chunk in self.chunks_exact(STRIPE) {
+        for chunk in self.as_chunks::<STRIPE>().0 {
             for j in 0..STRIPE {
                 vsum[j] = vsum[j] + chunk[j].as_();
             }
@@ -170,7 +175,7 @@ where
 
     fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
         let mut vsum = [F::default(); STRIPE];
-        for (i, chunk) in self.chunks_exact(STRIPE).enumerate() {
+        for (i, chunk) in self.as_chunks::<STRIPE>().0.iter().enumerate() {
             for j in 0..STRIPE {
                 // Unconditional add with select for better branch-free opts.
                 let addend = if mask.get(i * STRIPE + j) {

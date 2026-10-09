@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import AttributeRemovedError, ComputeError
 from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
@@ -198,3 +198,10 @@ def test_selector_by_name_single() -> None:
 def test_selector_by_name_multiple() -> None:
     with pytest.raises(ComputeError):
         cs.by_name(["foo", "bar"]).meta.output_name()
+
+
+def test_write_json_removed() -> None:
+    with pytest.raises(
+        AttributeRemovedError, match=re.escape("use `meta.serialize` instead")
+    ):
+        pl.col("a").meta.write_json()  # type: ignore[attr-defined]

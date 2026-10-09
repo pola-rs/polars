@@ -159,7 +159,7 @@ pub enum ArrowDataType {
     /// This type mostly used to represent low cardinality string
     /// arrays or a limited set of primitive types as integers.
     ///
-    /// The `bool` value indicates the `Dictionary` is sorted if set to `true`.
+    /// The `bool` value indicates the `Dictionary` keys are considered ordered.
     Dictionary(IntegerType, Box<ArrowDataType>, bool),
     /// Decimal value with precision and scale
     /// precision is the number of digits in the number and
@@ -367,7 +367,9 @@ impl ArrowDataType {
             ),
             Dictionary(keys, _, _) => (*keys).into(),
             Union(_) => unimplemented!(),
-            Map(_, _) => unimplemented!(),
+            // Polars stores a Map as its entries, with `i64` offsets. This has to agree with
+            // `DataType::Map::to_physical`, which reaches the same place through `LargeList`.
+            Map(entries, _) => entries.dtype.underlying_physical_type().to_large_list(true),
             Extension(ext) => ext.inner.underlying_physical_type(),
         }
     }
@@ -413,11 +415,17 @@ impl ArrowDataType {
                     })
                     .collect(),
             ),
-            Dictionary(keys, values, is_sorted) => {
-                Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_sorted)
+            Dictionary(keys, values, is_ordered) => {
+                Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_ordered)
             },
             Union(_) => unimplemented!(),
-            Map(_, _) => unimplemented!(),
+            Map(entries, keys_sorted) => Map(
+                Box::new(Field {
+                    dtype: entries.dtype.to_storage_recursive(),
+                    ..*entries.clone()
+                }),
+                *keys_sorted,
+            ),
             _ => self.clone(),
         }
     }
@@ -451,6 +459,7 @@ impl ArrowDataType {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
     }
 
+    #[inline]
     pub fn is_numeric(&self) -> bool {
         use ArrowDataType as D;
         matches!(

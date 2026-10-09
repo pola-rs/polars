@@ -190,6 +190,30 @@ shape: (2, 2)
 └─────┴─────┘
 ```
 
+## For engine authors: identifying a source
+
+This section is for people writing a Polars execution engine. If you are writing an IO source, you
+can skip it.
+
+Polars does not call your source directly. It calls a wrapper that deserializes the predicate and
+forwards the call. Engines may need to identify sources they know about, for example to provide
+execution context or call additional methods.
+
+To make that possible, the wrapper satisfies the `IOSourceScanFunction` protocol, which exposes the
+registered source:
+
+```python
+from polars.io.plugins import IOSourceScanFunction
+
+# `scan_fn` is the scan function of the `PythonScan` node being executed.
+if isinstance(scan_fn, IOSourceScanFunction):
+    source = scan_fn.io_source  # exactly the object passed to register_io_source
+    if isinstance(source, MyEngineSource):
+        ...
+```
+
+This is as unstable as the rest of the IO plugin API.
+
 ## Further reading
 
 - [Rust example (distribution source)](https://github.com/pola-rs/pyo3-polars/tree/main/example/io_plugin)

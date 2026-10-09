@@ -1,7 +1,7 @@
-use arrow::types::{
+use num_traits::{FromBytes, ToBytes, Zero};
+use polars_arrow::types::{
     AlignedBytes, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
 };
-use num_traits::{FromBytes, ToBytes, Zero};
 use polars_utils::float16::pf16;
 
 use crate::parquet::schema::types::PhysicalType;
@@ -212,12 +212,16 @@ impl NativeType for [u32; 3] {
 
     #[inline]
     fn ord(&self, other: &Self) -> std::cmp::Ordering {
-        int96_to_i64_ns(*self).ord(&int96_to_i64_ns(*other))
+        // An INT96 timestamp is a Julian day (index 2) plus nanoseconds-of-day (indices 1, 0),
+        // so comparing those lexicographically is exact chronological order. Converting to
+        // nanoseconds first would clamp out-of-range values to i64::MAX, misordering them.
+        let key = |x: &[u32; 3]| (x[2], x[1], x[0]);
+        key(self).cmp(&key(other))
     }
 }
 
 #[inline]
-pub fn int96_to_i64_ns(value: [u32; 3]) -> i64 {
+pub fn int96_to_i64_ns(value: [u32; 3]) -> Option<i64> {
     const JULIAN_DAY_OF_EPOCH: i64 = 2_440_588;
     const SECONDS_PER_DAY: i64 = 86_400;
     const NANOS_PER_SECOND: i64 = 1_000_000_000;
@@ -226,7 +230,9 @@ pub fn int96_to_i64_ns(value: [u32; 3]) -> i64 {
     let nanoseconds = ((value[1] as i64) << 32) + value[0] as i64;
     let seconds = (day - JULIAN_DAY_OF_EPOCH) * SECONDS_PER_DAY;
 
-    seconds * NANOS_PER_SECOND + nanoseconds
+    seconds
+        .checked_mul(NANOS_PER_SECOND)
+        .and_then(|ns| ns.checked_add(nanoseconds))
 }
 
 #[inline]
@@ -242,6 +248,11 @@ pub fn decode<T: NativeType>(chunk: &[u8]) -> T {
 /// This is safe if the length is properly checked.
 #[inline]
 pub unsafe fn decode_unchecked<T: NativeType>(chunk: &[u8]) -> T {
-    let chunk: <T as NativeType>::Bytes = unsafe { chunk.try_into().unwrap_unchecked() };
+    let chunk: <T as NativeType>::Bytes = unsafe {
+        chunk
+            .get_unchecked(..size_of::<T>())
+            .try_into()
+            .unwrap_unchecked()
+    };
     T::from_le_bytes(chunk)
 }

@@ -1,10 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::Debug;
 
-use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
-use arrow::bitmap::BitmapBuilder;
-use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
+use polars_arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_buffer::Buffer;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
@@ -115,7 +115,11 @@ impl TakeChunked for Column {
         sorted: IsSorted,
         avoid_sharing: bool,
     ) -> Self {
-        // @scalar-opt
+        // A scalar column has the same value in every row, so only their number matters.
+        if let Column::Scalar(s) = self {
+            return s.resize(by.len()).into();
+        }
+
         let s = self.as_materialized_series();
         let s = unsafe { s.take_chunked_unchecked(by, sorted, avoid_sharing) };
         s.into_column()
@@ -126,7 +130,19 @@ impl TakeChunked for Column {
         by: &[ChunkId<B>],
         avoid_sharing: bool,
     ) -> Self {
-        // @scalar-opt
+        // As above, but the null ids still have to be carried over.
+        if let Column::Scalar(s) = self {
+            if !by.iter().any(ChunkId::is_null) {
+                return s.resize(by.len()).into();
+            }
+
+            let idx = IdxCa::from_iter_options(
+                PlSmallStr::EMPTY,
+                by.iter().map(|id| (!id.is_null()).then_some(0)),
+            );
+            return unsafe { self.take_unchecked(&idx) };
+        }
+
         let s = self.as_materialized_series();
         let s = unsafe { s.take_opt_chunked_unchecked(by, avoid_sharing) };
         s.into_column()

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import ArgumentRemovedError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -266,20 +267,32 @@ def test_replace_duplicates_new() -> None:
     assert_series_equal(result, expected)
 
 
-def test_replace_return_dtype_deprecated() -> None:
+def test_replace_return_dtype_removed() -> None:
+    def msg(qualname: str) -> str:
+        return (
+            re.escape(
+                f"the argument 'return_dtype' for '{qualname}' was deprecated in "
+            )
+            + ".*"
+            + re.escape("Use `replace_strict` instead to set a return data type while")
+        )
+
     s = pl.Series([1, 2, 3])
-    with pytest.deprecated_call():
-        result = s.replace(1, 10, return_dtype=pl.Int8)
-    expected = pl.Series([10, 2, 3], dtype=pl.Int8)
-    assert_series_equal(result, expected)
+    with pytest.raises(ArgumentRemovedError, match=msg("Series.replace")):
+        s.replace(1, 10, return_dtype=pl.Int8)  # type: ignore[call-arg]
+
+    e = pl.col("a")
+    with pytest.raises(ArgumentRemovedError, match=msg("Expr.replace")):
+        e.replace(1, 10, return_dtype=pl.Int8)  # type: ignore[call-arg]
 
 
-def test_replace_default_deprecated() -> None:
+def test_replace_default_removed() -> None:
     s = pl.Series([1, 2, 3])
-    with pytest.deprecated_call():
-        result = s.replace(1, 10, default=None)
-    expected = pl.Series([10, None, None], dtype=pl.Int32)
-    assert_series_equal(result, expected)
+    with pytest.raises(
+        ArgumentRemovedError,
+        match=re.escape("Use `replace_strict` instead to set a default while "),
+    ):
+        s.replace(1, 10, default=None)  # type: ignore[call-arg]
 
 
 def test_replace_single_argument_not_mapping() -> None:

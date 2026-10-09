@@ -1,12 +1,12 @@
 use std::cmp::Reverse;
 
+use polars_async::primitives::linearizer::Linearizer;
 use polars_core::frame::DataFrame;
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 
-use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 
@@ -32,10 +32,10 @@ impl ApplyRowIndexOrLimit {
 
         if verbose {
             eprintln!(
-                "[NDJSON ApplyRowIndexOrLimit]: init: \
+                "[NDJson ApplyRowIndexOrLimit]: init: \
                 limit: {:?}, \
                 row_index: {:?}",
-                &limit, &row_index
+                limit, row_index
             );
         }
 
@@ -70,7 +70,7 @@ impl ApplyRowIndexOrLimit {
             // No wait group logic here, already attached by line batch processors.
 
             if morsel_tx
-                .send_morsel(Morsel::new(df, morsel_seq, SourceToken::new()))
+                .send_morsel(Morsel::new_unregistered(df, morsel_seq, SourceToken::new()))
                 .await
                 .is_err()
             {
@@ -86,7 +86,7 @@ impl ApplyRowIndexOrLimit {
         drop(morsel_receiver);
 
         if verbose {
-            eprintln!("[NDJSON ApplyRowIndexOrLimit]: returning");
+            eprintln!("[NDJson ApplyRowIndexOrLimit]: returning");
         }
 
         Ok(())

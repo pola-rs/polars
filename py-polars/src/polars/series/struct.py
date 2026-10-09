@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    _NamespaceSuggestMixin,
     qualified_type_name,
     sphinx_accessor,
 )
@@ -13,10 +14,11 @@ from polars.schema import Schema
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from polars import DataFrame, Series
     from polars._plr import PySeries
+    from polars._typing import IntoExpr
 elif BUILDING_SPHINX_DOCS:
     # note: we assign this way to work around an autocomplete issue in ipython/jedi
     # (ref: https://github.com/davidhalter/jedi/issues/2057)
@@ -25,7 +27,7 @@ elif BUILDING_SPHINX_DOCS:
 
 
 @expr_dispatch
-class StructNameSpace:
+class StructNameSpace(_NamespaceSuggestMixin):
     """Series.struct namespace."""
 
     _accessor = "struct"
@@ -100,6 +102,30 @@ class StructNameSpace:
         ['c', 'd']
         """
 
+    def drop(self, names: Sequence[str], *, strict: bool = True) -> Series:
+        """
+        Drop one or more fields from the struct.
+
+        Parameters
+        ----------
+        names
+            Names of the fields to drop.
+        strict
+            If True, raise an error if any of the specified fields do not exist in the
+            struct.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.drop(["a"])
+        shape: (2,)
+        Series: 'a' [struct[1]]
+        [
+            {2}
+            {4}
+        ]
+        """
+
     @property
     def schema(self) -> Schema:
         """
@@ -136,6 +162,41 @@ class StructNameSpace:
         └─────┴─────┘
         """
         return wrap_df(self._s.struct_unnest())
+
+    def eval(
+        self,
+        *exprs: IntoExpr | Iterable[IntoExpr],
+        **named_exprs: IntoExpr,
+    ) -> Series:
+        """
+        Select fields of this struct, dropping the fields that are not selected.
+
+        This is similar to `select` on `DataFrame`.
+
+        The expressions must be length-preserving; they are evaluated against the
+        fields of the struct, which are addressed with :func:`polars.field`.
+
+        Parameters
+        ----------
+        *exprs
+            Field(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional fields to select, specified as keyword arguments.
+            The fields will be renamed to the keyword used.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [{"x": 1, "y": 4}, {"x": 4, "y": 9}])
+        >>> s.struct.eval(pl.field("y"), x_sq=pl.field("x") ** 2)
+        shape: (2,)
+        Series: 'a' [struct[2]]
+        [
+            {4,1}
+            {9,16}
+        ]
+        """
 
     def json_encode(self) -> Series:
         """

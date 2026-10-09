@@ -1,5 +1,4 @@
 //! Declares [`TrustedLen`].
-use std::iter::Scan;
 use std::slice::{Iter, IterMut};
 
 /// An iterator of known, fixed size.
@@ -30,13 +29,15 @@ where
 }
 
 unsafe impl<I> TrustedLen for std::iter::Enumerate<I> where I: TrustedLen {}
-
-unsafe impl<A, B> TrustedLen for std::iter::Zip<A, B>
+unsafe impl<I, T> TrustedLen for polars_utils::itertools::EnumerateIdx<I, T>
 where
-    A: TrustedLen,
-    B: TrustedLen,
+    I: TrustedLen,
+    polars_utils::itertools::EnumerateIdx<I, T>: Iterator,
 {
 }
+
+unsafe impl<A: TrustedLen, B: TrustedLen> TrustedLen for std::iter::Zip<A, B> {}
+unsafe impl<A: TrustedLen, B: TrustedLen> TrustedLen for polars_utils::itertools::ZipEq<A, B> {}
 
 unsafe impl<T> TrustedLen for std::slice::ChunksExact<'_, T> {}
 
@@ -72,13 +73,6 @@ unsafe impl<T> TrustedLen for std::ops::RangeInclusive<T> where std::ops::RangeI
 {}
 unsafe impl<A: TrustedLen> TrustedLen for std::iter::StepBy<A> {}
 
-unsafe impl<I, St, F, B> TrustedLen for Scan<I, St, F>
-where
-    F: FnMut(&mut St, I::Item) -> Option<B>,
-    I: TrustedLen,
-{
-}
-
 unsafe impl<T: Copy> TrustedLen for polars_buffer::buffer::IntoIter<T> {}
 
 unsafe impl<K, V> TrustedLen for hashbrown::hash_map::IntoIter<K, V> {}
@@ -101,14 +95,6 @@ where
     #[inline]
     pub unsafe fn new(iter: I, len: usize) -> Self {
         Self { iter, len }
-    }
-}
-
-impl<J: Clone> TrustMyLength<std::iter::RepeatN<J>, J> {
-    /// Create a new `TrustMyLength` iterator that repeats `value` `len` times.
-    pub fn new_repeat_n(value: J, len: usize) -> Self {
-        // SAFETY: This is always safe since repeat(..).take(n) always repeats exactly `n` times`.
-        unsafe { Self::new(std::iter::repeat_n(value, len), len) }
     }
 }
 

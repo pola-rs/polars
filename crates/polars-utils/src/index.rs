@@ -10,6 +10,31 @@ pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
 
+/// Avoids clippy::unnecessary_cast when compiling with bigidx enabled.
+#[inline]
+pub const fn idxsize_to_u64(
+    #[cfg(feature = "bigidx")] val: u64,
+    #[cfg(not(feature = "bigidx"))] val: u32,
+) -> u64 {
+    #[cfg(feature = "bigidx")]
+    {
+        val
+    }
+    #[cfg(not(feature = "bigidx"))]
+    {
+        val as u64
+    }
+}
+
+/// Avoids clippy::useless_conversion when compiling with bigidx enabled.
+#[inline(always)]
+pub fn idxsize_try_from<T>(x: T) -> Result<IdxSize, <IdxSize as TryFrom<T>>::Error>
+where
+    IdxSize: TryFrom<T>,
+{
+    IdxSize::try_from(x)
+}
+
 #[cfg(not(feature = "bigidx"))]
 pub type NonZeroIdxSize = std::num::NonZeroU32;
 #[cfg(feature = "bigidx")]
@@ -145,43 +170,6 @@ pub fn check_bounds(idx: &[IdxSize], len: IdxSize) -> PolarsResult<()> {
     polars_ensure!(max_idx < len, OutOfBounds: "indices are out of bounds");
     Ok(())
 }
-
-pub trait ToIdx {
-    fn to_idx(self, len: u64) -> IdxSize;
-}
-
-macro_rules! impl_to_idx {
-    ($ty:ty) => {
-        impl ToIdx for $ty {
-            #[inline]
-            fn to_idx(self, _len: u64) -> IdxSize {
-                self as IdxSize
-            }
-        }
-    };
-    ($ty:ty, $ity:ty) => {
-        impl ToIdx for $ty {
-            #[inline]
-            fn to_idx(self, len: u64) -> IdxSize {
-                let idx = self as $ity;
-                if idx < 0 {
-                    (idx + len as $ity) as IdxSize
-                } else {
-                    idx as IdxSize
-                }
-            }
-        }
-    };
-}
-
-impl_to_idx!(u8);
-impl_to_idx!(u16);
-impl_to_idx!(u32);
-impl_to_idx!(u64);
-impl_to_idx!(i8, i16);
-impl_to_idx!(i16, i32);
-impl_to_idx!(i32, i64);
-impl_to_idx!(i64, i64);
 
 // Allows for 2^24 (~16M) chunks
 // Leaves 2^40 (~1T) rows per chunk

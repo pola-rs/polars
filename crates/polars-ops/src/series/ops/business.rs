@@ -1,26 +1,15 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
-use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+use polars_core::utils::polars_arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_core::{binary_output_height, ternary_output_height};
+use polars_defs::expr::Roll;
 use polars_utils::binary_search::{find_first_ge_index, find_first_gt_index};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
-#[cfg(feature = "timezones")]
-use crate::prelude::replace_time_zone;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum Roll {
-    Forward,
-    Backward,
-    Raise,
-}
 
 macro_rules! empty_or_all_null {
     ($c:expr) => {
@@ -83,10 +72,12 @@ pub fn business_day_count(
 
     let out: ChunkedArray<Int32Type> = (0..output_height)
         .map(|i| {
+            // Note: we must compute holidays first since holidays_getter is stateful, and may
+            // not be skipped due to a short-circuiting ? operator.
+            let holidays = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
             let start =
                 unsafe { start_dates.get_unchecked(if start_dates.len() == 1 { 0 } else { i }) }?;
             let end = unsafe { end_dates.get_unchecked(if end_dates.len() == 1 { 0 } else { i }) }?;
-            let holidays = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
 
             Some(business_day_count_impl(
                 start,
@@ -273,11 +264,13 @@ pub fn add_business_days(
 
         (0..output_height)
             .map(|i| {
+                // Note: we must compute holidays first since holidays_getter is stateful, and may
+                // not be skipped due to a short-circuiting ? operator.
+                let holidays_list = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
                 let start = unsafe {
                     start_dates.get_unchecked(if start_dates.len() == 1 { 0 } else { i })
                 }?;
                 let n = unsafe { n.get_unchecked(if n.len() == 1 { 0 } else { i }) }?;
-                let holidays_list = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
 
                 Some(roll_start_date(start, roll, &week_mask, holidays_list).map(
                     |(start, day_of_week)| {
@@ -413,8 +406,10 @@ pub fn is_business_day(
 
     let out: BooleanChunked = (0..output_height)
         .map(|i| {
-            let date = unsafe { dates.get_unchecked(if dates.len() == 1 { 0 } else { i }) }?;
+            // Note: we must compute holidays first since holidays_getter is stateful, and may
+            // not be skipped due to a short-circuiting ? operator.
             let holidays_list = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
+            let date = unsafe { dates.get_unchecked(if dates.len() == 1 { 0 } else { i }) }?;
 
             let day_of_week = get_day_of_week(date);
 

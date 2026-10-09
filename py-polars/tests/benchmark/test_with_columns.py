@@ -6,8 +6,6 @@ import polars as pl
 import polars.selectors as cs
 
 
-# TODO: this is slow in streaming
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.slow
 def test_with_columns_quadratic_19503() -> None:
     num_columns = 10_000

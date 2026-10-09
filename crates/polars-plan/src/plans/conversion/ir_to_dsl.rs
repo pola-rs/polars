@@ -155,23 +155,18 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Quantile {
-                expr,
-                quantile,
-                method,
+            IRAggExpr::Sum {
+                input,
+                null_on_empty,
             } => {
-                let expr = node_to_expr(expr, expr_arena);
-                let quantile = node_to_expr(quantile, expr_arena);
-                AggExpr::Quantile {
-                    expr: Arc::new(expr),
-                    quantile: Arc::new(quantile),
-                    method,
+                let exp = node_to_expr(input, expr_arena);
+                if null_on_empty {
+                    when(exp.clone().count().gt(lit(0)))
+                        .then(exp.sum())
+                        .otherwise(Expr::Literal(LiteralValue::untyped_null()))
+                } else {
+                    exp.sum()
                 }
-                .into()
-            },
-            IRAggExpr::Sum(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Sum(Arc::new(exp)).into()
             },
             IRAggExpr::Std(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -180,10 +175,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Var(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Var(Arc::new(exp), ddof).into()
-            },
-            IRAggExpr::AggGroups(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::AggGroups(Arc::new(exp)).into()
             },
             IRAggExpr::Count {
                 input,
@@ -244,9 +235,14 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             variant,
         },
         #[cfg(feature = "dtype-struct")]
-        AExpr::StructEval { expr, evaluation } => Expr::StructEval {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => Expr::StructEval {
             expr: Arc::new(node_to_expr(expr, expr_arena)),
             evaluation: expr_irs_to_exprs(evaluation, expr_arena),
+            variant,
         },
         AExpr::Function {
             input,
@@ -309,48 +305,47 @@ fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
 }
 
 pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
-    use {FunctionExpr as F, IRFunctionExpr as IF};
+    use FunctionExpr as F;
+    use IRFunctionExpr as IF;
 
     let function = match function {
         #[cfg(feature = "dtype-array")]
         IF::ArrayExpr(f) => {
-            use {ArrayFunction as A, IRArrayFunction as IA};
+            use ArrayFunction as A;
+            use IRArrayFunction as IA;
             F::ArrayExpr(match f {
                 IA::Concat => A::Concat,
                 IA::Length => A::Length,
                 IA::Min => A::Min,
                 IA::Max => A::Max,
                 IA::Sum => A::Sum,
+                IA::Dot => A::Dot,
                 IA::ToList => A::ToList,
-                IA::Unique(v) => A::Unique(v),
-                IA::NUnique => A::NUnique,
                 IA::Std(v) => A::Std(v),
                 IA::Var(v) => A::Var(v),
                 IA::Mean => A::Mean,
                 IA::Median => A::Median,
-                #[cfg(feature = "array_any_all")]
-                IA::Any => A::Any,
-                #[cfg(feature = "array_any_all")]
-                IA::All => A::All,
                 IA::Sort(v) => A::Sort(v),
-                IA::Reverse => A::Reverse,
                 IA::ArgMin => A::ArgMin,
                 IA::ArgMax => A::ArgMax,
                 IA::Get(v) => A::Get(v),
                 IA::Join(v) => A::Join(v),
                 #[cfg(feature = "is_in")]
-                IA::Contains { nulls_equal } => A::Contains { nulls_equal },
+                IA::Contains { nulls_equal, .. } => A::Contains { nulls_equal },
                 #[cfg(feature = "array_count")]
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
                 IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode(options) => A::Explode(options),
                 #[cfg(feature = "array_to_struct")]
-                IA::ToStruct(ng) => A::ToStruct(ng),
+                IA::ToStruct { fields } => A::ToStruct {
+                    fields: Some(fields),
+                },
             })
         },
         IF::BinaryExpr(f) => {
-            use {BinaryFunction as B, IRBinaryFunction as IB};
+            use BinaryFunction as B;
+            use IRBinaryFunction as IB;
             F::BinaryExpr(match f {
                 IB::Contains => B::Contains,
                 IB::StartsWith => B::StartsWith,
@@ -374,9 +369,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "dtype-categorical")]
         IF::Categorical(f) => {
-            use {CategoricalFunction as C, IRCategoricalFunction as IC};
+            use CategoricalFunction as C;
+            use IRCategoricalFunction as IC;
             F::Categorical(match f {
-                IC::GetCategories => C::GetCategories,
                 #[cfg(feature = "strings")]
                 IC::LenBytes => C::LenBytes,
                 #[cfg(feature = "strings")]
@@ -387,22 +382,39 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IC::EndsWith(v) => C::EndsWith(v),
                 #[cfg(feature = "strings")]
                 IC::Slice(s, l) => C::Slice(s, l),
+                IC::To(dt, strict) => C::To(DataTypeExpr::Literal(dt), strict),
+                IC::Physical => C::Physical,
+            })
+        },
+        #[cfg(feature = "dtype-map")]
+        IF::MapExpr(f) => {
+            use IRMapFunction as IM;
+            use MapFunction as M;
+            F::MapExpr(match f {
+                IM::Entries => M::Entries,
+                IM::Keys => M::Keys,
+                IM::Values => M::Values,
+                IM::Length => M::Length,
+                IM::ContainsKey { .. } => M::ContainsKey,
+                IM::Get { .. } => M::Get,
             })
         },
         #[cfg(feature = "dtype-extension")]
         IF::Extension(f) => {
-            use {ExtensionFunction as E, IRExtensionFunction as IE};
+            use ExtensionFunction as E;
+            use IRExtensionFunction as IE;
             F::Extension(match f {
                 IE::To(dtype) => E::To(dtype.into()),
                 IE::Storage => E::Storage,
             })
         },
         IF::ListExpr(f) => {
-            use {IRListFunction as IL, ListFunction as L};
+            use IRListFunction as IL;
+            use ListFunction as L;
             F::ListExpr(match f {
                 IL::Concat => L::Concat,
                 #[cfg(feature = "is_in")]
-                IL::Contains { nulls_equal } => L::Contains { nulls_equal },
+                IL::Contains { nulls_equal, .. } => L::Contains { nulls_equal },
                 #[cfg(feature = "list_drop_nulls")]
                 IL::DropNulls => L::DropNulls,
                 #[cfg(feature = "list_sample")]
@@ -439,25 +451,21 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "diff")]
                 IL::Diff { n, null_behavior } => L::Diff { n, null_behavior },
                 IL::Sort(sort_options) => L::Sort(sort_options),
-                IL::Reverse => L::Reverse,
-                IL::Unique(v) => L::Unique(v),
-                IL::NUnique => L::NUnique,
                 #[cfg(feature = "list_sets")]
                 IL::SetOperation(set_operation) => L::SetOperation(set_operation),
-                #[cfg(feature = "list_any_all")]
-                IL::Any => L::Any,
-                #[cfg(feature = "list_any_all")]
-                IL::All => L::All,
                 IL::Join(v) => L::Join(v),
                 #[cfg(feature = "dtype-array")]
                 IL::ToArray(v) => L::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
                 IL::ToStruct(list_to_struct_args) => L::ToStruct(list_to_struct_args),
+                #[cfg(feature = "dtype-map")]
+                IL::ToMap => L::ToMap,
             })
         },
         #[cfg(feature = "strings")]
         IF::StringExpr(f) => {
-            use {IRStringFunction as IB, StringFunction as B};
+            use IRStringFunction as IB;
+            use StringFunction as B;
             F::StringExpr(match f {
                 IB::Format { format, insertions } => B::Format { format, insertions },
                 #[cfg(feature = "concat_str")]
@@ -580,10 +588,12 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "dtype-struct")]
         IF::StructExpr(f) => {
-            use {IRStructFunction as IB, StructFunction as B};
+            use IRStructFunction as IB;
+            use StructFunction as B;
             F::StructExpr(match f {
                 IB::FieldByName(pl_small_str) => B::FieldByName(pl_small_str),
                 IB::RenameFields(pl_small_strs) => B::RenameFields(pl_small_strs),
+                IB::DropFields(pl_small_strs, strict) => B::Drop(pl_small_strs, strict),
                 IB::PrefixFields(pl_small_str) => B::PrefixFields(pl_small_str),
                 IB::SuffixFields(pl_small_str) => B::SuffixFields(pl_small_str),
                 #[cfg(feature = "json")]
@@ -593,7 +603,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "temporal")]
         IF::TemporalExpr(f) => {
-            use {IRTemporalFunction as IB, TemporalFunction as B};
+            use IRTemporalFunction as IB;
+            use TemporalFunction as B;
             F::TemporalExpr(match f {
                 IB::Millennium => B::Millennium,
                 IB::Century => B::Century,
@@ -609,7 +620,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::OrdinalDay => B::OrdinalDay,
                 IB::Time => B::Time,
                 IB::Date => B::Date,
-                IB::Datetime => B::Datetime,
                 #[cfg(feature = "dtype-duration")]
                 IB::Duration(time_unit) => B::Duration(time_unit),
                 IB::Hour => B::Hour,
@@ -634,7 +644,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::TotalNanoseconds { fractional } => B::TotalNanoseconds { fractional },
                 IB::ToString(v) => B::ToString(v),
                 IB::CastTimeUnit(time_unit) => B::CastTimeUnit(time_unit),
-                IB::WithTimeUnit(time_unit) => B::WithTimeUnit(time_unit),
                 #[cfg(feature = "timezones")]
                 IB::ConvertTimeZone(time_zone) => B::ConvertTimeZone(time_zone),
                 IB::TimeStamp(time_unit) => B::TimeStamp(time_unit),
@@ -667,7 +676,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "bitwise")]
         IF::Bitwise(f) => {
-            use {BitwiseFunction as B, IRBitwiseFunction as IB};
+            use BitwiseFunction as B;
+            use IRBitwiseFunction as IB;
             F::Bitwise(match f {
                 IB::CountOnes => B::CountOnes,
                 IB::CountZeros => B::CountZeros,
@@ -681,10 +691,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             })
         },
         IF::Boolean(f) => {
-            use {BooleanFunction as B, IRBooleanFunction as IB};
+            use BooleanFunction as B;
+            use IRBooleanFunction as IB;
             F::Boolean(match f {
                 IB::Any { ignore_nulls } => B::Any { ignore_nulls },
                 IB::All { ignore_nulls } => B::All { ignore_nulls },
+                IB::IsEmpty { ignore_nulls } => B::IsEmpty { ignore_nulls },
+                IB::HasNulls => B::HasNulls,
                 IB::IsNull => B::IsNull,
                 IB::IsNotNull => B::IsNotNull,
                 IB::IsFinite => B::IsFinite,
@@ -702,7 +715,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "is_between")]
                 IB::IsBetween { closed } => B::IsBetween { closed },
                 #[cfg(feature = "is_in")]
-                IB::IsIn { nulls_equal } => B::IsIn { nulls_equal },
+                IB::IsIn { nulls_equal, .. } => B::IsIn { nulls_equal },
                 #[cfg(feature = "is_close")]
                 IB::IsClose {
                     abs_tol,
@@ -713,6 +726,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     rel_tol,
                     nans_equal,
                 },
+                IB::IsSorted {
+                    descending,
+                    nulls_last,
+                } => B::IsSorted {
+                    descending,
+                    nulls_last,
+                },
                 IB::AllHorizontal => B::AllHorizontal,
                 IB::AnyHorizontal => B::AnyHorizontal,
                 IB::Not => B::Not,
@@ -720,7 +740,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "business")]
         IF::Business(f) => {
-            use {BusinessFunction as B, IRBusinessFunction as IB};
+            use BusinessFunction as B;
+            use IRBusinessFunction as IB;
             F::Business(match f {
                 IB::BusinessDayCount { week_mask } => B::BusinessDayCount { week_mask },
                 IB::AddBusinessDay { week_mask, roll } => B::AddBusinessDay { week_mask, roll },
@@ -742,7 +763,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         IF::NullCount => F::NullCount,
         IF::Pow(f) => {
-            use {IRPowFunction as IP, PowFunction as P};
+            use IRPowFunction as IP;
+            use PowFunction as P;
             F::Pow(match f {
                 IP::Generic => P::Generic,
                 IP::Sqrt => P::Sqrt,
@@ -750,7 +772,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             })
         },
         #[cfg(feature = "row_hash")]
-        IF::Hash(s0, s1, s2, s3) => F::Hash(s0, s1, s2, s3),
+        IF::Hash(seed) => F::Hash(seed),
         #[cfg(feature = "arg_where")]
         IF::ArgWhere => F::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -759,7 +781,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::SearchSorted { side, descending } => F::SearchSorted { side, descending },
         #[cfg(feature = "range")]
         IF::Range(f) => {
-            use {IRRangeFunction as IR, RangeFunction as R};
+            use IRRangeFunction as IR;
+            use RangeFunction as R;
             F::Range(match f {
                 IR::IntRange { step, dtype } => R::IntRange {
                     step,
@@ -832,7 +855,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "trigonometry")]
         IF::Trigonometry(f) => {
-            use {IRTrigonometricFunction as IT, TrigonometricFunction as T};
+            use IRTrigonometricFunction as IT;
+            use TrigonometricFunction as T;
             F::Trigonometry(match f {
                 IT::Cos => T::Cos,
                 IT::Cot => T::Cot,
@@ -859,7 +883,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::FillNullWithStrategy(strategy) => F::FillNullWithStrategy(strategy),
         #[cfg(feature = "rolling_window")]
         IF::RollingExpr { function, options } => {
-            use {IRRollingFunction as IR, RollingFunction as R};
+            use IRRollingFunction as IR;
+            use RollingFunction as R;
             FunctionExpr::RollingExpr {
                 function: match function {
                     IR::Min => R::Min,
@@ -892,7 +917,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             function_by,
             options,
         } => {
-            use {IRRollingFunctionBy as IR, RollingFunctionBy as R};
+            use IRRollingFunctionBy as IR;
+            use RollingFunctionBy as R;
             FunctionExpr::RollingExprBy {
                 function_by: match function_by {
                     IR::MinBy => R::MinBy,
@@ -907,11 +933,11 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
-        IF::Rechunk => F::Rechunk,
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,
         IF::DropNulls => F::DropNulls,
+        IF::Quantile { method } => F::Quantile { method },
         #[cfg(feature = "mode")]
         IF::Mode { maintain_order } => F::Mode { maintain_order },
         #[cfg(feature = "moment")]
@@ -940,6 +966,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Repeat => F::Repeat,
         #[cfg(feature = "round_series")]
         IF::Clip { has_min, has_max } => F::Clip { has_min, has_max },
+        IF::AsList => F::AsList,
         #[cfg(feature = "dtype-struct")]
         IF::AsStruct => F::AsStruct,
         #[cfg(feature = "top_k")]
@@ -973,6 +1000,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::UniqueCounts => F::UniqueCounts,
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
+        #[cfg(feature = "approx_quantile")]
+        ref f @ (IF::ApproxQuantileSketch { .. } | IF::ApproxQuantileEstimate { .. }) => {
+            return Expr::Display {
+                inputs: input,
+                fmt_str: Box::new(format_pl_smallstr!("{f}")),
+            };
+        },
         IF::Coalesce => F::Coalesce,
         #[cfg(feature = "diff")]
         IF::Diff(nb) => F::Diff(nb),
@@ -990,9 +1024,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Log1p => F::Log1p,
         #[cfg(feature = "log")]
         IF::Exp => F::Exp,
+        #[cfg(feature = "log")]
+        IF::Erf => F::Erf,
+        #[cfg(feature = "log")]
+        IF::Erfc => F::Erfc,
         IF::Unique(v) => F::Unique(v),
         #[cfg(feature = "round_series")]
         IF::Round { decimals, mode } => F::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        IF::DecimalArith { op, scale } => F::DecimalArith { op, scale },
+        IF::TruncArith(op) => F::TruncArith(op),
         #[cfg(feature = "round_series")]
         IF::RoundSF { digits } => F::RoundSF { digits },
         #[cfg(feature = "round_series")]
@@ -1017,7 +1058,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::ConcatExpr { rechunk } => F::ConcatExpr(rechunk),
         #[cfg(feature = "cov")]
         IF::Correlation { method } => {
-            use {CorrelationMethod as C, IRCorrelationMethod as IC};
+            use CorrelationMethod as C;
+            use IRCorrelationMethod as IC;
             F::Correlation {
                 method: match method {
                     IC::Pearson => C::Pearson,
@@ -1057,6 +1099,30 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             allow_duplicates,
             include_breaks,
         },
+        #[cfg(feature = "cutqcut")]
+        IF::Bin(IRBinOptions {
+            method,
+            labels,
+            include_intervals,
+        }) => F::Bin(BinOptions {
+            method: match method {
+                IRBinMethod::Intervals { spec, right_closed } => BinMethod::Intervals {
+                    spec: match spec {
+                        IntervalSpec::Breaks(breaks) => {
+                            DslIntervalSpec::Breaks(breaks.into_series())
+                        },
+                        IntervalSpec::Count(n_bins) => DslIntervalSpec::Count(n_bins),
+                    },
+                    right_closed,
+                },
+                IRBinMethod::Quantiles { spec, right_closed } => {
+                    BinMethod::Quantiles { spec, right_closed }
+                },
+                IRBinMethod::Ranks { spec } => BinMethod::Ranks { spec },
+            },
+            labels,
+            include_intervals,
+        }),
         #[cfg(feature = "rle")]
         IF::RLE => F::RLE,
         #[cfg(feature = "rle")]
@@ -1064,7 +1130,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::ToPhysical => F::ToPhysical,
         #[cfg(feature = "random")]
         IF::Random { method, seed } => {
-            use {IRRandomMethod as IR, RandomMethod as R};
+            use IRRandomMethod as IR;
+            use RandomMethod as R;
             F::Random {
                 method: match method {
                     IR::Shuffle => R::Shuffle,
@@ -1085,11 +1152,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "ffi_plugin")]
         IF::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
@@ -1145,6 +1214,10 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "ewma_by")]
         IF::EwmMeanBy { half_life } => F::EwmMeanBy { half_life },
         #[cfg(feature = "ewma")]
+        IF::EwmSum { options } => F::EwmSum { options },
+        #[cfg(feature = "ewma_by")]
+        IF::EwmSumBy { half_life } => F::EwmSumBy { half_life },
+        #[cfg(feature = "ewma")]
         IF::EwmStd { options } => F::EwmStd { options },
         #[cfg(feature = "ewma")]
         IF::EwmVar { options } => F::EwmVar { options },
@@ -1165,7 +1238,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
             v,
         ),
-        IF::DynamicPred { pred } => {
+        IF::DynamicPred { pred, .. } | IF::DynamicSkipBatch { pred } => {
             return Expr::Display {
                 inputs: input,
                 fmt_str: Box::new(format_pl_smallstr!("{pred:?}")),

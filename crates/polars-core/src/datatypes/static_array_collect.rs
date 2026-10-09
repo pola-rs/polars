@@ -1,5 +1,5 @@
-use arrow::array::ArrayFromIter;
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::array::ArrayFromIter;
+use polars_arrow::bitmap::BitmapBuilder;
 
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
 

@@ -15,6 +15,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,
@@ -172,9 +173,49 @@ def test_estimated_size() -> None:
 
 
 def test_estimated_size_sliced_list_25068() -> None:
-    df = pl.select(pl.int_range(10000).cast(pl.List(pl.Int64)))
+    df = pl.select(pl.list(pl.int_range(10000)))
 
     assert df.slice(5000).estimated_size() / df.estimated_size() <= 0.5
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (1, pl.Int64),
+        (None, pl.Int64),
+        (True, pl.Boolean),
+        (None, pl.Boolean),
+        ("a" * 20, pl.String),
+        (None, pl.String),
+        (b"ab", pl.Binary),
+        (date(2020, 1, 1), pl.Date),
+        (None, pl.Datetime("us")),
+        (1, pl.Decimal(10, 2)),
+        ("a", pl.Categorical()),
+        ("b", pl.Enum(["a", "b"])),
+        ([1, 2, 3], pl.List(pl.Int32)),
+        ([1], pl.List(pl.Int32)),
+        ([1, None, 3], pl.List(pl.Int32)),
+        ([True, False, True], pl.List(pl.Boolean)),
+        (["xy", "z"], pl.List(pl.String)),
+        ([[1], [2, 3]], pl.List(pl.List(pl.Int32))),
+        (None, pl.List(pl.Int32)),
+        ([1, 2], pl.Array(pl.Int16, 2)),
+        (None, pl.Array(pl.Int16, 2)),
+        ({"a": 1, "b": "xy"}, pl.Struct({"a": pl.Int8, "b": pl.String})),
+        ({"a": None, "b": [1]}, pl.Struct({"a": pl.Int8, "b": pl.List(pl.Int8)})),
+        (None, pl.Struct({"a": pl.Int8, "b": pl.Array(pl.Int8, 2)})),
+    ],
+)
+def test_estimated_size_scalar_column(value: Any, dtype: pl.DataType) -> None:
+    df = pl.select(pl.repeat(value, 1001, dtype=dtype))
+    unit = pl.select(pl.repeat(value, 1, dtype=dtype)).to_series()
+    assert df.estimated_size() == unit.estimated_size()
+
+
+def test_estimated_size_scalar_column_not_expanded() -> None:
+    df = pl.select(pl.repeat(1, 2**31, dtype=pl.Int64))
+    assert df.estimated_size() == 8
 
 
 @pytest.mark.parametrize(
@@ -296,3 +337,82 @@ def test_is_str_sequence_check(
     assert is_str_sequence(sequence, include_series=include_series) == expected
     if expected:
         assert is_sequence(sequence, include_series=include_series)
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_acc", "expected_seen"),
+    [
+        pytest.param(
+            [[0], [1], [2], [3], [4]],
+            [0, 1, 2, 3, 4],
+            [
+                ([0], [1]),
+                ([0, 1], [2]),
+                ([3], [4]),
+                ([0, 1, 2], [3, 4]),
+            ],
+            id="length_5",
+        ),
+        pytest.param(
+            [[0], [1], [2], [3], [4], [5]],
+            [0, 1, 2, 3, 4, 5],
+            [
+                ([0], [1]),
+                ([3], [4]),
+                ([0, 1], [2]),
+                ([3, 4], [5]),
+                ([0, 1, 2], [3, 4, 5]),
+            ],
+            id="length_6",
+        ),
+        pytest.param(
+            [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            [
+                ([0], [1]),
+                ([5], [6]),
+                ([0, 1], [2]),
+                ([3], [4]),
+                ([5, 6], [7]),
+                ([8], [9]),
+                ([0, 1, 2], [3, 4]),
+                ([5, 6, 7], [8, 9]),
+                ([0, 1, 2, 3, 4], [5, 6, 7, 8, 9]),
+            ],
+            id="length_10",
+        ),
+    ],
+)
+def test_reduce_balanced(
+    values: list[list[int]],
+    expected_acc: list[int],
+    expected_seen: list[tuple[list[int], list[int]]],
+) -> None:
+    seen = []
+
+    def reducer(left: list[int], right: list[int]) -> list[int]:
+        seen.append((left, right))
+        return left + right
+
+    assert reduce_balanced(reducer, values) == expected_acc
+    assert seen == expected_seen
+
+    with pytest.raises(TypeError):
+        reduce_balanced(reducer, [])
+
+
+@pytest.mark.parametrize("n", range(1, 99))
+def test_reduce_balanced_parametric(n: int) -> None:
+    values = [[i] for i in range(n)]
+    expected_acc = [*range(n)]
+
+    seen = []
+
+    def reducer(left: list[int], right: list[int]) -> list[int]:
+        seen.append((left, right))
+        return left + right
+
+    assert reduce_balanced(reducer, values) == expected_acc
+
+    for seq_lsubtree, seq_rsubtree in seen:
+        assert abs(len(seq_lsubtree) - len(seq_rsubtree)) <= 1

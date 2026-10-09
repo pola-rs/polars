@@ -133,7 +133,7 @@ impl LiveTimerInner {
 
         // (1) Acquire and Release to ensure we load state_ns from previous start_session, if necessary.
         self.refcount
-            .fetch_update(Ordering::Release, Ordering::Acquire, |rc| {
+            .try_update(Ordering::Release, Ordering::Acquire, |rc| {
                 if rc == SESSION_UNIT {
                     return None; // We're the sole reference, can just destroy.
                 }

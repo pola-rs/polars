@@ -1,4 +1,4 @@
-#[cfg(feature = "ir_serde")]
+#[cfg(any(feature = "ir_serde", feature = "serde"))]
 use serde::{Deserialize, Serialize};
 
 use crate::error::*;
@@ -22,7 +22,7 @@ fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Node(pub usize);
 
 impl Default for Node {

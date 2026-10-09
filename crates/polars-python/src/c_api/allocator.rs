@@ -1,23 +1,16 @@
-#[cfg(all(
-    not(feature = "default_alloc"),
-    target_family = "unix",
-    not(target_os = "emscripten"),
-))]
-#[global_allocator]
-static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
-#[cfg(all(
-    not(feature = "default_alloc"),
-    any(not(target_family = "unix"), target_os = "emscripten"),
-))]
-#[global_allocator]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 use std::alloc::Layout;
 use std::ffi::{c_char, c_void};
 
 use pyo3::ffi::PyCapsule_New;
-use pyo3::{Bound, PyAny, PyResult, Python};
+use pyo3::{Bound, PyAny, PyResult, Python, pyfunction};
+
+#[global_allocator]
+static ALLOC: polars_ooc::Allocator = polars_ooc::Allocator;
+
+#[pyfunction]
+pub fn _estimate_memory_usage() -> u64 {
+    polars_ooc::estimate_memory_usage()
+}
 
 unsafe extern "C" fn alloc(size: usize, align: usize) -> *mut u8 {
     unsafe { std::alloc::alloc(Layout::from_size_align_unchecked(size, align)) }

@@ -146,9 +146,10 @@ def read_database(
       include Dremio and InfluxDB).
 
     * The `read_database_uri` function can be noticeably faster than `read_database`
-      if you are using a SQLAlchemy or DBAPI2 connection, as `connectorx` and `adbc`
-      optimise translation of the result set into Arrow format. Note that you can
-      determine a connection's URI from a SQLAlchemy engine object by calling
+      (which supports SQLAlchemy and DBAPI2 connections directly), as the `connectorx`
+      and `adbc` engines used by `read_database_uri` optimise translation of the
+      result set into Arrow format. To use `read_database_uri` you must pass a string
+      URI, which can be extracted from a SQLAlchemy engine object by calling
       `conn.engine.url.render_as_string(hide_password=False)`.
 
     * If Polars has to create a cursor from your connection in order to execute the

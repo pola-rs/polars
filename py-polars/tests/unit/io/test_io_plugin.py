@@ -4,13 +4,13 @@ import datetime
 import io
 import subprocess
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.io.plugins import register_io_source
+from polars.io.plugins import IOSourceScanFunction, register_io_source
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -56,14 +56,16 @@ def test_defer_validate_true() -> None:
 
 
 @pytest.mark.may_fail_cloud
-@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
+@pytest.mark.may_fail_lazy_schema  # reason: validate_schema=False
 def test_defer_validate_false() -> None:
     lf = pl.defer(
         lambda: pl.DataFrame({"a": np.ones(3)}),
         schema={"a": pl.Boolean},
         validate_schema=False,
     )
-    assert lf.collect().to_dict(as_series=False) == {"a": [1.0, 1.0, 1.0]}
+    assert lf.collect(engine="in-memory").to_dict(as_series=False) == {
+        "a": [1.0, 1.0, 1.0]
+    }
 
 
 def test_empty_iterator_io_plugin() -> None:
@@ -82,7 +84,7 @@ def test_empty_iterator_io_plugin() -> None:
 
 def test_scan_lines() -> None:
     def scan_lines(f: io.BytesIO) -> pl.LazyFrame:
-        schema = pl.Schema({"lines": pl.String()})
+        schema = pl.Schema({"line": pl.String()})
 
         def generator(
             with_columns: list[str] | None,
@@ -103,13 +105,10 @@ def test_scan_lines() -> None:
                     n_rows -= remaining_rows
 
                 while remaining_rows != 0 and (line := x.readline().rstrip()):
-                    if isinstance(line, str):
-                        batch_lines += [batch_lines]
-                    else:
-                        batch_lines += [line.decode()]
+                    batch_lines += [line.decode()]
                     remaining_rows -= 1
 
-                df = pl.Series("lines", batch_lines, pl.String()).to_frame()
+                df = pl.Series("line", batch_lines, pl.String()).to_frame()
 
                 if with_columns is not None:
                     df = df.select(with_columns)
@@ -133,21 +132,22 @@ This allows it to read into multiple rows.
 
     assert_series_equal(
         scan_lines(f).collect().to_series(),
-        pl.Series("lines", text.splitlines(), pl.String()),
+        pl.Series("line", text.splitlines(), pl.String()),
     )
 
 
 @pytest.mark.may_fail_cloud
-@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_datetime_io_predicate_pushdown_21790() -> None:
     recorded: dict[str, pl.Expr | None] = {"predicate": None}
+    schema = {"timestamp": pl.Datetime(time_unit="ns")}
     df = pl.DataFrame(
         {
             "timestamp": [
                 datetime.datetime(2024, 1, 1, 0),
                 datetime.datetime(2024, 1, 3, 0),
             ]
-        }
+        },
+        schema=schema,
     )
 
     def _source(
@@ -166,7 +166,6 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
 
         yield inner_df
 
-    schema = {"timestamp": pl.Datetime(time_unit="ns")}
     lf = register_io_source(io_source=_source, schema=schema)
 
     cutoff = datetime.datetime(2024, 1, 4)
@@ -183,6 +182,53 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
     assert pl.DataFrame({}).select(dt_val).item() == cutoff
 
     assert str(column) == str(pl.col("timestamp"))
+
+
+def test_io_plugin_custom_explain() -> None:
+    def _source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        yield pl.DataFrame({"a": [1, 2, 3]})
+
+    default_plan = register_io_source(
+        io_source=_source,
+        schema={"a": pl.Int64},
+    ).explain()
+    assert "PYTHON SCAN" in default_plan
+    assert "PYTHON[" not in default_plan
+    assert "INFO:" not in default_plan
+
+    left = register_io_source(
+        io_source=_source,
+        schema={"a": pl.Int64},
+        explain_name="left",
+        explain_detail="left detail",
+    )
+    right = register_io_source(
+        io_source=_source,
+        schema={"a": pl.Int64},
+        explain_name="right",
+        explain_detail="right detail",
+    )
+
+    plan = left.explain()
+    assert "PYTHON[left] SCAN" in plan
+    assert "PROJECT */1 COLUMNS" in plan
+    assert "INFO: left detail" in plan
+
+    plans = {
+        "INNER JOIN": left.join(right, on="a").explain(),
+        "UNION": pl.concat([left, right]).explain(),
+    }
+    for operation, plan in plans.items():
+        assert operation in plan
+        assert "PYTHON[left] SCAN" in plan
+        assert "INFO: left detail" in plan
+        assert "PYTHON[right] SCAN" in plan
+        assert "INFO: right detail" in plan
 
 
 @pytest.mark.parametrize(("validate"), [(True), (False)])
@@ -313,3 +359,54 @@ def test_io_plugin_object_dtype_25740() -> None:
     out = lf.collect()
     assert out.schema == df.schema
     assert out.to_dict(as_series=False) == {"a": [dummy, None]}
+
+
+def _scan_fn(lf: pl.LazyFrame) -> Any:
+    """Reach the registered scan function the way an execution engine does."""
+    return lf._ldf.visit().view_current_node().options[0]
+
+
+def _source(
+    with_columns: list[str] | None,
+    predicate: pl.Expr | None,
+    n_rows: int | None,
+    batch_size: int | None,
+) -> Iterator[pl.DataFrame]:
+    yield pl.DataFrame({"a": [1, 2, 3]})
+
+
+class _CallableSource:
+    """A source that is a class instance, which is how engines define their own."""
+
+    def __call__(
+        self,
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        yield pl.DataFrame({"a": [1, 2, 3]})
+
+
+@pytest.mark.parametrize(
+    "source", [_source, _CallableSource()], ids=["function", "callable-instance"]
+)
+def test_io_plugin_exposes_io_source(source: Any) -> None:
+    lf = register_io_source(source, schema={"a": pl.Int64})
+    scan_fn = _scan_fn(lf)
+
+    assert isinstance(scan_fn, IOSourceScanFunction)
+    assert scan_fn.io_source is source
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
+
+def test_io_plugin_non_source_fails_protocol_check() -> None:
+    assert not isinstance(_source, IOSourceScanFunction)
+
+
+def test_io_plugin_io_source_survives_serialization() -> None:
+    lf = register_io_source(_CallableSource(), schema={"a": pl.Int64})
+    roundtripped = pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
+
+    assert isinstance(_scan_fn(roundtripped).io_source, _CallableSource)
+    assert_frame_equal(roundtripped.collect(), pl.DataFrame({"a": [1, 2, 3]}))

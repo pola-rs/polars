@@ -1,6 +1,5 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
-use polars_utils::UnitVec;
+use polars_core::runtime::RAYON;
 
 use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
@@ -26,7 +25,7 @@ impl PhysicalExpr for FilterExpr {
         let s_f = || self.input.evaluate(df, state);
         let predicate_f = || self.by.evaluate(df, state);
 
-        let (series, predicate) = POOL.install(|| rayon::join(s_f, predicate_f));
+        let (series, predicate) = RAYON.install(|| rayon::join(s_f, predicate_f));
         let (series, predicate) = (series?, predicate?);
 
         series.filter(predicate.bool()?)
@@ -41,7 +40,7 @@ impl PhysicalExpr for FilterExpr {
         let ac_s_f = || self.input.evaluate_on_groups(df, groups, state);
         let ac_predicate_f = || self.by.evaluate_on_groups(df, groups, state);
 
-        let (ac_s, ac_predicate) = POOL.install(|| rayon::join(ac_s_f, ac_predicate_f));
+        let (ac_s, ac_predicate) = RAYON.install(|| rayon::join(ac_s_f, ac_predicate_f));
         let (mut ac_s, mut ac_predicate) = (ac_s?, ac_predicate?);
 
         ac_s.set_groups_for_undefined_agg_states();
@@ -54,67 +53,13 @@ impl PhysicalExpr for FilterExpr {
 
         // Slow path. Different groups for input and predicate.
         if !std::ptr::eq(ac_s.groups.as_ref(), ac_predicate.groups.as_ref()) {
-            let mut needs_broadcast = false;
             for (l, r) in ac_s.groups.iter().zip(ac_predicate.groups.iter()) {
-                needs_broadcast |= (l.len() == 1 || r.len() == 1) && l.len() != r.len();
                 if l.len() != 1 && r.len() != 1 && l.len() != r.len() {
                     polars_bail!(length_mismatch = "filter", l.len(), r.len());
                 }
             }
-
-            fn broadcast(
-                groups: &GroupsType,
-                other_lengths: impl Iterator<Item = usize>,
-            ) -> GroupsIdx {
-                match groups {
-                    GroupsType::Idx(i) => i
-                        .iter()
-                        .zip(other_lengths)
-                        .map(|((fst, idxs), l)| {
-                            if idxs.len() != l && idxs.len() == 1 {
-                                (fst, UnitVec::from_iter(std::iter::repeat_n(fst, l)))
-                            } else {
-                                (fst, idxs.clone())
-                            }
-                        })
-                        .collect(),
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: _,
-                        monotonic: _,
-                    } => groups
-                        .iter()
-                        .zip(other_lengths)
-                        .map(|([start, length], l)| {
-                            if *length as usize != l && *length == 1 {
-                                (*start, UnitVec::from_iter(std::iter::repeat_n(*start, l)))
-                            } else {
-                                (*start, UnitVec::from_iter(*start..*start + *length))
-                            }
-                        })
-                        .collect(),
-                }
-            }
-
-            // If either side needs a broadcast, perform the broadcasting on the groups before the
-            // `aggregated`.
-            if needs_broadcast {
-                ac_s.groups = Cow::Owned(
-                    GroupsType::Idx(broadcast(
-                        ac_s.groups.as_ref(),
-                        ac_predicate.groups.iter().map(|i| i.len()),
-                    ))
-                    .into_sliceable(),
-                );
-                ac_predicate.groups = Cow::Owned(
-                    GroupsType::Idx(broadcast(
-                        ac_predicate.groups.as_ref(),
-                        ac_s.groups.iter().map(|i| i.len()),
-                    ))
-                    .into_sliceable(),
-                );
-            }
-
+            ac_s.broadcast_unit_groups_to(&mut ac_predicate);
+            ac_predicate.broadcast_unit_groups_to(&mut ac_s);
             ac_s.normalize_values();
             ac_predicate.normalize_values();
         }

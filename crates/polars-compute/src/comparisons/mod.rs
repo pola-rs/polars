@@ -1,5 +1,5 @@
-use arrow::array::Array;
-use arrow::bitmap::{self, Bitmap};
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::{self, Bitmap};
 
 pub trait TotalEqKernel: Sized + Array {
     type Scalar: ?Sized;
@@ -87,7 +87,7 @@ mod view;
 
 #[cfg(feature = "simd")]
 mod _simd_dtypes {
-    use arrow::types::{days_ms, i256, months_days_ns};
+    use polars_arrow::types::{days_ms, i256, months_days_ns};
 
     use crate::NotSimdPrimitive;
 

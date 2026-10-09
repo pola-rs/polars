@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from math import ceil
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, cast, overload
 
 import pytest
 import sqlalchemy
@@ -129,6 +129,27 @@ def test_read_async(tmp_sqlite_db: Path) -> None:
     asyncio.run(_test_impl())
 
 
+def test_read_async_without_async_sessionmaker(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sqlalchemy.ext import asyncio as sa_async
+
+    monkeypatch.delattr(sa_async, "async_sessionmaker", raising=False)
+
+    async def _test_impl() -> None:
+        async_engine = create_async_engine("sqlite+aiosqlite://")
+        try:
+            async with (
+                async_engine.connect() as conn,
+                sa_async.AsyncSession(async_engine) as session,
+            ):
+                for connection in (async_engine, conn, session):
+                    df = pl.read_database("SELECT 1 AS x", connection=connection)
+                    assert_frame_equal(df, pl.DataFrame({"x": [1]}))
+        finally:
+            await async_engine.dispose()
+
+    asyncio.run(_test_impl())
+
+
 @pytest.mark.skipif(
     parse_version(sqlalchemy.__version__) < (2, 0),
     reason="SQLAlchemy 2.0+ required for async tests",
@@ -195,12 +216,14 @@ def test_surrealdb_fetchall(batch_size: int | None) -> None:
             )
         )
         if batch_size:
-            frames = list(res)  # type: ignore[call-overload]
+            res = cast("Iterable[pl.DataFrame]", res)
+            frames = list(res)
             n_mock_rows = len(SURREAL_MOCK_DATA)
             assert len(frames) == ceil(n_mock_rows / batch_size)
             assert_frame_equal(df_expected[:batch_size], frames[0])
         else:
-            assert_frame_equal(df_expected, res)  # type: ignore[arg-type]
+            res = cast("pl.DataFrame", res)
+            assert_frame_equal(df_expected, res)
 
 
 def test_async_nested_captured_loop_21263() -> None:

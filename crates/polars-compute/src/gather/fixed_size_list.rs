@@ -17,13 +17,13 @@
 
 use std::mem::ManuallyDrop;
 
-use arrow::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
-use arrow::bitmap::MutableBitmap;
-use arrow::compute::utils::combine_validities_and;
-use arrow::datatypes::reshape::{Dimension, ReshapeDimension};
-use arrow::datatypes::{ArrowDataType, IdxArr, PhysicalType};
-use arrow::legacy::prelude::FromData;
-use arrow::with_match_primitive_type;
+use polars_arrow::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::compute::utils::combine_validities_and;
+use polars_arrow::datatypes::reshape::{Dimension, ReshapeDimension};
+use polars_arrow::datatypes::{ArrowDataType, IdxArr, PhysicalType};
+use polars_arrow::legacy::prelude::FromData;
+use polars_arrow::with_match_primitive_type;
 use polars_utils::itertools::Itertools;
 
 use super::Index;
@@ -207,15 +207,15 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::StaticArray;
-    use arrow::datatypes::ArrowDataType;
+    use polars_arrow::array::StaticArray;
+    use polars_arrow::datatypes::ArrowDataType;
 
     /// Test gather for FixedSizeListArray with outer validity but no inner validities.
     #[test]
     fn test_arr_gather_nulls_outer_validity_19482() {
-        use arrow::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
-        use arrow::bitmap::Bitmap;
-        use arrow::datatypes::reshape::{Dimension, ReshapeDimension};
+        use polars_arrow::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use polars_arrow::bitmap::Bitmap;
+        use polars_arrow::datatypes::reshape::{Dimension, ReshapeDimension};
         use polars_utils::IdxSize;
 
         use super::take_unchecked;
@@ -250,8 +250,8 @@ mod tests {
 
     #[test]
     fn test_arr_gather_nulls_inner_validity() {
-        use arrow::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
-        use arrow::datatypes::reshape::{Dimension, ReshapeDimension};
+        use polars_arrow::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use polars_arrow::datatypes::reshape::{Dimension, ReshapeDimension};
         use polars_utils::IdxSize;
 
         use super::take_unchecked;

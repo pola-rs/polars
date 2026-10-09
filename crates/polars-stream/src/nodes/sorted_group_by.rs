@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::GroupsType;
 use polars_core::schema::Schema;
@@ -9,17 +11,16 @@ use polars_expr::state::ExecutionState;
 use polars_ops::series::{SearchSortedSide, rle_lengths, search_sorted};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{RecvPort, SendPort};
+use crate::utils::morsel_distributor::morsel_distributor;
 
 pub struct SortedGroupBy {
     buf_df: DataFrame,
@@ -30,6 +31,7 @@ pub struct SortedGroupBy {
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
 
     slice: Option<(IdxSize, IdxSize)>,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 impl SortedGroupBy {
     pub fn new(
@@ -45,6 +47,7 @@ impl SortedGroupBy {
             key,
             aggs,
             slice,
+            seq_offset: Arc::default(),
         }
     }
 
@@ -59,7 +62,7 @@ impl SortedGroupBy {
         let column = df.column(key).unwrap();
         rle_lengths(column, idxs).unwrap();
 
-        let windows_offset = windows_slice.0 as usize;
+        let windows_offset = (windows_slice.0 as usize).min(idxs.len());
         let windows_length = (windows_slice.1 as usize).min(idxs.len() - windows_offset);
 
         let df_offset = idxs[..windows_offset].iter().sum::<IdxSize>();
@@ -165,7 +168,11 @@ impl ComputeNode for SortedGroupBy {
                 .await?;
 
                 _ = send
-                    .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                    .send(Morsel::new_unregistered(
+                        df,
+                        self.seq.successor().offset_by_u64(self.seq_offset.load()),
+                        SourceToken::new(),
+                    ))
                     .await;
 
                 Ok(())
@@ -176,9 +183,10 @@ impl ComputeNode for SortedGroupBy {
         let mut recv = recv.serial();
         let send = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, rxs) = distributor_channel::<(Morsel, (IdxSize, IdxSize))>(
+        let (mut distributor, rxs) = morsel_distributor(
             send.len(),
             *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+            self.seq_offset.clone(),
         );
 
         // Worker tasks.
@@ -217,7 +225,8 @@ impl ComputeNode for SortedGroupBy {
             while let Ok(morsel) = recv.recv().await
                 && self.slice.is_none_or(|(_, l)| l > 0)
             {
-                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                let (sf, seq, source_token, wait_token) = morsel.into_inner();
+                let df = sf.into_df().await;
                 self.seq = seq;
                 drop(wait_token);
 
@@ -276,7 +285,7 @@ impl ComputeNode for SortedGroupBy {
 
                 if distributor
                     .send((
-                        Morsel::new(df, seq, source_token),
+                        Morsel::new_unregistered(df, seq, source_token),
                         (windows_offset, windows_length),
                     ))
                     .await

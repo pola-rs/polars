@@ -711,6 +711,26 @@ def test_to_time_format_warning() -> None:
     assert result == time(5, 10, 10, 74)
 
 
+@pytest.mark.parametrize(
+    ("expr", "dtype"),
+    [
+        (pl.col("a").str.to_time(), pl.Time),
+        (pl.col("a").str.to_date(), pl.Date),
+        (pl.col("a").str.to_date(exact=False), pl.Date),
+        (pl.col("a").str.to_datetime(), pl.Datetime),
+        (pl.col("a").str.to_datetime(exact=False), pl.Datetime),
+    ],
+)
+def test_all_nulls_(expr: pl.Expr, dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {"a": [None, None]},
+        schema_overrides={"a": pl.String},
+    )
+    result = df.with_columns(expr)["a"]
+    expected = pl.Series("a", [None, None], dtype=dtype)
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.parametrize("exact", [True, False])
 def test_to_datetime_ambiguous_earliest(exact: bool) -> None:
     result = (
@@ -819,6 +839,10 @@ def test_polars_parser_fooled_by_trailing_nonsense_22167() -> None:
         pl.Series(["2025-04-06T18:57:42.77123Z"]).str.to_datetime(
             "%Y-%m-%dT%H:%M:%S.%6f#z"
         )
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.777561920"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%9fZ"
+        )
 
 
 def test_strptime_empty_input_22214() -> None:
@@ -886,7 +910,22 @@ def test_date_parse_omit_day_month() -> None:
             "2022 December",
         ]
     )
-    result = s.str.strptime(pl.Date, "%Y %B")
+    s_abbrev = pl.Series(
+        [
+            "2022 Jan",
+            "2022 Feb",
+            "2022 Mar",
+            "2022 Apr",
+            "2022 May",
+            "2022 Jun",
+            "2022 Jul",
+            "2022 Aug",
+            "2022 Sep",
+            "2022 Oct",
+            "2022 Nov",
+            "2022 Dec",
+        ]
+    )
     expected = pl.Series(
         [
             date(2022, 1, 1),
@@ -903,7 +942,9 @@ def test_date_parse_omit_day_month() -> None:
             date(2022, 12, 1),
         ]
     )
-    assert_series_equal(result, expected)
+    assert_series_equal(s.str.strptime(pl.Date, "%Y %B"), expected)
+    assert_series_equal(s_abbrev.str.strptime(pl.Date, "%Y %b"), expected)
+    assert_series_equal(s_abbrev.str.strptime(pl.Date, "%Y %B"), expected)
 
 
 @pytest.mark.parametrize("length", [1, 5])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -12,6 +13,8 @@ import pytest
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
 from polars.exceptions import (
+    ArgumentRemovedError,
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
@@ -28,13 +31,7 @@ if TYPE_CHECKING:
     from polars._typing import ConcatMethod
 
 
-def test_error_on_empty_group_by() -> None:
-    with pytest.raises(
-        ComputeError, match="at least one key is required in a group_by operation"
-    ):
-        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.len())
-
-
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")  # cut
 def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
@@ -47,6 +44,14 @@ def test_error_on_reducing_map() -> None:
             pl.map_batches(["t", "y"], np.mean, return_dtype=pl.Float64)
         )
 
+    enum = pl.Enum(
+        [
+            "(-inf, 1]",
+            "(1, 2]",
+            "(2, 3]",
+            "(3, inf]",
+        ]
+    )
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(TypeError, match=r"`map` with `returns_scalar=False`"):
         df.select(
@@ -55,7 +60,10 @@ def test_error_on_reducing_map() -> None:
                 lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
                 is_elementwise=True,
                 return_dtype=pl.Struct(
-                    {"breakpoint": pl.Int64, "cat": pl.Categorical()}
+                    {
+                        "breakpoint": pl.Int64,
+                        "category": enum,
+                    }
                 ),
             )
             .over("group")
@@ -76,7 +84,7 @@ def test_error_on_reducing_map() -> None:
                 "breakpoint": [1.0, 2.0, 3.0, float("inf")],
                 "category": ["(-inf, 1]", "(1, 2]", "(2, 3]", "(3, inf]"],
             },
-            schema_overrides={"category": pl.Categorical()},
+            schema_overrides={"category": enum},
         ),
     )
 
@@ -374,16 +382,6 @@ def test_sort_by_different_lengths() -> None:
             ]
         )
 
-    with pytest.raises(
-        ShapeError,
-        match=r"expressions in 'sort_by' must have matching group lengths",
-    ):
-        df.group_by("group").agg(
-            [
-                pl.col("col1").sort_by(pl.col("col2").first()),
-            ]
-        )
-
 
 def test_err_filter_no_expansion() -> None:
     # df contains floats
@@ -446,7 +444,8 @@ def test_take_negative_index_is_oob() -> None:
 def test_string_numeric_arithmetic_err() -> None:
     df = pl.DataFrame({"s": ["x"]})
     with pytest.raises(
-        InvalidOperationError, match=r"arithmetic on string and numeric not allowed"
+        InvalidOperationError,
+        match=r"arithmetic on dtypes str and dyn int is not allowed \(lhs: column 's'",
     ):
         df.select(pl.col("s") + 1)
 
@@ -549,7 +548,8 @@ def test_empty_inputs_error() -> None:
                 time_unit="ns",
                 eager=True,
             ),
-            None,
+            # The needle is cast to the values' unit.
+            [False, None, False],
         ),
         ("d", [time(10, 30)], None),
         ("e", [datetime(1999, 12, 31, 10, 30)], None),
@@ -669,7 +669,7 @@ def test_no_panic_pandas_nat() -> None:
 
 def test_list_to_struct_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.DataFrame({"a": 1}).to_series().list.to_struct(fields=["a", "b"])
+        pl.DataFrame({"a": 1}).to_series().list.to_struct(["a", "b"])
 
 
 def test_raise_invalid_agg() -> None:
@@ -713,21 +713,14 @@ def test_raise_on_different_results_20104() -> None:
 
 
 @pytest.mark.parametrize("fill_value", [None, -1])
-def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
+def test_shift_with_null_raises(fill_value: Any) -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
-    df_shift = None
-    with pytest.deprecated_call(  # @2.0
-        match=r"shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+    with pytest.raises(
+        ComputeError, match=re.escape("shift value 'n' must not be null.")
     ):
-        df_shift = df.select(
+        df.select(
             pl.col.x.shift(pl.col.x.filter(pl.col.x > 3).first(), fill_value=fill_value)
         )
-    # Check that the result is a column of nulls, even if the fill_value is different
-    assert_frame_equal(
-        df_shift,
-        pl.DataFrame({"x": [None, None, None]}),
-        check_dtypes=False,
-    )
 
 
 def test_raies_on_mismatch_column_length_24500() -> None:
@@ -769,3 +762,76 @@ def test_raies_on_mismatch_column_length_binary_expr() -> None:
                 pl.col("c").head(pl.col("c").first()),
             )
         )
+
+
+def test_column_not_found_lists_available() -> None:
+    df = pl.DataFrame({"foo": [1, 2], "bar": [3, 4], "baz": [5, 6]})
+    with pytest.raises(ColumnNotFoundError, match=r"(?s).*foo.*bar.*baz.*"):
+        df.select("missing")
+
+
+def test_column_not_found_suggests_similar() -> None:
+    df = pl.DataFrame({"alpha": [1, 2], "beta": [3, 4]})
+    with pytest.raises(ColumnNotFoundError, match=r"Did you mean \"alpha\""):
+        df.select("alphe")
+
+
+def test_str_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'split'"):
+        pl.col("a").str.spliit("x")  # type: ignore[attr-defined]
+
+
+def test_dt_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
+        pl.col("a").dt.houur()  # type: ignore[attr-defined]
+
+
+def test_series_dt_namespace_typo_suggests() -> None:
+    s = pl.Series([date(2022, 1, 1)])
+    with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
+        s.dt.houur()  # type: ignore[attr-defined]
+
+
+def test_series_dt_namespace_removed_item() -> None:
+    s = pl.Series([date(2022, 1, 1)])
+    with pytest.raises(
+        AttributeRemovedError, match=r"use `dt\.replace_time_zone\(None\)` instead"
+    ):
+        s.dt.datetime()  # type: ignore[attr-defined]
+
+
+def test_list_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'shift'"):
+        pl.col("a").list.shiift()  # type: ignore[attr-defined]
+
+
+def test_struct_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'rename_fields'"):
+        pl.col("a").struct.renam_fields([])  # type: ignore[attr-defined]
+
+
+def test_dtype_mismatch_names_column_and_dtypes() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"arithmetic on dtypes i64 and str is not allowed \(lhs: column 'a', rhs: column 'b'\)",
+    ):
+        df.select(pl.col("a") + pl.col("b"))
+
+
+def test_join_nulls_argument_removed() -> None:
+    df = pl.DataFrame({"a": [1, None]})
+    with pytest.raises(
+        ArgumentRemovedError,
+        match=re.escape(
+            "the argument 'join_nulls' for 'DataFrame.join' was deprecated in version 1.24 "
+            "and has been removed in version 2.0. It was renamed to 'nulls_equal'."
+        ),
+    ):
+        df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
+
+
+def test_invalid_classmethod_error() -> None:
+    match = "'Series' object has no attribute 'nonexistent'"
+    with pytest.raises(AttributeError, match=re.escape(match)):
+        pl.Series.nonexistent()  # type: ignore[attr-defined]

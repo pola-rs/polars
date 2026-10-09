@@ -11,6 +11,7 @@ from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -696,7 +697,6 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
     "method",
     ["parquet", "csv", "ipc", "ndjson"],
 )
-@pytest.mark.may_fail_auto_streaming  # unsupported negative slice offset -1 for CSV source
 def test_scan_in_memory(method: str) -> None:
     f = io.BytesIO()
     df = pl.DataFrame(
@@ -1247,7 +1247,7 @@ def test_scan_negative_slice_decompress(format_name: str) -> None:
 
     lf = getattr(pl, f"scan_{format_name}")(compressed_data).slice(-9, 5)
     if format_name == "lines":
-        lf = lf.select(pl.col("lines").alias(col_name).str.to_integer())
+        lf = lf.select(pl.col("line").alias(col_name).str.to_integer())
 
     expected = [pl.Series("x", [38, 39, 40, 41, 42])]
     got = lf.collect(engine="streaming")
@@ -1330,6 +1330,49 @@ def test_scan_file_uri_hostname_component() -> None:
         match="unsupported: non-empty hostname for 'file:' URI: 'hostname:80'",
     ):
         q.collect()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan_func", "write_func", "subdir", "raw_char", "encoded_char"),
+    [
+        # the reported issue: hive `key=value` directory
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "foo=bar", "=", "%3D"),
+        # the decoded `?` (from `%3F`) must stay literal, not act as a glob wildcard
+        pytest.param(
+            pl.scan_parquet,
+            pl.DataFrame.write_parquet,
+            "foo?bar",
+            "?",
+            "%3F",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="'?' is not a legal filename character on Windows",
+            ),
+        ),
+        # the other expansion method (`expand_paths`)
+        (pl.scan_csv, pl.DataFrame.write_csv, "foo=bar", "=", "%3D"),
+    ],
+)
+def test_scan_percent_encoded_file_uri_27840(
+    tmp_path: Path,
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, Path], None],
+    subdir: str,
+    raw_char: str,
+    encoded_char: str,
+) -> None:
+    # `file://` URIs are percent-decoded (RFC 3986) before reaching the filesystem.
+    d = tmp_path / subdir
+    d.mkdir()
+
+    df = pl.DataFrame({"a": 1})
+    path = d / "data.bin"
+    write_func(df, path)
+
+    encoded_uri = format_file_uri(path).replace(raw_char, encoded_char)
+
+    assert_frame_equal(scan_func(encoded_uri).collect(), df)
 
 
 @pytest.mark.write_disk
@@ -1421,6 +1464,7 @@ def test_scan_expand_paths_no_glob(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_scan_sink_error_captures_path() -> None:
     storage_options = {
         "aws_endpoint_url": "http://localhost:333",
@@ -1454,6 +1498,7 @@ def test_scan_sink_error_captures_path() -> None:
     ],
 )
 @pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_scan_metrics(
     plmonkeypatch: PlMonkeyPatch,
@@ -1517,10 +1562,90 @@ def test_scan_metrics(
     assert_frame_equal(out, df)
 
 
+@pytest.mark.debug
+@pytest.mark.write_disk
+def test_scan_sink_metrics_multiple_phases(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "a"
+    df = pl.DataFrame({"a": range(500)})
+
+    plmonkeypatch.setenv("POLARS_LOG_METRICS", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+
+    df.write_parquet(path, row_group_size=1)
+    expected_read_amount_bytes = 44000
+    metadata = pq.read_metadata(tmp_path / "a")
+    created_by_size = len(metadata.created_by.encode("utf-8"))
+
+    capfd.readouterr()
+    pl.scan_parquet(path).collect()
+    capture = capfd.readouterr().err
+
+    assert (
+        sum(
+            1
+            for line in capture.splitlines()
+            if line.startswith("multi-scan[parquet]")
+            and f"total_bytes_received={expected_read_amount_bytes}" in line
+        )
+        == 1
+    )
+
+    capfd.readouterr()
+    (
+        pl.scan_parquet(path)
+        .join(pl.scan_parquet(path), on="a")
+        .sink_parquet(tmp_path / "b", row_group_size=1, engine="streaming")
+    )
+    capture = capfd.readouterr().err
+
+    assert_frame_equal(
+        pl.scan_lines(io.StringIO(capture))
+        .select(
+            node_name=pl.col("line").str.extract(r"^([^:]*)"),
+            io_total_bytes_requested=pl.col("line").str.extract(
+                r"total_bytes_requested=([\d]*)"
+            ),
+            io_total_bytes_received=pl.col("line").str.extract(
+                r"total_bytes_received=([\d]*)"
+            ),
+            io_total_bytes_sent=pl.col("line").str.extract(r"total_bytes_sent=([\d]*)"),
+        )
+        .join(
+            pl.LazyFrame(
+                {"node_name": ["multi-scan[parquet]", "io-sink[single-file[parquet]]"]}
+            ),
+            on="node_name",
+            how="right",
+            maintain_order="right",
+        )
+        .collect(),
+        # Both sides of the join scan the file.
+        pl.DataFrame(
+            {
+                "io_total_bytes_requested": [f"{expected_read_amount_bytes}"] * 2
+                + ["0"],
+                "io_total_bytes_received": [f"{expected_read_amount_bytes}"] * 2
+                + ["0"],
+                "io_total_bytes_sent": ["0", "0", f"{137254 + created_by_size}"],
+                "node_name": ["multi-scan[parquet]"] * 2
+                + ["io-sink[single-file[parquet]]"],
+            }
+        ),
+    )
+
+    capfd.readouterr()
+
+
 def test_scan_slice_filter_pushdown_22790() -> None:
     f = io.BytesIO()
     df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
     df.write_parquet(f)
+    f.seek(0)
 
     q = pl.scan_parquet(f).tail(5).filter((pl.col("a") % 5).is_between(2, 3))
 
@@ -1530,3 +1655,98 @@ def test_scan_slice_filter_pushdown_22790() -> None:
     assert plan.index("SLICE") > plan.index("SCAN")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [7, 8]}))
+
+
+@pytest.mark.parametrize(
+    "format",
+    [
+        "csv",
+        "ipc",
+        "parquet",
+        "ndjson",
+    ],
+)
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_read_projection_and_row_index(format: str, use_pyarrow: bool) -> None:
+    f = io.BytesIO()
+    getattr(pl.DataFrame({"a": 1, "b": 2}), f"write_{format}")(f)
+    f.seek(0)
+
+    read = getattr(pl, f"read_{format}")
+
+    if format == "ndjson":
+        with pytest.raises(TypeError, match="unexpected keyword argument 'columns'"):
+            read(f, columns=...)
+
+        return
+
+    assert_frame_equal(
+        read(f, columns=["b"], row_index_name="index", use_pyarrow=use_pyarrow),
+        pl.DataFrame(
+            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
+        ),
+    )
+
+    f.seek(0)
+
+    assert_frame_equal(
+        read(f, columns=[1], row_index_name="index", use_pyarrow=use_pyarrow),
+        pl.DataFrame(
+            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
+        ),
+    )
+
+
+@pytest.mark.parametrize("use_bytesio", [True, False])
+@pytest.mark.parametrize("lazy", [True, False])
+@pytest.mark.parametrize("format", ["parquet", "ipc", "csv", "ndjson"])
+@pytest.mark.write_disk
+def test_scan_from_object_nonzero_offset(
+    tmp_path: Path,
+    lazy: bool,
+    format: str,
+    use_bytesio: bool,
+) -> None:
+    def read(source: Any) -> Any:
+        return (
+            getattr(pl, f"scan_{format}")(source).collect()
+            if lazy
+            else getattr(pl, f"read_{format}")(source)
+        )
+
+    def write(df: pl.DataFrame, f: Any) -> None:
+        if lazy:
+            getattr(df.lazy(), f"sink_{format}")(f)
+        else:
+            getattr(df, f"write_{format}")(f)
+
+    path = tmp_path / "x"
+
+    f_bytesio = io.BytesIO()
+    padding = 100 * b"\xff"
+
+    with path.open("wb") as f_wb_disk:
+        f_wb = f_bytesio if use_bytesio else f_wb_disk
+        f_wb.write(padding)
+        write(pl.DataFrame({"x": 1}), f_wb)
+
+    f_bytesio.seek(0)
+
+    with path.open("rb") as f_rb_disk:
+        f_rb = f_bytesio if use_bytesio else f_rb_disk
+        assert f_rb.read(100) == padding
+
+        assert_frame_equal(read(f_rb), pl.DataFrame({"x": 1}))
+
+
+@pytest.mark.write_disk
+def test_scan_expand_paths_arg(tmp_path: Path) -> None:
+    pl.DataFrame({"a": 1}).write_parquet(tmp_path / "data.parquet")
+
+    q = pl.scan_parquet(tmp_path)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1}))
+
+    q = pl.scan_parquet(tmp_path, _expand_paths=False)
+
+    with pytest.raises(OSError):
+        q.collect()

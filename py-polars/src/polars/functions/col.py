@@ -401,7 +401,7 @@ class Col:
 
             frame = inspect.currentframe()
             while frame is not None:
-                if (frame := frame.f_back) is not None and (  # type: ignore[union-attr]
+                if (frame := frame.f_back) is not None and (
                     _have_qualname or "self" in frame.f_locals
                 ):
                     # if we are inside class scope confirm the col has been mangled

@@ -4,7 +4,8 @@ from collections.abc import Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, get_type_hints
 
-from polars._dependencies import _check_for_pydantic, pydantic
+import polars as pl
+from polars._dependencies import _check_for_pydantic, dataclasses, pydantic
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -57,6 +58,11 @@ def is_namedtuple(cls: Any, *, annotated: bool = False) -> bool:
     return False
 
 
+def is_dataclass_instance(value: Any) -> bool:
+    """Check if value is a dataclass instance (`is_dataclass` also matches classes)."""
+    return dataclasses.is_dataclass(value) and not isinstance(value, type)
+
+
 def is_pydantic_model(value: Any) -> bool:
     """Check if value derives from a pydantic.BaseModel."""
     return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
@@ -69,14 +75,17 @@ def is_sqlalchemy_row(value: Any) -> bool:
     )
 
 
-def get_first_non_none(values: Sequence[Any | None]) -> Any:
+def get_first_non_none(values: Sequence[Any | None] | pl.Series) -> Any:
     """
     Return the first value from a sequence that isn't None.
 
     If sequence doesn't contain non-None values, return None.
     """
-    if values is not None:
-        return next((v for v in values if v is not None), None)
+    if isinstance(values, pl.Series):
+        if values.dtype == pl.Null or values.null_count() == len(values):
+            return None
+
+    return next((v for v in values if v is not None), None)
 
 
 def nt_unpack(obj: Any) -> Any:

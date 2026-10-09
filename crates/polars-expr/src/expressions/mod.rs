@@ -12,6 +12,7 @@ mod field;
 mod filter;
 mod gather;
 mod group_iter;
+mod len;
 mod literal;
 #[cfg(feature = "dynamic_group_by")]
 mod rolling;
@@ -29,9 +30,6 @@ use std::fmt::{Display, Formatter};
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
-use arrow::array::ArrayRef;
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
@@ -42,10 +40,15 @@ pub(crate) use eval::*;
 pub(crate) use field::*;
 pub(crate) use filter::*;
 pub(crate) use gather::*;
+pub(crate) use len::*;
 pub(crate) use literal::*;
+use polars_arrow::array::ArrayRef;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::prelude::*;
+use polars_utils::UnitVec;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
@@ -54,8 +57,7 @@ pub(crate) use sortby::*;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use structeval::*;
 pub(crate) use ternary::*;
-pub use window::window_function_format_order_by;
-pub(crate) use window::*;
+pub use window::{WindowExpr, window_function_format_order_by};
 
 use crate::state::ExecutionState;
 
@@ -150,7 +152,7 @@ pub struct AggregationContext<'a> {
     pub(crate) update_groups: UpdateGroups,
     /// This is true when the Series and Groups still have all
     /// their original values. Not the case when filtered
-    pub(crate) original_len: bool,
+    pub(crate) original_groups: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -254,7 +256,7 @@ impl<'a> AggregationContext<'a> {
             state: series,
             groups,
             update_groups: UpdateGroups::No,
-            original_len: true,
+            original_groups: true,
         }
     }
 
@@ -266,7 +268,7 @@ impl<'a> AggregationContext<'a> {
         self.state.rename(name);
     }
 
-    fn from_agg_state(
+    pub(crate) fn from_agg_state(
         agg_state: AggState,
         groups: Cow<'a, GroupPositions>,
     ) -> AggregationContext<'a> {
@@ -274,12 +276,12 @@ impl<'a> AggregationContext<'a> {
             state: agg_state,
             groups,
             update_groups: UpdateGroups::No,
-            original_len: true,
+            original_groups: true,
         }
     }
 
-    pub(crate) fn set_original_len(&mut self, original_len: bool) -> &mut Self {
-        self.original_len = original_len;
+    pub(crate) fn set_original_groups(&mut self, original_groups: bool) -> &mut Self {
+        self.original_groups = original_groups;
         self
     }
 
@@ -418,12 +420,14 @@ impl<'a> AggregationContext<'a> {
         self.groups = Cow::Owned(groups);
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
+        // Conservatively set `false`, there's no guarantee `groups` matches the original.
+        self.original_groups = false;
         self
     }
 
     /// Ensure that each group is represented by contiguous values in memory.
     pub fn normalize_values(&mut self) {
-        self.set_original_len(false);
+        self.set_original_groups(false);
         self.groups();
         let values = self.flat_naive();
         let values = unsafe { values.agg_list(&self.groups) };
@@ -436,7 +440,9 @@ impl<'a> AggregationContext<'a> {
         self.aggregated();
         let out = self.get_values();
         match self.agg_state() {
-            AggState::AggregatedScalar(_) => Cow::Owned(out.as_list()),
+            AggState::AggregatedScalar(_) => {
+                Cow::Owned(out.as_materialized_series().to_unit_list())
+            },
             _ => Cow::Borrowed(out.list().unwrap()),
         }
     }
@@ -651,12 +657,12 @@ impl<'a> AggregationContext<'a> {
 
     /// Fixes groups for `AggregatedScalar` and `LiteralScalar` so that they point to valid
     /// data elements in the `AggState` values.
-    fn set_groups_for_undefined_agg_states(&mut self) {
+    pub(crate) fn set_groups_for_undefined_agg_states(&mut self) {
         match &self.state {
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
             AggState::AggregatedScalar(c) => {
                 assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned({
+                self.with_groups({
                     let groups = (0..c.len() as IdxSize).map(|i| [i, 1]).collect();
                     GroupsType::new_slice(groups, false, true).into_sliceable()
                 });
@@ -664,12 +670,54 @@ impl<'a> AggregationContext<'a> {
             AggState::LiteralScalar(c) => {
                 assert_eq!(c.len(), 1);
                 assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned({
+                self.with_groups({
                     let groups = vec![[0, 1]; self.groups.len()];
                     GroupsType::new_slice(groups, true, true).into_sliceable()
                 });
             },
         }
+    }
+
+    /// Repeats each unit-length group to the length of the matching group in `other`, returning
+    /// whether any group was repeated.
+    pub(crate) fn broadcast_unit_groups_to(&mut self, other: &mut AggregationContext) -> bool {
+        let other_groups = other.groups();
+        let needs_broadcast = self
+            .groups()
+            .iter()
+            .zip(other_groups.iter())
+            .any(|(g, o)| g.len() == 1 && o.len() != 1);
+        if !needs_broadcast {
+            return false;
+        }
+
+        let other_lengths = other_groups.iter().map(|g| g.len());
+        let groups: GroupsIdx = match self.groups.as_ref().as_ref() {
+            GroupsType::Idx(i) => i
+                .iter()
+                .zip(other_lengths)
+                .map(|((fst, idxs), l)| {
+                    if idxs.len() != l && idxs.len() == 1 {
+                        (fst, UnitVec::from_iter(std::iter::repeat_n(fst, l)))
+                    } else {
+                        (fst, idxs.clone())
+                    }
+                })
+                .collect(),
+            GroupsType::Slice { groups, .. } => groups
+                .iter()
+                .zip(other_lengths)
+                .map(|(&[start, length], l)| {
+                    if length as usize != l && length == 1 {
+                        (start, UnitVec::from_iter(std::iter::repeat_n(start, l)))
+                    } else {
+                        (start, UnitVec::from_iter(start..start + length))
+                    }
+                })
+                .collect(),
+        };
+        self.with_groups(GroupsType::Idx(groups).into_sliceable());
+        true
     }
 
     pub fn into_static(&self) -> AggregationContext<'static> {
@@ -679,7 +727,7 @@ impl<'a> AggregationContext<'a> {
             state: self.state.clone(),
             groups,
             update_groups: self.update_groups,
-            original_len: self.original_len,
+            original_groups: self.original_groups,
         }
     }
 }
@@ -790,17 +838,12 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         if self.has_window_function {
             state.insert_has_window_function_flag();
         }
-        self.expr.evaluate(df, &state).map(|c| {
-            // IO expression result should be boolean-typed.
-            debug_assert_eq!(c.dtype(), &DataType::Boolean);
-            (if c.len() == 1 && df.height() != 1 {
-                // filter(lit(True)) will hit here.
-                c.new_from_index(0, df.height())
-            } else {
-                c
-            })
-            .take_materialized_series()
-        })
+        // `filter(lit(True))` produces a unit-length column, which we broadcast.
+        let c = self.expr.evaluate(df, &state)?;
+        // IO expression result should be boolean-typed.
+        debug_assert_eq!(c.dtype(), &DataType::Boolean);
+        Ok(c.broadcast_owned_to(df.height())?
+            .take_materialized_series())
     }
 }
 

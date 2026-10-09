@@ -1,12 +1,12 @@
-use arrow::array::{FixedSizeBinaryArray, Splitable};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::ArrowDataType;
-use arrow::pushable::Pushable;
-use arrow::types::{
+use bytemuck::Zeroable;
+use polars_arrow::array::{FixedSizeBinaryArray, Splitable};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::pushable::Pushable;
+use polars_arrow::types::{
     AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8,
     Bytes12Alignment4, Bytes16Alignment16, Bytes32Alignment16,
 };
-use bytemuck::Zeroable;
 use polars_buffer::{Buffer, SharedStorage};
 
 use super::Filter;
@@ -17,6 +17,7 @@ use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::{Encoding, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
+use crate::read::PredicateFilter;
 use crate::read::deserialize::dictionary_encoded::constrain_page_validity;
 use crate::read::deserialize::utils::{self, Decoded};
 use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
@@ -544,6 +545,22 @@ impl Decoder for BinaryDecoder {
         ))
     }
 
+    fn evaluate_dict_predicate(
+        &self,
+        _dict: &Self::Dict,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<Bitmap> {
+        // Dispatch to this codepath disabled from crates/polars-stream/src/nodes/io_sources/parquet/init.rs
+        //
+        // This would panic attempting to create a polars DataType::Binary Series from a
+        // dyn Array of type ArrowDataType::FixedSizeBinary(_) (via Series::from_chunk_and_dtype
+        // in predicate.evaluate_mut()).
+        //
+        // TODO: Performant fix would involve refactoring this (BinaryDecoder) to also store Views
+        // in the intermediate state, and only when a predicate is being applied on this column.
+        unimplemented!("parquet: fixed-size binary prefilter");
+    }
+
     fn evaluate_predicate(
         &mut self,
         _state: &utils::State<'_, Self>,
@@ -557,7 +574,7 @@ impl Decoder for BinaryDecoder {
     fn extend_decoded(
         &self,
         decoded: &mut Self::DecodedState,
-        additional: &dyn arrow::array::Array,
+        additional: &dyn polars_arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
         let additional = additional

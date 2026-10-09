@@ -15,6 +15,7 @@ use super::utils::{
 };
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
+use crate::interned;
 use crate::utils::EnterPolarsExt;
 
 #[pymethods]
@@ -63,7 +64,7 @@ pub(super) fn df_to_numpy(
                         "copy not allowed: cannot create a writable array without copying data",
                     ));
                 }
-                arr = arr.call_method0(py, intern!(py, "copy"))?;
+                arr = arr.call_method0(py, interned::COPY.get(py))?;
             }
             return Ok(arr);
         }
@@ -271,25 +272,29 @@ fn df_columns_to_numpy(
     order: IndexOrder,
     writable: bool,
 ) -> PyResult<Py<PyAny>> {
-    let np_arrays = df.columns().iter().map(|c| {
-        let mut arr = series_to_numpy(py, c.as_materialized_series(), writable, true).unwrap();
+    let np_arrays = df
+        .columns()
+        .iter()
+        .map(|c| {
+            let mut arr = series_to_numpy(py, c.as_materialized_series(), writable, true)?;
 
-        // Convert multidimensional arrays to 1D object arrays.
-        let shape: Vec<usize> = arr
-            .getattr(py, intern!(py, "shape"))
-            .unwrap()
-            .extract(py)
-            .unwrap();
-        if shape.len() > 1 {
-            // TODO: Downcast the NumPy array to Rust and split without calling into Python.
-            let subarrays = (0..shape[0]).map(|idx| {
-                arr.call_method1(py, intern!(py, "__getitem__"), (idx,))
-                    .unwrap()
-            });
-            arr = PyArray1::from_iter(py, subarrays).into_py_any(py).unwrap();
-        }
-        arr
-    });
+            // Convert multidimensional arrays to 1D object arrays.
+            let shape: Vec<usize> = arr
+                .getattr(py, interned::SHAPE.get(py))
+                .unwrap()
+                .extract(py)
+                .unwrap();
+            if shape.len() > 1 {
+                // TODO: Downcast the NumPy array to Rust and split without calling into Python.
+                let subarrays = (0..shape[0]).map(|idx| {
+                    arr.call_method1(py, interned::DUNDER_GETITEM.get(py), (idx,))
+                        .unwrap()
+                });
+                arr = PyArray1::from_iter(py, subarrays).into_py_any(py).unwrap();
+            }
+            PyResult::Ok(arr)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
 
     let numpy = super::utils::get_numpy_module(py)?;
     let np_array = match order {

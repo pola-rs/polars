@@ -13,13 +13,12 @@ fn test_describe() {
     .lazy();
     let mut context = SQLContext::new();
     context.register("df", lf.clone());
-    let sql = r#"EXPLAIN SELECT year, country, MAX(year) as year_max FROM df"#;
+    let sql = r#"EXPLAIN SELECT MAX(year) as year_max, MIN(country) AS country FROM df"#;
     let res = context.execute(sql).unwrap();
     let df = res.collect().unwrap();
     let lf = lf.select([
-        col("year"),
-        col("country"),
         col("year").max().alias("year_max"),
+        col("country").min().alias("country"),
     ]);
     let expected = lf.describe_optimized_plan().unwrap();
 
@@ -29,7 +28,7 @@ fn test_describe() {
         .unwrap()
         .str()
         .unwrap()
-        .into_iter()
+        .iter()
         .collect::<Vec<_>>();
 
     assert_eq!(actual, expected);

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.various import parse_version
-from polars.convert import from_arrow
 from polars.exceptions import ModuleUpgradeRequiredError
 
 if TYPE_CHECKING:
@@ -43,6 +42,8 @@ def _read_sql_connectorx(
     schema_overrides: SchemaDict | None = None,
     pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame:
+    from polars import DataFrame
+
     cx = import_optional("connectorx")
 
     if parse_version(cx.__version__) < (0, 4, 2):
@@ -71,7 +72,7 @@ def _read_sql_connectorx(
         errmsg = re.sub("://[^:]+:[^:]+@", "://***:***@", str(err))
         raise type(err)(errmsg) from err
 
-    return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
+    return DataFrame(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
 def _read_sql_adbc(
@@ -114,10 +115,12 @@ def _read_sql_adbc(
         "fetch_arrow" if adbc_version >= (1, 6, 0) else "fetch_arrow_table"
     )
 
+    from polars import DataFrame
+
     with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
         cursor.execute(query, **(execute_options or {}))
         tbl = getattr(cursor, fetch_method_name)()
-        return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
+        return DataFrame(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
 def _get_adbc_driver_name_from_uri(connection_uri: str) -> str:

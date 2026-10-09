@@ -1,4 +1,4 @@
-use polars_ops::frame::JoinCoalesce;
+use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType};
 
 use super::*;
 
@@ -27,7 +27,7 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
         .left_on([col("sireid")])
         .right_on([col("id")])
         .suffix("_sire")
-        .finish()
+        .finish()?
         .drop(cols(["sireid"]))
         .collect()?;
 
@@ -39,6 +39,7 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "cross_join")]
 fn test_cross_join_pd() -> PolarsResult<()> {
+    use polars_defs::join::MaintainOrderJoin;
     let food = df![
         "name"=> ["Omelette", "Fried Egg"],
         "price" => [8, 5]
@@ -49,11 +50,21 @@ fn test_cross_join_pd() -> PolarsResult<()> {
         "price" => [5, 4]
     ]?;
 
-    let q = food.lazy().cross_join(drink.lazy(), None).select([
-        col("name").alias("food"),
-        col("name_right").alias("beverage"),
-        (col("price") + col("price_right")).alias("total"),
-    ]);
+    let q = food
+        .lazy()
+        .join(
+            drink.lazy(),
+            vec![],
+            vec![],
+            JoinArgs::new(JoinType::Cross)
+                .with_suffix(None)
+                .with_maintain_order(MaintainOrderJoin::LeftRight),
+        )?
+        .select([
+            col("name").alias("food"),
+            col("name_right").alias("beverage"),
+            (col("price") + col("price_right")).alias("total"),
+        ]);
 
     let out = q.collect()?;
     let expected = df![
@@ -103,7 +114,7 @@ fn scan_join_same_file() -> PolarsResult<()> {
                 [col("category")],
                 [col("category")],
                 JoinType::Inner.into(),
-            )
+            )?
             .with_comm_subplan_elim(cse);
         let out = q.collect()?;
         assert_eq!(
@@ -159,7 +170,7 @@ fn test_coalesce_toggle_projection_pushdown() -> PolarsResult<()> {
                 coalesce: JoinCoalesce::KeepColumns,
                 ..Default::default()
             },
-        )
+        )?
         .select([col("a"), col("b")])
         .to_alp_optimized()?;
 
@@ -215,55 +226,6 @@ fn test_select_hconcat_pushdown_non_strict_25263() -> PolarsResult<()> {
         out,
         df![
             "d" => [Some(1), Some(2), None]
-        ]?
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_select_hconcat_pushdown_strict_25263() -> PolarsResult<()> {
-    let df_a = df![
-        "a" => [1, 2],
-        "b" => [4, 5],
-    ]?
-    .lazy();
-
-    let df_b = df![
-        "d" => [1, 2],
-    ]?
-    .lazy();
-
-    // strict: we don't read any columns from `df_a`
-    let lf = concat_lf_horizontal(
-        [df_a, df_b],
-        HConcatOptions {
-            strict: true,
-            ..Default::default()
-        },
-    )?
-    .select([col("d")]);
-    let plan = lf.clone().to_alp_optimized()?;
-
-    let node = plan.lp_top;
-    let lp_arena = plan.lp_arena;
-
-    assert!(lp_arena.iter(node).all(|(_, plan)| match plan {
-        IR::DataFrameScan { schema, .. } => {
-            // make sure that we don't read any columns from `df_a`
-            if schema.contains("a") {
-                panic!("should not have read any columns from `df_a`");
-            }
-            true
-        },
-        _ => true,
-    }));
-
-    let out = lf.collect()?;
-    assert_eq!(
-        out,
-        df![
-            "d" => [Some(1), Some(2)]
         ]?
     );
 

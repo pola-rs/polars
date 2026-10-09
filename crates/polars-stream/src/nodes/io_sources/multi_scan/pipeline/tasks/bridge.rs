@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use crate::async_executor;
-use crate::async_executor::{JoinHandle, TaskPriority};
-use crate::async_primitives::connector;
-use crate::async_primitives::wait_group::WaitToken;
+use polars_async::executor;
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority};
+use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::WaitToken;
+
 use crate::morsel::{MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::components::bridge::{
     BridgeRecvPort, BridgeState, StopReason,
@@ -12,6 +13,7 @@ use crate::pipe::PortSender;
 
 pub fn spawn_bridge(
     bridge_state: Arc<Mutex<BridgeState>>,
+    task_metrics: Option<&TaskMetricAggregator>,
 ) -> (
     JoinHandle<()>,
     // For attaching file reader output port
@@ -22,8 +24,9 @@ pub fn spawn_bridge(
     let (incoming_tx, incoming) = connector::connector();
     let (outgoing_tx, outgoing) = connector::connector();
 
-    let handle = async_executor::spawn(
+    let handle = executor::spawn(
         TaskPriority::Low,
+        task_metrics,
         Bridge {
             incoming,
             outgoing,

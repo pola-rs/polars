@@ -5,10 +5,10 @@ mod quantile;
 mod rank;
 mod sum;
 
-use arrow::legacy::utils::CustomIterTools;
 pub use mean::*;
 pub use min_max::*;
 pub use moment::*;
+use polars_arrow::legacy::utils::CustomIterTools;
 pub use quantile::*;
 pub use rank::*;
 pub use sum::*;
@@ -61,7 +61,7 @@ where
     let (start, end) = det_offsets_fn(0, window_size, len);
     let mut agg_window = Agg::new(values, validity, start, end, params, Some(window_size));
 
-    let mut validity = create_validity(min_periods, len, window_size, det_offsets_fn)
+    let mut validity = create_validity(min_periods, len, window_size, det_offsets_fn, None, false)
         .unwrap_or_else(|| {
             let mut validity = MutableBitmap::with_capacity(len);
             validity.extend_constant(len, true);
@@ -75,14 +75,11 @@ where
             // we are in bounds
             unsafe { agg_window.update(start, end) };
             match agg_window.get_agg(idx) {
-                Some(val) => {
-                    if agg_window.is_valid(min_periods) {
-                        val
-                    } else {
-                        // SAFETY: we are in bounds
-                        unsafe { validity.set_unchecked(idx, false) };
-                        Out::default()
-                    }
+                Some(val) if agg_window.is_valid(min_periods) => val,
+                Some(_) => {
+                    // SAFETY: we are in bounds
+                    unsafe { validity.set_unchecked(idx, false) };
+                    Out::default()
                 },
                 None => {
                     // SAFETY: we are in bounds
@@ -102,8 +99,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::array::{Array, Int32Array};
-    use arrow::datatypes::ArrowDataType;
+    use polars_arrow::array::{Array, Int32Array};
+    use polars_arrow::datatypes::ArrowDataType;
     use polars_buffer::Buffer;
     use polars_utils::min_max::MaxIgnoreNan;
 

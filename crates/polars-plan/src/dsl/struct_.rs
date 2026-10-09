@@ -71,10 +71,26 @@ impl StructNameSpace {
         self._rename_fields_impl(names.into_iter().map(|x| x.into()).collect())
     }
 
-    pub fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
+    fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0
             .map_unary(FunctionExpr::StructExpr(StructFunction::RenameFields(
                 names,
+            )))
+    }
+
+    /// Drop the given fields from the [`StructChunked`].
+    pub fn drop<I, S>(self, names: I, strict: bool) -> Expr
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<PlSmallStr>,
+    {
+        self._drop_impl(names.into_iter().map(|x| x.into()).collect(), strict)
+    }
+
+    fn _drop_impl(self, names: Arc<[PlSmallStr]>, strict: bool) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::StructExpr(StructFunction::Drop(
+                names, strict,
             )))
     }
 
@@ -84,10 +100,23 @@ impl StructNameSpace {
             .map_unary(FunctionExpr::StructExpr(StructFunction::JsonEncode))
     }
 
+    /// Add or overwrite fields of the [`StructChunked`], retaining the fields that are not
+    /// part of `fields`.
     pub fn with_fields(self, fields: Vec<Expr>) -> Expr {
         Expr::StructEval {
             expr: Arc::new(self.0),
             evaluation: fields,
+            variant: StructEvalVariant::WithFields,
+        }
+    }
+
+    /// Project `fields` on the [`StructChunked`], dropping the fields that are not part of
+    /// `fields`.
+    pub fn eval(self, fields: Vec<Expr>) -> Expr {
+        Expr::StructEval {
+            expr: Arc::new(self.0),
+            evaluation: fields,
+            variant: StructEvalVariant::Select,
         }
     }
 }

@@ -1,7 +1,6 @@
 use std::io::{BufReader, BufWriter};
 
 use polars::lazy::prelude::Expr;
-use polars_utils::pl_serialize;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -13,23 +12,17 @@ use crate::file::get_file_like;
 
 #[pymethods]
 impl PyExpr {
-    // Pickle we set FC is false, as that is used for caching (compact is faster) and is not intended to be used
-    // across different versions.
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        // Used in pickle/pickling
-        let mut writer: Vec<u8> = vec![];
-        pl_serialize::SerializeOptions::default()
-            .serialize_into_writer::<_, _, false>(&mut writer, &self.inner)
+        let mut bytes: Vec<u8> = vec![];
+        self.inner
+            .serialize_compact_into(&mut bytes)
             .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-
-        Ok(PyBytes::new(py, &writer))
+        Ok(PyBytes::new(py, &bytes))
     }
 
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
-        // Used in pickle/pickling
         let bytes = state.extract::<PyBackedBytes>()?;
-        self.inner = pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader::<_, _, false>(&*bytes)
+        self.inner = Expr::deserialize_compact_from(&mut &*bytes)
             .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
         Ok(())
     }
@@ -37,9 +30,8 @@ impl PyExpr {
     /// Serialize into binary data.
     fn serialize_binary(&self, py_f: Py<PyAny>) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
-        let writer = BufWriter::new(file);
-        pl_serialize::SerializeOptions::default()
-            .serialize_into_writer::<_, _, true>(writer, &self.inner)
+        self.inner
+            .serialize_binary_into(&mut BufWriter::new(file))
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
@@ -47,8 +39,8 @@ impl PyExpr {
     #[cfg(feature = "json")]
     fn serialize_json(&self, py_f: Py<PyAny>) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
-        let writer = BufWriter::new(file);
-        serde_json::to_writer(writer, &self.inner)
+        self.inner
+            .serialize_json_into(&mut BufWriter::new(file))
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
@@ -56,9 +48,7 @@ impl PyExpr {
     #[staticmethod]
     fn deserialize_binary(py_f: Py<PyAny>) -> PyResult<PyExpr> {
         let file = get_file_like(py_f, false)?;
-        let reader = BufReader::new(file);
-        let expr: Expr = pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader::<_, _, true>(reader)
+        let expr = Expr::deserialize_binary_from(&mut BufReader::new(file))
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(expr.into())
     }
@@ -82,7 +72,7 @@ impl PyExpr {
         // in this scope.
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
-        let inner: Expr = serde_json::from_str(json).map_err(|_| {
+        let inner = Expr::deserialize_json_from_str(json).map_err(|_| {
             let msg = "could not deserialize input into an expression";
             ComputeError::new_err(msg)
         })?;

@@ -2,19 +2,20 @@ use std::sync::Arc;
 
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
-use polars_core::POOL;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::relaxed_cell::RelaxedCell;
-use polars_utils::reuse_vec::reuse_vec;
+use polars_utils::vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
-use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::metrics::{GraphMetrics, MetricsBuilder};
+use crate::metrics::GraphMetrics;
+use crate::nodes::NodeMemoryUsage;
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -25,17 +26,23 @@ pub struct StreamingExecutionState {
     /// The ExecutionState passed to any non-streaming operations.
     pub in_memory_exec_state: ExecutionState,
 
+    /// The aggregator for the metrics of tasks spawned by the node this state
+    /// belongs to.
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
+
     query_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
     subphase_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
 }
 
 impl StreamingExecutionState {
+    pub fn task_metrics(&self) -> Option<&TaskMetricAggregator> {
+        self.task_metrics.as_deref()
+    }
+
     /// Spawns a task which is awaited at the end of the query.
     #[allow(unused)]
     pub fn spawn_query_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(&self, fut: F) {
-        self.query_tasks_send
-            .send(polars_io::pl_async::get_runtime().spawn(fut))
-            .unwrap();
+        self.query_tasks_send.send(ASYNC.spawn(fut)).unwrap();
     }
 
     /// Spawns a task which is awaited at the end of the current subphase. That is
@@ -46,17 +53,15 @@ impl StreamingExecutionState {
         &self,
         fut: F,
     ) {
-        self.subphase_tasks_send
-            .send(polars_io::pl_async::get_runtime().spawn(fut))
-            .unwrap();
+        self.subphase_tasks_send.send(ASYNC.spawn(fut)).unwrap();
     }
 }
 
-/// Finds all runnable pipeline blockers in the graph, that is, nodes which:
+/// Finds all runnable phase sinks, that is, nodes which:
 ///  - Only have blocked output ports.
 ///  - Have at least one ready input port connected to a ready output port.
-fn find_runnable_pipeline_blockers(graph: &Graph) -> Vec<GraphNodeKey> {
-    let mut blockers = Vec::new();
+fn find_runnable_phase_sinks(graph: &Graph) -> Vec<GraphNodeKey> {
+    let mut phase_sinks = Vec::new();
     for (node_key, node) in graph.nodes.iter() {
         // TODO: how does the multiplexer fit into this?
         let only_has_blocked_outputs = node
@@ -72,10 +77,10 @@ fn find_runnable_pipeline_blockers(graph: &Graph) -> Vec<GraphNodeKey> {
                 && graph.pipes[*i].recv_state == PortState::Ready
         });
         if has_input_ready {
-            blockers.push(node_key);
+            phase_sinks.push(node_key);
         }
     }
-    blockers
+    phase_sinks
 }
 
 /// Given a set of nodes expand this set with all nodes which are inputs to the
@@ -108,27 +113,24 @@ fn expand_ready_subgraph(
 
 /// Finds a part of the graph which we can run.
 fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<LogicalPipeKey>) {
-    // Find pipeline blockers, choose a subset with at most one memory intensive
-    // pipeline blocker, and return the subgraph needed to feed them.
-    let blockers = find_runnable_pipeline_blockers(graph);
-    let (expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
-        graph.nodes[*b]
-            .compute
-            .is_memory_intensive_pipeline_blocker()
-    });
+    // Find phase sinks, choose a subset with at most one accumulating node, and
+    // return the subgraph needed to feed them.
+    let phase_sinks = find_runnable_phase_sinks(graph);
+    let (accumulating, mut to_run): (Vec<_>, Vec<_>) = phase_sinks
+        .into_iter()
+        .partition(|n| graph.nodes[*n].compute.memory_usage() == NodeMemoryUsage::Accumulating);
 
-    // If all expensive pipeline blockers left are sinks (InMemorySink), we're not
-    // gaining anything by only running a subset.
-    let only_expensive_sinks_left = expensive
+    // If all accumulating nodes left are sinks (InMemorySink), we're not gaining
+    // anything by only running a subset.
+    let only_accumulating_sinks_left = accumulating
         .iter()
         .all(|node_key| graph.nodes[*node_key].outputs.is_empty());
 
-    let mut to_run = cheap;
-    if only_expensive_sinks_left {
-        to_run.extend(expensive);
+    if only_accumulating_sinks_left {
+        to_run.extend(accumulating);
     } else {
-        // TODO: choose which expensive pipeline blocker(s) to run more intelligently.
-        let best = expensive.into_iter().max_by_key(|node_key| {
+        // TODO: choose which accumulating node(s) to run more intelligently.
+        let best = accumulating.into_iter().max_by_key(|node_key| {
             // Prefer to run nodes whose outputs are ready to be consumed. Also
             // prefer to run nodes which have outputs over in-memory sinks.
             let num_outputs = graph.nodes[*node_key].outputs.len();
@@ -152,6 +154,7 @@ fn run_subgraph(
     pipes: &[LogicalPipeKey],
     pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<RelaxedCell<u64>>>,
     state: &StreamingExecutionState,
+    node_states: &SecondaryMap<GraphNodeKey, StreamingExecutionState>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
@@ -187,7 +190,7 @@ fn run_subgraph(
         }
     }
 
-    async_executor::task_scope(|scope| {
+    executor::task_scope(None, |scope| {
         // Using SlotMap::iter_mut we can get simultaneous mutable references. By storing them and
         // removing the references from the secondary map as we do our topological sort we ensure
         // they are unique.
@@ -221,28 +224,15 @@ fn run_subgraph(
             }
 
             // Spawn the tasks.
-            let pre_spawn_offset = join_handles.len();
-
-            if let Some(graph_metrics) = metrics.clone() {
-                node.compute.set_metrics_builder(MetricsBuilder {
-                    graph_key: node_key,
-                    graph_metrics,
-                });
-            }
-
+            let node_state = &node_states[node_key];
+            scope.set_task_metrics(node_state.task_metrics());
             node.compute.spawn(
                 scope,
                 &mut recv_ports[..],
                 &mut send_ports[..],
-                state,
+                node_state,
                 &mut join_handles,
             );
-            if let Some(lock) = metrics.as_ref() {
-                let mut m = lock.lock();
-                for handle in &join_handles[pre_spawn_offset..] {
-                    m.add_task(node_key, handle.metrics().unwrap().clone());
-                }
-            }
 
             // Ensure the ports were consumed.
             assert!(recv_ports.iter().all(|p| p.is_none()));
@@ -285,12 +275,14 @@ fn run_subgraph(
 
         // Spawn tasks for all the physical pipes (no-op on most, but needed for
         // those with distributors or linearizers).
-        for pipe in physical_pipes.values_mut() {
+        for (pipe_key, pipe) in physical_pipes.iter_mut() {
+            let receiver = graph.pipes[pipe_key].receiver;
+            scope.set_task_metrics(node_states[receiver].task_metrics());
             pipe.spawn(scope, &mut join_handles);
         }
 
         // Wait until all tasks are done.
-        polars_io::pl_async::get_runtime().block_on(async move {
+        ASYNC.block_in_place_on(async move {
             for handle in join_handles {
                 handle.await?;
             }
@@ -305,19 +297,25 @@ pub fn execute_graph(
     graph: &mut Graph,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
-    // Get the number of threads from the rayon thread-pool as that respects our config.
-    let num_pipelines = POOL.current_num_threads();
-    async_executor::set_num_threads(num_pipelines);
-
     let (query_tasks_send, query_tasks_recv) = crossbeam_channel::unbounded();
     let (subphase_tasks_send, subphase_tasks_recv) = crossbeam_channel::unbounded();
 
     let state = StreamingExecutionState {
-        num_pipelines,
+        num_pipelines: polars_config::config().max_threads(),
         in_memory_exec_state: ExecutionState::default(),
         query_tasks_send,
         subphase_tasks_send,
+        task_metrics: None,
     };
+    let node_states: SecondaryMap<GraphNodeKey, StreamingExecutionState> = graph
+        .nodes
+        .keys()
+        .map(|key| {
+            let mut node_state = state.clone();
+            node_state.task_metrics = metrics.as_ref().map(|m| m.lock().node_task_metrics(key));
+            (key, node_state)
+        })
+        .collect();
 
     // Ensure everything is properly connected.
     for (node_key, node) in &graph.nodes {
@@ -337,13 +335,13 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states(&state, metrics.as_deref())?;
+        graph.update_all_states(&node_states, metrics.as_deref())?;
 
         if let Some(m) = metrics.as_ref() {
             m.lock().flush(&graph.pipes);
         }
 
-        polars_io::pl_async::get_runtime().block_on(async {
+        ASYNC.block_in_place_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
                 handle.await.unwrap()?;
@@ -373,9 +371,10 @@ pub fn execute_graph(
             &pipes,
             &mut pipe_seq_offsets,
             &state,
+            &node_states,
             metrics.clone(),
         )?;
-        polars_io::pl_async::get_runtime().block_on(async {
+        ASYNC.block_in_place_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
                 handle.await.unwrap()?;
@@ -393,7 +392,7 @@ pub fn execute_graph(
     }
 
     // Finalize query tasks.
-    polars_io::pl_async::get_runtime().block_on(async {
+    ASYNC.block_in_place_on(async {
         // TODO: track this in metrics.
         while let Ok(handle) = query_tasks_recv.try_recv() {
             handle.await.unwrap()?;

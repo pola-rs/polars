@@ -3,8 +3,6 @@ use std::sync::Arc;
 use polars_utils::live_timer::{LiveTimer, LiveTimerSession};
 use polars_utils::relaxed_cell::RelaxedCell;
 
-pub const HEAD_RESPONSE_SIZE_ESTIMATE: u64 = 1;
-
 #[derive(Debug, Default, Clone)]
 pub struct IOMetrics {
     pub io_timer: LiveTimer,
@@ -46,6 +44,24 @@ impl OptIOMetrics {
         let io_session = self.start_io_session();
 
         let out = fut.await;
+
+        drop(io_session);
+
+        self.add_bytes_received(num_bytes);
+
+        out
+    }
+
+    /// [`Self::record_io_read`] for a read done on the calling thread.
+    pub fn record_io_read_blocking<F, O>(&self, num_bytes: u64, f: F) -> O
+    where
+        F: FnOnce() -> O,
+    {
+        self.add_bytes_requested(num_bytes);
+
+        let io_session = self.start_io_session();
+
+        let out = f();
 
         drop(io_session);
 

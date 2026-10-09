@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import sys
 from functools import partial
@@ -619,9 +620,12 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
 
     if write is pl.DataFrame.write_parquet:
         df.write_parquet(f, row_group_size=5)
+        f.seek(0)
         assert pq.read_metadata(f).num_row_groups == 2
     else:
         write(df, f)
+
+    f.seek(0)
 
     for end in range(2, 10):
         assert_frame_equal(
@@ -645,6 +649,7 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
 def test_row_index_name_in_file(scan: Any, write: Any) -> None:
     f = io.BytesIO()
     write(pl.DataFrame({"index": 1}), f)
+    f.seek(0)
 
     with pytest.raises(
         pl.exceptions.DuplicateError,
@@ -660,6 +665,9 @@ def test_extra_columns_not_ignored_22218() -> None:
 
     dfs[0].write_parquet(files[0])
     dfs[1].write_parquet(files[1])
+
+    for f in files:
+        f.seek(0)
 
     with pytest.raises(
         pl.exceptions.SchemaError,
@@ -690,6 +698,9 @@ def test_scan_null_upcast(scan: Any, write: Any) -> None:
 
     write(dfs[0], files[0])
     write(dfs[1], files[1])
+
+    for f in files:
+        f.seek(0)
 
     # Prevent CSV schema inference from loading as string (it looks at multiple
     # files).
@@ -725,6 +736,9 @@ def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
 
     write(dfs[0], files[0])
     write(dfs[1], files[1])
+
+    for f in files:
+        f.seek(0)
 
     # Prevent CSV schema inference from loading as string (it looks at multiple
     # files).
@@ -946,3 +960,765 @@ def test_hive_predicate_filtering_edge_case_25630(
         schema={"index": pl.get_index_type()},
     )
     assert_frame_equal(res, expected)
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_to_partitioned_union(tmp_path: Path) -> None:
+    # Inner-joining two hive-partitioned datasets on their (first) hive column
+    # should be rewritten into a union of per-partition joins, where each
+    # branch only reads the intersecting partitions and filters both sides
+    # down to the matching partition values.
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    # `foo=3` has no match on the right-hand side, so it should be pruned
+    # entirely and never show up in the rewritten plan.
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 2], "y": [100, 200]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = left.join(right, left_on="foo", right_on="bar", how="inner")
+    plan = q.explain()
+
+    # The join is rewritten to a union of 2 branches, one for each matching
+    # partition value (1 and 2).
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" not in plan
+    assert plan.count("INNER JOIN:") == 2
+
+    # Each branch only scans the matching partition on both sides.
+    assert "foo=1" in plan
+    assert "foo=2" in plan
+    assert "foo=3" not in plan
+    assert "bar=1" in plan
+    assert "bar=2" in plan
+
+    # Both sides of each branch are filtered down to the partition value.
+    assert plan.count('col("foo")') > 0
+    assert plan.count('col("bar")') > 0
+    assert plan.count("is_in") == 4
+
+    out = q.sort("foo")
+    assert_frame_equal(
+        out.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort("foo"),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_pre_partition_hive_flag(tmp_path: Path) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 2], "y": [100, 200]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = left.join(right, left_on="foo", right_on="bar", how="inner")
+
+    default_flags = pl.QueryOptFlags()
+    assert default_flags.pre_partition_hive is True
+
+    plan_enabled = q.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=True))
+    assert plan_enabled.startswith("UNION[maintain_order: false]")
+    assert plan_enabled.count("INNER JOIN:") == 2
+
+    plan_disabled = q.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=False))
+    assert "UNION" not in plan_disabled
+    assert plan_disabled.count("INNER JOIN:") == 1
+    assert plan_disabled.count("is_in") == 2
+
+    out = q.sort("foo")
+    assert_frame_equal(
+        out.collect(optimizations=pl.QueryOptFlags(pre_partition_hive=True)).sort(
+            "foo"
+        ),
+        out.collect(optimizations=pl.QueryOptFlags(pre_partition_hive=False)).sort(
+            "foo"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_left_join(tmp_path: Path) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 2], "y": [100, 200]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = left.join(right, left_on="foo", right_on="bar", how="left")
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" in plan
+    assert "PLAN 3:" not in plan
+    assert plan.count("LEFT JOIN:") == 3
+    assert "foo=1" in plan
+    assert "foo=2" in plan
+    assert "foo=3" in plan
+    assert "bar=1" in plan
+    assert "bar=2" in plan
+
+    out = q.sort("foo")
+    assert_frame_equal(
+        out.collect().sort("foo"),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "foo"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_right_join(tmp_path: Path) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 2, 4], "y": [100, 200, 400]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = left.join(right, left_on="foo", right_on="bar", how="right")
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" in plan
+    assert "PLAN 3:" not in plan
+    assert plan.count("RIGHT JOIN:") == 3
+    assert "foo=1" in plan
+    assert "foo=2" in plan
+    assert "foo=3" not in plan
+    assert "bar=1" in plan
+    assert "bar=2" in plan
+    assert "bar=4" in plan
+
+    out = q.sort("bar")
+    assert_frame_equal(
+        out.collect().sort("bar"),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "bar"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_to_partitioned_union(tmp_path: Path) -> None:
+    # Grouping a hive-partitioned dataset by its (first) hive column should be
+    # rewritten into a union of per-partition group-by's, where each branch
+    # only reads the matching partition.
+    root = tmp_path / "root"
+
+    pl.DataFrame({"foo": [1, 1, 2, 3], "x": [10, 1, 20, 30]}).write_parquet(
+        root, partition_by="foo"
+    )
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+
+    q = lf.group_by("foo").agg(pl.sum("x").alias("x_sum"), pl.len())
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" in plan
+    assert "PLAN 3:" not in plan
+    assert plan.count("AGGREGATE") == 3
+    assert "foo=1" in plan
+    assert "foo=2" in plan
+    assert "foo=3" in plan
+    assert plan.count("is_in") == 3
+
+    out = q.sort("foo")
+    expected = pl.DataFrame(
+        {"foo": [1, 2, 3], "x_sum": [11, 20, 30], "len": [2, 1, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(out.collect(), expected)
+    assert_frame_equal(
+        out.collect(),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "foo"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_pre_partition_hive_flag(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        root, partition_by="foo"
+    )
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+    q = lf.group_by("foo").agg(pl.sum("x"))
+
+    plan_enabled = q.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=True))
+    assert plan_enabled.startswith("UNION[maintain_order: false]")
+    assert plan_enabled.count("AGGREGATE") == 3
+
+    plan_disabled = q.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=False))
+    assert "UNION" not in plan_disabled
+    assert plan_disabled.count("AGGREGATE") == 1
+
+    out = q.sort("foo")
+    assert_frame_equal(
+        out.collect(optimizations=pl.QueryOptFlags(pre_partition_hive=True)).sort(
+            "foo"
+        ),
+        out.collect(optimizations=pl.QueryOptFlags(pre_partition_hive=False)).sort(
+            "foo"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_maintain_order_disables_rewrite(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        root, partition_by="foo"
+    )
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+
+    # `maintain_order` group-by's must not be split into an unordered union.
+    q = lf.group_by("foo", maintain_order=True).agg(pl.sum("x"))
+    plan = q.explain()
+    assert "UNION" not in plan
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
+    # Test that hive prepartitioning is applied to semi-joins.
+
+    left_root = tmp_path / "left.parquet"
+    right_root = tmp_path / "right.parquet"
+
+    pl.DataFrame({"foo": [1, 11, 21], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 11], "y": [100, 200]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = (
+        left.join(right, left_on="foo", right_on="bar", how="semi")
+        .slice(0, 1)
+        # Collapse the two results into the same value so that we don't have to care
+        # about the order of the result.
+        .with_columns(foo=pl.col("foo") % 10, x=pl.col("x") % 10)
+    )
+    plan = q.explain()
+
+    assert "UNION[maintain_order: false]" in plan
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" not in plan
+    assert plan.count("SEMI JOIN:") == 2
+    assert "foo=1" in plan
+    assert "foo=11" in plan
+    assert "foo=21" not in plan
+
+    out = q.sort("foo")
+    result = out.collect().sort("foo")
+    assert result.schema == pl.Schema({"foo": pl.Int64, "x": pl.Int64})
+    assert_frame_equal(
+        result,
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "foo"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_repeated_partition_values_28617(tmp_path: Path) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    # Nested partitioning: the first hive column repeats once per file, so the
+    # branches must be deduplicated on the partition value.
+    pl.DataFrame(
+        {
+            "cohort_index": [0, 0],
+            "chunk_index": [1, 2],
+            "index": [1, 1],
+            "value": [1, 1],
+        }
+    ).write_parquet(left_root, partition_by=["cohort_index", "chunk_index"])
+    pl.DataFrame(
+        {
+            "cohort_index": [0, 0, 0, 0, 0, 0],
+            "chunk_index": [1, 1, 1, 2, 2, 2],
+            "index": [1, 1, 1, 1, 1, 1],
+            "raster_index": [1, 2, 3, 1, 2, 3],
+        }
+    ).write_parquet(right_root, partition_by=["cohort_index", "chunk_index"])
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    on = ["chunk_index", "cohort_index", "index"]
+    q = right.join(left, on=on, how="inner")
+
+    out = q.sort("chunk_index", "raster_index").collect()
+    assert out.height == 6
+    assert_frame_equal(
+        out,
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "chunk_index", "raster_index"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_repeated_partition_values(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+
+    # `foo` repeats over the nested `bar` partitions, so both `foo` values must
+    # end up in exactly one branch.
+    pl.DataFrame(
+        {"foo": [1, 1, 2, 2], "bar": [1, 2, 1, 2], "x": [1, 2, 3, 4]}
+    ).write_parquet(root, partition_by=["foo", "bar"])
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+    q = lf.group_by("foo").agg(pl.sum("x"))
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert plan.count("AGGREGATE") == 2
+
+    out = q.sort("foo").collect()
+    assert_frame_equal(out, pl.DataFrame({"foo": [1, 2], "x": [3, 7]}))
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_null_partition(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    (root / "foo=1").mkdir(parents=True)
+    (root / "foo=__HIVE_DEFAULT_PARTITION__").mkdir(parents=True)
+
+    pl.DataFrame({"x": [10, 20]}).write_parquet(root / "foo=1" / "data.parquet")
+    pl.DataFrame({"x": [5]}).write_parquet(
+        root / "foo=__HIVE_DEFAULT_PARTITION__" / "data.parquet"
+    )
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+    q = lf.group_by("foo").agg(pl.sum("x")).sort("foo", nulls_last=True)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"foo": [1, None], "x": [30, 5]}),
+    )
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.write_disk
+def test_hive_join_rewrite_null_partition(tmp_path: Path, nulls_equal: bool) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    for root, name, frames in [
+        (left_root, "x", {"foo=1": [10], "foo=2": [20]}),
+        (right_root, "y", {"foo=1": [100]}),
+    ]:
+        for part, values in frames.items():
+            (root / part).mkdir(parents=True)
+            pl.DataFrame({name: values}).write_parquet(root / part / "data.parquet")
+
+        (root / "foo=__HIVE_DEFAULT_PARTITION__").mkdir(parents=True)
+        pl.DataFrame({name: [0]}).write_parquet(
+            root / "foo=__HIVE_DEFAULT_PARTITION__" / "data.parquet"
+        )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    for how in ["inner", "left"]:
+        q = left.join(right, on="foo", how=how, nulls_equal=nulls_equal).sort(  # type: ignore[arg-type]
+            "foo", "x", nulls_last=True
+        )
+        assert_frame_equal(
+            q.collect(),
+            q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.parametrize(
+    ("scan", "write", "env_var"),
+    [
+        (
+            pl.scan_parquet,
+            partial(pl.DataFrame.write_parquet, row_group_size=100),
+            "POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET",
+        ),
+        (
+            pl.scan_ipc,
+            partial(pl.DataFrame.write_ipc, record_batch_size=100),
+            "POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET",
+        ),
+    ],
+)
+def test_prefetch_kbytes_budget_below_download_chunk_29464(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: Any,
+    scan: Any,
+    write: Any,
+    env_var: str,
+) -> None:
+    plmonkeypatch.setenv(env_var, "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    dfs = [
+        pl.DataFrame({"a": range(i * 1000, (i + 1) * 1000), "b": ["x" * 50] * 1000})
+        for i in range(3)
+    ]
+    paths = [tmp_path / f"{i}" for i in range(len(dfs))]
+    for df, path in zip(dfs, paths, strict=True):
+        write(df, path)
+
+    capfd.readouterr()
+    out = scan(paths).collect(engine="streaming")
+    capture = capfd.readouterr().err
+
+    assert "prefetch_kbytes_limit: 1\n" in capture
+    assert_frame_equal(out, pl.concat(dfs))
+
+
+# Formats that opt in to emitting files unordered.
+UNORDERED_FILES_SCAN_AND_WRITE = [
+    pytest.param(pl.scan_parquet, pl.DataFrame.write_parquet, "parquet", id="parquet"),
+    pytest.param(pl.scan_ipc, pl.DataFrame.write_ipc, "ipc", id="ipc"),
+]
+
+
+def _multiscan_unordered_frames(
+    n_files: int = 20, n_rows: int = 1_000
+) -> list[pl.DataFrame]:
+    return [
+        pl.select(
+            a=pl.int_range(i * n_rows, (i + 1) * n_rows), f=pl.lit(i, dtype=pl.Int64)
+        )
+        for i in range(n_files)
+    ]
+
+
+def _multiscan_unordered_sources(
+    write: Any, ext: str, tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> tuple[list[Path], pl.DataFrame]:
+    # Files are only emitted unordered for remote sources; force the async path.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_MAX_CONCURRENT_SCANS", "4")
+    dfs = _multiscan_unordered_frames()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for i, df in enumerate(dfs):
+        path = tmp_path / f"{i:02}.{ext}"
+        write(df, path)
+        paths.append(path)
+    return paths, pl.concat(dfs)
+
+
+def _assert_files_order(capture: str, expected: str) -> None:
+    # CI also runs with reader capabilities cleared, which takes the ordered fallback.
+    if os.environ.get("POLARS_FORCE_EMPTY_READER_CAPABILITIES") == "1":
+        expected = "unordered_files: false (reason: no capability)"
+    assert expected in capture
+
+
+def _collect_verbose(
+    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> tuple[pl.DataFrame, str]:
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        out = q.collect(engine="streaming")
+        return out, capfd.readouterr().err
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, df = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
+    lf = scan(sources)
+
+    out, capture = _collect_verbose(lf.select(pl.col("a").sum()), plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: true, unordered_init: true")
+    assert out.item() == df["a"].sum()
+
+    # Row positions are tracked, so readers initialize in order.
+    q = lf.with_row_index().filter(pl.col("a") % 3 == 0).select(pl.col("index").max())
+    _, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(
+        capture,
+        "unordered_files: true, unordered_init: false (reason: row index or slice)",
+    )
+
+    # The measurement knob forces file order without touching the query.
+    plmonkeypatch.setenv("POLARS_FORCE_ORDERED_MULTISCAN", "1")
+    _, capture = _collect_verbose(lf.select(pl.col("a").sum()), plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: false (reason: forced)")
+    plmonkeypatch.delenv("POLARS_FORCE_ORDERED_MULTISCAN")
+
+    def collect(q: pl.LazyFrame) -> pl.DataFrame:
+        return q.collect(engine="streaming")
+
+    assert_frame_equal(collect(lf.sort("a")), df)
+    assert_frame_equal(
+        collect(lf.with_row_index().filter(pl.col("a") % 3 == 0).sort("index")),
+        df.with_row_index().filter(pl.col("a") % 3 == 0),
+    )
+    assert_frame_equal(
+        collect(lf.slice(1_234, 10_000).select(pl.col("a").sum(), pl.len())),
+        df.slice(1_234, 10_000).select(pl.col("a").sum(), pl.len()),
+    )
+    assert_frame_equal(
+        collect(lf.group_by("f").agg(pl.len(), pl.col("a").min()).sort("f")),
+        df.group_by("f").agg(pl.len(), pl.col("a").min()).sort("f"),
+    )
+    # Order is observed.
+    assert_frame_equal(collect(lf), df)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_multiscan_unordered_files_requires_capability(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # CSV does not opt in to emitting files unordered.
+    sources, df = _multiscan_unordered_sources(
+        pl.DataFrame.write_csv, "csv", tmp_path, plmonkeypatch
+    )
+    q = pl.scan_csv(sources).select(pl.col("a").sum())
+
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    assert "unordered_files: false (reason: no capability)" in capture
+    assert out.item() == df["a"].sum()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_post_apply(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # File paths and missing columns go through each file's post-apply pipeline.
+    plmonkeypatch.setenv("POLARS_MAX_CONCURRENT_SCANS", "4")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    # Only parquet scans have a missing columns option.
+    insert_missing = ext == "parquet"
+    dfs = []
+    for i, df in enumerate(_multiscan_unordered_frames()):
+        path = tmp_path / f"{i:02}.{ext}"
+        write(df.drop("f") if insert_missing and i == 7 else df, path)
+        dfs.append(df.with_columns(path=pl.lit(str(path))))
+    df = pl.concat(dfs).with_columns(normalize_path_separator_pl(pl.col("path")))
+
+    kwargs: dict[str, Any] = {}
+    if insert_missing:
+        df = df.with_columns(
+            pl.when(pl.col("f") == 7).then(None).otherwise(pl.col("f")).alias("f")
+        )
+        kwargs["missing_columns"] = "insert"
+    lf = scan(tmp_path / f"*.{ext}", include_file_paths="path", **kwargs)
+    # `f` is constant per file; `min` keeps the query order-agnostic.
+    aggs = [pl.len(), pl.col("a").min(), pl.col("f").min()]
+    q = lf.group_by("path").agg(aggs)
+
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+
+    _assert_files_order(capture, "unordered_files: true")
+    assert_frame_equal(out.sort("path"), df.group_by("path").agg(aggs).sort("path"))
+    assert_frame_equal(lf.sort("a").collect(engine="streaming"), df)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_single_effective_source(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # With one file left to read there is nothing to interleave.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    sources, df = _multiscan_unordered_sources(
+        write, ext, tmp_path / "flat", plmonkeypatch
+    )
+
+    capfd.readouterr()
+    out = scan(sources[:1]).select(pl.col("a").sum()).collect(engine="streaming")
+    assert "unordered_files: false (reason: single source)" in capfd.readouterr().err
+    assert out.item() == df.head(1_000)["a"].sum()
+
+    # The hive partition filter skips every file but one.
+    hive = tmp_path / "hive"
+    for i, frame in enumerate(df.partition_by("f", maintain_order=True)):
+        (hive / f"f={i}").mkdir(parents=True)
+        write(frame.drop("f"), hive / f"f={i}" / f"0.{ext}")
+    lf = scan(hive, hive_partitioning=True)
+
+    capfd.readouterr()
+    out = (
+        lf.filter(pl.col("f") == 3)
+        .select(pl.col("a").sum())
+        .collect(engine="streaming")
+    )
+    assert "unordered_files: false (reason: single source)" in capfd.readouterr().err
+    assert out.item() == df.filter(pl.col("f") == 3)["a"].sum()
+
+    capfd.readouterr()
+    out = (
+        lf.filter(pl.col("f") >= 3)
+        .select(pl.col("a").sum())
+        .collect(engine="streaming")
+    )
+    _assert_files_order(capfd.readouterr().err, "unordered_files: true")
+    assert out.item() == df.filter(pl.col("f") >= 3)["a"].sum()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_error(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, _ = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
+    write(pl.DataFrame({"a": ["x"], "f": [0]}), sources[10])
+    q = scan(sources).select(pl.col("a").sum())
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        with pytest.raises(pl.exceptions.SchemaError):
+            q.collect(engine="streaming")
+        capture = capfd.readouterr().err
+
+    # The error must surface from the unordered path.
+    _assert_files_order(capture, "unordered_files: true")
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_collect_all(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, df = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
+    q = scan(sources).select(pl.col("a").sum())
+    out = io.BytesIO()
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+        _, head, count = pl.collect_all(
+            [q.sink_parquet(out, lazy=True), q.head(10), q.select(pl.len())],
+            engine="streaming",
+        )
+        capture = capfd.readouterr().err
+
+    _assert_files_order(capture, "unordered_files: true")
+    assert head.item() == df["a"].sum()
+    assert count.item() == 1
+    out.seek(0)
+    assert pl.read_parquet(out).item() == df["a"].sum()
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("scan", "write", "ext"), UNORDERED_FILES_SCAN_AND_WRITE)
+def test_multiscan_unordered_files_local_stays_ordered(
+    scan: Any,
+    write: Any,
+    ext: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    sources, df = _multiscan_unordered_sources(write, ext, tmp_path, plmonkeypatch)
+    q = scan(sources).select(pl.col("a").sum())
+
+    # Same query and sources; only the async gate flips.
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: true")
+    assert out.item() == df["a"].sum()
+
+    # Local reads have no stragglers to hide, so files stay ordered.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+    out, capture = _collect_verbose(q, plmonkeypatch, capfd)
+    _assert_files_order(capture, "unordered_files: false (reason: not remote)")
+    assert out.item() == df["a"].sum()

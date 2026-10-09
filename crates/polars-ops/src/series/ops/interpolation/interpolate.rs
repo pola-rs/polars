@@ -1,16 +1,15 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::MutableBitmap;
 use num_traits::{NumCast, Zero};
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use polars_defs::expr::InterpolationMethod;
 
-use super::{linear_itp, nearest_itp};
+use super::linear_itp;
 
-fn near_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, out: &mut Vec<T>)
+fn near_interp<T>(low: T, high: T, steps: IdxSize, _steps_n: T, out: &mut Vec<T>)
 where
     T: Sub<Output = T>
         + Mul<Output = T>
@@ -20,12 +19,9 @@ where
         + Copy
         + PartialOrd,
 {
-    let diff = high - low;
-    for step_i in 1..steps {
-        let step_i: T = NumCast::from(step_i).unwrap();
-        let v = nearest_itp(low, step_i, diff, steps_n);
-        out.push(v)
-    }
+    let mid = steps.div_ceil(2);
+    out.extend((1..mid).map(|_| low));
+    out.extend((mid..steps).map(|_| high));
 }
 
 #[inline]
@@ -200,14 +196,6 @@ fn interpolate_linear(s: &Series) -> Series {
 
 fn linear_interp_signed<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series {
     interpolate_impl(ca, signed_interp::<T::Native>).into_series()
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum InterpolationMethod {
-    Linear,
-    Nearest,
 }
 
 pub fn interpolate(s: &Series, method: InterpolationMethod) -> Series {

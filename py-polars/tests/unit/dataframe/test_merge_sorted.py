@@ -31,6 +31,32 @@ def test_merge_sorted_valid_inputs() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_merge_sorted_multiple_keys() -> None:
+    df0 = pl.DataFrame({"key_1": [1, 1, 3], "key_2": [1, 4, 2]})
+    df1 = pl.DataFrame({"key_1": [1, 2, 3], "key_2": [2, 1, 1]})
+
+    out = df0.merge_sorted(df1, key=["key_1", "key_2"])
+
+    expected = pl.DataFrame(
+        {
+            "key_1": [1, 1, 1, 2, 3, 3],
+            "key_2": [1, 2, 4, 1, 1, 2],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_merge_sorted_multiple_frames_multiple_keys() -> None:
+    df0 = pl.DataFrame({"key_1": [1, 3], "key_2": [1, 2]})
+    df1 = pl.DataFrame({"key_1": [1, 2], "key_2": [2, 1]})
+    df2 = pl.DataFrame({"key_1": [2, 3], "key_2": [2, 1]})
+
+    out = pl.merge_sorted([df0, df1, df2], key=["key_1", "key_2"])
+
+    expected = pl.concat([df0, df1, df2]).sort(["key_1", "key_2"])
+    assert_frame_equal(out, expected)
+
+
 def test_merge_sorted_bad_input_type() -> None:
     a = pl.DataFrame({"x": [1, 2, 3]})
     b = pl.DataFrame({"x": [4, 5, 6]})

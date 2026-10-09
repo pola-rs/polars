@@ -1,6 +1,6 @@
 #![allow(clippy::eq_op)] // We use x != x to detect NaN generically.
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_buffer::SharedStorage;
 use polars_utils::float::IsFloat;
 

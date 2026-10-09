@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -80,7 +81,7 @@ def test_string_concat_errors(invalid_concat: str) -> None:
         SQLSyntaxError,
         match=r"CONCAT.*expects at least \d argument[s]? \(found \d\)",
     ):
-        pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data")
+        pl.SQLContext(data=lf).execute(f"SELECT {invalid_concat} FROM data").collect()
 
 
 def test_string_left_right_reverse() -> None:
@@ -103,7 +104,7 @@ def test_string_left_right_reverse() -> None:
     }
     for func, invalid_arg, invalid_err in (
         ("LEFT", "'xyz'", '"xyz"'),
-        ("RIGHT", "6.66", "(dyn float: 6.66)"),
+        ("RIGHT", "6.66", "6.66"),
     ):
         with pytest.raises(
             SQLSyntaxError,
@@ -275,6 +276,42 @@ def test_string_like_multiline() -> None:
         assert df.sql(f"SELECT txt FROM self WHERE txt LIKE '{s}'").item() == s
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "%a%b%",
+        "%ab%ab%",
+        "a%b",
+        "a%a",
+        "a%",
+        "%b",
+        "a%b%",
+        "%a%b",
+        "%b%a%",
+        "%€%b%",
+        "%a_b%",
+        "_%a%",
+        "%",
+        "%%",
+        "%a%%b%",
+        "%.%*%",
+    ],
+)
+def test_string_like_wildcards(pattern: str) -> None:
+    txt = [
+        "", "a", "b", "ab", "ba", "aab", "abab", "a\nb", "xaybz", "aXb",
+        "abXab", "é€b", "bXa", "a.b*c", None,
+    ]  # fmt: skip
+    rx = re.compile(re.escape(pattern).replace("%", ".*").replace("_", "."), re.DOTALL)
+    df = pl.DataFrame({"txt": txt})
+
+    res = df.sql(f"SELECT txt LIKE '{pattern}' AS m FROM self")["m"].to_list()
+    assert res == [None if s is None else rx.fullmatch(s) is not None for s in txt]
+
+    res = df.sql(f"SELECT txt NOT LIKE '{pattern}' AS m FROM self")["m"].to_list()
+    assert res == [None if s is None else rx.fullmatch(s) is None for s in txt]
+
+
 @pytest.mark.parametrize("form", ["NFKC", "NFKD"])
 def test_string_normalize(form: str) -> None:
     df = pl.DataFrame({"txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"]})  # noqa: RUF001
@@ -367,7 +404,7 @@ def test_string_replace() -> None:
         with pytest.raises(
             SQLSyntaxError, match=r"REPLACE expects 3 arguments \(found 2\)"
         ):
-            ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
+            ctx.execute("SELECT REPLACE(words,'coffee') FROM df").collect()
 
 
 def test_string_split() -> None:
@@ -438,7 +475,7 @@ def test_string_substr() -> None:
                 SQLSyntaxError,
                 match=r"SUBSTR does not support negative length \(-99\)",
             ):
-                ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df")
+                ctx.execute("SELECT SUBSTR(scol,2,-99) FROM df").collect()
 
             with pytest.raises(
                 SQLSyntaxError,
@@ -512,4 +549,6 @@ def test_string_trim(foods_ipc_path: Path) -> None:
         match="unsupported TRIM syntax",
     ):
         # currently unsupported (snowflake-style) trim syntax
-        lf.sql("SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self")
+        lf.sql(
+            "SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self"
+        ).collect()

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
-from polars._utils.parse import parse_into_list_of_expressions
-from polars._utils.various import qualified_type_name
+from polars._utils.parse import (
+    parse_into_list_of_expressions,
+)
+from polars._utils.various import _NamespaceSuggestMixin, qualified_type_name
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
     from polars._typing import IntoExpr
 
 
-class ExprStructNameSpace:
+class ExprStructNameSpace(_NamespaceSuggestMixin):
     """Namespace for struct related expressions."""
 
     _accessor = "struct"
@@ -23,6 +24,48 @@ class ExprStructNameSpace:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: str | int) -> Expr:
+        """
+        Return a struct field by name or by index.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        item
+            If a string, the name of the struct field. If an integer, the index
+            of the struct field.
+
+        Examples
+        --------
+        Access by field name:
+
+        >>> df = pl.DataFrame({"x": [1, 2], "y": ["a", "b"]}).select(
+        ...     pl.struct("x", "y").alias("s")
+        ... )
+        >>> df.select(pl.col("s").struct["x"])
+        shape: (2, 1)
+        ┌─────┐
+        │ x   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        └─────┘
+
+        Access by field index:
+
+        >>> df.select(pl.col("s").struct[0])
+        shape: (2, 1)
+        ┌─────┐
+        │ x   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        └─────┘
+        """
         if isinstance(item, str):
             return self.field(item)
         elif isinstance(item, int):
@@ -34,6 +77,8 @@ class ExprStructNameSpace:
     def field(self, name: str | list[str], *more_names: str) -> Expr:
         """
         Retrieve one or multiple `Struct` field(s) as a new Series.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -158,6 +203,8 @@ class ExprStructNameSpace:
 
         Alias for `Expr.struct.field("*")`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "aaa": [1, 2],
@@ -192,6 +239,8 @@ class ExprStructNameSpace:
     def rename_fields(self, names: Sequence[str]) -> Expr:
         """
         Rename the fields of the struct.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -253,9 +302,48 @@ class ExprStructNameSpace:
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
+    def drop(self, names: Sequence[str], *, strict: bool = True) -> Expr:
+        """
+        Drop one or more fields from the struct.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        names
+            Names of the fields to drop.
+        strict
+            If True, raise an error if any of the specified fields do not exist in the
+            struct.
+
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "aaa": [1, 2],
+        ...         "bbb": ["ab", "cd"],
+        ...         "ccc": [True, None],
+        ...     }
+        ... ).select(pl.struct("aaa", "bbb", "ccc").alias("struct_col"))
+        >>> df.select(pl.col("struct_col").struct.drop(["aaa"]))
+        shape: (2, 1)
+        ┌─────────────┐
+        │ struct_col  │
+        │ ---         │
+        │ struct[2]   │
+        ╞═════════════╡
+        │ {"ab",true} │
+        │ {"cd",null} │
+        └─────────────┘
+        """
+        return wrap_expr(self._pyexpr.struct_drop(names, strict))
+
     def json_encode(self) -> Expr:
         """
         Convert this struct to a string column with json values.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -284,7 +372,7 @@ class ExprStructNameSpace:
 
         This is similar to `with_columns` on `DataFrame`.
 
-        .. versionadded:: 0.20.27
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -346,12 +434,82 @@ class ExprStructNameSpace:
 
         See Also
         --------
+        eval
         field
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
-
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return wrap_expr(self._pyexpr.struct_with_fields(pyexprs))
+
+    def eval(
+        self,
+        *exprs: IntoExpr | Iterable[IntoExpr],
+        **named_exprs: IntoExpr,
+    ) -> Expr:
+        """
+        Select fields of this struct, dropping the fields that are not selected.
+
+        This is similar to `select` on `DataFrame`. Use
+        :meth:`~ExprStructNameSpace.with_fields` to retain the fields that are not
+        selected.
+
+        The expressions must be length-preserving; they are evaluated against the
+        fields of the struct, which are addressed with :func:`polars.field`.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        *exprs
+            Field(s) to select, specified as positional arguments.
+            Accepts expression input. Strings are parsed as column names, other
+            non-expression inputs are parsed as literals.
+        **named_exprs
+            Additional fields to select, specified as keyword arguments.
+            The fields will be renamed to the keyword used.
+
+        See Also
+        --------
+        with_fields
+        field
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "coords": [{"x": 1, "y": 4}, {"x": 4, "y": 9}, {"x": 9, "y": 16}],
+        ...         "multiply": [10, 2, 3],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("coords").struct.eval(
+        ...         pl.field("x").sqrt(),
+        ...         y_mul=pl.field("y") * pl.col("multiply"),
+        ...     )
+        ... )
+        shape: (3, 2)
+        ┌───────────┬──────────┐
+        │ coords    ┆ multiply │
+        │ ---       ┆ ---      │
+        │ struct[2] ┆ i64      │
+        ╞═══════════╪══════════╡
+        │ {1.0,40}  ┆ 10       │
+        │ {2.0,18}  ┆ 2        │
+        │ {3.0,48}  ┆ 3        │
+        └───────────┴──────────┘
+
+        Fields that are not selected are dropped:
+
+        >>> df.select(pl.col("coords").struct.eval(pl.field("y")))
+        shape: (3, 1)
+        ┌───────────┐
+        │ coords    │
+        │ ---       │
+        │ struct[1] │
+        ╞═══════════╡
+        │ {4}       │
+        │ {9}       │
+        │ {16}      │
+        └───────────┘
+        """
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
+        return wrap_expr(self._pyexpr.struct_eval(pyexprs))

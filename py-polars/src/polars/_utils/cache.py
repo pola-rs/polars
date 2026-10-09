@@ -4,7 +4,7 @@ from collections import OrderedDict
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
-from polars._utils.various import no_default
+from polars._utils.various import NO_DEFAULT
 
 if TYPE_CHECKING:
     import sys
@@ -87,11 +87,12 @@ class LRUCache(MutableMapping[K, V]):
         """Insert a value into the cache."""
         if self._max_size == 0:
             return
-        while len(self) >= self._max_size:
-            self.popitem()
         if key in self:
             # moving accessed items to the end marks them as recently used
             self._items.move_to_end(key)
+        else:
+            while len(self) >= self._max_size:
+                self.popitem()
         self._items[key] = value
 
     def __repr__(self) -> str:
@@ -155,14 +156,14 @@ class LRUCache(MutableMapping[K, V]):
             self.popitem()
         self._max_size = n
 
-    def pop(self, key: K, default: D | NoDefault = no_default) -> V | D:
+    def pop(self, key: K, default: D | NoDefault = NO_DEFAULT) -> V | D:
         """
         Remove specified key from the cache and return the associated value.
 
         If the key is not found, `default` is returned (if given).
         Otherwise, a KeyError is raised.
         """
-        if (item := self._items.pop(key, default)) is no_default:
+        if (item := self._items.pop(key, default)) is NO_DEFAULT:
             msg = f"{key!r} not found in cache"
             raise KeyError(msg)
         return item

@@ -72,7 +72,7 @@ impl View {
     #[inline]
     pub unsafe fn new_inline_unchecked(bytes: &[u8]) -> Self {
         debug_assert!(bytes.len() <= u32::MAX as usize);
-        debug_assert!(bytes.len() as u32 <= Self::MAX_INLINE_SIZE);
+        debug_assert!(bytes.len() <= Self::MAX_INLINE_SIZE as usize);
 
         let mut view = Self {
             length: bytes.len() as u32,
@@ -101,8 +101,42 @@ impl View {
     /// Panics if the `bytes.len() > View::MAX_INLINE_SIZE`.
     #[inline]
     pub fn new_inline(bytes: &[u8]) -> Self {
-        assert!(bytes.len() as u32 <= Self::MAX_INLINE_SIZE);
+        assert!(bytes.len() <= Self::MAX_INLINE_SIZE as usize);
         unsafe { Self::new_inline_unchecked(bytes) }
+    }
+
+    /// Create an inline view from the first `len` bytes of `block` without branching on `len`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `len > View::MAX_INLINE_SIZE`.
+    #[inline(always)]
+    pub fn new_inline_from_block(block: [u8; 16], len: usize) -> Self {
+        // Masks that keep the first `len` inline bytes and zero the rest.
+        const MASKS: [[u8; 16]; View::MAX_INLINE_SIZE as usize + 1] = {
+            let mut masks = [[0u8; 16]; View::MAX_INLINE_SIZE as usize + 1];
+            let mut len = 0;
+            while len <= View::MAX_INLINE_SIZE as usize {
+                let mut i = 0;
+                while i < len {
+                    masks[len][4 + i] = 0xFF;
+                    i += 1;
+                }
+                len += 1;
+            }
+            masks
+        };
+
+        let mask = MASKS[len];
+        let mut raw = [0u8; 16];
+        raw[4..].copy_from_slice(&block[..12]);
+        for i in 0..16 {
+            raw[i] &= mask[i];
+        }
+        // The length field is little-endian, like the rest of the view.
+        raw[..4].copy_from_slice(&(len as u32).to_le_bytes());
+        // SAFETY: `View` is `repr(C)` with the length first, then 12 inline bytes.
+        unsafe { std::mem::transmute::<[u8; 16], View>(raw) }
     }
 
     /// Create a new inline view
@@ -113,7 +147,7 @@ impl View {
     #[inline]
     pub unsafe fn new_noninline_unchecked(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
         debug_assert!(bytes.len() <= u32::MAX as usize);
-        debug_assert!(bytes.len() as u32 > View::MAX_INLINE_SIZE);
+        debug_assert!(bytes.len() > View::MAX_INLINE_SIZE as usize);
 
         // SAFETY: The invariant of this function guarantees that this is safe.
         let prefix = unsafe { u32::from_le_bytes(bytes[0..4].try_into().unwrap_unchecked()) };
@@ -131,7 +165,7 @@ impl View {
 
         // SAFETY: We verify the invariant with the outer if statement
         unsafe {
-            if bytes.len() as u32 <= Self::MAX_INLINE_SIZE {
+            if bytes.len() <= Self::MAX_INLINE_SIZE as usize {
                 Self::new_inline_unchecked(bytes)
             } else {
                 Self::new_noninline_unchecked(bytes, buffer_idx, offset)
@@ -212,6 +246,26 @@ impl View {
                 self.get_inlined_slice_unchecked()
             } else {
                 self.get_external_slice_unchecked(buffers)
+            }
+        }
+    }
+
+    /// Hashes the bytes this view refers to. Inline views are canonical, so they are hashed
+    /// directly from their 16 bytes.
+    ///
+    /// # Safety
+    /// Assumes that this view is valid for the given buffers.
+    #[inline]
+    pub unsafe fn hash_with_buffers_unchecked<B: AsRef<[u8]>, S: std::hash::BuildHasher>(
+        &self,
+        buffers: &[B],
+        build_hasher: &S,
+    ) -> u64 {
+        unsafe {
+            if self.length <= Self::MAX_INLINE_SIZE {
+                build_hasher.hash_one(self.as_u128())
+            } else {
+                build_hasher.hash_one(self.get_external_slice_unchecked(buffers))
             }
         }
     }
@@ -365,7 +419,7 @@ impl View {
                     }
                 }
 
-                views.extend(src.chunks_exact(N).map(|slice| unsafe {
+                views.extend(src.as_chunks::<N>().0.iter().map(|slice| unsafe {
                     View::new_inline_unchecked(slice)
                 }));
             },
@@ -398,6 +452,7 @@ unsafe impl Zeroable for View {}
 unsafe impl Pod for View {}
 
 impl PartialEq for View {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.as_u128() == other.as_u128()
     }
@@ -412,6 +467,7 @@ impl TotalOrd for View {
 }
 
 impl TotalEq for View {
+    #[inline(always)]
     fn tot_eq(&self, other: &Self) -> bool {
         self.eq(other)
     }

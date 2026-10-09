@@ -47,7 +47,7 @@ where
         return vec![hm];
     }
 
-    POOL.install(|| {
+    RAYON.install(|| {
         // Compute the number of elements in each partition for each portion.
         let per_thread_partition_sizes: Vec<Vec<usize>> = keys
             .par_iter()
@@ -164,6 +164,24 @@ where
             })
             .collect()
     })
+}
+
+/// Reduces monomorphization: keeps `build_tables` instantiated once per key type.
+pub(crate) fn build_tables_from_arrays<T>(
+    arrays: &[&T::Array],
+    nulls_equal: bool,
+) -> Vec<PlHashMap<<Option<T::Native> as ToTotalOrd>::TotalOrdItem, IdxVec>>
+where
+    T: PolarsNumericType,
+    Option<T::Native>: TotalHash + TotalEq + ToTotalOrd,
+    <Option<T::Native> as ToTotalOrd>::TotalOrdItem:
+        Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+{
+    let keys = arrays
+        .iter()
+        .map(|arr| arr.iter().map(|v| v.copied()))
+        .collect();
+    build_tables(keys, nulls_equal)
 }
 
 // we determine the offset so that we later know which index to store in the join tuples

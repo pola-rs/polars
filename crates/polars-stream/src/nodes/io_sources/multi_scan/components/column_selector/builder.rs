@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
+use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn as _, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, LIST_ELEMENT_DEFAULT_ID};
@@ -184,6 +184,22 @@ impl ColumnSelectorBuilder {
         }
 
         if let DataType::List(target_inner) = target_dtype {
+            #[cfg(feature = "dtype-map")]
+            if let Some(incoming_entries) = incoming_dtype.map_entries_dtype() {
+                self.attach_transforms(
+                    ColumnSelector::Position(0),
+                    &incoming_entries,
+                    target_inner,
+                    target_name,
+                )?;
+
+                return Ok(ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(input_selector));
+            }
+
             let DataType::List(incoming_inner) = incoming_dtype else {
                 return mismatch_err("");
             };
@@ -226,6 +242,56 @@ impl ColumnSelectorBuilder {
                     },
                 },
             );
+        }
+
+        #[cfg(feature = "dtype-map")]
+        if let DataType::Map(target_key, target_value) = target_dtype {
+            if let DataType::List(incoming_inner) = incoming_dtype {
+                let target_entries = target_dtype.map_entries_dtype().unwrap();
+                self.attach_transforms(
+                    ColumnSelector::Position(0),
+                    incoming_inner,
+                    &target_entries,
+                    target_name,
+                )?;
+
+                return Ok(ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(input_selector));
+            }
+
+            let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
+                return mismatch_err("");
+            };
+
+            // Mirrors what `should_cast_column` does for non-streaming scans.
+            let Ok(cast_key) = incoming_key.matches_schema_type(target_key) else {
+                return mismatch_err("Map key types are not castable");
+            };
+
+            // We can transform the value child if needed, because it can not break the map invariants.
+            let mut selector = match self.attach_transforms(
+                ColumnSelector::Position(0),
+                incoming_value,
+                target_value,
+                target_name,
+            )? {
+                ColumnSelector::Position(0) => input_selector,
+                value_selector => ColumnTransform::MapValuesMapping { value_selector }
+                    .into_selector(input_selector),
+            };
+
+            if cast_key {
+                selector = ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(selector);
+            }
+
+            return Ok(selector);
         }
 
         // Eq here should be cheap as we have intercepted all nested types above.
@@ -344,19 +410,44 @@ impl ColumnSelectorBuilder {
 
                     (TimeUnit::Microseconds, TimeUnit::Milliseconds) => {
                         if !self.cast_columns_policy.datetime_microseconds_downcast {
-                            // TODO
                             return mismatch_err(
-                                "unimplemented: 'microsecond-downcast' in scan cast options",
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-downcast')",
                             );
                         }
                     },
 
-                    _ => return mismatch_err(""),
+                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => {
+                        if !self.cast_columns_policy.datetime_microseconds_upcast {
+                            return mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-upcast')",
+                            );
+                        }
+                    },
+
+                    (TimeUnit::Milliseconds, TimeUnit::Microseconds | TimeUnit::Nanoseconds) => {
+                        if !self.cast_columns_policy.datetime_milliseconds_upcast {
+                            return mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='millisecond-upcast')",
+                            );
+                        }
+                    },
+
+                    // All distinct-unit pairs are covered above.
+                    _ => unreachable!(),
                 };
             }
 
+            // Upcasting to a finer unit (`target_unit < incoming_unit`) multiplies the values
+            // and can overflow, so use strict casting to raise if out-of-range. Downcasts and
+            // timezone-only casts only lose precision, so non-strict is fine.
+            let cast_options = if target_unit < incoming_unit {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+
             // Dtype differs and we are allowed to coerce
-            return attach_cast(CastOptions::NonStrict);
+            return attach_cast(cast_options);
         }
 
         if target_dtype.is_string() && incoming_dtype.is_categorical() {
@@ -383,7 +474,9 @@ impl ColumnSelectorBuilder {
         use IcebergColumnType as ICT;
 
         match &target_column.type_ {
-            ICT::FixedSizeList(..) | ICT::List(_) => iceberg_default_value_provider = None,
+            ICT::FixedSizeList(..) | ICT::List(_) | ICT::Map(..) => {
+                iceberg_default_value_provider = None
+            },
             ICT::Struct(_) | ICT::Primitive { .. } => {},
         }
 
@@ -426,7 +519,7 @@ impl ColumnSelectorBuilder {
                             "encountered extra struct field: {}, \
                             hint: specify this field in the schema, or pass \
                             cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
-                            &extra_col.name,
+                            extra_col.name,
                         ));
                     }
 
@@ -464,7 +557,7 @@ impl ColumnSelectorBuilder {
                                     return mismatch_err(&format!(
                                         "encountered missing struct field: {}, \
                                         hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
-                                        &output_column.name,
+                                        output_column.name,
                                     ));
                                 },
                             }
@@ -547,6 +640,52 @@ impl ColumnSelectorBuilder {
                     })
                 },
 
+                ICT::Map(target_key, target_value) => {
+                    feature_gated!("dtype-map", {
+                        let ICT::Map(incoming_key, incoming_value) = incoming_dtype else {
+                            return mismatch_err("");
+                        };
+
+                        if incoming_key.physical_id != target_key.physical_id {
+                            return mismatch_err("physical ID mismatch for map keys column");
+                        }
+
+                        if incoming_value.physical_id != target_value.physical_id {
+                            return mismatch_err("physical ID mismatch for map values column");
+                        }
+
+                        let incoming_key_dtype = incoming_key.type_.to_polars_dtype();
+                        let target_key_dtype = target_key.type_.to_polars_dtype();
+
+                        let Ok(cast_key) =
+                            incoming_key_dtype.matches_schema_type(&target_key_dtype)
+                        else {
+                            return mismatch_err("Map key types are not castable");
+                        };
+
+                        let mut selector = match self.attach_iceberg_transforms(
+                            ColumnSelector::Position(0),
+                            incoming_value,
+                            target_value,
+                            iceberg_default_value_provider,
+                        )? {
+                            ColumnSelector::Position(0) => input_selector,
+                            value_selector => ColumnTransform::MapValuesMapping { value_selector }
+                                .into_selector(input_selector),
+                        };
+
+                        if cast_key {
+                            selector = ColumnTransform::Cast {
+                                dtype: target_column.type_.to_polars_dtype(),
+                                options: CastOptions::NonStrict,
+                            }
+                            .into_selector(selector);
+                        }
+
+                        selector
+                    })
+                },
+
                 ICT::Primitive {
                     dtype: target_dtype,
                 } => {
@@ -609,7 +748,7 @@ pub fn build_iceberg_default_value_impl(
     use IcebergColumnType as ICT;
 
     match &target_column.type_ {
-        ICT::FixedSizeList(..) | ICT::List(_) => Ok(None),
+        ICT::FixedSizeList(..) | ICT::List(_) | ICT::Map(..) => Ok(None),
 
         ICT::Struct(fields) => {
             use polars_core::prelude::StructChunked;

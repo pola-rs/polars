@@ -4,10 +4,10 @@ use std::simd::Select;
 #[cfg(feature = "simd")]
 use std::simd::prelude::*;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::NativeType;
 use num_traits::Zero;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 macro_rules! wrapping_impl {
@@ -62,6 +62,21 @@ fn wrapping_sum_with_mask_scalar<T: Zero + WrappingAdd + Copy>(vals: &[T], mask:
         .fold(T::zero(), |a, b| a.wrapping_add(&b))
 }
 
+fn wrapping_sum_with_mask_scalar_upcast<T, S>(vals: &[T], mask: &BitMask) -> S
+where
+    T: NativeType + Zero + Into<S>,
+    S: Zero + WrappingAdd + Copy,
+{
+    assert!(vals.len() == mask.len());
+    vals.iter()
+        .enumerate()
+        .map(|(i, x)| {
+            // No filter but rather select of 0 for cmov opt.
+            if mask.get(i) { *x } else { T::zero() }
+        })
+        .fold(S::zero(), |a, b| a.wrapping_add(&b.into()))
+}
+
 #[cfg(not(feature = "simd"))]
 impl<T> WrappingSum for T
 where
@@ -97,7 +112,9 @@ where
         let zero: Simd<T, STRIPE> = Simd::default();
 
         let vsum = main
-            .chunks_exact(STRIPE)
+            .as_chunks::<STRIPE>()
+            .0
+            .iter()
             .enumerate()
             .map(|(i, a)| {
                 let m: Mask<T::Mask, STRIPE> = main_mask.get_simd(i * STRIPE);
@@ -167,5 +184,20 @@ where
         WrappingSum::wrapping_sum_with_validity(arr.values(), &BitMask::from_bitmap(mask))
     } else {
         WrappingSum::wrapping_sum(arr.values())
+    }
+}
+
+pub fn wrapping_sum_arr_upcast<T, S>(arr: &PrimitiveArray<T>) -> S
+where
+    T: NativeType + Zero + Into<S>,
+    S: Zero + WrappingAdd + Copy,
+{
+    let validity = arr.validity().filter(|_| arr.null_count() > 0);
+    if let Some(mask) = validity {
+        wrapping_sum_with_mask_scalar_upcast(arr.values(), &BitMask::from_bitmap(mask))
+    } else {
+        arr.values()
+            .iter()
+            .fold(S::zero(), |a, b| a.wrapping_add(&(*b).into()))
     }
 }

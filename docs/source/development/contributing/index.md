@@ -309,17 +309,9 @@ in the Polars repository. Please adhere to the following guidelines:
     - Explicitly state that you yourself have reviewed *all* changes in your pull request, and believe
       that they are relevant and correct.
     - Not try to solve an issue marked as "good first issue".
-    - Adhere to the rest of our [AI policy](/AI_POLICY.md).
+    - Adhere to the rest of our [AI policy](https://github.com/pola-rs/polars/blob/main/AI_POLICY.md).
   If you fail either requirement the maintainer may simply close your pull request.
 <!-- dprint-ignore-end -->
-
-We unfortunately are overwhelmed by the amount of low-quality contributions created primarily using
-AI. These cost us a lot of time (and regularly simply don't work), while the author has barely spent
-any effort, so for first-time contributors there are some more rules:
-
-- You must post a screenshot of you successfully running the test suite (`make test`), locally on
-  your machine (not the CI).
-- You may not have more than one open PR at a time.
 
 After you have opened your pull request, a maintainer will review it and possibly leave some
 comments. Once all issues are resolved, the maintainer will merge your pull request, and your work
@@ -327,6 +319,22 @@ will be part of the next Polars release!
 
 Keep in mind that your work does not have to be perfect right away! If you are stuck or unsure about
 your solution, feel free to open a draft pull request and ask for help.
+
+During review, some of our maintainers will use
+[_conventional comments_](https://conventionalcomments.org) in their reviews. The meanings of the
+comment labels (like **issue**: or **nit:**) are documented at
+<https://conventionalcomments.org/#labels>
+
+### First-time contributions
+
+We unfortunately are overwhelmed by the amount of low-quality contributions created primarily using
+AI. These cost us a lot of time (and regularly simply don't work), while the author has barely spent
+any effort, so for first-time contributors there are some more rules:
+
+- You must post a screenshot of you successfully running the test suite (`make test`), locally on
+  your machine (not the CI). The screenshot must show your terminal window borders clearly, it must
+  not be cropped to only show text.
+- You may not have more than one open PR at a time.
 
 ## Contributing to documentation
 
@@ -344,16 +352,16 @@ raise an issue to discuss what you feel is missing or could be improved.
 
 #### Building and serving the user guide
 
-The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for
+The user guide is built using [Zensical](https://zensical.org/). You install the dependencies for
 building the user guide by running `make build` in the root of the repo. Additionally, you need to
 make sure the [graphviz](https://graphviz.org/) `dot` binary is on your path.
 
-Activate the virtual environment and run `mkdocs serve` to build and serve the user guide, so you
+Activate the virtual environment and run `zensical serve` to build and serve the user guide, so you
 can view it locally and see updates as you make changes.
 
 #### Creating a new user guide page
 
-Each user guide page is based on a `.md` markdown file. This file must be listed in `mkdocs.yml`.
+Each user guide page is based on a `.md` markdown file. This file must be listed in `zensical.toml`.
 
 #### Adding a shell code block
 

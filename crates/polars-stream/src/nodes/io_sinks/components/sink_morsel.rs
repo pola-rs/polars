@@ -19,6 +19,10 @@ impl SinkMorsel {
         (self.df, self.permit)
     }
 
+    pub fn height(&self) -> usize {
+        self.df.height()
+    }
+
     pub fn df(&self) -> &DataFrame {
         &self.df
     }

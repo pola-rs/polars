@@ -8,8 +8,9 @@ use super::*;
 
 pub fn new_approx_n_unique_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
     // TODO: Move the error checks up and make this function infallible
+    use ApproxNUniqueReducer as R;
     use DataType::*;
-    use {ApproxNUniqueReducer as R, VecGroupedReduction as VGR};
+    use VecGroupedReduction as VGR;
     Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, R::<BooleanType>::default())),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {

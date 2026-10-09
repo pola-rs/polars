@@ -16,7 +16,7 @@ from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 if TYPE_CHECKING:
     from typing import Any
 
-    from polars._typing import PolarsDataType
+    from polars._typing import ArrayLike, EngineType, PolarsDataType
 
 FIELD_COMBS = [
     (descending, nulls_last, False)
@@ -60,7 +60,7 @@ def roundtrip_re(
 
 
 def roundtrip_series_re(
-    values: pl.series.series.ArrayLike,
+    values: ArrayLike,
     dtype: PolarsDataType,
     *,
     unordered: bool = False,
@@ -473,3 +473,61 @@ def test_row_encoding_null_chunks() -> None:
         pl.concat([lf1, lf2]).collect(),
         out,
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_row_encoding_group_context(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 2, 1], "a": [1, 2, 3, None]})
+    out = lf.select(
+        pl.col("a")._row_encode().over("g")._row_decode(["a"], [pl.Int64])
+    ).unnest(cs.all())
+    assert_frame_equal(out.collect(engine=engine), lf.select("a").collect())
+
+    out = (
+        lf.group_by("g")
+        .agg(pl.col("a")._row_encode())
+        .select("g", n=pl.col("a").list.len())
+        .sort("g")
+    )
+    expected = pl.DataFrame(
+        {"g": [1, 2], "n": [2, 2]}, schema_overrides={"n": pl.UInt32}
+    )
+    assert_frame_equal(out.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_row_encoding_distinct(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": ["x", "y", "x", None]})
+    k = pl.col("a")._row_encode()
+    out = lf.select(
+        n_unique=k.n_unique(),
+        unique=k.unique().len(),
+        first=k.is_first_distinct().implode(),
+        last=k.is_last_distinct().implode(),
+    )
+    expected = pl.DataFrame(
+        {
+            "n_unique": [3],
+            "unique": [3],
+            "first": [[True, True, False, True]],
+            "last": [[False, True, True, True]],
+        },
+        schema_overrides={
+            "n_unique": pl.get_index_type(),
+            "unique": pl.get_index_type(),
+        },
+    )
+    assert_frame_equal(out.collect(engine=engine), expected)
+
+    out = (
+        lf.group_by(k)
+        .agg(pl.len())
+        .select(pl.col("a")._row_decode(["a"], [pl.String]), "len")
+        .unnest("a")
+        .sort("a")
+    )
+    expected = pl.DataFrame(
+        {"a": [None, "x", "y"], "len": [1, 2, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(out.collect(engine=engine), expected)

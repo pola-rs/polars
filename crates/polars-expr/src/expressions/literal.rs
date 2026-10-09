@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
-use arrow::temporal_conversions::NANOSECONDS_IN_DAY;
+use polars_arrow::temporal_conversions::NANOSECONDS_IN_DAY;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_plan::constants::get_literal_name;

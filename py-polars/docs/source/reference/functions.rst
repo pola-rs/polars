@@ -16,6 +16,7 @@ Conversion
     from_pandas
     from_records
     from_repr
+    from_torch
     json_normalize
 
 Miscellaneous
@@ -26,6 +27,7 @@ Miscellaneous
     align_frames
     concat
     union
+    merge_sorted
     defer
     escape_regex
 

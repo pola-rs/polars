@@ -29,14 +29,15 @@
 
 #![allow(clippy::collapsible_else_if)]
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::types::NativeType;
 use polars_utils::algebraic_ops::*;
 
 const CHUNK_SIZE: usize = 128;
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct VarState {
     weight: f64,
@@ -45,6 +46,7 @@ pub struct VarState {
 }
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct CovState {
     weight: f64,
@@ -54,6 +56,7 @@ pub struct CovState {
 }
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct PearsonState {
     weight: f64,
@@ -99,18 +102,6 @@ impl VarState {
         self.clear_zero_weight_nan();
     }
 
-    pub fn remove_one(&mut self, x: f64) {
-        // Just a specialized version of
-        // self.combine(&Self { weight: -1.0, mean: x, dp: 0.0 })
-        let new_weight = self.weight - 1.0;
-        let delta_mean = x - self.mean;
-        let new_mean = self.mean - delta_mean / new_weight;
-        self.dp -= (x - new_mean) * delta_mean;
-        self.weight = new_weight;
-        self.mean = new_mean;
-        self.clear_zero_weight_nan();
-    }
-
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
             return;
@@ -143,6 +134,10 @@ impl VarState {
 }
 
 impl CovState {
+    pub fn weight(&self) -> f64 {
+        self.weight
+    }
+
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
         if x.is_empty() {
@@ -150,9 +145,8 @@ impl CovState {
         }
 
         let weight = x.len() as f64;
-        let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
+        let mean_x = alg_sum_f64(x.iter().copied()) / weight;
+        let mean_y = alg_sum_f64(y.iter().copied()) / weight;
         Self {
             weight,
             mean_x,
@@ -163,6 +157,19 @@ impl CovState {
                     .map(|(&xi, &yi)| (xi - mean_x) * (yi - mean_y)),
             ),
         }
+    }
+
+    pub fn insert_one(&mut self, x: f64, y: f64) {
+        let new_weight = self.weight + 1.0;
+        let new_weight_frac = 1.0 / new_weight;
+        let delta_mean_x = x - self.mean_x;
+        let delta_mean_y = y - self.mean_y;
+        let new_mean_x = self.mean_x + delta_mean_x * new_weight_frac;
+        let new_mean_y = self.mean_y + delta_mean_y * new_weight_frac;
+        self.dp_xy += (x - new_mean_x) * delta_mean_y;
+        self.weight = new_weight;
+        self.mean_x = new_mean_x;
+        self.mean_y = new_mean_y;
     }
 
     pub fn combine(&mut self, other: &Self) {
@@ -195,6 +202,10 @@ impl CovState {
 }
 
 impl PearsonState {
+    pub fn weight(&self) -> f64 {
+        self.weight
+    }
+
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
         if x.is_empty() {
@@ -202,9 +213,8 @@ impl PearsonState {
         }
 
         let weight = x.len() as f64;
-        let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
+        let mean_x = alg_sum_f64(x.iter().copied()) / weight;
+        let mean_y = alg_sum_f64(y.iter().copied()) / weight;
         let mut dp_xx = 0.0;
         let mut dp_xy = 0.0;
         let mut dp_yy = 0.0;
@@ -221,6 +231,21 @@ impl PearsonState {
             dp_xy,
             dp_yy,
         }
+    }
+
+    pub fn insert_one(&mut self, x: f64, y: f64) {
+        let new_weight = self.weight + 1.0;
+        let new_weight_frac = 1.0 / new_weight;
+        let delta_mean_x = x - self.mean_x;
+        let delta_mean_y = y - self.mean_y;
+        let new_mean_x = self.mean_x + delta_mean_x * new_weight_frac;
+        let new_mean_y = self.mean_y + delta_mean_y * new_weight_frac;
+        self.dp_xx += (x - new_mean_x) * delta_mean_x;
+        self.dp_xy += (x - new_mean_x) * delta_mean_y;
+        self.dp_yy += (y - new_mean_y) * delta_mean_y;
+        self.weight = new_weight;
+        self.mean_x = new_mean_x;
+        self.mean_y = new_mean_y;
     }
 
     pub fn combine(&mut self, other: &Self) {
@@ -256,6 +281,7 @@ impl PearsonState {
 }
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct SkewState {
     weight: f64,
@@ -339,25 +365,6 @@ impl SkewState {
         self.clear_zero_weight_nan();
     }
 
-    pub fn remove_one(&mut self, x: f64) {
-        // Specialization of self.combine(&SkewState { weight: -1.0, mean: x, m2: 0.0, m3: 0.0 });
-        let new_weight = self.weight - 1.0;
-        let delta_mean = x - self.mean;
-        let delta_mean_weight = delta_mean / new_weight;
-        let new_mean = self.mean - delta_mean_weight;
-
-        let weight_diff = self.weight + 1.0;
-        let m2_update = (new_mean - x) * delta_mean;
-        let new_m2 = self.m2 + m2_update;
-        let new_m3 = self.m3 + delta_mean_weight * (m2_update * weight_diff + 3.0 * self.m2);
-
-        self.weight = new_weight;
-        self.mean = new_mean;
-        self.m2 = new_m2;
-        self.m3 = new_m3;
-        self.clear_zero_weight_nan();
-    }
-
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
             return;
@@ -411,6 +418,7 @@ impl SkewState {
 }
 
 #[derive(Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct KurtosisState {
     weight: f64,
@@ -497,31 +505,6 @@ impl KurtosisState {
                 * (delta_mean_weight
                     * (m2_update * (self.weight * weight_diff + 1.0) + 6.0 * self.m2)
                     - 4.0 * self.m3);
-
-        self.weight = new_weight;
-        self.mean = new_mean;
-        self.m2 = new_m2;
-        self.m3 = new_m3;
-        self.m4 = new_m4;
-        self.clear_zero_weight_nan();
-    }
-
-    pub fn remove_one(&mut self, x: f64) {
-        // Specialization of self.combine(&KurtosisState { weight: -1.0, mean: x, m2: 0.0, m3: 0.0, m4: 0.0 });
-        let new_weight = self.weight - 1.0;
-        let delta_mean = x - self.mean;
-        let delta_mean_weight = delta_mean / new_weight;
-        let new_mean = self.mean - delta_mean_weight;
-
-        let weight_diff = self.weight + 1.0;
-        let m2_update = (new_mean - x) * delta_mean;
-        let new_m2 = self.m2 + m2_update;
-        let new_m3 = self.m3 + delta_mean_weight * (m2_update * weight_diff + 3.0 * self.m2);
-        let new_m4 = self.m4
-            + delta_mean_weight
-                * (delta_mean_weight
-                    * (m2_update * (self.weight * weight_diff + 1.0) + 6.0 * self.m2)
-                    + 4.0 * self.m3);
 
         self.weight = new_weight;
         self.mean = new_mean;

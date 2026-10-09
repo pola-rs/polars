@@ -31,17 +31,19 @@ use std::sync::Arc;
 mod schema;
 pub use aliases::*;
 pub use any_value::*;
-pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
-#[cfg(feature = "dtype-categorical")]
-use arrow::datatypes::IntegerType;
-pub use arrow::datatypes::reshape::*;
-pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::types::NativeType;
 use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
 use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
+pub use polars_arrow::array::{
+    ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray,
+};
+#[cfg(feature = "dtype-categorical")]
+use polars_arrow::datatypes::IntegerType;
+pub use polars_arrow::datatypes::reshape::*;
+pub use polars_arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
+use polars_arrow::types::NativeType;
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
 #[cfg(feature = "dtype-categorical")]
@@ -422,8 +424,7 @@ pub type BinaryOffsetChunked = ChunkedArray<BinaryOffsetType>;
 #[cfg(feature = "object")]
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
-pub trait NumericNative:
-    TotalOrd
+pub trait NumericNative: TotalOrd
     + PartialOrd
     + TotalHash
     + NativeType
@@ -431,8 +432,6 @@ pub trait NumericNative:
     + NumCast
     + Zero
     + One
-    // + Simd
-    // + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
     + Sub<Output = Self>
@@ -445,7 +444,7 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + IsFloat
-    + HasPrimitiveArithmeticKernel<TrueDivT=<Self::TrueDivPolarsType as PolarsNumericType>::Native>
+    + HasPrimitiveArithmeticKernel<TrueDivT = <Self::TrueDivPolarsType as PolarsNumericType>::Native>
     + FloatSum<f64>
     + AsPrimitive<f64>
     + MinMax

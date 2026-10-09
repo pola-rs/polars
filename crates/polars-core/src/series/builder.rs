@@ -1,4 +1,4 @@
-use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
+use polars_arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
 use polars_utils::IdxSize;
 
 #[cfg(feature = "object")]
@@ -171,6 +171,7 @@ impl SeriesBuilder {
 
     pub fn opt_gather_extend(&mut self, other: &Series, idxs: &[IdxSize], share: ShareStrategy) {
         let chunks = other.chunks();
+        assert!(other.len() < IdxSize::MAX as usize);
         assert!(chunks.len() == 1);
         self.builder.opt_gather_extend(&*chunks[0], idxs, share);
     }

@@ -18,10 +18,8 @@ impl Series {
             // Two [`Datetime`](DataType::Datetime) series are *not* equal if their timezones
             // are different, regardless if they represent the same UTC time or not.
             #[cfg(feature = "timezones")]
-            (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) => {
-                if tz_lhs != tz_rhs {
-                    return false;
-                }
+            (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) if tz_lhs != tz_rhs => {
+                return false;
             },
             _ => {},
         }

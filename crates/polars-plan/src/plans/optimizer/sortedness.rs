@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{FillNullStrategy, PlHashMap, PlHashSet};
+use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_utils::arena::{Arena, Node};
@@ -11,23 +11,27 @@ use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "round_series")]
+use crate::dsl::Operator;
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::plans::IRStringFunction;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
+#[cfg(feature = "round_series")]
+use crate::plans::{DynLiteralValue, LiteralValue};
 
 /// Container for sortedness state at each stage in an IR plan.
 #[derive(Debug)]
-pub struct IRPlanSorted(PlHashMap<Node, IRSorted>);
+pub struct IRPlanSorted(PlIndexMap<Node, IRSorted>);
 
 impl IRPlanSorted {
     pub fn resolve(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
-        let mut seen = PlHashSet::default();
-        let mut sortedness = PlHashMap::default();
-        let mut cache_proxy = PlHashMap::default();
-        let mut amort_passed_columns = PlHashSet::default();
+        let mut seen = PlIndexSet::default();
+        let mut sortedness = PlIndexMap::default();
+        let mut cache_proxy = PlIndexMap::default();
+        let mut names_set_scratch = ScratchIndexSet::default();
         is_sorted_rec(
             root,
             ir_arena,
@@ -35,7 +39,7 @@ impl IRPlanSorted {
             &mut seen,
             &mut sortedness,
             &mut cache_proxy,
-            &mut amort_passed_columns,
+            &mut names_set_scratch,
             true,
         );
         Self(sortedness)
@@ -68,7 +72,7 @@ impl IRPlanSorted {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Default, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, Hash, Eq)]
 pub struct AExprSorted {
     /// If `Some(true)`, the expression is sorted in descending order.
     /// If `Some(false)`, the expression is sorted in ascending order.
@@ -143,7 +147,8 @@ pub fn are_keys_sorted_any(
             expr_arena.get(key.node()),
             expr_arena,
             input_schema,
-            Some(&ir_sorted?.0[idx..]),
+            Some(ir_sorted?.0.get(idx..)?),
+            idx + 1 < keys.len(),
         )?;
         sortedness.push(s);
     }
@@ -164,14 +169,15 @@ pub fn expr_is_sorted(
         expr_arena,
         input_schema,
         ir_sorted.map(|s| s.0.as_ref()),
+        false,
     )
 }
 
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
-    let mut seen = PlHashSet::default();
-    let mut sortedness = PlHashMap::default();
-    let mut cache_proxy = PlHashMap::default();
-    let mut amort_passed_columns = PlHashSet::default();
+    let mut seen = PlIndexSet::default();
+    let mut sortedness = PlIndexMap::default();
+    let mut cache_proxy = PlIndexMap::default();
+    let mut names_set_scratch = ScratchIndexSet::default();
 
     is_sorted_rec(
         root,
@@ -180,7 +186,7 @@ pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) ->
         &mut seen,
         &mut sortedness,
         &mut cache_proxy,
-        &mut amort_passed_columns,
+        &mut names_set_scratch,
         false,
     )
 }
@@ -191,10 +197,10 @@ fn is_sorted_rec(
     root: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
-    seen: &mut PlHashSet<Node>,
-    sortedness: &mut PlHashMap<Node, IRSorted>,
-    cache_proxy: &mut PlHashMap<UniqueId, Option<IRSorted>>,
-    amort_passed_columns: &mut PlHashSet<PlSmallStr>,
+    seen: &mut PlIndexSet<Node>,
+    sortedness: &mut PlIndexMap<Node, IRSorted>,
+    cache_proxy: &mut PlIndexMap<UniqueId, Option<IRSorted>>,
+    names_set_scratch: &mut ScratchIndexSet<PlSmallStr>,
     create_full_map: bool,
 ) -> Option<IRSorted> {
     if let Some(s) = sortedness.get(&root) {
@@ -213,7 +219,7 @@ fn is_sorted_rec(
                 seen,
                 sortedness,
                 cache_proxy,
-                amort_passed_columns,
+                names_set_scratch,
                 create_full_map,
             )
         }};
@@ -239,22 +245,35 @@ fn is_sorted_rec(
             predicate: _,
         } => rec!(*input),
         IR::Scan { .. } => None,
-        IR::DataFrameScan { df, .. } => {
+        IR::DataFrameScan {
+            df, output_schema, ..
+        } => {
+            let last_is_null = |c: &Column| Some(c.get(c.len().checked_sub(1)?).ok()?.is_null());
             let sorted_cols = df
                 .columns()
                 .iter()
-                .filter_map(|c| match c.is_sorted_flag() {
-                    IsSorted::Not => None,
-                    IsSorted::Ascending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(false),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                    }),
-                    IsSorted::Descending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(true),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
-                    }),
+                .filter_map(|c| {
+                    // Skip projected-out columns.
+                    if output_schema
+                        .as_ref()
+                        .is_some_and(|schema| !schema.contains(c.name()))
+                    {
+                        return None;
+                    }
+
+                    match c.is_sorted_flag() {
+                        IsSorted::Not => None,
+                        IsSorted::Ascending => Some(Sorted {
+                            column: c.name().clone(),
+                            descending: Some(false),
+                            nulls_last: Some(last_is_null(c).unwrap_or(false)),
+                        }),
+                        IsSorted::Descending => Some(Sorted {
+                            column: c.name().clone(),
+                            descending: Some(true),
+                            nulls_last: Some(last_is_null(c).unwrap_or(false)),
+                        }),
+                    }
                 })
                 .collect_vec();
             (!sorted_cols.is_empty()).then(|| IRSorted(sorted_cols.into()))
@@ -280,7 +299,7 @@ fn is_sorted_rec(
             if let Some(input_sorted) = &input_sorted {
                 // We can keep a sorted column if it was kept and not changed.
 
-                amort_passed_columns.clear();
+                let amort_passed_columns = names_set_scratch.get();
                 amort_passed_columns.extend(expr.iter().filter_map(|e| {
                     let column = into_column(e.node(), expr_arena)?;
                     (column == e.output_name()).then(|| column.clone())
@@ -317,7 +336,7 @@ fn is_sorted_rec(
             if let Some(input_sorted) = &input_sorted {
                 // We can keep a sorted column if it was not overwritten.
 
-                amort_passed_columns.clear();
+                let amort_passed_columns = names_set_scratch.get();
                 amort_passed_columns.extend(exprs.iter().filter_map(|e| {
                     match into_column(e.node(), expr_arena) {
                         None => Some(e.output_name().clone()),
@@ -348,6 +367,26 @@ fn is_sorted_rec(
                 let input_schema = ir_arena.get(input).schema(ir_arena);
                 first_expr_ir_sorted(exprs, expr_arena, input_schema.as_ref(), None)
                     .map(|s| IRSorted([s].into()))
+            }
+        },
+        IR::Window {
+            input,
+            exprs,
+            maintain_order,
+            ..
+        } => {
+            if !*maintain_order {
+                return None;
+            }
+            let input_sorted = rec!(*input)?;
+            let first_overwritten_key = input_sorted
+                .0
+                .iter()
+                .position(|v| exprs.iter().any(|e| e.output_name() == &v.column));
+            match first_overwritten_key {
+                None => Some(input_sorted),
+                Some(0) => None,
+                Some(i) => Some(IRSorted(input_sorted.0.iter().take(i).cloned().collect())),
             }
         },
         IR::Sort {
@@ -403,7 +442,7 @@ fn is_sorted_rec(
             let input = *input;
             let input_sorted = rec!(input)?;
 
-            amort_passed_columns.clear();
+            let amort_passed_columns = names_set_scratch.get();
             amort_passed_columns.extend(keys.iter().filter_map(|e| {
                 let column = into_column(e.node(), expr_arena)?;
                 (column == e.output_name()).then(|| column.clone())
@@ -458,27 +497,115 @@ fn is_sorted_rec(
 
         IR::GroupBy { .. } => None,
         IR::Join { .. } => None,
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => {
+            let input = *input;
+            let idxs = *idxs;
+            let null_on_oob = *null_on_oob;
+            let input_sorted = rec!(input)?;
+            let idxs_sorted = rec!(idxs)?;
+            if idxs_sorted.0.len() != 1 {
+                return None;
+            }
+            let idxs_sorted = &idxs_sorted.0[0];
+
+            // The null locations must be known and match exactly, or we might
+            // get a mixture of nulls at start and end.
+            for s in input_sorted.0.iter() {
+                if s.nulls_last.is_none() || s.nulls_last != idxs_sorted.nulls_last {
+                    return None;
+                }
+            }
+
+            // Furthermore, if out-of-bounds can create nulls those must match the null location,
+            // that is, the larger indices must be on the side where the nulls are.
+            if null_on_oob {
+                if idxs_sorted.nulls_last.is_none()
+                    || idxs_sorted.nulls_last != idxs_sorted.descending.map(|b| !b)
+                {
+                    return None;
+                }
+            }
+
+            let mut out_sorted = input_sorted.0.iter().cloned().collect_vec();
+            match idxs_sorted.descending {
+                Some(false) => {},
+                Some(true) => {
+                    for s in &mut out_sorted {
+                        s.descending = s.descending.map(|b| !b);
+                        s.nulls_last = s.nulls_last.map(|b| !b);
+                    }
+                },
+                None => {
+                    for s in &mut out_sorted {
+                        s.descending = None;
+                        s.nulls_last = None;
+                    }
+                },
+            }
+            Some(IRSorted(out_sorted.into()))
+        },
         IR::MapFunction { input, function } => match function {
             FunctionIR::Hint(hint) => match hint {
                 HintIR::Sorted(v) => Some(IRSorted(v.clone())),
                 #[expect(unreachable_patterns)]
                 _ => rec!(*input),
             },
+            FunctionIR::Explode { columns, .. } => {
+                let mut sorted = rec!(*input);
+
+                // Truncate the sortedness to the first exploded column if one exists.
+                if let Some(sorted) = sorted.as_mut() {
+                    let explode_names = names_set_scratch.get();
+                    explode_names.extend(columns.iter().cloned());
+
+                    if let Some(i) = sorted
+                        .0
+                        .iter()
+                        .position(|x| explode_names.contains(&x.column))
+                    {
+                        sorted.0 = sorted.0.iter().take(i).cloned().collect();
+                    }
+                }
+
+                sorted
+            },
+            FunctionIR::RowIndex { name, .. } => Some(IRSorted(
+                // e.g. sort([A, B]).with_row_index(), is valid to be sorted to either of:
+                // 1) [index, A, B]
+                // 2) [A, B, index]
+                // We choose (2), as that does better for the following case:
+                // `.sort([A, B]).with_row_index().join_asof(on=[A, B])`
+                // as the join_asof can successfully validate the input has a sorted (prefix) of
+                // [A, B],
+                rec!(*input)
+                    .as_ref()
+                    .map_or(Default::default(), |x| x.0.iter().cloned())
+                    .chain(Some(Sorted {
+                        column: name.clone(),
+                        descending: Some(false),
+                        nulls_last: Some(false),
+                    }))
+                    .collect(),
+            )),
             _ => None,
         },
         IR::Union { .. } => None,
         IR::HConcat { .. } => None,
-        IR::ExtContext { .. } => None,
         IR::Sink { .. } => None,
         IR::SinkMultiple { .. } => None,
         #[cfg(feature = "merge_sorted")]
         IR::MergeSorted { key, .. } => Some(IRSorted(
-            [Sorted {
-                column: key.clone(),
-                descending: None,
-                nulls_last: None,
-            }]
-            .into(),
+            key.iter()
+                .map(|column| Sorted {
+                    column: column.clone(),
+                    descending: None,
+                    nulls_last: None,
+                })
+                .collect(),
         )),
         IR::Distinct { input, options } => {
             if !options.maintain_order {
@@ -487,6 +614,14 @@ fn is_sorted_rec(
 
             let input = *input;
             rec!(input)
+        },
+        IR::UnoptimizedDispatch { .. } => None,
+        IR::Resolver { resolved_ir, .. } => {
+            if let Some(node) = *resolved_ir {
+                rec!(node)
+            } else {
+                None
+            }
         },
         IR::Invalid => unreachable!(),
     };
@@ -504,7 +639,7 @@ fn first_expr_ir_sorted(
     input_sorted: Option<&[Sorted]>,
 ) -> Option<Sorted> {
     exprs.iter().find_map(|e| {
-        aexpr_sortedness(arena.get(e.node()), arena, schema, input_sorted).map(|s| Sorted {
+        aexpr_sortedness(arena.get(e.node()), arena, schema, input_sorted, false).map(|s| Sorted {
             column: e.output_name().clone(),
             descending: s.descending,
             nulls_last: s.nulls_last,
@@ -512,12 +647,17 @@ fn first_expr_ir_sorted(
     })
 }
 
+/// With `keep_distinct`, the expression must also keep different values different. This is needed
+/// for all but the last of several sort keys, as a key is only sorted among equal values of the
+/// keys before it. A value that does not come from the sorted column, such as a literal, does not
+/// keep them different.
 #[recursive::recursive]
 pub fn aexpr_sortedness(
     aexpr: &AExpr,
     arena: &Arena<AExpr>,
     schema: &Schema,
     input_sorted: Option<&[Sorted]>,
+    keep_distinct: bool,
 ) -> Option<AExprSorted> {
     match aexpr {
         AExpr::Element => None,
@@ -531,6 +671,7 @@ pub fn aexpr_sortedness(
         },
         #[cfg(feature = "dtype-struct")]
         AExpr::StructField(_) => None,
+        AExpr::Literal(_) | AExpr::Len | AExpr::Sort { .. } if keep_distinct => None,
         AExpr::Literal(lv) if lv.is_scalar() => Some(AExprSorted {
             descending: Some(false),
             nulls_last: Some(false),
@@ -547,12 +688,31 @@ pub fn aexpr_sortedness(
             options: CastOptions::Strict,
         } if dtype.is_integer() => {
             let expr = arena.get(*expr);
-            let expr_sortedness = aexpr_sortedness(expr, arena, schema, input_sorted)?;
+            let expr_sortedness =
+                aexpr_sortedness(expr, arena, schema, input_sorted, keep_distinct)?;
             let input_dtype = expr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?;
             if !input_dtype.is_integer() {
                 return None;
             }
             Some(expr_sortedness)
+        },
+        // A cast to a wider Decimal keeps all values, so it can't fail or add nulls.
+        #[cfg(feature = "dtype-decimal")]
+        AExpr::Cast {
+            expr,
+            dtype: DataType::Decimal(prec, scale),
+            options: _,
+        } => {
+            let expr = arena.get(*expr);
+            let DataType::Decimal(input_prec, input_scale) =
+                expr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?
+            else {
+                return None;
+            };
+            if *scale < input_scale || prec - scale < input_prec - input_scale {
+                return None;
+            }
+            aexpr_sortedness(expr, arena, schema, input_sorted, keep_distinct)
         },
         AExpr::Cast { .. } => None, // @TODO: More casts are allowed
         AExpr::Sort { expr: _, options } => Some(AExprSorted {
@@ -563,14 +723,57 @@ pub fn aexpr_sortedness(
             input,
             function,
             options: _,
-        } => function_expr_sortedness(function, input, arena, schema, input_sorted),
+        } => function_expr_sortedness(function, input, arena, schema, input_sorted, keep_distinct),
         AExpr::Filter { input, by: _ }
         | AExpr::Slice {
             input,
             offset: _,
             length: _,
-        } => aexpr_sortedness(arena.get(*input), arena, schema, input_sorted),
+        } => aexpr_sortedness(
+            arena.get(*input),
+            arena,
+            schema,
+            input_sorted,
+            keep_distinct,
+        ),
 
+        #[cfg(feature = "round_series")]
+        AExpr::BinaryExpr {
+            left,
+            op: Operator::Multiply,
+            right,
+        } => {
+            let (input, factor) = match (int_literal(*left, arena), int_literal(*right, arena)) {
+                (None, Some(factor)) => (*left, factor),
+                (Some(factor), None) => (*right, factor),
+                _ => return None,
+            };
+            // Integer multiplication wraps on overflow, so only allow it if the input has bounds
+            // that can't overflow.
+            let AExpr::Function {
+                input: clip_inputs,
+                function:
+                    IRFunctionExpr::Clip {
+                        has_min: true,
+                        has_max: true,
+                    },
+                ..
+            } = arena.get(input)
+            else {
+                return None;
+            };
+            let (min, max) = int_clip_bounds(clip_inputs, arena)?;
+            let dtype = aexpr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?;
+            if factor <= 0 || !dtype.is_integer() {
+                return None;
+            }
+            let dtype_min = dtype.min().ok()?.value().extract::<i128>()?;
+            let dtype_max = dtype.max().ok()?.value().extract::<i128>()?;
+            if min.checked_mul(factor)? < dtype_min || max.checked_mul(factor)? > dtype_max {
+                return None;
+            }
+            aexpr_sortedness(arena.get(input), arena, schema, input_sorted, keep_distinct)
+        },
         AExpr::BinaryExpr { .. }
         | AExpr::Gather { .. }
         | AExpr::SortBy { .. }
@@ -595,28 +798,27 @@ pub fn function_expr_sortedness(
     arena: &Arena<AExpr>,
     schema: &Schema,
     input_sorted: Option<&[Sorted]>,
+    keep_distinct: bool,
 ) -> Option<AExprSorted> {
     macro_rules! rec_ae {
-        ($node:expr) => {{ aexpr_sortedness(arena.get($node), arena, schema, input_sorted) }};
+        ($node:expr) => {{ aexpr_sortedness(arena.get($node), arena, schema, input_sorted, keep_distinct) }};
     }
 
     match function {
+        // These can make different values equal or don't come from the sorted column.
+        #[cfg(feature = "rle")]
+        IRFunctionExpr::RLEID if keep_distinct => None,
+        IRFunctionExpr::SetSortedFlag(_)
+        | IRFunctionExpr::FillNullWithStrategy(
+            FillNullStrategy::Forward(None) | FillNullStrategy::Backward(None),
+        ) if keep_distinct => None,
+
         #[cfg(feature = "rle")]
         IRFunctionExpr::RLEID => Some(AExprSorted {
             descending: Some(false),
             nulls_last: Some(false),
         }),
-        IRFunctionExpr::SetSortedFlag(sortedness) => match sortedness.descending {
-            Some(false) => Some(AExprSorted {
-                descending: Some(false),
-                nulls_last: None,
-            }),
-            Some(true) => Some(AExprSorted {
-                descending: Some(true),
-                nulls_last: None,
-            }),
-            None => None,
-        },
+        IRFunctionExpr::SetSortedFlag(sortedness) => sortedness.descending.map(|_| *sortedness),
 
         IRFunctionExpr::Unique(true)
         | IRFunctionExpr::DropNulls
@@ -662,20 +864,49 @@ pub fn function_expr_sortedness(
             }
         },
 
+        IRFunctionExpr::ToPhysical => {
+            let [e] = inputs else {
+                return None;
+            };
+            // Categoricals don't sort by their physical value.
+            let dtype = arena
+                .get(e.node())
+                .to_dtype(&ToFieldContext::new(arena, schema))
+                .ok()?;
+            if !(dtype.is_primitive_numeric() || dtype.is_decimal() || dtype.is_temporal()) {
+                return None;
+            }
+            rec_ae!(e.node())
+        },
+
+        #[cfg(feature = "round_series")]
+        IRFunctionExpr::Clip {
+            has_min: true,
+            has_max: true,
+        } => {
+            // Clipping can make different values equal.
+            if keep_distinct {
+                return None;
+            }
+            int_clip_bounds(inputs, arena)?;
+            let e = inputs[0].node();
+            let dtype = arena
+                .get(e)
+                .to_dtype(&ToFieldContext::new(arena, schema))
+                .ok()?;
+            if !dtype.is_integer() {
+                return None;
+            }
+            rec_ae!(e)
+        },
+
         IRFunctionExpr::Reverse => {
             let [e] = inputs else {
                 return None;
             };
 
-            let mut sortedness = rec_ae!(e.node())?;
-
-            if let Some(d) = &mut sortedness.descending {
-                *d = !*d;
-            }
-            if let Some(n) = &mut sortedness.nulls_last {
-                *n ^= !*n;
-            }
-            Some(sortedness)
+            let sortedness = rec_ae!(e.node())?;
+            Some(sortedness.reverse())
         },
 
         #[cfg(all(feature = "strings", feature = "concat_str"))]
@@ -692,4 +923,27 @@ pub fn function_expr_sortedness(
 
         _ => None,
     }
+}
+
+/// The value of an integer scalar literal.
+#[cfg(feature = "round_series")]
+fn int_literal(node: Node, arena: &Arena<AExpr>) -> Option<i128> {
+    match arena.get(node) {
+        AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))) => Some(*v),
+        AExpr::Literal(LiteralValue::Scalar(sc)) if sc.dtype().is_integer() => sc.value().extract(),
+        _ => None,
+    }
+}
+
+/// The bounds of `clip(x, min, max)` with integer literal bounds.
+#[cfg(feature = "round_series")]
+fn int_clip_bounds(inputs: &[ExprIR], arena: &Arena<AExpr>) -> Option<(i128, i128)> {
+    let [_, min, max] = inputs else {
+        return None;
+    };
+    let (min, max) = (
+        int_literal(min.node(), arena)?,
+        int_literal(max.node(), arena)?,
+    );
+    (min <= max).then_some((min, max))
 }

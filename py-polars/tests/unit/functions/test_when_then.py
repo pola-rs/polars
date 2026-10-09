@@ -3,14 +3,18 @@ from __future__ import annotations
 import itertools
 import random
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import InvalidOperationError, ShapeError
+from polars.exceptions import InvalidOperationError
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_when_then() -> None:
@@ -338,29 +342,8 @@ def test_single_element_broadcast(
         .drop("key")
     )
     if expected.height > 1:
-        result = result.explode(cs.all())
+        result = result.explode(cs.all(), empty_as_null=True)
     assert_frame_equal(result, expected, check_row_order=maintain_order)
-
-
-@pytest.mark.parametrize(
-    "df",
-    [pl.DataFrame({"x": range(5)}), pl.DataFrame({"x": 5 * [[*range(5)]]})],
-)
-@pytest.mark.parametrize(
-    "ternary_expr",
-    [
-        pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x")),
-        pl.when(False).then(pl.col("x").head(2)).otherwise(pl.col("x")),
-    ],
-)
-def test_mismatched_height_should_raise(
-    df: pl.DataFrame, ternary_expr: pl.Expr
-) -> None:
-    with pytest.raises(ShapeError):
-        df.select(ternary_expr)
-
-    with pytest.raises(ShapeError):
-        df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
 
 
 @pytest.mark.parametrize("maintain_order", [False, True])
@@ -382,7 +365,7 @@ def test_when_then_output_name_12380(maintain_order: bool) -> None:
             df.group_by(pl.lit(True).alias("key"), maintain_order=maintain_order)
             .agg(ternary_expr)
             .drop("key")
-            .explode(cs.all())
+            .explode(cs.all(), empty_as_null=True)
         )
         assert_frame_equal(expect, actual, check_row_order=maintain_order)
 
@@ -406,7 +389,7 @@ def test_when_then_output_name_12380(maintain_order: bool) -> None:
             df.group_by(pl.lit(True).alias("key"))
             .agg(ternary_expr)
             .drop("key")
-            .explode(cs.all())
+            .explode(cs.all(), empty_as_null=True)
         )
         assert_frame_equal(
             expect,
@@ -826,11 +809,26 @@ def test_when_then_simplification() -> None:
         ).explain()
     )
     assert (
-        """(col("a")) * (2)"""
+        """col("a") * 2"""
         in (
             lf.select(pl.when(False).then(pl.col("a")).otherwise(pl.col("a") * 2))
         ).explain()
     )
+
+
+def test_when_then_simplification_scalar_branches() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, 3]})
+    q = lf.group_by("g", maintain_order=True).agg(
+        pl.when(True).then(pl.col("a").max()).otherwise(pl.col("a").min())
+    )
+    assert "when" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"g": [1, 2], "a": [2, 3]}))
+
+    # A scalar branch next to a column branch is not folded, as it would change the
+    # height.
+    q = lf.select(pl.when(True).then(pl.col("a").max()).otherwise(pl.col("a")))
+    assert "when" in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [3, 3, 3]}))
 
 
 def test_when_then_in_group_by_aggregated_22922() -> None:
@@ -840,3 +838,79 @@ def test_when_then_in_group_by_aggregated_22922() -> None:
     )
     expected = pl.DataFrame({"group": ["x", "y"], "expr": [3, None]})
     assert_frame_equal(out, expected)
+
+
+def test_when_then_nested_null_28941() -> None:
+    df = pl.DataFrame({"a": [None, 1.0], "b": [True, True]})
+    out = df.select(
+        pl.when(pl.col("a") >= 0)
+        .then(pl.col("a"))
+        .otherwise(pl.when(pl.col("b")).then(-2.0).otherwise(-1.0))
+    )
+    expected = pl.DataFrame({"a": [-2.0, 1.0]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("true_len", [0, 1, 8])
+@pytest.mark.parametrize("false_len", [0, 1, 8])
+@pytest.mark.parametrize("null_len", [0, 1, 8])
+@pytest.mark.parametrize("broadcast_then", [True, False])
+@pytest.mark.parametrize("broadcast_otherwise", [True, False])
+def test_when_otherwise_broadcast_28969(
+    true_len: int,
+    false_len: int,
+    null_len: int,
+    broadcast_then: bool,
+    broadcast_otherwise: bool,
+) -> None:
+    input = [True] * true_len + [False] * false_len + [None] * null_len
+    df = pl.DataFrame(
+        {
+            "x": input,
+            "t": [1] * len(input),
+            "o": [2] * len(input),
+        },
+        schema={"x": pl.Boolean, "t": pl.Int64, "o": pl.Int64},
+    )
+    out = df.select(
+        pl.when("x")
+        .then(pl.lit(1, dtype=pl.Int64).alias("t") if broadcast_then else pl.col.t)
+        .otherwise(
+            pl.lit(2, dtype=pl.Int64).alias("o") if broadcast_otherwise else pl.col.o
+        )
+    )
+    expected = pl.DataFrame(
+        {"t": [1 if x else 2 for x in input]}, schema={"t": pl.Int64}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_when_then_scalar_condition_on_empty_frame_with_cse() -> None:
+    n = pl.len().cast(pl.Int64)
+    running = pl.col("x").cum_sum()
+    q = pl.LazyFrame({"x": []}, schema={"x": pl.Int64}).with_columns(
+        pl.when(n > 1).then((running - 1) / (n - 1)).otherwise(0.0).alias("y"),
+        (running * n).alias("z"),
+    )
+    expected = pl.DataFrame(
+        schema={"x": pl.Int64, "y": pl.Float64, "z": pl.Int64},
+    )
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+@pytest.mark.parametrize("height", [0, 3])
+def test_when_then_scalar_condition_with_cse_scalar_branch(height: int) -> None:
+    n = (pl.col("x") > 5).sum()
+    q = pl.LazyFrame({"x": range(height)}, schema={"x": pl.Int64}).select(
+        pl.when(n > 0).then(n * 2)
+    )
+    expected = pl.DataFrame({"x": [None]}, schema={"x": get_index_type()})
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_scalar_condition_masks_unselected_branch(engine: EngineType) -> None:
+    q = pl.LazyFrame({"x": ["bad", "worse"]}).select(
+        pl.when(pl.lit(False)).then(pl.col("x").cast(pl.Int64)).otherwise(0)
+    )
+    assert q.collect(engine=engine).to_series().to_list() == [0, 0]

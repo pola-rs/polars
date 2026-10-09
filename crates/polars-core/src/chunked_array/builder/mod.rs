@@ -10,8 +10,6 @@ mod string;
 
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
 pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
 pub use categorical::*;
@@ -19,6 +17,8 @@ pub use categorical::*;
 pub(crate) use fixed_size_list::*;
 pub use list::*;
 pub use null::*;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
 pub use primitive::*;
 pub use string::*;
 
@@ -30,12 +30,15 @@ use crate::utils::{NoNull, get_iter_capacity};
 pub trait ChunkedBuilder<N, T: PolarsDataType> {
     fn append_value(&mut self, val: N);
     fn append_null(&mut self);
+
+    #[inline]
     fn append_option(&mut self, opt_val: Option<N>) {
         match opt_val {
             Some(v) => self.append_value(v),
             None => self.append_null(),
         }
     }
+
     fn finish(self) -> ChunkedArray<T>;
 
     fn shrink_to_fit(&mut self);

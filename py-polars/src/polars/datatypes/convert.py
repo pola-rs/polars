@@ -32,6 +32,7 @@ from polars.datatypes.classes import (
     Int64,
     Int128,
     List,
+    Map,
     Null,
     Object,
     String,
@@ -50,7 +51,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from typing import TypeGuard
+    from typing import Final, TypeGuard
 
     from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
@@ -115,6 +116,12 @@ def unpack_dtypes(
             if include_compound:
                 unpacked.add(tp)
             unpacked.update(unpack_dtypes(tp.inner, include_compound=include_compound))
+        elif isinstance(tp, Map):
+            if include_compound:
+                unpacked.add(tp)
+            unpacked.update(
+                unpack_dtypes(tp.key, tp.value, include_compound=include_compound)
+            )
         elif isinstance(tp, Struct):
             if include_compound:
                 unpacked.add(tp)
@@ -147,6 +154,7 @@ class _DataTypeMappings:
             Int64: "i64",
             Int128: "i128",
             List: "list",
+            Map: "map",
             Object: "object",
             String: "str",
             Struct: "struct",
@@ -178,6 +186,7 @@ class _DataTypeMappings:
             Int64: int,
             Int128: int,
             List: list,
+            Map: dict,
             Null: None.__class__,
             Object: object,
             String: str,
@@ -216,7 +225,7 @@ class _DataTypeMappings:
 
     @property
     @functools.lru_cache  # noqa: B019
-    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.lib.DataType]:
+    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.DataType]:
         return {
             bool: pa.bool_(),
             date: pa.date32(),
@@ -232,21 +241,22 @@ class _DataTypeMappings:
     @property
     @functools.lru_cache  # noqa: B019
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
-        def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
+        def _dtype_str_repr_safe(o: Any) -> str | None:
             try:
-                return _dtype_str_repr(o.base_type()).split("[")[0]  # type: ignore[return-value]
+                return _dtype_str_repr(o.base_type()).split("[")[0]
             except TypeError:
                 return None
 
         return {
-            _dtype_str_repr_safe(obj): obj  # type: ignore[misc]
+            str_repr: obj
             for obj in globals().values()
-            if is_polars_dtype(obj) and _dtype_str_repr_safe(obj) is not None
+            if is_polars_dtype(obj)
+            and (str_repr := _dtype_str_repr_safe(obj)) is not None
         }
 
 
 # Initialize once (poor man's singleton :)
-DataTypeMappings = _DataTypeMappings()
+DataTypeMappings: Final[_DataTypeMappings] = _DataTypeMappings()
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
@@ -269,7 +279,7 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
         raise NotImplementedError(msg) from None
 
 
-def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
+def py_type_to_arrow_type(dtype: PythonDataType) -> pa.DataType:
     """Convert a Python dtype to an Arrow dtype."""
     try:
         return DataTypeMappings.PY_TYPE_TO_ARROW_TYPE[dtype]

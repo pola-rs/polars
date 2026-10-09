@@ -74,7 +74,7 @@ for mod, methods in OPTIONAL_MODULES_AND_METHODS.items():
 
 
 def doctest_teardown(d: doctest.DocTest) -> None:
-    # don't let config changes or string cache state leak between tests
+    # don't let config changes leak between tests
     pl.Config.restore_defaults()
 
 
@@ -115,14 +115,9 @@ if __name__ == "__main__":
 
     # Set doctests to fail on warnings
     warnings.simplefilter("error", Warning)
+    # TODO: Remove in 2.0.
     warnings.filterwarnings(
         "ignore",
-        message="datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*",
-        category=DeprecationWarning,
-    )
-    warnings.filterwarnings(
-        "ignore",
-        message="datetime.datetime.utcnow\\(\\) is deprecated.*",
         category=DeprecationWarning,
     )
 

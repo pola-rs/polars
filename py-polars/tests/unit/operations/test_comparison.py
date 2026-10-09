@@ -10,13 +10,13 @@ import pytest
 
 import polars as pl
 from polars.datatypes.group import INTEGER_DTYPES
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager as ContextManager
 
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def test_comparison_order_null_broadcasting() -> None:
@@ -613,6 +613,45 @@ def test_comparison_literal_behavior_matches_nonliteral_behavior(
         test(pl.lit(None, dtype=dtype_lhs), pl.col("r"))
 
 
+@pytest.mark.parametrize(
+    ("col_unit", "lit_unit"), [("ns", "us"), ("ns", "ms"), ("us", "ms")]
+)
+@pytest.mark.parametrize("temporal", [pl.Datetime, pl.Duration])
+def test_comparison_with_lower_precision_literal_matches_column(
+    col_unit: TimeUnit, lit_unit: TimeUnit, temporal: Any
+) -> None:
+    unit_ns = {"ns": 1, "us": 1_000, "ms": 1_000_000}
+    per_lit_unit = unit_ns[lit_unit] // unit_ns[col_unit]
+    base = 1_767_225_600_000_000_000 // unit_ns[col_unit]
+    values = [base - 1, base, base + 1, base + per_lit_unit - 1, base + per_lit_unit]
+    df = pl.DataFrame({"c": pl.Series(values).cast(temporal(col_unit))})
+    lit_value = pl.Series([base // per_lit_unit]).cast(temporal(lit_unit)).item()
+    lit = pl.lit(lit_value, dtype=temporal(lit_unit))
+
+    def comparisons(l: pl.Expr, r: pl.Expr) -> dict[str, pl.Expr]:  # noqa: E741
+        return {
+            "eq": l == r,
+            "ne": l != r,
+            "lt": l < r,
+            "lteq": l <= r,
+            "gt": l > r,
+            "gteq": l >= r,
+            "eq_missing": l.eq_missing(r),
+            "ne_missing": l.ne_missing(r),
+        }
+
+    lf = df.lazy()
+    as_column = lf.with_columns(r=lit)
+    c, r = pl.col("c"), pl.col("r")
+    for with_lit, with_col in (
+        (comparisons(c, lit), comparisons(c, r)),
+        (comparisons(lit, c), comparisons(r, c)),
+    ):
+        assert_frame_equal(
+            lf.select(**with_lit).collect(), as_column.select(**with_col).collect()
+        )
+
+
 def test_comparison_literal_downcast_flooring_datetime_ns() -> None:
     dt = datetime(2026, 1, 1)
     unit_phys_s = pl.Series("datetime[ns]", [dt], dtype=pl.Datetime("ns")).to_physical()
@@ -1047,12 +1086,12 @@ def test_comparison_literal_downcast_rewrites() -> None:
     assert_rewrite(
         pl.col("datetime[ns]")
         <= pl.lit(datetime(2026, 1, 1, microsecond=1000), dtype=pl.Datetime("ms")),
-        "<= (2026-01-01 00:00:00.001999999)",
+        "<= 2026-01-01 00:00:00.001999999",
     )
 
     assert_rewrite(
         pl.col("i16") == pl.lit(10, dtype=pl.Int32),
-        'col("i16")) == (10)',
+        'col("i16") == 10',
     )
 
     assert_rewrite(
@@ -1102,15 +1141,74 @@ def test_comparison_literal_downcast_rewrites() -> None:
 
     assert_rewrite(
         pl.col("u16").is_between(-1, 10),
-        'col("u16")) <= (10)',
+        'col("u16") <= 10',
     )
 
     assert_rewrite(
         pl.col("u16").is_between(10, 1 << 16, closed="right"),
-        'col("u16")) > (10)',
+        'col("u16") > 10',
     )
 
     assert_rewrite(
         pl.col("u16").is_between(1 << 16, 1 << 17),
         'when(col("u16").is_not_null()).then(false).otherwise(null)',
     )
+
+
+def test_is_between_coerces_dynamic_float_bounds_28278() -> None:
+    # These are distinct in float64, but the same in float32
+    x = 1.0000001192092896  # == 1 + eps_f32
+    lower_bound = 1.00000015  # < 1 + 2*eps_f32
+
+    q = pl.LazyFrame({"x": [x]}, schema={"x": pl.Float32}).select(
+        binary=pl.col("x") >= lower_bound,
+        is_between=pl.col("x").is_between(lower_bound, 2.0),
+    )
+
+    assert q.collect().row(0) == (True, True)
+    assert "dyn float" not in q.explain()
+
+    q_f64 = pl.LazyFrame({"x": [x]}, schema={"x": pl.Float64}).select(
+        binary=pl.col("x") >= lower_bound,
+        is_between=pl.col("x").is_between(lower_bound, 2.0),
+    )
+    assert q_f64.collect().row(0) == (False, False)
+    assert "dyn float" not in q_f64.explain()
+
+
+def test_is_between_coerces_dynamic_numeric_bounds() -> None:
+    q = pl.LazyFrame(
+        {"x": [0.5, 3.5, 7.5]},
+        schema={"x": pl.Float64},
+    ).select(
+        integer_bounds=pl.col("x").is_between(3, 7),
+        mixed_bounds=pl.col("x").is_between(3, 7.0),
+    )
+
+    plan = q.explain()
+    assert "dyn int" not in plan
+    assert "dyn float" not in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "integer_bounds": [False, True, False],
+                "mixed_bounds": [False, True, False],
+            }
+        ),
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.Date(), pl.Datetime("us")])
+def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
+    df = pl.LazyFrame({"value": []}, schema={"value": dtype})
+
+    q = df.select(
+        pl.col("value").is_between(pl.lit("2000-01-01"), pl.lit("2000-01-02"))
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot compare 'date/datetime/time' to a string value",
+    ):
+        q.explain()

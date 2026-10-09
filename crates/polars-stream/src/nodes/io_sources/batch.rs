@@ -1,13 +1,13 @@
 //! Reads batches from a `dyn Fn`
 
 use async_trait::async_trait;
+use polars_async::executor::{JoinHandle, TaskPriority, spawn};
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{JoinHandle, TaskPriority, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::{
@@ -20,6 +20,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::{
 pub mod builder {
     use std::sync::{Arc, Mutex};
 
+    use polars_error::PolarsResult;
     use polars_utils::pl_str::PlSmallStr;
 
     use super::BatchFnReader;
@@ -35,12 +36,12 @@ pub mod builder {
     }
 
     impl FileReaderBuilder for BatchFnReaderBuilder {
-        fn reader_name(&self) -> &str {
-            &self.name
+        fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+            Ok(self.name.clone())
         }
 
-        fn reader_capabilities(&self) -> ReaderCapabilities {
-            ReaderCapabilities::empty()
+        fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
+            Ok(ReaderCapabilities::empty())
         }
 
         fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
@@ -52,7 +53,7 @@ pub mod builder {
             _source: polars_plan::prelude::ScanSource,
             _cloud_options: Option<Arc<polars_io::cloud::CloudOptions>>,
             scan_source_idx: usize,
-        ) -> Box<dyn FileReader> {
+        ) -> PolarsResult<Box<dyn FileReader>> {
             assert_eq!(scan_source_idx, 0);
 
             let mut reader = self
@@ -64,7 +65,7 @@ pub mod builder {
 
             reader.execution_state = Some(self.execution_state.lock().unwrap().clone().unwrap());
 
-            Box::new(reader) as Box<dyn FileReader>
+            Ok(Box::new(reader) as Box<dyn FileReader>)
         }
     }
 
@@ -84,7 +85,7 @@ pub type GetBatchFn =
 pub use get_batch_state::GetBatchState;
 
 mod get_batch_state {
-    use polars_io::pl_async::get_runtime;
+    use polars_core::runtime::ASYNC;
 
     use super::{DataFrame, GetBatchFn, PolarsResult, StreamingExecutionState};
 
@@ -99,7 +100,7 @@ mod get_batch_state {
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            get_runtime()
+            ASYNC
                 .spawn_blocking({
                     move || unsafe { slf.next_impl(&execution_state).map(|x| (slf, x)) }
                 })
@@ -111,7 +112,7 @@ mod get_batch_state {
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            get_runtime()
+            ASYNC
                 .spawn_blocking({
                     move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
                 })
@@ -179,8 +180,12 @@ impl FileReader for BatchFnReader {
             pre_slice: None,
             predicate: None,
             cast_columns_policy: _,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: _,
+            maintain_order: _,
+            last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
                     mut file_schema_tx,
@@ -189,7 +194,7 @@ impl FileReader for BatchFnReader {
                 },
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         let execution_state = self.execution_state().clone();
@@ -215,7 +220,8 @@ impl FileReader for BatchFnReader {
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
-        let handle = spawn(TaskPriority::Low, async move {
+        let task_metrics = self.execution_state().task_metrics();
+        let handle = spawn(TaskPriority::Low, task_metrics, async move {
             if let Some(file_schema_tx) = file_schema_tx {
                 let opt_df;
 
@@ -244,7 +250,11 @@ impl FileReader for BatchFnReader {
                 n_rows_seen = n_rows_seen.saturating_add(df.height());
 
                 if morsel_sender
-                    .send_morsel(Morsel::new(df, MorselSeq::new(seq), source_token.clone()))
+                    .send_morsel(Morsel::new_unregistered(
+                        df,
+                        MorselSeq::new(seq),
+                        source_token.clone(),
+                    ))
                     .await
                     .is_err()
                 {

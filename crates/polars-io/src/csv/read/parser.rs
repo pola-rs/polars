@@ -2,8 +2,8 @@ use std::cmp;
 
 use memchr::memchr2_iter;
 use polars_buffer::Buffer;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_error::feature_gated;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
@@ -42,7 +42,7 @@ pub fn count_rows(
                 .try_open_assume_latest()?
         })
     } else {
-        polars_utils::open_file(path.as_std_path())?
+        polars_utils::io::open_file(path.as_std_path())?
     };
 
     let mmap = MMapSemaphore::new_from_file(&file).unwrap();
@@ -94,6 +94,8 @@ pub fn count_rows_from_reader_par(
     let (_, mut leftover) = read_until_start_and_infer_schema(
         &reader_options,
         None,
+        true,
+        true,
         decompressed_size_hint,
         None,
         &mut reader,
@@ -106,11 +108,10 @@ pub fn count_rows_from_reader_par(
     };
 
     let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
-    POOL.install(|| {
+    RAYON.install(|| {
         let mut states = Vec::new();
-        let eof_unterminated_row;
 
-        if comment_prefix.is_none() {
+        let eof_unterminated_row = if comment_prefix.is_none() {
             let mut last_slice = Buffer::new();
             let mut err = None;
 
@@ -150,7 +151,7 @@ pub fn count_rows_from_reader_par(
 
             // Technically this is broken if the input has a comment line at the end that is longer
             // than `BYTES_PER_CHUNK`, but in practice this ought to be fine.
-            eof_unterminated_row = ends_in_unterminated_row(&last_slice, eol_char, comment_prefix);
+            ends_in_unterminated_row(&last_slice, eol_char, comment_prefix)
         } else {
             // For the non-compressed case this is a zero-copy op.
             // TODO: Implement streaming chunk logic.
@@ -189,8 +190,8 @@ pub fn count_rows_from_reader_par(
                 })
                 .collect_into_vec(&mut states);
 
-            eof_unterminated_row = ends_in_unterminated_row(&bytes, eol_char, comment_prefix);
-        }
+            ends_in_unterminated_row(&bytes, eol_char, comment_prefix)
+        };
 
         let mut n = 0;
         let mut in_string = false;
@@ -663,6 +664,7 @@ impl<'a> Iterator for SplitLines<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct CountLines {
     quote_char: u8,
     eol_char: u8,
@@ -703,6 +705,10 @@ impl CountLines {
             quoting,
             comment_prefix,
         }
+    }
+
+    pub fn has_comment_prefix(&self) -> bool {
+        self.comment_prefix.is_some()
     }
 
     /// Analyzes a chunk of CSV data.
@@ -1175,6 +1181,7 @@ pub(super) fn parse_lines(
                                         \n\
                                         You might want to try:\n\
                                         - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
+                                        - increasing `infer_schema_files` (e.g. `infer_schema_files=50`),\n\
                                         - specifying correct dtype with the `schema_overrides` argument\n\
                                         - setting `ignore_errors` to `True`,\n\
                                         - adding `{}` to the `null_values` list.\n\n\

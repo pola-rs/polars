@@ -1,9 +1,11 @@
 use std::fmt::{Display, Formatter};
 
 use polars_core::prelude::*;
-use polars_ops::series::ClosedInterval;
+use polars_defs::expr::ClosedInterval;
 #[cfg(feature = "temporal")]
-use polars_time::{ClosedWindow, Duration};
+use polars_defs::time::duration::Duration;
+#[cfg(feature = "temporal")]
+use polars_defs::time::group_by::ClosedWindow;
 
 use super::{FunctionOptions, IRFunctionExpr};
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
@@ -160,42 +162,36 @@ impl IRRangeFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRRangeFunction as R;
         match self {
-            R::IntRange { .. } => {
-                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
+            R::IntRange { .. } => FunctionOptions::groupwise()
+                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME | FunctionFlags::RANGE),
             R::IntRanges { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            R::LinearSpace { .. } => {
-                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
+            R::LinearSpace { .. } => FunctionOptions::groupwise()
+                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME | FunctionFlags::RANGE),
             R::LinearSpaces { .. } => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-date")]
-            R::DateRange { .. } => {
-                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
+            R::DateRange { .. } => FunctionOptions::groupwise()
+                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME | FunctionFlags::RANGE),
             #[cfg(feature = "dtype-date")]
-            R::DateRanges { .. } => {
-                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
+            R::DateRanges { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME | FunctionFlags::RANGE),
             #[cfg(feature = "dtype-datetime")]
             R::DatetimeRange { .. } => {
                 FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-datetime")]
-            R::DatetimeRanges { .. } => {
-                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
+            R::DatetimeRanges { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME | FunctionFlags::RANGE),
             #[cfg(feature = "dtype-time")]
             R::TimeRange { .. } => {
                 FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             #[cfg(feature = "dtype-time")]
-            R::TimeRanges { .. } => {
-                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
-            },
+            R::TimeRanges { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME | FunctionFlags::RANGE),
         }
     }
 }

@@ -156,6 +156,7 @@ also be used as the leading clause in a query, supporting the following variatio
 
 * ``FROM tbl`` - equivalent to ``SELECT * FROM tbl``.
 * ``FROM tbl SELECT ...`` - a reordered ``SELECT`` with explicit projections.
+* ``FROM tbl1, tbl2 ...`` - multiple comma-separated tables; see the :ref:`JOIN <join>` clause for implicit join syntax.
 
 **Example:**
 
@@ -217,6 +218,7 @@ Combines rows from two or more tables based on a related column.
 * `[NATURAL] RIGHT [OUTER] JOIN`
 * `[LEFT | RIGHT] ANTI JOIN`
 * `[LEFT | RIGHT] SEMI JOIN`
+* `ASOF JOIN ... MATCH_CONDITION (...)` (see :ref:`ASOF joins <asof_join>`)
 
 **Example:**
 
@@ -263,6 +265,103 @@ Combines rows from two or more tables based on a related column.
     # │ 1   ┆ x     ┆ a   │
     # │ 2   ┆ y     ┆ b   │
     # └─────┴───────┴─────┘
+
+**Implicit (comma) joins**
+
+Tables can also be combined using the older comma-separated ``FROM`` syntax, with the
+join conditions given in the ``WHERE`` clause. Cross-table equality predicates are lifted
+into the join keys (resulting in an ``INNER`` join), while any remaining predicates are
+applied as filters. If no predicate bridges two tables they are combined as a ``CROSS JOIN``.
+
+.. code-block:: python
+
+    pl.sql("""
+      SELECT foo, apple, df1.ham
+      FROM df1, df2
+      WHERE df1.ham = df2.ham
+    """).collect()
+    # shape: (2, 3)
+    # ┌─────┬───────┬─────┐
+    # │ foo ┆ apple ┆ ham │
+    # │ --- ┆ ---   ┆ --- │
+    # │ i64 ┆ str   ┆ str │
+    # ╞═════╪═══════╪═════╡
+    # │ 1   ┆ x     ┆ a   │
+    # │ 2   ┆ y     ┆ b   │
+    # └─────┴───────┴─────┘
+
+.. note::
+
+   For an implicit join, the comparison columns should be qualified with their table name
+   or alias on both sides (eg: ``WHERE df1.ham = df2.ham``). Unqualified comparisons are
+   treated as ordinary filters rather than join keys.
+
+**Non-equi join conditions**
+
+Join conditions are not restricted to equality; the ``<``, ``<=``, ``>``, ``>=``, and ``!=``
+operators are also supported (in both explicit ``ON`` clauses and implicit joins), and can
+be freely combined with equi-conditions using ``AND``.
+
+.. code-block:: python
+
+    df3 = pl.DataFrame({"value": [5, 25, 45]})
+    df4 = pl.DataFrame({"lo": [0, 20], "hi": [20, 50]})
+    pl.sql("""
+      SELECT value, lo, hi
+      FROM df3 INNER JOIN df4
+      ON df3.value >= df4.lo AND df3.value < df4.hi
+    """).collect()
+    # shape: (3, 3)
+    # ┌───────┬─────┬─────┐
+    # │ value ┆ lo  ┆ hi  │
+    # │ ---   ┆ --- ┆ --- │
+    # │ i64   ┆ i64 ┆ i64 │
+    # ╞═══════╪═════╪═════╡
+    # │ 5     ┆ 0   ┆ 20  │
+    # │ 25    ┆ 20  ┆ 50  │
+    # │ 45    ┆ 20  ┆ 50  │
+    # └───────┴─────┴─────┘
+
+.. _asof_join:
+
+**ASOF joins**
+
+An ``ASOF JOIN`` pairs each row of the left table with the closest row of the right table
+that satisfies the ``MATCH_CONDITION``, which compares one column (or expression) of each
+table with ``>=``, ``>``, ``<=``, or ``<``. An optional ``ON`` (or ``USING``) clause gives
+equality conditions that matching rows must also satisfy. Every left row is kept; if there
+is no matching right row, the right columns are null.
+
+.. code-block:: python
+
+    population = pl.DataFrame(
+      {
+        "date": [date(2016, 3, 1), date(2018, 8, 1), date(2019, 1, 1)],
+        "population": [82.19, 82.66, 83.12],
+      }
+    )
+    gdp = pl.DataFrame(
+      {
+        "date": [date(2016, 1, 1), date(2017, 1, 1), date(2018, 1, 1), date(2019, 1, 1)],
+        "gdp": [4164, 4411, 4566, 4696],
+      }
+    )
+    pl.sql("""
+      SELECT p.date, population, gdp
+      FROM population p
+      ASOF JOIN gdp g MATCH_CONDITION (p.date >= g.date)
+      ORDER BY p.date
+    """).collect()
+    # shape: (3, 3)
+    # ┌────────────┬────────────┬──────┐
+    # │ date       ┆ population ┆ gdp  │
+    # │ ---        ┆ ---        ┆ ---  │
+    # │ date       ┆ f64        ┆ i64  │
+    # ╞════════════╪════════════╪══════╡
+    # │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+    # │ 2018-08-01 ┆ 82.66      ┆ 4566 │
+    # │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+    # └────────────┴────────────┴──────┘
 
 .. _where:
 
@@ -464,7 +563,8 @@ Multiple windows, multiple expressions:
 
 QUALIFY
 -------
-Filter rows in a query based on window function results.
+Filter rows in a query based on window function results. It runs after `GROUP BY` and
+`HAVING`, and can use columns that are not in the `SELECT` list.
 
 **Example:**
 

@@ -122,7 +122,7 @@ where
     F: Fn(S::Native) -> S::Native + Copy,
     S: PolarsNumericType,
 {
-    use arrow::Either::*;
+    use polars_arrow::Either::*;
     let chunks = chunks.into_iter().map(|arr| {
         let owned_arr = arr
             .as_any()
@@ -133,7 +133,7 @@ where
         drop(arr);
 
         let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(
+            polars_arrow::compute::arity::unary(
                 arr,
                 f,
                 S::get_static_dtype().to_arrow(CompatLevel::newest()),
@@ -197,7 +197,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         // SAFETY, we do no t change the lengths
         unsafe {
             self.downcast_iter_mut()
-                .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
+                .for_each(|arr| polars_arrow::compute::arity_assign::unary(arr, f))
         };
         // can be in any order now
         self.compute_len();
@@ -489,15 +489,9 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
             out
         };
         let mut ca: ListChunked = {
-            if !self.has_nulls() {
-                self.into_no_null_iter()
-                    .map(&mut function)
-                    .collect_trusted()
-            } else {
-                self.into_iter()
-                    .map(|opt_v| opt_v.map(&mut function))
-                    .collect_trusted()
-            }
+            self.series_iter()
+                .map(|opt_v| opt_v.map(&mut function))
+                .collect_trusted()
         };
         if fast_explode {
             ca.set_fast_explode()
@@ -512,7 +506,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
         if self.is_empty() {
             return self.clone();
         }
-        self.into_iter().map(f).collect_trusted()
+        self.series_iter().map(f).collect_trusted()
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -548,7 +542,7 @@ where
     where
         F: Fn(&'a T) -> T + Copy,
     {
-        let mut ca: ObjectChunked<T> = self.into_iter().map(|opt_v| opt_v.map(f)).collect();
+        let mut ca: ObjectChunked<T> = self.iter().map(|opt_v| opt_v.map(f)).collect();
         ca.rename(self.name().clone());
         ca
     }
@@ -557,7 +551,7 @@ where
     where
         F: Fn(Option<&'a T>) -> Option<T> + Copy,
     {
-        let mut ca: ObjectChunked<T> = self.into_iter().map(f).collect();
+        let mut ca: ObjectChunked<T> = self.iter().map(f).collect();
         ca.rename(self.name().clone());
         ca
     }

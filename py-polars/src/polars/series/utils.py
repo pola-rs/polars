@@ -3,12 +3,14 @@ from __future__ import annotations
 import inspect
 import sys
 from functools import wraps
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.expired import removed_parameters
 from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
+from polars.exceptions import AttributeRemovedError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,22 +42,67 @@ def expr_dispatch(cls: type[T]) -> type[T]:
         if (
             # private
             not name.startswith("_")
-            # Avoid error when building docs
+            # avoid error when building docs
             # https://github.com/pola-rs/polars/pull/13238#discussion_r1438787093
             # TODO: is there a better way to do this?
             and name != "plot"
         ):
             attr = getattr(cls, name)
             if callable(attr):
-                attr = _undecorated(attr)
+                removed_params = getattr(attr, "__removed_parameters__", None)
+                attr = cast("Callable[..., Series]", _undecorated(attr))
+
                 # note: `co_varnames` starts with the function args, but needs to be
                 # constrained by `co_argcount` as it also includes function-level consts
                 args = attr.__code__.co_varnames[: attr.__code__.co_argcount]
+
                 # if an expression method with compatible method exists, further check
                 # that the series implementation has an empty function body
                 if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
-                    setattr(cls, name, call_expr(attr))
+                    dispatcher = call_expr(attr)
+                    if removed_params is not None:
+                        # the @removed_params() decorator was applied to the original
+                        # function, so we also apply it to the dispatcher function.
+                        dispatcher = removed_parameters(*removed_params)(dispatcher)
+                    setattr(cls, name, dispatcher)
+
+    # forward any `__getattr__` calls to the Expr namespace's too.
+    if (namespace, "__getattr__", ("self", "name")) in expr_lookup:
+        cls.__getattr__ = _forward_getattr(cls, namespace)  # type: ignore[attr-defined]
+
     return cls
+
+
+def _forward_getattr(
+    cls: type[Any], namespace: str | None
+) -> Callable[[Any, str], Any]:
+    """
+    Forward failed attribute lookups to the matching Expr namespace.
+
+    Ensures that errors for (e.g.) removed methods are also raised on the Series
+    side. Names that the Expr namespace does not recognise fall back to the
+    class' own `__getattr__` (if any).
+    """
+    original_getattr = getattr(cls, "__getattr__", None)
+
+    def __getattr__(self: Any, name: str) -> Any:
+        # note: a dummy Expr suffices; we only want the namespace's __getattr__
+        expr: Any = pl.Expr()
+        expr._pyexpr = None
+        if namespace is not None:
+            expr = getattr(expr, namespace)
+        try:
+            return expr.__getattr__(name)
+        except AttributeRemovedError:
+            raise
+        except AttributeError:
+            if original_getattr is not None:
+                return original_getattr(self, name)
+            else:
+                msg = f"{type(self).__name__!r} object has no attribute {name!r}"
+                raise AttributeError(msg, name=name, obj=self) from None
+
+    return __getattr__
 
 
 def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str, ...]]]:
@@ -70,7 +117,7 @@ def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str,
 
     lookup = set()
     for name in dir(expr):
-        if not name.startswith("_"):
+        if not name.startswith("_") or name == "__getattr__":
             try:
                 m = getattr(expr, name)
             except AttributeError:  # may raise for @property methods
@@ -121,6 +168,12 @@ def _is_empty_method(func: SeriesMethod) -> bool:
     fc = func.__code__
     return (fc.co_code in _EMPTY_BYTECODE) and (
         (len(fc.co_consts) == 2 and fc.co_consts[1] is None)
+        or (
+            # note: py315 loads the implicit None without storing it in `co_consts`
+            sys.version_info >= (3, 15)
+            and isinstance(func.__doc__, str)
+            and fc.co_consts == (func.__doc__,)
+        )
         # account for optimized-out docstrings (eg: running 'python -OO')
         or (sys.flags.optimize == 2 and fc.co_consts == (None,))
     )

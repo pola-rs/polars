@@ -1,5 +1,5 @@
-use arrow::bitmap::Bitmap;
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_buffer::Buffer;
 
 #[cfg(feature = "object")]
@@ -7,7 +7,18 @@ use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
 impl Series {
+    /// Create a Series of `size` null values with the requested dtype.
+    ///
+    /// # Panics
+    /// Panics if `dtype` contains an invalid Map dtype.
     pub fn full_null(name: PlSmallStr, size: usize, dtype: &DataType) -> Self {
+        // Separate from the `match` below, because it only peels off a single layer of
+        // nesting.
+        #[cfg(feature = "dtype-map")]
+        dtype
+            .ensure_valid_map_dtypes()
+            .expect("invalid Map dtype in `Series::full_null`");
+
         // match the logical types and create them
         match dtype {
             DataType::List(inner_dtype) => {
@@ -56,12 +67,8 @@ impl Series {
                     .collect::<Vec<_>>();
                 let ca = StructChunked::from_series(name, size, fields.iter()).unwrap();
 
-                if !fields.is_empty() {
-                    ca.with_outer_validity(Some(Bitmap::new_zeroed(size)))
-                        .into_series()
-                } else {
-                    ca.into_series()
-                }
+                ca.with_outer_validity(Some(Bitmap::new_zeroed(size)))
+                    .into_series()
             },
             DataType::BinaryOffset => {
                 let length = size;
@@ -96,6 +103,12 @@ impl Series {
                     builder.append_null();
                 }
                 builder.to_series()
+            },
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => {
+                let storage = Series::full_null(name, size, &dtype.map_storage_dtype().unwrap());
+                // SAFETY: the dtype is checked above, and an all-null Map holds no entries.
+                unsafe { MapChunked::from_storage_unchecked(dtype.clone(), storage) }.into_series()
             },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, storage_dtype) => {

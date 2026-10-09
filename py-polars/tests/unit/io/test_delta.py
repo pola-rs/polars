@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pickle
+import re
 import warnings
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -10,26 +11,54 @@ from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
 import pytest
-from deltalake import DeltaTable, write_deltalake
+from deltalake import DeltaTable, WriterProperties, write_deltalake
 from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
+from polars._plr import PyLazyFrame
+from polars._utils.wrap import wrap_ldf
+from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
-from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._dataset import (
+    DeltaDataset,
+    _source_sizes,
+    _table_root,
+)
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
 def delta_table_path(io_files_path: Path) -> Path:
     return io_files_path / "delta-table"
+
+
+def _resize_delta_add_actions(root: Path) -> None:
+    """Update logged file sizes after tests rewrite Parquet data files.
+
+    Delta files are normally immutable; these fixtures must keep sizes in sync.
+    """
+    import json
+
+    for entry in sorted((root / "_delta_log").glob("*.json")):
+        lines = []
+        for line in entry.read_text().splitlines():
+            action = json.loads(line)
+            if "add" in action:
+                action["add"]["size"] = (root / action["add"]["path"]).stat().st_size
+                line = json.dumps(action)
+            lines.append(line)
+        entry.write_text("\n".join(lines) + "\n")
 
 
 def new_pl_delta_dataset(source: str | DeltaTable) -> DeltaDataset:
@@ -42,7 +71,6 @@ def new_pl_delta_dataset(source: str | DeltaTable) -> DeltaDataset:
         delta_table_options=None,
         use_pyarrow=False,
         pyarrow_options=None,
-        rechunk=False,
     )
 
 
@@ -376,15 +404,10 @@ def test_sink_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     df_supported.lazy().sink_delta(partitioned_tbl_uri, mode="overwrite")
 
 
-@pytest.mark.write_disk
-def test_write_delta_overwrite_schema_deprecated(
-    df: pl.DataFrame, tmp_path: Path
-) -> None:
-    df = df.select(pl.col(pl.Int64))
-    with pytest.deprecated_call():
-        df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
-    result = pl.read_delta(tmp_path)
-    assert_frame_equal(df, result)
+def test_write_delta_overwrite_schema_removed(df: pl.DataFrame) -> None:
+    msg = 'Use the `delta_write_options` parameter instead and pass `{"schema_mode": "overwrite"}`.'
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        df.write_delta("", mode="overwrite", overwrite_schema=True)  # type: ignore[call-overload]
 
 
 @pytest.mark.write_disk
@@ -711,6 +734,7 @@ def test_scan_delta_nanosecond_timestamp(
     parquet_file_path = parquet_files[0]
 
     df_nano_ts.write_parquet(parquet_file_path)
+    _resize_delta_add_actions(root)
 
     # Baseline: The timestamp in the file is in nanoseconds.
     q = pl.scan_parquet(parquet_file_path)
@@ -766,6 +790,7 @@ def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
     parquet_file_path = parquet_files[0]
 
     df_nano_ts.write_parquet(parquet_file_path)
+    _resize_delta_add_actions(root)
 
     # Baseline: The timestamp in the file is in nanoseconds.
     q = pl.scan_parquet(parquet_file_path)
@@ -954,10 +979,10 @@ def _df_many_types() -> pl.DataFrame:
 @pytest.mark.parametrize(
     "expr",
     [
-        # Bool
-        # pl.col.bool == False,  ## see github issue #26290, to be confirmed
-        # pl.col.bool <= False,
-        # pl.col.bool < True,
+        # Bool (requires deltalake >= 1.5.1)
+        ~pl.col.bool,
+        pl.col.bool <= False,
+        pl.col.bool < True,
         pl.col.bool.is_null(),
         # Integer
         pl.col.int == 2,
@@ -965,10 +990,10 @@ def _df_many_types() -> pl.DataFrame:
         pl.col.int < 3,
         pl.col.int.is_null(),
         (pl.col.int < 2) & (pl.col.int.is_not_null()),
-        # Float ## see github issue #26238
-        # pl.col.float == 2.0,
-        # pl.col.float <= 2.0,
-        # pl.col.float < 3.0,
+        # Float
+        pl.col.float == 2.0,
+        pl.col.float <= 2.0,
+        pl.col.float < 3.0,
         pl.col.float.is_null(),
         # mixed
         (pl.col.int == 2) & (pl.col.float.is_not_null()),
@@ -981,9 +1006,15 @@ def _df_many_types() -> pl.DataFrame:
         pl.col.decimal <= pl.lit(2.0).cast(pl.Decimal(10, 2)),
         pl.col.decimal < pl.lit(3.0).cast(pl.Decimal(10, 2)),
         pl.col.decimal.is_null(),
-        # Struct # see github issue #26239
+        # Struct whole-column null-count pushdown
+        pl.col.struct.is_null(),
+        # Struct per-field pushdown
+        pl.col.struct.struct.field("x") == 2,
+        pl.col.struct.struct.field("x") < 3,
+        pl.col.struct.struct.field("x").is_null(),
+        # whole-struct `==` is excluded: comparing structs needs ordering, which is
+        # unimplemented and panics (a kernel gap, not a pushdown one). e.g.:
         # pl.col.struct == {"x": 2, "y": 20},
-        # pl.col.struct.is_null(),
         # Date & datetime
         pl.col.date == pl.date(2020, 1, 1),
         pl.col.datetime == pl.datetime(2020, 1, 1),
@@ -1036,34 +1067,34 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
         pl.DataFrame(
             [
                 pl.Series('len', [2, 2, 2], dtype=pl.Int64),
-                pl.Series('p_nc', [None, None, None], dtype=pl.UInt32),
+                pl.Series('p_nc', [None, None, None], dtype=get_index_type()),
                 pl.Series('p_min', [None, None, None], dtype=pl.Int64),
                 pl.Series('p_max', [None, None, None], dtype=pl.Int64),
-                pl.Series('a_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('a_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('a_min', [1, 5, 3], dtype=pl.Int64),
                 pl.Series('a_max', [2, 5, 4], dtype=pl.Int64),
-                pl.Series('bool_nc', [0, 1, 0], dtype=pl.Int64),
-                pl.Series('bool_min', [None, None, None], dtype=pl.Boolean),
-                pl.Series('bool_max', [None, None, None], dtype=pl.Boolean),
-                pl.Series('int_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('bool_nc', [0, 1, 0], dtype=get_index_type()),
+                pl.Series('bool_min', [False, True, True], dtype=pl.Boolean),
+                pl.Series('bool_max', [False, True, True], dtype=pl.Boolean),
+                pl.Series('int_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('int_min', [1, 5, 3], dtype=pl.Int64),
                 pl.Series('int_max', [2, 5, 4], dtype=pl.Int64),
-                pl.Series('float_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('float_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('float_min', [1.0, 5.0, 3.0], dtype=pl.Float64),
                 pl.Series('float_max', [2.0, 5.0, 4.0], dtype=pl.Float64),
-                pl.Series('string_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('string_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('string_min', ['a', 'ccc', 'c'], dtype=pl.String),
                 pl.Series('string_max', ['b', 'ccc', 'cc'], dtype=pl.String),
-                pl.Series('struct_nc', [{'x': 0, 'y': 0}, {'x': 1, 'y': 1}, {'x': 0, 'y': 0}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
+                pl.Series('struct_nc', [{'x': 0, 'y': 0}, {'x': 1, 'y': 1}, {'x': 0, 'y': 0}], dtype=pl.Struct({'x': get_index_type(), 'y': get_index_type()})),
                 pl.Series('struct_min', [{'x': 1, 'y': 10}, {'x': 5, 'y': 50}, {'x': 3, 'y': 30}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
                 pl.Series('struct_max', [{'x': 2, 'y': 20}, {'x': 5, 'y': 50}, {'x': 4, 'y': 40}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
-                pl.Series('decimal_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('decimal_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('decimal_min', [Decimal('1.00'), Decimal('5.00'), Decimal('3.00')], dtype=pl.Decimal(precision=10, scale=2)),
                 pl.Series('decimal_max', [Decimal('2.00'), Decimal('5.00'), Decimal('4.00')], dtype=pl.Decimal(precision=10, scale=2)),
-                pl.Series('date_nc', [0, 0, 0], dtype=pl.Int64),
+                pl.Series('date_nc', [0, 0, 0], dtype=get_index_type()),
                 pl.Series('date_min', [datetime.date(2020, 1, 1), datetime.date(2020, 1, 5), datetime.date(2020, 1, 3)], dtype=pl.Date),
                 pl.Series('date_max', [datetime.date(2020, 1, 2), datetime.date(2020, 1, 6), datetime.date(2020, 1, 4)], dtype=pl.Date),
-                pl.Series('datetime_nc', [0, 0, 0], dtype=pl.Int64),
+                pl.Series('datetime_nc', [0, 0, 0], dtype=get_index_type()),
                 pl.Series('datetime_min', [datetime.datetime(2020, 1, 1, 0, 0), datetime.datetime(2020, 1, 5, 0, 0), datetime.datetime(2020, 1, 3, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
                 pl.Series('datetime_max', [datetime.datetime(2020, 1, 2, 0, 0), datetime.datetime(2020, 1, 6, 0, 0), datetime.datetime(2020, 1, 4, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
             ]
@@ -1230,7 +1261,7 @@ def test_delta_dataset_does_not_pickle_table_object(tmp_path: Path) -> None:
     dataset = pickle.loads(pickle.dumps(dataset))
     assert dataset.table_.get() is None
 
-    assert_frame_equal(dataset.to_dataset_scan()[0].collect(), df)  # type: ignore[index]
+    assert_frame_equal(dataset.to_dataset_scan()[0].collect(), df)
 
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
@@ -1359,3 +1390,413 @@ def test_scan_delta_filter_delta_log_statistics_missing_26444(tmp_path: Path) ->
             )
             is None
         )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_filter_combined_predicates_statistics_27072(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame({"p": [10, 10, 20, 20, 30, 30]})
+
+    dfs = [df.with_columns(pl.lit(i).alias("a")) for i in range(3)]
+
+    root = tmp_path / "delta"
+    for df in dfs:
+        df.write_delta(root, delta_write_options={"partition_by": "p"}, mode="append")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+
+    filter = (pl.col("p") == 10) & (pl.col("a") == 1)
+
+    assert_frame_equal(
+        pl.scan_delta(root).filter(filter).collect(),
+        pl.concat(dfs).filter(filter),
+        check_column_order=False,
+        check_row_order=False,
+    )
+    assert "skipping 8 / 9 files" in capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_literal_filter_empty_df_27242(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)})
+    df.write_delta(tmp_path)
+
+    out = pl.scan_delta(tmp_path).filter(pl.lit(True)).collect()
+    assert_frame_equal(df, out)
+
+
+def test_scan_delta_predicate_pushdown_struct_column_27857(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "error_flags": pl.Series(
+                [
+                    {"length_issue": True, "incomplete": True},
+                    {"length_issue": False, "incomplete": False},
+                ]
+            )
+        }
+    )
+    df.write_delta(tmp_path)
+
+    predicate = pl.any_horizontal(pl.col("error_flags").struct.unnest())
+    out = pl.scan_delta(tmp_path).filter(predicate).collect()
+
+    expected = pl.DataFrame(
+        {"error_flags": pl.Series([{"length_issue": True, "incomplete": True}])}
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_predicate_pushdown_struct_is_not_null(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # A struct row with a null *field* is still a non-null *struct*, so `is_not_null()`
+    # must keep it. The per-field null count must not be read as the struct's row-level
+    # null count, or it would wrongly skip the first file (`a` all-null, structs valid).
+    st = pl.Struct({"a": pl.Int64, "b": pl.Int64})
+    df = pl.DataFrame(
+        {
+            "s": pl.Series(
+                [{"a": None, "b": 1}, {"a": None, "b": 2}, {"a": 5, "b": 5}], dtype=st
+            )
+        }
+    )
+    df[:2].write_delta(tmp_path)
+    df[2:].write_delta(tmp_path, mode="append")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_delta(tmp_path).filter(pl.col("s").is_not_null()).collect()
+    err = capfd.readouterr().err
+
+    # Every struct is non-null, so all rows are kept; the first file (`a` all-null)
+    # must not be pruned.
+    assert_frame_equal(out, df, check_row_order=False)
+    assert "skipping 1 / 2 files" not in err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Heavy-footer resolution needs the file sizes recorded in the Delta log.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    properties = WriterProperties(max_row_group_size=500)
+
+    for n in [20, 4000, 20]:
+        pl.DataFrame({"x": range(n)}).write_delta(
+            tmp_path,
+            mode="append",
+            delta_write_options={"writer_properties": properties},
+        )
+
+    dataset = new_pl_delta_dataset(DeltaTable(tmp_path))
+    capfd.readouterr()
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
+
+    retained = lf._ldf._retained_parquet_footers()
+    # Retain source 0 and the heavy file's eight row groups.
+    assert len(retained) == 1
+    assert retained[0][0][1] == 1
+    assert sorted(rg for _, rg in retained[0]) == [1, 8]
+
+    assert lf.collect().height == 4040
+    assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "partition_values", [["0", "1"], ["a b", "100%"], ["\u00e4/\u00f6", "z"]]
+)
+@pytest.mark.write_disk
+def test_scan_delta_source_sizes_match_the_file_list(
+    tmp_path: Path, partition_values: list[str]
+) -> None:
+    # Match sizes against full paths, including encoded partition directories.
+    for value in partition_values:
+        pl.DataFrame({"p": [value] * 10, "x": range(10)}).write_delta(
+            tmp_path, mode="append", delta_write_options={"partition_by": "p"}
+        )
+
+    table = DeltaTable(tmp_path)
+    uris = table.file_uris()
+
+    assert _source_sizes(
+        uris, _table_root(table.table_uri), table._table.get_add_file_sizes()
+    ) == [Path(uri).stat().st_size for uri in uris]
+
+
+def test_delta_table_root_normalisation() -> None:
+    # Match local file URIs and Polars' lakefs-to-s3 rewrite.
+    assert _table_root("file:///private/var/t") == "/private/var/t/"
+    assert _table_root("file:///C:/Users/t") == "C:/Users/t/"
+    assert _table_root("s3://bucket/t/") == "s3://bucket/t/"
+    assert _table_root("lakefs://repo/main/t") == "s3://repo/main/t/"
+
+
+def test_delta_source_sizes_lookup() -> None:
+    root = "/t/"
+    # Files in different partitions can share a name; key on the relative path.
+    sizes = {"p=0/part.parquet": 100, "p=1/part.parquet": 200}
+    paths = ["/t/p=0/part.parquet", "/t/p=1/part.parquet"]
+
+    assert _source_sizes(paths, root, sizes) == [100, 200]
+    # The result follows the scan order, not the dict order.
+    assert _source_sizes(paths[::-1], root, dict(reversed(sizes.items()))) == [200, 100]
+
+    # A nested directory that repeats the table name is a distinct key.
+    nested = {"part.parquet": 100, "t/part.parquet": 200}
+    assert _source_sizes(["/t/part.parquet", "/t/t/part.parquet"], root, nested) == [
+        100,
+        200,
+    ]
+
+    # Unknown paths disable size hints.
+    assert _source_sizes(["/other/part.parquet"], root, sizes) is None
+    assert _source_sizes(["/t/p=2/part.parquet"], root, sizes) is None
+
+
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers_with_encoded_partition_values(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Encoded partition values must not disable sizes or heavy-footer resolution.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    properties = WriterProperties(max_row_group_size=500)
+
+    for value, n in [("a b", 20), ("100%", 4000), ("\u00e4/\u00f6", 20)]:
+        pl.DataFrame({"p": [value] * n, "x": range(n)}).write_delta(
+            tmp_path,
+            mode="append",
+            delta_write_options={
+                "partition_by": "p",
+                "writer_properties": properties,
+            },
+        )
+
+    dataset = new_pl_delta_dataset(DeltaTable(tmp_path))
+    capfd.readouterr()
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
+
+    retained = lf._ldf._retained_parquet_footers()
+    # Retain source 0 and the heavy file's eight row groups.
+    assert len(retained) == 1
+    assert retained[0][0][1] == 1
+    assert sorted(rg for _, rg in retained[0]) == [1, 8]
+
+    assert lf.collect().height == 4040
+    assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_scan_delta_resolves_heavy_footers_on_object_store(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Match encoded paths to sizes, then read source 0 and the heavy-file footer.
+    import threading
+
+    from tests.unit.io.cloud.conftest import CountingS3
+
+    s3 = CountingS3()
+    threading.Thread(target=s3.server.serve_forever, daemon=True).start()
+    s3.client.create_bucket(Bucket="bucket")
+
+    try:
+        storage_options = {
+            "AWS_ACCESS_KEY_ID": s3.storage_options["aws_access_key_id"],
+            "AWS_SECRET_ACCESS_KEY": s3.storage_options["aws_secret_access_key"],
+            "AWS_REGION": s3.storage_options["aws_region"],
+            "AWS_ENDPOINT_URL": s3.endpoint,
+            "AWS_ALLOW_HTTP": "true",
+            # Allow commits to mock S3 without an external lock.
+            "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+        }
+        properties = WriterProperties(max_row_group_size=500)
+
+        for value, n in [("a b", 20), ("100%", 4000), ("ä/ö", 20)]:
+            pl.DataFrame({"p": [value] * n, "x": range(n)}).write_delta(
+                "s3://bucket/t",
+                mode="append",
+                storage_options=storage_options,
+                delta_write_options={
+                    "partition_by": "p",
+                    "writer_properties": properties,
+                },
+            )
+
+        table = DeltaTable("s3://bucket/t", storage_options=storage_options)
+        uris = table.file_uris()
+
+        # Encoded partition values must not break the size pairing.
+        sizes = _source_sizes(
+            uris, _table_root(table.table_uri), table._table.get_add_file_sizes()
+        )
+        assert sizes is not None
+        assert len(sizes) == len(uris)
+
+        dataset = DeltaDataset(
+            table_=NoPickleOption(table),
+            table_uri_=None,
+            version=None,
+            storage_options=storage_options,  # type: ignore[arg-type]
+            credential_provider_builder=None,
+            delta_table_options=None,
+            use_pyarrow=False,
+            pyarrow_options=None,
+        )
+
+        plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+        capfd.readouterr()
+
+        lf = wrap_ldf(
+            PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4)
+        )
+
+        mark = len(s3.log)
+        retained = lf._ldf._retained_parquet_footers()
+        planning = s3.since(mark)
+
+        heavy = sizes.index(max(sizes))
+        assert retained == [[(0, 1), (heavy, 8)]]
+        assert "parquet resolve: pinned 1 / 1 heavy sources" in capfd.readouterr().err
+
+        # Only the retained sources had their footers fetched.
+        assert s3.range_get_keys(planning) == {
+            uris[i].removeprefix("s3://") for i, _ in retained[0]
+        }
+    finally:
+        s3.server.shutdown()
+
+
+def join_structure(lf: pl.LazyFrame) -> list[str]:
+    return [
+        line.strip()
+        for line in lf.explain().splitlines()
+        if "JOIN" in line or "ON:" in line or "SCAN" in line
+    ]
+
+
+def small_build_side(*keys: int, key: str) -> pl.LazyFrame:
+    # Only a filtered build side publishes a runtime filter.
+    lf = pl.LazyFrame({key: list(keys), "e": list(range(len(keys)))})
+    return lf.filter(pl.col("e") >= 0)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_join_order_matches_parquet(tmp_path: Path) -> None:
+    n = 1000
+    frames = {
+        "a": pl.DataFrame({"k": [i % 5 for i in range(n)], "x": range(n)}),
+        "b": pl.DataFrame({"k": [i % 5 for i in range(n)], "y": range(n)}),
+        "d": pl.DataFrame({"k": range(5), "flag": [True] + 4 * [False]}),
+    }
+    for name, df in frames.items():
+        df.write_delta(tmp_path / name)
+    files = {name: DeltaTable(tmp_path / name).file_uris() for name in frames}
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        return (
+            scan("a")
+            .join(scan("b"), on="k")
+            .join(scan("d").filter(pl.col("flag")), on="k")
+        )
+
+    delta = query(lambda name: pl.scan_delta(tmp_path / name))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+
+    structure = join_structure(delta)
+    assert structure == join_structure(parquet)
+
+    # The filtered dimension is joined before the other fact.
+    plan = "\n".join(structure)
+    assert plan.index(files["d"][0]) < plan.index(files["b"][0])
+
+
+@pytest.mark.parametrize("renamed", [False, True])
+@pytest.mark.write_disk
+def test_scan_delta_runtime_join_filter(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    renamed: bool,
+) -> None:
+    # One file per append.
+    for i in range(3):
+        pl.DataFrame({"x": range(100 * i, 100 * i + 100), "f": range(100)}).write_delta(
+            tmp_path, mode="append"
+        )
+
+    # The table statistics hold `f`. They only hold `x` if the join key has its name.
+    probe = pl.scan_delta(tmp_path).filter(pl.col("f") >= 0)
+    if not renamed:
+        # The statistics of `x` skip a file.
+        probe = probe.filter(pl.col("x") < 200)
+    key = "k" if renamed else "x"
+    q = probe.rename({"x": key}).join(small_build_side(150, 160, key=key), on=key)
+    assert 'col("x").dynamic_predicate()' in q.explain(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+
+    skipped = 0 if renamed else 1
+    assert f"allows skipping {skipped} / 3 files" in err
+    assert err.count("reading 0 / 1 row groups") == 2 - skipped
+    assert err.count("reading 1 / 1 row groups") == 1
+    assert_frame_equal(
+        out,
+        pl.DataFrame({key: [150, 160], "f": [50, 60], "e": [0, 1]}),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_runtime_join_filter_with_partition_predicate(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    for p in range(3):
+        pl.DataFrame({"x": range(100 * p, 100 * p + 100), "p": p}).write_delta(
+            tmp_path, mode="append", delta_write_options={"partition_by": "p"}
+        )
+
+    q = (
+        pl.scan_delta(tmp_path)
+        .filter(pl.col("p") >= 1)
+        .join(small_build_side(150, 160, key="x"), on="x")
+        .select("x", "e")
+    )
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+
+    # The partition predicate skips a file, and the reader still gets the runtime
+    # filter.
+    assert "allows skipping 1 / 3 files" in err
+    assert err.count("reading 0 / 1 row groups") == 1
+    assert err.count("reading 1 / 1 row groups") == 1
+    assert_frame_equal(
+        out, pl.DataFrame({"x": [150, 160], "e": [0, 1]}), check_row_order=False
+    )

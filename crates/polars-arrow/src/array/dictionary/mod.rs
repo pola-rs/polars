@@ -195,8 +195,12 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// # Errors
     /// This function errors iff
     /// * any of the keys's values is not represented in `usize` or is `>= values.len()`
-    pub fn try_from_keys(keys: PrimitiveArray<K>, values: Box<dyn Array>) -> PolarsResult<Self> {
-        let dtype = Self::default_dtype(values.dtype().clone());
+    pub fn try_from_keys(
+        keys: PrimitiveArray<K>,
+        values: Box<dyn Array>,
+        ordered: bool,
+    ) -> PolarsResult<Self> {
+        let dtype = Self::default_dtype(values.dtype().clone(), ordered);
         Self::try_new(dtype, keys, values)
     }
 
@@ -305,8 +309,8 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         }
     }
 
-    pub(crate) fn default_dtype(values_datatype: ArrowDataType) -> ArrowDataType {
-        ArrowDataType::Dictionary(K::KEY_TYPE, Box::new(values_datatype), false)
+    pub(crate) fn default_dtype(values_datatype: ArrowDataType, ordered: bool) -> ArrowDataType {
+        ArrowDataType::Dictionary(K::KEY_TYPE, Box::new(values_datatype), ordered)
     }
 
     /// Slices this [`DictionaryArray`].

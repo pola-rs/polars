@@ -16,4 +16,7 @@ pub mod dsl;
 pub mod frame;
 pub mod plans;
 pub mod prelude;
+pub mod traversal;
 pub mod utils;
+
+polars_utils::define_unique_column_name!("PLAN");

@@ -1,6 +1,98 @@
+use std::ops::ControlFlow;
+
 use super::*;
+use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
+use crate::traversal::visitor::NodeVisitor;
 
 impl AExpr {
+    /// Push the inputs of this node to the given container, in field declaration order.
+    ///
+    /// This function and its users must be updated if the field declaration order changes.
+    pub fn inputs<E>(&self, container: &mut E)
+    where
+        E: Extend<Node>,
+    {
+        use AExpr::*;
+
+        match self {
+            Element | Column(_) | Literal(_) | Len => {},
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => {},
+            BinaryExpr { left, op: _, right } => {
+                container.extend([*left, *right]);
+            },
+            Cast { expr, .. } => container.extend([*expr]),
+            Sort { expr, .. } => container.extend([*expr]),
+            Gather { expr, idx, .. } => {
+                container.extend([*expr, *idx]);
+            },
+            SortBy { expr, by, .. } => {
+                container.extend([*expr]);
+                container.extend(by.iter().cloned());
+            },
+            Filter { input, by } => {
+                container.extend([*input, *by]);
+            },
+            Agg(agg_e) => match agg_e.get_input() {
+                NodeInputs::Single(node) => container.extend([node]),
+                NodeInputs::Many(nodes) => container.extend(nodes),
+                NodeInputs::Leaf => {},
+            },
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
+                container.extend([*truthy, *falsy, *predicate]);
+            },
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousAgg { input, .. } => container.extend(input.iter().map(|e| e.node())),
+            Explode { expr: e, .. } => container.extend([*e]),
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                container.extend([*function, *index_column]);
+            },
+            Over {
+                function,
+                partition_by,
+                order_by,
+                mapping: _,
+            } => {
+                container.extend([*function]);
+                container.extend(partition_by.iter().cloned());
+                container.extend(order_by.as_ref().map(|(n, _)| *n));
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                container.extend([*expr, *evaluation]);
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval {
+                expr, evaluation, ..
+            } => {
+                container.extend([*expr]);
+                container.extend(evaluation.iter().map(|x| x.node()));
+            },
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                container.extend([*input, *offset, *length]);
+            },
+        }
+    }
+
     /// Push the inputs of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
@@ -79,7 +171,9 @@ impl AExpr {
                 container.extend([*expr]);
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 // Evaluation is included. In case this is not allowed, use `inputs_rev_strict()`.
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
@@ -110,7 +204,9 @@ impl AExpr {
 
         match self {
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 // Evaluation is explicitly excluded. It is up to the caller to handle
                 // any tree traversal if required.
                 _ = evaluation;
@@ -191,7 +287,9 @@ impl AExpr {
                 variant: _,
             } => container.extend([*evaluation, *expr]),
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 container.extend(evaluation.iter().rev().map(ExprIR::node));
                 container.extend([*expr]);
             },
@@ -236,19 +334,7 @@ impl AExpr {
                 return self;
             },
             Agg(a) => {
-                match a {
-                    IRAggExpr::Quantile {
-                        expr,
-                        quantile,
-                        method: _,
-                    } => {
-                        *expr = inputs[0];
-                        *quantile = inputs[1];
-                    },
-                    _ => {
-                        a.set_input(inputs[0]);
-                    },
-                }
+                a.set_input(inputs[0]);
                 return self;
             },
             Ternary {
@@ -280,7 +366,9 @@ impl AExpr {
                 return self;
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 *expr = inputs[0];
                 _ = evaluation; // Intentional.
                 return self;
@@ -358,17 +446,7 @@ impl AExpr {
                 return self;
             },
             Agg(a) => {
-                if let IRAggExpr::Quantile {
-                    expr,
-                    quantile,
-                    method: _,
-                } = a
-                {
-                    *expr = inputs[0];
-                    *quantile = inputs[1];
-                } else {
-                    a.set_input(inputs[0]);
-                }
+                a.set_input(inputs[0]);
                 return self;
             },
             Ternary {
@@ -400,7 +478,9 @@ impl AExpr {
                 return self;
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 assert_eq!(inputs.len(), evaluation.len() + 1);
                 *expr = inputs[0];
                 for (e, node) in evaluation.iter_mut().zip(inputs[1..].iter()) {
@@ -468,12 +548,10 @@ impl IRAggExpr {
             Item { input, .. } => Single(*input),
             Mean(input) => Single(*input),
             Implode { input, .. } => Single(*input),
-            Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
-            Sum(input) => Single(*input),
+            Sum { input, .. } => Single(*input),
             Count { input, .. } => Single(*input),
             Std(input, _) => Single(*input),
             Var(input, _) => Single(*input),
-            AggGroups(input) => Single(*input),
         }
     }
     pub fn set_input(&mut self, input: Node) {
@@ -490,12 +568,10 @@ impl IRAggExpr {
             Item { input, .. } => input,
             Mean(input) => input,
             Implode { input, .. } => input,
-            Quantile { expr, .. } => expr,
-            Sum(input) => input,
+            Sum { input, .. } => input,
             Count { input, .. } => input,
             Std(input, _) => input,
             Var(input, _) => input,
-            AggGroups(input) => input,
         };
         *node = input;
     }
@@ -513,6 +589,57 @@ impl NodeInputs {
             NodeInputs::Single(node) => *node,
             NodeInputs::Many(nodes) => nodes[0],
             NodeInputs::Leaf => panic!(),
+        }
+    }
+}
+
+pub fn aexpr_tree_traversal<ArenaT, Edge, BreakValue>(
+    root_ae_node: Node,
+    expr_arena: &mut ArenaT,
+    visit_stack: &mut Vec<Node>,
+    edges: &mut Vec<Edge>,
+    visitor: &mut dyn NodeVisitor<Key = Node, Storage = ArenaT, Edge = Edge, BreakValue = BreakValue>,
+) -> ControlFlow<BreakValue, Edge>
+where
+    ArenaT: GetNodeInputs<Node>,
+{
+    tree_traversal(root_ae_node, expr_arena, visit_stack, edges, visitor)
+}
+
+struct ExtendWrap<'a, T>(&'a mut dyn FnMut(T));
+
+impl<'a, T> Extend<T> for ExtendWrap<'a, T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for v in iter.into_iter() {
+            (self.0)(v)
+        }
+    }
+}
+
+impl GetNodeInputs<Node> for Arena<AExpr> {
+    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
+        self.get(key).inputs(&mut ExtendWrap(push_fn));
+    }
+}
+
+impl GetNodeInputs<Node> for &Arena<AExpr> {
+    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
+        self.get(key).inputs(&mut ExtendWrap(push_fn));
+    }
+}
+
+impl GetNodeInputs<Node> for Arena<IR> {
+    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
+        for v in self.get(key).inputs() {
+            push_fn(v)
+        }
+    }
+}
+
+impl GetNodeInputs<Node> for &Arena<IR> {
+    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
+        for v in self.get(key).inputs() {
+            push_fn(v)
         }
     }
 }

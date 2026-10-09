@@ -7,13 +7,13 @@ performance:
 regression:
   - '/regression/i'
 A-dtype-categorical:
-  - '/categorical|categories|category/i'
+  - '/categorical|categories/i'
 A-dtype-decimal:
   - '/decimal/i'
 A-dtype-object:
   - '/\bObject\b/'
 A-dtype-struct:
-  - '/\bstruct\b/i'
+  - '/\b(as_|to_)?struct\b/i'
 A-gpu:
   - '/\bgpu\b/i'
 A-ide:
@@ -40,6 +40,8 @@ A-io-json:
   - '/json/i'
 A-io-parquet:
   - '/parquet/i'
+A-io-partitioning:
+  - '/\bHive\b/i'
 A-io-spreadsheet:
   - '/spreadsheet|excel|\bods\b/i'
 A-panic:
@@ -47,7 +49,7 @@ A-panic:
 A-plugin:
   - '/plugin/i'
 A-sql:
-  - '/\bsql\b|sqlcontext/i'
+  - '/\bsql\b|sql_expr|sqlcontext/i'
 A-selectors:
   - '/selector/i'
 A-streaming:

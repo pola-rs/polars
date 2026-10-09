@@ -1,4 +1,3 @@
-// use polars_core::error::feature_gated;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -6,19 +5,26 @@ use super::*;
 use crate::reduce::any_all::{new_all_reduction, new_any_reduction};
 #[cfg(feature = "approx_unique")]
 use crate::reduce::approx_n_unique::new_approx_n_unique_reduction;
+#[cfg(feature = "approx_quantile")]
+use crate::reduce::approx_quantile::new_approx_quantile_sketch_reduction;
 #[cfg(feature = "bitwise")]
 use crate::reduce::bitwise::{
     new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
 };
 use crate::reduce::count::{CountReduce, NullCountReduce};
+#[cfg(feature = "cov")]
+use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
+use crate::reduce::has_nulls::HasNullsReduce;
 use crate::reduce::implode::new_unordered_implode_reduction;
-use crate::reduce::len::LenReduce;
+use crate::reduce::is_empty::IsEmptyReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
-use crate::reduce::sum::new_sum_reduction;
+#[cfg(feature = "moment")]
+use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
+use crate::reduce::sum::{IdxTypeCheckedSumReducer, new_sum_reduction};
 use crate::reduce::var_std::new_var_std_reduction;
 
 /// Converts a node into a reduction + its associated selector expression.
@@ -36,7 +42,10 @@ pub fn into_reduction(
     };
     let (gr, in_node) = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
-            IRAggExpr::Sum(input) => (new_sum_reduction(get_dt(*input)?)?, *input),
+            IRAggExpr::Sum {
+                input,
+                null_on_empty,
+            } => (new_sum_reduction(get_dt(*input)?, *null_on_empty)?, *input),
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {
                 propagate_nans,
@@ -73,20 +82,18 @@ pub fn into_reduction(
                 input,
                 maintain_order: false,
             } => (new_unordered_implode_reduction(get_dt(*input)?), *input),
-            IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
             IRAggExpr::Implode { .. } => todo!(),
-            IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {
             if let Some(first_column) = schema.iter_names().next() {
-                let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
+                let out: Box<dyn GroupedReduction> = Box::new(CountReduce::new(true));
                 let expr = expr_arena.add(AExpr::Column(first_column.as_str().into()));
 
                 (out, expr)
             } else {
-                // Support len aggregation on 0-width morsels.
+                // Support len aggregation on 0-width morsels, used by `scan_*().select(len())`.
                 // Notes:
                 // * We do this instead of projecting a scalar, because scalar literals don't
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).
@@ -98,7 +105,8 @@ pub fn into_reduction(
                     "not implemented: len() of groups with no columns"
                 );
 
-                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE)?;
+                let out: Box<dyn GroupedReduction> =
+                    Box::new(IdxTypeCheckedSumReducer::new_grouped_reduction());
                 let expr = expr_arena.add(AExpr::Len);
 
                 (out, expr)
@@ -125,6 +133,18 @@ pub fn into_reduction(
             assert!(inner_exprs.len() == 1);
             let input = inner_exprs[0].node();
             let out = new_approx_n_unique_reduction(get_dt(input)?)?;
+            (out, input)
+        },
+
+        #[cfg(feature = "approx_quantile")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::ApproxQuantileSketch { method, error },
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_approx_quantile_sketch_reduction(get_dt(input)?, method.clone(), *error)?;
             (out, input)
         },
 
@@ -158,6 +178,11 @@ pub fn into_reduction(
                 IRBooleanFunction::All { ignore_nulls } => {
                     (new_all_reduction(*ignore_nulls), input)
                 },
+                IRBooleanFunction::IsEmpty { ignore_nulls } => {
+                    let is_empty = Box::new(IsEmptyReduce::new(*ignore_nulls)) as Box<_>;
+                    (is_empty, input)
+                },
+                IRBooleanFunction::HasNulls => (Box::new(HasNullsReduce::new()) as Box<_>, input),
                 _ => unreachable!(),
             }
         },
@@ -232,6 +257,58 @@ pub fn into_reduction(
                 .unwrap();
             (reduction.new_empty(), input)
         },
+
+        #[cfg(feature = "cov")]
+        AExpr::Function {
+            input: inner_exprs,
+            function:
+                IRFunctionExpr::Correlation {
+                    method:
+                        method @ (polars_plan::plans::IRCorrelationMethod::Covariance(_)
+                        | polars_plan::plans::IRCorrelationMethod::Pearson),
+                },
+            options: _,
+        } => {
+            use polars_plan::plans::IRCorrelationMethod;
+            assert!(inner_exprs.len() == 2);
+            let input_x = inner_exprs[0].node();
+            let input_y = inner_exprs[1].node();
+            let dtype_x = get_dt(input_x)?;
+            let dtype_y = get_dt(input_y)?;
+            let gr: Box<dyn GroupedReduction> = match method {
+                IRCorrelationMethod::Covariance(ddof) => {
+                    new_cov_reduction(dtype_x, dtype_y, *ddof)?
+                },
+                IRCorrelationMethod::Pearson => new_pearson_corr_reduction(dtype_x, dtype_y)?,
+                _ => unreachable!(),
+            };
+            return Ok((gr, vec![input_x, input_y]));
+        },
+
+        #[cfg(feature = "moment")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Skew(bias),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_skew_reduction(get_dt(input)?, *bias)?;
+            (out, input)
+        },
+
+        #[cfg(feature = "moment")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Kurtosis(fisher, bias),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_kurtosis_reduction(get_dt(input)?, *fisher, *bias)?;
+            (out, input)
+        },
+
         _ => unreachable!(),
     };
     Ok((gr, vec![in_node]))

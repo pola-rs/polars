@@ -107,6 +107,10 @@ impl DslFunction {
                     !input_schema.contains(value_name),
                     Duplicate: "duplicate column name '{value_name}'"
                 );
+                polars_ensure!(
+                    variable_name != value_name,
+                    Duplicate: "duplicate column name '{value_name}'"
+                );
 
                 let on = match args.on {
                     None => None,

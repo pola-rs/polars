@@ -1,3 +1,4 @@
+use polars_defs::join::{JoinArgs, JoinTypeOptions};
 use polars_ops::frame::DataFrameJoinOps;
 use recursive::recursive;
 
@@ -57,7 +58,7 @@ impl Executor for JoinExec {
             let mut state_left = state.split();
             state_right.branch_idx += 1;
 
-            POOL.join(
+            RAYON.join(
                 move || input_left.execute(&mut state_left),
                 move || input_right.execute(&mut state_right),
             )
@@ -68,54 +69,33 @@ impl Executor for JoinExec {
         let df_left = df_left?;
         let df_right = df_right?;
 
-        let profile_name = if state.has_node_timer() {
-            let by = self
-                .left_on
-                .iter()
-                .map(|s| Ok(s.to_field(df_left.schema())?.name))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("join".to_string(), &by);
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
+        let evaluate_keys = |df: &DataFrame, keys: &[Arc<dyn PhysicalExpr>]| {
+            keys.iter()
+                .map(|key| key.evaluate(df, state)?.broadcast_owned_to(df.height()))
+                .collect::<PolarsResult<Vec<_>>>()
         };
+        let left_on_series = evaluate_keys(&df_left, &self.left_on)?;
+        let right_on_series = evaluate_keys(&df_right, &self.right_on)?;
 
-        state.record(
-            || {
-                let left_on_series = self
-                    .left_on
-                    .iter()
-                    .map(|e| e.evaluate(&df_left, state))
-                    .collect::<PolarsResult<Vec<_>>>()?;
+        let df = df_left._join_impl(
+            &df_right,
+            left_on_series
+                .into_iter()
+                .map(|c| c.take_materialized_series())
+                .collect(),
+            right_on_series
+                .into_iter()
+                .map(|c| c.take_materialized_series())
+                .collect(),
+            self.args.clone(),
+            self.options.clone(),
+            true,
+            state.verbose(),
+        );
 
-                let right_on_series = self
-                    .right_on
-                    .iter()
-                    .map(|e| e.evaluate(&df_right, state))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-
-                let df = df_left._join_impl(
-                    &df_right,
-                    left_on_series
-                        .into_iter()
-                        .map(|c| c.take_materialized_series())
-                        .collect(),
-                    right_on_series
-                        .into_iter()
-                        .map(|c| c.take_materialized_series())
-                        .collect(),
-                    self.args.clone(),
-                    self.options.clone(),
-                    true,
-                    state.verbose(),
-                );
-
-                if state.verbose() {
-                    eprintln!("{:?} join dataframes finished", self.args.how);
-                };
-                df
-            },
-            profile_name,
-        )
+        if state.verbose() {
+            eprintln!("{:?} join dataframes finished", self.args.how);
+        };
+        df
     }
 }

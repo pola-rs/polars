@@ -13,6 +13,7 @@ from polars.io.iceberg._dataset import (
     IcebergScanResolver,
     IcebergScanTableSerializer,
     IcebergTableWrap,
+    _reusable_catalog,
 )
 
 if TYPE_CHECKING:
@@ -28,6 +29,8 @@ def scan_iceberg(
     source: str | pyiceberg.table.Table,
     *,
     snapshot_id: int | None = None,
+    from_snapshot_id_exclusive: int | None = None,
+    to_snapshot_id_inclusive: int | None = None,
     storage_options: StorageOptionsDict | None = None,
     catalog: pyiceberg.catalog.Catalog
     | polars.io.iceberg.IcebergCatalogConfig
@@ -40,6 +43,8 @@ def scan_iceberg(
     """
     Lazily read from an Apache Iceberg table.
 
+    .. engine-support:: in-memory, streaming, distributed
+
     Parameters
     ----------
     source
@@ -47,6 +52,14 @@ def scan_iceberg(
         or an absolute path to the metadata.
     snapshot_id
         The snapshot ID to scan from.
+    from_snapshot_id_exclusive
+        The snapshot ID immediately before the first append snapshot to scan.
+        Setting this or `to_snapshot_id_inclusive` enables an incremental append
+        scan. If omitted, the scan starts from the oldest ancestor of the end
+        snapshot.
+    to_snapshot_id_inclusive
+        The last snapshot ID to include in an incremental append scan. If omitted,
+        the table's current snapshot is used.
     storage_options
         Extra options for the storage backends supported by `pyiceberg`.
         For cloud storages, this may include configurations for authentication etc.
@@ -101,6 +114,13 @@ def scan_iceberg(
     Returns
     -------
     LazyFrame
+
+    Notes
+    -----
+    Iceberg manifest lists and manifests are cached in memory for the lifetime of
+    the process, and shared between scans with the same storage and catalog
+    properties. The cache assumes that credentials taken from the environment stay
+    the same for the lifetime of the process.
 
     Examples
     --------
@@ -170,6 +190,14 @@ def scan_iceberg(
     >>> table_path = "/path/to/iceberg-table/metadata.json"
     >>> snapshot_id = 7051579356916758811
     >>> pl.scan_iceberg(table_path, snapshot_id=snapshot_id).collect()  # doctest: +SKIP
+
+    Creates an incremental append scan between two snapshots.
+
+    >>> pl.scan_iceberg(
+    ...     table_path,
+    ...     from_snapshot_id_exclusive=7051579356916758811,
+    ...     to_snapshot_id_inclusive=8051579356916758811,
+    ... ).collect()  # doctest: +SKIP
     """
     from polars._plr import PyLazyFrame
 
@@ -183,6 +211,15 @@ def scan_iceberg(
     else:
         fast_deletion_count = False
 
+    if snapshot_id is not None and (
+        from_snapshot_id_exclusive is not None or to_snapshot_id_inclusive is not None
+    ):
+        msg = (
+            "cannot combine `snapshot_id` with `from_snapshot_id_exclusive` "
+            "or `to_snapshot_id_inclusive`"
+        )
+        raise ValueError(msg)
+
     table: pyiceberg.table.Table | None = None
 
     if importlib.util.find_spec("pyiceberg.table") is not None:
@@ -191,21 +228,25 @@ def scan_iceberg(
         if isinstance(source, pyiceberg.table.Table):
             table = source
 
-    table_descriptor_ = None
+    table_descriptor_: str | IcebergCatalogTableDescriptor | None = None
 
     if table is None:
         source = str(source)
-        table_descriptor_ = (
-            source  # Inferred as static metadata path
-            if "/" in source or "\\" in source
-            else IcebergCatalogTableDescriptor(
-                table_identifier=source,
-                catalog_config=IcebergCatalogConfig._from_api_parameter_or_environment_default(
+
+        if "/" in source or "\\" in source:
+            table_descriptor_ = source  # Inferred as static metadata path
+        else:
+            catalog_config, catalog_instance = (
+                IcebergCatalogConfig._from_api_parameter_or_environment_default(
                     catalog,
                     fn_name="scan_iceberg",
-                ),
+                )
             )
-        )
+            table_descriptor_ = IcebergCatalogTableDescriptor(
+                table_identifier=source,
+                catalog_config=catalog_config,
+                catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
+            )
 
     dataset = IcebergScanResolver(
         table=IcebergTableWrap(
@@ -215,6 +256,8 @@ def scan_iceberg(
             iceberg_storage_properties=storage_options,
         ),
         snapshot_id=snapshot_id,
+        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
         reader_override=reader_override,
         use_metadata_statistics=use_metadata_statistics,
         fast_deletion_count=fast_deletion_count,

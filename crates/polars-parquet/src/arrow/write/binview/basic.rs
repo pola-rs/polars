@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryViewArray};
+use polars_arrow::array::{Array, BinaryViewArray};
 use polars_compute::min_max::MinMaxKernel;
 use polars_error::PolarsResult;
 

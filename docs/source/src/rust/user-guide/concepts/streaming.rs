@@ -9,12 +9,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by(vec![col("species")])
         .agg([col("sepal_width").mean()]);
 
-    let df = q1.clone().with_new_streaming(true).collect()?;
+    let df = q1.clone().with_streaming(true).collect()?;
     println!("{df}");
     // --8<-- [end:streaming]
 
     // --8<-- [start:example]
-    let query_plan = q1.with_new_streaming(true).explain(true)?;
+    let query_plan = q1.with_streaming(true).explain(true)?;
     println!("{query_plan}");
     // --8<-- [end:example]
 
@@ -24,11 +24,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_columns(vec![
             col("sepal_length")
                 .mean()
-                .over(vec![col("species")])
+                .over(vec![col("species")])?
                 .alias("sepal_length_mean"),
         ]);
 
-    let query_plan = q2.with_new_streaming(true).explain(true)?;
+    let query_plan = q2.with_streaming(true).explain(true)?;
     println!("{query_plan}");
     // --8<-- [end:example2]
 

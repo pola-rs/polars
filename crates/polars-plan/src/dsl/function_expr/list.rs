@@ -15,7 +15,7 @@ pub enum ListFunction {
     Sample {
         is_fraction: bool,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     },
     Slice,
@@ -43,20 +43,15 @@ pub enum ListFunction {
         null_behavior: NullBehavior,
     },
     Sort(SortOptions),
-    Reverse,
-    Unique(bool),
-    NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
-    #[cfg(feature = "list_any_all")]
-    Any,
-    #[cfg(feature = "list_any_all")]
-    All,
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(Arc<[PlSmallStr]>),
+    #[cfg(feature = "dtype-map")]
+    ToMap,
 }
 
 impl Display for ListFunction {
@@ -99,26 +94,15 @@ impl Display for ListFunction {
             Diff { .. } => "diff",
             Length => "length",
             Sort(_) => "sort",
-            Reverse => "reverse",
-            Unique(is_stable) => {
-                if *is_stable {
-                    "unique_stable"
-                } else {
-                    "unique"
-                }
-            },
-            NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
-            #[cfg(feature = "list_any_all")]
-            Any => "any",
-            #[cfg(feature = "list_any_all")]
-            All => "all",
             Join(_) => "join",
             #[cfg(feature = "dtype-array")]
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "dtype-map")]
+            ToMap => "to_map",
         };
         write!(f, "list.{name}")
     }

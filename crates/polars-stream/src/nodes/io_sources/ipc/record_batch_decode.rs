@@ -1,15 +1,14 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use arrow::array::TryExtend;
-use arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
-use arrow::io::ipc::write::KeyValueRef;
+use polars_arrow::array::TryExtend;
+use polars_arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
+use polars_arrow::io::ipc::write::KeyValueRef;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlHashMap;
 use polars_core::schema::Schema;
-use polars_core::utils::arrow::io::ipc::read::common::apply_projection;
-use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata, read_batch};
+use polars_core::utils::polars_arrow::io::ipc::read::common::apply_projection;
+use polars_core::utils::polars_arrow::io::ipc::read::{BlockReader, FileMetadata, read_batch};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
@@ -32,15 +31,16 @@ impl RecordBatchDecoder {
     pub(super) async fn record_batch_data_to_df(
         &self,
         record_batch_data: RecordBatchData,
-        // Rows as requested, relative to the start of the Record Batch.
-        slice_offset: usize,
-        slice_len: usize,
     ) -> PolarsResult<DataFrame> {
+        // Rows as requested, relative to the start of the Record Batch.
+        let (slice_offset, slice_len) = record_batch_data
+            .slice
+            .unwrap_or((0, record_batch_data.num_rows as usize));
         let file_metadata = self.file_metadata.clone();
         let pl_schema = self.pl_schema.clone();
         let projection_info = self.projection_info.as_ref().clone();
         let bytes = record_batch_data.fetched_bytes;
-        let block_index = record_batch_data.block_index;
+        let block_index = record_batch_data.record_batch_idx;
 
         let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
         let dictionaries = self.dictionaries.as_ref().as_ref().unwrap();
@@ -150,7 +150,7 @@ fn get_flags(
 fn project_flags(
     flags: Option<Vec<Option<StatisticsFlags>>>,
     columns: &[usize],
-    map: &PlHashMap<usize, usize>,
+    map: &[usize],
 ) -> Option<Vec<Option<StatisticsFlags>>> {
     if let Some(inner) = flags {
         let cols: Vec<_> = columns.iter().map(|i| inner[*i]).collect();
@@ -159,8 +159,8 @@ fn project_flags(
         // NOTE. Because of the way the projection map is generated, the scenario
         // where old != new is not reachable at the time of writing, and therefore
         // not tested.
-        map.iter().for_each(|(old, new)| {
-            out[*new] = cols[*old];
+        map.iter().enumerate().for_each(|(old, new)| {
+            out[*new] = cols[old];
         });
         Some(out)
     } else {

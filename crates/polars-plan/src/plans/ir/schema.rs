@@ -1,3 +1,4 @@
+use polars_utils::itertools::Itertools;
 use recursive::recursive;
 
 use super::*;
@@ -29,12 +30,13 @@ impl IR {
             Cache { .. } => "cache",
             GroupBy { .. } => "aggregate",
             Join { .. } => "join",
+            Gather { .. } => "gather",
             HStack { .. } => "hstack",
+            Window { .. } => "window",
             Distinct { .. } => "distinct",
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
             HConcat { .. } => "hconcat",
-            ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => "sink (memory)",
                 SinkTypeIR::Callback(..) => "sink (callback)",
@@ -45,6 +47,8 @@ impl IR {
             SimpleProjection { .. } => "simple_projection",
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => "merge_sorted",
+            UnoptimizedDispatch { .. } => "unoptimized_dispatch",
+            Resolver { .. } => "resolver",
             Invalid => "invalid",
         }
     }
@@ -75,6 +79,7 @@ impl IR {
             HConcat { schema, .. } => schema,
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
+            Gather { input, .. } => return arena.get(*input).schema(arena),
             Scan {
                 output_schema,
                 file_info,
@@ -91,6 +96,7 @@ impl IR {
             GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
+            Window { schema, .. } => schema,
             Distinct { input, .. }
             | Sink {
                 input,
@@ -108,9 +114,30 @@ impl IR {
                     Cow::Borrowed(schema) => function.schema(schema).unwrap(),
                 };
             },
-            ExtContext { schema, .. } => schema,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
+            UnoptimizedDispatch {
+                inputs,
+                arg_map,
+                operation,
+            } => {
+                let input_schemas = inputs
+                    .iter()
+                    .map(|input| arena.get(*input).schema(arena).into_owned())
+                    .collect_vec();
+                return Cow::Owned(operation.schema(&input_schemas, arg_map));
+            },
+            Resolver {
+                resolver_schema,
+                resolved_ir,
+                ..
+            } => {
+                if let Some(node) = *resolved_ir {
+                    return arena.get(node).schema(arena);
+                }
+
+                resolver_schema
+            },
             Invalid => unreachable!(),
         };
         Cow::Borrowed(schema)
@@ -118,6 +145,7 @@ impl IR {
 
     /// Get the schema of the logical plan node, using caching.
     #[recursive]
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     pub fn schema_with_cache<'a>(
         node: Node,
         arena: &'a Arena<IR>,
@@ -145,7 +173,8 @@ impl IR {
                 input,
                 payload: SinkTypeIR::Memory,
             }
-            | Slice { input, .. } => IR::schema_with_cache(*input, arena, cache),
+            | Slice { input, .. }
+            | Gather { input, .. } => IR::schema_with_cache(*input, arena, cache),
             Sink { .. } | SinkMultiple { .. } => Arc::new(Schema::default()),
             Scan {
                 output_schema,
@@ -161,7 +190,7 @@ impl IR {
             | GroupBy { schema, .. }
             | Join { schema, .. }
             | HStack { schema, .. }
-            | ExtContext { schema, .. }
+            | Window { schema, .. }
             | SimpleProjection {
                 columns: schema, ..
             } => schema.clone(),
@@ -171,6 +200,28 @@ impl IR {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => IR::schema_with_cache(*input_left, arena, cache),
+            UnoptimizedDispatch {
+                inputs,
+                arg_map,
+                operation,
+            } => {
+                let input_schemas = inputs
+                    .iter()
+                    .map(|input| IR::schema_with_cache(*input, arena, cache))
+                    .collect_vec();
+                operation.schema(&input_schemas, arg_map)
+            },
+            Resolver {
+                resolver_schema,
+                resolved_ir,
+                ..
+            } => {
+                return if let Some(node) = *resolved_ir {
+                    return IR::schema_with_cache(node, arena, cache);
+                } else {
+                    resolver_schema.clone()
+                };
+            },
             Invalid => unreachable!(),
         };
         cache.insert(node, schema.clone());

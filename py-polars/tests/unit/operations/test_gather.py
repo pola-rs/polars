@@ -1,9 +1,16 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, OutOfBoundsError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_negative_index() -> None:
@@ -210,9 +217,7 @@ def test_gather_len_19561() -> None:
     df = pl.DataFrame({"foo": ["baz"] * N, "bar": range(N)})
 
     idxs = (
-        pl.int_range(1, N)
-        .repeat_by(pl.int_range(1, N))
-        .list.explode(keep_nulls=False, empty_as_null=False)
+        pl.int_range(1, N).repeat_by(pl.int_range(1, N)).list.explode(keep_nulls=False)
     )
     gather = pl.col("bar").gather(idxs).alias("gather")
 
@@ -472,3 +477,104 @@ def test_get_typed_index_default_raises_out_of_bounds(idx_dtype: pl.DataType) ->
 
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
         df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype)))
+
+
+def test_expr_gather_null_on_oob() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    result = df.select(pl.col("a").gather([0, 1, 10], null_on_oob=True))
+    assert result["a"].to_list() == [1, 2, None]
+
+
+def test_series_gather_null_on_oob() -> None:
+    s = pl.Series("a", [1, 2, 3])
+
+    result = s.gather([0, 1, 10], null_on_oob=True)
+    assert result.to_list() == [1, 2, None]
+
+
+@pytest.mark.parametrize("value", [1, 1.5, "a", True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_gather_scalar_with_interleaved_nulls(
+    value: int | float | str | bool, nulls_last: bool
+) -> None:
+    frame = pl.DataFrame({"x": [value]})
+    result = frame.gather(pl.Series([None, 0, None], dtype=pl.UInt32))
+    values = [value, None, None] if nulls_last else [None, None, value]
+    assert_frame_equal(
+        result.sort("x", nulls_last=nulls_last), pl.DataFrame({"x": values})
+    )
+
+
+def test_gather_null_on_oob_group_by() -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 2], "x": [1.0, 2.0, 3.0]})
+    # Indices outside the Int64 range.
+    wide_idx = pl.Series([0, 2**63, -(2**63) - 1], dtype=pl.Int128)
+    q = lf.group_by("g").agg(
+        pos=pl.col("x").gather([0, 5], null_on_oob=True),
+        neg=pl.col("x").gather([-1, -5], null_on_oob=True),
+        big=pl.col("x").gather([0, 2**32], null_on_oob=True),
+        wide=pl.col("x").gather(wide_idx, null_on_oob=True),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "pos": [[1.0, None], [2.0, None]],
+            "neg": [[1.0, None], [3.0, None]],
+            "big": [[1.0, None], [2.0, None]],
+            "wide": [[1.0, None, None], [2.0, None, None]],
+        }
+    )
+    for engine in ["in-memory", "streaming"]:
+        assert_frame_equal(
+            q.collect(engine=engine),  # type: ignore[call-overload]
+            expected,
+            check_row_order=False,
+        )
+    with pytest.raises(OutOfBoundsError):
+        lf.group_by("g").agg(pl.col("x").gather([0, 5])).collect()
+
+    assert_frame_equal(
+        lf.select(pl.col("x").gather(wide_idx, null_on_oob=True)).collect(),
+        pl.DataFrame({"x": [1.0, None, None]}),
+    )
+    with pytest.raises(OutOfBoundsError):
+        lf.select(pl.col("x").gather(wide_idx)).collect()
+
+
+@pytest.mark.parametrize(
+    "idx",
+    [
+        [0, 2**32],
+        [-1, 2**32],
+        [-(2**32) - 1, 0],
+        pl.Series([0, 2**32], dtype=pl.UInt64),
+        pl.Series([0, 2**63, -(2**63) - 1], dtype=pl.Int128),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_gather_group_by_large_index_raises(
+    idx: list[int] | pl.Series, engine: EngineType
+) -> None:
+    q = (
+        pl.LazyFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+        .group_by("g")
+        .agg(pl.col("x").gather(idx))
+    )
+    with pytest.raises(OutOfBoundsError):
+        q.collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "idx",
+    [
+        pl.Series([-1, 0], dtype=pl.Int8),
+        pl.Series([-1, 0], dtype=pl.Int128),
+        pl.Series([1, 0], dtype=pl.UInt64),
+    ],
+)
+def test_gather_group_by_index_dtypes(idx: pl.Series) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2, 2], "x": [1, 2, 3, 4]})
+    q = lf.group_by("g", maintain_order=True).agg(pl.col("x").gather(idx))
+    expected = pl.DataFrame({"g": [1, 2], "x": [[2, 1], [4, 3]]})
+    assert_frame_equal(q.collect(), expected)

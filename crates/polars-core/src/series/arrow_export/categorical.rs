@@ -1,9 +1,9 @@
 use std::any::Any;
 
-use arrow::array::builder::ArrayBuilder;
-use arrow::datatypes::IntegerType;
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
+use polars_arrow::array::builder::ArrayBuilder;
+use polars_arrow::datatypes::IntegerType;
+use polars_arrow::types::NativeType;
 use polars_compute::cast::utf8view_to_utf8;
 
 use crate::prelude::*;
@@ -136,6 +136,11 @@ impl CategoricalToArrowConverter {
                     self.initialize(field.dtype())
                 }
             },
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => {
+                self.initialize(key);
+                self.initialize(value);
+            },
             #[cfg(feature = "dtype-extension")]
             Extension(_, inner) => self.initialize(inner),
             _ => assert!(!dtype.is_nested()),
@@ -216,7 +221,7 @@ impl CategoricalArrayToArrowConverter {
         let dictionary_dtype = ArrowDataType::Dictionary(
             <T as DictionaryKey>::KEY_TYPE,
             Box::new(values.dtype().clone()),
-            false, // is_sorted
+            dtype.is_enum(),
         );
 
         unsafe {

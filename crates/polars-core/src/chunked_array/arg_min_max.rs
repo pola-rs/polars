@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use polars_arrow::array::Array;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 

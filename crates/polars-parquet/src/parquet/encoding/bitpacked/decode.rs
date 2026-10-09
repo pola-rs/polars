@@ -192,10 +192,12 @@ impl<T: Unpackable> ChunkedDecoder<'_, '_, T> {
 }
 
 impl<'a, T: Unpackable> Decoder<'a, T> {
+    #[inline(always)]
     pub fn chunked<'b>(&'b mut self) -> ChunkedDecoder<'a, 'b, T> {
         ChunkedDecoder { decoder: self }
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.length
     }

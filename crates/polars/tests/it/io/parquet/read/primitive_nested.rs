@@ -37,7 +37,7 @@ fn compose_array<I: Iterator<Item = u32>, F: Iterator<Item = u32>, G: Iterator<I
     let mut prev_def = 0;
     rep_levels
         .into_iter()
-        .zip(def_levels.into_iter())
+        .zip(def_levels)
         .try_for_each(|(rep, def)| {
             match rep {
                 1 => {},

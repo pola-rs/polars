@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
-use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::chunked_array::from_iterator_par::{
     ChunkedCollectParIterExt, try_list_from_par_iter,
 };
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use rayon::prelude::*;
 
 use super::*;
@@ -73,7 +73,7 @@ impl ApplyExpr {
     ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, state);
         if self.allow_threading {
-            POOL.install(|| self.inputs.par_iter().map(f).collect())
+            RAYON.install(|| self.inputs.par_iter().map(f).collect())
         } else {
             self.inputs.iter().map(f).collect()
         }
@@ -152,7 +152,7 @@ impl ApplyExpr {
 
         // At this point, calling aggregated() will not lead to memory explosion.
         let agg = match ac.agg_state() {
-            AggState::AggregatedScalar(s) => s.as_list().into_column(),
+            AggState::AggregatedScalar(s) => s.to_unit_list(),
             _ => ac.aggregated(),
         };
 
@@ -175,16 +175,16 @@ impl ApplyExpr {
             if self.output_field.dtype.is_known() {
                 let dtype = self.output_field.dtype.clone();
                 let dtype = dtype.implode();
-                POOL.install(|| {
+                RAYON.install(|| {
                     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, dtype)
                 })?
             } else {
-                POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
+                RAYON.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
             }
         } else {
             agg.list()
                 .unwrap()
-                .into_iter()
+                .series_iter()
                 .map(f)
                 .collect::<PolarsResult<_>>()?
         };
@@ -348,6 +348,8 @@ impl ApplyExpr {
         let mut container = vec![Default::default(); acs.len()];
         let schema = self.get_input_schema(df);
         let field = self.to_field(&schema)?;
+        // Without groups there is no output to take the dtype of a dynamic literal from.
+        let dtype = field.dtype.clone().materialize_unknown(true)?;
 
         // Aggregate representation of the aggregation contexts,
         // then unpack the lists and finally create iterators from this list chunked arrays.
@@ -359,8 +361,8 @@ impl ApplyExpr {
         // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
-        let ca = if field.dtype().is_known() {
-            let mut builder = get_list_builder(&field.dtype, len * 5, len, field.name);
+        let ca = if dtype.is_known() {
+            let mut builder = get_list_builder(&dtype, len * 5, len, field.name);
             for _ in 0..len {
                 container.clear();
                 for iter in &mut iters {
@@ -402,8 +404,8 @@ impl ApplyExpr {
         #[cfg(debug_assertions)]
         {
             let inner = ca.dtype().inner_dtype().unwrap();
-            if field.dtype.is_known() {
-                assert_eq!(inner, &field.dtype);
+            if dtype.is_known() {
+                assert_eq!(inner, &dtype);
             }
         }
 
@@ -432,7 +434,7 @@ impl PhysicalExpr for ApplyExpr {
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
         let mut inputs = if self.allow_threading && self.inputs.len() > 1 {
-            POOL.install(|| {
+            RAYON.install(|| {
                 self.inputs
                     .par_iter()
                     .map(f)
@@ -442,12 +444,35 @@ impl PhysicalExpr for ApplyExpr {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
-        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
-            self.eval_and_flatten(&mut inputs)
+        // If the function is elementwise and all columns are scalar
+        // we can only evaluate once and then broadcast.
+        let constant_len = if self.flags.is_elementwise() {
+            constant_broadcast_len(&inputs)
+        } else {
+            None
+        };
+        if constant_len.is_some() {
+            for c in inputs.iter_mut() {
+                if c.len() > 1 {
+                    *c = c.new_from_index(0, 1);
+                }
+            }
+        }
+
+        let out = if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
+            self.eval_and_flatten(&mut inputs)?
         } else {
             let in_name = inputs[0].name().clone();
-            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
-        }
+            self.eval_and_flatten(&mut inputs)?.with_name(in_name)
+        };
+
+        Ok(match constant_len {
+            Some(len) => {
+                debug_assert_eq!(out.len(), 1);
+                out.new_from_index(0, len)
+            },
+            None => out,
+        })
     }
 
     #[allow(clippy::ptr_arg)]
@@ -615,4 +640,16 @@ impl PhysicalExpr for ApplyExpr {
         self.flags.returns_scalar()
             || (self.function_operates_on_scalar && self.flags.is_length_preserving())
     }
+}
+
+fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
+    let len = inputs.iter().map(|c| c.len()).max()?;
+    if len <= 1 {
+        return None;
+    }
+    // Only a single row, or a scalar already at the full length, can be repeated.
+    inputs
+        .iter()
+        .all(|c| c.len() == 1 || (c.len() == len && matches!(c, Column::Scalar(_))))
+        .then_some(len)
 }

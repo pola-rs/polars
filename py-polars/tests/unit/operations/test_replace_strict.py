@@ -428,3 +428,9 @@ def test_replace_strict_incompatible_types_26329() -> None:
         pl.exceptions.InvalidOperationError, match="cannot use values of type"
     ):
         df.with_columns(pl.col("x").replace_strict({"a": 1}))
+
+
+def test_replace_strict_str_enum_27060() -> None:
+    enum = pl.Enum(["A", "B"])
+    out = pl.Series(["A", "B"]).cast(enum).replace_strict({"A": "X", "B": "Y"})
+    assert_series_equal(out, pl.Series(["X", "Y"]))

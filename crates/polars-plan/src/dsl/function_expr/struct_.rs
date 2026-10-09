@@ -6,6 +6,7 @@ use super::*;
 pub enum StructFunction {
     FieldByName(PlSmallStr),
     RenameFields(Arc<[PlSmallStr]>),
+    Drop(Arc<[PlSmallStr]>, bool),
     PrefixFields(PlSmallStr),
     SuffixFields(PlSmallStr),
     #[cfg(feature = "json")]
@@ -20,6 +21,8 @@ impl Display for StructFunction {
         match self {
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
+            Drop(names, false) => write!(f, "struct.drop({names:?}, strict=False)"),
+            Drop(names, true) => write!(f, "struct.drop({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]

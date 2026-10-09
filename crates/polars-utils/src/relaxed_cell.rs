@@ -35,6 +35,11 @@ impl<T: AtomicNative> RelaxedCell<T> {
     pub fn get_mut(&mut self) -> &mut T {
         T::get_mut(&mut self.0)
     }
+
+    #[inline(always)]
+    pub fn swap(&self, value: T) -> T {
+        T::swap(&self.0, value)
+    }
 }
 
 impl<T: AtomicNative> From<T> for RelaxedCell<T> {
@@ -65,6 +70,7 @@ pub trait AtomicNative: Sized + Default + fmt::Debug {
     fn fetch_sub(atomic: &Self::Atomic, val: Self) -> Self;
     fn fetch_max(atomic: &Self::Atomic, val: Self) -> Self;
     fn get_mut(atomic: &mut Self::Atomic) -> &mut Self;
+    fn swap(atomic: &Self::Atomic, val: Self) -> Self;
 }
 
 macro_rules! impl_relaxed_cell {
@@ -108,6 +114,11 @@ macro_rules! impl_relaxed_cell {
             fn get_mut(atomic: &mut Self::Atomic) -> &mut Self {
                 atomic.get_mut()
             }
+
+            #[inline(always)]
+            fn swap(atomic: &Self::Atomic, val: Self) -> Self {
+                atomic.swap(val, Ordering::Relaxed)
+            }
         }
     };
 }
@@ -115,6 +126,7 @@ macro_rules! impl_relaxed_cell {
 impl_relaxed_cell!(u8, new_u8, AtomicU8);
 impl_relaxed_cell!(u32, new_u32, AtomicU32);
 impl_relaxed_cell!(u64, new_u64, AtomicU64);
+impl_relaxed_cell!(i64, new_i64, AtomicI64);
 impl_relaxed_cell!(usize, new_usize, AtomicUsize);
 
 impl RelaxedCell<bool> {
@@ -160,5 +172,10 @@ impl AtomicNative for bool {
     #[inline(always)]
     fn get_mut(atomic: &mut Self::Atomic) -> &mut Self {
         atomic.get_mut()
+    }
+
+    #[inline(always)]
+    fn swap(atomic: &Self::Atomic, val: Self) -> Self {
+        atomic.swap(val, Ordering::Relaxed)
     }
 }

@@ -7,9 +7,10 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-use arrow::array::ArrayRef;
-use polars_core::POOL;
+use polars_arrow::array::ArrayRef;
+use polars_core::runtime::RAYON;
 use polars_core::utils::_set_partition_size;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
 pub use single_keys_dispatch::SeriesJoin;
@@ -25,6 +26,7 @@ pub(crate) use sort_merge::*;
 pub use super::*;
 #[cfg(feature = "chunked_ids")]
 use crate::chunked_array::gather::chunked::TakeChunkedHorPar;
+use crate::unique_column_name;
 
 pub fn default_join_ids() -> ChunkJoinOptIds {
     #[cfg(feature = "chunked_ids")]
@@ -48,9 +50,9 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-#[cfg(feature = "performant")]
-use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
+#[cfg(feature = "performant")]
+use polars_arrow::legacy::conversion::primitive_to_vec;
 
 pub trait JoinDispatch: IntoDf {
     /// # Safety
@@ -152,16 +154,11 @@ pub trait JoinDispatch: IntoDf {
         let (mut join_idx_l, mut join_idx_r) =
             s_left.hash_join_outer(s_right, args.validation, args.nulls_equal)?;
 
-        try_raise_keyboard_interrupt();
-        if let Some((offset, len)) = args.slice {
-            let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
-            join_idx_l.slice(offset, len);
-            join_idx_r.slice(offset, len);
-        }
-        let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
-        let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
+        try_raise_polars_abort();
 
         let (df_left, df_right) = if args.maintain_order != MaintainOrderJoin::None {
+            let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
+            let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
             let mut df = unsafe {
                 DataFrame::new_unchecked_infer_height(vec![
                     idx_ca_l.into_series().into(),
@@ -184,31 +181,46 @@ pub trait JoinDispatch: IntoDf {
 
             df.sort_in_place(columns, options)?;
 
+            // If the order is maintained, we can only slice after sorting
+            if let Some((offset, len)) = args.slice {
+                df = df.slice(offset, len);
+            }
+
             let join_tuples_left = df.column("a").unwrap().idx().unwrap();
             let join_tuples_right = df.column("b").unwrap().idx().unwrap();
-            POOL.join(
+            RAYON.join(
                 || unsafe { df_self.take_unchecked(join_tuples_left) },
                 || unsafe { other.take_unchecked(join_tuples_right) },
             )
         } else {
-            POOL.join(
+            if let Some((offset, len)) = args.slice {
+                let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
+                join_idx_l.slice(offset, len);
+                join_idx_r.slice(offset, len);
+            }
+            let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
+            let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
+            RAYON.join(
                 || unsafe { df_self.take_unchecked(&idx_ca_l) },
                 || unsafe { other.take_unchecked(&idx_ca_r) },
             )
         };
 
         let coalesce = args.coalesce.coalesce(&JoinType::Full);
-        let out = _finish_join(df_left, df_right, args.suffix.clone());
         if coalesce {
+            let tmp_right_name = unique_column_name();
+            let mut df_right = df_right;
+            df_right.rename(s_right.name().as_str(), tmp_right_name.clone())?;
+            let out = _finish_join(df_left, df_right, args.suffix.clone())?;
             Ok(_coalesce_full_join(
-                out?,
+                out,
                 &[s_left.name().clone()],
-                &[s_right.name().clone()],
+                &[tmp_right_name],
                 args.suffix,
                 df_self,
             ))
         } else {
-            out
+            _finish_join(df_left, df_right, args.suffix.clone())
         }
     }
 }

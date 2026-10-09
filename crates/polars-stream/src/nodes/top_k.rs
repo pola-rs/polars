@@ -3,8 +3,10 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::prelude::row_encode::_get_rows_encoded;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -13,6 +15,7 @@ use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 use polars_utils::sort::ReorderWithNulls;
 use polars_utils::total_ord::TotalOrdWrap;
+use rayon::prelude::*;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use super::compute_node_prelude::*;
@@ -24,6 +27,9 @@ new_key_type! {
     struct DfsKey;
     struct RowIdxKey;
 }
+
+/// Minimum number of rows a gather must remove from a subset to be worthwhile.
+const MIN_GATHER_REMOVED_ROWS: usize = 16;
 
 /// Represents a subset of a dataframe.
 struct DfSubset {
@@ -58,7 +64,7 @@ impl DfSubset {
             }
         });
 
-        unsafe { self.df = self.df.take_slice_unchecked(gather_idx_buf) }
+        unsafe { self.df = self.df.take_slice_unchecked_impl(gather_idx_buf, false) }
     }
 }
 
@@ -67,7 +73,8 @@ struct BottomKWithPayload<P> {
     heap: BinaryHeap<Priority<P, (DfsKey, RowIdxKey)>>,
     df_subsets: SlotMap<DfsKey, DfSubset>,
     row_idxs: SlotMap<RowIdxKey, IdxSize>,
-    to_prune: SecondaryMap<DfsKey, ()>,
+    marked_for_pruning: SecondaryMap<DfsKey, ()>,
+    to_prune: Vec<DfsKey>,
     gather_idxs: Vec<IdxSize>,
     shared_optimum: Arc<RwLock<Option<P>>>,
 }
@@ -79,7 +86,8 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             heap: BinaryHeap::with_capacity(k + 1),
             df_subsets: SlotMap::with_key(),
             row_idxs: SlotMap::with_key(),
-            to_prune: SecondaryMap::new(),
+            marked_for_pruning: SecondaryMap::new(),
+            to_prune: Vec::new(),
             gather_idxs: Vec::new(),
             shared_optimum,
         }
@@ -109,6 +117,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
                 &to_owned,
             );
         }
+        self.mark_if_sparse(dfs_key);
         self.prune();
 
         if new_optimum && self.heap.len() == self.k {
@@ -149,18 +158,29 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         if self.heap.len() > self.k {
             let (dfs_key, row_idx_key) = self.heap.pop().unwrap().1;
             self.row_idxs[row_idx_key] = IdxSize::MAX;
-            let df_subset = &mut self.df_subsets[dfs_key];
-            df_subset.subset_len -= 1;
-            if df_subset.subset_len == self.df_subsets.len() / 2 {
-                self.to_prune.insert(dfs_key, ());
-            }
+            self.df_subsets[dfs_key].subset_len -= 1;
+            self.mark_if_sparse(dfs_key);
         }
 
         new_optimum
     }
 
+    /// Schedules a subset for pruning once none of its rows are in the heap, or once at most half
+    /// of its rows are in the heap and a gather would remove enough rows to be worthwhile.
+    fn mark_if_sparse(&mut self, dfs_key: DfsKey) {
+        let df_subset = &self.df_subsets[dfs_key];
+        let in_heap = df_subset.subset_len;
+        let removed = df_subset.df.height() - in_heap;
+        let should_prune =
+            in_heap == 0 || (removed >= in_heap && removed >= MIN_GATHER_REMOVED_ROWS);
+        if should_prune && self.marked_for_pruning.insert(dfs_key, ()).is_none() {
+            self.to_prune.push(dfs_key);
+        }
+    }
+
     pub fn prune(&mut self) {
-        for (dfs_key, ()) in self.to_prune.drain() {
+        for dfs_key in self.to_prune.drain(..) {
+            self.marked_for_pruning.remove(dfs_key);
             if self.df_subsets[dfs_key].subset_len == 0 {
                 let df_subset = self.df_subsets.remove(dfs_key).unwrap();
                 for row_idx in df_subset.rows {
@@ -195,6 +215,9 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
                 |x| x,
             );
         }
+        for &dfs_key in new_df_keys.values() {
+            self.mark_if_sparse(dfs_key);
+        }
         self.prune();
     }
 
@@ -209,6 +232,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         }));
         self.heap.clear();
         self.row_idxs.clear();
+        self.marked_for_pruning.clear();
         self.to_prune.clear();
         Some(ret.unwrap())
     }
@@ -543,13 +567,14 @@ impl TopKNode {
         key_schema: Arc<Schema>,
         key_selectors: Vec<StreamExpr>,
         dyn_pred: Option<DynamicPred>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         Self {
             reverse,
             nulls_last,
             key_schema,
             key_selectors,
-            state: TopKState::WaitingForK(InMemorySinkNode::new(k_schema)),
+            state: TopKState::WaitingForK(InMemorySinkNode::new(k_schema, task_metrics)),
             dyn_pred,
         }
     }
@@ -606,10 +631,16 @@ impl ComputeNode for TopKNode {
             },
             // Input is done, transition to being a source.
             TopKState::Sink { reducers, .. } if recv[0] == PortState::Done => {
-                let mut reducer = reducers.pop().unwrap();
-                for r in reducers {
-                    reducer.combine(&**r);
-                }
+                let reducer = RAYON.install(|| {
+                    core::mem::take(reducers)
+                        .into_par_iter()
+                        .with_max_len(1)
+                        .reduce_with(|mut l, r| {
+                            l.combine(&*r);
+                            l
+                        })
+                        .unwrap()
+                });
                 if let Some(df) = reducer.finalize() {
                     self.state = TopKState::Source(InMemorySourceNode::new(
                         Arc::new(df),
@@ -649,6 +680,15 @@ impl ComputeNode for TopKNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            TopKState::WaitingForK(_) | TopKState::Sink { .. } | TopKState::Done => {
+                NodeMemoryUsage::Bounded
+            },
+            TopKState::Source(src) => src.memory_usage(),
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
@@ -676,7 +716,7 @@ impl ComputeNode for TopKNode {
                     let key_selectors = &*key_selectors;
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
-                            let df = morsel.into_df();
+                            let df = morsel.into_df().await;
                             let mut key_columns = Vec::new();
                             for selector in key_selectors {
                                 let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;

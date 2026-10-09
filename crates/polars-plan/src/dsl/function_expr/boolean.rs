@@ -13,6 +13,10 @@ pub enum BooleanFunction {
     All {
         ignore_nulls: bool,
     },
+    IsEmpty {
+        ignore_nulls: bool,
+    },
+    HasNulls,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -41,6 +45,10 @@ pub enum BooleanFunction {
         rel_tol: TotalOrdWrap<f64>,
         nans_equal: bool,
     },
+    IsSorted {
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
@@ -51,8 +59,19 @@ impl Display for BooleanFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use BooleanFunction::*;
         let s = match self {
-            All { .. } => "all",
-            Any { .. } => "any",
+            All {
+                ignore_nulls: false,
+            } => "all",
+            All { ignore_nulls: true } => "all_ignore_nulls",
+            Any {
+                ignore_nulls: false,
+            } => "any",
+            Any { ignore_nulls: true } => "any_ignore_nulls",
+            IsEmpty {
+                ignore_nulls: false,
+            } => "is_empty",
+            IsEmpty { ignore_nulls: true } => "is_empty_ignore_nulls",
+            HasNulls => "has_nulls",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",
@@ -73,6 +92,7 @@ impl Display for BooleanFunction {
             IsIn { .. } => "is_in",
             #[cfg(feature = "is_close")]
             IsClose { .. } => "is_close",
+            IsSorted { .. } => "is_sorted",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",

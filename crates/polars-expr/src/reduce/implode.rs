@@ -1,11 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
-use arrow::array::{
+use polars_arrow::array::{
     BinaryViewArray, ListArray, MutableBinaryViewArray, MutableBooleanArray, MutablePrimitiveArray,
 };
-use arrow::offset::Offsets;
-use arrow::pushable::Pushable;
+use polars_arrow::offset::Offsets;
+use polars_arrow::pushable::Pushable;
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::UnitVec;
@@ -100,8 +100,9 @@ impl<T: PolarsNumericType> Reducer for NumUnorderedImplodeReducer<T> {
 
         let values = out.freeze();
         let list_dtype = DataType::List(Box::new(dtype.clone()));
+        let phys_list_dtype = DataType::List(Box::new(dtype.to_physical()));
         let arr = ListArray::new(
-            list_dtype.to_arrow(CompatLevel::newest()),
+            phys_list_dtype.to_arrow(CompatLevel::newest()),
             offsets.freeze(),
             values.boxed(),
             None,

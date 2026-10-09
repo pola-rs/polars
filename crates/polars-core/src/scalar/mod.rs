@@ -13,7 +13,7 @@ use crate::chunked_array::cast::CastOptions;
 use crate::datatypes::{AnyValue, DataType};
 use crate::prelude::{Column, Series};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
@@ -22,7 +22,7 @@ pub struct Scalar {
 impl Hash for Scalar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.dtype.hash(state);
-        self.value.hash_impl(state, true);
+        self.value.hash_impl(state, false);
     }
 }
 

@@ -155,6 +155,10 @@ class CredentialProviderAWS(CachingCredentialProvider):
         at any point without it being considered a breaking change.
     """
 
+    profile_name: str | None
+    region_name: str | None
+    assume_role: AWSAssumeRoleKWArgs | None
+
     def __init__(  # noqa: D417 (TODO)
         self,
         *,
@@ -162,7 +166,7 @@ class CredentialProviderAWS(CachingCredentialProvider):
         region_name: str | None = None,
         assume_role: AWSAssumeRoleKWArgs | None = None,
         _auto_init_unhandled_key: str | None = None,
-        _storage_options_has_endpoint_url: bool = False,
+        _storage_options: dict[str, str | None] | None = None,
     ) -> None:
         """
         Initialize a credential provider for AWS.
@@ -184,7 +188,7 @@ class CredentialProviderAWS(CachingCredentialProvider):
         self.region_name = region_name
         self.assume_role = assume_role
         self._auto_init_unhandled_key = _auto_init_unhandled_key
-        self._storage_options_has_endpoint_url = _storage_options_has_endpoint_url
+        self._storage_options = _storage_options or {}
 
         super().__init__()
 
@@ -203,19 +207,26 @@ class CredentialProviderAWS(CachingCredentialProvider):
             msg = "did not receive any credentials from boto3.Session.get_credentials()"
             raise self.EmptyCredentialError(msg)
 
+        # Important: Do this before fetching expiry, `creds.*` property access
+        # might be needed for the expiry to be generated
+        # (e.g. DeferredRefreshableCredentials).
+        creds_dict = {
+            "aws_access_key_id": creds.access_key,
+            "aws_secret_access_key": creds.secret_key,
+            **({"aws_session_token": creds.token} if creds.token is not None else {}),
+        }
+
         expiry = (
             int(expiry.timestamp())
             if isinstance(expiry := getattr(creds, "_expiry_time", None), datetime)
             else None
         )
 
-        return {
-            "aws_access_key_id": creds.access_key,
-            "aws_secret_access_key": creds.secret_key,
-            **({"aws_session_token": creds.token} if creds.token is not None else {}),
-        }, expiry
+        return creds_dict, expiry
 
     def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
+        assert self.assume_role is not None
+
         client = session.client("sts")
 
         sts_response = client.assume_role(**self.assume_role)
@@ -235,21 +246,57 @@ class CredentialProviderAWS(CachingCredentialProvider):
 
     # Called from Rust, mainly for AWS endpoint_url
     def _storage_update_options(self) -> dict[str, str]:
-        if self._storage_options_has_endpoint_url:
+        storage_options = self._storage_options
+        if "endpoint" in storage_options:
             return {}
-
         try:
-            config = self._session()._session.get_scoped_config()
+            session = self._session()
+            config = session._session.get_scoped_config()
         except ImportError:
             return {}
+
+        region_name = (
+            storage_options.get("region", self.region_name)
+            or os.getenv("AWS_REGION")
+            or os.getenv("AWS_DEFAULT_REGION")
+            or config.get("region")
+            or storage_options.get("default_region")
+            or session.region_name
+        )
+        options = {"region": region_name} if region_name is not None else {}
 
         if endpoint_url := config.get("endpoint_url"):
             if verbose():
                 eprint(f"[CredentialProviderAWS]: Loaded endpoint_url: {endpoint_url}")
+            return {**options, "endpoint_url": endpoint_url}
 
-            return {"endpoint_url": endpoint_url}
+        if any(
+            os.getenv(k)
+            for k in ("AWS_ENDPOINT", "AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3")
+        ):
+            return options
 
-        return {}
+        use_virtual_hosted_style = storage_options.get("virtual_hosted_style_request")
+        if use_virtual_hosted_style is None:
+            use_virtual_hosted_style = os.getenv(
+                "AWS_VIRTUAL_HOSTED_STYLE_REQUEST", "false"
+            )
+        if region_name is None or use_virtual_hosted_style.lower() == "true":
+            return options
+
+        from botocore.regions import EndpointResolver
+
+        endpoint = EndpointResolver(
+            session._session.get_data("endpoints")
+        ).construct_endpoint("s3", region_name)
+        if endpoint is None:
+            return options
+
+        endpoint_url = f"https://{endpoint['hostname']}"
+        if verbose():
+            eprint(f"[CredentialProviderAWS]: Resolved endpoint_url: {endpoint_url}")
+
+        return {**options, "endpoint_url": endpoint_url}
 
     # Called from Rust
     def _can_use_as_provider(self) -> bool:
@@ -317,6 +364,11 @@ class CredentialProviderAzure(CachingCredentialProvider):
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
     """
+
+    account_name: str | None
+    scopes: list[str]
+    tenant_id: str | None
+    credential: Any | None
 
     def __init__(
         self,

@@ -1,14 +1,18 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::byte_source::DynByteSourceBuilder;
+use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -21,6 +25,8 @@ pub struct LineReaderBuilder {
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
+    pub file_read_context: std::sync::OnceLock<FileReadContext>,
 }
 
 impl std::fmt::Debug for LineReaderBuilder {
@@ -28,20 +34,25 @@ impl std::fmt::Debug for LineReaderBuilder {
         f.debug_struct("LineReaderBuilder")
             .field("prefetch_limit", &self.prefetch_limit)
             .field("prefetch_semaphore", &self.prefetch_semaphore)
+            .field("file_read_context", &self.file_read_context)
             .finish()
     }
 }
 
 impl FileReaderBuilder for LineReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "line"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("line"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
-        ndjson_reader_capabilities()
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
+        Ok(ndjson_reader_capabilities())
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            self.task_metrics.set(task_metrics).ok().unwrap();
+        }
+
         // The maximum number of chunks actively being prefetched at any point in time.
         let prefetch_limit = std::env::var("POLARS_LINES_CHUNK_PREFETCH_LIMIT")
             .map(|x| {
@@ -78,7 +89,7 @@ impl FileReaderBuilder for LineReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         _scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::ndjson::ChunkPrefetchSync;
 
@@ -86,11 +97,20 @@ impl FileReaderBuilder for LineReaderBuilder {
         let chunk_reader_builder = ChunkReaderBuilder::Lines;
         let verbose = config::verbose();
 
+        // Note: Unlike mmap, `pread` returns chunks backed by ordinary heap memory. The rows
+        // produced by `split_lines_to_rows()` point directly into those chunks, and keeping
+        // file-backed pages mapped for the lifetime of the output is more expensive than the
+        // anonymous memory that `pread` reads into.
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
-                DynByteSourceBuilder::ObjectStore
-            } else {
+                DynByteSourceBuilder::ObjectStore(FetchConfig::streaming())
+            } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
+            } else {
+                let read_context = self
+                    .file_read_context
+                    .get_or_init(|| FileReadContext::from_config("LineReaderBuilder"));
+                DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
         // Leverage the existing NDJson code path and line counting functionality.
@@ -110,8 +130,9 @@ impl FileReaderBuilder for LineReaderBuilder {
             },
             init_data: None,
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
         };
 
-        Box::new(reader) as _
+        Ok(Box::new(reader) as _)
     }
 }

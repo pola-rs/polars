@@ -1,7 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
@@ -21,16 +18,9 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.set_flags(flags)
     }
 
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
-    }
-
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
-    }
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        (&self.0).into_total_eq_inner()
     }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         (&self.0).into_total_ord_inner()
@@ -206,12 +196,17 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.deposit(validity).into_series()
     }
 
+    #[inline]
     fn len(&self) -> usize {
         self.0.len()
     }
 
     fn rechunk(&self) -> Series {
         self.0.rechunk().into_owned().into_series()
+    }
+
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0.clone().with_validity(validity).into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -258,6 +253,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkUnique::arg_unique(&self.0)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(&self.0)
     }

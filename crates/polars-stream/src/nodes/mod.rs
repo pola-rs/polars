@@ -1,5 +1,6 @@
 pub mod backward_fill;
 pub mod callback_sink;
+pub mod columnar_function;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
 #[cfg(feature = "dynamic_group_by")]
@@ -9,14 +10,20 @@ pub mod dynamic_slice;
 pub mod ewm;
 pub mod filter;
 pub mod forward_fill;
+pub mod gather;
 pub mod gather_every;
 pub mod group_by;
 pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod input_independent_select;
+#[cfg(feature = "interpolate")]
+pub mod interpolate;
 pub mod io_sinks;
 pub mod io_sources;
+#[cfg(feature = "is_first_distinct")]
+pub mod is_first_distinct;
+pub mod is_sorted;
 pub mod joins;
 pub mod map;
 #[cfg(feature = "merge_sorted")]
@@ -29,28 +36,37 @@ pub mod reduce;
 pub mod repeat;
 pub mod rle;
 pub mod rle_id;
+pub mod rolling_fixed_window;
 #[cfg(feature = "dynamic_group_by")]
 pub mod rolling_group_by;
+pub mod scalar_window;
 pub mod select;
 pub mod shift;
 pub mod simple_projection;
+pub mod sort;
 pub mod sorted_group_by;
 pub mod sorted_unique;
 pub mod streaming_slice;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+pub mod strptime_infer;
 pub mod top_k;
 pub mod unordered_union;
+pub mod window;
 pub mod with_row_index;
 pub mod zip;
 
 /// The imports you'll always need for implementing a ComputeNode.
 mod compute_node_prelude {
+    pub use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
     pub use polars_core::frame::DataFrame;
     pub use polars_error::PolarsResult;
     pub use polars_expr::state::ExecutionState;
-    pub use polars_ooc::Token;
 
-    pub use super::ComputeNode;
-    pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
+    pub use super::{ComputeNode, NodeMemoryUsage};
     pub use crate::execute::StreamingExecutionState;
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};
@@ -60,7 +76,26 @@ mod compute_node_prelude {
 use compute_node_prelude::*;
 
 use crate::execute::StreamingExecutionState;
-use crate::metrics::MetricsBuilder;
+
+/// How a node's memory use relates to its input size, given its current state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeMemoryUsage {
+    /// Memory does not meaningfully grow with the input size, now or in a later
+    /// state.
+    Bounded,
+    /// Memory may grow with the input size while data streams through the node.
+    Unbounded,
+
+    /// Stores nothing meaningful yet, but will be `Accumulating` in a later state.
+    WillAccumulate,
+    /// Stores (substantial parts of) its input while running. Each phase runs
+    /// at most one such node, unless all such nodes remaining are sinks.
+    Accumulating,
+    /// Holds significant stored data that may be freed once this node runs to completion.
+    HoldingUntilDone,
+    /// Holds significant stored data that may be freed immediately while this node runs.
+    Draining,
+}
 
 pub trait ComputeNode: Send {
     /// The name of this node.
@@ -84,10 +119,9 @@ pub trait ComputeNode: Send {
         state: &StreamingExecutionState,
     ) -> PolarsResult<()>;
 
-    /// If this node (in its current state) is a pipeline blocker, and whether
-    /// this is memory intensive or not.
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        false
+    /// The memory usage of this node in its current state.
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        NodeMemoryUsage::Bounded
     }
 
     /// Spawn the tasks that this compute node needs to receive input(s),
@@ -100,8 +134,6 @@ pub trait ComputeNode: Send {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
-
-    fn set_metrics_builder(&mut self, _metrics_builder: MetricsBuilder) {}
 
     /// Called once after the last execution phase to extract output from
     /// in-memory nodes.

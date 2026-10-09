@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use arrow::array::ListArray;
+use polars_arrow::array::ListArray;
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_error::{PolarsResult, polars_bail};

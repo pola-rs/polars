@@ -1,11 +1,11 @@
 mod serializer;
 
-use arrow::array::NullArray;
-use arrow::legacy::time_zone::Tz;
-use polars_core::POOL;
+use polars_arrow::array::NullArray;
+use polars_arrow::legacy::time_zone::Tz;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_error::polars_ensure;
-use polars_utils::reuse_vec::reuse_vec;
+use polars_utils::vec::reuse_vec;
 use rayon::prelude::*;
 use serializer::{serializer_for, string_serializer};
 
@@ -233,7 +233,7 @@ pub(crate) fn write(
             };
 
         if n_threads > 1 {
-            POOL.install(|| {
+            RAYON.install(|| {
                 buffers
                     .par_iter_mut()
                     .enumerate()

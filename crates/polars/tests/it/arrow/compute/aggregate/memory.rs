@@ -1,6 +1,6 @@
-use arrow::array::*;
-use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::datatypes::{ArrowDataType, Field};
+use polars_arrow::array::*;
+use polars_arrow::compute::aggregate::estimated_bytes_size;
+use polars_arrow::datatypes::{ArrowDataType, Field};
 
 #[test]
 fn primitive() {

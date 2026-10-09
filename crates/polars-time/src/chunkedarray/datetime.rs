@@ -1,9 +1,9 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::temporal;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::compute::temporal;
 use polars_compute::cast::{CastOptionsImpl, cast};
-use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
-use polars_ops::chunked_array::datetime::replace_time_zone;
+use polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone;
+use polars_core::prelude::*;
 
 use super::*;
 
@@ -48,7 +48,7 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+            DataType::Datetime(_, Some(_)) => &replace_time_zone(
                 ca,
                 None,
                 &StringChunked::new("".into(), ["raise"]),
@@ -69,7 +69,7 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+            DataType::Datetime(_, Some(_)) => &replace_time_zone(
                 ca,
                 None,
                 &StringChunked::new("".into(), ["raise"]),
@@ -107,7 +107,7 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+            DataType::Datetime(_, Some(_)) => &replace_time_zone(
                 ca,
                 None,
                 &StringChunked::new("".into(), ["raise"]),
@@ -176,7 +176,7 @@ pub trait DatetimeMethods: AsDatetime {
         };
         let ca_local = match ca.dtype() {
             #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+            DataType::Datetime(_, Some(_)) => &replace_time_zone(
                 ca,
                 None,
                 &StringChunked::new("".into(), ["raise"]),
@@ -194,16 +194,13 @@ pub trait DatetimeMethods: AsDatetime {
         fmt: &str,
         tu: TimeUnit,
     ) -> DatetimeChunked {
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
-
         Int64Chunked::from_iter_options(
             name,
-            v.iter()
-                .map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func)),
+            v.iter().map(|s| {
+                NaiveDateTime::parse_from_str(s, fmt)
+                    .ok()
+                    .map(|dt| tu.datetime_to_timestamp(dt))
+            }),
         )
         .into_datetime(tu, None)
     }
@@ -224,13 +221,13 @@ pub trait DatetimeMethods: AsDatetime {
         name: PlSmallStr,
     ) -> PolarsResult<DatetimeChunked> {
         let ca: Int64Chunked = year
-            .into_iter()
-            .zip(month)
-            .zip(day)
-            .zip(hour)
-            .zip(minute)
-            .zip(second)
-            .zip(nanosecond)
+            .iter()
+            .zip(month.iter())
+            .zip(day.iter())
+            .zip(hour.iter())
+            .zip(minute.iter())
+            .zip(second.iter())
+            .zip(nanosecond.iter())
             .map(|((((((y, m), d), h), mnt), s), ns)| {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
                     (y, m, d, h, mnt, s, ns)

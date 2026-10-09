@@ -25,17 +25,9 @@ CSV
    :toctree: api/
 
    read_csv
-   read_csv_batched
    scan_csv
    DataFrame.write_csv
    LazyFrame.sink_csv
-
-.. currentmodule:: polars.io.csv.batched_reader
-
-.. autosummary::
-   :toctree: api/
-
-    BatchedCsvReader.next_batches
 
 .. currentmodule:: polars
 
@@ -89,6 +81,14 @@ Iceberg
    DataFrame.write_iceberg
    LazyFrame.sink_iceberg
 
+Lance
+~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_lance
+
+
 JSON
 ~~~~
 .. autosummary::
@@ -140,13 +140,32 @@ Parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
-PyArrow Datasets
+External
+~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_external_reader
+
+.. currentmodule:: polars.io.external_reader
+
+.. autosummary::
+   :toctree: api/
+
+   FileReader
+   FileReaderBuilder
+   ReaderCapabilities
+
+.. currentmodule:: polars
+
+Arrow Datasets
 ~~~~~~~~~~~~~~~~
 Connect to pyarrow datasets.
 
 .. autosummary::
    :toctree: api/
 
+   scan_arrow_c_stream
    scan_pyarrow_dataset
 
 Cloud Credentials

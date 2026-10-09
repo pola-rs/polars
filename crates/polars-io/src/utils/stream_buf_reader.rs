@@ -1,14 +1,13 @@
 use std::io::{BufRead, Cursor};
 
 use polars_buffer::Buffer;
+#[cfg(feature = "async")]
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 #[cfg(feature = "async")]
 use polars_utils::async_utils::tokio_handle_ext;
 #[cfg(feature = "async")]
 use tokio::sync::OwnedSemaphorePermit;
-
-#[cfg(feature = "async")]
-use crate::pl_async;
 
 #[cfg(feature = "async")]
 pub struct OpenReaderState {
@@ -57,7 +56,16 @@ impl StreamBufReader {
 
         drop(state.receiver);
 
-        pl_async::get_runtime().block_in_place_on(state.producer_task_handle)?
+        ASYNC.block_in_place_on(state.producer_task_handle)?
+    }
+
+    /// Returns the next fetched buffer without copying, or an empty buffer at EOF.
+    pub fn next_buffer(&mut self) -> std::io::Result<Buffer<u8>> {
+        self.fill_buf()?;
+        Ok(self
+            .get_open_state()
+            .map(|state| std::mem::take(&mut state.current))
+            .unwrap_or_default())
     }
 }
 
@@ -85,8 +93,7 @@ impl std::io::BufRead for StreamBufReader {
         if state.current.is_empty() {
             match state.receiver.blocking_recv() {
                 Some((handle, _permit)) => {
-                    let fetched_bytes =
-                        pl_async::get_runtime().block_in_place_on(handle).unwrap()?;
+                    let fetched_bytes = ASYNC.block_in_place_on(handle).unwrap()?;
                     state.current = fetched_bytes;
                 },
                 None => {

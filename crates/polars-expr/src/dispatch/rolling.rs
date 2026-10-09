@@ -1,7 +1,9 @@
 use std::ops::BitAnd;
 
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use polars_core::error::PolarsResult;
+#[cfg(feature = "cov")]
+use polars_core::error::polars_bail;
 use polars_core::prelude::{
     AnyValue, ChunkCast, Column, DataType, IntoColumn, NamedFrom, RollingOptionsFixedWindow,
     TimeUnit,
@@ -190,9 +192,14 @@ pub(super) fn rolling_corr_cov(
 
     let mean_x = x.rolling_mean(rolling_options.clone())?;
     let mean_y = y.rolling_mean(rolling_options.clone())?;
+
+    if is_corr && cov_options.ddof.is_some() {
+        polars_bail!(InvalidOperation: "options.ddof must be None for rolling_corr");
+    }
+    let ddof_value = cov_options.ddof.unwrap_or(1);
     let ddof = Series::new(
         PlSmallStr::EMPTY,
-        &[AnyValue::from(cov_options.ddof).cast(&dtype)],
+        &[AnyValue::from(ddof_value).cast(&dtype)],
     );
 
     let numerator = ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()

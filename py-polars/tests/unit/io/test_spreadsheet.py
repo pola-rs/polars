@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import warnings
 from collections import OrderedDict
 from datetime import date, datetime, time
@@ -13,6 +14,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import (
+    ArgumentRemovedError,
     NoDataError,
     ParameterCollisionError,
 )
@@ -503,7 +505,6 @@ def test_read_invalid_worksheet(
         (pl.read_ods, "path_ods_mixed", {}),
     ],
 )
-@pytest.mark.may_fail_auto_streaming
 def test_read_mixed_dtype_columns(
     read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
     source: str,
@@ -828,9 +829,14 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             ({}, True)
             if write_params.get("include_header", True)
             else (
-                {"new_columns": ["dtm", "str", "val"]}
-                if engine == "xlsx2csv"
-                else {"column_names": ["dtm", "str", "val"]},
+                {
+                    "new_columns" if engine == "xlsx2csv" else "column_names": [
+                        "dtm",
+                        "str",
+                        "val",
+                        "_",
+                    ],
+                },
                 False,
             )
         )
@@ -844,13 +850,17 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         _wb = df.write_excel(workbook=xls, worksheet="data", **write_params)
 
         # ...and read it back again:
-        xldf = pl.read_excel(
-            xls,
-            sheet_name="data",
-            engine=engine,
-            read_options=read_options,
-            has_header=has_header,
-        )[:3].select(df.columns[:3])
+        xldf = (
+            pl.read_excel(
+                xls,
+                sheet_name="data",
+                engine=engine,
+                read_options=read_options,
+                has_header=has_header,
+            )
+            .head(3)
+            .select("dtm", "str", "val")
+        )
 
         if engine == "xlsx2csv":
             xldf = xldf.with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
@@ -922,7 +932,7 @@ def test_excel_write_compound_types(
         xls.getbuffer(),
     ):
         xldf = pl.read_excel(
-            binary_data,  # type: ignore[arg-type]
+            binary_data,
             sheet_name="data",
             engine=engine,
             include_file_paths="wbook",
@@ -955,8 +965,11 @@ def test_excel_read_named_table_with_total_row(tmp_path: Path) -> None:
     )
     for engine in ("calamine", "openpyxl"):
         col_subset = ["x", "z"]
-        subset_kwarg = {"columns": col_subset}
-        base_kwargs = {"table_name": "PolarsFrameTable", "engine": engine}
+        subset_kwarg: dict[str, Any] = {"columns": col_subset}
+        base_kwargs: dict[str, Any] = {
+            "table_name": "PolarsFrameTable",
+            "engine": engine,
+        }
 
         for kwargs, df_expected in (
             (base_kwargs, df),  # all cols
@@ -1036,7 +1049,7 @@ def test_excel_read_no_headers(engine: ExcelSpreadsheetEngine) -> None:
     df.write_excel(xls, worksheet="data", include_header=False)
 
     xldf = pl.read_excel(xls, engine=engine, has_header=False)
-    expected = xldf.rename({"column_1": "colx", "column_2": "coly", "column_3": "colz"})
+    expected = xldf.rename({"column_0": "colx", "column_1": "coly", "column_2": "colz"})
     assert_frame_equal(df, expected)
 
 
@@ -1090,7 +1103,9 @@ def test_excel_write_sparklines(engine: ExcelSpreadsheetEngine) -> None:
             sheet_zoom=125,
         )
 
-    tables = {tbl["name"] for tbl in wb.get_worksheet_by_name("frame_data").tables}
+    worksheet = wb.get_worksheet_by_name("frame_data")
+    assert worksheet is not None
+    tables = {tbl["name"] for tbl in worksheet.tables}
     assert "Frame0" in tables
 
     with warnings.catch_warnings():
@@ -1153,11 +1168,11 @@ def test_excel_write_multiple_tables() -> None:
             },
         )
 
-    table_names = {
-        tbl["name"]
-        for sheet in wb.sheetnames
-        for tbl in wb.get_worksheet_by_name(sheet).tables
-    }
+    table_names: set[str] = set()
+    for sheet in wb.sheetnames:
+        worksheet = wb.get_worksheet_by_name(sheet)
+        assert worksheet is not None
+        table_names.update(tbl["name"] for tbl in worksheet.tables)
     assert table_names == {f"Frame{n}" for n in range(4)}
     assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
 
@@ -1243,9 +1258,9 @@ def test_excel_freeze_panes() -> None:
 
     table_names: set[str] = set()
     for sheet in ("sheet1", "sheet2", "sheet3"):
-        table_names.update(
-            tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
-        )
+        worksheet = wb.get_worksheet_by_name(sheet)
+        assert worksheet is not None
+        table_names.update(tbl["name"] for tbl in worksheet.tables)
     assert table_names == {f"Frame{n}" for n in range(3)}
     assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
 
@@ -1277,7 +1292,7 @@ def test_excel_empty_sheet(
     with pytest.raises(NoDataError, match="empty Excel sheet"):
         read_spreadsheet(empty_spreadsheet_path, schema_overrides=schema_overrides)
 
-    engine_params = [{}] if ods else [{"engine": "calamine"}]
+    engine_params: list[dict[str, Any]] = [{}] if ods else [{"engine": "calamine"}]
     for params in engine_params:
         df = read_spreadsheet(
             empty_spreadsheet_path,
@@ -1331,7 +1346,6 @@ def test_excel_mixed_calamine_float_data(io_files_path: Path) -> None:
 
 
 @pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch, _read_spreadsheet_xlsx2csv needs to be changed not to call `_reorder_columns` on the df
 def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {
@@ -1411,10 +1425,10 @@ def test_excel_write_select_col_dtype() -> None:
     from xlsxwriter import Workbook
 
     def get_col_widths(wb_bytes: BytesIO) -> dict[str, int]:
-        return {
-            k: round(v.width)
-            for k, v in load_workbook(wb_bytes).active.column_dimensions.items()
-        }
+        active_workbook = load_workbook(wb_bytes).active
+        assert active_workbook is not None
+
+        return {k: round(v.width) for k, v in active_workbook.column_dimensions.items()}
 
     df = pl.DataFrame(
         {
@@ -1471,3 +1485,52 @@ def test_excel_read_columns_nonlist_sequence(engine: ExcelSpreadsheetEngine) -> 
     xldf = pl.read_excel(xls, engine=engine, columns="colx")
     expected = df.select("colx")
     assert_frame_equal(xldf, expected)
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_ods, "path_ods", {}),
+    ],
+)
+def test_spreadsheet_no_resource_warning(
+    read_spreadsheet: Callable[..., pl.DataFrame],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    # ref: https://github.com/pola-rs/polars/issues/14466
+    spreadsheet_path = request.getfixturevalue(source)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        read_spreadsheet(spreadsheet_path, **params)
+        read_spreadsheet(spreadsheet_path, sheet_id=0, **params)
+
+
+def test_read_excel_renamed_options_removed() -> None:
+    msg = "It was renamed to 'engine_options'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.read_excel(BytesIO(), xlsx2csv_options={})  # type: ignore[call-overload]
+
+    msg = "It was renamed to 'read_options'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.read_excel(BytesIO(), read_csv_options={})  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize("pyarrow_available", [True, False])
+def test_read_excel_calamine_pyarrow_available(
+    pyarrow_available: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "polars.io.spreadsheet.functions._PYARROW_AVAILABLE", pyarrow_available
+    )
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    xls = BytesIO()
+    df.write_excel(xls)
+
+    read_df = pl.read_excel(xls, engine="calamine")
+    assert_frame_equal(read_df, df)

@@ -5,8 +5,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
-from polars.testing import assert_frame_equal, assert_frame_not_equal
+from polars.exceptions import ComputeError, ShapeError
+from polars.testing import (
+    assert_frame_equal,
+    assert_frame_not_equal,
+    assert_series_equal,
+)
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
@@ -161,6 +165,33 @@ def test_hconcat_slice_pushdown() -> None:
     assert_frame_equal(df_out, expected)
 
 
+def test_hconcat_tail_unequal_heights_27552() -> None:
+    # Regression for https://github.com/pola-rs/polars/issues/27552
+    # HConcat null-pads shorter inputs to the longest input's height; a
+    # negative-offset slice (e.g. .tail(n)) over the concat must reflect those
+    # padded nulls, not each input's own last n rows.
+    a = pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
+    b = pl.LazyFrame({"y": [10, 20, 30]})
+
+    lazy_out = pl.concat([a, b], how="horizontal_extend").tail(2).collect()
+    eager_out = pl.concat([a.collect(), b.collect()], how="horizontal_extend").tail(2)
+
+    assert_frame_equal(lazy_out, eager_out)
+
+
+def test_hconcat_tail_unequal_heights_strict_raises_27552() -> None:
+    # Regression for https://github.com/pola-rs/polars/issues/27552
+    # With `how="horizontal"`, concat of unequal-height inputs must raise, even
+    # when followed by a negative-offset slice. Before the fix, the slice was
+    # pushed into each input and equalised their post-slice heights,
+    # silently bypassing the strict-mode height check.
+    a = pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
+    b = pl.LazyFrame({"y": [10, 20, 30]})
+
+    with pytest.raises(ShapeError):
+        pl.concat([a, b], how="horizontal").tail(2).collect()
+
+
 @pytest.mark.parametrize(
     "ref",
     [
@@ -197,7 +228,7 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     assert_frame_equal(expect, out)
 
     assert pl.LazyFrame().select(x=1).head(1).collect().height == 1
-    assert pl.LazyFrame().with_columns(x=1).head(1).collect().height == 1
+    assert pl.LazyFrame(height=1).with_columns(x=1).head(1).collect().height == 1
 
     q = lf.select(x=1).head(1)
     assert q.collect().height == 1
@@ -540,3 +571,38 @@ def test_slice_negative_offset_none_len_26150() -> None:
 
 def test_n_rows_slice_pushdown_26656() -> None:
     assert pl.scan_csv(b"x\n" * 20, n_rows=5).head(10).collect().height == 5
+
+
+def test_series_slice_neg_offset_29183() -> None:
+    a = pl.Series([1, 2, 3])
+    assert_series_equal(a.slice(-1), pl.Series([3]))
+    assert_series_equal(a.slice(-2), pl.Series([2, 3]))
+    assert_series_equal(a.slice(-3), a)
+    assert_series_equal(a.slice(-4), a)
+    assert_series_equal(a.slice(-5), a)
+    assert_series_equal(a.slice(-500), a)
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (-2, 1),
+        (-4, 3),
+        (-40, 5),
+        (-2, 5),
+        (-50, 45),
+        (-7, 0),
+    ],
+)
+def test_streaming_negative_slice_uneven_morsels_29398(
+    offset: int, length: int
+) -> None:
+    a = list(range(42))
+    lf = pl.concat([pl.LazyFrame({"x": a[:2]}), pl.LazyFrame({"x": a[2:]})])
+    expected = pl.DataFrame({"x": slice_ref(a, offset, length)}, schema={"x": pl.Int64})
+
+    assert_frame_equal(lf.slice(offset, length).collect(), expected)
+    assert_frame_equal(
+        lf.select(pl.col("x").slice(offset, length)).collect(),
+        expected,
+    )

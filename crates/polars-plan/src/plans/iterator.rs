@@ -53,10 +53,7 @@ macro_rules! push_expr {
                     Item { input, .. } => $push($c, input),
                     Implode { input, .. } => $push($c, input),
                     Count { input, .. } => $push($c, input),
-                    // TODO: shouldn't quantile push the quantile expr as well?
-                    Quantile { expr, .. } => $push($c, expr),
                     Sum(e) => $push($c, e),
-                    AggGroups(e) => $push($c, e),
                     Std(e, _) => $push($c, e),
                     Var(e, _) => $push($c, e),
                 }
@@ -82,7 +79,9 @@ macro_rules! push_expr {
                 $push($c, expr);
             },
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
+            StructEval {
+                expr, evaluation, ..
+            } => {
                 evaluation.$iter().rev().for_each(|e| $push_owned($c, e));
                 $push($c, expr);
             },
@@ -117,6 +116,7 @@ macro_rules! push_expr {
             },
             KeepName(e) => $push($c, e),
             RenameAlias { expr, .. } => $push($c, expr),
+            PipeWithDtype { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             SubPlan { .. } => {},
             // pass
             Selector(_) => {},

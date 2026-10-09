@@ -1,50 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::BooleanArray;
-use arrow::compute::concatenate::concatenate_validities;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;
+use polars_defs::expr::{RankMethod, RankOptions};
 use rand::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::prelude::SeriesSealed;
-
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum RankMethod {
-    Average,
-    Min,
-    Max,
-    Dense,
-    Ordinal,
-    #[cfg(feature = "random")]
-    Random,
-}
-
-// We might want to add a `nulls_last` or `null_behavior` field.
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct RankOptions {
-    pub method: RankMethod,
-    pub descending: bool,
-}
-
-impl Default for RankOptions {
-    fn default() -> Self {
-        Self {
-            method: RankMethod::Dense,
-            descending: false,
-        }
-    }
-}
-
-#[cfg(feature = "random")]
-fn get_random_seed() -> u64 {
-    let mut rng = SmallRng::from_os_rng();
-
-    rng.next_u64()
-}
 
 unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, mut flush_ties: F) {
     let mut ties_indices = Vec::with_capacity(128);
@@ -134,7 +95,8 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         match method {
             #[cfg(feature = "random")]
             Random => unsafe {
-                let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
+                use polars_core::random::get_global_random_u64;
+                let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
                 let mut out = vec![0 as IdxSize; s.len()];
                 rank_impl(&sort_idx_ca, neq, |ties| {
                     ties.shuffle(&mut rng);
@@ -261,7 +223,7 @@ mod test {
 
         let out = rank(&s, RankMethod::Average, false, None)
             .f64()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
 
         assert_eq!(
@@ -291,7 +253,7 @@ mod test {
         );
         let out = rank(&s, RankMethod::Max, false, None)
             .idx()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(
             out,
@@ -315,12 +277,12 @@ mod test {
         let s = UInt32Chunked::new("".into(), &[None, None, None]).into_series();
         let out = rank(&s, RankMethod::Average, false, None)
             .f64()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None]);
         let out = rank(&s, RankMethod::Dense, false, None)
             .idx()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None]);
         Ok(())
@@ -340,7 +302,7 @@ mod test {
         let s = Series::new("".into(), &[None, Some(1), Some(1), Some(5), None]);
         let out = rank(&s, RankMethod::Dense, true, None)
             .idx()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(2 as IdxSize), Some(2), Some(1), None]);
 

@@ -3,7 +3,8 @@ use std::num::NonZeroUsize;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use object_store::PutPayload;
-use polars_error::{PolarsError, PolarsResult};
+use polars_core::runtime::ASYNC;
+use polars_error::{PolarsError, PolarsResult, polars_bail};
 use polars_utils::async_utils::error_capture::{ErrorCapture, ErrorHandle};
 use polars_utils::async_utils::tokio_handle_ext;
 
@@ -36,7 +37,7 @@ pub(super) struct StartedState {
 }
 
 impl InternalCloudWriter {
-    pub(super) async fn start(&mut self) -> PolarsResult<()> {
+    async fn start(&mut self) -> PolarsResult<()> {
         if let WriterState::NotStarted = &self.state {
             let path_ref = &self.path;
             let multipart = PlMultipartUpload::new(
@@ -72,7 +73,9 @@ impl InternalCloudWriter {
                     return Ok(state);
                 },
                 WriterState::NotStarted => self.start().await?,
-                WriterState::Finished => panic!(),
+                WriterState::Finished => {
+                    polars_bail!(ComputeError: "cannot write to cloud writer after it finished or failed")
+                },
             }
         }
     }
@@ -112,16 +115,47 @@ impl InternalCloudWriter {
 
         let fut = async move { io_metrics.record_bytes_tx(num_bytes, upload_fut).await };
 
-        let handle = tokio_handle_ext::AbortOnDropHandle(tokio::spawn(
-            state.error_capture.clone().wrap_future(fut),
-        ));
+        let handle = tokio_handle_ext::AbortOnDropHandle(
+            ASYNC.spawn(state.error_capture.clone().wrap_future(fut)),
+        );
 
         state.tasks.push(handle);
 
         Ok(())
     }
 
-    pub(super) async fn finish(&mut self) -> PolarsResult<()> {
+    /// Uploads `payload` as the entire object using a single `PUT` request.
+    async fn put_single(&mut self, payload: PutPayload) -> PolarsResult<()> {
+        self.state = WriterState::Finished;
+
+        let path_ref = &self.path;
+        let num_bytes = payload.content_length() as u64;
+
+        let upload_fut = self.store.exec_with_rebuild_retry_on_err(|s| {
+            let payload = payload.clone();
+            async move {
+                s.put_opts(path_ref, payload, object_store::PutOptions::default())
+                    .await
+            }
+        });
+
+        self.io_metrics
+            .record_bytes_tx(num_bytes, upload_fut)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Uploads `tail` and completes the object, via a single `PUT` if multipart never started.
+    pub(super) async fn finish(&mut self, tail: Option<PutPayload>) -> PolarsResult<()> {
+        if let WriterState::NotStarted = &self.state {
+            return self.put_single(tail.unwrap_or_default()).await;
+        }
+
+        if let Some(payload) = tail {
+            self.put(payload).await?;
+        }
+
         let Some(StartedState {
             mut multipart,
             tasks,

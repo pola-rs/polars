@@ -1,12 +1,12 @@
 use std::cmp::Reverse;
 
+use polars_async::primitives::distributor_channel;
+use polars_async::primitives::linearizer::Inserter;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::priority::Priority;
 
 use super::chunk_reader::ChunkReader;
-use crate::async_primitives::distributor_channel;
-use crate::async_primitives::linearizer::Inserter;
 use crate::morsel::SourceToken;
 use crate::nodes::MorselSeq;
 use crate::nodes::compute_node_prelude::*;
@@ -47,7 +47,7 @@ impl LineBatchProcessor {
 
         if verbose {
             eprintln!(
-                "[NDJSON LineBatchProcessor {}]: begin run(): port_type: {}",
+                "[NDJson LineBatchProcessor {}]: begin run(): port_type: {}",
                 worker_idx,
                 output_port.port_type()
             );
@@ -57,7 +57,7 @@ impl LineBatchProcessor {
 
         if !matches!(output_port, LineBatchProcessorOutputPort::Closed) {
             while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().await {
-                let df = chunk_reader.read_chunk(&bytes)?;
+                let df = chunk_reader.read_chunk(bytes)?;
 
                 n_rows_processed = n_rows_processed.saturating_add(df.height());
 
@@ -71,7 +71,7 @@ impl LineBatchProcessor {
 
         if needs_total_row_count {
             if verbose {
-                eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: entering row count mode");
+                eprintln!("[NDJson LineBatchProcessor {worker_idx}]: entering row count mode");
             }
 
             while let Ok(LineBatch {
@@ -84,7 +84,7 @@ impl LineBatchProcessor {
         }
 
         if verbose {
-            eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: returning");
+            eprintln!("[NDJson LineBatchProcessor {worker_idx}]: returning");
         }
 
         Ok(n_rows_processed)
@@ -130,7 +130,7 @@ impl LineBatchProcessorOutputPort {
         let result = async {
             match self {
                 Direct { tx, source_token } => {
-                    let morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                    let morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
                     tx.send_morsel(morsel).await.map_err(|_| ())?;
                     Ok(())
                 },

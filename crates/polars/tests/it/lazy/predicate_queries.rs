@@ -213,7 +213,7 @@ fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
                 ..Default::default()
             },
         )?
-        .filter(len().over([col("k")]).gt(lit(1)))
+        .filter(len().over([col("k")]).unwrap().gt(lit(1)))
         .collect()?;
 
         assert!(out.equals(&expected));
@@ -233,7 +233,7 @@ fn test_predicate_on_join_select_4884() -> PolarsResult<()> {
         .left_on([col("y")])
         .right_on([col("x")])
         .suffix("_right")
-        .finish()
+        .finish()?
         .select([col("x"), col("y_right").alias("y")])
         .filter(col("x").neq(col("y")).and(col("y").eq(2)))
         .collect()?;

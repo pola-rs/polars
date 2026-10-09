@@ -1,5 +1,5 @@
-use arrow::Either;
-use arrow::compute::concatenate::concatenate;
+use polars_arrow::Either;
+use polars_arrow::compute::concatenate::concatenate;
 
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
@@ -232,7 +232,7 @@ mod test {
 
         ca.extend(&to_append)?;
         assert_eq!(ca.len(), 6);
-        let vals = ca.into_no_null_iter().collect::<Vec<_>>();
+        let vals = ca.no_null_iter().collect::<Vec<_>>();
         assert_eq!(vals, ["a", "b", "c", "a", "b", "e"]);
 
         Ok(())
@@ -245,7 +245,7 @@ mod test {
 
         ca.extend(&to_append)?;
         assert_eq!(ca.len(), 4);
-        let vals = ca.into_no_null_iter().collect::<Vec<_>>();
+        let vals = ca.no_null_iter().collect::<Vec<_>>();
         assert_eq!(vals, [true, false, false, false]);
 
         Ok(())

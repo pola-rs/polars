@@ -1,14 +1,14 @@
 use std::hash::Hash;
 
-use arrow::array::*;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute::arity::unary;
-use arrow::datatypes::{ArrowDataType, TimeUnit};
-use arrow::offset::{Offset, Offsets};
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 #[cfg(feature = "dtype-decimal")]
 use num_traits::{Float, ToPrimitive};
+use polars_arrow::array::*;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::compute::arity::unary;
+use polars_arrow::datatypes::{ArrowDataType, TimeUnit};
+use polars_arrow::offset::{Offset, Offsets};
+use polars_arrow::types::NativeType;
 use polars_error::PolarsResult;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -129,7 +129,7 @@ where
     let validity = validity.freeze();
     let validity = match array.validity() {
         None => validity,
-        Some(arr_validity) => arrow::bitmap::and(&validity, arr_validity),
+        Some(arr_validity) => polars_arrow::bitmap::and(&validity, arr_validity),
     };
 
     PrimitiveArray::<O>::new(dtype, out.into(), Some(validity))
@@ -338,9 +338,10 @@ where
 
 pub(super) fn primitive_to_dictionary_dyn<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &dyn Array,
+    ordered: bool,
 ) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
-    primitive_to_dictionary::<T, K>(from).map(|x| Box::new(x) as Box<dyn Array>)
+    primitive_to_dictionary::<T, K>(from, ordered).map(|x| Box::new(x) as Box<dyn Array>)
 }
 
 /// Cast [`PrimitiveArray`] to [`DictionaryArray`]. Also known as packing.
@@ -349,11 +350,13 @@ pub(super) fn primitive_to_dictionary_dyn<T: NativeType + Eq + Hash, K: Dictiona
 /// in the array.
 pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &PrimitiveArray<T>,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
     let iter = from.iter().map(|x| x.copied());
-    let mut array = MutableDictionaryArray::<K, _>::try_empty(MutablePrimitiveArray::<T>::from(
-        from.dtype().clone(),
-    ))?;
+    let mut array = MutableDictionaryArray::<K, _>::try_empty(
+        MutablePrimitiveArray::<T>::from(from.dtype().clone()),
+        ordered,
+    )?;
     array.reserve(from.len());
     array.try_extend(iter)?;
 

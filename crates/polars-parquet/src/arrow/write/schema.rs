@@ -1,11 +1,12 @@
 use std::sync::{Arc, LazyLock};
 
-use arrow::datatypes::{
-    ArrowDataType, ArrowSchema, ExtensionType, Field, PARQUET_EMPTY_STRUCT, TimeUnit,
-};
-use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::Engine as _;
 use base64::engine::general_purpose;
+use polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
+use polars_arrow::datatypes::{
+    ArrowDataType, ArrowSchema, ExtensionType, Field, PARQUET_EMPTY_STRUCT, TimeUnit,
+};
+use polars_arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -48,9 +49,9 @@ fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
             }
             D::Struct(fields)
         },
-        D::Dictionary(it, dtype, sorted) => {
+        D::Dictionary(it, dtype, ordered) => {
             let dtype = convert_dtype(*dtype);
-            D::Dictionary(it, Box::new(dtype), sorted)
+            D::Dictionary(it, Box::new(dtype), ordered)
         },
         D::Extension(ext) => {
             let dtype = convert_dtype(ext.inner);
@@ -93,6 +94,8 @@ pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
 
 /// Creates a [`ParquetType`] from a [`Field`].
 pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
+    const PARQUET_FIELD_ID_KEY: &str = "PARQUET:field_id";
+
     let name = field.name.clone();
     let repetition = if field.is_nullable {
         Repetition::Optional
@@ -100,7 +103,11 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         Repetition::Required
     };
 
-    let field_id: Option<i32> = None;
+    let field_id: Option<i32> = field
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get(PARQUET_FIELD_ID_KEY))
+        .and_then(|v| v.parse().ok());
 
     // create type from field
     let (physical_type, primitive_converted_type, primitive_logical_type) = match field
@@ -246,7 +253,10 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         },
         ArrowDataType::Dictionary(_, value, _) => {
             assert!(!value.is_nested());
-            let dict_field = Field::new(name, value.as_ref().clone(), field.is_nullable);
+            let mut dict_field = Field::new(name, value.as_ref().clone(), field.is_nullable);
+            if let Some(metadata) = &field.metadata {
+                dict_field = dict_field.with_metadata((**metadata).clone());
+            }
             return to_parquet_type(&dict_field);
         },
         ArrowDataType::FixedSizeBinary(size) => {
@@ -306,6 +316,46 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         ),
         ArrowDataType::UInt128 | ArrowDataType::Int128 => {
             (PhysicalType::FixedLenByteArray(16), None, None)
+        },
+        ArrowDataType::Map(entries, _keys_sorted) => {
+            let ArrowDataType::Struct(entry_fields) = entries.dtype().to_storage() else {
+                polars_bail!(
+                    InvalidOperation:
+                    "Map entries must be a struct, got {:?}", entries.dtype(),
+                )
+            };
+            let [key, value] = entry_fields.as_slice() else {
+                polars_bail!(
+                    InvalidOperation:
+                    "Map entries must have exactly two fields, got {}", entry_fields.len(),
+                )
+            };
+
+            let key = Field {
+                name: MAP_KEY_NAME,
+                is_nullable: false,
+                ..key.clone()
+            };
+            let value = Field {
+                name: MAP_VALUE_NAME,
+                ..value.clone()
+            };
+
+            return Ok(ParquetType::from_group(
+                name,
+                repetition,
+                Some(GroupConvertedType::Map),
+                Some(GroupLogicalType::Map),
+                vec![ParquetType::from_group(
+                    PlSmallStr::from_static("key_value"),
+                    Repetition::Repeated,
+                    None,
+                    None,
+                    vec![to_parquet_type(&key)?, to_parquet_type(&value)?],
+                    None,
+                )],
+                field_id,
+            ));
         },
         ArrowDataType::List(f)
         | ArrowDataType::FixedSizeList(f, _)

@@ -9,13 +9,16 @@ from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars._utils.logging import eprint
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
+from polars.io._utils import null_count_dtype
 from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from deltalake import DeltaTable
 
-    from polars import DataFrame, DataType
-    from polars._typing import SchemaDict, StorageOptionsDict
+    from polars import DataFrame, DataType, Series
+    from polars._typing import PolarsDataType, SchemaDict, StorageOptionsDict
 
 
 def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> str:
@@ -110,6 +113,7 @@ def _extract_table_statistics_from_delta_add_actions(
     add_actions_df: DataFrame,
     *,
     filter_columns: list[str],
+    best_effort_columns: Sequence[str] = (),
     schema: SchemaDict,
     verbose: bool,
 ) -> DataFrame | None:
@@ -141,23 +145,67 @@ def _extract_table_statistics_from_delta_add_actions(
         else {}
     )
 
+    height = add_actions_df.height
+
+    def null_col(dt: PolarsDataType) -> Series:
+        return pl.Series([None], dtype=dt).new_from_index(0, height)
+
+    def column_statistics(col_name: str) -> dict[str, Series]:
+        dtype = schema[col_name]
+        # The skip-batch predicate expects `<col>_nc` in the index type (a per-field
+        # struct of index counts for struct columns), so normalise the counts here.
+        nc_dtype = null_count_dtype(dtype)
+        col_nc = null_count_cols.get(col_name)
+        col_min = min_cols.get(col_name)
+        col_max = max_cols.get(col_name)
+
+        stats: dict[str, Series] = {
+            f"{col_name}_nc": (
+                col_nc.cast(nc_dtype) if col_nc is not None else null_col(nc_dtype)
+            )
+        }
+
+        if isinstance(dtype, pl.Struct):
+            # Delta records struct min/max field-wise as a struct mirroring the column
+            # schema. Cast to the column dtype so every schema field is present and
+            # resolvable, letting the skip-batch predicate prune on an individual struct
+            # field via `col("<c>_min").struct.field(..)`.
+            stats[f"{col_name}_min"] = (
+                col_min.cast(dtype) if col_min is not None else null_col(dtype)
+            )
+            stats[f"{col_name}_max"] = (
+                col_max.cast(dtype) if col_max is not None else null_col(dtype)
+            )
+        else:
+            stats[f"{col_name}_min"] = (
+                col_min if col_min is not None else null_col(dtype)
+            )
+            stats[f"{col_name}_max"] = (
+                col_max if col_max is not None else null_col(dtype)
+            )
+
+        return stats
+
+    def best_effort_column_statistics(col_name: str) -> dict[str, Series]:
+        try:
+            return column_statistics(col_name)
+        except Exception as e:
+            if verbose:
+                eprint(
+                    f"scan_delta: statistics load failed for column {col_name!r}: {e!r}"
+                )
+
+            dtype = schema[col_name]
+            return {
+                f"{col_name}_nc": null_col(null_count_dtype(dtype)),
+                f"{col_name}_min": null_col(dtype),
+                f"{col_name}_max": null_col(dtype),
+            }
+
     for col_name in filter_columns:
-        if (col_nc := null_count_cols.get(col_name)) is None:
-            col_nc = pl.Series([None], dtype=pl.get_index_type()).new_from_index(
-                0, add_actions_df.height
-            )
-        if (col_min := min_cols.get(col_name)) is None:
-            col_min = pl.Series([None], dtype=schema[col_name]).new_from_index(
-                0, add_actions_df.height
-            )
+        out.update(column_statistics(col_name))
 
-        if (col_max := max_cols.get(col_name)) is None:
-            col_max = pl.Series([None], dtype=schema[col_name]).new_from_index(
-                0, add_actions_df.height
-            )
+    for col_name in best_effort_columns:
+        out.update(best_effort_column_statistics(col_name))
 
-        out[f"{col_name}_nc"] = col_nc
-        out[f"{col_name}_min"] = col_min
-        out[f"{col_name}_max"] = col_max
-
-    return pl.DataFrame(out, height=add_actions_df.height)
+    return pl.DataFrame(out, height=height)

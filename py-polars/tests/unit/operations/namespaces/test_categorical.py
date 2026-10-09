@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -77,28 +78,13 @@ def test_sort_categoricals_6014_lexical() -> None:
     assert out.to_dict(as_series=False) == {"key": ["aaa", "bbb", "ccc"]}
 
 
-def test_categorical_get_categories() -> None:
-    s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
-    assert set(s.cat.get_categories().to_list()) >= {"foo", "bar", "ham"}
-
-
-def test_cat_to_local() -> None:
-    s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    assert_series_equal(s, s.cat.to_local())
-
-
-def test_cat_uses_lexical_ordering() -> None:
-    with pytest.warns(DeprecationWarning, match="ordering parameter"):
-        physical_cat = pl.Categorical(ordering="physical")
-
-    for dtype in [pl.Categorical, pl.Categorical(), physical_cat]:
-        s = pl.Series(["a", "b", None, "b"]).cast(dtype)  # type: ignore[arg-type]
-
-        with pytest.warns(
-            DeprecationWarning,
-            match="Categoricals are now always ordered lexically",
-        ):
-            assert s.cat.uses_lexical_ordering()
+def test_categorical_categories() -> None:
+    categorical = pl.Categorical(categories=pl.Categories.random())
+    s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=categorical)
+    assert isinstance(s.dtype, pl.Categorical)
+    assert all(s.dtype.categories[x] in {0, 1, 2} for x in s)
+    assert all(s.dtype.categories[x] in {"foo", "bar", "ham"} for x in [0, 1, 2])
+    assert list(s.dtype.categories) == ["foo", "bar", "ham"]
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum])
@@ -127,7 +113,7 @@ def test_cat_len_bytes(dtype: PolarsDataType) -> None:
         pl.LazyFrame({"key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2], "value": s.extend(s)})
         .group_by("key", maintain_order=True)
         .agg(pl.col("value").cat.len_bytes().alias("len_bytes"))
-        .explode("len_bytes")
+        .explode("len_bytes", empty_as_null=True)
         .collect()
     )
     expected_df = pl.DataFrame(
@@ -167,7 +153,7 @@ def test_cat_len_chars(dtype: PolarsDataType) -> None:
         pl.LazyFrame({"key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2], "value": s.extend(s)})
         .group_by("key", maintain_order=True)
         .agg(pl.col("value").cat.len_chars().alias("len_bytes"))
-        .explode("len_bytes")
+        .explode("len_bytes", empty_as_null=True)
         .collect()
     )
     expected_df = pl.DataFrame(
@@ -250,3 +236,32 @@ def test_cat_order_flag_csv_read_23823() -> None:
         schema_overrides={"colx": pl.Categorical},
     )
     assert_frame_equal(expected, lf.sort("colx", descending=False).collect())
+
+
+@pytest.mark.parametrize("cat_kind", ["enum", "cat"])
+def test_cat_to_from_physical(cat_kind: str) -> None:
+    values = ["foobar", "barfoo", "foobar", "x", None]
+
+    if cat_kind == "cat":
+        categories = pl.Categories.random()
+        dtype: pl.DataType = pl.Categorical(categories)
+        _dummy = pl.Series(values, dtype=dtype)
+        cats = [categories[s] for s in values if s is not None]
+        phys: type[pl.UInt32 | pl.UInt8] = pl.UInt32
+    else:
+        dtype = pl.Enum(sorted({x for x in values if x is not None}))
+        cats = [1, 0, 1, 2]
+        phys = pl.UInt8
+
+    df = pl.DataFrame({"a": pl.Series(values, dtype=dtype)})
+
+    assert_series_equal(
+        df["a"].cat.physical(), pl.Series("a", cats + [None], dtype=phys)
+    )
+
+    assert_series_equal(
+        pl.Series("a", cats + [4], dtype=phys).cat.to(dtype, strict=False), df["a"]
+    )
+
+    with pytest.raises(ComputeError):
+        pl.Series(cats + [4], dtype=phys).cat.to(dtype)

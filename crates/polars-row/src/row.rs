@@ -1,10 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::sync::Arc;
 
-use arrow::array::{BinaryArray, BinaryViewArray};
-use arrow::datatypes::ArrowDataType;
-use arrow::ffi::mmap;
-use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_arrow::array::{BinaryArray, BinaryViewArray};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::ffi::mmap;
+use polars_arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::cast::binary_to_binview;
 use polars_dtype::categorical::CategoricalMapping;
 

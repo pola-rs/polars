@@ -11,9 +11,10 @@ from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
+
 
 _POLARS_TO_SQLITE_: dict[PolarsDataType, str] = {
     # SQLite has limited type support (primitive scalar types only)
@@ -25,7 +26,7 @@ _POLARS_TO_SQLITE_: dict[PolarsDataType, str] = {
 
 
 def _execute_with_sqlite(
-    frames: dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: Mapping[str, pl.DataFrame | pl.LazyFrame],
     query: str,
 ) -> pl.DataFrame:
     """Execute a SQL query against SQLite, returning a DataFrame."""
@@ -57,7 +58,7 @@ def _execute_with_sqlite(
 
 
 def _execute_with_duckdb(
-    frames: dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: Mapping[str, pl.DataFrame | pl.LazyFrame],
     query: str,
 ) -> pl.DataFrame:
     """Execute a SQL query against DuckDB, returning a DataFrame."""
@@ -69,6 +70,8 @@ def _execute_with_duckdb(
             """DuckDB not installed; required for `assert_sql_matches` with "compare_with='duckdb'"."""
         )
     with duckdb.connect(":memory:") as conn:
+        # Polars SQL sorts NULLs like PostgreSQL: last for ASC, first for DESC.
+        conn.execute("SET default_null_order = 'nulls_last_on_asc_first_on_desc'")
         for name, df in frames.items():
             conn.register(name, df)
         return conn.execute(query).pl()  # type: ignore[no-any-return]
@@ -81,14 +84,17 @@ _COMPARISON_BACKENDS_ = {
 
 
 def assert_sql_matches(
-    frames: pl.DataFrame | pl.LazyFrame | dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: pl.DataFrame | pl.LazyFrame | Mapping[str, pl.DataFrame | pl.LazyFrame],
     *,
     query: str,
-    compare_with: Literal["sqlite", "duckdb"] | Collection[Literal["sqlite", "duckdb"]],
+    compare_with: (
+        Literal["sqlite", "duckdb"] | Collection[Literal["sqlite", "duckdb"]] | None
+    ),
     check_dtypes: bool = False,
     check_row_order: bool = True,
     check_column_names: bool = True,
     expected: pl.DataFrame | dict[str, Sequence[Any]] | None = None,
+    engines: Sequence[EngineType] | None = None,
 ) -> bool:
     """
     Assert that a Polars SQL query produces the same result as a reference backend.
@@ -108,6 +114,7 @@ def assert_sql_matches(
         One or more named SQL engines to use as a reference for comparison.
         - 'sqlite': Use Python's built-in `sqlite3` module.
         - 'duckdb': Use DuckDB (requires `duckdb` to be installed separately).
+        - None: Don't compare against a backend (requires that "expected" is set).
     check_dtypes
         Require that the comparison frame dtypes match; defaults to False, as different
         backends may use different type systems, and we care about the values.
@@ -120,6 +127,9 @@ def assert_sql_matches(
         An optional DataFrame (or dictionary) containing the expected result;
         with this we can confirm both that the result matches the reference
         implementation *and* that those results match expectation.
+    engines
+        Collect the Polars query with each of these engines and require that they
+        agree, instead of the single default (eager) execution.
 
     Examples
     --------
@@ -150,10 +160,23 @@ def assert_sql_matches(
     if isinstance(frames, (pl.DataFrame, pl.LazyFrame)):
         frames = {"self": frames}
 
-    with pl.SQLContext(frames=frames, eager=True) as ctx:
-        polars_result = ctx.execute(query=query, eager=True)
+    if engines:
+        with pl.SQLContext(frames=frames, eager=False) as ctx:
+            plan = ctx.execute(query=query, eager=False)
+        results = [plan.collect(engine=engine) for engine in engines]
+        polars_result = results[0]
+        for other in results[1:]:
+            assert_frame_equal(polars_result, other, check_row_order=check_row_order)
+    else:
+        with pl.SQLContext(frames=frames, eager=True) as ctx:
+            polars_result = ctx.execute(query=query, eager=True)
 
-    if isinstance(compare_with, str):
+    if not compare_with:
+        if expected is None:
+            msg = "if no comparison backend specified, `expected` is required"
+            raise ValueError(msg)
+        compare_with = []
+    elif isinstance(compare_with, str):
         compare_with = [compare_with]
 
     for comparison_backend in compare_with:

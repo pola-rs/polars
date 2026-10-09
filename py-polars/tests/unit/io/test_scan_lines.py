@@ -9,6 +9,8 @@ from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -56,7 +58,7 @@ def test_scan_lines(
 
     assert_frame_equal(
         pl.scan_lines(b"").collect(),
-        pl.DataFrame(schema={"lines": pl.String}),
+        pl.DataFrame(schema={"line": pl.String}),
     )
 
     assert_frame_equal(
@@ -66,7 +68,7 @@ def test_scan_lines(
 
     assert_frame_equal(
         pl.scan_lines(b"").collect(),
-        pl.DataFrame(schema={"lines": pl.String}),
+        pl.DataFrame(schema={"line": pl.String}),
     )
 
     lf = pl.scan_lines(b"""\
@@ -79,26 +81,26 @@ EEE
 
     assert_frame_equal(
         lf.slice(2, 1).collect(),
-        pl.DataFrame({"lines": ["CCC"]}),
+        pl.DataFrame({"line": ["CCC"]}),
     )
 
     assert_frame_equal(
         lf.with_row_index().slice(2, 1).collect(),
         pl.DataFrame(
-            {"index": [2], "lines": ["CCC"]},
+            {"index": [2], "line": ["CCC"]},
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
 
     assert_frame_equal(
         lf.slice(-2, 1).collect(),
-        pl.DataFrame({"lines": ["DDD"]}),
+        pl.DataFrame({"line": ["DDD"]}),
     )
 
     assert_frame_equal(
         lf.with_row_index().slice(-2, 1).collect(),
         pl.DataFrame(
-            {"index": [3], "lines": ["DDD"]},
+            {"index": [3], "line": ["DDD"]},
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
@@ -113,7 +115,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 5 * [v]}),
+            pl.DataFrame({"line": 5 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 5
@@ -122,7 +124,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": [v]}),
+            pl.DataFrame({"line": [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 1
@@ -132,7 +134,7 @@ EEE
         assert_frame_equal(
             q.collect(),
             pl.DataFrame(
-                {"index": [4], "lines": [v]},
+                {"index": [4], "line": [v]},
                 schema_overrides={"index": pl.get_index_type()},
             ),
         )
@@ -143,7 +145,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame(schema={"lines": pl.String}),
+            pl.DataFrame(schema={"line": pl.String}),
         )
 
         assert q.select(pl.len()).collect().item() == 0
@@ -152,7 +154,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": [v]}),
+            pl.DataFrame({"line": [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 1
@@ -162,7 +164,7 @@ EEE
         assert_frame_equal(
             q.collect(),
             pl.DataFrame(
-                {"index": [4], "lines": [v]},
+                {"index": [4], "line": [v]},
                 schema_overrides={"index": pl.get_index_type()},
             ),
         )
@@ -173,7 +175,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 4 * [v]}),
+            pl.DataFrame({"line": 4 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 4
@@ -182,7 +184,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 5 * [v]}),
+            pl.DataFrame({"line": 5 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 5
@@ -209,3 +211,15 @@ def test_scan_lines_negative_slice_reversed_read(
     # This succeeds because the line counter simply counts '\n' bytes without
     # parsing to string.
     assert q.select(pl.len()).collect().item() == 5000
+
+
+def test_scan_source_shorter_than_compression_magic(tmp_path: Path) -> None:
+    path = tmp_path / "a.txt"
+    path.write_bytes(b"\n")
+
+    assert pl.scan_lines(path).tail(3).collect().to_series().to_list() == [""]
+
+    path = tmp_path / "a.ndjson"
+    path.write_bytes(b"{}\n")
+
+    assert pl.scan_ndjson(path).tail(3).collect().height == 1

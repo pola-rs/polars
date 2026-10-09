@@ -1,4 +1,5 @@
 use polars_core::utils::flatten;
+use polars_defs::join::JoinValidation;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::itertools::Itertools;
@@ -7,6 +8,7 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::*;
+use crate::frame::join::validation::validate_build;
 
 pub(super) fn probe_inner<T, F, I>(
     probe: I,
@@ -64,18 +66,18 @@ where
         }
         let hash_tbls = build_tables(build, nulls_equal);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, swapped)?;
+        validate_build(validate, build_size, expected_size, swapped)?;
         hash_tbls
     } else {
         build_tables(build, nulls_equal)
     };
-    try_raise_keyboard_interrupt();
+    try_raise_polars_abort();
 
     let n_tables = hash_tbls.len();
     let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    let out = POOL.install(|| {
+    let out = RAYON.install(|| {
         let tuples = probe
             .into_par_iter()
             .zip(offsets)

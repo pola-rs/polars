@@ -1,33 +1,37 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
-use polars_ooc::AccessPattern::Fifo;
+use polars_async::executor::TaskMetricAggregator;
+use polars_async::primitives::wait_group::WaitGroup;
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use super::compute_node_prelude::*;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 
-// TODO: replace this with an out-of-core buffering solution.
 enum BufferedStream {
-    Open(VecDeque<(Token, MorselSeq)>),
+    Open(VecDeque<(SpillFrame, MorselSeq)>, MostRecentSpillContext),
     Closed,
 }
 
 impl BufferedStream {
-    fn new() -> Self {
-        Self::Open(VecDeque::new())
+    fn new(task_metrics: Option<Arc<TaskMetricAggregator>>) -> Self {
+        Self::Open(
+            VecDeque::new(),
+            MostRecentSpillContext::new("multiplexer".into(), task_metrics),
+        )
     }
 }
 
+#[derive(Default)]
 pub struct MultiplexerNode {
     buffers: Vec<BufferedStream>,
+    recv_done: bool,
 }
 
 impl MultiplexerNode {
     pub fn new() -> Self {
-        Self {
-            buffers: Vec::default(),
-        }
+        Self::default()
     }
 }
 
@@ -40,23 +44,27 @@ impl ComputeNode for MultiplexerNode {
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && !send.is_empty());
 
         // Initialize buffered streams, and mark those for which the receiver
         // is no longer interested as closed.
-        self.buffers.resize_with(send.len(), BufferedStream::new);
+        self.buffers.resize_with(send.len(), || {
+            BufferedStream::new(state.task_metrics.clone())
+        });
         for (s, b) in send.iter().zip(&mut self.buffers) {
             if *s == PortState::Done {
                 *b = BufferedStream::Closed;
             }
         }
 
+        self.recv_done = recv[0] == PortState::Done;
+
         // Check if either the input is done, or all outputs are done.
         let input_done = recv[0] == PortState::Done
             && self.buffers.iter().all(|b| match b {
-                BufferedStream::Open(v) => v.is_empty(),
+                BufferedStream::Open(v, _) => v.is_empty(),
                 BufferedStream::Closed => true,
             });
         let output_done = send.iter().all(|p| *p == PortState::Done);
@@ -75,7 +83,7 @@ impl ComputeNode for MultiplexerNode {
         // Pass along the input state to the output.
         for (i, s) in send.iter_mut().enumerate() {
             let buffer_empty = match &self.buffers[i] {
-                BufferedStream::Open(v) => v.is_empty(),
+                BufferedStream::Open(v, _) => v.is_empty(),
                 BufferedStream::Closed => true,
             };
             *s = if buffer_empty && recv[0] == PortState::Done {
@@ -96,6 +104,28 @@ impl ComputeNode for MultiplexerNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        let mut num_open = 0;
+        let mut any_buffered = false;
+        for b in &self.buffers {
+            match b {
+                BufferedStream::Open(v, _) => {
+                    num_open += 1;
+                    any_buffered |= !v.is_empty();
+                },
+                BufferedStream::Closed => {},
+            }
+        }
+
+        if !self.recv_done && num_open >= 2 {
+            NodeMemoryUsage::Unbounded
+        } else if any_buffered {
+            NodeMemoryUsage::Draining
+        } else {
+            NodeMemoryUsage::Bounded
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
@@ -108,8 +138,14 @@ impl ComputeNode for MultiplexerNode {
         assert!(self.buffers.len() == send_ports.len());
 
         enum Listener<'a> {
-            Active(UnboundedSender<Morsel>),
-            Buffering(&'a mut VecDeque<(Token, MorselSeq)>),
+            Active(
+                UnboundedSender<(SpillFrame, MorselSeq, SourceToken)>,
+                MostRecentSpillContext,
+            ),
+            Buffering(
+                &'a mut VecDeque<(SpillFrame, MorselSeq)>,
+                MostRecentSpillContext,
+            ),
             Inactive,
         }
 
@@ -120,21 +156,18 @@ impl ComputeNode for MultiplexerNode {
             .iter_mut()
             .enumerate()
             .map(|(port_idx, buffer)| {
-                if let BufferedStream::Open(buf) = buffer {
+                if let BufferedStream::Open(buf, ctx) = buffer {
                     if send_ports[port_idx].is_some() {
-                        // TODO: replace with a bounded channel and store data
-                        // out-of-core beyond a certain size.
                         let (rx, tx) = unbounded_channel();
-                        (Listener::Active(rx), Some((buf, tx)))
+                        (Listener::Active(rx, ctx.clone()), Some((buf, tx)))
                     } else {
-                        (Listener::Buffering(buf), None)
+                        (Listener::Buffering(buf, ctx.clone()), None)
                     }
                 } else {
                     (Listener::Inactive, None)
                 }
             })
             .unzip();
-
         // TODO: parallel multiplexing.
         if let Some(mut receiver) = recv_ports[0].take().map(|r| r.serial()) {
             let buffered_source_token = buffered_source_token.clone();
@@ -147,17 +180,25 @@ impl ComputeNode for MultiplexerNode {
 
                     let mut anyone_interested = false;
                     let mut active_listener_interested = false;
+                    let seq = morsel.seq();
                     for buf_sender in &mut buf_senders {
                         match buf_sender {
-                            Listener::Active(s) => match s.send(morsel.clone()) {
-                                Ok(_) => {
-                                    anyone_interested = true;
-                                    active_listener_interested = true;
-                                },
-                                Err(_) => *buf_sender = Listener::Inactive,
+                            Listener::Active(s, ctx) => {
+                                let source_token = morsel.source_token().clone();
+                                let sf = morsel.sf().clone();
+                                ctx.register(&sf).await;
+                                match s.send((sf, seq, source_token)) {
+                                    Ok(_) => {
+                                        anyone_interested = true;
+                                        active_listener_interested = true;
+                                    },
+                                    Err(_) => *buf_sender = Listener::Inactive,
+                                }
                             },
-                            Listener::Buffering(b) => {
-                                b.push_front((morsel.clone().into_token(Fifo).await, morsel.seq()));
+                            Listener::Buffering(b, ctx) => {
+                                let sf = morsel.sf().clone();
+                                ctx.register(&sf).await;
+                                b.push_front((sf, seq));
                                 anyone_interested = true;
                             },
                             Listener::Inactive => {},
@@ -188,25 +229,29 @@ impl ComputeNode for MultiplexerNode {
                 let buffered_source_token = buffered_source_token.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // First we try to flush all the old buffered data.
-                    while let Some((token, seq)) = buf.pop_back() {
-                        let df = token.into_df().await;
-                        let mut morsel = Morsel::new(df, seq, buffered_source_token.clone());
+                    while let Some((sf, seq)) = buf.pop_back() {
+                        let mut morsel = Morsel::new(sf, seq, buffered_source_token.clone());
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
                             return Ok(());
                         }
-                        if buffered_source_token.stop_requested()
-                            && let Ok(rx_morsel) = rx.try_recv()
-                        {
-                            rx_morsel.source_token().stop();
-                            let rx_seq = rx_morsel.seq();
-                            buf.push_front((rx_morsel.into_token(Fifo).await, rx_seq));
+
+                        // Someone wants to stop, flush remainder into buffer.
+                        if buffered_source_token.stop_requested() {
+                            drop(sender);
+                            while let Some((sf, seq, source_token)) = rx.recv().await {
+                                source_token.stop();
+                                buf.push_front((sf, seq));
+                            }
+                            return Ok(());
                         }
+
                         wait_group.wait().await;
                     }
 
                     // Then send along data from the multiplexer.
-                    while let Some(mut morsel) = rx.recv().await {
+                    while let Some((sf, seq, source_token)) = rx.recv().await {
+                        let mut morsel = Morsel::new(sf, seq, source_token);
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
                             return Ok(());

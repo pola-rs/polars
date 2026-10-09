@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 from warnings import warn
 
 import polars._reexport as pl
-from polars._utils.various import find_stacklevel
+from polars._warnings import find_stacklevel
 
 if TYPE_CHECKING:
     from collections.abc import Callable

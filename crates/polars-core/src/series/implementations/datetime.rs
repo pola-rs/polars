@@ -1,8 +1,6 @@
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DatetimeChunked {
@@ -46,9 +44,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             })
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.physical().into_total_ord_inner()
     }
@@ -292,6 +287,15 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0
+            .physical()
+            .clone()
+            .with_validity(validity)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
             .physical()
@@ -351,6 +355,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.physical().arg_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(self.0.physical())
     }

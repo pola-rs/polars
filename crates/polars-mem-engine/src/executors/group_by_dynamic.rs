@@ -1,3 +1,6 @@
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::DynamicGroupOptionsIR;
+
 use super::*;
 
 #[cfg_attr(not(feature = "dynamic_group_by"), allow(dead_code))]
@@ -8,8 +11,7 @@ pub(crate) struct GroupByDynamicExec {
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     #[cfg(feature = "dynamic_group_by")]
-    pub(crate) options: DynamicGroupOptions,
-    pub(crate) input_schema: SchemaRef,
+    pub(crate) options: DynamicGroupOptionsIR,
     pub(crate) output_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
     pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
@@ -39,7 +41,7 @@ impl GroupByDynamicExec {
         };
 
         let (mut time_key, bounds, groups) = df.group_by_dynamic(group_by, &self.options)?;
-        POOL.install(|| {
+        RAYON.install(|| {
             keys.iter_mut().for_each(|key| {
                 unsafe { *key = key.agg_first(&groups) };
             })
@@ -96,24 +98,6 @@ impl Executor for GroupByDynamicExec {
             }
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            let by = self
-                .keys
-                .iter()
-                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("group_by_dynamic".to_string(), &by);
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
-        };
-
-        if state.has_node_timer() {
-            let new_state = state.clone();
-            new_state.record(|| self.execute_impl(state, df), profile_name)
-        } else {
-            self.execute_impl(state, df)
-        }
+        self.execute_impl(state, df)
     }
 }

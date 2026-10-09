@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
+from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
+from polars.datatypes import parse_into_datatype_expr
 
 if TYPE_CHECKING:
+    import polars._reexport as pl
     from polars import Expr
+    from polars._typing import (
+        PolarsDataType,
+    )
 
 
 class ExprCatNameSpace:
@@ -17,32 +24,11 @@ class ExprCatNameSpace:
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
-    def get_categories(self) -> Expr:
-        """
-        Get the categories stored in this data type.
-
-        Examples
-        --------
-        >>> df = pl.Series(
-        ...     "cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical
-        ... ).to_frame()
-        >>> df.select(pl.col("cats").cat.get_categories())  # doctest: +SKIP
-        shape: (3, 1)
-        ┌──────┐
-        │ cats │
-        │ ---  │
-        │ str  │
-        ╞══════╡
-        │ foo  │
-        │ bar  │
-        │ ham  │
-        └──────┘
-        """
-        return wrap_expr(self._pyexpr.cat_get_categories())
-
     def len_bytes(self) -> Expr:
         """
         Return the byte-length of the string representation of each value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -86,6 +72,8 @@ class ExprCatNameSpace:
     def len_chars(self) -> Expr:
         """
         Return the number of characters of the string representation of each value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -134,6 +122,8 @@ class ExprCatNameSpace:
     def starts_with(self, prefix: str) -> Expr:
         """
         Check if string representations of values start with a substring.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -190,6 +180,8 @@ class ExprCatNameSpace:
         """
         Check if string representations of values end with a substring.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         suffix
@@ -242,6 +234,8 @@ class ExprCatNameSpace:
     def slice(self, offset: int, length: int | None = None) -> Expr:
         """
         Extract a substring from the string representation of each value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -304,3 +298,56 @@ class ExprCatNameSpace:
         └─────────────┴───────┘
         """
         return wrap_expr(self._pyexpr.cat_slice(offset, length))
+
+    @unstable()
+    def to(
+        self, dtype: PolarsDataType | pl.DataTypeExpr, *, strict: bool = True
+    ) -> Expr:
+        """
+        Convert to a categorical or enum `dtype`.
+
+        The input must be of the physical type of the categorical or enum dtype.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        dtype
+            The target categorical or enum dtype.
+        strict
+            Whether to panic when encountering an illegal category.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+        """
+        py_dtype = parse_into_datatype_expr(dtype)._pydatatype_expr
+        return wrap_expr(self._pyexpr.cat_to(py_dtype, strict))
+
+    @unstable()
+    def physical(self) -> Expr:
+        """
+        Get the physical values of a categorical or enum data type.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+        """
+        return wrap_expr(self._pyexpr.cat_physical())
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "get_categories": "to get the distinct values present in a"
+                    " Categorical column, use `Expr.unique()`. For the fixed category"
+                    " list of an Enum, use its `dtype.categories`.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

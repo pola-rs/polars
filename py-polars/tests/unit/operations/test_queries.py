@@ -43,7 +43,7 @@ def test_repeat_expansion_in_group_by() -> None:
         .agg(pl.repeat(1, pl.len()).cum_sum())
         .to_dict(as_series=False)
     )
-    assert out == {"g": [1, 2, 3], "repeat": [[1], [1, 2], [1, 2, 3]]}
+    assert out == {"g": [1, 2, 3], "literal": [[1], [1, 2], [1, 2, 3]]}
 
 
 def test_agg_after_head() -> None:
@@ -117,7 +117,6 @@ def test_maintain_order_after_sampling() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
 @pytest.mark.parametrize("maintain_order", [False, True])
@@ -216,12 +215,12 @@ def test_dtype_concat_3735() -> None:
     for dt in NUMERIC_DTYPES:
         d1 = pl.DataFrame([pl.Series("val", [1, 2], dtype=dt)])
 
-    d2 = pl.DataFrame([pl.Series("val", [3, 4], dtype=dt)])
-    df = pl.concat([d1, d2])
+        d2 = pl.DataFrame([pl.Series("val", [3, 4], dtype=dt)])
+        df = pl.concat([d1, d2])
 
-    assert df.shape == (4, 1)
-    assert df.columns == ["val"]
-    assert df.to_series().to_list() == [1, 2, 3, 4]
+        assert df.shape == (4, 1)
+        assert df.columns == ["val"]
+        assert df.to_series().to_list() == [1, 2, 3, 4]
 
 
 def test_opaque_filter_on_lists_3784() -> None:
