@@ -875,6 +875,18 @@ impl SQLExprVisitor<'_> {
             _ => (self.visit_expr(left)?, self.visit_expr(right)?),
         };
         rhs = self.convert_temporal_strings(&lhs, &rhs);
+        if matches!(
+            op,
+            SQLBinaryOperator::Eq
+                | SQLBinaryOperator::NotEq
+                | SQLBinaryOperator::Spaceship
+                | SQLBinaryOperator::Lt
+                | SQLBinaryOperator::LtEq
+                | SQLBinaryOperator::Gt
+                | SQLBinaryOperator::GtEq
+        ) {
+            lhs = self.convert_temporal_strings(&rhs, &lhs);
+        }
         // An operator with a decimal literal operand is resolved once the operand types are
         // known, so that the literal can take a float operand's type.
         let decimal_literal_operand =
