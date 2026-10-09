@@ -8,9 +8,11 @@ the main Iceberg test suite with the plugin planner (`test_iceberg_plugin_suite.
 
 from __future__ import annotations
 
+import functools
 import importlib.metadata
 import io
 import json
+import operator
 import pickle
 import re
 import sys
@@ -879,6 +881,84 @@ def test_iceberg_plugin_decimal_partition_deletes_after_precision_widening(
     lf = pl.scan_iceberg(tbl)
     assert_frame_equal(lf.collect(), expected, check_row_order=False)
     assert lf.select(pl.len()).collect().item() == 2
+
+
+def test_iceberg_plugin_absent_partition_summary_bounds(tmp_path: Path) -> None:
+    from pyiceberg.manifest import write_manifest_list
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "x", LongType())),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "x")),
+    )
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    tbl.append(df.to_arrow())
+
+    # Partition summary bounds are optional: rewrite the manifest list without them.
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    manifests = snapshot.manifests(tbl.io)
+    for manifest in manifests:
+        for summary in manifest.partitions or ():
+            # `lower_bound` and `upper_bound`.
+            summary[2] = None
+            summary[3] = None
+    Path(snapshot.manifest_list.removeprefix("file://")).unlink()
+    with write_manifest_list(
+        format_version=tbl.format_version,
+        output_file=tbl.io.new_output(snapshot.manifest_list),
+        snapshot_id=snapshot.snapshot_id,
+        parent_snapshot_id=snapshot.parent_snapshot_id,
+        sequence_number=snapshot.sequence_number,
+        avro_compression="deflate",
+    ) as writer:
+        writer.add_manifests(manifests)
+
+    for predicate in [
+        pl.col("x") == 2,
+        pl.col("x") > 1,
+        pl.col("x").is_in([3]),
+        pl.col("x").is_not_null(),
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
+def test_iceberg_plugin_deeply_nested_schema(tmp_path: Path) -> None:
+    from pyiceberg.types import StructType
+
+    # Deeper than serde_json's default recursion limit (three JSON levels per struct).
+    depth = 45
+    iceberg_type: Any = LongType()
+    value: Any = 1
+    for i in range(depth):
+        iceberg_type = StructType(NestedField(1000 + i, "f", iceberg_type))
+        value = {"f": value}
+
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "s", iceberg_type))
+    )
+    df = pl.DataFrame({"s": [value]})
+    tbl.append(df.to_arrow())
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df)
+    assert pl.scan_iceberg(tbl).select(pl.len()).collect().item() == 1
+
+
+def test_iceberg_plugin_deeply_nested_row_filter(metadata_path: str) -> None:
+    # An `and` chain deeper than serde_json's default recursion limit.
+    predicate = functools.reduce(
+        operator.and_, [pl.col("a") != i for i in range(100, 400)]
+    )
+    assert_frame_equal(
+        pl.scan_iceberg(metadata_path).filter(predicate).collect(),
+        TEST_DF.filter(predicate),
+    )
 
 
 def test_iceberg_plugin_gzip_metadata(metadata_path: str) -> None:

@@ -196,7 +196,7 @@ def plugin_scan(
             filter_columns=filter_columns,
             statistics_columns=statistics_columns,
             row_filter=(
-                iceberg_table_filter.model_dump_json()
+                _row_filter_json(iceberg_table_filter)
                 if iceberg_table_filter is not None
                 else None
             ),
@@ -217,6 +217,54 @@ def plugin_scan(
             metadata_cache_scope=metadata_cache_scope,
         )
     )
+
+
+def _row_filter_json(expr: pyiceberg.expressions.BooleanExpression) -> str:
+    from pydantic_core import PydanticSerializationError
+
+    try:
+        return _balance_filter(expr).model_dump_json()
+    except PydanticSerializationError as e:
+        # E.g. exceeds Pydantic's recursion limit.
+        msg = f"iceberg: unsupported: row filter: {e}"
+        raise NotImplementedError(msg) from e
+
+
+def _balance_filter(
+    expr: pyiceberg.expressions.BooleanExpression,
+) -> pyiceberg.expressions.BooleanExpression:
+    """
+    Rebalance chains of `And` / `Or`.
+
+    Filters are converted from Polars as left-deep trees, whose JSON nesting
+    exceeds the recursion limits of Pydantic and of JSON parsers.
+    """
+    from pyiceberg.expressions import And, Not, Or
+
+    if isinstance(expr, Not):
+        return Not(_balance_filter(expr.child))
+    if not isinstance(expr, (And, Or)):
+        return expr
+
+    op = type(expr)
+    operands = []
+    stack: list[pyiceberg.expressions.BooleanExpression] = [expr]
+    while stack:
+        e = stack.pop()
+        if type(e) is op:
+            stack.extend((e.right, e.left))  # type: ignore[attr-defined]
+        else:
+            operands.append(_balance_filter(e))
+
+    def build(
+        operands: list[pyiceberg.expressions.BooleanExpression],
+    ) -> pyiceberg.expressions.BooleanExpression:
+        if len(operands) == 1:
+            return operands[0]
+        mid = len(operands) // 2
+        return op(build(operands[:mid]), build(operands[mid:]))
+
+    return build(operands)
 
 
 def _plr() -> Any:
