@@ -868,3 +868,15 @@ def test_merge_join_clipped_key(left_on: list[pl.Expr | str], merge_join: bool) 
     expected = q.collect(engine="in-memory")
     assert expected.height > 0
     assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+def test_merge_join_set_sorted_key() -> None:
+    # "c" does not come from the sorted column "a", so "b" is not sorted within it.
+    left = pl.LazyFrame(
+        {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [0, 0, 0, 0]}
+    ).set_sorted("a", "b")
+    right = pl.LazyFrame({"c": [0, 0], "b": [1, 2]}).set_sorted("c", "b")
+    q = left.join(right, left_on=[pl.col("c").set_sorted(), "b"], right_on=["c", "b"])
+    expected = q.collect(engine="in-memory")
+    assert expected.height == 4
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)

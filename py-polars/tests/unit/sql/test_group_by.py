@@ -233,6 +233,23 @@ def test_aggregate_with_excluded_columns() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * EXCLUDE (g) REPLACE (SUM(x) AS x) FROM self",
+        "SELECT * EXCLUDE (g) REPLACE (SUM(x) AS x) FROM self ORDER BY x",
+        "SELECT * EXCLUDE (g) REPLACE (SUM(x) + 1 AS x) FROM self WHERE g > 5",
+        "SELECT * REPLACE (MAX(g) AS g, SUM(x) AS x) FROM self",
+        "SELECT * EXCLUDE (g, x), SUM(x) AS s FROM self ORDER BY s",
+        "SELECT * REPLACE (MAX(x) AS x) FROM self GROUP BY g ORDER BY g",
+        "SELECT * REPLACE (x + 1 AS x) FROM self GROUP BY ALL ORDER BY ALL",
+    ],
+)
+def test_replace_with_aggregates(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [3, 1, 2]})
+    assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
 def test_group_by_all_multi() -> None:
     dt1 = date(1999, 12, 31)
     dt2 = date(2028, 7, 5)
