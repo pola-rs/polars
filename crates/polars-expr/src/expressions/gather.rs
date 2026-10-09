@@ -1,4 +1,3 @@
-use num_traits::Zero;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
@@ -81,10 +80,17 @@ impl PhysicalExpr for GatherExpr {
                 // The range is checked first, so the casts don't wrap. Only scan for the
                 // bounds that the dtype doesn't already give.
                 let dtype_max = dtype.max()?.value().extract::<u128>().unwrap();
-                let has_negative = dtype.is_signed_integer()
-                    && with_match_physical_integer_polars_type!(dtype, |$T| {
-                        has_negative::<$T>(s.as_ref().as_ref())
-                    });
+                let has_negative = match dtype {
+                    #[cfg(feature = "dtype-i8")]
+                    DataType::Int8 => s.i8()?.has_negative(),
+                    #[cfg(feature = "dtype-i16")]
+                    DataType::Int16 => s.i16()?.has_negative(),
+                    DataType::Int32 => s.i32()?.has_negative(),
+                    DataType::Int64 => s.i64()?.has_negative(),
+                    #[cfg(feature = "dtype-i128")]
+                    DataType::Int128 => s.i128()?.has_negative(),
+                    _ => false,
+                };
                 if !has_negative {
                     let max = if dtype_max <= IdxSize::MAX as u128 {
                         dtype_max
@@ -170,14 +176,4 @@ impl PhysicalExpr for GatherExpr {
     fn is_scalar(&self) -> bool {
         self.returns_scalar
     }
-}
-
-/// Also checks masked out values. Stops at the first block that has a negative value.
-fn has_negative<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> bool {
-    let zero = T::Native::zero();
-    ca.downcast_iter().any(|arr| {
-        arr.values()
-            .chunks(1024)
-            .any(|block| block.iter().fold(false, |acc, v| acc | (*v < zero)))
-    })
 }
