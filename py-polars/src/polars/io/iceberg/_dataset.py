@@ -12,9 +12,8 @@ from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
 from polars.io.iceberg._cache import (
-    CacheStats,
     describe_metadata_file_cache,
-    get_table_cache,
+    get_metadata_file_cache,
     load_static_table,
 )
 from polars.io.iceberg._utils import (
@@ -88,11 +87,13 @@ SerializedTableState: TypeAlias = str | IcebergCatalogTableDescriptor
 def _load_static_table(
     metadata_location: str, properties: dict[str, Any]
 ) -> pyiceberg.table.Table:
-    stats = CacheStats()
-    table = load_static_table(metadata_location, properties, stats)
+    table, stats = load_static_table(metadata_location, properties)
 
     if verbose():
-        eprint(f"IcebergTableWrap: table cache: {stats.describe(get_table_cache())}")
+        eprint(
+            "IcebergTableWrap: metadata file cache: "
+            f"{stats.describe(get_metadata_file_cache())}"
+        )
 
     return table
 

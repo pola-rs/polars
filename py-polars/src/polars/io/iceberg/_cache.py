@@ -1,13 +1,11 @@
-"""Process-wide caches for immutable Iceberg metadata.
+"""Process-wide cache for immutable Iceberg metadata files.
 
 Manifest lists, manifests and table metadata files with a write-time UUID in
-their name are immutable at a given path, so they can be reused across scans of
-the same table within a process. Manifest lists and manifests are cached as
-bytes at the PyIceberg ``FileIO`` boundary: PyIceberg reads a metadata file by
-calling ``io.new_input(path).open().read()``, and the wrapping ``FileIO`` here
-serves that read from memory when the path was seen before. Table metadata files
-are cached as the loaded ``StaticTable``, in a cache of their own; scans of the
-same metadata path share that table, including its ``FileIO``.
+their name are immutable at a given path, so their bytes can be reused across
+scans of the same table within a process. The cache sits at the PyIceberg
+``FileIO`` boundary: PyIceberg reads a metadata file by calling
+``io.new_input(path).open().read()``, and the wrapping ``FileIO`` here serves
+that read from memory when the path was seen before.
 """
 
 from __future__ import annotations
@@ -19,7 +17,8 @@ import re
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from pathlib import Path, PureWindowsPath
+from typing import TYPE_CHECKING, Any
 
 from polars._utils.various import qualified_type_name
 
@@ -30,33 +29,33 @@ if TYPE_CHECKING:
     from pyiceberg.table import StaticTable
 
 ENV_METADATA_FILE_CACHE_MB = "POLARS_ICEBERG_METADATA_FILE_CACHE_MB"
-ENV_TABLE_CACHE_MB = "POLARS_ICEBERG_TABLE_CACHE_MB"
 DEFAULT_METADATA_FILE_CACHE_MB = 64
-DEFAULT_TABLE_CACHE_MB = 64
 _BYTES_PER_MB = 2**20
-
-T = TypeVar("T")
-
-_MAX_TOO_LARGE_KEYS = 256
 
 _UUID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
 )
 
 
-def _has_uuid_name(location: str, suffix: str) -> bool:
-    # A Windows path can have a UUID in a directory name.
-    name = re.split(r"[/\\]", location)[-1]
-    return name.endswith(suffix) and _UUID_PATTERN.search(name) is not None
+def _is_absolute_location(location: str) -> bool:
+    # A relative path resolves against the working directory, which can change.
+    return (
+        "://" in location
+        or location.startswith("file:/")
+        or Path(location).is_absolute()
+        or PureWindowsPath(location).is_absolute()
+    )
 
 
 def _is_cacheable_metadata_file(location: str) -> bool:
-    # Manifest lists and manifests with a write-time UUID in the name.
-    return _has_uuid_name(location, ".avro")
-
-
-def _is_cacheable_table_metadata(location: str) -> bool:
-    return _has_uuid_name(location, ".metadata.json")
+    # Manifest lists, manifests and table metadata files with a write-time UUID in
+    # the name. A Windows path can have a UUID in a directory name.
+    name = re.split(r"[/\\]", location)[-1]
+    return (
+        _is_absolute_location(location)
+        and name.endswith((".avro", ".metadata.json"))
+        and _UUID_PATTERN.search(name) is not None
+    )
 
 
 # Set by REST catalogs, changes on every commit to the table.
@@ -161,7 +160,7 @@ class CacheStats:
     evicted: int = 0
     bypass: str | None = None
 
-    def describe(self, cache: _LruCache[Any]) -> str:
+    def describe(self, cache: IcebergMetadataFileCache) -> str:
         """Summary for verbose output."""
         if self.bypass is not None:
             return f"bypassed: {self.bypass}"
@@ -172,18 +171,16 @@ class CacheStats:
         )
 
 
-class _LruCache(Generic[T]):
-    """Cache with LRU eviction bounded by the total of the entry sizes."""
+class IcebergMetadataFileCache:
+    """Byte cache with LRU eviction bounded by total size."""
 
     def __init__(self, max_bytes: int) -> None:
         self.max_bytes = max_bytes
         self._lock = threading.Lock()
-        self._entries: OrderedDict[str, tuple[T, int]] = OrderedDict()
+        self._entries: OrderedDict[str, bytes] = OrderedDict()
         self._total_bytes = 0
-        # Per-key locks so concurrent misses on one key fetch once.
+        # Per-path locks so concurrent misses on one path fetch once.
         self._fetch_locks: dict[str, threading.Lock] = {}
-        # Keys of values too large to store, most recent last.
-        self._too_large: OrderedDict[str, None] = OrderedDict()
 
     @property
     def enabled(self) -> bool:
@@ -198,98 +195,72 @@ class _LruCache(Generic[T]):
         with self._lock:
             return self._total_bytes
 
-    def _get_locked(self, key: str) -> T | None:
-        entry = self._entries.get(key)
-        if entry is None:
-            return None
-        self._entries.move_to_end(key)
-        return entry[0]
+    def _get_locked(self, location: str) -> bytes | None:
+        data = self._entries.get(location)
+        if data is not None:
+            self._entries.move_to_end(location)
+        return data
 
-    def get(self, key: str) -> T | None:
+    def get(self, location: str) -> bytes | None:
         with self._lock:
-            return self._get_locked(key)
+            return self._get_locked(location)
 
-    def is_too_large(self, key: str) -> bool:
-        """Whether a value for `key` was too large to store."""
-        with self._lock:
-            return key in self._too_large
-
-    def put(
-        self, key: str, value: T, size: int, stats: CacheStats | None = None
-    ) -> None:
-        """Store `value`, accounted at `size` bytes plus the key length.
-
-        `stats` counts a value too large to store and the entries evicted.
-        """
+    def put(self, location: str, data: bytes, stats: CacheStats | None = None) -> None:
+        """Store `data`; `stats` counts data too large to store and the evictions."""
         # Keys count towards the budget, so empty entries are bounded too.
-        size += len(key)
+        size = len(location) + len(data)
 
         with self._lock:
             if size > self.max_bytes:
                 if stats is not None:
                     stats.too_large += 1
-                self._too_large[key] = None
-                self._too_large.move_to_end(key)
-                if len(self._too_large) > _MAX_TOO_LARGE_KEYS:
-                    self._too_large.popitem(last=False)
                 return
 
-            if key in self._entries:
+            if location in self._entries:
                 return
 
-            self._entries[key] = (value, size)
+            self._entries[location] = data
             self._total_bytes += size
 
             while self._total_bytes > self.max_bytes:
-                _, (_, evicted_size) = self._entries.popitem(last=False)
-                self._total_bytes -= evicted_size
+                key, evicted = self._entries.popitem(last=False)
+                self._total_bytes -= len(key) + len(evicted)
                 if stats is not None:
                     stats.evicted += 1
 
     def get_or_fetch(
-        self, key: str, fetch: Callable[[], tuple[T, int]], stats: CacheStats
-    ) -> T:
-        """Return the cached value, fetching on a miss; `stats` counts it.
-
-        `fetch` returns the value and the size it is accounted at.
-        """
+        self, location: str, fetch: Callable[[], bytes], stats: CacheStats
+    ) -> bytes:
+        """Return the cached bytes, fetching on a miss; `stats` counts it."""
         with self._lock:
-            if (cached := self._get_locked(key)) is not None:
+            if (data := self._get_locked(location)) is not None:
                 stats.hits += 1
-                return cached
+                return data
 
-            fetch_lock = self._fetch_locks.setdefault(key, threading.Lock())
+            fetch_lock = self._fetch_locks.setdefault(location, threading.Lock())
 
         try:
             with fetch_lock:
                 with self._lock:
-                    if (cached := self._get_locked(key)) is not None:
+                    if (data := self._get_locked(location)) is not None:
                         stats.hits += 1
-                        return cached
+                        return data
 
                     stats.misses += 1
 
-                value, size = fetch()
-                self.put(key, value, size, stats)
+                data = fetch()
+                self.put(location, data, stats)
         finally:
             with self._lock:
-                # A newer lock for the same key may have replaced this one.
-                if self._fetch_locks.get(key) is fetch_lock:
-                    del self._fetch_locks[key]
+                # A newer lock for the same path may have replaced this one.
+                if self._fetch_locks.get(location) is fetch_lock:
+                    del self._fetch_locks[location]
 
-        return value
-
-
-class IcebergMetadataFileCache(_LruCache[bytes]):
-    """Cache of manifest list and manifest bytes."""
-
-
-class IcebergTableCache(_LruCache["StaticTable"]):
-    """Cache of tables loaded from table metadata files."""
+        return data
 
 
 def _bypass_reason(
-    cache: _LruCache[Any], file_io: FileIO, scope: str | None
+    cache: IcebergMetadataFileCache, file_io: FileIO, scope: str | None
 ) -> str | None:
     # `scope` is `_file_io_scope(file_io)`.
     if not cache.enabled:
@@ -302,14 +273,13 @@ def _bypass_reason(
 
 
 _global_metadata_file_cache: IcebergMetadataFileCache | None = None
-_global_table_cache: IcebergTableCache | None = None
 _global_cache_lock = threading.Lock()
 
 
-def _configured_size(env_var: str, default_mb: int) -> int:
-    value = os.getenv(env_var)
+def _configured_size() -> int:
+    value = os.getenv(ENV_METADATA_FILE_CACHE_MB)
     if value is None:
-        return default_mb * _BYTES_PER_MB
+        return DEFAULT_METADATA_FILE_CACHE_MB * _BYTES_PER_MB
 
     try:
         size_mb = int(value)
@@ -318,7 +288,7 @@ def _configured_size(env_var: str, default_mb: int) -> int:
 
     if size_mb < 0:
         msg = (
-            f"invalid value for {env_var}: {value!r}, expected a "
+            f"invalid value for {ENV_METADATA_FILE_CACHE_MB}: {value!r}, expected a "
             "non-negative number of MiB"
         )
         raise ValueError(msg)
@@ -334,79 +304,61 @@ def get_metadata_file_cache() -> IcebergMetadataFileCache:
         with _global_cache_lock:
             if _global_metadata_file_cache is None:
                 _global_metadata_file_cache = IcebergMetadataFileCache(
-                    _configured_size(
-                        ENV_METADATA_FILE_CACHE_MB, DEFAULT_METADATA_FILE_CACHE_MB
-                    )
+                    _configured_size()
                 )
 
     return _global_metadata_file_cache
 
 
-def get_table_cache() -> IcebergTableCache:
-    """Return the process-wide table cache, built from the environment."""
-    global _global_table_cache
-
-    if _global_table_cache is None:
-        with _global_cache_lock:
-            if _global_table_cache is None:
-                _global_table_cache = IcebergTableCache(
-                    _configured_size(ENV_TABLE_CACHE_MB, DEFAULT_TABLE_CACHE_MB)
-                )
-
-    return _global_table_cache
-
-
-def reset_caches() -> None:
-    """Drop the process-wide caches; the next use rebuilds them from the environment."""
-    global _global_metadata_file_cache, _global_table_cache
+def reset_metadata_file_cache() -> None:
+    """Drop the process-wide cache; the next use rebuilds it from the environment."""
+    global _global_metadata_file_cache
 
     with _global_cache_lock:
         _global_metadata_file_cache = None
-        _global_table_cache = None
-
-
-# Measured on PyIceberg 0.12 across metadata files of 0.1 to 20 MB: the parsed
-# metadata is 5.7x the size of its JSON, `model_dump_json()` 0.92x.
-_PARSED_BYTES_PER_JSON_BYTE = 6
-
-# Counted per cached table, which holds a FileIO and its storage clients.
-_TABLE_OVERHEAD_BYTES = 2**20
 
 
 def load_static_table(
-    metadata_location: str, properties: dict[str, Any], stats: CacheStats
-) -> StaticTable:
-    """Load the table at `metadata_location` with `StaticTable.from_metadata`.
+    metadata_location: str, properties: dict[str, Any]
+) -> tuple[StaticTable, CacheStats]:
+    """Load a table like `StaticTable.from_metadata`, through the cache.
 
-    Served from the table cache when the file name carries a UUID and
-    `properties` can be scoped; `stats` counts that cache read, or records why the
-    cache was bypassed. A cached table is shared by every scan of the same
-    metadata file; a `StaticTable` cannot refresh, and nothing in Polars modifies
-    it. A table too large for the cache bypasses it on later loads.
+    The metadata file is read through the metadata file cache. Every load builds
+    its own table and FileIO. The returned stats count the cache read, or record
+    why the cache was bypassed.
     """
+    from pyiceberg.catalog.noop import NoopCatalog
     from pyiceberg.io import load_file_io
+    from pyiceberg.serializers import FromInputFile
     from pyiceberg.table import StaticTable
 
-    def load() -> tuple[StaticTable, int]:
+    if not metadata_location.endswith(".metadata.json"):
         table = StaticTable.from_metadata(metadata_location, properties=properties)
-        size = (
-            len(table.metadata.model_dump_json()) * _PARSED_BYTES_PER_JSON_BYTE
-            + _TABLE_OVERHEAD_BYTES
-        )
-        return table, size
+        return table, CacheStats(bypass="version hint")
 
-    cache = get_table_cache()
-    file_io = load_file_io(properties, location=metadata_location)
-    scope = _file_io_scope(file_io)
-    key = f"{scope}:{metadata_location}"
-    stats.bypass = _bypass_reason(cache, file_io, scope)
-    if stats.bypass is None and not _is_cacheable_table_metadata(metadata_location):
+    file_io = CachingFileIO(
+        load_file_io(properties, location=metadata_location),
+        get_metadata_file_cache(),
+    )
+    stats = file_io.stats
+    if stats.bypass is None and not _is_absolute_location(metadata_location):
+        stats.bypass = "relative path"
+    if stats.bypass is None and not _is_cacheable_metadata_file(metadata_location):
         stats.bypass = "no UUID in metadata file name"
-    if stats.bypass is None and cache.is_too_large(key):
-        stats.bypass = "too large for the cache"
-    if stats.bypass is not None:
-        return StaticTable.from_metadata(metadata_location, properties=properties)
-    return cache.get_or_fetch(key, load, stats)
+
+    # `StaticTable.from_metadata` of PyIceberg 0.12, with the metadata file read
+    # through the cache.
+    metadata = FromInputFile.table_metadata(file_io.new_input(metadata_location))
+    table = StaticTable(
+        identifier=("static-table", metadata_location),
+        metadata_location=metadata_location,
+        metadata=metadata,
+        io=load_file_io(
+            {**properties, **metadata.properties}, location=metadata_location
+        ),
+        catalog=NoopCatalog("static-table"),
+    )
+    return table, stats
 
 
 class CachedInputFile:
@@ -430,10 +382,9 @@ class CachedInputFile:
     def location(self) -> str:
         return self._location
 
-    def _fetch(self) -> tuple[bytes, int]:
+    def _fetch(self) -> bytes:
         with self._inner.new_input(self._location).open(seekable=False) as f:
-            data = f.read()
-        return data, len(data)
+            return f.read()
 
     def _bytes(self) -> bytes:
         return self._cache.get_or_fetch(self._key, self._fetch, self._stats)

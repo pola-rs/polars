@@ -117,10 +117,10 @@ def scan_iceberg(
 
     Notes
     -----
-    Iceberg manifest lists and manifests, and the table loaded from a scanned
+    Iceberg manifest lists and manifests, and the metadata file of a scanned
     metadata path, are cached in memory for the lifetime of the process when their
     file name carries a UUID, and shared between scans with the same storage and
-    catalog properties. The caches assume that credentials taken from the
+    catalog properties. The cache assumes that credentials taken from the
     environment stay the same for the lifetime of the process.
 
     Examples
