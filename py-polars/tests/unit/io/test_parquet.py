@@ -5700,3 +5700,31 @@ def test_filter_struct_column_missing_in_file(tmp_path: Path) -> None:
             .collect(),
             df.filter(predicate),
         )
+
+
+@pytest.mark.parametrize("nullable", [True, False])
+@pytest.mark.parametrize("use_byte_stream_split", [True, False])
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_read_float16_without_arrow_schema_29829(
+    nullable: bool, use_byte_stream_split: bool, use_dictionary: bool
+) -> None:
+    schema = pa.schema([pa.field("x", pa.float16(), nullable=nullable)])
+    values = [1.5, -2.25, 3.0] + ([None] if nullable else [])
+    mask = np.array([v is None for v in values])
+    arr = np.array([0.0 if v is None else v for v in values], dtype=np.float16)
+    table = pa.table({"x": pa.array(arr, type=pa.float16(), mask=mask)}, schema=schema)
+
+    f = io.BytesIO()
+    pq.write_table(
+        table,
+        f,
+        use_dictionary=use_dictionary and not use_byte_stream_split,
+        use_byte_stream_split=["x"] if use_byte_stream_split else False,
+        store_schema=False,
+    )
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.read_parquet(f),
+        pl.DataFrame({"x": values}, schema={"x": pl.Float16}),
+    )

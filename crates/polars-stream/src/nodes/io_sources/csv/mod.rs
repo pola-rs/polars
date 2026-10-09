@@ -204,7 +204,7 @@ impl FileReader for CsvFileReader {
         }
 
         // There are two byte sourcing strategies `ReaderSource`: (a) async parallel prefetch using a
-        // streaming pipeline, or (b) memory-mapped, only to be used for uncompressed local files.
+        // streaming pipeline, or (b) in-memory, only to be used for uncompressed in-memory buffers.
         // The `compressed_reader` (of type `ByteSourceReader`) abstracts these source types.
         // The `use_async_prefetch` flag controls the optional pipeline startup behavior.
         let use_async_prefetch =
@@ -216,7 +216,7 @@ impl FileReader for CsvFileReader {
             Some(_) => Some(file_size * ASSUMED_COMPRESSION_RATIO),
         };
 
-        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with
+        // Unify the two source options (uncompressed in-memory buffer, or streaming async with
         // transparent decompression), into one unified reader source.
         let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
@@ -299,7 +299,13 @@ impl FileReader for CsvFileReader {
         // Because StreamBufReader uses `blocking_recv`, this runs on tokio's elastic blocking pool.
         let infer_schema_handle =
             tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
-                let mut reader = ByteSourceReader::try_new(reader_source, compression)?;
+                let mut reader = match reader_source {
+                    // Zero-copy fast-path for memory-mapped files.
+                    ReaderSource::Memory(cursor) => {
+                        ByteSourceReader::from_memory(cursor.into_inner())?
+                    },
+                    reader_source => ByteSourceReader::try_new(reader_source, compression)?,
+                };
                 let result = read_until_start_and_infer_schema(
                     &options,
                     Some(projected_schema.clone()),
@@ -323,6 +329,7 @@ impl FileReader for CsvFileReader {
             }));
 
         let task_metrics = self.task_metrics.as_deref();
+        let line_batch_task_metrics = self.task_metrics.clone();
 
         // Task: Line batch source.
         // Create and send newline-aligned batches. Create chunk_reader for decoder.
@@ -389,7 +396,8 @@ impl FileReader for CsvFileReader {
                             line_batch_tx,
                             pre_slice,
                             needs_full_row_count,
-                            use_async_prefetch,
+                            num_pipelines,
+                            task_metrics: line_batch_task_metrics,
                             verbose,
                         }
                         .run()

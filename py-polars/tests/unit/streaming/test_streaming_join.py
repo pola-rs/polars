@@ -879,3 +879,15 @@ def test_streaming_join_empty_build_side_after_repeat(how: JoinStrategy) -> None
         empty, left_on="c", right_on="k", how=how
     )
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_merge_join_set_sorted_key() -> None:
+    # "c" does not come from the sorted column "a", so "b" is not sorted within it.
+    left = pl.LazyFrame(
+        {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [0, 0, 0, 0]}
+    ).set_sorted("a", "b")
+    right = pl.LazyFrame({"c": [0, 0], "b": [1, 2]}).set_sorted("c", "b")
+    q = left.join(right, left_on=[pl.col("c").set_sorted(), "b"], right_on=["c", "b"])
+    expected = q.collect(engine="in-memory")
+    assert expected.height == 4
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)

@@ -925,6 +925,45 @@ def test_quantified_subquery_compared_after_cast(predicate: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "b IN (SELECT k FROM t2)",
+        "b NOT IN (SELECT d FROM t2)",
+        "b = ANY (SELECT d FROM t2)",
+        "b <> ALL (SELECT k FROM t2)",
+        "a IN (SELECT f FROM t2)",
+        "b IN (SELECT k FROM t2 WHERE t2.g = t1.g)",
+        "a NOT IN (SELECT f FROM t2 WHERE t2.g = t1.g)",
+        "0.1 IN (SELECT h FROM t2)",
+        "0.1 NOT IN (SELECT h FROM t2 WHERE t2.g = t1.g)",
+    ],
+)
+def test_in_subquery_float_with_integer_or_decimal(predicate: str) -> None:
+    # Compared as Float64, as with `=`, so 2^53 and 2^53 + 1 are equal. A decimal
+    # literal takes the type of the Float32 column `h`, so 0.1 is in it.
+    big = 2**53
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {"a": [1, 2, 3], "b": [float(big), 1.5, None], "g": [1, 1, 2]}
+            ),
+            "t2": pl.DataFrame(
+                {
+                    "k": [big + 1, 2, 3],
+                    "d": pl.Series([big + 1, 2, 3], dtype=pl.Decimal(20, 0)),
+                    "f": [2.0, 2.5, 3.0],
+                    "h": pl.Series([0.1, 0.5, 2.0], dtype=pl.Float32),
+                    "g": [1, 1, 2],
+                }
+            ),
+        },
+        query=f"SELECT a, {predicate} AS r FROM t1 ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
 def test_quantified_subquery_type_errors() -> None:
     ctx = pl.SQLContext(
         t1=pl.DataFrame({"s": ["10"], "l": [[1.0]]}),

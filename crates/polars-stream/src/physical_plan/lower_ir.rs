@@ -910,6 +910,7 @@ fn lower_ir_inner(
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            file_read_context: std::sync::OnceLock::new(),
                             io_metrics: std::sync::OnceLock::new(),
                             task_metrics: std::sync::OnceLock::new(),
                         }) as _

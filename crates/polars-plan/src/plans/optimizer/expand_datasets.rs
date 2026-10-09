@@ -119,20 +119,69 @@ pub(super) fn expand_datasets(
     Ok(())
 }
 
-/// Expand dataset scans that resolve to a native scan, so that join ordering sees
-/// their row counts and the statistics of their join keys and filtered columns.
-///
-/// Files are not skipped here. That is left to [`expand_datasets`], which runs after
-/// projection pushdown and the runtime join filters. A scan that falls back to a
-/// Python scan stays unexpanded, as that scan binds its projection when it is built.
+/// What [`expand_datasets_early`] does with the dataset scans.
 #[cfg(feature = "python")]
-pub(super) fn expand_datasets_for_join_order(
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum EarlyExpansion {
+    /// Expand the dataset scans that resolve to a native scan, so that join ordering
+    /// sees their row counts and the statistics of their join keys and filtered columns.
+    ///
+    /// Files are not skipped here. That is left to [`expand_datasets`], which runs after
+    /// projection pushdown and the runtime join filters. A scan that falls back to a
+    /// Python scan stays unexpanded, as that scan binds its projection when it is built.
+    ForJoinOrder,
+    /// Only give the dataset scans the statistics of their expansion, so that
+    /// estimates can be made before the scans are expanded. The scans stay
+    /// unexpanded, as the filters that let their expansion skip files are pushed into
+    /// them later. Scans that already have a row count are left alone.
+    ///
+    /// This is best effort: a scan that fails to expand gets no statistics. Without
+    /// its filters, the expansion may read metadata that the query never needs.
+    StatisticsOnly,
+}
+
+/// Give the dataset scans below `root` the statistics of their expansion, so that
+/// [`node_stats`](crate::plans::node_stats) can estimate a plan before it is
+/// optimized. The scans stay unexpanded. This is best effort, see
+/// [`EarlyExpansion::StatisticsOnly`].
+pub fn attach_dataset_scan_statistics(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
+) {
+    #[cfg(feature = "python")]
+    if let Err(err) =
+        expand_datasets_early(root, ir_arena, expr_arena, EarlyExpansion::StatisticsOnly)
+        && config::verbose()
+    {
+        eprintln!("attach_dataset_scan_statistics(): {err}");
+    }
+    #[cfg(not(feature = "python"))]
+    let _ = (root, ir_arena, expr_arena);
+}
+
+#[cfg(feature = "python")]
+pub(super) fn expand_datasets_early(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    mode: EarlyExpansion,
 ) -> PolarsResult<()> {
     let mut key_and_filter_names: PlIndexSet<PlSmallStr> = PlIndexSet::new();
     let mut dataset_scans: PlIndexSet<Node> = PlIndexSet::new();
+
+    let statistics_only = mode == EarlyExpansion::StatisticsOnly;
+    let is_dataset_scan = |ir: &IR| match ir {
+        IR::Scan {
+            scan_type,
+            file_info,
+            ..
+        } => {
+            matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. })
+                && !(statistics_only && file_info.stats.rows.value().is_some())
+        },
+        _ => false,
+    };
 
     for (node, ir) in ir_arena.iter(root) {
         match ir {
@@ -146,9 +195,7 @@ pub(super) fn expand_datasets_for_join_order(
                 key_and_filter_names
                     .extend(aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned());
             },
-            IR::Scan { scan_type, .. }
-                if matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) =>
-            {
+            ir if is_dataset_scan(ir) => {
                 dataset_scans.insert(node);
             },
             _ => {},
@@ -180,13 +227,40 @@ pub(super) fn expand_datasets_for_join_order(
 
     ASYNC.block_in_place_on(async {
         while let Some((node, ir)) = expansion_tasks.next().await {
-            let ir = ir?;
+            let ir = match ir {
+                Ok(ir) => ir,
+                Err(err) if statistics_only => {
+                    if config::verbose() {
+                        eprintln!("expand_datasets_early(): no statistics: {err}");
+                    }
+                    continue;
+                },
+                Err(err) => return Err(err),
+            };
             let IR::Scan { scan_type, .. } = &ir else {
                 unreachable!()
             };
 
-            if !matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) {
-                ir_arena.replace(node, ir);
+            if matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) {
+                continue;
+            }
+            match mode {
+                EarlyExpansion::ForJoinOrder => {
+                    ir_arena.replace(node, ir);
+                },
+                EarlyExpansion::StatisticsOnly => {
+                    let IR::Scan { file_info, .. } = ir else {
+                        unreachable!()
+                    };
+                    let IR::Scan {
+                        file_info: dataset_file_info,
+                        ..
+                    } = ir_arena.get_mut(node)
+                    else {
+                        unreachable!()
+                    };
+                    dataset_file_info.stats = file_info.stats;
+                },
             }
         }
 

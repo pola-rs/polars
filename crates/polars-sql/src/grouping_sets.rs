@@ -269,15 +269,11 @@ impl GroupingSets {
     /// Run the ordinary aggregation once per grouping set over one shared input and
     /// concatenate the branches onto a common schema of canonical keys (NULL where a
     /// set omits them), aggregate outputs and `GROUPING()` values.
-    ///
-    /// `group_aggs` run in `group_by().agg()`; `global_aggs` are the same aggregates
-    /// as they run in `select()` for the empty set.
     pub(crate) fn aggregate(
         &self,
         lf: LazyFrame,
         key_schema: &Schema,
-        group_aggs: &[Expr],
-        global_aggs: &[Expr],
+        aggs: &[Expr],
         agg_names: &[PlSmallStr],
     ) -> PolarsResult<LazyFrame> {
         // Compute non-column keys once, before the input is shared.
@@ -312,14 +308,14 @@ impl GroupingSets {
             .iter()
             .map(|set| {
                 let branch = if set.is_empty() {
-                    let mut aggs = global_aggs.to_vec();
-                    if aggs.is_empty() {
-                        aggs.push(len().alias(GLOBAL_COUNT_COL));
+                    let mut global_aggs = aggs.to_vec();
+                    if global_aggs.is_empty() {
+                        global_aggs.push(len().alias(GLOBAL_COUNT_COL));
                     }
-                    shared.clone().select(aggs)
+                    shared.clone().select(global_aggs)
                 } else {
                     let keys: Vec<Expr> = set.iter().map(|&i| group_keys[i].clone()).collect();
-                    shared.clone().group_by(keys).agg(group_aggs)
+                    shared.clone().group_by(keys).agg(aggs)
                 };
 
                 let mut out: Vec<Expr> =

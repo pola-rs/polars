@@ -1283,6 +1283,46 @@ def test_sort_by_dynamic_24057(expr: pl.Expr, result: list[list[int]]) -> None:
     assert_frame_equal(out, expected)
 
 
+def test_sort_by_scalar_key_29583_29760() -> None:
+    df = pl.DataFrame({"k": [0, 0, 0, 1, 1, 1], "a": [12, 10, 11, 22, 20, 21]})
+    a = pl.col("a")
+    by_scalar = (pl.lit(1), a.max())
+
+    for key in by_scalar:
+        out = df.select(a.sort_by(key))["a"].to_list()
+        assert sorted(out) == sorted(df["a"])
+        out = df.select(a.sort_by(key, "a", descending=[False, True]))["a"].to_list()
+        assert out == [22, 21, 20, 12, 11, 10]
+
+        grouped = df.group_by("k", maintain_order=True)
+        out = grouped.agg(a.head(1).sort_by(key))["a"].to_list()
+        assert out == [[12], [22]]
+        out = grouped.agg(a.sort_by(key, "a", descending=[False, True]))["a"].to_list()
+        assert out == [[12, 11, 10], [22, 21, 20]]
+
+        out = df.select(a.sort_by(key, "a").over("k"))["a"].to_list()
+        assert out == [10, 11, 12, 20, 21, 22]
+
+    # A unit-length group of a non-scalar key is not broadcast.
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.group_by("k").agg(a.sort_by(a.head(1)))
+
+    # Sorting a scalar input keeps it scalar.
+    q = df.lazy().group_by("k", maintain_order=True).agg(a.max().sort_by(a.max(), 1))
+    expected = pl.DataFrame({"k": [0, 1], "a": [12, 22]})
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expected)
+    q = df.lazy().group_by("a").agg(pl.col("k").max().sort_by("k"))
+    assert q.collect().schema == q.collect_schema()
+
+    # A scalar key is still evaluated.
+    lf = pl.LazyFrame({"a": [3, 1], "s": ["x", "y"]})
+    q = lf.select(a.sort_by(pl.col("s").first().cast(pl.Int64)))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
+        q.collect(optimizations=pl.QueryOptFlags.none())
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="arithmetic"):
+        lf.select(a.sort_by(pl.col("s").first() + 1)).collect()
+
+
 def test_sort_by_reordered_input_29630() -> None:
     df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [2, 1, 4, 3]})
 

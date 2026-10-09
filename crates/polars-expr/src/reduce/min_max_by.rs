@@ -129,7 +129,7 @@ trait SelectReducer: Clone + Send + Sync + 'static {
         Cow::Borrowed(s)
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize>;
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize>;
 
     fn select_one(
         &self,
@@ -170,11 +170,8 @@ where
         s.to_physical_repr()
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        arg_min_numeric(ca).filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_min_numeric(ca)
     }
 
     fn select_one(
@@ -221,11 +218,8 @@ where
         s.to_physical_repr()
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        arg_max_numeric(ca).filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_max_numeric(ca)
     }
 
     fn select_one(
@@ -264,11 +258,8 @@ impl SelectReducer for BinaryMinSelector {
         Cow::Owned(s.cast(&DataType::Binary).unwrap())
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        arg_min_binary(ca).filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_min_binary(ca)
     }
 
     fn select_one(
@@ -313,11 +304,8 @@ impl SelectReducer for BinaryMaxSelector {
         Cow::Owned(s.cast(&DataType::Binary).unwrap())
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        arg_max_binary(ca).filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_max_binary(ca)
     }
 
     fn select_one(
@@ -352,11 +340,8 @@ impl SelectReducer for BinaryOffsetMinSelector {
         None
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        arg_min_binary_offset(ca).filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_min_binary_offset(ca)
     }
 
     fn select_one(
@@ -396,11 +381,8 @@ impl SelectReducer for BinaryOffsetMaxSelector {
         Vec::new()
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        arg_max_binary_offset(ca).filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_max_binary_offset(ca)
     }
 
     fn select_one(
@@ -434,11 +416,8 @@ impl SelectReducer for BooleanMinSelector {
         None
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        arg_min_bool(ca).filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_min_bool(ca)
     }
 
     fn select_one(
@@ -467,11 +446,8 @@ impl SelectReducer for BooleanMaxSelector {
         None
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        arg_max_bool(ca).filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+        arg_max_bool(ca)
     }
 
     fn select_one(
@@ -516,13 +492,9 @@ impl<T: PolarsCategoricalType> SelectReducer for CatMinSelector<T> {
         s.to_physical_repr()
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
         use polars_core::chunked_array::arg_min_max::arg_min_opt_iter;
-        let arg_min = arg_min_opt_iter(ca.iter().map(|cat| self.0.cat_to_str(cat?.as_cat())));
-        arg_min.filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+        arg_min_opt_iter(ca.iter().map(|cat| self.0.cat_to_str(cat?.as_cat())))
     }
 
     fn select_one(
@@ -574,13 +546,9 @@ impl<T: PolarsCategoricalType> SelectReducer for CatMaxSelector<T> {
         s.to_physical_repr()
     }
 
-    fn select_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
+    fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
         use polars_core::chunked_array::arg_min_max::arg_max_opt_iter;
-        let arg_max = arg_max_opt_iter(ca.iter().map(|cat| self.0.cat_to_str(cat?.as_cat())));
-        arg_max.filter(|idx| {
-            let val = unsafe { ca.value_unchecked(*idx) };
-            self.select_one(v, val)
-        })
+        arg_max_opt_iter(ca.iter().map(|cat| self.0.cat_to_str(cat?.as_cat())))
     }
 
     fn select_one(
@@ -677,13 +645,22 @@ where
             .cast_series(ord_values.as_materialized_series());
         let ca: &ChunkedArray<R::Dtype> = ord_values.as_ref().as_ref().as_ref();
 
-        if let Some(selected) = self
-            .reducer
-            .select_ca(&mut self.values[group_idx as usize], ca)
-        {
-            self.mask.set(group_idx as usize, true);
-            let selected_val = payload_values.new_from_index(selected, 1);
-            self.payload.update_group(&[&selected_val], group_idx, 0)?;
+        if let Some(selected) = self.reducer.arg_ca(ca) {
+            let val = unsafe { ca.value_unchecked(selected) };
+            let better = self
+                .reducer
+                .select_one(&mut self.values[group_idx as usize], val);
+            if better || !self.mask.get(group_idx as usize) {
+                self.mask.set(group_idx as usize, true);
+                // A scalar payload, such as a literal, arrives as a unit-length column.
+                let payload_idx = if payload_values.len() == 1 {
+                    0
+                } else {
+                    selected
+                };
+                let selected_val = payload_values.new_from_index(payload_idx, 1);
+                self.payload.update_group(&[&selected_val], group_idx, 0)?;
+            }
         }
 
         Ok(())

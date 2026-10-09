@@ -10,8 +10,8 @@ use polars_core::utils::try_get_supertype;
 use polars_defs::join::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
 use polars_plan::plans::{
-    ExprPushdownGroup, ExprToIRContext, NodeStats, is_inherently_nondeterministic, node_stats,
-    to_expr_ir,
+    ExprPushdownGroup, ExprToIRContext, NodeStats, attach_dataset_scan_statistics,
+    is_inherently_nondeterministic, node_stats, to_expr_ir,
 };
 use polars_plan::prelude::{AggExpr, DslPlan, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
@@ -26,7 +26,7 @@ use sqlparser::ast::{
 };
 
 use crate::context::{CORRELATED_COL_PREFIX, FilterMode, combine_conditions, get_table_name};
-use crate::sql_expr::{parse_sql_expr, sql_in_membership};
+use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
 use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
 use crate::{SQLContext, unique_column_name};
 
@@ -545,6 +545,7 @@ impl SQLContext {
         if *version != self.lp_arena.version() {
             return Ok(None);
         }
+        attach_dataset_scan_statistics(*node, &mut self.lp_arena, &self.expr_arena);
         Ok(node_stats(*node, &self.lp_arena, &self.expr_arena))
     }
 
@@ -1000,7 +1001,7 @@ impl SQLContext {
         // empty candidate set rather than an unknown one.
         let set = col(set_name.clone());
         let is_in = sql_in_membership(
-            needle.is_in(set.clone(), false),
+            sql_is_in(needle, set.clone()),
             set.clone(),
             set.clone().is_null().or(set.list().len().eq(lit(0u32))),
         );
