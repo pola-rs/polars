@@ -204,6 +204,16 @@ pub fn optimize(
 
     #[cfg(feature = "cse")]
     if run_set_cache_states {
+        // Gives the dataset scans below caches the statistics that the cache decision needs.
+        #[cfg(feature = "python")]
+        if opt_flags.row_estimate() {
+            expand_datasets::expand_datasets_early(
+                root,
+                ir_arena,
+                expr_arena,
+                expand_datasets::EarlyExpansion::ForCacheDecision,
+            )?;
+        }
         cse::set_cache_states(
             root,
             ir_arena,
@@ -232,7 +242,12 @@ pub fn optimize(
     // Gives the dataset scans the statistics that the join passes need.
     #[cfg(feature = "python")]
     if opt_flags.join_order() && get_or_init_members!().has_joins {
-        expand_datasets::expand_datasets_for_join_order(root, ir_arena, expr_arena)?;
+        expand_datasets::expand_datasets_early(
+            root,
+            ir_arena,
+            expr_arena,
+            expand_datasets::EarlyExpansion::ForJoinOrder,
+        )?;
     }
 
     // Needs the filters that predicate pushdown places on the scans, and must come

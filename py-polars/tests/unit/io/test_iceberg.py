@@ -5913,6 +5913,44 @@ def test_scan_iceberg_join_order_with_a_filter_above_a_shared_scan(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_cache_decision_matches_parquet_29822(tmp_path: Path) -> None:
+    rows = 20_000
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "fact": pl.DataFrame(
+                {
+                    "key": [i % 100 for i in range(rows)],
+                    "grp": [i % 7 for i in range(rows)],
+                    "val": range(rows),
+                }
+            ),
+            "dim": pl.DataFrame({"key": range(100), "name": range(100)}),
+        },
+    )
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        # Each branch filters the shared subplan on its own, so the caches are only
+        # kept if the statistics show that sharing the subplan is cheaper.
+        base = (
+            scan("fact")
+            .join(scan("dim"), on="key")
+            .group_by("grp", "name")
+            .agg(pl.col("val").sum())
+        )
+        return pl.concat(
+            [base.filter(pl.col("grp") != i).select("name", "val") for i in range(8)]
+        )
+
+    iceberg = query(lambda name: pl.scan_iceberg(tables[name]))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+
+    assert parquet.explain().count("CACHE[id:") == 8
+    assert iceberg.explain().count("CACHE[id:") == 8
+    assert_frame_equal(iceberg.collect(), parquet.collect(), check_row_order=False)
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_join_on_full_range_decimal_keys(tmp_path: Path) -> None:
     big = 10**38 - 1
     df = pl.from_arrow(

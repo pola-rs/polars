@@ -119,20 +119,40 @@ pub(super) fn expand_datasets(
     Ok(())
 }
 
-/// Expand dataset scans that resolve to a native scan, so that join ordering sees
-/// their row counts and the statistics of their join keys and filtered columns.
-///
-/// Files are not skipped here. That is left to [`expand_datasets`], which runs after
-/// projection pushdown and the runtime join filters. A scan that falls back to a
-/// Python scan stays unexpanded, as that scan binds its projection when it is built.
+/// What [`expand_datasets_early`] does with the dataset scans.
 #[cfg(feature = "python")]
-pub(super) fn expand_datasets_for_join_order(
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum EarlyExpansion {
+    /// Expand the dataset scans that resolve to a native scan, so that join ordering
+    /// sees their row counts and the statistics of their join keys and filtered columns.
+    ///
+    /// Files are not skipped here. That is left to [`expand_datasets`], which runs after
+    /// projection pushdown and the runtime join filters. A scan that falls back to a
+    /// Python scan stays unexpanded, as that scan binds its projection when it is built.
+    ForJoinOrder,
+    /// Only give the dataset scans below caches the statistics of their expansion, so
+    /// that the cache decision can weigh the cached subplans. The scans stay
+    /// unexpanded, as the filters that let their expansion skip files are pushed into
+    /// them only after that decision.
+    ForCacheDecision,
+}
+
+#[cfg(feature = "python")]
+pub(super) fn expand_datasets_early(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
+    mode: EarlyExpansion,
 ) -> PolarsResult<()> {
     let mut key_and_filter_names: PlIndexSet<PlSmallStr> = PlIndexSet::new();
     let mut dataset_scans: PlIndexSet<Node> = PlIndexSet::new();
+
+    let is_dataset_scan = |ir: &IR| match ir {
+        IR::Scan { scan_type, .. } => {
+            matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. })
+        },
+        _ => false,
+    };
 
     for (node, ir) in ir_arena.iter(root) {
         match ir {
@@ -146,9 +166,15 @@ pub(super) fn expand_datasets_for_join_order(
                 key_and_filter_names
                     .extend(aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned());
             },
-            IR::Scan { scan_type, .. }
-                if matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) =>
-            {
+            IR::Cache { input, .. } if mode == EarlyExpansion::ForCacheDecision => {
+                dataset_scans.extend(
+                    ir_arena
+                        .iter(*input)
+                        .filter(|(_, ir)| is_dataset_scan(ir))
+                        .map(|(node, _)| node),
+                );
+            },
+            ir if mode == EarlyExpansion::ForJoinOrder && is_dataset_scan(ir) => {
                 dataset_scans.insert(node);
             },
             _ => {},
@@ -185,8 +211,26 @@ pub(super) fn expand_datasets_for_join_order(
                 unreachable!()
             };
 
-            if !matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) {
-                ir_arena.replace(node, ir);
+            if matches!(scan_type.as_ref(), FileScanIR::PythonDataset { .. }) {
+                continue;
+            }
+            match mode {
+                EarlyExpansion::ForJoinOrder => {
+                    ir_arena.replace(node, ir);
+                },
+                EarlyExpansion::ForCacheDecision => {
+                    let IR::Scan { file_info, .. } = ir else {
+                        unreachable!()
+                    };
+                    let IR::Scan {
+                        file_info: dataset_file_info,
+                        ..
+                    } = ir_arena.get_mut(node)
+                    else {
+                        unreachable!()
+                    };
+                    dataset_file_info.stats = file_info.stats;
+                },
             }
         }
 
