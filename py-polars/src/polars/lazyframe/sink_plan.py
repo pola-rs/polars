@@ -71,7 +71,7 @@ def _sink_parquet_plan(
     sync_on_close: SyncOnCloseMethod | None,
     metadata: ParquetMetadata | None,
     arrow_schema: ArrowSchemaExportable | None,
-    encryption_properties: ParquetEncryptionProperties | None,
+    encryption: ParquetEncryptionProperties | None,
     mkdir: bool,
     sinked_paths_callback: SinkedPathsCallback | None,
 ) -> LazyFrame:
@@ -90,8 +90,8 @@ def _sink_parquet_plan(
         msg = "`arrow_schema` parameter is considered unstable"
         issue_unstable_warning(msg)
 
-    if encryption_properties is not None:
-        msg = "`encryption_properties` parameter is considered unstable"
+    if encryption is not None:
+        msg = "`encryption` parameter is considered unstable"
         issue_unstable_warning(msg)
 
     default_statistics = {
@@ -150,9 +150,7 @@ def _sink_parquet_plan(
         metadata=metadata,
         arrow_schema=arrow_schema,
         encryption_properties=(
-            encryption_properties._pyencryptionproperties
-            if encryption_properties is not None
-            else None
+            encryption._pyencryptionproperties if encryption is not None else None
         ),
     )
     return wrap_ldf(ldf_py)

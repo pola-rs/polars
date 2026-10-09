@@ -305,7 +305,7 @@ def test_sink_forwards_options(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -
         (
             "sink_parquet",
             {
-                "encryption_properties": pl.ParquetEncryptionProperties(
+                "encryption": pl.ParquetEncryptionProperties(
                     footer_key=b"0123456789012345"
                 )
             },

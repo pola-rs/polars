@@ -251,7 +251,7 @@ class RemoteEngine(Engine):
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
-        encryption_properties: ParquetEncryptionProperties | None,
+        encryption: ParquetEncryptionProperties | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
@@ -260,7 +260,7 @@ class RemoteEngine(Engine):
         self._reject_if_set(
             mkdir=mkdir,
             sync_on_close=sync_on_close,
-            encryption_properties=encryption_properties,
+            encryption=encryption,
             sinked_paths_callback=sinked_paths_callback,
         )
         self._target(lf).sink_parquet(

@@ -4148,7 +4148,7 @@ class DataFrame:
         ) = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption_properties: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4252,7 +4252,7 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
-        encryption_properties
+        encryption
             Properties for writing Parquet files encrypted with Parquet modular
             encryption. See :class:`ParquetEncryptionProperties`.
 
@@ -4311,8 +4311,8 @@ class DataFrame:
             if mkdir:
                 msg = "write_parquet with `use_pyarrow=True` cannot be combined with `mkdir`"
                 raise ValueError(msg)
-            if encryption_properties is not None:
-                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `encryption_properties`"
+            if encryption is not None:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `encryption`"
                 raise ValueError(msg)
 
             tbl = self.to_arrow()
@@ -4383,7 +4383,7 @@ class DataFrame:
             credential_provider=credential_provider,
             metadata=metadata,
             arrow_schema=arrow_schema,
-            encryption_properties=encryption_properties,
+            encryption=encryption,
             engine=engine,
             mkdir=mkdir,
             optimizations=QueryOptFlags._eager(),

@@ -428,7 +428,7 @@ def assert_basic_encryption(path: Path, expected: pl.DataFrame | None = None) ->
 
     # Unencrypted columns can be read with only the footer key
     footer_key_only = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
-    lf = pl.scan_parquet(path, decryption_properties=footer_key_only)
+    lf = pl.scan_parquet(path, decryption=footer_key_only)
     assert_frame_equal(
         lf.select("id", "public").collect(),
         expected.select("id", "public"),
@@ -440,16 +440,14 @@ def assert_basic_encryption(path: Path, expected: pl.DataFrame | None = None) ->
     ):
         lf.select("secret").collect()
 
-    df = pl.scan_parquet(
-        path, decryption_properties=basic_decryption_properties()
-    ).collect()
+    df = pl.scan_parquet(path, decryption=basic_decryption_properties()).collect()
     assert_frame_equal(df, expected, check_row_order=False, check_column_order=False)
 
 
 def test_write_parquet_encrypted(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
     basic_data().write_parquet(
-        path, encryption_properties=basic_encryption_properties(), **WRITE_OPTIONS
+        path, encryption=basic_encryption_properties(), **WRITE_OPTIONS
     )
     assert_basic_encryption(path)
 
@@ -459,7 +457,7 @@ def test_write_parquet_encrypted_partition_by(tmp_path: Path) -> None:
     basic_data().write_parquet(
         path,
         partition_by="part",
-        encryption_properties=basic_encryption_properties(),
+        encryption=basic_encryption_properties(),
         **WRITE_OPTIONS,
     )
     assert len(parquet_files(path)) == 3
@@ -471,7 +469,7 @@ def test_sink_parquet_encrypted(tmp_path: Path, engine: EngineType) -> None:
     path = tmp_path / "out.parquet"
     basic_data().lazy().sink_parquet(
         path,
-        encryption_properties=basic_encryption_properties(),
+        encryption=basic_encryption_properties(),
         engine=engine,
         **WRITE_OPTIONS,
     )
@@ -483,7 +481,7 @@ def test_sink_parquet_encrypted_file_uri(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
     basic_data().lazy().sink_parquet(
         format_file_uri(path),
-        encryption_properties=basic_encryption_properties(),
+        encryption=basic_encryption_properties(),
         **WRITE_OPTIONS,
     )
     assert_basic_encryption(path)
@@ -493,7 +491,7 @@ def test_sink_parquet_encrypted_partition_by_key(tmp_path: Path) -> None:
     path = tmp_path / "out"
     basic_data().lazy().sink_parquet(
         pl.PartitionBy(path, key="part"),
-        encryption_properties=basic_encryption_properties(),
+        encryption=basic_encryption_properties(),
         mkdir=True,
         **WRITE_OPTIONS,
     )
@@ -505,7 +503,7 @@ def test_sink_parquet_encrypted_partition_by_max_rows(tmp_path: Path) -> None:
     path = tmp_path / "out"
     basic_data().lazy().sink_parquet(
         pl.PartitionBy(path, max_rows_per_file=400),
-        encryption_properties=basic_encryption_properties(),
+        encryption=basic_encryption_properties(),
         mkdir=True,
         **WRITE_OPTIONS,
     )
@@ -518,16 +516,14 @@ def test_sink_parquet_reencrypt(tmp_path: Path) -> None:
     source = tmp_path / "source.parquet"
     basic_data().write_parquet(
         source,
-        encryption_properties=pl.ParquetEncryptionProperties(footer_key=AES_256_KEY),
+        encryption=pl.ParquetEncryptionProperties(footer_key=AES_256_KEY),
         **WRITE_OPTIONS,
     )
     path = tmp_path / "out.parquet"
     pl.scan_parquet(
         source,
-        decryption_properties=pl.ParquetDecryptionProperties(footer_key=AES_256_KEY),
-    ).sink_parquet(
-        path, encryption_properties=basic_encryption_properties(), **WRITE_OPTIONS
-    )
+        decryption=pl.ParquetDecryptionProperties(footer_key=AES_256_KEY),
+    ).sink_parquet(path, encryption=basic_encryption_properties(), **WRITE_OPTIONS)
     assert_basic_encryption(path)
 
 
@@ -639,7 +635,7 @@ def test_write_roundtrip(
     path = tmp_path / "out.parquet"
     df.write_parquet(
         path,
-        encryption_properties=pl.ParquetEncryptionProperties(
+        encryption=pl.ParquetEncryptionProperties(
             **{"footer_key": FOOTER_KEY, **encryption_kwargs}
         ),
         **WRITE_OPTIONS,
@@ -653,16 +649,14 @@ def test_write_roundtrip(
     decryption_properties = pl.ParquetDecryptionProperties(
         **{"footer_key": FOOTER_KEY, **decryption_kwargs}
     )
-    assert_frame_equal(
-        pl.read_parquet(path, decryption_properties=decryption_properties), df
-    )
+    assert_frame_equal(pl.read_parquet(path, decryption=decryption_properties), df)
 
 
 def test_write_empty_frame(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
     df = basic_data().clear()
-    df.write_parquet(path, encryption_properties=basic_encryption_properties())
-    result = pl.read_parquet(path, decryption_properties=basic_decryption_properties())
+    df.write_parquet(path, encryption=basic_encryption_properties())
+    result = pl.read_parquet(path, decryption=basic_decryption_properties())
     assert_frame_equal(result, df)
 
 
@@ -674,7 +668,7 @@ def test_write_plaintext_footer_readable_without_keys(
     path = tmp_path / "out.parquet"
     df.write_parquet(
         path,
-        encryption_properties=pl.ParquetEncryptionProperties(
+        encryption=pl.ParquetEncryptionProperties(
             footer_key=FOOTER_KEY, plaintext_footer=True, column_keys=column_keys
         ),
     )
@@ -698,7 +692,7 @@ def test_write_plaintext_footer_signature(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
     basic_data().write_parquet(
         path,
-        encryption_properties=pl.ParquetEncryptionProperties(
+        encryption=pl.ParquetEncryptionProperties(
             footer_key=FOOTER_KEY, plaintext_footer=True
         ),
         metadata={"note": "original_value"},
@@ -713,12 +707,12 @@ def test_write_plaintext_footer_signature(tmp_path: Path) -> None:
     with pytest.raises(
         pl.exceptions.ComputeError, match="Footer signature verification failed"
     ):
-        pl.read_parquet(tampered, decryption_properties=decryption_properties)
+        pl.read_parquet(tampered, decryption=decryption_properties)
 
     decryption_properties = pl.ParquetDecryptionProperties(
         footer_key=FOOTER_KEY, verify_footer_signature=False
     )
-    df = pl.read_parquet(tampered, decryption_properties=decryption_properties)
+    df = pl.read_parquet(tampered, decryption=decryption_properties)
     assert_frame_equal(df, basic_data())
 
 
@@ -726,7 +720,7 @@ def test_write_aad_prefix_not_stored_must_be_provided(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
     basic_data().write_parquet(
         path,
-        encryption_properties=pl.ParquetEncryptionProperties(
+        encryption=pl.ParquetEncryptionProperties(
             footer_key=FOOTER_KEY, aad_prefix=AAD_PREFIX
         ),
     )
@@ -735,7 +729,7 @@ def test_write_aad_prefix_not_stored_must_be_provided(tmp_path: Path) -> None:
         pl.exceptions.ComputeError,
         match="encrypted with an AAD prefix that is not stored in the file",
     ):
-        pl.read_parquet(path, decryption_properties=decryption_properties)
+        pl.read_parquet(path, decryption=decryption_properties)
 
 
 @pytest.mark.parametrize("store_aad_prefix", [True, False])
@@ -743,7 +737,7 @@ def test_write_aad_prefix_mismatch(tmp_path: Path, store_aad_prefix: bool) -> No
     path = tmp_path / "out.parquet"
     basic_data().write_parquet(
         path,
-        encryption_properties=pl.ParquetEncryptionProperties(
+        encryption=pl.ParquetEncryptionProperties(
             footer_key=FOOTER_KEY,
             aad_prefix=AAD_PREFIX,
             store_aad_prefix=store_aad_prefix,
@@ -757,28 +751,24 @@ def test_write_aad_prefix_mismatch(tmp_path: Path, store_aad_prefix: bool) -> No
     with pytest.raises(
         pl.exceptions.ComputeError, match="unable to decrypt parquet footer"
     ):
-        pl.read_parquet(path, decryption_properties=decryption_properties)
+        pl.read_parquet(path, decryption=decryption_properties)
 
 
 def test_write_read_with_wrong_footer_key(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
-    basic_data().write_parquet(
-        path, encryption_properties=basic_encryption_properties()
-    )
+    basic_data().write_parquet(path, encryption=basic_encryption_properties())
     decryption_properties = pl.ParquetDecryptionProperties(
         footer_key=COLUMN_KEY_2, column_keys={"secret": COLUMN_KEY}
     )
     with pytest.raises(
         pl.exceptions.ComputeError, match="unable to decrypt parquet footer"
     ):
-        pl.read_parquet(path, decryption_properties=decryption_properties)
+        pl.read_parquet(path, decryption=decryption_properties)
 
 
 def test_write_read_with_wrong_column_key(tmp_path: Path) -> None:
     path = tmp_path / "out.parquet"
-    basic_data().write_parquet(
-        path, encryption_properties=basic_encryption_properties()
-    )
+    basic_data().write_parquet(path, encryption=basic_encryption_properties())
     decryption_properties = pl.ParquetDecryptionProperties(
         footer_key=FOOTER_KEY, column_keys={"secret": COLUMN_KEY_2}
     )
@@ -786,7 +776,7 @@ def test_write_read_with_wrong_column_key(tmp_path: Path) -> None:
         pl.exceptions.ComputeError,
         match="Unable to decrypt metadata for column 'secret', the column key may be wrong",
     ):
-        pl.read_parquet(path, decryption_properties=decryption_properties)
+        pl.read_parquet(path, decryption=decryption_properties)
 
 
 def test_write_column_key_not_in_schema(tmp_path: Path) -> None:
@@ -799,7 +789,7 @@ def test_write_column_key_not_in_schema(tmp_path: Path) -> None:
         match="columns with encryption keys specified were not found in the schema: missing",
     ):
         basic_data().write_parquet(
-            tmp_path / "out.parquet", encryption_properties=encryption_properties
+            tmp_path / "out.parquet", encryption=encryption_properties
         )
 
 
@@ -814,7 +804,7 @@ def test_write_invalid_key_length(tmp_path: Path, kwargs: dict[str, Any]) -> Non
     with pytest.raises(pl.exceptions.ComputeError, match="unsupported key length: 9"):
         basic_data().write_parquet(
             tmp_path / "out.parquet",
-            encryption_properties=pl.ParquetEncryptionProperties(**kwargs),
+            encryption=pl.ParquetEncryptionProperties(**kwargs),
         )
 
 
@@ -838,9 +828,7 @@ def test_write_read_with_pyarrow(tmp_path: Path, kwargs: dict[str, Any]) -> None
     path = tmp_path / "out.parquet"
     df.write_parquet(
         path,
-        encryption_properties=pl.ParquetEncryptionProperties(
-            footer_key=FOOTER_KEY, **kwargs
-        ),
+        encryption=pl.ParquetEncryptionProperties(footer_key=FOOTER_KEY, **kwargs),
         **WRITE_OPTIONS,
     )
 
@@ -859,10 +847,8 @@ def test_write_encrypted_predicate_pushdown(tmp_path: Path) -> None:
     # Statistics for encrypted columns are stored in encrypted column metadata
     path = tmp_path / "out.parquet"
     df = basic_data()
-    df.write_parquet(
-        path, encryption_properties=basic_encryption_properties(), **WRITE_OPTIONS
-    )
-    lf = pl.scan_parquet(path, decryption_properties=basic_decryption_properties())
+    df.write_parquet(path, encryption=basic_encryption_properties(), **WRITE_OPTIONS)
+    lf = pl.scan_parquet(path, decryption=basic_decryption_properties())
     for predicate in [
         pl.col("secret") == "secret_500",
         pl.col("id").is_between(10, 20),
@@ -873,11 +859,9 @@ def test_write_encrypted_predicate_pushdown(tmp_path: Path) -> None:
 def test_write_encrypted_with_pyarrow_raises(tmp_path: Path) -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
     encryption_properties = pl.ParquetEncryptionProperties(footer_key=FOOTER_KEY)
-    with pytest.raises(
-        ValueError, match="cannot be combined with `encryption_properties`"
-    ):
+    with pytest.raises(ValueError, match="cannot be combined with `encryption`"):
         df.write_parquet(
             tmp_path / "out.parquet",
             use_pyarrow=True,
-            encryption_properties=encryption_properties,
+            encryption=encryption_properties,
         )

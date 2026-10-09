@@ -2420,7 +2420,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption_properties: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
@@ -2446,7 +2446,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption_properties: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
@@ -2476,7 +2476,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption_properties: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -2583,7 +2583,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
-        encryption_properties
+        encryption
             Properties for writing Parquet files encrypted with Parquet modular
             encryption. See :class:`ParquetEncryptionProperties`.
 
@@ -2686,7 +2686,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 sync_on_close=sync_on_close,
                 metadata=metadata,
                 arrow_schema=arrow_schema,
-                encryption_properties=encryption_properties,
+                encryption=encryption,
                 mkdir=mkdir,
                 sinked_paths_callback=sinked_paths_callback,
             )
@@ -2705,7 +2705,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sync_on_close=sync_on_close,
             metadata=metadata,
             arrow_schema=arrow_schema,
-            encryption_properties=encryption_properties,
+            encryption=encryption,
             mkdir=mkdir,
             optimizations=optimizations,
             sinked_paths_callback=sinked_paths_callback,
