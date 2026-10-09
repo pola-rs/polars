@@ -58,10 +58,17 @@ fn to_sort_repr(c: &Column) -> Column {
 
 static ERR_MSG: &str = "expressions in 'sort_by' must have matching group lengths";
 
-fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
-    polars_ensure!(a.iter().zip(b.iter()).all(|(a, b)| {
-        a.len() == b.len()
-    }), ShapeMismatch: ERR_MSG);
+fn check_groups(groups_in: &GroupsType, groups_by: &GroupsType) -> PolarsResult<()> {
+    if let Some((g_in, g_by)) = groups_in
+        .iter()
+        .zip(groups_by.iter())
+        .find(|(g_in, g_by)| g_in.len() != g_by.len())
+    {
+        polars_bail!(
+            ShapeMismatch: "{ERR_MSG} (got a group with {} values to sort but {} values in `by`)",
+            g_in.len(), g_by.len()
+        );
+    }
     Ok(())
 }
 
@@ -142,8 +149,14 @@ fn sort_by_groups_no_match<'a>(
 
                 match (opt_s, s_sort_by) {
                     (Some(s), Some(s_sort_by)) => {
-                        let same_len = s_sort_by.iter().all(|s_sort_by| s_sort_by.len() == s.len());
-                        polars_ensure!(same_len, ComputeError: "series lengths don't match in 'sort_by' expression");
+                        if let Some(mismatch) =
+                            s_sort_by.iter().find(|s_sort_by| s_sort_by.len() != s.len())
+                        {
+                            polars_bail!(
+                                ComputeError: "series lengths don't match in 'sort_by' expression: the series to sort has length {} but a `by` series has length {}",
+                                s.len(), mismatch.len()
+                            );
+                        }
                         let columns = s_sort_by
                             .iter()
                             .cloned()
@@ -372,7 +385,7 @@ impl PhysicalExpr for SortByExpr {
             let groups = ac_sort_by.groups();
 
             let (check, groups) = RAYON.join(
-                || check_groups(groups, ac_in.groups()),
+                || check_groups(ac_in.groups(), groups),
                 || {
                     update_groups_sort_by(
                         groups,
