@@ -27,8 +27,8 @@ use sqlparser::parser::{Parser, ParserOptions};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
-    check_columns_in_aggregates, has_windows_over_aggregates, is_marked_aggregate,
-    strip_aggregate_marks,
+    check_columns_in_aggregates, has_subquery_outside_aggregates, has_windows_over_aggregates,
+    is_marked_aggregate, strip_aggregate_marks,
 };
 use crate::grouping_sets::{
     GroupingCall, GroupingSets, canonicalize_keys, contains_grouping_placeholder,
@@ -267,6 +267,9 @@ pub(crate) struct GroupScope {
     /// aggregates, which are read once per row (see `broadcast_subqueries_in_inputs`). A
     /// subquery in a parameter, as the separator of STRING_AGG, is read once.
     pub(crate) subqueries_read_per_row: PlHashSet<PlSmallStr>,
+    /// The plan of each scalar subquery resolved in the block, by placeholder, for a block
+    /// that reads it again after aggregating.
+    subquery_plans: PlHashMap<PlSmallStr, LazyFrame>,
 }
 
 impl Default for SQLContext {
@@ -2132,23 +2135,23 @@ impl SQLContext {
 
         let has_group_by = !group_by_keys.is_empty() || grouping_sets.is_some();
         if !has_group_by {
-            // The 'having' clause is only valid inside 'group by'
-            if select_stmt.having.is_some() {
-                polars_bail!(SQLSyntax: "HAVING clause not valid outside of GROUP BY; found:\n{:?}", select_stmt.having);
-            };
             polars_ensure!(
                 self.group_scope.grouping_calls.is_empty(),
                 SQLSyntax: "GROUPING() requires a GROUP BY clause"
             );
         }
-        // Without GROUP BY, a block with aggregates is one group, and its windows run on
-        // that one row.
+        // Without GROUP BY, a block with aggregates or HAVING is one group, and its windows
+        // and the subqueries outside its aggregates run on that one row.
         let all_projections = projections
             .iter()
             .chain(&qualify)
             .cloned()
             .collect::<Vec<_>>();
-        lf = if !has_group_by && !has_windows_over_aggregates(&all_projections) {
+        lf = if !has_group_by
+            && lowered_having.is_none()
+            && !has_windows_over_aggregates(&all_projections)
+            && !has_subquery_outside_aggregates(&all_projections, &subquery_names)
+        {
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
             self.group_scope.mark_whole_frame_windows = false;
             projections = all_projections;
@@ -2833,6 +2836,9 @@ impl SQLContext {
 
                     // A window lowering can repeat a subquery, as in `SUM((SELECT 1)) OVER ()`.
                     if subplan_names.insert(names[0].0.clone()) {
+                        self.group_scope
+                            .subquery_plans
+                            .insert(names[0].0.clone(), lf.clone());
                         subplans.push(lf);
                     }
                     let placeholder = Expr::Column(names[0].0.clone());
@@ -3382,8 +3388,6 @@ impl SQLContext {
         // block filters on after the aggregation.
         let (order_by, mut extra_projections) =
             self.resolve_order_by_aggregates(order_by, &projections, &schema_before)?;
-        extra_projections
-            .extend(qualify.map(|(name, e)| (name, reduce_correlated_cols_in_group_context(e))));
 
         let projections: Vec<Expr> = projections
             .into_iter()
@@ -3393,7 +3397,7 @@ impl SQLContext {
         // Note: HAVING is evaluated in the group context (`group_by().having(...)` for
         // ordinary grouping, a post-union filter for grouping sets), so any reference
         // to a SELECT alias is resolved to the aggregate it names.
-        let having = having.map(|having_expr| {
+        let mut having = having.map(|having_expr| {
             let having_expr = having_expr.map_expr(|e| match &e {
                 Expr::Column(name) => resolve_select_alias(name, &projections, &schema_before)
                     .map_or(e, |resolved| strip_outer_alias(&resolved)),
@@ -3402,23 +3406,35 @@ impl SQLContext {
             reduce_correlated_cols_in_group_context(having_expr)
         });
 
-        // Resolve scalar subqueries in HAVING against the pre-aggregation frame.
+        // Resolve scalar subqueries in HAVING and the ORDER BY aggregates against the
+        // pre-aggregation frame.
+        let new_subquery_names;
+        let mut exprs: Vec<&mut Expr> = extra_projections.iter_mut().map(|(_, e)| e).collect();
+        exprs.extend(having.as_mut());
+        (lf, new_subquery_names) = self.process_subqueries(lf, exprs, SubqueryShape::Scalar)?;
+        if !new_subquery_names.is_empty() {
+            let schema = self.get_frame_schema(&mut lf)?;
+            let schema_before = Arc::make_mut(&mut schema_before);
+            for name in &new_subquery_names {
+                schema_before.with_column(name.clone(), schema.get(name).unwrap().clone());
+            }
+        }
+        for e in extra_projections
+            .iter_mut()
+            .map(|(_, e)| e)
+            .chain(having.as_mut())
+        {
+            *e = broadcast_subqueries_in_inputs(
+                e.clone(),
+                &new_subquery_names,
+                &self.group_scope.subqueries_read_per_row,
+            );
+        }
         let mut subquery_names = subquery_names.clone();
-        let having = match having {
-            Some(mut having_expr) => {
-                let having_subquery_names;
-                (lf, having_subquery_names) =
-                    self.process_subqueries(lf, vec![&mut having_expr], SubqueryShape::Scalar)?;
-                let having_expr = broadcast_subqueries_in_inputs(
-                    having_expr,
-                    &having_subquery_names,
-                    &self.group_scope.subqueries_read_per_row,
-                );
-                subquery_names.extend(having_subquery_names);
-                Some(having_expr)
-            },
-            None => None,
-        };
+        subquery_names.extend(new_subquery_names);
+
+        extra_projections
+            .extend(qualify.map(|(name, e)| (name, reduce_correlated_cols_in_group_context(e))));
 
         // Note: remove the `group_by` keys as Polars adds those implicitly.
         let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
@@ -3449,8 +3465,13 @@ impl SQLContext {
                 .collect(),
             whole_frame_partition: whole_frame_partition.as_ref(),
             subquery_names: &subquery_names,
+            subqueries_after_aggregation: grouping.is_none() && group_by_keys.is_empty(),
+            subqueries_read_after: PlIndexSet::new(),
             aggregates: AggregateOutputs::with_capacity(projections.len()),
         };
+        if let Some(having) = &having {
+            splitter.check_columns_per_group(having)?;
+        }
         // Post-aggregation expressions read computed keys from their stored columns.
         let bind_keys = |e: Expr| match grouping {
             Some(grouping) => grouping.bind_stored_keys(e, &key_schema),
@@ -3493,6 +3514,7 @@ impl SQLContext {
             }
             let field = e_inner.to_field(&schema_before)?;
             if is_non_group_key_expr {
+                splitter.check_columns_per_group(e)?;
                 // Window functions run on the aggregated frame; only the aggregates
                 // inside them run in the group context. The same holds for anything
                 // combining aggregates with grouped keys or `GROUPING()` values.
@@ -3522,6 +3544,8 @@ impl SQLContext {
                     if !group_by_keys_schema.contains(&field.name) {
                         polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
                     }
+                } else {
+                    splitter.check_columns_per_group(e_inner)?;
                 }
             }
         }
@@ -3544,7 +3568,36 @@ impl SQLContext {
         }
 
         let aggregated = match grouping {
-            None if group_by_keys.is_empty() => lf.select(splitter.aggregates.into_exprs()),
+            None if group_by_keys.is_empty() => {
+                // Without GROUP BY there is one aggregated row, which HAVING filters.
+                let having = having.map(|having| splitter.hoist(having)).transpose()?;
+                let mut aggregates = splitter.aggregates.into_exprs();
+                // The row also exists when nothing is aggregated, as in `SELECT 1 ... HAVING`.
+                if aggregates.is_empty() {
+                    aggregates.push(len());
+                }
+                let mut aggregated = lf.select(aggregates);
+                if !splitter.subqueries_read_after.is_empty() {
+                    let mut frames = vec![aggregated];
+                    frames.extend(
+                        splitter
+                            .subqueries_read_after
+                            .iter()
+                            .map(|name| self.group_scope.subquery_plans[name].clone()),
+                    );
+                    aggregated = concat_lf_horizontal(
+                        frames,
+                        HConcatOptions {
+                            broadcast_unit_length: true,
+                            ..Default::default()
+                        },
+                    )?;
+                }
+                match having {
+                    Some(having) => aggregated.filter(having.cast(DataType::Boolean)),
+                    None => aggregated,
+                }
+            },
             None => {
                 // With a column key, every group has a row. A group-by on scalar keys only runs
                 // as a select over all rows, which may be none.
@@ -3590,7 +3643,7 @@ impl SQLContext {
                 let aggregated =
                     grouping.aggregate(lf, &key_schema, &aggregation_projection, &agg_names)?;
                 match having {
-                    Some(having) => aggregated.filter(having),
+                    Some(having) => aggregated.filter(having.cast(DataType::Boolean)),
                     None => aggregated,
                 }
             },
@@ -3675,13 +3728,15 @@ impl SQLContext {
                 }
             }
         }
-        // A literal-only projection (`SELECT 1 ... GROUP BY ()`) must keep the union's
-        // height, so the columns are added before the frame is narrowed.
-        let projected = match grouping {
-            Some(_) => aggregated
+        // A literal-only projection (`SELECT 1 ... GROUP BY ()` or `SELECT 1 ... HAVING`)
+        // must keep the height of the aggregated rows, so the columns are added before the
+        // frame is narrowed.
+        let projected = if grouping.is_some() || group_by_keys.is_empty() {
+            aggregated
                 .with_columns(&output_projection)
-                .select(output_names.into_iter().map(col).collect::<Vec<_>>()),
-            None => aggregated.select(&output_projection),
+                .select(output_names.into_iter().map(col).collect::<Vec<_>>())
+        } else {
+            aggregated.select(&output_projection)
         };
         Ok((
             projected,
