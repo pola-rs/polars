@@ -6244,7 +6244,9 @@ def test_scan_iceberg_reader_filter_float_nan(
             NestedField(1, "x", DoubleType()), NestedField(2, "i", LongType())
         ),
     )
-    df = pl.DataFrame({"x": [1.0, float("nan"), 3.0, None], "i": [1, 2, 3, 4]})
+    df = pl.DataFrame(
+        {"x": [1.0, float("nan"), 3.0, None, 0.0, -0.0], "i": [1, 2, 3, 4, 5, 6]}
+    )
     tbl.append(df.to_arrow())
 
     for predicate in [
@@ -6257,6 +6259,10 @@ def test_scan_iceberg_reader_filter_float_nan(
         pl.col("x") < 2.0,
         pl.col("x") < float("nan"),
         pl.col("x").is_in([3.0]),
+        # PyArrow `is_in` distinguishes -0.0 from 0.0.
+        pl.col("x").is_in([0.0, 5.0]),
+        pl.col("x").is_in([-0.0, 5.0]),
+        pl.col("x") == 0.0,
         (pl.col("x") <= 1.0) | (pl.col("i") == 2),
     ]:
         assert_frame_equal(
@@ -6266,6 +6272,59 @@ def test_scan_iceberg_reader_filter_float_nan(
             df.filter(predicate),
             check_row_order=False,
         )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_initial_default_identity_partition_added_later(
+    tmp_path: Path,
+) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    tbl.append(pl.DataFrame({"a": [1, 2]}).to_arrow())
+
+    md_path = Path(
+        tbl.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+    md_object["format-version"] = 3
+    md_object["schemas"][-1]["fields"].append(
+        {
+            "id": 2,
+            "name": "region",
+            "required": False,
+            "type": "string",
+            "initial-default": "EU",
+        }
+    )
+    md_object["last-column-id"] = 2
+    # Partition by `region` after the files were written: those files are in a
+    # spec without the identity field.
+    md_object["partition-specs"].append(
+        {
+            "spec-id": 1,
+            "fields": [
+                {
+                    "source-id": 2,
+                    "field-id": 1000,
+                    "name": "region",
+                    "transform": "identity",
+                }
+            ],
+        }
+    )
+    md_object["default-spec-id"] = 1
+    md_object["last-partition-id"] = 1000
+    md_path.write_text(json.dumps(md_object))
+    tbl = catalog.load_table(tbl.name())
+
+    expect = pl.DataFrame({"a": [1, 2], "region": ["EU", "EU"]})
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), expect)
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).filter(pl.col("region") == "EU").collect(), expect
+    )
 
 
 @pytest.mark.write_disk

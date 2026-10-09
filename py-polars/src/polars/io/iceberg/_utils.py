@@ -464,6 +464,10 @@ def filter_for_pyiceberg_reader(
         v = v.value if isinstance(v, Literal) else v
         return isinstance(v, float) and math.isnan(v)
 
+    def is_zero_literal(v: Any) -> bool:
+        v = v.value if isinstance(v, Literal) else v
+        return v == 0
+
     def visit(
         e: pyiceberg.expressions.BooleanExpression,
     ) -> pyiceberg.expressions.BooleanExpression | None:
@@ -490,8 +494,12 @@ def filter_for_pyiceberg_reader(
                     *getattr(e, "literals", ()),
                     *([e.literal] if hasattr(e, "literal") else []),
                 ]
-                if not isinstance(e, nan_excluding) or any(
-                    is_nan_literal(v) for v in literals
+                if (
+                    not isinstance(e, nan_excluding)
+                    or any(is_nan_literal(v) for v in literals)
+                    # PyArrow `is_in` and Parquet row group statistics distinguish
+                    # -0.0 from 0.0.
+                    or (isinstance(e, In) and any(is_zero_literal(v) for v in literals))
                 ):
                     return None
         return e
