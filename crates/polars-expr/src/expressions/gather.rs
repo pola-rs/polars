@@ -1,6 +1,7 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
+use polars_core::with_match_physical_integer_polars_type;
 use polars_ops::prelude::lst_get;
 use polars_ops::series::convert_and_bound_index;
 
@@ -66,16 +67,33 @@ impl PhysicalExpr for GatherExpr {
             idx.into_owned()
         } else {
             idx.apply_to_inner(&|s| {
+                let dtype = s.dtype();
                 polars_ensure!(
-                    s.dtype().is_integer(),
+                    dtype.is_integer(),
                     op = "gather/get",
-                    got = s.dtype(),
+                    got = dtype,
                     expected = "integer type"
                 );
-                // The range is checked first, so the casts don't wrap.
-                let min_max = s.min::<i128>()?.zip(s.max::<i128>()?);
-                let fits =
-                    |lo: i128, hi: i128| min_max.is_some_and(|(min, max)| lo <= min && max <= hi);
+                if dtype == &IDX_DTYPE {
+                    return Ok(s);
+                }
+                // The range is checked first, so the casts don't wrap. Only scan for the
+                // bounds that the dtype doesn't already give.
+                let dtype_max = dtype.max()?.value().extract::<u128>().unwrap();
+                let (min, max) = match (dtype.is_signed_integer(), dtype_max > IdxSize::MAX as u128)
+                {
+                    (false, false) => (0, dtype_max as i128),
+                    (true, false) => (s.min::<i128>()?.unwrap_or(0), dtype_max as i128),
+                    (false, true) => {
+                        let max = s.max::<u128>()?.unwrap_or(0);
+                        (0, i128::try_from(max).unwrap_or(i128::MAX))
+                    },
+                    (true, true) => with_match_physical_integer_polars_type!(dtype, |$T| {
+                        let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+                        ca.min_max().map_or((0, 0), |(min, max)| (min as i128, max as i128))
+                    }),
+                };
+                let fits = |lo: i128, hi: i128| lo <= min && max <= hi;
                 if fits(0, IdxSize::MAX as i128) {
                     s.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
                 } else if fits(i64::MIN as i128, i64::MAX as i128) {
