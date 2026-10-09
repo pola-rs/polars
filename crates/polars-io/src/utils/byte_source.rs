@@ -501,10 +501,10 @@ mod cachestat {
             let ret = unsafe {
                 libc::syscall(
                     SYS_CACHESTAT,
-                    file.as_raw_fd(),
+                    file.as_raw_fd() as libc::c_long,
                     &mut range as *mut CachestatRange,
                     &mut cs as *mut Cachestat,
-                    0,
+                    0 as libc::c_long,
                 )
             };
             if ret != 0 {
