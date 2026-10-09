@@ -243,7 +243,11 @@ where
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _mapping) => {
-                polars_ensure!(self.dtype() == &fcats.physical().dtype(), ComputeError: "cannot cast numeric types to 'Enum'");
+                polars_ensure!(
+                    self.dtype() == &fcats.physical().dtype(),
+                    ComputeError: "cannot cast `{}` to `Enum`; only the physical type `{}` is supported",
+                    self.dtype(), fcats.physical().dtype()
+                );
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;

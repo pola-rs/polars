@@ -111,7 +111,7 @@ pub(super) fn to_list(s: &Column) -> PolarsResult<Column> {
     if let DataType::Array(inner, _) = s.dtype() {
         s.cast(&DataType::List(inner.clone()))
     } else {
-        polars_bail!(ComputeError: "expected array dtype")
+        polars_bail!(ComputeError: "expected array dtype, got {}", s.dtype())
     }
 }
 
