@@ -493,3 +493,41 @@ def test_row_encoding_group_context(engine: EngineType) -> None:
         {"g": [1, 2], "n": [2, 2]}, schema_overrides={"n": pl.UInt32}
     )
     assert_frame_equal(out.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_row_encoding_distinct(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": ["x", "y", "x", None]})
+    k = pl.col("a")._row_encode()
+    out = lf.select(
+        n_unique=k.n_unique(),
+        unique=k.unique().len(),
+        first=k.is_first_distinct().implode(),
+        last=k.is_last_distinct().implode(),
+    )
+    expected = pl.DataFrame(
+        {
+            "n_unique": [3],
+            "unique": [3],
+            "first": [[True, True, False, True]],
+            "last": [[False, True, True, True]],
+        },
+        schema_overrides={
+            "n_unique": pl.get_index_type(),
+            "unique": pl.get_index_type(),
+        },
+    )
+    assert_frame_equal(out.collect(engine=engine), expected)
+
+    out = (
+        lf.group_by(k)
+        .agg(pl.len())
+        .select(pl.col("a")._row_decode(["a"], [pl.String]), "len")
+        .unnest("a")
+        .sort("a")
+    )
+    expected = pl.DataFrame(
+        {"a": [None, "x", "y"], "len": [1, 2, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(out.collect(engine=engine), expected)

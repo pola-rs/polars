@@ -215,12 +215,86 @@ def test_having_on_group_key(query: str) -> None:
         "SELECT *, COUNT(*) FROM self",
         "SELECT * EXCLUDE (g), SUM(x) AS s FROM self",
         "SELECT * EXCLUDE (g) REPLACE (x + SUM(x) AS x) FROM self",
+        "SELECT SUM(x) FROM self HAVING x > 1",
+        "SELECT x + 1 FROM self HAVING SUM(x) > 1",
+        "SELECT x + SUM(x) FROM self HAVING TRUE",
+        "SELECT ABS(x) FROM self HAVING TRUE",
     ],
 )
 def test_column_outside_aggregate_without_group_by_error(query: str) -> None:
     df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
     with pytest.raises(SQLSyntaxError, match="'x' should participate in the GROUP BY"):
         df.sql(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g FROM self GROUP BY g HAVING x > 1",
+        "SELECT g FROM self GROUP BY g HAVING g + x > 1",
+        "SELECT g FROM self GROUP BY GROUPING SETS ((g), ()) HAVING x > 1",
+        "SELECT g, SUM(x), x + 1 FROM self GROUP BY g",
+        "SELECT g, x + SUM(x) FROM self GROUP BY g",
+        "SELECT g, ABS(x) FROM self GROUP BY g",
+    ],
+)
+def test_column_outside_aggregate_with_group_by_error(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    with pytest.raises(SQLSyntaxError, match="'x' should participate in the GROUP BY"):
+        df.sql(query)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT SUM(x) AS s FROM self HAVING SUM(x) > 1",
+        "SELECT SUM(x) AS s FROM self HAVING s > 100",
+        "SELECT COUNT(*) AS n FROM self WHERE x > 10 HAVING COUNT(*) = 0",
+        "SELECT 1 AS a FROM self HAVING COUNT(*) > 1",
+        "SELECT 1 AS a FROM self HAVING 1 = 0",
+        "SELECT SUM(x) AS s FROM self HAVING SUM((SELECT 1)) = 3",
+        "SELECT SUM(x) AS s, COUNT(*) OVER () AS w FROM self HAVING SUM(x) > 1",
+        "SELECT SUM(x) AS s FROM self HAVING NULL",
+    ],
+)
+def test_having_without_group_by(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    assert_sql_matches(
+        df, query=query, compare_with="duckdb", engines=["in-memory", "streaming"]
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, SUM(x) AS s FROM self GROUP BY g ORDER BY SUM((SELECT 1)), g",
+        "SELECT g, SUM(x) AS s FROM self GROUP BY g ORDER BY MAX(x) + (SELECT 10) DESC",
+        "SELECT g, SUM(x) AS s FROM self GROUP BY GROUPING SETS ((g), ()) ORDER BY SUM((SELECT 1)), g",
+        "SELECT g, SUM(x) AS s FROM self GROUP BY GROUPING SETS ((g), ()) HAVING SUM((SELECT 1)) > 1 ORDER BY g",
+    ],
+)
+def test_subquery_in_aggregate_after_group_by(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    assert_sql_matches(
+        df, query=query, compare_with="duckdb", engines=["in-memory", "streaming"]
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT COUNT(*) AS n FROM self WHERE x > 5 HAVING (SELECT 1) = 1",
+        "SELECT COUNT(*) AS n, (SELECT 1) AS s FROM self WHERE x > 5",
+        "SELECT COUNT(*) AS n, (SELECT 1) + COUNT(*) AS s FROM self WHERE x > 5",
+        "SELECT SUM(x) AS s, SUM((SELECT 1)) OVER () AS w FROM self WHERE x > 5",
+        "SELECT COUNT(*) AS n FROM (SELECT (SELECT 1) AS s FROM self WHERE x > 5)",
+    ],
+)
+def test_subquery_without_input_rows(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "g": [1, 1, 2]})
+    assert_sql_matches(
+        df, query=query, compare_with="duckdb", engines=["in-memory", "streaming"]
+    )
 
 
 def test_aggregate_with_excluded_columns() -> None:
@@ -367,7 +441,7 @@ def test_group_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match=r"HAVING clause not valid outside of GROUP BY",
+        match=r"'a' should participate in the GROUP BY clause or an aggregate function",
     ):
         df.sql("SELECT a, COUNT(a) AS n FROM self HAVING n > 1")
 
