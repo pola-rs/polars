@@ -2411,12 +2411,20 @@ def test_asof_join_keeps_finest_time_unit() -> None:
     assert result.to_series().to_list() == [2]
 
 
-def test_asof_join_keeps_time_range() -> None:
-    left = pl.DataFrame(
-        {"ts": pl.Series([datetime(2500, 1, 1)], dtype=pl.Datetime("ms"))}
-    )
+@pytest.mark.parametrize(
+    "left_ts",
+    [
+        pl.Series([datetime(2500, 1, 1)], dtype=pl.Datetime("ms", "UTC")),
+        pl.Series([date(2500, 1, 1)]),
+    ],
+)
+def test_asof_join_keeps_time_range(left_ts: pl.Series) -> None:
+    left = pl.DataFrame({"ts": left_ts})
     right = pl.DataFrame(
-        {"ts": pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("ns")), "v": [1]}
+        {
+            "ts": pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("ns", "UTC")),
+            "v": [1],
+        }
     )
     query = "SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION (l.ts >= r.ts)"
     result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
@@ -2438,6 +2446,15 @@ def test_asof_join_after_join(match_condition: str) -> None:
     """
     result = pl.SQLContext(frames, eager=True).execute(query)
     assert_frame_equal(result, pl.DataFrame({"id": [1, 2], "v": [10, 70]}))
+
+
+@pytest.mark.parametrize("match_condition", ["L.lt >= R.rt", "R.rt <= L.lt"])
+def test_asof_join_qualifier_case(match_condition: str) -> None:
+    left = pl.DataFrame({"lt": [5]})
+    right = pl.DataFrame({"rt": [4], "v": [1]})
+    query = f"SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION ({match_condition})"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [1]
 
 
 @pytest.mark.parametrize(

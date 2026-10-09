@@ -2733,7 +2733,11 @@ impl SQLContext {
                 // A table qualifier takes precedence over a struct column of the same name. The
                 // right input is a single relation, so any other relation is in the left input.
                 SQLExpr::CompoundIdentifier(idents) if self.relation_in_scope(&idents[0].value) => {
-                    Some(idents[0].value != tbl_right.name)
+                    let name = idents[0].value.as_str();
+                    let is_right = name == tbl_right.name
+                        || (!self.active_relations.contains(name)
+                            && name.eq_ignore_ascii_case(&tbl_right.name));
+                    Some(!is_right)
                 },
                 SQLExpr::CompoundIdentifier(idents) => column_side(&idents[0].value),
                 _ => None,
@@ -4211,10 +4215,14 @@ fn asof_key_pair(
         .unwrap_or(TimeUnit::Milliseconds);
     let to_ticks = |e: Expr, dtype: &DataType| -> Expr {
         let (e, ticks_per_value) = match (dtype, &supertype) {
-            (DataType::Date, DataType::Datetime(_, None)) => (e, 86_400 * ticks_per_second(unit)),
             (DataType::Datetime(tu, _) | DataType::Duration(tu), _) => {
                 (e, ticks_per_second(unit) / ticks_per_second(*tu))
             },
+            // Milliseconds hold every date without overflow.
+            (DataType::Date, DataType::Datetime(_, tz)) => (
+                e.cast(DataType::Datetime(TimeUnit::Milliseconds, tz.clone())),
+                ticks_per_second(unit) / ticks_per_second(TimeUnit::Milliseconds),
+            ),
             (_, DataType::Datetime(_, tz)) => (e.cast(DataType::Datetime(unit, tz.clone())), 1),
             _ => (e.cast(DataType::Duration(unit)), 1),
         };
