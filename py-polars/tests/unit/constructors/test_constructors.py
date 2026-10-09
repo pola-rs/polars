@@ -1366,6 +1366,26 @@ def test_from_rows_owned_values() -> None:
     assert df.rows() == rows
 
 
+def test_from_rows_nested_across_batches() -> None:
+    rows = [(i, [i, None], {"x": i}, [i, i + 1]) for i in range(3000)]
+    df = pl.DataFrame(
+        rows,
+        schema=["id", "list", "struct", "array"],
+        schema_overrides={"array": pl.Array(pl.Int64, 2)},
+        orient="row",
+        infer_schema_length=1500,
+    )
+    assert df.dtypes == [
+        pl.Int64,
+        pl.List(pl.Int64),
+        pl.Struct({"x": pl.Int64}),
+        pl.Array(pl.Int64, 2),
+    ]
+    assert df.n_chunks("all") == [1, 1, 1, 1]
+    assert df["list"].flags["FAST_EXPLODE"]
+    assert df.rows() == rows
+
+
 def test_from_dicts_schema() -> None:
     data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
 
