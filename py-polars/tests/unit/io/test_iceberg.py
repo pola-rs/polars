@@ -20,7 +20,7 @@ from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -6041,6 +6041,133 @@ def test_scan_iceberg_join_order_with_a_filter_above_a_shared_scan(
     # `flag`.
     plan = "\n".join(structure)
     assert plan.index(files["d"][0]) < plan.index(files["e"][0])
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_cache_decision_matches_parquet_29822(tmp_path: Path) -> None:
+    rows = 20_000
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "fact": pl.DataFrame(
+                {
+                    "key": [i % 100 for i in range(rows)],
+                    "grp": [i % 7 for i in range(rows)],
+                    "val": range(rows),
+                }
+            ),
+            "dim": pl.DataFrame({"key": range(100), "name": range(100)}),
+        },
+    )
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        # Each branch filters the shared subplan on its own, so the caches are only
+        # kept if the statistics show that sharing the subplan is cheaper.
+        base = (
+            scan("fact")
+            .join(scan("dim"), on="key")
+            .group_by("grp", "name")
+            .agg(pl.col("val").sum())
+        )
+        return pl.concat(
+            [base.filter(pl.col("grp") != i).select("name", "val") for i in range(8)]
+        )
+
+    iceberg = query(lambda name: pl.scan_iceberg(tables[name]))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+
+    assert parquet.explain().count("CACHE[id:") == 8
+    assert iceberg.explain().count("CACHE[id:") == 8
+    assert_frame_equal(iceberg.collect(), parquet.collect(), check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_statistics_do_not_read_filtered_out_metadata(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", LongType())
+        ),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "k")),
+    )
+    for k in [1, 2]:
+        pl.DataFrame({"k": [k] * 10, "v": range(10)}).write_iceberg(tbl, mode="append")
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    # Only a read of partition `k = 2` needs this manifest.
+    for manifest in snapshot.manifests(tbl.io):
+        entries = manifest.fetch_manifest_entry(tbl.io)
+        if all(e.data_file.partition[0] == 2 for e in entries):
+            Path(manifest.manifest_path.removeprefix("file://")).unlink()
+
+    scan = pl.scan_iceberg(tbl)
+    k1 = scan.filter(pl.col("k") == 1)
+    # Different filters over a shared scan, so the cache decision asks for estimates.
+    q = pl.concat([k1.filter(pl.col("v") < 5), k1.filter(pl.col("v") >= 5)])
+    assert q.collect(engine="in-memory").height == 10
+    assert q.collect(engine="streaming").height == 10
+
+    sql = "SELECT k FROM o WHERE s < (SELECT SUM(v) FROM i WHERE i.k = o.k AND i.k = 1)"
+    ctx = pl.SQLContext(o=pl.DataFrame({"k": [1], "s": [0]}), i=scan)
+    assert ctx.execute(sql).collect().height == 1
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_shared_scan_reads_one_snapshot(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "x", LongType())), name="a"
+    )
+    pl.DataFrame({"x": [1]}).write_iceberg(tbl, mode="append")
+    scan = pl.scan_iceberg(tbl)
+
+    original = IcebergScanResolver.to_dataset_scan
+    calls = 0
+
+    def to_dataset_scan(self: IcebergScanResolver, **kwargs: Any) -> Any:
+        nonlocal calls
+        resolved = original(self, **kwargs)
+        calls += 1
+        if calls == 1:
+            # A writer commits between two reads of the same scan.
+            pl.DataFrame({"x": [2]}).write_iceberg(tbl, mode="append")
+        return resolved
+
+    with patch.object(IcebergScanResolver, "to_dataset_scan", to_dataset_scan):
+        out = pl.concat([scan, scan]).collect(engine="streaming")
+
+    # Both reads of one scan see the same snapshot.
+    assert out["x"].to_list() == [1, 1]
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_sql_correlated_aggregate_restricted_like_parquet(
+    tmp_path: Path,
+) -> None:
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "o": pl.DataFrame({"k": range(10), "s": range(10)}),
+            "i": pl.DataFrame({"k": [i % 20 for i in range(100)], "v": range(100)}),
+        },
+    )
+    query = "SELECT k FROM o WHERE s < (SELECT SUM(v) FROM i WHERE i.k = o.k)"
+
+    def plan_and_result(
+        scan: Callable[[str], pl.LazyFrame],
+    ) -> tuple[str, pl.DataFrame]:
+        lf = pl.SQLContext({name: scan(name) for name in tables}).execute(query)
+        return lf.explain(), lf.collect()
+
+    iceberg_plan, iceberg = plan_and_result(lambda n: pl.scan_iceberg(tables[n]))
+    parquet_plan, parquet = plan_and_result(lambda n: pl.scan_parquet(files[n]))
+
+    # The inner table is over twice the outer one, so the aggregate is restricted to
+    # the outer keys.
+    assert "SEMI JOIN" in parquet_plan
+    assert "SEMI JOIN" in iceberg_plan
+    assert_frame_equal(iceberg, parquet, check_row_order=False)
 
 
 @pytest.mark.write_disk

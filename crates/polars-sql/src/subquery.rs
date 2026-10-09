@@ -10,8 +10,8 @@ use polars_core::utils::try_get_supertype;
 use polars_defs::join::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
 use polars_plan::plans::{
-    ExprPushdownGroup, ExprToIRContext, NodeStats, is_inherently_nondeterministic, node_stats,
-    to_expr_ir,
+    ExprPushdownGroup, ExprToIRContext, NodeStats, attach_dataset_scan_statistics,
+    is_inherently_nondeterministic, node_stats, to_expr_ir,
 };
 use polars_plan::prelude::{AggExpr, DslPlan, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
@@ -545,6 +545,7 @@ impl SQLContext {
         if *version != self.lp_arena.version() {
             return Ok(None);
         }
+        attach_dataset_scan_statistics(*node, &mut self.lp_arena, &self.expr_arena);
         Ok(node_stats(*node, &self.lp_arena, &self.expr_arena))
     }
 
