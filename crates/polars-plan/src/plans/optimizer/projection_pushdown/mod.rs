@@ -1462,8 +1462,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 // concat_horizontal([lf, ..]).select(len())
                 // -> concat_horizontal([lf.select(len().alias(i)) for i, lf in enumerate(..)]).select(max_horizontal('*'))
+                // When unit-length inputs are broadcast, the height is not the max: a height of
+                // 0 and a height of 1 give 0.
                 if out_edge.projection() == Projection::Len
                     && !strict
+                    && !options.broadcast_unit_length
                     && let Some(select_len_ae_node) =
                         extract_select_len_expr(parent_ir, self.expr_arena).map(|eir| eir.node())
                 {
