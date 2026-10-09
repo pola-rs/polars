@@ -2411,6 +2411,50 @@ def test_asof_join_keeps_finest_time_unit() -> None:
     assert result.to_series().to_list() == [2]
 
 
+def test_asof_join_keeps_time_range() -> None:
+    left = pl.DataFrame(
+        {"ts": pl.Series([datetime(2500, 1, 1)], dtype=pl.Datetime("ms"))}
+    )
+    right = pl.DataFrame(
+        {"ts": pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("ns")), "v": [1]}
+    )
+    query = "SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION (l.ts >= r.ts)"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [1]
+
+
+@pytest.mark.parametrize("match_condition", ["y.ts >= z.ts", "z.ts <= y.ts"])
+def test_asof_join_after_join(match_condition: str) -> None:
+    frames = {
+        "x": pl.DataFrame({"id": [1, 2]}),
+        "y": pl.DataFrame({"id": [1, 2], "ts": [5, 10]}),
+        "z": pl.DataFrame({"ts": [1, 7], "v": [10, 70]}),
+    }
+    query = f"""
+        SELECT x.id, z.v
+        FROM x JOIN y ON x.id = y.id
+        ASOF JOIN z MATCH_CONDITION ({match_condition})
+        ORDER BY x.id
+    """
+    result = pl.SQLContext(frames, eager=True).execute(query)
+    assert_frame_equal(result, pl.DataFrame({"id": [1, 2], "v": [10, 70]}))
+
+
+@pytest.mark.parametrize(
+    "match_condition", ["nested.x >= rnested.x", "rnested.x <= nested.x"]
+)
+def test_asof_join_struct_fields(match_condition: str) -> None:
+    left = pl.DataFrame({"nested": [{"x": 5}, {"x": 3}]})
+    right = pl.DataFrame({"rnested": [{"x": 4}], "v": [1]})
+    query = f"""
+        SELECT l.nested.x, r.v
+        FROM l ASOF JOIN r MATCH_CONDITION ({match_condition})
+        ORDER BY l.nested.x
+    """
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.rows() == [(3, None), (5, 1)]
+
+
 @pytest.mark.parametrize(
     ("join", "error"),
     [

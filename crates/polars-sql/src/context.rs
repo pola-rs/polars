@@ -14,6 +14,8 @@ use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
+#[cfg(feature = "asof_join")]
+use sqlparser::ast::visit_expressions;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -2707,6 +2709,53 @@ impl SQLContext {
         Ok(joined)
     }
 
+    /// Which input an `ASOF JOIN` match operand reads: `Some(true)` for the left input,
+    /// `Some(false)` for the right one, and `None` if all its columns are in both.
+    #[cfg(feature = "asof_join")]
+    fn asof_operand_is_left(
+        &self,
+        expr: &SQLExpr,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> PolarsResult<Option<bool>> {
+        let column_side = |name: &str| match (
+            tbl_left.schema.contains(name),
+            tbl_right.schema.contains(name),
+        ) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            _ => None,
+        };
+        let (mut reads_left, mut reads_right) = (false, false);
+        let _ = visit_expressions(expr, |e| {
+            let side = match e {
+                SQLExpr::Identifier(ident) => column_side(&ident.value),
+                // A table qualifier takes precedence over a struct column of the same name. The
+                // right input is a single relation, so any other relation is in the left input.
+                SQLExpr::CompoundIdentifier(idents) if self.relation_in_scope(&idents[0].value) => {
+                    Some(idents[0].value != tbl_right.name)
+                },
+                SQLExpr::CompoundIdentifier(idents) => column_side(&idents[0].value),
+                _ => None,
+            };
+            match side {
+                Some(true) => reads_left = true,
+                Some(false) => reads_right = true,
+                None => {},
+            }
+            ControlFlow::<()>::Continue(())
+        });
+        polars_ensure!(
+            !(reads_left && reads_right),
+            SQLSyntax: "ASOF JOIN MATCH_CONDITION operand {} reads both tables", expr
+        );
+        Ok(match (reads_left, reads_right) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        })
+    }
+
     /// `ASOF JOIN r MATCH_CONDITION (l.t >= r.t) [ON l.k = r.k AND ... | USING (k, ...)]`.
     ///
     /// Every left row is kept, paired with the closest right row that satisfies the match
@@ -2745,11 +2794,14 @@ impl SQLContext {
             SQLSyntax: "ASOF JOIN MATCH_CONDITION must compare a column of each table, found {}",
             match_condition
         );
-        match (
-            asof_operand_is_left(left, tbl_left, tbl_right),
-            asof_operand_is_left(right, tbl_left, tbl_right),
+        let left_is_left = match (
+            self.asof_operand_is_left(left, tbl_left, tbl_right)?,
+            self.asof_operand_is_left(right, tbl_left, tbl_right)?,
         ) {
-            (Some(l), Some(r)) if l == r => polars_bail!(
+            (Some(l), Some(r)) if l != r => l,
+            (Some(l), None) => l,
+            (None, Some(r)) => !r,
+            (Some(_), Some(_)) => polars_bail!(
                 SQLSyntax: "ASOF JOIN MATCH_CONDITION must compare a column of each table, found {}",
                 match_condition
             ),
@@ -2757,11 +2809,20 @@ impl SQLContext {
                 SQLSyntax: "ASOF JOIN MATCH_CONDITION is ambiguous, qualify its columns with their table name: {}",
                 match_condition
             ),
-            _ => {},
-        }
-        let join_schema = build_join_schema(tbl_left, tbl_right)?;
-        let (left_on, right_on, swapped) =
-            determine_left_right_join_on(self, left, right, tbl_left, tbl_right, &join_schema)?;
+        };
+        let swapped = !left_is_left;
+        let (left_operand, right_operand) = if swapped {
+            (right, left)
+        } else {
+            (left, right)
+        };
+        let left_on =
+            strip_join_aliases(parse_sql_expr(left_operand, self, Some(&tbl_left.schema))?);
+        let right_on = strip_join_aliases(parse_sql_expr(
+            right_operand,
+            self,
+            Some(&tbl_right.schema),
+        )?);
         let (strategy, allow_eq) = match (op, swapped) {
             (SQLBinaryOperator::GtEq, false) | (SQLBinaryOperator::LtEq, true) => {
                 (AsofStrategy::Backward, true)
@@ -2795,15 +2856,10 @@ impl SQLContext {
             reject_unresolved_subquery(e, "ASOF JOIN")?;
         }
 
-        // Both sides of each key pair need the same dtype.
         let to_supertype = |l: Expr, r: Expr| -> PolarsResult<(Expr, Expr)> {
             let l_dtype = l.to_field(&tbl_left.schema)?.dtype;
             let r_dtype = r.to_field(&tbl_right.schema)?.dtype;
-            if l_dtype == r_dtype {
-                return Ok((l, r));
-            }
-            let dtype = asof_key_supertype(&l_dtype, &r_dtype)?;
-            Ok((l.cast(dtype.clone()), r.cast(dtype)))
+            asof_key_pair(l, &l_dtype, r, &r_dtype)
         };
 
         // `by` keys are column names, so each key pair is computed into a temporary column
@@ -4121,53 +4177,50 @@ fn object_name_to_string(name: &ObjectName) -> String {
         .join(".")
 }
 
-/// Which input an `ASOF JOIN` match operand reads: `Some(true)` for the left input,
-/// `Some(false)` for the right one and `None` if the table names and schemas don't tell.
+/// Casts an `ASOF JOIN` key pair to one dtype. Temporal keys of different dtypes become Int128
+/// counts of the finest time unit: a common temporal dtype would lose either precision (with the
+/// coarser unit) or range (with the finer unit).
 #[cfg(feature = "asof_join")]
-fn asof_operand_is_left(
-    expr: &SQLExpr,
-    tbl_left: &TableInfo,
-    tbl_right: &TableInfo,
-) -> Option<bool> {
-    match (
-        expr_refers_to_table(expr, &tbl_left.name),
-        expr_refers_to_table(expr, &tbl_right.name),
-    ) {
-        (true, false) => Some(true),
-        (false, true) => Some(false),
-        (true, true) => None,
-        (false, false) => match (
-            sql_expr_cols_all_in_schema(expr, &tbl_left.schema),
-            sql_expr_cols_all_in_schema(expr, &tbl_right.schema),
-        ) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            _ => None,
-        },
+fn asof_key_pair(
+    l: Expr,
+    l_dtype: &DataType,
+    r: Expr,
+    r_dtype: &DataType,
+) -> PolarsResult<(Expr, Expr)> {
+    if l_dtype == r_dtype {
+        return Ok((l, r));
     }
-}
-
-/// The dtype both keys of an `ASOF JOIN` key pair are cast to. Unlike `try_get_supertype`, it
-/// keeps the finest time unit: a coarser one can make distinct keys equal, which changes the
-/// closest match.
-#[cfg(feature = "asof_join")]
-fn asof_key_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
-    let finest_unit = [l, r]
+    let supertype = try_get_supertype(l_dtype, r_dtype)?;
+    if !matches!(supertype, DataType::Datetime(..) | DataType::Duration(_)) {
+        return Ok((l.cast(supertype.clone()), r.cast(supertype)));
+    }
+    let ticks_per_second = |tu: TimeUnit| -> i64 {
+        match tu {
+            TimeUnit::Nanoseconds => 1_000_000_000,
+            TimeUnit::Microseconds => 1_000_000,
+            TimeUnit::Milliseconds => 1_000,
+        }
+    };
+    let unit = [l_dtype, r_dtype]
         .into_iter()
         .filter_map(|dtype| match dtype {
             DataType::Datetime(tu, _) | DataType::Duration(tu) => Some(*tu),
             _ => None,
         })
-        .min_by_key(|tu| match tu {
-            TimeUnit::Nanoseconds => 0,
-            TimeUnit::Microseconds => 1,
-            TimeUnit::Milliseconds => 2,
-        });
-    Ok(match (try_get_supertype(l, r)?, finest_unit) {
-        (DataType::Datetime(_, tz), Some(tu)) => DataType::Datetime(tu, tz),
-        (DataType::Duration(_), Some(tu)) => DataType::Duration(tu),
-        (dtype, _) => dtype,
-    })
+        .max_by_key(|tu| ticks_per_second(*tu))
+        .unwrap_or(TimeUnit::Milliseconds);
+    let to_ticks = |e: Expr, dtype: &DataType| -> Expr {
+        let (e, ticks_per_value) = match (dtype, &supertype) {
+            (DataType::Date, DataType::Datetime(_, None)) => (e, 86_400 * ticks_per_second(unit)),
+            (DataType::Datetime(tu, _) | DataType::Duration(tu), _) => {
+                (e, ticks_per_second(unit) / ticks_per_second(*tu))
+            },
+            (_, DataType::Datetime(_, tz)) => (e.cast(DataType::Datetime(unit, tz.clone())), 1),
+            _ => (e.cast(DataType::Duration(unit)), 1),
+        };
+        e.to_physical().cast(DataType::Int128) * lit(ticks_per_value)
+    };
+    Ok((to_ticks(l, l_dtype), to_ticks(r, r_dtype)))
 }
 
 /// Extract column names from a USING clause in a JoinOperator (if present).
@@ -4436,9 +4489,6 @@ fn expr_cols_all_in_schema(expr: &Expr, schema: &Schema) -> bool {
 ///
 /// An operand can also be constant (`ON df1.x = df2.x AND df2.flag = 'y'`), in which case it has
 /// no table of its own and takes whichever side the other operand does not.
-///
-/// Returns `(left_on, right_on, swapped)`, where `swapped` is true if `expr_left` belongs to the
-/// right table.
 fn determine_left_right_join_on(
     ctx: &mut SQLContext,
     expr_left: &SQLExpr,
@@ -4446,7 +4496,7 @@ fn determine_left_right_join_on(
     tbl_left: &TableInfo,
     tbl_right: &TableInfo,
     join_schema: &Schema,
-) -> PolarsResult<(Expr, Expr, bool)> {
+) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
     let left_refs = (
@@ -4485,16 +4535,16 @@ fn determine_left_right_join_on(
     // if the SQL-level references unambiguously indicate table ownership, we're done
     match (left_refs, right_refs) {
         // standard: left expr → left table, right expr → right table
-        ((true, false), (false, true)) => return Ok((left_on, right_on, false)),
+        ((true, false), (false, true)) => return Ok((vec![left_on], vec![right_on])),
         // reversed: left expr → right table, right expr → left table
-        ((false, true), (true, false)) => return Ok((right_on, left_on, true)),
+        ((false, true), (true, false)) => return Ok((vec![right_on], vec![left_on])),
         // qualified column vs constant: the qualifier alone settles it (note that this also
         // covers a column name that is present in *both* schemas, which schema-based
         // resolution below cannot disambiguate)
-        ((true, false), _) if right_is_const => return Ok((left_on, right_on, false)),
-        ((false, true), _) if right_is_const => return Ok((right_on, left_on, true)),
-        (_, (false, true)) if left_is_const => return Ok((left_on, right_on, false)),
-        (_, (true, false)) if left_is_const => return Ok((right_on, left_on, true)),
+        ((true, false), _) if right_is_const => return Ok((vec![left_on], vec![right_on])),
+        ((false, true), _) if right_is_const => return Ok((vec![right_on], vec![left_on])),
+        (_, (false, true)) if left_is_const => return Ok((vec![left_on], vec![right_on])),
+        (_, (true, false)) if left_is_const => return Ok((vec![right_on], vec![left_on])),
         // unsupported: one side references *both* tables
         ((true, true), _) | (_, (true, true)) if tbl_left.name != tbl_right.name => {
             polars_bail!(
@@ -4531,16 +4581,16 @@ fn determine_left_right_join_on(
 
     match (left_on_cols_in, right_on_cols_in) {
         // each expression's columns exist in exactly one schema
-        ((true, false), (false, true)) => Ok((left_on, right_on, false)),
-        ((false, true), (true, false)) => Ok((right_on, left_on, true)),
+        ((true, false), (false, true)) => Ok((vec![left_on], vec![right_on])),
+        ((false, true), (true, false)) => Ok((vec![right_on], vec![left_on])),
         // one expression is in both schemas (or is constant) and the other in only one;
         // the unique one decides, and the ambiguous one takes the remaining side
-        ((true, true), (true, false)) => Ok((right_on, left_on, true)),
-        ((true, true), (false, true)) => Ok((left_on, right_on, false)),
-        ((true, false), (true, true)) => Ok((left_on, right_on, false)),
-        ((false, true), (true, true)) => Ok((right_on, left_on, true)),
+        ((true, true), (true, false)) => Ok((vec![right_on], vec![left_on])),
+        ((true, true), (false, true)) => Ok((vec![left_on], vec![right_on])),
+        ((true, false), (true, true)) => Ok((vec![left_on], vec![right_on])),
+        ((false, true), (true, true)) => Ok((vec![right_on], vec![left_on])),
         // pass through as-is
-        _ => Ok((left_on, right_on, false)),
+        _ => Ok((vec![left_on], vec![right_on])),
     }
 }
 
@@ -4570,7 +4620,7 @@ fn process_join_on(
             },
             SQLBinaryOperator::Eq => {
                 let join_schema = build_join_schema(tbl_left, tbl_right)?;
-                let (l, r, _) = determine_left_right_join_on(
+                let (l, r) = determine_left_right_join_on(
                     ctx,
                     left,
                     right,
@@ -4578,7 +4628,7 @@ fn process_join_on(
                     tbl_right,
                     &join_schema,
                 )?;
-                Ok((vec![l], vec![r], vec![]))
+                Ok((l, r, vec![]))
             },
             _ => process_join_predicate(ctx, sql_expr, tbl_left, tbl_right),
         },
