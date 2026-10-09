@@ -35,6 +35,8 @@ from polars.io.iceberg._cache import (
 from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import pyiceberg.expressions
     import pyiceberg.table
 
@@ -130,8 +132,6 @@ def plugin_scan(
 ) -> LazyFrame:
     """Plan the scan of `tbl` with the plugin; returns the native parquet scan."""
     from polars.io.iceberg._dataset import (
-        ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP,
-        _convert_iceberg_property_value,
         _convert_iceberg_to_object_store_storage_options,
     )
 
@@ -153,13 +153,7 @@ def plugin_scan(
 
     # Catalog-provided IO properties (e.g. vended credentials) with known object store
     # equivalents, overridden by the user's storage options.
-    storage_options: dict[str, Any] = {
-        (key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP[k]): (
-            _convert_iceberg_property_value(key, v)
-        )
-        for k, v in tbl.io.properties.items()
-        if k in ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP
-    }
+    storage_options = _catalog_storage_options(tbl.io.properties, metadata_location)
     if user_storage_options is not None:
         user_options = _convert_iceberg_to_object_store_storage_options(
             user_storage_options
@@ -221,6 +215,97 @@ def plugin_scan(
             metadata_cache_scope=metadata_cache_scope,
         )
     )
+
+
+_AZURE_SCHEMES = ("abfs", "abfss", "adl", "az", "azure", "wasb", "wasbs")
+
+# FileIO properties that PyIceberg honours and that have no object store equivalent,
+# by URL scheme.
+_UNSUPPORTED_IO_PROPERTIES: dict[tuple[str, ...], tuple[str, ...]] = {
+    ("s3", "s3a", "s3n"): (
+        "s3.signer",
+        "s3.signer.uri",
+        "s3.signer.endpoint",
+        "s3.role-arn",
+        "s3.role-session-name",
+        "s3.profile-name",
+        "client.role-arn",
+        "client.role-session-name",
+        "client.profile-name",
+    ),
+    _AZURE_SCHEMES: (
+        "adls.connection-string",
+        "adls.credential",
+        "adls.blob-storage-authority",
+        "adls.dfs-storage-authority",
+        "adls.blob-storage-scheme",
+        "adls.dfs-storage-scheme",
+    ),
+    ("gs", "gcs"): ("gcs.service.host", "gcs.requester-pays"),
+    ("hf",): ("hf.endpoint",),
+}
+
+# PyIceberg's fallbacks for S3 properties.
+_S3_CLIENT_PROPERTIES = {
+    "client.access-key-id": "s3.access-key-id",
+    "client.secret-access-key": "s3.secret-access-key",
+    "client.session-token": "s3.session-token",
+    "client.region": "s3.region",
+}
+
+
+def _catalog_storage_options(
+    properties: Mapping[str, Any], location: str
+) -> dict[str, Any]:
+    """
+    Object store options from a table's FileIO properties.
+
+    Raises `NotImplementedError` for properties that change how storage is accessed
+    but have no equivalent, so that PyIceberg plans the scan.
+    """
+    from polars.io.iceberg._dataset import (
+        ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP,
+        _convert_iceberg_property_value,
+    )
+
+    scheme = location.split("://", 1)[0].lower() if "://" in location else ""
+    for schemes, keys in _UNSUPPORTED_IO_PROPERTIES.items():
+        if scheme in schemes and (
+            unsupported := sorted(k for k in keys if k in properties)
+        ):
+            msg = f"iceberg: unsupported: FileIO properties: {unsupported}"
+            raise NotImplementedError(msg)
+    if scheme in ("s3", "s3a", "s3n"):
+        if str(properties.get("s3.remote-signing-enabled", "")).lower() == "true":
+            msg = "iceberg: unsupported: S3 remote signing"
+            raise NotImplementedError(msg)
+        properties = {
+            **{
+                s3_key: properties[k]
+                for k, s3_key in _S3_CLIENT_PROPERTIES.items()
+                if k in properties
+            },
+            **properties,
+        }
+
+    storage_options = {
+        (key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP[k]): (
+            _convert_iceberg_property_value(key, v)
+        )
+        for k, v in properties.items()
+        if k in ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP
+    }
+    # Anonymous access.
+    for schemes, anonymous_key, skip_signature_key in (
+        (("s3", "s3a", "s3n"), "s3.anonymous", "aws_skip_signature"),
+        (_AZURE_SCHEMES, "adls.anon", "azure_skip_signature"),
+    ):
+        if (
+            scheme in schemes
+            and str(properties.get(anonymous_key, "")).lower() == "true"
+        ):
+            storage_options[skip_signature_key] = "true"
+    return storage_options
 
 
 def _row_filter_json(expr: pyiceberg.expressions.BooleanExpression) -> str:
@@ -308,7 +393,7 @@ def _plugin_capsule(supported_ids: list[str]) -> Any:
 
 
 # Object store keys of catalog-provided credentials
-# (`ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP` values).
+# (`_catalog_storage_options` values).
 _CATALOG_CREDENTIAL_KEYS = frozenset(
     [
         "aws_access_key_id",
@@ -322,6 +407,8 @@ _CATALOG_CREDENTIAL_KEYS = frozenset(
         "azure_storage_token",
         "bearer_token",
         "token",
+        "aws_skip_signature",
+        "azure_skip_signature",
     ]
 )
 

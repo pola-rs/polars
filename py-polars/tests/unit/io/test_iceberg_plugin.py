@@ -999,36 +999,6 @@ def test_iceberg_plugin_deeply_nested_row_filter(metadata_path: str) -> None:
     )
 
 
-def test_iceberg_plugin_filter_identity_partition_decimal_widened(
-    tmp_path: Path,
-) -> None:
-    from decimal import Decimal
-
-    from pyiceberg.partitioning import PartitionField, PartitionSpec
-    from pyiceberg.transforms import IdentityTransform
-    from pyiceberg.types import DecimalType
-
-    tbl, _ = new_iceberg_table(
-        tmp_path,
-        schema=IcebergSchema(NestedField(1, "d", DecimalType(9, 2))),
-        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "d")),
-    )
-    tbl.append(
-        pl.DataFrame(
-            {"d": [Decimal("1.00"), Decimal("2.50")]}, schema={"d": pl.Decimal(9, 2)}
-        ).to_arrow()
-    )
-    with tbl.update_schema() as update:
-        update.update_column("d", DecimalType(18, 2))
-    tbl = tbl.catalog.load_table(tbl.name())
-
-    predicate = pl.col("d") == pl.lit(Decimal("1.00"), pl.Decimal(18, 2))
-    assert_frame_equal(
-        pl.scan_iceberg(tbl).filter(predicate).collect(),
-        pl.DataFrame({"d": [Decimal("1.00")]}, schema={"d": pl.Decimal(18, 2)}),
-    )
-
-
 def test_iceberg_plugin_gzip_metadata(metadata_path: str) -> None:
     import gzip
 
@@ -1509,6 +1479,40 @@ def test_iceberg_plugin_storage_scope() -> None:
 
     # Options that cannot be fingerprinted are not cached.
     assert plugin_storage_scope(io, {"key": object()}) is None
+
+
+def test_iceberg_plugin_storage_scope_credential_sources(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    from polars.io.iceberg._cache import plugin_storage_scope
+
+    io = PyArrowFileIO({"s3.region": "us-east-1"})
+    scope = plugin_storage_scope(io, None)
+
+    # Credentials taken from the environment.
+    plmonkeypatch.setenv("AWS_PROFILE", "other")
+    env_scope = plugin_storage_scope(io, None)
+    assert env_scope != scope
+    plmonkeypatch.delenv("AWS_PROFILE")
+    assert plugin_storage_scope(io, None) == scope
+
+    # Polars' default credential provider.
+    def provider() -> Any:
+        return {}, None
+
+    def other_provider() -> Any:
+        return {}, None
+
+    with pl.Config(default_credential_provider=provider):
+        provider_scope = plugin_storage_scope(io, None)
+        assert provider_scope is not None
+        assert provider_scope != scope
+        assert plugin_storage_scope(io, None) == provider_scope
+    with pl.Config(default_credential_provider=other_provider):
+        assert plugin_storage_scope(io, None) not in (scope, provider_scope)
+    assert plugin_storage_scope(io, None) == scope
     assert plugin_storage_scope(PyArrowFileIO({"key": object()}), None) is None  # type: ignore[dict-item]
 
 
@@ -1582,3 +1586,46 @@ def test_iceberg_plugin_catalog_storage_options(
         "aws_server_side_encryption": "aws:kms",
         "aws_unsigned_payload": "true",
     }
+
+
+def test_iceberg_plugin_catalog_storage_options_by_scheme() -> None:
+    from polars.io.iceberg._plugin import _catalog_storage_options
+
+    properties = {
+        "client.access-key-id": "client-key",
+        "client.region": "eu-west-1",
+        "s3.region": "us-east-1",
+        "s3.anonymous": "true",
+    }
+    # PyIceberg's `client.*` fallbacks, where the `s3.*` property is not set.
+    assert _catalog_storage_options(properties, "s3://bucket/t.metadata.json") == {
+        "aws_access_key_id": "client-key",
+        "aws_region": "us-east-1",
+        "aws_skip_signature": "true",
+    }
+    # Only for S3.
+    assert _catalog_storage_options(properties, "gs://bucket/t.metadata.json") == {
+        "aws_region": "us-east-1",
+    }
+
+
+@pytest.mark.parametrize(
+    ("properties", "location"),
+    [
+        ({"s3.signer.uri": "https://signer"}, "s3://b/t.metadata.json"),
+        ({"s3.remote-signing-enabled": "true"}, "s3://b/t.metadata.json"),
+        ({"client.role-arn": "arn:aws:iam::1:role/r"}, "s3a://b/t.metadata.json"),
+        ({"s3.profile-name": "p"}, "s3://b/t.metadata.json"),
+        ({"adls.connection-string": "..."}, "abfss://c@a/t.metadata.json"),
+        ({"gcs.service.host": "http://localhost"}, "gs://b/t.metadata.json"),
+    ],
+)
+def test_iceberg_plugin_unsupported_io_properties(
+    properties: dict[str, str], location: str
+) -> None:
+    from polars.io.iceberg._plugin import _catalog_storage_options
+
+    with pytest.raises(NotImplementedError, match="unsupported"):
+        _catalog_storage_options(properties, location)
+    # Properties of other storage are ignored.
+    _catalog_storage_options(properties, "file:///t.metadata.json")

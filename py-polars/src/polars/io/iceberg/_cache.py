@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import hashlib
 import io
+import itertools
 import os
 import re
 import threading
+import weakref
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -123,15 +125,58 @@ def _properties_fingerprint(properties: Mapping[str, Any]) -> str | None:
     return hashlib.sha256(repr(sorted(kept.items())).encode()).hexdigest()
 
 
+# Environment variables from which object store clients take credentials.
+_CREDENTIAL_ENV_PREFIXES = ("AWS_", "AZURE_", "GOOGLE_", "GCS_", "GCP_")
+
+
+def _credential_env_fingerprint() -> str:
+    env = sorted(
+        (k, v) for k, v in os.environ.items() if k.startswith(_CREDENTIAL_ENV_PREFIXES)
+    )
+    return hashlib.sha256(repr(env).encode()).hexdigest()
+
+
 def _file_io_scope(file_io: FileIO) -> str | None:
     # `type()`, not `__class__`, which mocks and proxies can override.
     if qualified_type_name(type(file_io)) not in _BUILTIN_FILE_IO_CLASSES:
         return None
     try:
-        return _properties_fingerprint(file_io.properties)
+        properties_scope = _properties_fingerprint(file_io.properties)
     except Exception:
         # Properties that cannot be fingerprinted bypass the cache.
         return None
+    if properties_scope is None:
+        return None
+    # Without credentials in the properties, FileIOs take them from the environment.
+    return hashlib.sha256(
+        f"{properties_scope}:{_credential_env_fingerprint()}".encode()
+    ).hexdigest()
+
+
+# Unique tokens of credential provider objects. Not `id()`, which is reused after an
+# object is freed.
+_PROVIDER_TOKENS: weakref.WeakKeyDictionary[Any, int] = weakref.WeakKeyDictionary()
+_PROVIDER_TOKENS_LOCK = threading.Lock()
+_next_provider_token = itertools.count()
+
+
+def _default_credential_provider_scope() -> str | None:
+    # The plugin's storage uses Polars' default credential provider (`pl.Config`).
+    # None when it cannot be identified.
+    import polars.io.cloud.credential_provider._builder as builder
+
+    provider = builder.DEFAULT_CREDENTIAL_PROVIDER
+    if provider is None or isinstance(provider, str):
+        return repr(provider)
+    try:
+        with _PROVIDER_TOKENS_LOCK:
+            token = _PROVIDER_TOKENS.get(provider)
+            if token is None:
+                token = _PROVIDER_TOKENS[provider] = next(_next_provider_token)
+    except TypeError:
+        # Not weakly referenceable.
+        return None
+    return f"provider:{token}"
 
 
 def plugin_storage_scope(
@@ -139,21 +184,23 @@ def plugin_storage_scope(
 ) -> str | None:
     """Cache scope of a scan planned by the plugin.
 
-    The plugin reads with storage configured from the FileIO's properties and
-    the user's storage options, so both are fingerprinted. None when either
-    cannot be.
+    The plugin reads with storage configured from the FileIO's properties, the
+    user's storage options and Polars' default credential provider, so all are
+    fingerprinted. None when one cannot be.
     """
     if (io_scope := _file_io_scope(file_io)) is None:
         return None
-    if not storage_options:
-        return io_scope
+    if (provider_scope := _default_credential_provider_scope()) is None:
+        return None
     try:
-        options_scope = _properties_fingerprint(storage_options)
+        options_scope = _properties_fingerprint(storage_options or {})
     except Exception:
         return None
     if options_scope is None:
         return None
-    return hashlib.sha256(f"{io_scope}:{options_scope}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{io_scope}:{options_scope}:{provider_scope}".encode()
+    ).hexdigest()
 
 
 @dataclass

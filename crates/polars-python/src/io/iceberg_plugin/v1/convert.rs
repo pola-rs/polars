@@ -193,7 +193,7 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
             // As the PyIceberg planner's statistics; a record count that does not fit
             // becomes null (unknown), which only disables skipping that file.
             Some(rc) => rc.cast(&DataType::UInt32)?.with_name("len".into()),
-            None => Column::new_empty("len".into(), &DataType::UInt32),
+            None => Column::full_null("len".into(), n, &DataType::UInt32),
         };
         let mut columns = vec![len];
         if let Some(stats) = file_column("stats") {

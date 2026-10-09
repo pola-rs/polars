@@ -23,6 +23,8 @@ from polars.io.iceberg._utils import (
     _new_pyiceberg_scan,
     _normalize_windows_iceberg_file_uri,
     extract_field_initial_default,
+    filter_for_scan_schema,
+    filter_with_nan_ordering,
     try_convert_pyarrow_predicate,
 )
 from polars.io.scan_options.cast_options import ScanCastOptions
@@ -550,8 +552,17 @@ class IcebergScanResolver:
                 selected_fields=selected_fields,
             )
 
+            if iceberg_table_filter is not None and schema_id != (
+                tbl.metadata.current_schema_id
+            ):
+                iceberg_table_filter = filter_for_scan_schema(
+                    iceberg_table_filter, iceberg_schema, tbl.schema()
+                )
+
             if iceberg_table_filter is not None:
-                scan = scan.filter(iceberg_table_filter)
+                scan = scan.filter(
+                    filter_with_nan_ordering(iceberg_table_filter, iceberg_schema)
+                )
 
             for i, file_info in enumerate(scan.plan_files()):
                 if file_info.file.file_format != FileFormat.PARQUET:

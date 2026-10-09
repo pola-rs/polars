@@ -400,6 +400,72 @@ def load_puffin_deletion_file(puffin_bytes: bytes) -> dict[str, pl.Series]:
     return {k: pl.Series(v).reinterpret(dtype=pl.UInt64) for k, v in positions.items()}
 
 
+def filter_for_scan_schema(
+    expr: pyiceberg.expressions.BooleanExpression,
+    scan_schema: pyiceberg.schema.Schema,
+    current_schema: pyiceberg.schema.Schema,
+) -> pyiceberg.expressions.BooleanExpression | None:
+    """
+    The filter to plan a scan of an older schema with, or None.
+
+    PyIceberg binds scan filters to the current schema, also when time travelling;
+    after schema changes, a column name may refer to another field (or none). The
+    filter is kept only if it binds to the same fields in both schemas.
+    """
+    from pyiceberg.expressions.visitors import bind
+
+    try:
+        if bind(scan_schema, expr, case_sensitive=True) == bind(
+            current_schema, expr, case_sensitive=True
+        ):
+            return expr
+    except Exception:
+        pass
+
+    return None
+
+
+def filter_with_nan_ordering(
+    expr: pyiceberg.expressions.BooleanExpression,
+    schema: pyiceberg.schema.Schema,
+) -> pyiceberg.expressions.BooleanExpression:
+    """
+    Adapt a filter to Polars' NaN ordering.
+
+    In Polars, NaN is greater than all other values, whereas Iceberg comparisons
+    are false for NaN. `>` / `>=` on a float column therefore also select NaN.
+    """
+    from pyiceberg.expressions import (
+        And,
+        GreaterThan,
+        GreaterThanOrEqual,
+        IsNaN,
+        Or,
+        Reference,
+    )
+    from pyiceberg.expressions.visitors import rewrite_not
+    from pyiceberg.types import DoubleType, FloatType
+
+    def visit(
+        e: pyiceberg.expressions.BooleanExpression,
+    ) -> pyiceberg.expressions.BooleanExpression:
+        if isinstance(e, (And, Or)):
+            return type(e)(visit(e.left), visit(e.right))
+        if isinstance(e, (GreaterThan, GreaterThanOrEqual)) and isinstance(
+            e.term, Reference
+        ):
+            try:
+                field = schema.find_field(e.term.name, case_sensitive=True)
+            except ValueError:
+                return e
+            if isinstance(field.field_type, (FloatType, DoubleType)):
+                return Or(e, IsNaN(e.term))  # type: ignore[call-arg]
+        return e
+
+    # Negations are pushed down first, as `~(x < v)` also selects NaN.
+    return visit(rewrite_not(expr))
+
+
 class IdentityTransformedPartitionValuesBuilder:
     def __init__(
         self,
@@ -410,6 +476,7 @@ class IdentityTransformedPartitionValuesBuilder:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
         from pyiceberg.transforms import IdentityTransform
         from pyiceberg.types import (
+            DecimalType,
             DoubleType,
             FloatType,
             IntegerType,
@@ -473,6 +540,13 @@ class IdentityTransformedPartitionValuesBuilder:
                     or (
                         isinstance(projected_type, (DoubleType, FloatType))
                         and isinstance(type_this_schema, (DoubleType, FloatType))
+                    )
+                    or (
+                        # Precision widening; unscaled values are unchanged.
+                        isinstance(projected_type, DecimalType)
+                        and isinstance(type_this_schema, DecimalType)
+                        and projected_type.scale == type_this_schema.scale
+                        and projected_type.precision >= type_this_schema.precision
                     )
                 ):
                     self.partition_values[field_id] = (

@@ -6132,3 +6132,100 @@ def test_scan_iceberg_runtime_join_filter(
         pl.DataFrame({key: [150, 160], "f": [50, 60], "e": [0, 1]}),
         check_row_order=False,
     )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_filter_identity_partition_decimal_widened(
+    tmp_path: Path,
+) -> None:
+
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import DecimalType
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "d", DecimalType(9, 2))),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "d")),
+    )
+    tbl.append(
+        pl.DataFrame(
+            {"d": [D("1.00"), D("2.50")]}, schema={"d": pl.Decimal(9, 2)}
+        ).to_arrow()
+    )
+    with tbl.update_schema() as update:
+        update.update_column("d", DecimalType(18, 2))
+    tbl = tbl.catalog.load_table(tbl.name())
+
+    predicate = pl.col("d") == pl.lit(D("1.00"), pl.Decimal(18, 2))
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).filter(predicate).collect(),
+        pl.DataFrame({"d": [D("1.00")]}, schema={"d": pl.Decimal(18, 2)}),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_time_travel_filter_after_schema_change(
+    tmp_path: Path,
+) -> None:
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "b", StringType())
+        ),
+    )
+    df = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    tbl.append(df.to_arrow())
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    snapshot_id = snapshot.snapshot_id
+    # `b` is dropped; `a` is renamed, and another column takes its name.
+    with tbl.update_schema() as update:
+        update.delete_column("b")
+    with tbl.update_schema() as update:
+        update.rename_column("a", "a_old")
+    with tbl.update_schema() as update:
+        update.add_column("a", StringType())
+    tbl = tbl.catalog.load_table(tbl.name())
+
+    for predicate in [
+        pl.col("b") == "x",
+        pl.col("a") == 2,
+        (pl.col("a") > 1) & (pl.col("b") != "z"),
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl, snapshot_id=snapshot_id).filter(predicate).collect(),
+            df.filter(predicate),
+        )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_filter_float_nan_ordering(
+    tmp_path: Path,
+) -> None:
+
+    from pyiceberg.types import DoubleType
+
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "f", DoubleType()))
+    )
+    # One file with NaN and regular values, one with only NaN.
+    tbl.append(pl.DataFrame({"f": [1.0, float("nan")]}).to_arrow())
+    tbl.append(pl.DataFrame({"f": [float("nan")]}).to_arrow())
+    df = pl.DataFrame({"f": [1.0, float("nan"), float("nan")]})
+
+    # In Polars, NaN is greater than all other values.
+    for predicate in [
+        pl.col("f") > 1.5,
+        pl.col("f") >= 1.5,
+        ~(pl.col("f") < 1.5),
+        ~(pl.col("f") <= 1.5),
+        (pl.col("f") > 1.5) | (pl.col("f") == 0.0),
+        pl.col("f") < 1.5,
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
