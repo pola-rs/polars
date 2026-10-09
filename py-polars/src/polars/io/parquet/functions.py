@@ -105,7 +105,7 @@ def read_parquet(
     memory_map: bool = True,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
-    decryption_properties: ParquetDecryptionProperties | None = None,
+    decryption: ParquetDecryptionProperties | None = None,
     _expand_paths: bool = True,
 ) -> DataFrame:
     """
@@ -210,7 +210,7 @@ def read_parquet(
 
         * `insert`: Inserts the missing columns using NULLs as the row values.
         * `raise`: Raises an error.
-    decryption_properties
+    decryption
         Properties for decrypting Parquet files encrypted with Parquet modular
         encryption. See :class:`ParquetDecryptionProperties`.
 
@@ -258,7 +258,7 @@ def read_parquet(
         if schema is not None:
             msg = "`schema` cannot be used with `use_pyarrow=True`"
             raise ValueError(msg)
-        if decryption_properties is not None:
+        if decryption is not None:
             msg = (
                 "Parquet decryption properties cannot be used when use_pyarrow is True"
             )
@@ -301,7 +301,7 @@ def read_parquet(
         glob=glob,
         include_file_paths=include_file_paths,
         missing_columns=missing_columns,
-        decryption_properties=decryption_properties,
+        decryption=decryption,
         _expand_paths=_expand_paths,
     )
 
@@ -538,7 +538,7 @@ def scan_parquet(
     missing_columns: Literal["insert", "raise"] = "raise",
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
-    decryption_properties: ParquetDecryptionProperties | None = None,
+    decryption: ParquetDecryptionProperties | None = None,
     _expand_paths: bool = True,
     _column_mapping: ColumnMapping | None = None,
     _default_values: DefaultFieldValues | None = None,
@@ -667,7 +667,7 @@ def scan_parquet(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    decryption_properties
+    decryption
         Properties for decrypting Parquet files encrypted with Parquet modular
         encryption. See :class:`ParquetDecryptionProperties`.
 
@@ -713,8 +713,8 @@ def scan_parquet(
         msg = "The `hidden_file_prefix` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
-    if decryption_properties is not None:
-        msg = "The `decryption_properties` parameter of `scan_parquet` is considered unstable."
+    if decryption is not None:
+        msg = "The `decryption` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
     sources = get_sources(source)
@@ -732,9 +732,7 @@ def scan_parquet(
         low_memory=low_memory,
         use_statistics=use_statistics,
         decryption_properties=(
-            decryption_properties._pydecryptionproperties
-            if decryption_properties is not None
-            else None
+            decryption._pydecryptionproperties if decryption is not None else None
         ),
         scan_options=ScanOptions(
             row_index=(

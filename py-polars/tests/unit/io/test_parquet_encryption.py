@@ -97,7 +97,7 @@ def test_read_uniform_encryption(
 ) -> None:
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
     df = pl.read_parquet(
-        to_source(encrypted_file_path), decryption_properties=decryption_properties
+        to_source(encrypted_file_path), decryption=decryption_properties
     )
 
     assert_frame_equal(df, expected_data())
@@ -112,7 +112,7 @@ def test_read_ctr_encryption_unsupported(tmp_path: Path) -> None:
         pl.exceptions.ComputeError,
         match="The AES_GCM_CTR_V1 encryption algorithm is not yet supported",
     ):
-        pl.read_parquet(path, decryption_properties=decryption_properties)
+        pl.read_parquet(path, decryption=decryption_properties)
 
 
 @parametrize_source
@@ -122,7 +122,7 @@ def test_read_with_stored_aad_prefix(
     path = write_encrypted(tmp_path / "aad.parquet", aad_prefix=AAD_PREFIX)
     # The AAD prefix is stored in the file, so doesn't need to be provided
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
-    df = pl.read_parquet(to_source(path), decryption_properties=decryption_properties)
+    df = pl.read_parquet(to_source(path), decryption=decryption_properties)
 
     assert_frame_equal(df, expected_data())
 
@@ -141,12 +141,12 @@ def test_read_with_unstored_aad_prefix(
     # The AAD prefix isn't stored in the file, so must be provided
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
     with pytest.raises(pl.exceptions.ComputeError):
-        pl.read_parquet(source, decryption_properties=decryption_properties)
+        pl.read_parquet(source, decryption=decryption_properties)
 
     decryption_properties = pl.ParquetDecryptionProperties(
         footer_key=FOOTER_KEY, aad_prefix=AAD_PREFIX
     )
-    df = pl.read_parquet(source, decryption_properties=decryption_properties)
+    df = pl.read_parquet(source, decryption=decryption_properties)
 
     assert_frame_equal(df, expected_data())
 
@@ -172,7 +172,7 @@ def test_read_plaintext_footer(
         pl.read_parquet(source, columns=["s"])
 
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
-    df = pl.read_parquet(source, decryption_properties=decryption_properties)
+    df = pl.read_parquet(source, decryption=decryption_properties)
     assert_frame_equal(df, expected)
 
 
@@ -189,13 +189,13 @@ def test_read_tampered_plaintext_footer(tmp_path: Path) -> None:
     with pytest.raises(
         pl.exceptions.ComputeError, match="Footer signature verification failed"
     ):
-        pl.read_parquet(tampered, decryption_properties=decryption_properties)
+        pl.read_parquet(tampered, decryption=decryption_properties)
 
     # The file can still be read with signature verification disabled
     decryption_properties = pl.ParquetDecryptionProperties(
         footer_key=FOOTER_KEY, verify_footer_signature=False
     )
-    df = pl.read_parquet(tampered, decryption_properties=decryption_properties)
+    df = pl.read_parquet(tampered, decryption=decryption_properties)
     assert_frame_equal(df, expected_data())
 
 
@@ -229,7 +229,7 @@ def test_decryption_properties_with_pyarrow(encrypted_file_path: Path) -> None:
         pl.read_parquet(
             encrypted_file_path,
             use_pyarrow=True,
-            decryption_properties=decryption_properties,
+            decryption=decryption_properties,
         )
 
 
@@ -240,7 +240,7 @@ def test_scan_encrypted_footer_metadata(
     # Only requires reading the footer, not column data
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
     lf = pl.scan_parquet(
-        to_source(encrypted_file_path), decryption_properties=decryption_properties
+        to_source(encrypted_file_path), decryption=decryption_properties
     )
     assert lf.collect_schema() == expected_data().schema
     assert lf.select(pl.len()).collect().item() == NUM_ROWS
@@ -266,7 +266,7 @@ def test_scan_multiple_encrypted_files(
 
     # No schema is provided, so the schema and row counts come from the footers.
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
-    lf = pl.scan_parquet([source, source], decryption_properties=decryption_properties)
+    lf = pl.scan_parquet([source, source], decryption=decryption_properties)
 
     assert lf.select(pl.len()).collect().item() == 2 * NUM_ROWS
     assert_frame_equal(lf.collect(), pl.concat([expected, expected]))
@@ -293,7 +293,7 @@ def test_scan_resolve_metadata_level(
     plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
 
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
-    lf = pl.scan_parquet(sources, decryption_properties=decryption_properties)
+    lf = pl.scan_parquet(sources, decryption=decryption_properties)
     assert f"ESTIMATED ROWS: {3 * NUM_ROWS}" in lf.explain(optimized=True)
     assert lf.select(pl.len()).collect().item() == 3 * NUM_ROWS
 
@@ -306,15 +306,13 @@ def test_scan_encrypted_footer_with_wrong_key(encrypted_file_path: Path) -> None
         pl.exceptions.ComputeError, match="unable to decrypt parquet footer"
     ):
         pl.scan_parquet(
-            encrypted_file_path, decryption_properties=decryption_properties
+            encrypted_file_path, decryption=decryption_properties
         ).collect_schema()
 
 
 def test_serialize_with_decryption_properties(encrypted_file_path: Path) -> None:
     decryption_properties = pl.ParquetDecryptionProperties(footer_key=FOOTER_KEY)
-    lf = pl.scan_parquet(
-        encrypted_file_path, decryption_properties=decryption_properties
-    )
+    lf = pl.scan_parquet(encrypted_file_path, decryption=decryption_properties)
     with pytest.raises(
         pl.exceptions.ComputeError,
         match="cannot serialize parquet decryption properties",
