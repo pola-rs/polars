@@ -545,7 +545,7 @@ impl SQLContext {
         if *version != self.lp_arena.version() {
             return Ok(None);
         }
-        attach_dataset_scan_statistics(*node, &mut self.lp_arena, &self.expr_arena)?;
+        attach_dataset_scan_statistics(*node, &mut self.lp_arena, &self.expr_arena);
         Ok(node_stats(*node, &self.lp_arena, &self.expr_arena))
     }
 

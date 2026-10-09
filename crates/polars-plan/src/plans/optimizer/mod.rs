@@ -205,16 +205,6 @@ pub fn optimize(
 
     #[cfg(feature = "cse")]
     if run_set_cache_states {
-        // Gives the dataset scans below caches the statistics that the cache decision needs.
-        #[cfg(feature = "python")]
-        if opt_flags.row_estimate() {
-            expand_datasets::expand_datasets_early(
-                root,
-                ir_arena,
-                expr_arena,
-                expand_datasets::EarlyExpansion::StatisticsOnly { below_caches: true },
-            )?;
-        }
         cse::set_cache_states(
             root,
             ir_arena,
