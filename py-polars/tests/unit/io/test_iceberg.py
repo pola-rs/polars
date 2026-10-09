@@ -20,7 +20,7 @@ from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -5951,25 +5951,30 @@ def test_scan_iceberg_cache_decision_matches_parquet_29822(tmp_path: Path) -> No
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_shared_scan_is_read_twice(tmp_path: Path) -> None:
-    tables, files = write_iceberg_tables(
-        tmp_path, {"a": pl.DataFrame({"x": range(100)})}
+def test_scan_iceberg_shared_scan_reads_one_snapshot(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "x", LongType())), name="a"
     )
+    pl.DataFrame({"x": [1]}).write_iceberg(tbl, mode="append")
+    scan = pl.scan_iceberg(tbl)
 
-    def query(a: pl.LazyFrame) -> pl.LazyFrame:
-        return a.join(a.select(y="x"), left_on="x", right_on="y")
+    original = IcebergScanResolver.to_dataset_scan
+    calls = 0
 
-    iceberg = query(pl.scan_iceberg(tables["a"]))
-    parquet = query(pl.scan_parquet(files["a"]))
+    def to_dataset_scan(self: IcebergScanResolver, **kwargs: Any) -> Any:
+        nonlocal calls
+        resolved = original(self, **kwargs)
+        calls += 1
+        if calls == 1:
+            # A writer commits between two reads of the same scan.
+            pl.DataFrame({"x": [2]}).write_iceberg(tbl, mode="append")
+        return resolved
 
-    # Like a parquet scan, the table is read again instead of cached.
-    assert "CACHE[id:" not in parquet.explain(engine="streaming")
-    assert "CACHE[id:" not in iceberg.explain(engine="streaming")
-    assert_frame_equal(
-        iceberg.collect(engine="streaming"),
-        parquet.collect(engine="streaming"),
-        check_row_order=False,
-    )
+    with patch.object(IcebergScanResolver, "to_dataset_scan", to_dataset_scan):
+        out = pl.concat([scan, scan]).collect(engine="streaming")
+
+    # Both reads of one scan see the same snapshot.
+    assert out["x"].to_list() == [1, 1]
 
 
 @pytest.mark.write_disk

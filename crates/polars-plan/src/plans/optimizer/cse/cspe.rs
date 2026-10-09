@@ -274,9 +274,6 @@ fn is_plain_scan(ir: &IR) -> bool {
             crate::dsl::FileScanIR::Csv { .. } => true,
             #[cfg(feature = "json")]
             crate::dsl::FileScanIR::NDJson { .. } => true,
-            // Its reads share one loaded table, so they see the same version.
-            #[cfg(feature = "python")]
-            crate::dsl::FileScanIR::PythonDataset { .. } => true,
             _ => false,
         },
         _ => false,
