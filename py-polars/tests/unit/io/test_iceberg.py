@@ -5975,8 +5975,8 @@ def test_scan_iceberg_statistics_do_not_read_filtered_out_metadata(
     k1 = scan.filter(pl.col("k") == 1)
     # Different filters over a shared scan, so the cache decision asks for estimates.
     q = pl.concat([k1.filter(pl.col("v") < 5), k1.filter(pl.col("v") >= 5)])
-    for engine in ["in-memory", "streaming"]:
-        assert q.collect(engine=engine).height == 10  # type: ignore[arg-type]
+    assert q.collect(engine="in-memory").height == 10
+    assert q.collect(engine="streaming").height == 10
 
     sql = "SELECT k FROM o WHERE s < (SELECT SUM(v) FROM i WHERE i.k = o.k AND i.k = 1)"
     ctx = pl.SQLContext(o=pl.DataFrame({"k": [1], "s": [0]}), i=scan)
