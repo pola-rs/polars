@@ -293,6 +293,31 @@ def read_database(
         )
 
 
+def _merge_connection_options(uri: str, connection_options: dict[str, Any]) -> str:
+    """
+    Merge additional query parameters into a connection URI.
+
+    Only the query string is rewritten; every other part of the URI is passed through
+    verbatim (note that `urllib.parse.urlunparse` cannot be used here, as it mangles
+    URIs without an authority component, such as "sqlite:///path/to/db").
+    """
+    from urllib.parse import quote, unquote
+
+    def _encode(value: Any) -> str:
+        if isinstance(value, bool):
+            value = str(value).lower()
+        return quote(str(value), safe="")
+
+    base, _, query = uri.partition("?")
+    params = [
+        param
+        for param in query.split("&")
+        if param and unquote(param.split("=", 1)[0]) not in connection_options
+    ]
+    params.extend(f"{_encode(k)}={_encode(v)}" for k, v in connection_options.items())
+    return f"{base}?{'&'.join(params)}"
+
+
 @overload
 def read_database_uri(
     query: str,
@@ -306,6 +331,7 @@ def read_database_uri(
     schema_overrides: SchemaDict | None = None,
     execute_options: dict[str, Any] | None = None,
     pre_execution_query: str | list[str] | None = None,
+    connection_options: None = None,
 ) -> DataFrame: ...
 
 
@@ -322,6 +348,7 @@ def read_database_uri(
     schema_overrides: SchemaDict | None = None,
     execute_options: None = None,
     pre_execution_query: str | list[str] | None = None,
+    connection_options: dict[str, Any] | None = None,
 ) -> DataFrame: ...
 
 
@@ -338,6 +365,7 @@ def read_database_uri(
     schema_overrides: None = None,
     execute_options: dict[str, Any] | None = None,
     pre_execution_query: str | list[str] | None = None,
+    connection_options: dict[str, Any] | None = None,
 ) -> DataFrame: ...
 
 
@@ -353,6 +381,7 @@ def read_database_uri(
     schema_overrides: SchemaDict | None = None,
     execute_options: dict[str, Any] | None = None,
     pre_execution_query: str | list[str] | None = None,
+    connection_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Read the results of a SQL query into a DataFrame, given a URI.
@@ -405,6 +434,31 @@ def read_database_uri(
         Can be used to set runtime configurations using SET statements.
         Only applicable for Postgres and MySQL source.
         Only applicable with the connectorx engine.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+    connection_options
+        A dictionary of key-value pairs to merge into the connection URI as query
+        parameters. Keys that are already present in the URI are replaced; any other
+        existing parameter is passed through unchanged. Keys and values are
+        percent-encoded (a space becomes ``%20``), non-string values are serialized
+        with ``str``, and booleans are lowercased to ``true``/``false``, as expected
+        by most drivers. Only applicable with the connectorx engine.
+
+        Which keys are accepted depends on the connectorx source, which forwards them
+        to the underlying driver and rejects the ones it does not recognize. Support
+        is also version-dependent: connectorx 0.4.5 does not preserve spaces in
+        parameter values, reports an unrecognized parameter as a panic rather than an
+        error, and does not forward URL parameters for Trino. These are resolved from
+        connectorx 0.4.6 (spaces preserved, unknown parameters raised as errors, and
+        Trino parameters forwarded); with 0.4.5 those limitations remain.
+
+        .. note::
+            Prefer keeping credentials in the URI itself; unlike the
+            ``user:password`` portion of the URI, query parameters are not
+            redacted from connectorx error messages.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -463,6 +517,17 @@ def read_database_uri(
     ... ]
     >>> pl.read_database_uri(queries, uri, engine="connectorx")  # doctest: +SKIP
 
+    Set additional connection parameters without hand-building the URI query string
+    (here the resulting URI is
+    "postgresql://user:pass@server:port/database?sslmode=require&application_name=polars"):
+
+    >>> pl.read_database_uri(
+    ...     "SELECT * FROM lineitem",
+    ...     "postgresql://user:pass@server:port/database",
+    ...     engine="connectorx",
+    ...     connection_options={"sslmode": "require", "application_name": "polars"},
+    ... )  # doctest: +SKIP
+
     Read data from Snowflake using the ADBC driver:
 
     >>> df = pl.read_database_uri(
@@ -501,6 +566,11 @@ def read_database_uri(
         if execute_options:
             msg = "the 'connectorx' engine does not support use of `execute_options`"
             raise ValueError(msg)
+        if connection_options:
+            issue_unstable_warning(
+                "the 'connection-options' parameter is considered unstable."
+            )
+            uri = _merge_connection_options(uri, connection_options)
         if pre_execution_query:
             issue_unstable_warning(
                 "the 'pre-execution-query' parameter is considered unstable."
@@ -516,6 +586,9 @@ def read_database_uri(
             pre_execution_query=pre_execution_query,
         )
     elif engine == "adbc":
+        if connection_options:
+            msg = "the 'adbc' engine does not support use of `connection_options`"
+            raise ValueError(msg)
         if not isinstance(query, str):
             msg = f"only a single SQL query string is accepted for adbc, got a {qualified_type_name(query)!r} type"
             raise ValueError(msg)

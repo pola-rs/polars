@@ -70,6 +70,14 @@ def _read_sql_connectorx(
     except BaseException as err:
         # basic sanitisation of /user:pass/ credentials exposed in connectorx errs
         errmsg = re.sub("://[^:]+:[^:]+@", "://***:***@", str(err))
+        # connectorx < 0.4.6 panics (rather than raising) on some invalid
+        # connection parameters; surface that as a normal Python exception so
+        # callers can catch it consistently across versions (connectorx >= 0.4.6
+        # already raises RuntimeError). See sfu-db/connector-x#933.
+        from polars.exceptions import PanicException
+
+        if isinstance(err, PanicException):
+            raise RuntimeError(errmsg) from err  # noqa: TRY004
         raise type(err)(errmsg) from err
 
     return DataFrame(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
