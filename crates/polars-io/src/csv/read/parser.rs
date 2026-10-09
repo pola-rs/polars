@@ -996,9 +996,9 @@ fn ends_in_unterminated_row(
     if !bytes.is_empty() && bytes.last().copied().unwrap() != eol_char {
         // We can do a simple backwards-scan to find the start of last line if it is a
         // comment line, since comment lines can't escape new-lines.
-        let last_new_line_post = memchr::memrchr(eol_char, bytes).unwrap_or(0);
+        let last_line_start = memchr::memrchr(eol_char, bytes).map(|p| p + 1).unwrap_or(0);
         let last_line_is_comment_line = bytes
-            .get(last_new_line_post + 1..)
+            .get(last_line_start..)
             .map(|line| is_comment_line(line, comment_prefix))
             .unwrap_or(false);
 
@@ -1259,5 +1259,36 @@ mod test {
         assert_eq!(lines2.next(), Some("1,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), Some("2,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), None);
+    }
+
+    #[test]
+    fn test_count_rows_unterminated_comment_at_eof() {
+        use super::{CountLines, ends_in_unterminated_row};
+        use crate::csv::read::CommentPrefix;
+
+        // An unterminated comment line at EOF must not be counted as a row,
+        // also when the buffer contains no newline so the comment prefix is
+        // at byte 0. See https://github.com/pola-rs/polars/issues/26998
+        let prefix = CommentPrefix::Single(b'#');
+        assert!(!ends_in_unterminated_row(
+            b"# status: finished",
+            b'\n',
+            Some(&prefix)
+        ));
+        // Multi-character prefix, as in the issue report.
+        let multi = CommentPrefix::Multi("C,\"END OF REPORT\"".into());
+        assert!(!ends_in_unterminated_row(
+            b"C,\"END OF REPORT\",44643",
+            b'\n',
+            Some(&multi)
+        ));
+
+        let counter = CountLines::new(None, b'\n', Some(CommentPrefix::Single(b'#')));
+        let (n_lines, offset) = counter.count_rows(b"# status: finished", true);
+        assert_eq!((n_lines, offset), (0, 18));
+        let (n_lines, _) = counter.count_rows(b"1\t2\n3\t4\n# status: finished", true);
+        assert_eq!(n_lines, 2);
+        let (n_lines, _) = counter.count_rows(b"1\t2\n3\t4", true);
+        assert_eq!(n_lines, 2);
     }
 }
