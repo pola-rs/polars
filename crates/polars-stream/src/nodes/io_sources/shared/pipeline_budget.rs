@@ -1,27 +1,26 @@
 use std::num::NonZeroUsize;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock, Mutex, Once};
 use std::time::{Duration, Instant};
 
+use polars_core::config;
 use polars_io::cloud::concurrency_config::{FetchConfig, get_download_chunk_size};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
     LazyLock::new(|| std::env::var("POLARS_LOG_CONCURRENCY").is_ok());
 
-/// Prefetch kilobyte limit for a scan pipeline.
-///
-/// A value set in `env_var` is used as given. The default is at least one download chunk.
-pub(crate) fn prefetch_kbytes_limit_from_env_or_default(
-    env_var: &str,
-    num_pipelines: usize,
-) -> usize {
-    if let Ok(x) = std::env::var(env_var) {
-        return x
-            .parse::<NonZeroUsize>()
+/// Value of `env_var` if set; panics if it is not a positive integer.
+pub(crate) fn env_nonzero_usize(env_var: &str) -> Option<usize> {
+    std::env::var(env_var).ok().map(|x| {
+        x.parse::<NonZeroUsize>()
             .unwrap_or_else(|_| panic!("invalid value for {env_var}: {x}"))
-            .get();
-    }
+            .get()
+    })
+}
 
+/// Default prefetch kilobyte limit for a scan pipeline, at least one download chunk.
+pub(crate) fn default_prefetch_kbytes_limit(num_pipelines: usize) -> usize {
     // This should be large enough to be non-blocking, but small enough to avoid
     // excessive memory use from a run-away prefetch pipeline.
     // "Correct" formula: (a) max effective in-flight bdp-based bytes budget + (b) decode pipeline.
@@ -34,34 +33,83 @@ pub(crate) fn prefetch_kbytes_limit_from_env_or_default(
     (4 * num_pipelines * target_chunk_size_kb).max(get_download_chunk_size().div_ceil(1024))
 }
 
+/// Factor by which an ordered scan grows the default count limit. `PLDEV_ORDERED_WINDOW_FACTOR`
+/// overrides it.
+const ORDERED_WINDOW_FACTOR: usize = 2;
+
+fn ordered_window_factor() -> usize {
+    static FACTOR: LazyLock<usize> = LazyLock::new(|| {
+        std::env::var("PLDEV_ORDERED_WINDOW_FACTOR").map_or(ORDERED_WINDOW_FACTOR, |x| {
+            x.parse::<NonZeroUsize>()
+                .unwrap_or_else(|_| panic!("invalid value for PLDEV_ORDERED_WINDOW_FACTOR: {x}"))
+                .get()
+        })
+    });
+    *FACTOR
+}
+
 #[derive(Clone, Debug)]
 pub struct PipelineBudget {
     count: Arc<Semaphore>,
     kbytes: Arc<Semaphore>,
-    count_limit: usize,
+    count_limit: Arc<AtomicUsize>,
     kbytes_limit: usize,
+    /// False if the count limit was set by an env var.
+    can_grow_for_ordered: bool,
+    grown_for_ordered: Arc<Once>,
     last_reported: Arc<Mutex<Instant>>,
     report_interval: Duration,
 }
 
 impl PipelineBudget {
-    pub fn new(count_limit: usize, kbytes_limit: usize) -> Self {
+    /// Upper bound of the default count limit, also when grown for an ordered scan.
+    pub(crate) const MAX_DEFAULT_COUNT_LIMIT: usize = 2048;
+
+    pub fn new(count_limit: usize, kbytes_limit: usize, can_grow_for_ordered: bool) -> Self {
         Self {
             count: Arc::new(Semaphore::new(count_limit)),
             kbytes: Arc::new(Semaphore::new(kbytes_limit)),
-            count_limit,
+            count_limit: Arc::new(AtomicUsize::new(count_limit)),
             kbytes_limit,
+            can_grow_for_ordered,
+            grown_for_ordered: Arc::new(Once::new()),
             last_reported: Arc::new(Mutex::new(Instant::now())),
             report_interval: Duration::from_millis(100),
         }
     }
 
     pub(crate) fn count_limit(&self) -> usize {
-        self.count_limit
+        self.count_limit.load(Ordering::Acquire)
     }
 
     pub(crate) fn kbytes_limit(&self) -> usize {
         self.kbytes_limit
+    }
+
+    /// Grows the count limit by `ORDERED_WINDOW_FACTOR`, once per budget (shared by clones); a
+    /// no-op if the count limit was set by an env var. Call before sizing anything from
+    /// `count_limit()`.
+    pub(crate) fn grow_for_ordered(&self) {
+        if !self.can_grow_for_ordered {
+            return;
+        }
+        self.grown_for_ordered.call_once(|| {
+            let count_limit = self.count_limit();
+            let new_count_limit = count_limit
+                .saturating_mul(ordered_window_factor())
+                .min(Self::MAX_DEFAULT_COUNT_LIMIT);
+
+            self.count
+                .add_permits(new_count_limit.saturating_sub(count_limit));
+            self.count_limit.store(new_count_limit, Ordering::Release);
+
+            if config::verbose() {
+                eprintln!(
+                    "[PipelineBudget]: ordered scan: prefetch_limit: {count_limit} -> \
+                    {new_count_limit}"
+                );
+            }
+        });
     }
 
     /// Acquire permit for a fetch of `n_bytes`.
@@ -86,8 +134,9 @@ impl PipelineBudget {
 
         if *SHOULD_LOG_CONCURRENCY {
             if let Ok(mut last_log) = self.last_reported.lock() {
+                let count_limit = self.count_limit();
                 let kbytes_in_use = self.kbytes_limit - self.kbytes.available_permits();
-                let count_in_use = self.count_limit - self.count.available_permits();
+                let count_in_use = count_limit.saturating_sub(self.count.available_permits());
                 if last_log.elapsed() > self.report_interval {
                     eprintln!(
                         "[PipelineBudget {}] \
@@ -101,9 +150,9 @@ impl PipelineBudget {
                         self.kbytes_limit as f64 / 1e3,
                         kbytes_in_use as f64 / 1e3,
                         kbytes_in_use as f64 / self.kbytes_limit as f64,
-                        self.count_limit,
+                        count_limit,
                         count_in_use,
-                        count_in_use as f64 / self.count_limit as f64,
+                        count_in_use as f64 / count_limit as f64,
                     );
                     *last_log = Instant::now();
                 }

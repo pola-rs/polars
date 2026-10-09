@@ -1,4 +1,3 @@
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_async::executor::TaskMetricAggregator;
@@ -15,7 +14,7 @@ use polars_plan::dsl::ScanSource;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::shared::pipeline_budget::{
-    PipelineBudget, prefetch_kbytes_limit_from_env_or_default,
+    PipelineBudget, default_prefetch_kbytes_limit, env_nonzero_usize,
 };
 use super::{FileReader, ParquetFileReader};
 use crate::metrics::{IOMetrics, OptIOMetrics};
@@ -77,31 +76,22 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             let _ = self.task_metrics.set(task_metrics);
         }
 
-        // Bound the number of fetches in the pipeline.
-        // This bound goes together with the `prefetch_kbytes_limit` bound. In most
-        // large-dataset use cases, the kbytes memory bound will kick in first.
-        // This limit should be at least as large as the max in-flight concurrency.
-        let prefetch_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
-            .map(|x| {
-                x.parse::<NonZeroUsize>()
-                    .unwrap_or_else(|_| {
-                        panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_SIZE: {x}")
-                    })
-                    .get()
-            })
-            .unwrap_or(
-                execution_state
-                    .num_pipelines
-                    .saturating_mul(2)
-                    .max(get_inflight_request_budget() as usize)
-                    .clamp(16, 2048),
-            )
-            .max(1);
+        let prefetch_limit_env = env_nonzero_usize("POLARS_ROW_GROUP_PREFETCH_SIZE");
 
-        let prefetch_kbytes_limit = prefetch_kbytes_limit_from_env_or_default(
-            "POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET",
-            execution_state.num_pipelines,
-        );
+        // Bound the number of fetches in the pipeline.
+        // This bound goes together with the `prefetch_kbytes_limit` bound; it binds first for
+        // row groups smaller than `prefetch_kbytes_limit / prefetch_limit`.
+        // This limit should be at least as large as the max in-flight concurrency.
+        let prefetch_limit = prefetch_limit_env.unwrap_or_else(|| {
+            execution_state
+                .num_pipelines
+                .saturating_mul(2)
+                .max(get_inflight_request_budget() as usize)
+                .clamp(16, PipelineBudget::MAX_DEFAULT_COUNT_LIMIT)
+        });
+
+        let prefetch_kbytes_limit = env_nonzero_usize("POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET")
+            .unwrap_or_else(|| default_prefetch_kbytes_limit(execution_state.num_pipelines));
 
         if config::verbose() {
             eprintln!(
@@ -110,8 +100,14 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             );
         }
 
+        let can_grow_for_ordered = prefetch_limit_env.is_none();
+
         self.pipeline_budget
-            .set(PipelineBudget::new(prefetch_limit, prefetch_kbytes_limit))
+            .set(PipelineBudget::new(
+                prefetch_limit,
+                prefetch_kbytes_limit,
+                can_grow_for_ordered,
+            ))
             .unwrap()
     }
 
