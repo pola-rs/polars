@@ -33,7 +33,6 @@ mod collapse_sort;
 pub mod deep_copy;
 mod filter_constraint;
 mod ir_traversal;
-mod literal_select;
 mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
@@ -278,7 +277,6 @@ pub fn optimize(
         rules.push(Box::new(SimplifyBooleanRule {
             maintain_errors: pushdown_maintain_errors,
         }));
-        rules.push(Box::new(literal_select::LiteralSelect {}));
     }
 
     if !opt_flags.eager() {
