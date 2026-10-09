@@ -98,6 +98,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Clone polars-iceberg
+        uses: ./.github/actions/clone-polars-iceberg
+
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
@@ -154,6 +157,11 @@ jobs:
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           uv pip install --no-deps -e py-polars
           make build
+
+      - name: Install polars_iceberg plugin
+        run: |
+          make -C crates build-polars-iceberg
+          .venv/bin/python -c 'import polars_iceberg'
 
       - name: Run Python tests
         working-directory: py-polars

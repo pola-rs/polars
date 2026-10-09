@@ -100,6 +100,19 @@ fn sanitize(name: &str) -> Option<&str> {
     }
 }
 
+/// `AnyValue::dtype`, which panics for categorical values (their mapping is not
+/// a data type).
+fn any_value_dtype(av: &AnyValue<'_>) -> Option<DataType> {
+    match av {
+        #[cfg(feature = "dtype-categorical")]
+        AnyValue::Categorical(..)
+        | AnyValue::CategoricalOwned(..)
+        | AnyValue::Enum(..)
+        | AnyValue::EnumOwned(..) => None,
+        av => Some(av.dtype()),
+    }
+}
+
 /// Render a flat `Series` as a Python list literal, e.g. `[1,2,3]`.
 ///
 /// Returns `None` for values we cannot faithfully (or safely) write out as
@@ -133,9 +146,28 @@ fn series_to_pyarrow_list(s: &Series) -> Option<String> {
             AnyValue::Array(_, _) => return None,
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(_, _, _) => return None,
-            _ => {
-                write!(list_repr, "{av},").unwrap();
+            // The `Display` impls round (floats to ~6 significant digits,
+            // decimals through `f64` on the Python side), so a value in the
+            // list would no longer match itself.
+            #[cfg(feature = "dtype-decimal")]
+            AnyValue::Decimal(_, _, _) => return None,
+            av if any_value_dtype(&av).is_some_and(|dt| dt.is_float()) => {
+                // Same rendering as a scalar literal; NaN and inf have no
+                // Python literal.
+                let v = av.extract::<f64>()?;
+                if !v.is_finite() {
+                    return None;
+                }
+                // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
+                write!(list_repr, "{v:?},").unwrap();
             },
+            av if any_value_dtype(&av).is_some_and(|dt| dt.is_integer()) => {
+                // Not `{av}`: `AnyValue`'s `Display` inserts the configured
+                // thousands separator (`1,000`).
+                let v = av.extract::<i128>()?;
+                write!(list_repr, "{v},").unwrap();
+            },
+            _ => return None,
         }
     }
     // pop last comma
@@ -197,7 +229,7 @@ pub fn predicate_to_pa(
         AExpr::Literal(LiteralValue::Series(_)) => None,
         AExpr::Literal(lv) => {
             let av = lv.to_any_value()?;
-            let dtype = av.dtype();
+            let dtype = any_value_dtype(&av)?;
             match av.as_borrowed() {
                 AnyValue::String(s) => {
                     let s = sanitize(s)?;
@@ -222,7 +254,13 @@ pub fn predicate_to_pa(
                 av => {
                     if dtype.is_float() {
                         let val = av.extract::<f64>()?;
-                        Some(format!("{val}"))
+                        // `inf` is not a Python literal (NaN is special-cased by
+                        // the consumers as a comparison operand).
+                        if val.is_infinite() {
+                            return None;
+                        }
+                        // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
+                        Some(format!("{val:?}"))
                     } else if dtype.is_integer() {
                         let val = av.extract::<i64>()?;
                         Some(format!("{val}"))
@@ -529,7 +567,7 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
 fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, PyAny>> {
     use pyo3::IntoPyObjectExt;
 
-    let dtype = av.dtype();
+    let dtype = any_value_dtype(&av)?;
     match av.as_borrowed() {
         AnyValue::Null => Some(py.None().into_bound(py)),
         AnyValue::Boolean(v) => v.into_bound_py_any(py).ok(),

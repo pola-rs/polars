@@ -1,0 +1,55 @@
+name: polars-iceberg version
+description: >
+  Read the polars-iceberg version from the lower bound of the
+  `polars-iceberg >= <version>, < <next major version>` requirement in the `iceberg`
+  optional dependencies of py-polars/pyproject.toml, to install from PyPI and test against. Checks
+  the upper bound is the next major version. Requires a checkout of Polars.
+
+outputs:
+  version:
+    description: polars-iceberg version
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read polars-iceberg version
+      id: version
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        VERSION=$(python3 - <<'EOF'
+        import re, tomllib
+
+        with open("py-polars/pyproject.toml", "rb") as f:
+            deps = tomllib.load(f)["project"]["optional-dependencies"]["iceberg"]
+        bounds = [
+            m.groups()
+            for d in deps
+            if (
+                m := re.fullmatch(
+                    r"polars-iceberg\s*>=\s*([^\s,;]+)\s*,\s*<\s*([^\s,;]+)", d.strip()
+                )
+            )
+        ]
+        if len(bounds) != 1:
+            raise SystemExit(
+                "expected one 'polars-iceberg >= <version>, < <next major version>' "
+                f"requirement, found {deps}"
+            )
+        lower, upper = bounds[0]
+
+        m = re.match(r"\d+", lower)
+        if m is None:
+            raise SystemExit(f"cannot parse polars-iceberg version {lower}")
+        expected = f"{int(m.group()) + 1}.0.0"
+        if upper != expected:
+            raise SystemExit(
+                f"polars-iceberg upper bound {upper} is not the next major version {expected} "
+                f"of {lower}"
+            )
+        print(lower)
+        EOF
+        )
+        echo "polars-iceberg version: $VERSION"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"

@@ -202,6 +202,17 @@ impl ColumnConstraints {
         self.lower.is_some() || self.upper.is_some()
     }
 
+    // Whether `value` orders against the existing lower / upper bound. Bounds that
+    // don't (e.g. decimals of other precisions) can't be folded into one, so their
+    // conjuncts are kept verbatim.
+    fn orders_with_bounds(&self, value: &Scalar, lower: bool, upper: bool) -> bool {
+        let orders = |slot: &Option<(Scalar, bool)>| {
+            slot.as_ref()
+                .is_none_or(|(existing, _)| scalar_cmp(value, existing).is_some())
+        };
+        (!lower || orders(&self.lower)) && (!upper || orders(&self.upper))
+    }
+
     fn add_lower(&mut self, value: Scalar, inclusive: bool) -> bool {
         if self.unsat {
             return false;
@@ -878,6 +889,15 @@ fn classify_comparison(
     };
 
     let cc = constraints.entry(col_name).or_default();
+    let (lower, upper) = match op {
+        Operator::Gt | Operator::GtEq => (true, false),
+        Operator::Lt | Operator::LtEq => (false, true),
+        Operator::Eq => (true, true),
+        _ => (false, false),
+    };
+    if !cc.orders_with_bounds(&lit, lower, upper) {
+        return Classification::Opaque;
+    }
     match op {
         Operator::Gt => {
             cc.add_lower(lit, false);
@@ -1066,6 +1086,10 @@ fn classify_is_between(
         ClosedInterval::None => (false, false),
     };
     let cc = constraints.entry(col_name).or_default();
+    if !(cc.orders_with_bounds(&lo_lit, true, false) && cc.orders_with_bounds(&hi_lit, false, true))
+    {
+        return Classification::Opaque;
+    }
     cc.add_lower(lo_lit, lo_inclusive);
     cc.add_upper(hi_lit, hi_inclusive);
     if cc.unsat {

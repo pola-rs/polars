@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
+import re
 import uuid
 from _ast import GtE, Lt, LtE
 from ast import (
@@ -20,6 +21,7 @@ from ast import (
     Name,
     NotEq,
     UnaryOp,
+    USub,
 )
 from dataclasses import dataclass
 from functools import cache, singledispatch
@@ -46,9 +48,19 @@ if TYPE_CHECKING:
 else:
     from polars._dependencies import pyiceberg
 
+
+def _to_py_datetime_exact(value: int, time_unit: str, *args: Any) -> datetime:
+    # Python datetimes have microsecond precision: truncating a nanosecond value
+    # would change the predicate (e.g. narrow `<`), so it is not converted.
+    if time_unit == "ns" and value % 1000 != 0:
+        msg = f"nanosecond literal {value} cannot be represented exactly"
+        raise ValueError(msg)
+    return to_py_datetime(value, time_unit, *args)  # type: ignore[arg-type]
+
+
 _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
     "to_py_date": to_py_date,
-    "to_py_datetime": to_py_datetime,
+    "to_py_datetime": _to_py_datetime_exact,
 }
 
 ICEBERG_TIME_TO_NS: int = 1000
@@ -86,7 +98,9 @@ def _new_pyiceberg_scan(
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
 def _normalize_windows_iceberg_file_uri(path: str) -> str:
-    if path.startswith("file://") and not path.startswith("file:///"):
+    # `file://C:/x` has the drive letter as its authority. Other authorities (UNC hosts,
+    # `localhost`) are kept.
+    if re.match(r"file://[A-Za-z]:", path):
         return f"file:///{path.removeprefix('file://')}"
 
     return path
@@ -148,7 +162,13 @@ def _scan_pyarrow_dataset_impl(
             assert iceberg_table_filter is None
 
             def gen() -> Iterable[pl.DataFrame]:
-                remaining = scan.count()
+                if hasattr(scan, "count"):
+                    remaining = scan.count()
+                else:
+                    # E.g. incremental append scans.
+                    remaining = sum(
+                        batch.num_rows for batch in scan.to_arrow_batch_reader()
+                    )
 
                 if n_rows is not None:
                     remaining = min(remaining, n_rows)
@@ -263,6 +283,14 @@ def _(a: UnaryOp) -> Any:
     if isinstance(a.op, Invert):
         operand = _ensure_boolean_expression(_convert_predicate(a.operand))
         return pyiceberg.expressions.Not(operand)
+    elif (
+        isinstance(a.op, USub)
+        and isinstance(a.operand, Constant)
+        and isinstance(a.operand.value, (int, float))
+        and not isinstance(a.operand.value, bool)
+    ):
+        # Negative literals, e.g. `-5` or `to_py_datetime(-123, 'us')`.
+        return -a.operand.value
     else:
         msg = f"Unexpected UnaryOp: {a}"
         raise TypeError(msg)
@@ -385,7 +413,267 @@ def load_puffin_deletion_file(puffin_bytes: bytes) -> dict[str, pl.Series]:
 
     positions = pyiceberg.table.puffin.PuffinFile(puffin_bytes).to_vector()
 
-    return {k: pl.Series(v).reinterpret(dtype=pl.UInt64) for k, v in positions.items()}
+    return {
+        k: pl.Series(v, dtype=pl.Int64).reinterpret(dtype=pl.UInt64)
+        for k, v in positions.items()
+    }
+
+
+def filter_for_pyiceberg_reader(
+    expr: pyiceberg.expressions.BooleanExpression,
+    schema: pyiceberg.schema.Schema,
+) -> pyiceberg.expressions.BooleanExpression | None:
+    """
+    The part of a filter that PyIceberg can apply when reading rows, or None.
+
+    PyIceberg drops rows that do not match the filter, so it must select a superset
+    of the rows of Polars' predicate. On float columns, predicates that NaN
+    satisfies in Polars (where NaN is greater than all values) are left out: NaN
+    does not compare in Iceberg, and Parquet row group statistics used by PyArrow
+    exclude NaN.
+    """
+    import math
+
+    from pyiceberg.expressions import (
+        And,
+        EqualTo,
+        In,
+        IsNull,
+        LessThan,
+        LessThanOrEqual,
+        Not,
+        NotEqualTo,
+        NotNaN,
+        NotNull,
+        Or,
+        Reference,
+        UnboundPredicate,
+    )
+    from pyiceberg.expressions.literals import Literal
+    from pyiceberg.expressions.visitors import rewrite_not
+    from pyiceberg.types import DoubleType, FloatType
+
+    # Not satisfied by NaN, given non-NaN literals.
+    nan_excluding = (
+        LessThan,
+        LessThanOrEqual,
+        EqualTo,
+        In,
+        IsNull,
+        NotNull,
+        NotNaN,
+    )
+
+    def is_nan_literal(v: Any) -> bool:
+        v = v.value if isinstance(v, Literal) else v
+        return isinstance(v, float) and math.isnan(v)
+
+    def is_zero_literal(v: Any) -> bool:
+        v = v.value if isinstance(v, Literal) else v
+        return v == 0
+
+    def visit(
+        e: pyiceberg.expressions.BooleanExpression,
+    ) -> pyiceberg.expressions.BooleanExpression | None:
+        if isinstance(e, And):
+            left, right = visit(e.left), visit(e.right)
+            if left is None or right is None:
+                return left if right is None else right
+            return And(left, right)
+        if isinstance(e, Or):
+            left, right = visit(e.left), visit(e.right)
+            return None if left is None or right is None else Or(left, right)
+        if isinstance(e, Not):
+            # Not left by `rewrite_not`.
+            return None
+        if isinstance(e, UnboundPredicate):
+            if not isinstance(e.term, Reference):
+                return None
+            try:
+                field = schema.find_field(e.term.name, case_sensitive=True)
+            except ValueError:
+                return None
+            if not field.field_type.is_primitive:
+                # PyIceberg cannot project list / map columns for row filters.
+                return None
+            if isinstance(field.field_type, (FloatType, DoubleType)):
+                literals = [
+                    *getattr(e, "literals", ()),
+                    *([e.literal] if hasattr(e, "literal") else []),
+                ]
+                if (
+                    not isinstance(e, nan_excluding)
+                    or any(is_nan_literal(v) for v in literals)
+                    # PyArrow `is_in` and Parquet row group statistics distinguish
+                    # -0.0 from 0.0.
+                    or (isinstance(e, In) and any(is_zero_literal(v) for v in literals))
+                ):
+                    return None
+            if isinstance(e, NotEqualTo):
+                # PyIceberg drops nulls, but e.g. `~is_in([x], nulls_equal=True)`
+                # (`In` of one value becomes `EqualTo`) keeps them.
+                return Or(e, IsNull(e.term))  # type: ignore[call-arg]
+        return e
+
+    return visit(rewrite_not(expr))
+
+
+def filter_for_scan_schema(
+    expr: pyiceberg.expressions.BooleanExpression,
+    scan_schema: pyiceberg.schema.Schema,
+    current_schema: pyiceberg.schema.Schema,
+) -> pyiceberg.expressions.BooleanExpression | None:
+    """
+    The filter to plan a scan of an older schema with, or None.
+
+    PyIceberg binds scan filters to the current schema, also when time travelling;
+    after schema changes, a column name may refer to another field (or none). The
+    filter is kept only if it binds to the same fields in both schemas.
+    """
+    from pyiceberg.expressions.visitors import bind
+
+    try:
+        if bind(scan_schema, expr, case_sensitive=True) == bind(
+            current_schema, expr, case_sensitive=True
+        ):
+            return expr
+    except Exception:
+        pass
+
+    return None
+
+
+def filter_for_truncate_overflow(
+    expr: pyiceberg.expressions.BooleanExpression,
+    table: Table,
+) -> pyiceberg.expressions.BooleanExpression | None:
+    """
+    The filter to plan a scan with PyIceberg, or None.
+
+    Writers (Java, PyIceberg) truncate integers within the width of the type's minimum
+    with a wrapping subtraction, giving a large positive partition value, which
+    PyIceberg prunes for predicates on these integers. Such predicates on columns with
+    `truncate` partition fields are left out.
+    """
+    from pyiceberg.expressions import (
+        AlwaysTrue,
+        And,
+        EqualTo,
+        GreaterThan,
+        GreaterThanOrEqual,
+        In,
+        IsNull,
+        NotNull,
+        Or,
+        Reference,
+        UnboundPredicate,
+    )
+    from pyiceberg.expressions.literals import Literal
+    from pyiceberg.expressions.visitors import rewrite_not
+    from pyiceberg.transforms import TruncateTransform
+    from pyiceberg.types import IntegerType, LongType
+
+    # Field ID → smallest value whose truncated value is not wrapped.
+    min_unwrapped: dict[int, int] = {}
+
+    for spec in table.specs().values():
+        for partition_field in spec.fields:
+            if not isinstance(partition_field.transform, TruncateTransform):
+                continue
+
+            for schema in table.schemas().values():
+                try:
+                    field_type = schema.find_field(partition_field.source_id).field_type
+                except ValueError:
+                    continue
+
+                if isinstance(field_type, (IntegerType, LongType)):
+                    bits = 32 if isinstance(field_type, IntegerType) else 64
+                    min_unwrapped[partition_field.source_id] = max(
+                        min_unwrapped.get(partition_field.source_id, -(2**63)),
+                        -(2 ** (bits - 1)) + partition_field.transform.width,
+                    )
+
+    if not min_unwrapped:
+        return expr
+
+    current_schema = table.schema()
+
+    def matches_only_unwrapped(e: UnboundPredicate, min_value: int) -> bool:
+        if isinstance(e, (IsNull, NotNull)):
+            return True
+        if not isinstance(e, (EqualTo, In, GreaterThan, GreaterThanOrEqual)):
+            return False
+        literals = [
+            *getattr(e, "literals", ()),
+            *([e.literal] if hasattr(e, "literal") else []),
+        ]
+        return all(
+            isinstance(v := (lit.value if isinstance(lit, Literal) else lit), int)
+            and v >= min_value
+            for lit in literals
+        )
+
+    def visit(
+        e: pyiceberg.expressions.BooleanExpression,
+    ) -> pyiceberg.expressions.BooleanExpression:
+        if isinstance(e, (And, Or)):
+            return type(e)(visit(e.left), visit(e.right))
+        if isinstance(e, UnboundPredicate) and isinstance(e.term, Reference):
+            try:
+                field_id = current_schema.find_field(
+                    e.term.name, case_sensitive=True
+                ).field_id
+            except ValueError:
+                return e
+            min_value = min_unwrapped.get(field_id)
+            if min_value is not None and not matches_only_unwrapped(e, min_value):
+                return AlwaysTrue()
+        return e
+
+    out = visit(rewrite_not(expr))
+    return None if isinstance(out, AlwaysTrue) else out
+
+
+def filter_with_nan_ordering(
+    expr: pyiceberg.expressions.BooleanExpression,
+    schema: pyiceberg.schema.Schema,
+) -> pyiceberg.expressions.BooleanExpression:
+    """
+    Adapt a filter to Polars' NaN ordering.
+
+    In Polars, NaN is greater than all other values, whereas Iceberg comparisons
+    are false for NaN. `>` / `>=` on a float column therefore also select NaN.
+    """
+    from pyiceberg.expressions import (
+        And,
+        GreaterThan,
+        GreaterThanOrEqual,
+        IsNaN,
+        Or,
+        Reference,
+    )
+    from pyiceberg.expressions.visitors import rewrite_not
+    from pyiceberg.types import DoubleType, FloatType
+
+    def visit(
+        e: pyiceberg.expressions.BooleanExpression,
+    ) -> pyiceberg.expressions.BooleanExpression:
+        if isinstance(e, (And, Or)):
+            return type(e)(visit(e.left), visit(e.right))
+        if isinstance(e, (GreaterThan, GreaterThanOrEqual)) and isinstance(
+            e.term, Reference
+        ):
+            try:
+                field = schema.find_field(e.term.name, case_sensitive=True)
+            except ValueError:
+                return e
+            if isinstance(field.field_type, (FloatType, DoubleType)):
+                return Or(e, IsNaN(e.term))  # type: ignore[call-arg]
+        return e
+
+    # Negations are pushed down first, as `~(x < v)` also selects NaN.
+    return visit(rewrite_not(expr))
 
 
 class IdentityTransformedPartitionValuesBuilder:
@@ -398,6 +686,7 @@ class IdentityTransformedPartitionValuesBuilder:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
         from pyiceberg.transforms import IdentityTransform
         from pyiceberg.types import (
+            DecimalType,
             DoubleType,
             FloatType,
             IntegerType,
@@ -411,6 +700,8 @@ class IdentityTransformedPartitionValuesBuilder:
         # Logical types will have length-2 list [<constructor type>, <cast type>].
         # E.g. for Datetime it will be [Int64, Datetime]
         self.partition_values_dtypes: dict[int, pl.DataType] = {}
+        # {source_field_id: indices of files whose spec has the identity field}
+        self.present_indices: dict[int, list[int]] = {}
 
         # {spec_id: [partition_value_index, source_field_id]}
         self.partition_spec_id_to_identity_transforms: dict[
@@ -452,15 +743,23 @@ class IdentityTransformedPartitionValuesBuilder:
                 except ValueError:
                     continue
 
+                # Type promotions, in either direction: a scan of an older snapshot
+                # projects the type from before later promotions.
                 if not (
                     projected_type == type_this_schema
                     or (
-                        isinstance(projected_type, LongType)
-                        and isinstance(type_this_schema, IntegerType)
+                        isinstance(projected_type, (LongType, IntegerType))
+                        and isinstance(type_this_schema, (LongType, IntegerType))
                     )
                     or (
                         isinstance(projected_type, (DoubleType, FloatType))
                         and isinstance(type_this_schema, (DoubleType, FloatType))
+                    )
+                    or (
+                        # Precision changes; unscaled values are unchanged.
+                        isinstance(projected_type, DecimalType)
+                        and isinstance(type_this_schema, DecimalType)
+                        and projected_type.scale == type_this_schema.scale
                     )
                 ):
                     self.partition_values[field_id] = (
@@ -488,6 +787,7 @@ class IdentityTransformedPartitionValuesBuilder:
 
         for i, source_field_id in identity_transforms:
             partition_value = partition_values[i]
+            self.present_indices.setdefault(source_field_id, []).append(current_index)
 
             if isinstance(values := self.partition_values[source_field_id], list):
                 # extend() - there can be gaps from partitions being
@@ -496,7 +796,15 @@ class IdentityTransformedPartitionValuesBuilder:
                 values.append(partition_value)
 
     def finish(self) -> dict[int, pl.Series | str]:
-        from polars.datatypes import Date, Datetime, Duration, Int32, Int64, Time
+        from polars.datatypes import (
+            Binary,
+            Date,
+            Datetime,
+            Duration,
+            Int32,
+            Int64,
+            Time,
+        )
 
         out: dict[int, pl.Series | str] = {}
 
@@ -515,6 +823,10 @@ class IdentityTransformedPartitionValuesBuilder:
                         else output_dtype
                     )
 
+                    if constructor_dtype == Binary:
+                        # E.g. UUIDs.
+                        v = [x.bytes if isinstance(x, uuid.UUID) else x for x in v]
+
                     s = pl.Series(v, dtype=constructor_dtype)
 
                     assert not s.dtype.is_nested()
@@ -530,6 +842,45 @@ class IdentityTransformedPartitionValuesBuilder:
 
                 except Exception as e:
                     out[field_id] = f"failed to load partition values: {e}"
+
+        return out
+
+    @staticmethod
+    def fill_absent_with_initial_defaults(
+        values: dict[int, pl.Series | str],
+        present_indices: dict[int, list[int]],
+        initial_defaults: dict[int, pl.Series],
+        num_sources: int,
+    ) -> dict[int, pl.Series | str]:
+        """
+        Fill the values of files whose spec lacks the identity field.
+
+        A null value of a spec with the identity field is a null, and files of
+        specs without it take the `initial-default`.
+        """
+        import polars as pl
+
+        out = dict(values)
+
+        for field_id, v in values.items():
+            if not isinstance(v, pl.Series) or (
+                (default := initial_defaults.get(field_id)) is None
+            ):
+                continue
+
+            present = pl.Series([False] * num_sources, dtype=pl.Boolean).scatter(
+                present_indices.get(field_id, []), True
+            )
+
+            out[field_id] = (
+                pl.select(
+                    pl.when(present)
+                    .then(v.extend_constant(None, num_sources - v.len()))
+                    .otherwise(pl.lit(default.cast(v.dtype)))
+                )
+                .to_series()
+                .rename(v.name)
+            )
 
         return out
 
@@ -612,7 +963,13 @@ class IcebergStatisticsLoader:
         verbose = polars._utils.logging.verbose()
 
         out: list[pl.DataFrame] = [
-            pl.Series("len", self.file_lengths, dtype=pl.UInt32).to_frame()
+            # A record count that does not fit (or is unknown, -1 in some format v1
+            # tables) is null, which only disables skipping that file.
+            pl.Series(
+                "len",
+                [x if 0 <= x < 2**32 else None for x in self.file_lengths],
+                dtype=pl.UInt32,
+            ).to_frame()
         ]
 
         for field_id, stat_builder in self.file_column_statistics.items():
@@ -648,11 +1005,12 @@ class IcebergColumnStatisticsLoader:
     max_values: list[bytes | None]
 
     def push_file_statistics(self, file: DataFile) -> None:
-        self.null_count.append(file.null_value_counts.get(self.field_id))
+        # The metric maps are optional.
+        self.null_count.append((file.null_value_counts or {}).get(self.field_id))
 
         if self.load_from_bytes_impl is not None:
-            self.min_values.append(file.lower_bounds.get(self.field_id))
-            self.max_values.append(file.upper_bounds.get(self.field_id))
+            self.min_values.append((file.lower_bounds or {}).get(self.field_id))
+            self.max_values.append((file.upper_bounds or {}).get(self.field_id))
 
     def null_statistics(self, height: int) -> pl.DataFrame:
         import polars as pl
@@ -686,10 +1044,15 @@ class IcebergColumnStatisticsLoader:
         ).to_frame()
 
         if self.load_from_bytes_impl is None:
+            # Can be shorter if the identity partition field was removed.
             s = (
-                identity_transformed_values
+                identity_transformed_values.extend_constant(
+                    None, expected_height - identity_transformed_values.len()
+                )
                 if identity_transformed_values is not None
-                else pl.repeat(None, expected_height, dtype=self.column_dtype)
+                else pl.repeat(
+                    None, expected_height, dtype=self.column_dtype, eager=True
+                )
             )
 
             return out.with_columns(s.alias(f"{c}_min"), s.alias(f"{c}_max"))

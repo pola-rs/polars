@@ -2383,6 +2383,39 @@ def _bench_parquet_metadata_bincode_size(
 def _parquet_metadata_pruned_json(
     path: str, projection: pylist[str], predicate: pylist[str]
 ) -> str: ...
+
+# I/O plugin IDs (capsule names) this build can call.
+_IO_PLUGIN_IDS: pylist[str]
+
+def _iceberg_plugin_scan(
+    capsule: Any,
+    *,
+    metadata_location: str,
+    snapshot_id: int | None,
+    from_snapshot_id_exclusive: int | None,
+    to_snapshot_id_inclusive: int | None,
+    projection: pylist[str] | None,
+    filter_columns: pylist[str] | None,
+    row_filter: str | None,
+    limit: int | None,
+    use_metadata_statistics: bool,
+    fast_deletion_count: bool,
+    verbose: bool,
+    testing_fail: str | None,
+    source_url: str,
+    storage_options: Any,
+    credential_provider: Any,
+    cast_options: Any,
+    metadata_cache: PyIcebergMetadataFileCache | None,
+    metadata_cache_scope: str | None,
+) -> PyLazyFrame: ...
+
+class PyIcebergMetadataFileCache:
+    def __init__(self, max_bytes: int) -> None: ...
+    @property
+    def total_bytes(self) -> int: ...
+    def __len__(self) -> int: ...
+
 def read_clipboard_string() -> str: ...
 def write_clipboard_string(s: str) -> None: ...
 

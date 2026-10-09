@@ -1,0 +1,24 @@
+name: Clone polars-iceberg
+description: >
+  Clone https://github.com/pola-rs/polars-iceberg to crates/polars-iceberg (git-ignored), making the
+  `polars_iceberg` I/O plugin a member of the workspace.
+
+inputs:
+  ref:
+    description: Commit SHA, tag or branch of polars-iceberg to clone
+    # Pinned polars-iceberg revision that CI tests against. Bump this to pick up polars-iceberg changes.
+    default: py-0.1.0
+
+runs:
+  using: composite
+  steps:
+    - name: Clone polars-iceberg
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        REF: ${{ inputs.ref }}
+      run: |
+        git init -q crates/polars-iceberg
+        git -C crates/polars-iceberg fetch -q --depth 1 https://github.com/pola-rs/polars-iceberg "$REF"
+        git -C crates/polars-iceberg checkout -q FETCH_HEAD
+        echo "polars-iceberg $REF: $(git -C crates/polars-iceberg rev-parse HEAD)"

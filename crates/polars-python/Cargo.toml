@@ -21,6 +21,7 @@ polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
 polars-io = { workspace = true }
+polars-io-ext-ffi = { workspace = true, optional = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true, features = ["python"] }
 polars-observer = { workspace = true, optional = true }
@@ -49,6 +50,7 @@ libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
+object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods", "uuid"] }
 rayon = { workspace = true }
@@ -57,6 +59,7 @@ rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["sync"] }
 uuid = { workspace = true }
 
 [dependencies.polars]
@@ -195,7 +198,18 @@ cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-lazy/ffi_plugin"]
-cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
+cloud = [
+  "polars/cloud",
+  "polars/aws",
+  "polars/gcp",
+  "polars/azure",
+  "polars/http",
+  # I/O plugins (`io::iceberg_plugin`).
+  "dep:object_store",
+  "dep:polars-io-ext-ffi",
+  "polars-io-ext-ffi/iceberg",
+  "dep:tokio",
+]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]

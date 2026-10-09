@@ -5643,6 +5643,65 @@ def test_enum_table_statistics_prune() -> None:
     assert_frame_equal(out, pl.DataFrame(schema={"e": dtype}))
 
 
+@pytest.mark.parametrize(
+    ("dtype", "values"),
+    [
+        (pl.Decimal(9, 2), [Decimal("1.25"), Decimal("-3.00")]),
+        (pl.Date, [date(2000, 1, 1), date(1960, 1, 1)]),
+        (pl.Datetime("us", "UTC"), [datetime(2000, 1, 1), datetime(1960, 1, 1)]),
+        (pl.Time, [time(1), time(2)]),
+    ],
+)
+def test_filter_struct_field_with_logical_type_sibling(
+    dtype: pl.DataType, values: list[Any]
+) -> None:
+    df = pl.DataFrame(
+        {"s": [{"u": 5, "v": values[0]}, {"u": 1, "v": values[1]}, None]},
+        schema={"s": pl.Struct({"u": pl.Int32, "v": dtype})},
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    for predicate in [
+        pl.col("s").struct.field("u") > 1,
+        pl.col("s").struct.field("v") == pl.lit(values[0], dtype=dtype),
+        pl.col("s").struct.field("v") < pl.lit(values[0], dtype=dtype),
+    ]:
+        f.seek(0)
+        assert_frame_equal(
+            pl.scan_parquet(f).filter(predicate).collect(), df.filter(predicate)
+        )
+
+
+@pytest.mark.write_disk
+def test_filter_struct_column_missing_in_file(tmp_path: Path) -> None:
+    schema: dict[str, pl.DataType] = {
+        "id": pl.Int64(),
+        "st": pl.Struct({"x": pl.Int64}),
+    }
+    pl.DataFrame({"id": [1]}).write_parquet(tmp_path / "a.parquet")
+    pl.DataFrame({"id": [2], "st": [{"x": 1}]}, schema=schema).write_parquet(
+        tmp_path / "b.parquet"
+    )
+    df = pl.DataFrame({"id": [1, 2], "st": [None, {"x": 1}]}, schema=schema)
+
+    for predicate in [
+        pl.col("st").struct.field("x") == 1,
+        pl.col("st").is_null(),
+        pl.col("st").is_not_null(),
+    ]:
+        assert_frame_equal(
+            pl.scan_parquet(
+                [tmp_path / "a.parquet", tmp_path / "b.parquet"],
+                schema=schema,
+                missing_columns="insert",
+            )
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+        )
+
+
 @pytest.mark.parametrize("nullable", [True, False])
 @pytest.mark.parametrize("use_byte_stream_split", [True, False])
 @pytest.mark.parametrize("use_dictionary", [True, False])

@@ -479,7 +479,8 @@ pub enum MissingColumnsPolicy {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct CastColumnsPolicy {
-    /// Allow casting when target dtype is lossless supertype
+    /// Allow casting when target dtype is lossless supertype. This also allows widening
+    /// the precision of decimals with equal scale.
     pub integer_upcast: bool,
 
     /// Allow casting integers to floats.
@@ -1029,6 +1030,22 @@ impl CastColumnsPolicy {
             return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
                 Some(ref v) if v == target_dtype => Ok(true),
                 _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
+            };
+        }
+
+        // Decimal precision widening with equal scale (allowed Iceberg type promotion).
+        #[cfg(feature = "dtype-decimal")]
+        if let (
+            DataType::Decimal(target_precision, target_scale),
+            DataType::Decimal(incoming_precision, incoming_scale),
+        ) = (target_dtype, incoming_dtype)
+        {
+            return if target_scale != incoming_scale || target_precision < incoming_precision {
+                mismatch_err("incoming dtype cannot safely cast to target dtype")
+            } else if self.integer_upcast {
+                Ok(true)
+            } else {
+                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')")
             };
         }
 

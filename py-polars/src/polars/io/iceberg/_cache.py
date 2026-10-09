@@ -5,15 +5,21 @@ be reused across scans of the same table within a process. The cache sits at
 the PyIceberg ``FileIO`` boundary: PyIceberg reads a metadata file by calling
 ``io.new_input(path).open().read()``, and the wrapping ``FileIO`` here serves
 that read from memory when the path was seen before.
+
+Scans planned by the ``polars_iceberg`` plugin read metadata files through
+Polars' storage instead; those reads are cached on the Rust side, in a cache of
+the same size owned by the process-wide cache here (see ``plugin_cache``).
 """
 
 from __future__ import annotations
 
 import hashlib
 import io
+import itertools
 import os
 import re
 import threading
+import weakref
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -119,15 +125,87 @@ def _properties_fingerprint(properties: Mapping[str, Any]) -> str | None:
     return hashlib.sha256(repr(sorted(kept.items())).encode()).hexdigest()
 
 
+# Environment variables from which object store clients take credentials.
+_CREDENTIAL_ENV_PREFIXES = ("AWS_", "AZURE_", "GOOGLE_", "GCS_", "GCP_")
+_CREDENTIAL_ENV_VARS = frozenset(
+    ("IDENTITY_ENDPOINT", "IDENTITY_HEADER", "MSI_ENDPOINT")
+)
+
+
+def _credential_env_fingerprint() -> str:
+    env = sorted(
+        (k, v)
+        for k, v in os.environ.items()
+        if k.startswith(_CREDENTIAL_ENV_PREFIXES) or k in _CREDENTIAL_ENV_VARS
+    )
+    return hashlib.sha256(repr(env).encode()).hexdigest()
+
+
 def _file_io_scope(file_io: FileIO) -> str | None:
     # `type()`, not `__class__`, which mocks and proxies can override.
     if qualified_type_name(type(file_io)) not in _BUILTIN_FILE_IO_CLASSES:
         return None
     try:
-        return _properties_fingerprint(file_io.properties)
+        properties_scope = _properties_fingerprint(file_io.properties)
     except Exception:
         # Properties that cannot be fingerprinted bypass the cache.
         return None
+    if properties_scope is None:
+        return None
+    # Without credentials in the properties, FileIOs take them from the environment.
+    return hashlib.sha256(
+        f"{properties_scope}:{_credential_env_fingerprint()}".encode()
+    ).hexdigest()
+
+
+# Unique tokens of credential provider objects. Not `id()`, which is reused after an
+# object is freed.
+_PROVIDER_TOKENS: weakref.WeakKeyDictionary[Any, int] = weakref.WeakKeyDictionary()
+_PROVIDER_TOKENS_LOCK = threading.Lock()
+_next_provider_token = itertools.count()
+
+
+def _default_credential_provider_scope() -> str | None:
+    # The plugin's storage uses Polars' default credential provider (`pl.Config`).
+    # None when it cannot be identified.
+    import polars.io.cloud.credential_provider._builder as builder
+
+    provider = builder.DEFAULT_CREDENTIAL_PROVIDER
+    if provider is None or isinstance(provider, str):
+        return repr(provider)
+    try:
+        with _PROVIDER_TOKENS_LOCK:
+            token = _PROVIDER_TOKENS.get(provider)
+            if token is None:
+                token = _PROVIDER_TOKENS[provider] = next(_next_provider_token)
+    except TypeError:
+        # Not weakly referenceable.
+        return None
+    return f"provider:{token}"
+
+
+def plugin_storage_scope(
+    file_io: FileIO, storage_options: Mapping[str, Any] | None
+) -> str | None:
+    """Cache scope of a scan planned by the plugin.
+
+    The plugin reads with storage configured from the FileIO's properties, the
+    user's storage options and Polars' default credential provider, so all are
+    fingerprinted. None when one cannot be.
+    """
+    if (io_scope := _file_io_scope(file_io)) is None:
+        return None
+    if (provider_scope := _default_credential_provider_scope()) is None:
+        return None
+    try:
+        options_scope = _properties_fingerprint(storage_options or {})
+    except Exception:
+        return None
+    if options_scope is None:
+        return None
+    return hashlib.sha256(
+        f"{io_scope}:{options_scope}:{provider_scope}".encode()
+    ).hexdigest()
 
 
 @dataclass
@@ -148,6 +226,7 @@ class IcebergMetadataFileCache:
         self._total_bytes = 0
         # Per-path locks so concurrent misses on one path fetch once.
         self._fetch_locks: dict[str, threading.Lock] = {}
+        self._plugin_cache: Any = None
 
     @property
     def enabled(self) -> bool:
@@ -161,6 +240,18 @@ class IcebergMetadataFileCache:
     def total_bytes(self) -> int:
         with self._lock:
             return self._total_bytes
+
+    def plugin_cache(self) -> Any:
+        """Rust-side cache of the reads of scans planned by the plugin.
+
+        Of the same size as this cache, and dropped with it.
+        """
+        with self._lock:
+            if self._plugin_cache is None:
+                import polars._plr as plr
+
+                self._plugin_cache = plr.PyIcebergMetadataFileCache(self.max_bytes)
+            return self._plugin_cache
 
     def _get_locked(self, location: str) -> bytes | None:
         data = self._entries.get(location)

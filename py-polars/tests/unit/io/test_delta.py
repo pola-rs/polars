@@ -1429,6 +1429,24 @@ def test_scan_delta_literal_filter_empty_df_27242(tmp_path: Path) -> None:
     assert_frame_equal(df, out)
 
 
+@pytest.mark.write_disk
+def test_scan_delta_use_pyarrow_float_literals(tmp_path: Path) -> None:
+    df = pl.DataFrame({"f": [1.0, 2.5, 1e20]})
+    df.write_delta(tmp_path)
+
+    # Floats are rendered as Python float literals, also when integral (`1.0`, `1e20`).
+    for predicate in [
+        pl.col("f").is_in([1.0, 1e20]),
+        pl.col("f") == 1e20,
+        pl.col("f") == 1.0,
+    ]:
+        assert_frame_equal(
+            pl.scan_delta(tmp_path, use_pyarrow=True).filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
 def test_scan_delta_predicate_pushdown_struct_column_27857(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {

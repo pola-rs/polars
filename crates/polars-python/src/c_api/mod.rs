@@ -291,6 +291,23 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_wrapped(wrap_pyfunction!(
+        crate::io::iceberg_plugin::_iceberg_plugin_scan
+    ))
+    .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add_class::<crate::io::iceberg_plugin::metadata_cache::PyIcebergMetadataFileCache>()
+        .unwrap();
+    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    m.add(
+        "_IO_PLUGIN_IDS",
+        crate::io::iceberg_plugin::SUPPORTED_IDS
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
     #[cfg(all(feature = "parquet", feature = "json"))]
     m.add_wrapped(wrap_pyfunction!(
         functions::_bench_parquet_metadata_bincode_size

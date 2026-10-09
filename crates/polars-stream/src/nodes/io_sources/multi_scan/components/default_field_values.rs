@@ -34,9 +34,15 @@ impl IcebergDefaultValueProviderRef<'_> {
                 )
             })?;
 
-            // Note: `c` can be shorter than `scan_source_idx` if the iceberg partition field is deleted.
-            return Ok(c.get(self.scan_source_idx).ok().filter(|av| !av.is_null()));
-        } else if let Some(scalar) = initial_defaults.get(&physical_id)
+            // Note: `c` can be shorter than `scan_source_idx` if the iceberg partition field is
+            // deleted; those sources take the `initial-default`. Within `c`, files of partition
+            // specs without the identity field already hold it, so a null is a null.
+            if let Ok(av) = c.get(self.scan_source_idx) {
+                return Ok(Some(av).filter(|av| !av.is_null()));
+            }
+        }
+
+        if let Some(scalar) = initial_defaults.get(&physical_id)
             && !scalar.is_null()
         {
             return Ok(Some(scalar.as_any_value()));

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -1890,6 +1891,34 @@ def test_filter_constraint_nested_scalar_no_panic() -> None:
 
     q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") != [3]))
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [[1, 2]], "b": [1]}))
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        (pl.col("x") < Decimal("-0.0001"))
+        & (pl.col("x") <= pl.lit(Decimal("-1"), pl.Decimal(18, 4))),
+        (pl.col("x") < pl.lit(Decimal("0"), pl.Decimal(10, 4)))
+        & (pl.col("x") <= pl.lit(Decimal("-1"), pl.Decimal(18, 4))),
+        (pl.col("x") < pl.lit(Decimal("0"), pl.Decimal(10, 4)))
+        & pl.col("x").is_between(
+            pl.lit(Decimal("-3"), pl.Decimal(18, 4)),
+            pl.lit(Decimal("-1"), pl.Decimal(18, 4)),
+        ),
+    ],
+)
+def test_filter_constraint_literals_of_other_decimal_precision(
+    predicate: pl.Expr,
+) -> None:
+    # Bounds that don't order against each other are kept, not dropped.
+    lf = pl.LazyFrame(
+        {"x": [Decimal("-0.5"), Decimal("-2")]}, schema={"x": pl.Decimal(18, 4)}
+    )
+    assert_frame_equal(
+        lf.filter(predicate).collect(),
+        lf.filter(predicate).collect(optimizations=pl.QueryOptFlags.none()),
+    )
+    assert lf.filter(predicate).collect().height == 1
 
 
 def test_filter_constraint_column_with_its_own_order() -> None:
