@@ -11,7 +11,12 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
-from polars.io.iceberg._cache import CachingFileIO, caching_file_io
+from polars.io.iceberg._cache import (
+    CacheStats,
+    describe_metadata_file_cache,
+    get_table_cache,
+    load_static_table,
+)
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -83,38 +88,13 @@ SerializedTableState: TypeAlias = str | IcebergCatalogTableDescriptor
 def _load_static_table(
     metadata_location: str, properties: dict[str, Any]
 ) -> pyiceberg.table.Table:
-    from pyiceberg.table import StaticTable
+    stats = CacheStats()
+    table = load_static_table(metadata_location, properties, stats)
 
-    if not metadata_location.endswith(".metadata.json"):
-        return StaticTable.from_metadata(metadata_location, properties=properties)
+    if verbose():
+        eprint(f"IcebergTableWrap: table cache: {stats.describe(get_table_cache())}")
 
-    from pyiceberg.catalog.noop import NoopCatalog
-    from pyiceberg.io import load_file_io
-    from pyiceberg.serializers import FromInputFile
-
-    # `StaticTable.from_metadata` of PyIceberg 0.12, with the metadata file read
-    # through the cache.
-    file_io = load_file_io(properties, location=metadata_location)
-    cached = caching_file_io(file_io)
-    metadata = FromInputFile.table_metadata(
-        (cached or file_io).new_input(metadata_location)
-    )
-
-    if verbose() and cached is not None:
-        eprint(
-            "IcebergTableWrap: metadata file cache: "
-            f"hits: {cached.stats.hits}, misses: {cached.stats.misses}"
-        )
-
-    return StaticTable(
-        identifier=("static-table", metadata_location),
-        metadata_location=metadata_location,
-        metadata=metadata,
-        io=load_file_io(
-            {**properties, **metadata.properties}, location=metadata_location
-        ),
-        catalog=NoopCatalog("static-table"),
-    )
+    return table
 
 
 @dataclass(kw_only=True)
@@ -617,14 +597,10 @@ class IcebergScanResolver:
                     f"finish path expansion ({elapsed:.3f}s)"
                 )
 
-                if isinstance(scan.io, CachingFileIO):
-                    eprint(
-                        "IcebergScanResolver: to_dataset_scan(): "
-                        "metadata file cache: "
-                        f"hits: {scan.io.stats.hits}, "
-                        f"misses: {scan.io.stats.misses}, "
-                        f"cached bytes: {scan.io.cache.total_bytes}"
-                    )
+                eprint(
+                    "IcebergScanResolver: to_dataset_scan(): "
+                    f"metadata file cache: {describe_metadata_file_cache(scan.io)}"
+                )
 
         if not fallback_reason:
             if verbose:
