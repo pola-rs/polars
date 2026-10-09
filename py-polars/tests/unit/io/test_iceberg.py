@@ -5951,6 +5951,28 @@ def test_scan_iceberg_cache_decision_matches_parquet_29822(tmp_path: Path) -> No
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_shared_scan_is_read_twice(tmp_path: Path) -> None:
+    tables, files = write_iceberg_tables(
+        tmp_path, {"a": pl.DataFrame({"x": range(100)})}
+    )
+
+    def query(a: pl.LazyFrame) -> pl.LazyFrame:
+        return a.join(a.select(y="x"), left_on="x", right_on="y")
+
+    iceberg = query(pl.scan_iceberg(tables["a"]))
+    parquet = query(pl.scan_parquet(files["a"]))
+
+    # Like a parquet scan, the table is read again instead of cached.
+    assert "CACHE[id:" not in parquet.explain(engine="streaming")
+    assert "CACHE[id:" not in iceberg.explain(engine="streaming")
+    assert_frame_equal(
+        iceberg.collect(engine="streaming"),
+        parquet.collect(engine="streaming"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_join_on_full_range_decimal_keys(tmp_path: Path) -> None:
     big = 10**38 - 1
     df = pl.from_arrow(
