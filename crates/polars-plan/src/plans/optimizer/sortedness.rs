@@ -147,7 +147,7 @@ pub fn are_keys_sorted_any(
             expr_arena.get(key.node()),
             expr_arena,
             input_schema,
-            Some(&ir_sorted?.0[idx..]),
+            Some(ir_sorted?.0.get(idx..)?),
             idx + 1 < keys.len(),
         )?;
         sortedness.push(s);
@@ -649,7 +649,8 @@ fn first_expr_ir_sorted(
 
 /// With `keep_distinct`, the expression must also keep different values different. This is needed
 /// for all but the last of several sort keys, as a key is only sorted among equal values of the
-/// keys before it.
+/// keys before it. A value that does not come from the sorted column, such as a literal, does not
+/// keep them different.
 #[recursive::recursive]
 pub fn aexpr_sortedness(
     aexpr: &AExpr,
@@ -670,6 +671,7 @@ pub fn aexpr_sortedness(
         },
         #[cfg(feature = "dtype-struct")]
         AExpr::StructField(_) => None,
+        AExpr::Literal(_) | AExpr::Len | AExpr::Sort { .. } if keep_distinct => None,
         AExpr::Literal(lv) if lv.is_scalar() => Some(AExprSorted {
             descending: Some(false),
             nulls_last: Some(false),
@@ -803,6 +805,14 @@ pub fn function_expr_sortedness(
     }
 
     match function {
+        // These can make different values equal or don't come from the sorted column.
+        #[cfg(feature = "rle")]
+        IRFunctionExpr::RLEID if keep_distinct => None,
+        IRFunctionExpr::SetSortedFlag(_)
+        | IRFunctionExpr::FillNullWithStrategy(
+            FillNullStrategy::Forward(None) | FillNullStrategy::Backward(None),
+        ) if keep_distinct => None,
+
         #[cfg(feature = "rle")]
         IRFunctionExpr::RLEID => Some(AExprSorted {
             descending: Some(false),

@@ -64,7 +64,6 @@ struct SelectModifiers {
     exclude: PlHashSet<String>,                // SELECT * EXCLUDE
     ilike: Option<regex::Regex>,               // SELECT * ILIKE
     rename: PlHashMap<PlSmallStr, PlSmallStr>, // SELECT * RENAME
-    replace: Vec<Expr>,                        // SELECT * REPLACE
 }
 impl SelectModifiers {
     fn matches_ilike(&self, s: &str) -> bool {
@@ -1906,7 +1905,6 @@ impl SQLContext {
             ilike: None,
             exclude: PlHashSet::new(),
             rename: PlHashMap::new(),
-            replace: vec![],
         };
 
         if let Some(qualify) = &select_stmt.qualify {
@@ -2156,7 +2154,6 @@ impl SQLContext {
             projections = all_projections;
             // Aggregates are marked only until the projections are resolved below.
             let marked_projections = projections.clone();
-            let marked_replace = select_modifiers.replace.clone();
             explicit_aliases.extend(qualify.is_some().then_some(true));
             // A window over the whole frame has one value per row, so for the output
             // height it counts like a literal.
@@ -2165,10 +2162,6 @@ impl SQLContext {
                 .map(|e| self.map_whole_frame_windows(e.clone(), |_| lit(1)))
                 .collect();
             projections = projections
-                .into_iter()
-                .map(|e| strip_aggregate_marks(self.resolve_whole_frame_windows(e)))
-                .collect();
-            select_modifiers.replace = std::mem::take(&mut select_modifiers.replace)
                 .into_iter()
                 .map(|e| strip_aggregate_marks(self.resolve_whole_frame_windows(e)))
                 .collect();
@@ -2181,6 +2174,7 @@ impl SQLContext {
 
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
+            let mut retained_projections = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
             let mut retained_marked = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
@@ -2202,13 +2196,7 @@ impl SQLContext {
                     || (select_modifiers.matches_ilike(&name)
                         && !select_modifiers.exclude.contains(&name))
                 {
-                    let replacement = match marked {
-                        Expr::Column(name) => marked_replace
-                            .iter()
-                            .find(|e| expr_output_name(e) == Some(name)),
-                        _ => None,
-                    };
-                    retained_marked.push(replacement.unwrap_or(marked).clone());
+                    retained_marked.push(marked.clone());
                     projection_heights |= ExprSqlProjectionHeightBehavior::identify_from_expr(
                         &without_resolved_subqueries(height_expr, &subquery_names),
                     );
@@ -2219,6 +2207,7 @@ impl SQLContext {
                         p.clone()
                     });
                     retained_names.push(col(name));
+                    retained_projections.push(p.clone());
                 }
             }
             check_columns_in_aggregates(&retained_marked, &subquery_names)?;
@@ -2235,7 +2224,7 @@ impl SQLContext {
                     // * There is already a projection that projects to the table height.
                     // * All projection heights inherit from context (e.g. all scalar literals that
                     //   are to be broadcasted to table height).
-                    lf = lf.with_columns(projections)
+                    lf = lf.with_columns(retained_projections)
                 } else {
                     // We hit this branch if the output height is not guaranteed to match the table
                     // height. E.g.:
@@ -2251,7 +2240,7 @@ impl SQLContext {
                     let cached = lf.cache();
                     lf = cached
                         .clone()
-                        .select(projections)
+                        .select(retained_projections)
                         .with_row_index(NAME, None)
                         .join(
                             cached.with_row_index(NAME, None),
@@ -2269,9 +2258,6 @@ impl SQLContext {
                             },
                         )?;
                 }
-            }
-            if !select_modifiers.replace.is_empty() {
-                lf = lf.with_columns(&select_modifiers.replace);
             }
             if !select_modifiers.rename.is_empty() {
                 lf = lf.with_columns(select_modifiers.renamed_cols());
@@ -3579,14 +3565,14 @@ impl SQLContext {
                     ))),
                     None => group_by,
                 }
-                .agg(strip_group_implode(
+                .agg(
                     splitter
                         .aggregates
                         .into_exprs()
                         .into_iter()
                         .map(in_groups)
-                        .collect(),
-                ))
+                        .collect::<Vec<_>>(),
+                )
             },
             Some(grouping) => {
                 // HAVING runs on the combined rows, where it can also see `GROUPING()`.
@@ -3601,13 +3587,8 @@ impl SQLContext {
                     .iter()
                     .map(|e| Ok(e.to_field(&schema_before)?.name))
                     .collect::<PolarsResult<Vec<_>>>()?;
-                let aggregated = grouping.aggregate(
-                    lf,
-                    &key_schema,
-                    &strip_group_implode(aggregation_projection.clone()),
-                    &aggregation_projection,
-                    &agg_names,
-                )?;
+                let aggregated =
+                    grouping.aggregate(lf, &key_schema, &aggregation_projection, &agg_names)?;
                 match having {
                     Some(having) => aggregated.filter(having),
                     None => aggregated,
@@ -3810,7 +3791,7 @@ impl SQLContext {
 
     fn process_wildcard_additional_options(
         &mut self,
-        exprs: Vec<Expr>,
+        mut exprs: Vec<Expr>,
         options: &WildcardAdditionalOptions,
         modifiers: &mut SelectModifiers,
         schema: Option<&Schema>,
@@ -3872,10 +3853,14 @@ impl SQLContext {
         // SELECT * REPLACE
         if let Some(replacements) = &options.opt_replace {
             for rp in &replacements.items {
-                let replacement_expr = parse_sql_expr(&rp.expr, self, schema);
-                modifiers
-                    .replace
-                    .push(replacement_expr?.alias(rp.column_name.value.as_str()));
+                let name = rp.column_name.value.as_str();
+                let Some(expr) = exprs
+                    .iter_mut()
+                    .find(|e| expr_output_name(e).is_some_and(|n| n == name))
+                else {
+                    polars_bail!(SQLSyntax: "REPLACE column '{}' is not selected by the wildcard", name)
+                };
+                *expr = parse_sql_expr(&rp.expr, self, schema)?.alias(name);
             }
         }
         Ok(exprs)
@@ -4396,21 +4381,6 @@ fn process_join_predicate(
     });
     let predicate = strip_join_aliases(parse_sql_expr(&sql_expr, ctx, Some(&joined_schema))?);
     Ok((vec![], vec![], vec![predicate]))
-}
-
-/// `group_by().agg()` already collects a column into a list, so an explicit
-/// `implode` (SQL `ARRAY_AGG`) is dropped there; a global `select()` keeps it.
-fn strip_group_implode(aggs: Vec<Expr>) -> Vec<Expr> {
-    aggs.into_iter()
-        .map(|e| match e {
-            Expr::Agg(AggExpr::Implode { input, .. }) => Arc::unwrap_or_clone(input),
-            Expr::Alias(inner, name) => match inner.as_ref() {
-                Expr::Agg(AggExpr::Implode { input, .. }) => (**input).clone().alias(name),
-                _ => Expr::Alias(inner, name),
-            },
-            e => e,
-        })
-        .collect()
 }
 
 /// Check that a QUALIFY predicate reads a window function, directly or through a SELECT

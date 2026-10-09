@@ -926,3 +926,31 @@ def test_rank_order_observing(
     kept = "UNIQUE[maintain_order: true"
     assert (kept in q.explain(engine=engine)) == is_order_observing
     assert_frame_equal(q.collect(engine=engine), q.collect(engine="in-memory"))
+
+
+def test_sort_by_drops_scalar_keys() -> None:
+    lf = pl.LazyFrame({"k": [0, 0, 1], "a": [3, 1, 2]})
+    a = pl.col("a")
+
+    for q in [
+        lf.select(a.sort_by(pl.lit(1))),
+        lf.select(a.sort_by(a.max())),
+        lf.select(a.sort_by(a.max()).over("k")),
+        lf.group_by("k").agg(a.sort_by(a.max())),
+    ]:
+        assert ".sort_by(" not in q.explain()
+
+    q = lf.select(a.sort_by(a.max(), "a", descending=[False, True]))
+    plan = q.explain()
+    assert (
+        '.sort_by(by=[col("a")], sort_option=SortMultipleOptions { descending: [true]'
+        in plan
+    )
+    assert q.collect()["a"].to_list() == [3, 2, 1]
+
+    # A dropped key is still type-checked, but no longer evaluated.
+    lf = pl.LazyFrame({"a": [3, 1], "s": ["x", "y"]})
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="arithmetic"):
+        lf.select(a.sort_by(pl.col("s").first() + 1)).collect()
+    q = lf.select(a.sort_by(pl.col("s").first().cast(pl.Int64)))
+    assert sorted(q.collect()["a"]) == [1, 3]

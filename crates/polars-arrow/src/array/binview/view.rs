@@ -250,6 +250,26 @@ impl View {
         }
     }
 
+    /// Hashes the bytes this view refers to. Inline views are canonical, so they are hashed
+    /// directly from their 16 bytes.
+    ///
+    /// # Safety
+    /// Assumes that this view is valid for the given buffers.
+    #[inline]
+    pub unsafe fn hash_with_buffers_unchecked<B: AsRef<[u8]>, S: std::hash::BuildHasher>(
+        &self,
+        buffers: &[B],
+        build_hasher: &S,
+    ) -> u64 {
+        unsafe {
+            if self.length <= Self::MAX_INLINE_SIZE {
+                build_hasher.hash_one(self.as_u128())
+            } else {
+                build_hasher.hash_one(self.get_external_slice_unchecked(buffers))
+            }
+        }
+    }
+
     /// Construct a byte slice from an inline view, if it is inline.
     #[inline]
     pub fn get_inlined_slice(&self) -> Option<&[u8]> {

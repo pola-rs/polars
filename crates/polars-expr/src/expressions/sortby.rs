@@ -119,11 +119,15 @@ fn sort_by_groups_no_match<'a>(
     options: SortMultipleOptions,
     expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
+    // Sorting a single value, which the group length checks guarantee, leaves it unchanged.
+    if matches!(ac_in.state, AggState::AggregatedScalar(_)) {
+        return Ok(ac_in);
+    }
     let s_in = ac_in.aggregated();
     let mut s_in = s_in.list().unwrap().clone();
     let s_sort_by = ac_sort_by
         .iter_mut()
-        .map(|ac| ac.aggregated().list().unwrap().clone())
+        .map(|ac| ac.aggregated_as_list().into_owned())
         .collect::<Vec<_>>();
 
     let dtype = s_in.dtype().clone();
@@ -225,8 +229,11 @@ impl PhysicalExpr for SortByExpr {
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series_f = || self.input.evaluate(df, state);
-        if self.by.is_empty() {
-            // Sorting by 0 columns returns input unchanged.
+        if self.by.iter().all(|e| e.is_scalar()) {
+            // Constant keys leave the input unchanged.
+            for e in &self.by {
+                e.evaluate(df, state)?;
+            }
             return series_f();
         }
         let (series, sorted_idx) = if self.by.len() == 1 {
@@ -303,29 +310,22 @@ impl PhysicalExpr for SortByExpr {
                 .all(|ac_sort_by| ac_sort_by.groups.len() == ac_in.groups.len())
         );
 
+        // Constant keys leave the input unchanged, and a literal input stays a literal.
+        if matches!(ac_in.state, AggState::LiteralScalar(_))
+            || self.by.iter().all(|e| e.is_scalar())
+        {
+            return Ok(ac_in);
+        }
+
         // Enable reliable length checks downstream
         ac_in.set_groups_for_undefined_agg_states();
         ac_sort_by
             .iter_mut()
             .for_each(|ac| ac.set_groups_for_undefined_agg_states());
 
-        // If every input is a LiteralScalar, we return a LiteralScalar.
-        // Otherwise, we convert any LiteralScalar to AggregatedList.
-        let all_literal = matches!(ac_in.state, AggState::LiteralScalar(_))
-            || ac_sort_by
-                .iter()
-                .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
-
-        if all_literal {
-            return Ok(ac_in);
-        } else {
-            if matches!(ac_in.state, AggState::LiteralScalar(_)) {
-                ac_in.aggregated();
-            }
-            for ac in ac_sort_by.iter_mut() {
-                if matches!(ac.state, AggState::LiteralScalar(_)) {
-                    ac.aggregated();
-                }
+        for (e, ac) in self.by.iter().zip(ac_sort_by.iter_mut()) {
+            if e.is_scalar() && ac.broadcast_unit_groups_to(&mut ac_in) {
+                ac.normalize_values();
             }
         }
 
