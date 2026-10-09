@@ -218,6 +218,7 @@ Combines rows from two or more tables based on a related column.
 * `[NATURAL] RIGHT [OUTER] JOIN`
 * `[LEFT | RIGHT] ANTI JOIN`
 * `[LEFT | RIGHT] SEMI JOIN`
+* `ASOF JOIN ... MATCH_CONDITION (...)` (see :ref:`ASOF joins <asof_join>`)
 
 **Example:**
 
@@ -320,6 +321,47 @@ be freely combined with equi-conditions using ``AND``.
     # │ 25    ┆ 20  ┆ 50  │
     # │ 45    ┆ 20  ┆ 50  │
     # └───────┴─────┴─────┘
+
+.. _asof_join:
+
+**ASOF joins**
+
+An ``ASOF JOIN`` pairs each row of the left table with the closest row of the right table
+that satisfies the ``MATCH_CONDITION``, which compares one column (or expression) of each
+table with ``>=``, ``>``, ``<=``, or ``<``. An optional ``ON`` (or ``USING``) clause gives
+equality conditions that matching rows must also satisfy. Every left row is kept; if there
+is no matching right row, the right columns are null.
+
+.. code-block:: python
+
+    population = pl.DataFrame(
+      {
+        "date": [date(2016, 3, 1), date(2018, 8, 1), date(2019, 1, 1)],
+        "population": [82.19, 82.66, 83.12],
+      }
+    )
+    gdp = pl.DataFrame(
+      {
+        "date": [date(2016, 1, 1), date(2017, 1, 1), date(2018, 1, 1), date(2019, 1, 1)],
+        "gdp": [4164, 4411, 4566, 4696],
+      }
+    )
+    pl.sql("""
+      SELECT p.date, population, gdp
+      FROM population p
+      ASOF JOIN gdp g MATCH_CONDITION (p.date >= g.date)
+      ORDER BY p.date
+    """).collect()
+    # shape: (3, 3)
+    # ┌────────────┬────────────┬──────┐
+    # │ date       ┆ population ┆ gdp  │
+    # │ ---        ┆ ---        ┆ ---  │
+    # │ date       ┆ f64        ┆ i64  │
+    # ╞════════════╪════════════╪══════╡
+    # │ 2016-03-01 ┆ 82.19      ┆ 4164 │
+    # │ 2018-08-01 ┆ 82.66      ┆ 4566 │
+    # │ 2019-01-01 ┆ 83.12      ┆ 4696 │
+    # └────────────┴────────────┴──────┘
 
 .. _where:
 
