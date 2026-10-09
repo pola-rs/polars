@@ -751,6 +751,65 @@ null-value,b,bar
 }
 
 #[test]
+fn test_named_null_duplicates() -> PolarsResult<()> {
+    // Schema inference must pick the same entry for "a" as the reader (the last one); taking
+    // the first would infer "a" as Int64 and then fail to parse "NA" while reading.
+    let csv = "a,b\nNA,1\n2,NA\n";
+    let file = Cursor::new(csv);
+    let df = CsvReadOptions::default()
+        .map_parse_options(|parse_options| {
+            parse_options.with_null_values(Some(NullValues::Named(vec![
+                ("a".into(), "NA".into()),
+                ("a".into(), "2".into()),
+                ("b".into(), "NA".into()),
+            ])))
+        })
+        .into_reader_with_file_handle(file)
+        .finish()?;
+
+    use polars_core::df;
+    let expect = df![
+        "a" => [Some("NA"), None],
+        "b" => [Some(1_i64), None],
+    ]?;
+    assert!(df.equals_missing(&expect));
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "lazy")]
+fn test_with_schema_modify_named_nulls_by_new_name() -> PolarsResult<()> {
+    // Null values given by new names need a second inference, which must keep the dtype
+    // the modifier set for "A" while re-inferring "B".
+    let csv = polars_buffer::Buffer::from(b"a,b\n1,NA\nNA,2\n".to_vec());
+    let df = LazyCsvReader::new_with_sources(ScanSources::Buffers(Arc::from([csv])))
+        .with_null_values(Some(NullValues::Named(vec![
+            ("A".into(), "NA".into()),
+            ("B".into(), "NA".into()),
+        ])))
+        .with_schema_modify(|schema| {
+            Ok(schema
+                .iter()
+                .map(|(name, dtype)| match name.as_str() {
+                    "a" => Field::new("A".into(), DataType::Float64),
+                    _ => Field::new(name.to_uppercase().into(), dtype.clone()),
+                })
+                .collect())
+        })?
+        .finish()?
+        .collect()?;
+
+    use polars_core::df;
+    let expect = df![
+        "A" => [Some(1.0_f64), None],
+        "B" => [None, Some(2_i64)],
+    ]?;
+    assert_eq!(df.schema(), expect.schema());
+    assert!(df.equals_missing(&expect));
+    Ok(())
+}
+
+#[test]
 fn test_no_newline_at_end() -> PolarsResult<()> {
     let csv = r"a,b
 foo,foo

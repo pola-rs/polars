@@ -4,11 +4,14 @@ use std::num::NonZeroUsize;
 #[cfg(feature = "csv")]
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
+use polars_core::runtime::ASYNC;
 use polars_io::cloud::CloudOptions;
+use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::csv::read::{
     CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
 use polars_io::path_utils::expand_paths;
+use polars_io::utils::compression::ByteSourceReader;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
@@ -284,21 +287,17 @@ impl LazyCsvReader {
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let n_threads = self.read_options.n_threads;
 
-        let infer_schema = |bytes: Buffer<u8>| {
-            use polars_io::prelude::streaming::read_until_start_and_infer_schema;
-            use polars_io::utils::compression::ByteSourceReader;
-
-            let bytes_len = bytes.len();
-            let mut reader = ByteSourceReader::from_memory(bytes)?;
+        let infer_schema = |read_options: &CsvReadOptions, source: Buffer<u8>| {
+            let source_len = source.len();
+            let mut reader = ByteSourceReader::from_memory(source)?;
             let decompressed_size_hint = Some(
-                bytes_len
+                source_len
                     * reader
                         .compression()
                         .map_or(1, |_| ASSUMED_COMPRESSION_RATIO),
             );
-
-            let (inferred_schema, _) = read_until_start_and_infer_schema(
-                &self.read_options,
+            let (inferred_schema, ..) = read_until_start_and_infer_schema(
+                read_options,
                 None,
                 self.extra_columns_policy == ExtraColumnsPolicy::Ignore,
                 self.missing_columns_policy.unwrap_or_default() == MissingColumnsPolicy::Insert,
@@ -306,17 +305,13 @@ impl LazyCsvReader {
                 None,
                 &mut reader,
             )?;
-
             PolarsResult::Ok(inferred_schema)
         };
 
-        let schema = match self.sources.clone() {
+        let first_source = match self.sources.clone() {
             ScanSources::Paths(paths) => {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
-
-                use polars_core::runtime::ASYNC;
-
                 let paths = ASYNC.block_on(expand_paths(
                     &paths[..],
                     self.glob(),
@@ -330,7 +325,7 @@ impl LazyCsvReader {
 
                 let file = polars_utils::io::open_file(path.as_std_path())?;
                 let mmap = MMapSemaphore::new_from_file(&file)?;
-                infer_schema(Buffer::from_owner(mmap))?
+                Buffer::from_owner(mmap)
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {
@@ -338,19 +333,52 @@ impl LazyCsvReader {
                 };
 
                 let mmap = MMapSemaphore::new_from_file(file)?;
-                infer_schema(Buffer::from_owner(mmap))?
+                Buffer::from_owner(mmap)
             },
             ScanSources::Buffers(buffers) => {
                 let Some(buffer) = buffers.first() else {
                     polars_bail!(ComputeError: "no buffers specified for this reader");
                 };
 
-                infer_schema(buffer.clone())?
+                buffer.clone()
             },
         };
+        let file_schema = infer_schema(&self.read_options, first_source.clone())?;
 
         self.read_options.n_threads = n_threads;
-        let mut schema = f(schema)?;
+        let mut schema = f(file_schema.clone())?;
+
+        // Named null values may refer to either the file's or the new column names.
+        // Inference matched the file's names, so if any were given by their new name,
+        // infer again, keyed by the names in the file (keeping dtypes that `f` changed).
+        if let Some(NullValues::Named(named)) = &self.read_options.parse_options.null_values {
+            let by_file_name: Vec<_> = named
+                .iter()
+                .map(|(name, value)| {
+                    let file_name = schema
+                        .index_of(name)
+                        .and_then(|i| file_schema.get_at_index(i))
+                        .map_or(name, |(file_name, _)| file_name);
+                    (file_name.clone(), value.clone())
+                })
+                .collect();
+
+            if by_file_name != *named {
+                let mut read_options = self.read_options.clone();
+                Arc::make_mut(&mut read_options.parse_options).null_values =
+                    Some(NullValues::Named(by_file_name));
+                let reinferred = infer_schema(&read_options, first_source)?;
+                for ((dtype, inferred), reinferred) in schema
+                    .iter_values_mut()
+                    .zip(file_schema.iter_values())
+                    .zip(reinferred.iter_values())
+                {
+                    if dtype == inferred {
+                        *dtype = reinferred.clone();
+                    }
+                }
+            }
+        }
 
         self.read_options = self
             .read_options

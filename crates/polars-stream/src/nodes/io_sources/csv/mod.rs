@@ -315,7 +315,12 @@ impl FileReader for CsvFileReader {
                     None,
                     &mut reader,
                 )
-                .map(|(inferred_schema, base_leftover)| {
+                .map(|(inferred_schema, base_leftover, rekeyed_null_values)| {
+                    let mut options = options;
+                    if let Some(null_values) = rekeyed_null_values {
+                        let options = Arc::make_mut(&mut options);
+                        Arc::make_mut(&mut options.parse_options).null_values = Some(null_values);
+                    }
                     (
                         inferred_schema,
                         base_leftover,
