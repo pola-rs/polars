@@ -33,21 +33,27 @@ impl TaskState {
 
     /// Wake this task. Returns true if task.schedule should be called.
     fn wake(&self) -> bool {
+        // We always write, even if the state doesn't change. If we only loaded
+        // SCHEDULED / NOTIFIED_WHILE_RUNNING, nothing would order our caller's
+        // prior writes with the upcoming poll, which could then miss them
+        // while we skip rescheduling, losing the wakeup. As a read-modify-write
+        // we either precede start_running (which then acquires our writes) or
+        // observe RUNNING and reschedule.
         self.state
             .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
-                Self::SCHEDULED | Self::NOTIFIED_WHILE_RUNNING => None,
+                Self::SCHEDULED | Self::NOTIFIED_WHILE_RUNNING => Some(state),
                 Self::RUNNING => Some(Self::NOTIFIED_WHILE_RUNNING),
                 Self::IDLE => Some(Self::SCHEDULED),
                 _ => unreachable!("invalid TaskState"),
             })
-            .map(|state| state == Self::IDLE)
-            .unwrap_or(false)
+            .is_ok_and(|state| state == Self::IDLE)
     }
 
     /// Start running this task.
     fn start_running(&self) {
-        assert_eq!(self.state.load(Ordering::Acquire), Self::SCHEDULED);
-        self.state.store(Self::RUNNING, Ordering::Relaxed);
+        // Must be a read-modify-write, see wake().
+        let old_state = self.state.swap(Self::RUNNING, Ordering::Acquire);
+        assert_eq!(old_state, Self::SCHEDULED);
     }
 
     /// Done running this task. Returns true if task.schedule should be called.
