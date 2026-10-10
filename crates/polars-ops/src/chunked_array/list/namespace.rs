@@ -406,7 +406,10 @@ pub trait ListNameSpaceImpl: AsList {
                     },
                 )?,
             _ => {
-                polars_bail!(ComputeError: "The lengths of `n` and `offset` should be 1 or equal to the length of list.")
+                polars_bail!(
+                    ComputeError: "The lengths of `n` and `offset` should be 1 or equal to the length of list (got `n`: {}, `offset`: {}, list: {}).",
+                    n.len(), offset.len(), list_ca.len()
+                )
             },
         };
         Ok(out.into_series())

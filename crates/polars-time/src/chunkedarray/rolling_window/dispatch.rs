@@ -95,7 +95,8 @@ where
 
     polars_ensure!(
         ca.len() == by.len(),
-        InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column"
+        InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column (got {} and {})",
+        by.len(), ca.len()
     );
     ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
     polars_ensure!(
