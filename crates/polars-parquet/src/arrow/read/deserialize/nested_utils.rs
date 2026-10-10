@@ -22,6 +22,9 @@ pub struct Nested {
     // invalids. This, however, is a very common situation.
     num_valids: usize,
     num_invalids: usize,
+
+    // Whether a fixed-size list row was found with a number of children other than `width`.
+    is_misaligned: bool,
 }
 
 #[derive(Debug)]
@@ -47,6 +50,7 @@ impl Nested {
 
             num_valids: 0,
             num_invalids: 0,
+            is_misaligned: false,
         }
     }
 
@@ -60,6 +64,7 @@ impl Nested {
 
             num_valids: 0,
             num_invalids: 0,
+            is_misaligned: false,
         }
     }
 
@@ -72,6 +77,7 @@ impl Nested {
 
             num_valids: 0,
             num_invalids: 0,
+            is_misaligned: false,
         }
     }
 
@@ -84,6 +90,7 @@ impl Nested {
 
             num_valids: 0,
             num_invalids: 0,
+            is_misaligned: false,
         }
     }
 
@@ -217,6 +224,14 @@ impl Nested {
             offsets.push(length);
         }
     }
+
+    /// Marks a fixed-size list as misaligned unless its rows before the one just pushed have
+    /// `width` children each, i.e. `child_len` in total. Null rows are padded to `width` children.
+    fn mark_if_misaligned(&mut self, child_len: usize) {
+        if let NestedContent::FixedSizeList { width } = self.content {
+            self.is_misaligned |= child_len != (self.length - 1) * width;
+        }
+    }
 }
 
 /// Bulk collection of runs of valid, non-empty rows of the innermost (fixed-size) list, with
@@ -263,7 +278,7 @@ impl<'a> LeafRows<'a> {
     /// `collect_value` for any other value, and returns how many. It is not inlined,
     /// to keep `decode_nested` lean.
     #[inline(never)]
-    fn collect_values(
+    fn collect_values<const HAS_FIXED_SIZE_LIST: bool>(
         &self,
         page_def_levels: &[u16],
         page_rep_levels: &[u16],
@@ -301,7 +316,7 @@ impl<'a> LeafRows<'a> {
                 )?;
                 i += n;
             } else {
-                collect_value(
+                collect_value::<HAS_FIXED_SIZE_LIST>(
                     page_def_levels[i],
                     page_rep_levels[i],
                     num_collects,
@@ -326,6 +341,7 @@ impl<'a> LeafRows<'a> {
                 .get(depth + 1)
                 .map_or(num_row_items, |child| child.len());
             outer[depth].push(child_len as i64, true);
+            outer[depth].mark_if_misaligned(child_len);
         }
     }
 
@@ -344,6 +360,7 @@ impl<'a> LeafRows<'a> {
         let rows = &mut nested[..self.depths.len()];
         let num_row_items = rows[0].len();
         let list = rows.last_mut().unwrap();
+        let num_list_rows = list.len();
         // A run starts at most a row per value, so reserving that many offsets keeps reallocation,
         // and the spilling of registers around it, out of the loop.
         let (mut new_offsets, width) = match &mut list.content {
@@ -365,6 +382,7 @@ impl<'a> LeafRows<'a> {
         };
         let mut num_rows = 0;
         let mut num_outer_rows = 0;
+        let mut is_misaligned = false;
         let mut n = 0;
         loop {
             // Values that continue the current row.
@@ -391,8 +409,12 @@ impl<'a> LeafRows<'a> {
                 break;
             }
 
-            if let Some(new_offsets) = &mut new_offsets {
-                new_offsets[num_rows].write((num_items + n) as i64);
+            let child_len = num_items + n;
+            if IS_FIXED_SIZE_LIST {
+                // As in `Nested::mark_if_misaligned`.
+                is_misaligned |= child_len != (num_list_rows + num_rows) * width;
+            } else if let Some(new_offsets) = &mut new_offsets {
+                new_offsets[num_rows].write(child_len as i64);
             }
             num_rows += 1;
             n += 1;
@@ -429,6 +451,7 @@ impl<'a> LeafRows<'a> {
         for nest in rows.iter_mut() {
             nest.push_n_valids(num_rows);
         }
+        rows.last_mut().unwrap().is_misaligned |= is_misaligned;
         n
     }
 }
@@ -496,6 +519,38 @@ fn collect_rows_without_list(
     Ok(n)
 }
 
+/// Checks that each fixed-size list row so far has `width` children. With `is_partial`, the last
+/// row may still be missing children.
+#[inline(never)]
+fn check_fixed_size_list_rows(nested: &[Nested], is_partial: bool) -> ParquetResult<()> {
+    for pair in nested.windows(2) {
+        let (nest, child_len) = (&pair[0], pair[1].len());
+        if let NestedContent::FixedSizeList { width } = nest.content {
+            let expected_len = nest.length * width;
+            if nest.is_misaligned
+                || child_len > expected_len
+                || (!is_partial && child_len != expected_len)
+            {
+                return Err(fixed_size_list_row_len_err(width));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cold]
+fn fixed_size_list_row_len_err(width: usize) -> ParquetError {
+    let note = if width == 0 {
+        " (pyarrow writes non-null zero-width fixed-size lists this way)"
+    } else {
+        ""
+    };
+    ParquetError::oos(format!(
+        "definition and repetition levels encode a fixed-size list row whose number of elements \
+         differs from its width ({width}){note}"
+    ))
+}
+
 /// Utility structure to create a `Filter` and `Validity` mask for the leaf values.
 ///
 /// This batches the extending.
@@ -535,6 +590,8 @@ impl BatchedNestedDecoder<'_> {
         Ok(())
     }
 
+    // Inlined into each instance of the generic `decode_nested`.
+    #[inline]
     fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
         self.flush();
         self.filter.extend_constant(n, false);
@@ -685,7 +742,7 @@ struct DecodingState {
 /// Collects a single level value with the general per-level logic, for those that
 /// `LeafRows::collect_values` does not collect in bulk, e.g. of null and empty rows.
 #[inline(always)]
-fn collect_value(
+fn collect_value<const HAS_FIXED_SIZE_LIST: bool>(
     def: u16,
     rep: u16,
     num_collects: &mut usize,
@@ -743,6 +800,8 @@ fn collect_value(
         if depth == max_depth - 1 {
             // The leaf is valid, as an invalid one is pushed above.
             batched_collector.push_valid()?;
+        } else if HAS_FIXED_SIZE_LIST {
+            nest.mark_if_misaligned(length as usize);
         }
     }
 
@@ -750,7 +809,7 @@ fn collect_value(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn decode_nested(
+fn decode_nested<const HAS_FIXED_SIZE_LIST: bool>(
     mut current_def_levels: &[u16],
     mut current_rep_levels: &[u16],
 
@@ -801,7 +860,7 @@ fn decode_nested(
         // Handle collects
         if let Some(ref mut num_collects) = state.num_collects {
             let i = match &leaf_rows {
-                Some(leaf_rows) => leaf_rows.collect_values(
+                Some(leaf_rows) => leaf_rows.collect_values::<HAS_FIXED_SIZE_LIST>(
                     current_def_levels,
                     current_rep_levels,
                     num_collects,
@@ -919,6 +978,17 @@ impl<D: utils::Decoder> PageDecoder<D> {
 
         let mut top_level_filter = top_level_filter.iter();
 
+        // Only columns with a fixed-size list pay for checking its rows.
+        let has_fixed_size_list = nested_state
+            .nested
+            .iter()
+            .any(|n| matches!(n.content, NestedContent::FixedSizeList { .. }));
+        let decode_page = if has_fixed_size_list {
+            decode_nested::<true>
+        } else {
+            decode_nested::<false>
+        };
+
         let mut chunks = Vec::new();
         while let Some(page) = self.iter.next() {
             let page = page?;
@@ -948,7 +1018,7 @@ impl<D: utils::Decoder> PageDecoder<D> {
                 validity: &mut leaf_validity,
             };
 
-            decode_nested(
+            decode_page(
                 &current_def_levels,
                 &current_rep_levels,
                 &mut batched_collector,
@@ -958,6 +1028,11 @@ impl<D: utils::Decoder> PageDecoder<D> {
                 &def_levels,
                 &rep_levels,
             )?;
+            // A row may continue on the next page, so the last one is only checked for excess
+            // children.
+            if has_fixed_size_list {
+                check_fixed_size_list_rows(&nested_state.nested, true)?;
+            }
 
             batched_collector.finalize()?;
 
@@ -978,6 +1053,11 @@ impl<D: utils::Decoder> PageDecoder<D> {
             )?;
 
             self.iter.reuse_page_buffer(page);
+        }
+
+        // Rows don't span column chunks, so the last row must be complete here.
+        if has_fixed_size_list {
+            check_fixed_size_list_rows(&nested_state.nested, false)?;
         }
 
         // we pop the primitive off here.

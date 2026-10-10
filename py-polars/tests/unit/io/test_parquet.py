@@ -963,6 +963,16 @@ def test_parquet_array_dtype_nulls() -> None:
             pl.Array(pl.Int64, 0),
             marks=pytest.mark.may_fail_cloud,
         ),
+        pytest.param(
+            [[[], None], None, [], [[]]],
+            pl.List(pl.Array(pl.Int64, 0)),
+            marks=pytest.mark.may_fail_cloud,
+        ),
+        pytest.param(
+            [[[], None], None, [[], []]],
+            pl.Array(pl.Array(pl.Int64, 0), 2),
+            marks=pytest.mark.may_fail_cloud,
+        ),
         (
             [[[1, 5, 2], [42, 13, 37]], [[1, 2, 3], [5, 2, 3]], [[1, 2, 1], [3, 1, 3]]],
             pl.Array(pl.Array(pl.Int8, 3), 2),
@@ -1967,6 +1977,90 @@ def test_nested_span_multiple_pages_18400() -> None:
     assert_frame_equal(df.head(1), pl.read_parquet(f, n_rows=1))
 
 
+def _write_parquet_with_arrow_schema(
+    path: Path, tbl: pa.Table, arrow_type: pa.DataType
+) -> None:
+    """Write `tbl`, declaring `arrow_type` for column "a" in the Arrow schema."""
+    arrow_schema = pa.schema([pa.field("a", arrow_type)]).serialize()
+    with pq.ParquetWriter(path, tbl.schema, store_schema=False) as writer:
+        writer.write_table(tbl)
+        writer.add_key_value_metadata(
+            {"ARROW:schema": base64.b64encode(arrow_schema.to_pybytes()).decode()}
+        )
+
+
+@pytest.mark.parametrize("rows", [[[1, 2, 3], [4]], [[1, 2, 3]], [[1]]])
+def test_read_parquet_fixed_size_list_row_width_mismatch_raises(
+    rows: list[list[int]], tmp_path: Path
+) -> None:
+    # Variable-size list levels under an Arrow schema that declares `Array(Int64, 2)`.
+    tbl = pa.table({"a": pa.array(rows, pa.list_(pa.int64()))})
+    path = tmp_path / "misaligned.parquet"
+    _write_parquet_with_arrow_schema(path, tbl, pa.list_(pa.int64(), 2))
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"fixed-size list row whose number of elements differs from its width \(2\)",
+    ):
+        pl.read_parquet(path)
+
+
+@pytest.mark.may_fail_cloud  # reason: zero-width array
+@pytest.mark.parametrize(
+    ("values", "pa_dtype"),
+    [
+        ([[], None, []], pa.list_(pa.int64(), 0)),
+        ([[]], pa.list_(pa.field("item", pa.int64(), nullable=False), 0)),
+    ],
+)
+def test_read_parquet_zero_width_array_with_elements_raises(
+    values: list[list[int] | None], pa_dtype: pa.DataType
+) -> None:
+    # Arrow C++ writes non-null zero-width fixed-size lists as holding one element.
+    f = io.BytesIO()
+    pq.write_table(pa.table({"a": pa.array(values, pa_dtype)}), f)
+    f.seek(0)
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"differs from its width \(0\) \(pyarrow writes non-null zero-width",
+    ):
+        pl.read_parquet(f)
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        ([[1, None], None, [3, 4]], pl.Array(pl.Int64, 2)),
+        ([[[1, 2], None], None, [], [[3, 4]]], pl.List(pl.Array(pl.Int64, 2))),
+        ([[[1], []], None, [None, [2, 3]]], pl.Array(pl.List(pl.Int64), 2)),
+        (
+            [[[1, 2], None], None, [[3, None], [5, 6]]],
+            pl.Array(pl.Array(pl.Int64, 2), 2),
+        ),
+        ([{"x": [1, 2]}, None, {"x": None}], pl.Struct({"x": pl.Array(pl.Int64, 2)})),
+    ],
+)
+@pytest.mark.parametrize("use_pyarrow", [False, True])
+def test_read_parquet_fixed_size_list_roundtrip(
+    values: list[Any], dtype: pl.DataType, use_pyarrow: bool, tmp_path: Path
+) -> None:
+    values = values * 4
+    df = pl.DataFrame(
+        {"idx": range(len(values)), "a": values},
+        schema={"idx": pl.Int64, "a": dtype},
+    )
+    path = tmp_path / "fixed_size_list.parquet"
+    df.write_parquet(path, use_pyarrow=use_pyarrow, row_group_size=5)
+
+    assert_frame_equal(pl.read_parquet(path), df)
+    assert_frame_equal(pl.scan_parquet(path).slice(3, 6).collect(), df.slice(3, 6))
+    assert_frame_equal(
+        pl.scan_parquet(path, parallel="prefiltered")
+        .filter(pl.col("idx") % 3 != 1)
+        .collect(),
+        df.filter(pl.col("idx") % 3 != 1),
+    )
+
+
 def test_read_parquet_fixed_size_list_rows_across_pages(io_files_path: Path) -> None:
     # Current writers keep each row within a data page, so this file was written by
     # pyarrow (uncompressed, without dictionary) and then split into V1 data pages of 7
@@ -1997,6 +2091,31 @@ def test_read_parquet_fixed_size_list_rows_across_pages(io_files_path: Path) -> 
     )
     path = io_files_path / "fixed_size_list_rows_across_pages.parquet"
     _assert_nested_reads(path, df, offset=11, length=17)
+
+
+@pytest.mark.parametrize("width", [2, 20])
+@pytest.mark.parametrize("in_list", [False, True])
+def test_read_parquet_fixed_size_list_mismatch_in_long_run_raises(
+    width: int, in_list: bool, tmp_path: Path
+) -> None:
+    # One row is too long and the next one too short, so there are 1000 * width elements
+    # in total and only the check of each row can catch it.
+    rows = [list(range(width)) for _ in range(1000)]
+    rows[600].append(0)
+    rows[601].pop()
+    values: list[Any] = rows
+    physical, declared = pa.list_(pa.int64()), pa.list_(pa.int64(), width)
+    if in_list:
+        values = [rows[i : i + 2] for i in range(0, 1000, 2)]
+        physical, declared = pa.list_(physical), pa.list_(declared)
+    path = tmp_path / "misaligned.parquet"
+    _write_parquet_with_arrow_schema(
+        path, pa.table({"a": pa.array(values, physical)}), declared
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError, match=rf"differs from its width \({width}\)"
+    ):
+        pl.read_parquet(path)
 
 
 def _assert_nested_reads(
