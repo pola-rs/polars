@@ -515,6 +515,8 @@ impl PhysicalExpr for AggMinMaxByExpr {
             let encoded =
                 _get_rows_encoded_ca(by_col.name().clone(), &[by_col], &[false], &[false], true)?;
             encoded.cast(&DataType::Binary)?.into_column()
+        } else if by_col.dtype() == &DataType::BinaryOffset {
+            by_col.cast(&DataType::Binary)?
         } else {
             by_col
         };

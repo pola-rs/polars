@@ -27,6 +27,7 @@ pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
 mod extract_window;
+pub use expand_datasets::attach_dataset_scan_statistics;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
@@ -232,7 +233,12 @@ pub fn optimize(
     // Gives the dataset scans the statistics that the join passes need.
     #[cfg(feature = "python")]
     if opt_flags.join_order() && get_or_init_members!().has_joins {
-        expand_datasets::expand_datasets_for_join_order(root, ir_arena, expr_arena)?;
+        expand_datasets::expand_datasets_early(
+            root,
+            ir_arena,
+            expr_arena,
+            expand_datasets::EarlyExpansion::ForJoinOrder,
+        )?;
     }
 
     // Needs the filters that predicate pushdown places on the scans, and must come

@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
 use polars_plan::prelude::*;
-use polars_utils::aliases::PlHashSet;
+use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 
 use crate::context::is_correlated_result_col;
@@ -62,6 +62,12 @@ pub(crate) struct GroupContextSplitter<'a> {
     pub(crate) whole_frame_partition: Option<&'a PlSmallStr>,
     /// Columns holding the result of a scalar subquery.
     pub(crate) subquery_names: &'a PlHashSet<PlSmallStr>,
+    /// Whether a scalar subquery outside the aggregates is read from the aggregated rows.
+    /// Without GROUP BY there is one aggregated row even when there is no input row, so
+    /// only that row can hold its value.
+    pub(crate) subqueries_after_aggregation: bool,
+    /// The subqueries that are read from the aggregated rows.
+    pub(crate) subqueries_read_after: PlIndexSet<PlSmallStr>,
     pub(crate) aggregates: AggregateOutputs,
 }
 
@@ -71,6 +77,24 @@ impl GroupContextSplitter<'_> {
     fn is_group_value(&self, expr: &Expr) -> bool {
         matches!(expr, Expr::Agg(AggExpr::First(inner)) if matches!(inner.as_ref(), Expr::Column(name)
             if self.subquery_names.contains(name) || is_correlated_result_col(name)))
+    }
+
+    /// The scalar subquery that `expr` reads from the aggregated rows.
+    fn subquery_read_after<'e>(&self, expr: &'e Expr) -> Option<&'e PlSmallStr> {
+        match expr {
+            Expr::Agg(AggExpr::First(inner)) if self.subqueries_after_aggregation => {
+                match inner.as_ref() {
+                    Expr::Column(name) if self.subquery_names.contains(name) => Some(name),
+                    _ => None,
+                }
+            },
+            _ => None,
+        }
+    }
+
+    fn read_after_aggregation(&mut self, name: PlSmallStr) -> Expr {
+        self.subqueries_read_after.insert(name.clone());
+        Expr::Column(name)
     }
 
     /// Whether a SELECT projection must be processed in the group context rather
@@ -95,12 +119,13 @@ impl GroupContextSplitter<'_> {
         })
     }
 
-    /// Whether `expr` must run after aggregation: it holds a window, or combines
-    /// an aggregate with a grouped key.
+    /// Whether `expr` must run after aggregation: it holds a window or a subquery read from
+    /// the aggregated rows, or combines an aggregate with a grouped key.
     pub(crate) fn needs_post_aggregation(&self, expr: &Expr) -> bool {
         struct Finder<'a, 'b> {
             splitter: &'a GroupContextSplitter<'b>,
             has_window: bool,
+            has_subquery_read_after: bool,
             has_group_key: bool,
             has_aggregate: bool,
         }
@@ -119,6 +144,10 @@ impl GroupContextSplitter<'_> {
                         self.has_group_key |= self.splitter.keys.contains(name);
                         VisitRecursion::Skip
                     },
+                    _ if self.splitter.subquery_read_after(node).is_some() => {
+                        self.has_subquery_read_after = true;
+                        VisitRecursion::Skip
+                    },
                     _ if is_marked_aggregate(node) || self.splitter.is_group_value(node) => {
                         self.has_aggregate = true;
                         VisitRecursion::Skip
@@ -130,17 +159,23 @@ impl GroupContextSplitter<'_> {
         let mut finder = Finder {
             splitter: self,
             has_window: false,
+            has_subquery_read_after: false,
             has_group_key: false,
             has_aggregate: false,
         };
         let _ = expr.visit(&mut finder, &());
-        finder.has_window || (finder.has_group_key && finder.has_aggregate)
+        finder.has_window
+            || finder.has_subquery_read_after
+            || (finder.has_group_key && finder.has_aggregate)
     }
 
     /// Replace every aggregate in `expr` with a reference to a hoisted aggregation output,
     /// recorded in `self.aggregates`. A window runs on the aggregated rows; its inputs are
     /// bound by `bind_window_input`.
     pub(crate) fn hoist(&mut self, expr: Expr) -> PolarsResult<Expr> {
+        if let Some(name) = self.subquery_read_after(&expr) {
+            return Ok(self.read_after_aggregation(name.clone()));
+        }
         match expr {
             Expr::Over {
                 function,
@@ -173,6 +208,51 @@ impl GroupContextSplitter<'_> {
         }
     }
 
+    /// Check that `expr`, which runs in the group context, reads the input columns only in
+    /// group keys and aggregates: `x` has no single value per group in `HAVING x > 1`.
+    pub(crate) fn check_columns_per_group(&self, expr: &Expr) -> PolarsResult<()> {
+        struct Finder<'a, 'b> {
+            splitter: &'a GroupContextSplitter<'b>,
+            column: Option<PlSmallStr>,
+        }
+        impl Visitor for Finder<'_, '_> {
+            type Node = Expr;
+            type Arena = ();
+
+            fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
+                let splitter = self.splitter;
+                Ok(match node {
+                    // The inputs of a window are checked when they are bound.
+                    Expr::Over { .. } => VisitRecursion::Skip,
+                    _ if is_marked_aggregate(node)
+                        || splitter.is_group_value(node)
+                        || splitter.key_exprs.iter().any(|(key, _)| key == node) =>
+                    {
+                        VisitRecursion::Skip
+                    },
+                    Expr::Column(name)
+                        if !splitter.keys.contains(name)
+                            && !splitter.subquery_names.contains(name)
+                            && !is_correlated_result_col(name) =>
+                    {
+                        self.column = Some(name.clone());
+                        VisitRecursion::Stop
+                    },
+                    _ => VisitRecursion::Continue,
+                })
+            }
+        }
+        let mut finder = Finder {
+            splitter: self,
+            column: None,
+        };
+        expr.visit(&mut finder, &())?;
+        if let Some(name) = finder.column {
+            polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", name);
+        }
+        Ok(())
+    }
+
     /// Read the group keys in `expr`, which runs in the group context, as one value per
     /// group, as HAVING reads them.
     pub(crate) fn read_keys_per_group(&self, expr: Expr) -> Expr {
@@ -193,12 +273,19 @@ impl GroupContextSplitter<'_> {
         if let Some((_, name)) = self.key_exprs.iter().find(|(key, _)| *key == expr) {
             return Ok(col(name.clone()));
         }
+        if let Some(name) = self.subquery_read_after(&expr) {
+            return Ok(self.read_after_aggregation(name.clone()));
+        }
         match expr {
             e if is_marked_aggregate(&e) || self.is_group_value(&e) => {
                 Ok(self.aggregates.get_or_insert_hoisted(e))
             },
             Expr::Column(name) if self.subquery_names.contains(&name) => {
-                Ok(self.aggregates.get_or_insert_hoisted(col(name).first()))
+                if self.subqueries_after_aggregation {
+                    Ok(self.read_after_aggregation(name))
+                } else {
+                    Ok(self.aggregates.get_or_insert_hoisted(col(name).first()))
+                }
             },
             Expr::Column(name) => {
                 polars_ensure!(
@@ -212,31 +299,19 @@ impl GroupContextSplitter<'_> {
     }
 }
 
-/// The names that QUALIFY and ORDER BY can read besides the input columns: columns renamed
-/// by `SELECT * RENAME`, then SELECT aliases. Each stands for an expression over the input
-/// columns, of a type that is known if it could be inferred.
+/// The names that QUALIFY and ORDER BY can read besides the input columns: the SELECT
+/// aliases. Each stands for an expression over the input columns, of a type that is known
+/// if it could be inferred.
 pub(crate) struct OutputNames {
     names: PlHashMap<PlSmallStr, (Expr, Option<DataType>)>,
 }
 
 impl OutputNames {
-    /// The output names of `projections` and `renames` over the input `schema`. An input
+    /// The output names of `projections` over the input `schema`. An input
     /// column comes before an output name of the same name. `typed_schema` is `schema` with
     /// the columns that the projections read before the block resolves them.
-    pub(crate) fn new(
-        projections: &[Expr],
-        renames: &PlHashMap<PlSmallStr, PlSmallStr>,
-        schema: &Schema,
-        typed_schema: &Schema,
-    ) -> Self {
+    pub(crate) fn new(projections: &[Expr], schema: &Schema, typed_schema: &Schema) -> Self {
         let mut names = PlHashMap::new();
-        for (before, after) in renames {
-            if !schema.contains(after) {
-                names
-                    .entry(after.clone())
-                    .or_insert_with(|| (col(before.clone()), schema.get(before).cloned()));
-            }
-        }
         for projection in projections {
             if let Expr::Alias(inner, name) = projection
                 && !schema.contains(name)
@@ -280,6 +355,45 @@ pub(crate) fn has_windows_over_aggregates(projections: &[Expr]) -> bool {
         .iter()
         .any(|e| has_expr(e, |e| matches!(e, Expr::Over { .. })))
         && projections.iter().any(has_marked_aggregate)
+}
+
+/// Whether a block without GROUP BY reads a scalar subquery outside its aggregates, as in
+/// `SELECT COUNT(*), (SELECT 1) FROM t`. Without input rows, the subquery only has a value
+/// in the aggregated row.
+pub(crate) fn has_subquery_outside_aggregates(
+    projections: &[Expr],
+    subquery_names: &PlHashSet<PlSmallStr>,
+) -> bool {
+    struct Finder<'a> {
+        subquery_names: &'a PlHashSet<PlSmallStr>,
+        found: bool,
+    }
+    impl Visitor for Finder<'_> {
+        type Node = Expr;
+        type Arena = ();
+
+        fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
+            Ok(match node {
+                _ if is_marked_aggregate(node) => VisitRecursion::Skip,
+                Expr::Column(name) if self.subquery_names.contains(name) => {
+                    self.found = true;
+                    VisitRecursion::Stop
+                },
+                _ => VisitRecursion::Continue,
+            })
+        }
+    }
+    if subquery_names.is_empty() || !projections.iter().any(has_marked_aggregate) {
+        return false;
+    }
+    projections.iter().any(|expr| {
+        let mut finder = Finder {
+            subquery_names,
+            found: false,
+        };
+        let _ = expr.visit(&mut finder, &());
+        finder.found
+    })
 }
 
 /// Check that a block that aggregates without GROUP BY reads the input columns only in its
