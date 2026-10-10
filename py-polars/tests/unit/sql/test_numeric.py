@@ -277,7 +277,7 @@ def test_literal_arithmetic_folds_exactly(expr: str) -> None:
         ctx.prec = 80
         expected = eval(decimal_expr)
     lf = pl.sql(f"SELECT {expr} AS x")
-    assert re.match(r'SELECT \[-?[\d.]+\.alias\("x"\)\]', lf.explain())
+    assert lf.explain().startswith('DF ["x"]')
     res = lf.collect()
     assert res.item() == expected
     assert res.schema["x"].scale == -expected.as_tuple().exponent  # type: ignore[attr-defined]
