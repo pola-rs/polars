@@ -30,49 +30,20 @@ pub struct IRPlanSorted(PlIndexMap<Node, IRSorted>);
 
 impl IRPlanSorted {
     pub fn resolve(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
-        let traversal = Traversal {
-            create_full_map: true,
-            skip_unsliced_sorts: false,
-        };
-        Self::resolve_impl(&[root], ir_arena, expr_arena, traversal)
-    }
-
-    /// Like [`IRPlanSorted::resolve`], but a sort without a slice gives no sortedness, as it
-    /// is removed when its output order is not observed.
-    pub(crate) fn resolve_without_unsliced_sorts(
-        roots: &[Node],
-        ir_arena: &Arena<IR>,
-        expr_arena: &Arena<AExpr>,
-    ) -> Self {
-        let traversal = Traversal {
-            create_full_map: true,
-            skip_unsliced_sorts: true,
-        };
-        Self::resolve_impl(roots, ir_arena, expr_arena, traversal)
-    }
-
-    fn resolve_impl(
-        roots: &[Node],
-        ir_arena: &Arena<IR>,
-        expr_arena: &Arena<AExpr>,
-        traversal: Traversal,
-    ) -> Self {
         let mut seen = PlIndexSet::default();
         let mut sortedness = PlIndexMap::default();
         let mut cache_proxy = PlIndexMap::default();
         let mut names_set_scratch = ScratchIndexSet::default();
-        for &root in roots {
-            is_sorted_rec(
-                root,
-                ir_arena,
-                expr_arena,
-                &mut seen,
-                &mut sortedness,
-                &mut cache_proxy,
-                &mut names_set_scratch,
-                traversal,
-            );
-        }
+        is_sorted_rec(
+            root,
+            ir_arena,
+            expr_arena,
+            &mut seen,
+            &mut sortedness,
+            &mut cache_proxy,
+            &mut names_set_scratch,
+            true,
+        );
         Self(sortedness)
     }
 
@@ -163,27 +134,6 @@ impl From<AExprSorted> for IsSorted {
 #[derive(Debug, Clone)]
 pub struct IRSorted(pub Arc<[Sorted]>);
 
-#[derive(Clone, Copy)]
-struct Traversal {
-    /// Visit every input, so the sortedness of every node is stored.
-    create_full_map: bool,
-    /// A sort without a slice gives no sortedness.
-    skip_unsliced_sorts: bool,
-}
-
-/// Can two inputs sorted on their join keys like this be merged? The keys must be sorted
-/// the same way on both sides, with a known direction and null position.
-pub fn join_keys_sorted_together(
-    left: Option<&[AExprSorted]>,
-    right: Option<&[AExprSorted]>,
-) -> bool {
-    left.is_some_and(|l| {
-        right == Some(l)
-            && l.first()
-                .is_some_and(|s| s.descending.is_some() && s.nulls_last.is_some())
-    })
-}
-
 /// Are the keys together sorted in any way?
 ///
 /// Returns the way in which the keys are sorted, if they are sorted.
@@ -239,10 +189,7 @@ pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) ->
         &mut sortedness,
         &mut cache_proxy,
         &mut names_set_scratch,
-        Traversal {
-            create_full_map: false,
-            skip_unsliced_sorts: false,
-        },
+        false,
     )
 }
 
@@ -256,7 +203,7 @@ fn is_sorted_rec(
     sortedness: &mut PlIndexMap<Node, IRSorted>,
     cache_proxy: &mut PlIndexMap<UniqueId, Option<IRSorted>>,
     names_set_scratch: &mut ScratchIndexSet<PlSmallStr>,
-    traversal: Traversal,
+    create_full_map: bool,
 ) -> Option<IRSorted> {
     if let Some(s) = sortedness.get(&root) {
         return Some(s.clone());
@@ -275,12 +222,12 @@ fn is_sorted_rec(
                 sortedness,
                 cache_proxy,
                 names_set_scratch,
-                traversal,
+                create_full_map,
             )
         }};
     }
 
-    if traversal.create_full_map {
+    if create_full_map {
         for input in ir_arena.get(root).inputs() {
             rec!(input);
         }
@@ -444,7 +391,6 @@ fn is_sorted_rec(
                 Some(i) => Some(IRSorted(input_sorted.0.iter().take(i).cloned().collect())),
             }
         },
-        IR::Sort { slice: None, .. } if traversal.skip_unsliced_sorts => None,
         IR::Sort {
             input: _,
             by_column,

@@ -666,14 +666,11 @@ def test_merge_join_after_order_maintaining_join(
         pl.LazyFrame({"key": [0, 1], "d": [9, 10]}).set_sorted("key"),
         on="key",
         how="left",
+        maintain_order="left",
     )
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "merge-join" in dot
-    assert_frame_equal(
-        q.collect(engine="streaming"),
-        q.collect(engine="in-memory"),
-        check_row_order=False,
-    )
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
 _SORTED_LF = pl.LazyFrame({"a": [0, 1]}).set_sorted("a")
@@ -681,32 +678,36 @@ _UNSORTED_LF = pl.LazyFrame({"a": [1, 0, 2]})
 
 
 @pytest.mark.parametrize(
-    "lf",
+    ("lf", "maintain_order"),
     [
         pytest.param(
             _SORTED_LF.join(_UNSORTED_LF, on="a", how="left"),
+            "left",
             id="join-without-maintain-order",
         ),
         pytest.param(
             _SORTED_LF.join(
                 _UNSORTED_LF, on="a", how="full", maintain_order="left", coalesce=True
             ),
+            "left",
             id="full-join-appends-unmatched-right-rows",
         ),
         pytest.param(
             _UNSORTED_LF.join(_SORTED_LF, on="a", how="inner", maintain_order="left"),
+            "left",
             id="join-keeps-order-of-unsorted-side",
         ),
         pytest.param(
-            _UNSORTED_LF.sort("a").join(
-                _UNSORTED_LF, on="a", how="left", maintain_order="left"
-            ),
-            id="unsliced-sort-is-removed",
+            _SORTED_LF.join(_UNSORTED_LF, on="a", how="left", maintain_order="left"),
+            "none",
+            id="order-not-observed",
         ),
     ],
 )
-def test_no_merge_join_after_join(lf: pl.LazyFrame) -> None:
-    q = lf.join(_SORTED_LF, on="a", how="left")
+def test_no_merge_join_after_join(
+    lf: pl.LazyFrame, maintain_order: MaintainOrderJoin
+) -> None:
+    q = lf.join(_SORTED_LF, on="a", how="left", maintain_order=maintain_order)
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "merge-join" not in dot
 

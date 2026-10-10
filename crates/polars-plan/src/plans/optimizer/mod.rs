@@ -54,7 +54,6 @@ pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{
     AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
-    join_keys_sorted_together,
 };
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
