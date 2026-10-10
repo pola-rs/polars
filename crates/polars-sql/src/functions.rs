@@ -2492,7 +2492,11 @@ impl SQLFunctionVisitor<'_> {
                     sql_expr,
                     "ARRAY_AGG",
                 )?;
-                self.apply_window_spec(base.implode(true))
+                // NULL, not an empty list, when no row is read.
+                let array = when(self.rows_read().gt(lit(0)))
+                    .then(base.implode(true))
+                    .otherwise(Expr::Literal(LiteralValue::untyped_null()));
+                self.apply_window_spec(array)
             },
             _ => {
                 polars_bail!(SQLSyntax: "ARRAY_AGG must have exactly one argument; found {}", args.len())

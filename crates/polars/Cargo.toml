@@ -200,7 +200,7 @@ approx_quantile = [
   "polars-sql?/approx_quantile",
 ]
 arg_where = ["polars-lazy?/arg_where"]
-asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
+asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join", "polars-sql?/asof_join"]
 iejoin = ["polars-lazy?/iejoin", "polars-ops/iejoin"]
 binary_encoding = [
   "polars-ops/binary_encoding",

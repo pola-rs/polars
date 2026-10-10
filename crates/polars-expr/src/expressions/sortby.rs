@@ -92,6 +92,7 @@ fn sort_by_groups_single_by(
         nulls_last: options.nulls_last,
         // We are already in par iter.
         multithreaded: false,
+        limit: options.limit,
         ..Default::default()
     };
     let new_idx = match indicator {
@@ -119,11 +120,15 @@ fn sort_by_groups_no_match<'a>(
     options: SortMultipleOptions,
     expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
+    // Sorting a single value, which the group length checks guarantee, leaves it unchanged.
+    if matches!(ac_in.state, AggState::AggregatedScalar(_)) {
+        return Ok(ac_in);
+    }
     let s_in = ac_in.aggregated();
     let mut s_in = s_in.list().unwrap().clone();
     let s_sort_by = ac_sort_by
         .iter_mut()
-        .map(|ac| ac.aggregated().list().unwrap().clone())
+        .map(|ac| ac.aggregated_as_list().into_owned())
         .collect::<Vec<_>>();
 
     let dtype = s_in.dtype().clone();
@@ -172,6 +177,7 @@ fn sort_by_groups_multiple_by(
     nulls_last: &[bool],
     multithreaded: bool,
     maintain_order: bool,
+    limit: Option<IdxSize>,
 ) -> PolarsResult<(IdxSize, IdxVec)> {
     let new_idx = match indicator {
         GroupsIndicator::Idx((_first, idx)) => {
@@ -187,7 +193,7 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
-                limit: None,
+                limit,
             };
 
             let sorted_idx = arg_sort(&groups, options)?;
@@ -205,7 +211,7 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
-                limit: None,
+                limit,
             };
             let sorted_idx = arg_sort(&groups, options)?;
             map_sorted_indices_to_group_slice(&sorted_idx, first)
@@ -223,14 +229,18 @@ impl PhysicalExpr for SortByExpr {
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series_f = || self.input.evaluate(df, state);
-        if self.by.is_empty() {
-            // Sorting by 0 columns returns input unchanged.
+        if self.by.iter().all(|e| e.is_scalar()) {
+            // Constant keys leave the input unchanged.
+            for e in &self.by {
+                e.evaluate(df, state)?;
+            }
             return series_f();
         }
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
-                Ok(s_sort_by.arg_sort(SortOptions::from(&self.sort_options)))
+                let sorted_idx = s_sort_by.arg_sort(SortOptions::from(&self.sort_options));
+                Ok((sorted_idx, s_sort_by.len()))
             };
             RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
@@ -262,16 +272,17 @@ impl PhysicalExpr for SortByExpr {
                     .with_order_descending_multi(descending)
                     .with_nulls_last_multi(nulls_last);
 
-                arg_sort(&s_sort_by, options)
+                Ok((arg_sort(&s_sort_by, options)?, broadcast_length))
             };
             RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         };
-        let (sorted_idx, series) = (sorted_idx?, series?);
+        let ((sorted_idx, by_len), series) = (sorted_idx?, series?);
+        // With a limit, `sorted_idx` can be shorter than `by`.
         polars_ensure!(
-            sorted_idx.len() == series.len(),
+            by_len == series.len(),
             expr = self.expr, ShapeMismatch:
             "`sort_by` produced different length ({}) than the Series that has to be sorted ({})",
-            sorted_idx.len(), series.len()
+            by_len, series.len()
         );
 
         // SAFETY: sorted index are within bounds.
@@ -301,29 +312,22 @@ impl PhysicalExpr for SortByExpr {
                 .all(|ac_sort_by| ac_sort_by.groups.len() == ac_in.groups.len())
         );
 
+        // Constant keys leave the input unchanged, and a literal input stays a literal.
+        if matches!(ac_in.state, AggState::LiteralScalar(_))
+            || self.by.iter().all(|e| e.is_scalar())
+        {
+            return Ok(ac_in);
+        }
+
         // Enable reliable length checks downstream
         ac_in.set_groups_for_undefined_agg_states();
         ac_sort_by
             .iter_mut()
             .for_each(|ac| ac.set_groups_for_undefined_agg_states());
 
-        // If every input is a LiteralScalar, we return a LiteralScalar.
-        // Otherwise, we convert any LiteralScalar to AggregatedList.
-        let all_literal = matches!(ac_in.state, AggState::LiteralScalar(_))
-            || ac_sort_by
-                .iter()
-                .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)));
-
-        if all_literal {
-            return Ok(ac_in);
-        } else {
-            if matches!(ac_in.state, AggState::LiteralScalar(_)) {
-                ac_in.aggregated();
-            }
-            for ac in ac_sort_by.iter_mut() {
-                if matches!(ac.state, AggState::LiteralScalar(_)) {
-                    ac.aggregated();
-                }
+        for (e, ac) in self.by.iter().zip(ac_sort_by.iter_mut()) {
+            if e.is_scalar() && ac.broadcast_unit_groups_to(&mut ac_in) {
+                ac.normalize_values();
             }
         }
 
@@ -378,6 +382,7 @@ impl PhysicalExpr for SortByExpr {
                         &SortOptions {
                             descending: descending[0],
                             nulls_last: nulls_last[0],
+                            limit: self.sort_options.limit,
                             ..Default::default()
                         },
                     )
@@ -405,6 +410,7 @@ impl PhysicalExpr for SortByExpr {
                             &nulls_last,
                             self.sort_options.multithreaded,
                             self.sort_options.maintain_order,
+                            self.sort_options.limit,
                         )
                     })
                     .collect::<PolarsResult<_>>()
@@ -437,5 +443,62 @@ impl PhysicalExpr for SortByExpr {
 
     fn is_scalar(&self) -> bool {
         self.input.is_scalar()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_plan::prelude::expr_ir::ExprIR;
+    use polars_plan::prelude::*;
+    use polars_utils::arena::Arena;
+
+    use super::*;
+    use crate::{ExpressionConversionState, create_physical_expr};
+
+    /// A grouped `sort_by` with a limit only outputs the first rows of each group.
+    #[test]
+    fn test_sort_by_on_groups_keeps_limit() -> PolarsResult<()> {
+        let df = df![
+            "g" => [1, 1, 1, 2, 2, 2],
+            "x" => [1, 2, 3, 4, 5, 6],
+            "a" => [3, 1, 2, 2, 1, 3],
+            "b" => [0, 0, 0, 0, 0, 0],
+        ]?;
+        let groups = df.group_by_stable(["g"])?.into_groups();
+
+        for by in [vec!["a"], vec!["a", "b"]] {
+            let mut arena = Arena::new();
+            let x = arena.add(AExpr::Column("x".into()));
+            let by = by
+                .into_iter()
+                .map(|name| arena.add(AExpr::Column(name.into())))
+                .collect();
+            let sort_by = arena.add(AExpr::SortBy {
+                expr: x,
+                by,
+                sort_options: SortMultipleOptions {
+                    limit: Some(2),
+                    ..Default::default()
+                },
+            });
+            let phys = create_physical_expr(
+                &ExprIR::from_node(sort_by, &arena),
+                &mut arena,
+                df.schema(),
+                &mut ExpressionConversionState::new(false),
+            )?;
+
+            let mut ac = phys.evaluate_on_groups(&df, &groups, &ExecutionState::new())?;
+            let out = ac.aggregated();
+            let expected = Series::new(
+                "x".into(),
+                [
+                    Series::new("".into(), [2, 3]),
+                    Series::new("".into(), [5, 4]),
+                ],
+            );
+            assert!(out.as_materialized_series().equals(&expected));
+        }
+        Ok(())
     }
 }

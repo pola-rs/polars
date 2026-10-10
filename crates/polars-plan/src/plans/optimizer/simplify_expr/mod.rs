@@ -1,10 +1,12 @@
 mod simplify_functions;
+mod sort_lowering;
 
 use num_traits::Zero;
 use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
+use sort_lowering::lower_sort_reads;
 mod arity;
 
 use crate::plans::*;
@@ -552,7 +554,10 @@ fn string_addition_to_linear_concat(
     }
 }
 
-pub struct SimplifyExprRule {}
+pub struct SimplifyExprRule {
+    /// Rewrite expressions that only read the first or last rows of a sort.
+    pub lower_sorts: bool,
+}
 
 impl OptimizationRule for SimplifyExprRule {
     #[allow(clippy::float_cmp)]
@@ -563,6 +568,12 @@ impl OptimizationRule for SimplifyExprRule {
         schema: &Schema,
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
+        if self.lower_sorts {
+            if let Some(out) = lower_sort_reads(expr_node, expr_arena, schema) {
+                return Ok(Some(out));
+            }
+        }
+
         let expr = expr_arena.get(expr_node);
 
         if let AExpr::BinaryExpr { left, op, right } = expr {

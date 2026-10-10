@@ -433,8 +433,13 @@ impl PhysicalExpr for AggMinMaxByExpr {
     }
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let input = self.input.evaluate(df, state)?;
-        let by = self.by.evaluate(df, state)?;
+        let mut input = self.input.evaluate(df, state)?;
+        let mut by = self.by.evaluate(df, state)?;
+        if by.len() == 1 && self.by.is_scalar() {
+            by = by.new_from_index(0, input.len());
+        } else if input.len() == 1 && self.input.is_scalar() {
+            input = input.new_from_index(0, by.len());
+        }
         let name = if self.is_max_by { "max_by" } else { "min_by" };
         polars_ensure!(
             input.len() == by.len(),
@@ -462,12 +467,21 @@ impl PhysicalExpr for AggMinMaxByExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let ac = self.input.evaluate_on_groups(df, groups, state)?;
-        let ac_by = self.by.evaluate_on_groups(df, groups, state)?;
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let mut ac_by = self.by.evaluate_on_groups(df, groups, state)?;
         assert!(ac.groups.len() == ac_by.groups.len());
 
         // Don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
+
+        ac.set_groups_for_undefined_agg_states();
+        ac_by.set_groups_for_undefined_agg_states();
+        if self.input.is_scalar() && ac.broadcast_unit_groups_to(&mut ac_by) {
+            ac.normalize_values();
+        }
+        if self.by.is_scalar() && ac_by.broadcast_unit_groups_to(&mut ac) {
+            ac_by.normalize_values();
+        }
 
         let (input_col, input_groups) = ac.get_final_aggregation();
         let (by_col, by_groups) = ac_by.get_final_aggregation();
@@ -479,6 +493,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
             overlapping,
             monotonic,
         } = by_groups.as_ref().as_ref()
+            && input_groups.is_same(&by_groups)
         {
             let by_phys = by_col.as_materialized_series().to_physical_repr();
             if by_phys.dtype().is_primitive_numeric()
@@ -500,6 +515,8 @@ impl PhysicalExpr for AggMinMaxByExpr {
             let encoded =
                 _get_rows_encoded_ca(by_col.name().clone(), &[by_col], &[false], &[false], true)?;
             encoded.cast(&DataType::Binary)?.into_column()
+        } else if by_col.dtype() == &DataType::BinaryOffset {
+            by_col.cast(&DataType::Binary)?
         } else {
             by_col
         };
