@@ -670,7 +670,11 @@ def test_merge_join_after_order_maintaining_join(
     )
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "merge-join" in dot
-    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+    out = q.collect(engine="streaming")
+    expected = q.collect(engine="in-memory")
+    # Several matches of one row may come in any order.
+    assert_series_equal(out["key"], expected["key"])
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 _SORTED_LF = pl.LazyFrame({"a": [0, 1]}).set_sorted("a")
