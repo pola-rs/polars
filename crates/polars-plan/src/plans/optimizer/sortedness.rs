@@ -4,6 +4,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
+use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -685,16 +686,23 @@ pub fn aexpr_sortedness(
         AExpr::Cast {
             expr,
             dtype,
-            options: CastOptions::Strict,
-        } if dtype.is_integer() => {
+            options,
+        } if dtype.is_primitive_numeric() => {
             let expr = arena.get(*expr);
             let expr_sortedness =
                 aexpr_sortedness(expr, arena, schema, input_sorted, keep_distinct)?;
             let input_dtype = expr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?;
-            if !input_dtype.is_integer() {
-                return None;
-            }
-            Some(expr_sortedness)
+            // A strict integer cast raises instead of changing a value, and a widening cast keeps
+            // all values.
+            let keeps_values = match options {
+                CastOptions::Strict if dtype.is_integer() && input_dtype.is_integer() => true,
+                _ => {
+                    &input_dtype == dtype
+                        || get_numeric_upcast_supertype_lossless(&input_dtype, dtype).as_ref()
+                            == Some(dtype)
+                },
+            };
+            keeps_values.then_some(expr_sortedness)
         },
         // A cast to a wider Decimal keeps all values, so it can't fail or add nulls.
         #[cfg(feature = "dtype-decimal")]
