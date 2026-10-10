@@ -39,6 +39,39 @@ fn write_csv() {
 }
 
 #[test]
+fn write_csv_decimal_comma_scientific_regression() {
+    // Regression test for #29641: with float_scientific + decimal_comma the
+    // serializer's scratch buffer must be cleared for every item, otherwise each
+    // value after the first is appended to the previous one (silently
+    // corrupting the output by concatenating rows without separators).
+    let mut df =
+        DataFrame::new_infer_height(vec![Column::new("a".into(), [1.5f64, 2.5, 3.5])]).unwrap();
+
+    let mut buf: Vec<u8> = Vec::new();
+    CsvWriter::new(&mut buf)
+        .include_header(false)
+        .with_float_scientific(Some(true))
+        .with_decimal_comma(true)
+        .with_separator(b';')
+        .finish(&mut df)
+        .expect("csv written");
+    let csv = std::str::from_utf8(&buf).unwrap();
+    assert_eq!("1,5e0\n2,5e0\n3,5e0\n", csv);
+
+    // Guard the non-scientific decimal_comma path as well. Use ';' as the
+    // separator so the decimal-comma output (e.g. "1,5") is not quoted.
+    buf.clear();
+    CsvWriter::new(&mut buf)
+        .include_header(false)
+        .with_separator(b';')
+        .with_decimal_comma(true)
+        .finish(&mut df)
+        .expect("csv written");
+    let csv = std::str::from_utf8(&buf).unwrap();
+    assert_eq!("1,5\n2,5\n3,5\n", csv);
+}
+
+#[test]
 #[cfg(feature = "timezones")]
 fn write_dates() {
     use chrono;
