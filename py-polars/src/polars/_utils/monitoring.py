@@ -32,6 +32,6 @@ def activate_monitoring() -> None:
         "polars_cloud",
         err_prefix="query monitoring requires the",
         install_message=(
-            "Please install using the command `pip install 'polars-cloud>=0.11.0'`."
+            "Please install using the command `pip install 'polars-cloud>=0.13.0'`."
         ),
     ).authenticate()

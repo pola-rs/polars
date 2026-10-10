@@ -28,9 +28,9 @@ pub struct CloudStreamingMetricsHandle {
 #[pymethods]
 impl CloudStreamingMetricsHandle {
     fn snapshot_query_metrics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        let rows = self.metrics.snapshot();
-        let bytes =
-            rmp_serde::to_vec_named(&rows).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let snapshot = self.metrics.snapshot();
+        let bytes = rmp_serde::to_vec_named(&snapshot)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(PyBytes::new(py, &bytes))
     }
 }
@@ -151,8 +151,8 @@ pub fn set_query_monitoring(
 
     let module = py.import(POLARS_CLOUD_PACKAGE_NAME).map_err(|e| {
         PyRuntimeError::new_err(format!(
-            "query monitoring requires the `polars_cloud>=0.11.0` package, which could not be imported. \
-             Install it into this environment (e.g. `pip install 'polars-cloud>=0.11.0'`). ({e})",
+            "query monitoring requires the `polars_cloud>=0.13.0` package, which could not be imported. \
+             Install it into this environment (e.g. `pip install 'polars-cloud>=0.13.0'`). ({e})",
         ))
     })?;
     let cls = module

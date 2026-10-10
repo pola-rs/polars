@@ -648,7 +648,7 @@ impl PolarsObjectStore {
 
         metrics.add_bytes_requested(n as u64);
 
-        let io_session = metrics.start_io_session();
+        let io_session = metrics.start_rx_session();
 
         let out = self
             .exec_with_rebuild_retry_on_err(|s| async move {
