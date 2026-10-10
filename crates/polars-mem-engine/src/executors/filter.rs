@@ -91,6 +91,35 @@ impl FilterExec {
         Ok(accumulate_dataframes_vertical_unchecked(df))
     }
 
+    fn execute_vertical_mask(
+        &mut self,
+        df: DataFrame,
+        state: &ExecutionState,
+        n_partitions: usize,
+    ) -> PolarsResult<DataFrame> {
+        let chunks = df.clone().split_chunks_by_n(n_partitions, true);
+        let masks = RAYON.install(|| {
+            chunks
+                .par_iter()
+                .map(|chunk| {
+                    let c = self.predicate.evaluate(chunk, state)?;
+                    let mask = column_to_mask(&c, chunk.height())?.into_owned();
+                    if mask.len() == chunk.height() {
+                        Ok(mask)
+                    } else {
+                        Ok(mask.new_from_index(0, chunk.height()))
+                    }
+                })
+                .collect::<PolarsResult<Vec<BooleanChunked>>>()
+        })?;
+        let mut masks = masks.into_iter();
+        let mut mask = masks.next().unwrap();
+        for m in masks {
+            mask.append(&m)?;
+        }
+        df.filter(&mask.rechunk())
+    }
+
     fn execute_impl(
         &mut self,
         mut df: DataFrame,
@@ -105,8 +134,7 @@ impl FilterExec {
             } else if df.width() < n_partitions {
                 self.execute_hor(df, state)
             } else {
-                let chunks = df.split_chunks_by_n(n_partitions, true);
-                self.execute_chunks(chunks, state)
+                self.execute_vertical_mask(df, state, n_partitions)
             }
         } else {
             self.execute_hor(df, state)
