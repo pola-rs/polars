@@ -683,58 +683,38 @@ impl SQLExprVisitor<'_> {
     ///   "dt >= '2024-04-30'"
     ///   "dt = '2077-10-10'::date"
     ///   "dtm::date = '2077-10-10'
-    fn convert_temporal_strings(&mut self, left: &Expr, right: &Expr) -> Expr {
-        if let (Some(name), Some(s), expr_dtype) = match (left, right) {
-            // identify "col <op> string" expressions
-            (Expr::Column(name), Expr::Literal(lv)) if lv.extract_str().is_some() => {
-                (Some(name.clone()), Some(lv.extract_str().unwrap()), None)
-            },
-            // identify "CAST(expr AS type) <op> string" and/or "expr::type <op> string" expressions
-            (Expr::Cast { expr, dtype, .. }, Expr::Literal(lv)) if lv.extract_str().is_some() => {
-                let s = lv.extract_str().unwrap();
-                match &**expr {
-                    Expr::Column(name) => (Some(name.clone()), Some(s), Some(dtype)),
-                    _ => (None, Some(s), Some(dtype)),
-                }
-            },
-            _ => (None, None, None),
-        } {
-            if expr_dtype.is_none() && self.active_schema.is_none() {
-                right.clone()
-            } else {
-                let left_dtype = expr_dtype.map_or_else(
-                    || {
-                        self.active_schema
-                            .as_ref()
-                            .and_then(|schema| schema.get(&name))
-                    },
-                    |dt| dt.as_literal(),
-                );
-                let parsed = match left_dtype {
-                    Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
-                    Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
-                    Some(dtype @ DataType::Datetime(_, _))
-                        if is_iso_datetime(s) || is_iso_date(s) =>
-                    {
-                        let s = if s.len() == 10 {
-                            // handle upcast from ISO date string (10 chars) to datetime
-                            format!("{s}T00:00:00")
-                        } else {
-                            s.replacen(' ', "T", 1)
-                        };
-                        Some((s, dtype))
-                    },
-                    _ => None,
-                };
-                // A string that does not parse keeps its strict parse, which fails
-                // when the query runs.
-                parsed
-                    .and_then(|(s, dtype)| string_to_temporal(lit(s), dtype, true))
-                    .unwrap_or_else(|| right.clone())
-            }
-        } else {
-            right.clone()
+    fn convert_temporal_strings(&self, left: &Expr, right: &Expr) -> Expr {
+        let Some(s) = (match right {
+            Expr::Literal(lv) => lv.extract_str(),
+            _ => None,
+        }) else {
+            return right.clone();
+        };
+        // Without a schema, only a cast gives the type.
+        let left_dtype = match left {
+            Expr::Cast { dtype, .. } => dtype.as_literal().cloned(),
+            _ => None,
         }
+        .or_else(|| self.expr_dtype(left));
+        let parsed = match left_dtype {
+            Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
+            Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
+            Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
+                let s = if s.len() == 10 {
+                    // handle upcast from ISO date string (10 chars) to datetime
+                    format!("{s}T00:00:00")
+                } else {
+                    s.replacen(' ', "T", 1)
+                };
+                Some((s, dtype))
+            },
+            _ => None,
+        };
+        // A string that does not parse keeps its strict parse, which fails
+        // when the query runs.
+        parsed
+            .and_then(|(s, dtype)| string_to_temporal(lit(s), &dtype, true))
+            .unwrap_or_else(|| right.clone())
     }
 
     fn struct_field_access_expr(
@@ -884,6 +864,7 @@ impl SQLExprVisitor<'_> {
                 | SQLBinaryOperator::LtEq
                 | SQLBinaryOperator::Gt
                 | SQLBinaryOperator::GtEq
+                | SQLBinaryOperator::Minus
         ) {
             lhs = self.convert_temporal_strings(&rhs, &lhs);
         }
@@ -1565,14 +1546,14 @@ impl SQLExprVisitor<'_> {
         let low = self.visit_expr(low)?;
         let high = self.visit_expr(high)?;
 
-        let low = self.convert_temporal_strings(&expr, &low);
-        let high = self.convert_temporal_strings(&expr, &high);
         let (low_op, high_op) = if negated {
             (SQLBinaryOperator::Lt, SQLBinaryOperator::Gt)
         } else {
             (SQLBinaryOperator::GtEq, SQLBinaryOperator::LtEq)
         };
         let bound = |op: &SQLBinaryOperator, value: Expr| {
+            let value = self.convert_temporal_strings(&expr, &value);
+            let expr = self.convert_temporal_strings(&value, &expr);
             self.compare_date_with_timestamp(&expr, op, &value)
                 .or_else(|| compare(expr.clone(), op, value))
                 .unwrap()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any, Literal
 
 import pytest
@@ -229,6 +229,13 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
         ("'1960-01-07' <> dt", [0, 1]),
         ("'22:10:30' != tm", [0, 2]),
         ("'1960-01-07 00:00' = dt::datetime", [2]),
+        ("'2021-01-01' BETWEEN dt AND dtm", [0]),
+        ("'2021-01-01' NOT BETWEEN dt AND dtm", [1, 2]),
+        ("'12:00' BETWEEN tm AND '23:00'", [2]),
+        # string against an expression
+        ("dt + INTERVAL '1 day' = '1960-01-08'", [2]),
+        ("'2006-01-02 01:00' <= dtm + INTERVAL '1 hour'", [0, 2]),
+        ("COALESCE(dt, dt) > '2050-01-01'", [1]),
     ],
 )
 def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None:
@@ -281,6 +288,28 @@ def test_implicit_temporal_string_errors(dtval: str) -> None:
         match=r"(conversion.*failed)|(cannot compare.*string.*temporal)",
     ):
         df.sql(f"SELECT * FROM self WHERE '{dtval}' = dt")
+
+
+def test_implicit_temporal_strings_without_schema() -> None:
+    df = pl.DataFrame({"dtm": [datetime(2000, 1, 1, 12), datetime(2000, 1, 2, 12)]})
+    res = df.select(
+        a=pl.sql_expr("CAST(dtm AS DATE) = '2000-01-01'"),
+        b=pl.sql_expr("'2000-01-01' < dtm::date"),
+    )
+    assert res.rows() == [(True, False), (False, True)]
+
+
+def test_string_literal_minus_temporal() -> None:
+    df = pl.DataFrame(
+        {"dt": [date(2000, 1, 1), None], "dtm": [datetime(1999, 12, 31, 12), None]}
+    )
+    res = df.sql(
+        "SELECT '2000-01-02' - dt AS a, '2000-01-01 00:00:00' - dtm AS b FROM self"
+    )
+    expected = pl.DataFrame(
+        {"a": [timedelta(days=1), None], "b": [timedelta(hours=12), None]}
+    )
+    assert_frame_equal(res, expected)
 
 
 def test_strftime() -> None:
