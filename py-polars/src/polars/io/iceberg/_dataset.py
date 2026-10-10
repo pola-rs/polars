@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars._utils.various import qualified_type_name
+from polars.datatypes import Boolean
 from polars.exceptions import ComputeError
 from polars.io.iceberg._cache import CachingFileIO
 from polars.io.iceberg._plugin import (
@@ -789,6 +790,15 @@ class IcebergScanResolver:
                         len(sources),
                     ),
                     initial_defaults,
+                    {
+                        field_id: pl.Series(
+                            [False] * len(sources), dtype=Boolean
+                        ).scatter(
+                            missing_field_defaults.present_indices.get(field_id, []),
+                            True,
+                        )
+                        for field_id in identity_transformed_values
+                    },
                 ),
                 position_delete_files=position_delete_files,
                 deletion_vectors=deletion_vectors,
@@ -860,7 +870,9 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     source_sizes: list[int]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
-    default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
+    default_values: tuple[
+        dict[int, pl.Series | str], dict[int, pl.Series], dict[int, pl.Series]
+    ]
     position_delete_files: dict[int, list[str]]
     deletion_vectors: dict[int, str]
     min_max_statistics: pl.DataFrame | None

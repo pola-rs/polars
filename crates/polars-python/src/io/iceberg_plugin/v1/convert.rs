@@ -119,6 +119,17 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
         identity_values.insert(id, Err(msg));
     }
 
+    let mut identity_present = PlIndexMap::default();
+    if let Some(present) = file_column("constants_present") {
+        for field in present.struct_()?.fields_as_series() {
+            let id = parse_field_id(field.name())?;
+            field.bool()?;
+            polars_ensure!(field.null_count() == 0, ComputeError:
+                "iceberg plugin files: identity partition presence must not contain nulls");
+            identity_present.insert(id, field.into_column());
+        }
+    }
+
     let mut initial_defaults = PlIndexMap::default();
     if let Some(table_values) = &table_values
         && let Some(defaults) = table_values
@@ -136,6 +147,7 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
     let default_values = IcebergDefaultFieldValues {
         identity_transformed_partition_fields: PlIndexMapHashable(identity_values),
         initial_defaults: PlIndexMapHashable(initial_defaults),
+        identity_partition_fields_present: PlIndexMapHashable(identity_present),
     };
     let default_values =
         (!default_values.is_empty()).then(|| DefaultFieldValues::Iceberg(Arc::new(default_values)));

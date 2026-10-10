@@ -751,7 +751,28 @@ pub fn build_iceberg_default_value(
     )))
 }
 
-pub fn build_iceberg_default_value_impl(
+fn has_non_null_identity_partition_value(
+    provider: IcebergDefaultValueProviderRef,
+    column: &IcebergColumn,
+) -> PolarsResult<bool> {
+    match &column.type_ {
+        IcebergColumnType::Primitive { .. } => {
+            provider.has_non_null_identity_partition_value(column.physical_id)
+        },
+        IcebergColumnType::Struct(fields) => {
+            for field in fields.values() {
+                if has_non_null_identity_partition_value(provider, field)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        },
+        // Partition fields cannot reference fields inside lists or maps.
+        _ => Ok(false),
+    }
+}
+
+fn build_iceberg_default_value_impl(
     iceberg_default_value_provider: IcebergDefaultValueProviderRef,
     target_column: &IcebergColumn,
 ) -> PolarsResult<Option<Column>> {
@@ -763,15 +784,24 @@ pub fn build_iceberg_default_value_impl(
         ICT::Struct(fields) => {
             use polars_core::prelude::StructChunked;
 
-            let mut is_input_passthrough = true;
+            // A child's initial default must not turn a missing null parent into a
+            // non-null struct. Identity partition values are different: they describe
+            // data omitted from the file and may establish a non-null parent.
+            if !iceberg_default_value_provider
+                .has_non_null_initial_default(target_column.physical_id)
+                && !has_non_null_identity_partition_value(
+                    iceberg_default_value_provider,
+                    target_column,
+                )?
+            {
+                return Ok(None);
+            }
 
             let mut field_columns = Vec::with_capacity(fields.len());
 
             for field in fields.values() {
                 let opt_default =
                     build_iceberg_default_value_impl(iceberg_default_value_provider, field)?;
-
-                is_input_passthrough &= opt_default.is_none();
 
                 field_columns.push(if let Some(default) = opt_default {
                     assert_eq!(default.len(), 1);
@@ -781,15 +811,12 @@ pub fn build_iceberg_default_value_impl(
                 });
             }
 
-            if is_input_passthrough {
-                Ok(None)
-            } else {
-                Ok(Some(
-                    StructChunked::from_columns(target_column.name.clone(), 1, &field_columns)?
-                        .into_series()
-                        .into_column(),
-                ))
-            }
+            // An explicit `{}` default is a valid struct even if every child is null.
+            Ok(Some(
+                StructChunked::from_columns(target_column.name.clone(), 1, &field_columns)?
+                    .into_series()
+                    .into_column(),
+            ))
         },
 
         ICT::Primitive { dtype } => Ok(iceberg_default_value_provider

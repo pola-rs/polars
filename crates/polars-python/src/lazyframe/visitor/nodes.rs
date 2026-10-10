@@ -237,6 +237,7 @@ impl PyFileOptions {
                 let IcebergDefaultFieldValues {
                     identity_transformed_partition_fields,
                     initial_defaults,
+                    identity_partition_fields_present,
                 } = default_values.as_ref();
 
                 let partition_fields = PyDict::new(py);
@@ -260,7 +261,15 @@ impl PyFileOptions {
                     )?;
                 }
 
-                ("iceberg", (partition_fields, defaults))
+                let present = PyDict::new(py);
+                for (physical_id, column) in identity_partition_fields_present.iter() {
+                    present.set_item(
+                        *physical_id,
+                        PySeries::new(column.as_materialized_series().clone()),
+                    )?;
+                }
+
+                ("iceberg", (partition_fields, defaults, present))
                     .into_pyobject(py)?
                     .into_any()
                     .unbind()

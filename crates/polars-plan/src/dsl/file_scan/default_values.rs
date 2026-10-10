@@ -22,6 +22,9 @@ pub enum DefaultFieldValues {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct IcebergDefaultFieldValues {
     pub identity_transformed_partition_fields: PlIndexMapHashable<u32, Result<Column, String>>,
+    /// Whether each file's spec contains the identity field. Partition values may already
+    /// contain initial defaults for absent fields, so their validity is not a presence mask.
+    pub identity_partition_fields_present: PlIndexMapHashable<u32, Column>,
     pub initial_defaults: PlIndexMapHashable<u32, Scalar>,
 }
 
@@ -30,6 +33,7 @@ impl IcebergDefaultFieldValues {
         let IcebergDefaultFieldValues {
             identity_transformed_partition_fields,
             initial_defaults,
+            ..
         } = self;
         identity_transformed_partition_fields.is_empty() && initial_defaults.is_empty()
     }

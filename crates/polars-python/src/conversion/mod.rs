@@ -2104,10 +2104,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
 
         Ok(Wrap(match &*default_values_type {
             "iceberg" => {
-                let (identity_transformed_partition_values, initial_defaults): (
-                    Bound<'_, PyDict>,
-                    Bound<'_, PyDict>,
-                ) = ob.extract()?;
+                let (
+                    identity_transformed_partition_values,
+                    initial_defaults,
+                    identity_partition_fields_present,
+                ): (Bound<'_, PyDict>, Bound<'_, PyDict>, Bound<'_, PyDict>) = ob.extract()?;
 
                 let mut converted_identity_transformed_partition_values = PlIndexMap::new();
                 let mut converted_initial_defaults = PlIndexMap::new();
@@ -2143,11 +2144,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
                     converted_initial_defaults.insert(k, v);
                 }
 
+                let mut converted_present = PlIndexMap::new();
+                for (k, v) in identity_partition_fields_present.iter() {
+                    let k: u32 = k.extract()?;
+                    let v = get_series(&v)?;
+                    v.bool().map_err(to_py_err)?;
+                    converted_present.insert(k, v.into_column());
+                }
+
                 DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
                     identity_transformed_partition_fields: PlIndexMapHashable(
                         converted_identity_transformed_partition_values,
                     ),
                     initial_defaults: PlIndexMapHashable(converted_initial_defaults),
+                    identity_partition_fields_present: PlIndexMapHashable(converted_present),
                 }))
             },
 

@@ -21,7 +21,11 @@
 //!   (Parquet position delete file) or `deletion_vector` (Puffin file); a data file has either
 //!   position delete files or a single deletion vector.
 //! * `constants: struct{<field id>: <value>}` (only if non-empty): identity-partition values of
-//!   projected fields, per data file; null if the file has no value.
+//!   projected fields, per data file; coalesced with initial defaults for absent fields.
+//! * `constants_present: struct{<field id>: bool}`: whether each file's partition spec contains
+//!   the identity field, before coalescing with initial defaults. Required for reconstructing
+//!   missing structs if a nested identity field also has an initial default. Older planners
+//!   may omit this column; the host must reject ambiguous struct reconstruction in that case.
 //! * `stats: struct{<col>_nc: u64, <col>_min, <col>_max}` (only if statistics were requested
 //!   and there are filter or statistics columns): per-file null counts and bounds of the filter
 //!   and statistics columns, null if unknown. Struct columns have per-leaf struct statistics.

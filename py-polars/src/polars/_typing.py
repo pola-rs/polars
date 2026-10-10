@@ -209,7 +209,8 @@ ColumnMapping: TypeAlias = tuple[
     Any,
 ]
 DefaultFieldValues: TypeAlias = tuple[
-    Literal["iceberg"], tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
+    Literal["iceberg"],
+    tuple[dict[int, Union["Series", str]], dict[int, "Series"], dict[int, "Series"]],
 ]
 DeletionFiles: TypeAlias = (
     tuple[Literal["iceberg"], tuple[dict[int, list[str]], dict[int, str]]]

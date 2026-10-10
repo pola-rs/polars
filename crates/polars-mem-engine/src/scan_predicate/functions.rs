@@ -696,6 +696,7 @@ where
             let IcebergDefaultFieldValues {
                 identity_transformed_partition_fields,
                 initial_defaults,
+                identity_partition_fields_present,
             } = v.as_ref();
 
             let mut new_identity_transformed_partition_fields =
@@ -734,6 +735,19 @@ where
                     new_identity_transformed_partition_fields,
                 ),
                 initial_defaults: initial_defaults.clone(),
+                identity_partition_fields_present: PlIndexMapHashable(
+                    identity_partition_fields_present
+                        .iter()
+                        .map(|(id, present)| {
+                            // Keep the presence mask aligned with the remaining scan sources.
+                            let indices: IdxCa = selected_path_indices
+                                .clone()
+                                .map(|i| (i < present.len()).then(|| IdxSize::try_from(i).unwrap()))
+                                .collect();
+                            (*id, present.take(&indices).unwrap())
+                        })
+                        .collect(),
+                ),
             }))
         },
     });

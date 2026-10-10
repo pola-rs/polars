@@ -7010,3 +7010,324 @@ def test_convert_predicate_nanosecond_literal() -> None:
     assert try_convert_pyarrow_predicate(
         "(pa.compute.field('t') < to_py_datetime(2000,'ns'))"
     ) == LessThan("t", "1970-01-01T00:00:00.000002")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize("child_default", [None, 5])
+def test_scan_iceberg_v3_missing_struct_initial_default(
+    tmp_path: Path,
+    engine: EngineType,
+    child_default: int | None,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "s", StructType(NestedField(3, "a", LongType()))),
+            NestedField(
+                4,
+                "ls",
+                ListType(
+                    5,
+                    StructType(NestedField(6, "a", LongType())),
+                    element_required=False,
+                ),
+            ),
+            NestedField(
+                7,
+                "m",
+                MapType(
+                    8,
+                    StringType(),
+                    9,
+                    StructType(NestedField(10, "a", LongType())),
+                    value_required=False,
+                ),
+            ),
+        ),
+    )
+    data = pa.Table.from_pylist(
+        [
+            {"id": 1, "s": None, "ls": None, "m": None},
+            {
+                "id": 2,
+                "s": {"a": 2},
+                "ls": [None, {"a": 2}],
+                "m": [("null", None), ("value", {"a": 2})],
+            },
+            {"id": 3, "s": {"a": None}, "ls": [], "m": []},
+        ],
+        schema=tbl.schema().as_arrow(),
+    )
+    tbl.append(data)
+    # PyIceberg's writer currently replaces null lists/maps with empty ones.
+    # Write the intended values with field IDs intact for this reader test.
+    [task] = tbl.scan().plan_files()
+    data_path = Path(task.file.file_path.removeprefix("file:").removeprefix("//"))
+    pq.write_table(data, data_path)
+
+    # Upgrade the existing snapshot and add a new schema; leave old schema IDs
+    # and data files intact. Parent and child defaults are independent in v3.
+    md_path = Path(tbl.metadata_location.removeprefix("file:").removeprefix("//"))
+    md = json.loads(md_path.read_text())
+    md.update({"format-version": 3, "next-row-id": 0})
+    schema = copy.deepcopy(md["schemas"][-1])
+    schema["schema-id"] += 1
+    next_id = itertools.count(md["last-column-id"] + 1)
+
+    def field(name: str, dtype: Any, default: Any) -> dict[str, Any]:
+        out = {
+            "id": next(next_id),
+            "name": name,
+            "required": False,
+            "type": dtype,
+            "initial-default": default,
+            "write-default": default,
+        }
+        return out
+
+    def added_struct(name: str) -> dict[str, Any]:
+        # A null nested parent must also suppress a non-null grandchild default.
+        nested = field(
+            "nested",
+            {
+                "type": "struct",
+                "fields": [
+                    field("c", "long", 9),
+                ],
+            },
+            None,
+        )
+        return field(
+            name,
+            {
+                "type": "struct",
+                "fields": [
+                    field("b", "long", child_default),
+                    nested,
+                ],
+            },
+            None,
+        )
+
+    fields = schema["fields"]
+    for container in [
+        fields[1]["type"],
+        fields[2]["type"]["element"],
+        fields[3]["type"]["value"],
+    ]:
+        container["fields"].extend(
+            [
+                field("b", "long", child_default),
+                added_struct("added"),
+            ]
+        )
+    fields.append(added_struct("missing"))
+    md["schemas"].append(schema)
+    md["current-schema-id"] = schema["schema-id"]
+    md["last-column-id"] = next(next_id) - 1
+    evolved_path = tmp_path / f"{uuid.uuid4()}.metadata.json"
+    evolved_path.write_text(json.dumps(md))
+    tbl = StaticTable.from_metadata(str(evolved_path))
+
+    default = None
+    populated = {"a": 2, "b": child_default, "added": default}
+    expect = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "s": [None, populated, {"a": None, "b": child_default, "added": default}],
+            "ls": [None, [None, populated], []],
+            "m": [None, {"null": None, "value": populated}, {}],
+            "missing": [default, default, default],
+        },
+        schema=pl.Schema(tbl.schema().as_arrow()),
+    )
+    lf = pl.scan_iceberg(tbl)
+    assert_frame_equal(lf.collect(engine=engine), expect)
+    assert_frame_equal(
+        lf.select("missing").collect(engine=engine), expect.select("missing")
+    )
+    for predicate in [
+        pl.col("missing").is_null(),
+        pl.col("missing").struct.field("b") == 5,
+        pl.col("s").struct.field("added").is_null(),
+        pl.col("s").struct.field("b") == 5,
+        pl.col("id") == 2,
+    ]:
+        assert_frame_equal(
+            lf.filter(predicate).collect(engine=engine), expect.filter(predicate)
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_scan_iceberg_missing_struct_default_partition_evolution(
+    tmp_path: Path,
+    engine: EngineType,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "s", StructType(NestedField(3, "b", LongType()))),
+        ),
+    )
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"id": 1, "s": None}],
+            schema=tbl.schema().as_arrow(),
+        )
+    )
+    with tbl.update_spec() as update:
+        update.add_identity("s.b")
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"id": 2, "s": {"b": 5}}, {"id": 3, "s": None}],
+            schema=tbl.schema().as_arrow(),
+        )
+    )
+    with tbl.update_spec() as update:
+        update.remove_field("s.b")
+    tbl.append(
+        pa.Table.from_pylist(
+            [{"id": 4, "s": None}],
+            schema=tbl.schema().as_arrow(),
+        )
+    )
+
+    # Omit partition fields as in a metadata-only Hive migration. Only the
+    # non-null identity partition value establishes a non-null missing parent.
+    for task in tbl.scan().plan_files():
+        path = Path(task.file.file_path.removeprefix("file:").removeprefix("//"))
+        pq.write_table(pq.read_table(path, columns=["id"]), path)
+
+    md_path = Path(tbl.metadata_location.removeprefix("file:").removeprefix("//"))
+    md = json.loads(md_path.read_text())
+    md.update({"format-version": 3, "next-row-id": 0})
+    schema = copy.deepcopy(md["schemas"][-1])
+    schema["schema-id"] += 1
+    schema["fields"][1]["type"]["fields"].append(
+        {
+            "id": 4,
+            "name": "d",
+            "required": False,
+            "type": "long",
+            "initial-default": 5,
+            "write-default": 5,
+        }
+    )
+    md["schemas"].append(schema)
+    md["current-schema-id"] = schema["schema-id"]
+    md["last-column-id"] = 4
+    # A newly added identity field has no partition value in any existing file.
+    # Its coalesced initial default must not establish a non-null parent.
+    spec_id = max(spec["spec-id"] for spec in md["partition-specs"]) + 1
+    partition_id = md["last-partition-id"] + 1
+    md["partition-specs"].append(
+        {
+            "spec-id": spec_id,
+            "fields": [
+                {
+                    "source-id": 4,
+                    "field-id": partition_id,
+                    "name": "s.d",
+                    "transform": "identity",
+                }
+            ],
+        }
+    )
+    md["default-spec-id"] = spec_id
+    md["last-partition-id"] = partition_id
+    evolved_path = tmp_path / f"{uuid.uuid4()}.metadata.json"
+    evolved_path.write_text(json.dumps(md))
+    tbl = StaticTable.from_metadata(str(evolved_path))
+
+    expect = pl.DataFrame(
+        {"id": [1, 2, 3, 4], "s": [None, {"b": 5, "d": 5}, None, None]},
+        schema={"id": pl.Int64, "s": pl.Struct({"b": pl.Int64, "d": pl.Int64})},
+    )
+    lf = pl.scan_iceberg(tbl)
+    assert_frame_equal(lf.collect(engine=engine).sort("id"), expect)
+    # File pruning must gather the presence masks together with the sources.
+    for predicate in [
+        pl.col("id") != 2,
+        pl.col("id").is_in([1, 2]),
+        pl.col("id").is_in([2, 4]),
+        pl.col("s").is_null(),
+        pl.col("s").struct.field("d") == 5,
+    ]:
+        assert_frame_equal(
+            lf.filter(predicate).collect(engine=engine).sort("id"),
+            expect.filter(predicate),
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize("parent_default", [None, {}])
+@pytest.mark.parametrize("child_default", [None, 5])
+@pytest.mark.parametrize("partition_presence", [None, False, True])
+def test_iceberg_native_struct_default(
+    tmp_path: Path,
+    engine: EngineType,
+    parent_default: dict[str, Any] | None,
+    child_default: int | None,
+    partition_presence: bool | None,
+) -> None:
+    # Exercise the native contract directly: PyIceberg cannot yet load the
+    # spec's non-null `{}` struct default, but the reader must distinguish it
+    # from a null struct even when all children default to null.
+    schema = IcebergSchema(NestedField(1, "id", LongType()))
+    path = tmp_path / "data.parquet"
+    pq.write_table(pa.table({"id": [1, 2]}, schema=schema.as_arrow()), path)
+    projected = IcebergSchema(
+        *schema.fields,
+        NestedField(2, "s", StructType(NestedField(3, "b", LongType()))),
+    )
+    dtype = pl.Struct({"b": pl.Int64})
+    lf = pl.scan_parquet(
+        path,
+        schema=pl.Schema(projected.as_arrow()),
+        missing_columns="insert",
+        _column_mapping=("iceberg-column-mapping", projected.as_arrow()),
+        _default_values=(
+            "iceberg",
+            (
+                {3: pl.Series([child_default], dtype=pl.Int64)},
+                {
+                    2: pl.Series([parent_default], dtype=dtype),
+                    3: pl.Series([child_default], dtype=pl.Int64),
+                },
+                {}
+                if partition_presence is None
+                else {3: pl.Series([partition_presence])},
+            ),
+        ),
+    )
+    if (
+        partition_presence is None
+        and parent_default is None
+        and child_default is not None
+    ):
+        # Older plugins blend constants with defaults without retaining their
+        # provenance. Refuse ambiguous parent reconstruction instead of guessing.
+        with pytest.raises(
+            pl.exceptions.ComputeError,
+            match="identity partition presence is unavailable",
+        ):
+            lf.collect(engine=engine)
+        return
+
+    parent_is_valid = parent_default is not None or (
+        partition_presence is True and child_default is not None
+    )
+    default = {"b": child_default} if parent_is_valid else None
+    expect = pl.DataFrame(
+        {"id": [1, 2], "s": [default, default]}, schema={"id": pl.Int64, "s": dtype}
+    )
+    assert_frame_equal(lf.collect(engine=engine), expect)
+    for predicate in [pl.col("s").is_null(), pl.col("s").struct.field("b") == 5]:
+        assert_frame_equal(
+            lf.filter(predicate).collect(engine=engine), expect.filter(predicate)
+        )
