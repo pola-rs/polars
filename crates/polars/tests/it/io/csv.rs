@@ -44,11 +44,8 @@ fn write_csv_decimal_comma_scientific_regression() {
     // serializer's scratch buffer must be cleared for every item, otherwise each
     // value after the first is appended to the previous one (silently
     // corrupting the output by concatenating rows without separators).
-    let df = DataFrame::new_infer_height(vec![Column::new(
-        "a".into(),
-        [1.5f64, 2.5, 3.5],
-    )])
-    .unwrap();
+    let mut df =
+        DataFrame::new_infer_height(vec![Column::new("a".into(), [1.5f64, 2.5, 3.5])]).unwrap();
 
     let mut buf: Vec<u8> = Vec::new();
     CsvWriter::new(&mut buf)
