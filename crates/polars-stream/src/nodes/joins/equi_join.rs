@@ -1091,6 +1091,15 @@ impl ProbeState {
             let mut payload_rechunked = false;
             let mut total_matches = 0;
 
+            // Probing in order gathers the probe rows in order, so they stay sorted.
+            let probe_sorted_flags = params.preserve_order_probe.then(|| {
+                payload
+                    .columns()
+                    .iter()
+                    .map(|c| c.is_sorted_flag())
+                    .collect_vec()
+            });
+
             // Use selectivity estimate to reserve for morsel builders.
             let max_match_per_key_est = (selectivity_estimate * 1.2) as usize + 16;
             let out_est_size = ((selectivity_estimate * 1.2 * df_height as f64) as usize)
@@ -1102,6 +1111,13 @@ impl ProbeState {
                     |build: &mut DataFrameBuilder, probe: &mut DataFrameBuilder| {
                         let mut build_df = build.freeze_reset();
                         let mut probe_df = probe.freeze_reset();
+                        if let Some(flags) = &probe_sorted_flags {
+                            for (c, flag) in
+                                probe_df.columns_mut_retain_schema().iter_mut().zip(flags)
+                            {
+                                c.set_sorted_flag(*flag);
+                            }
+                        }
                         let out_df = if params.left_is_build.unwrap() {
                             build_df.hstack_mut_unchecked(probe_df.columns());
                             build_df

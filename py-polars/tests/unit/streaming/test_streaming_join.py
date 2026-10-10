@@ -880,3 +880,38 @@ def test_merge_join_set_sorted_key() -> None:
     expected = q.collect(engine="in-memory")
     assert expected.height == 4
     assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("how", "maintain_order"),
+    [
+        ("inner", "left"),
+        ("left", "left"),
+        ("left", "left_right"),
+        ("inner", "right"),
+        ("right", "right"),
+        ("right", "right_left"),
+    ],
+)
+def test_join_keeps_sorted_flag_of_ordered_side(
+    how: JoinStrategy, maintain_order: MaintainOrderJoin, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+    sorted_df = pl.DataFrame(
+        {
+            "a": [0, 1, 1, 2, 3, 3, 4, 5, 6, 6],
+            "s": pl.Series(range(10)).set_sorted(),
+        }
+    )
+    other = pl.DataFrame({"a": [6, 1, 3, 1, 5, 0], "c": range(6)})
+    if maintain_order.startswith("left"):
+        left, right = sorted_df, other
+    else:
+        left, right = other, sorted_df
+
+    q = left.lazy().join(right.lazy(), on="a", how=how, maintain_order=maintain_order)
+    out = q.collect(engine="streaming")
+    expected = q.collect(engine="in-memory")
+    assert out["s"].flags["SORTED_ASC"]
+    assert_series_equal(out["s"], expected["s"])
+    assert_frame_equal(out, expected, check_row_order=False)
