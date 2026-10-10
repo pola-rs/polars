@@ -94,7 +94,7 @@ from tests.unit.io.conftest import normalize_path_separator_pl
 from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from pyiceberg.table.snapshots import Snapshot
 
@@ -229,6 +229,33 @@ def new_iceberg_table(
     return catalog.create_table(
         (namespace, name), schema, **create_table_kwargs
     ), catalog
+
+
+def nested_field_by_path(
+    field_path: list[str], field_ids: Iterator[int]
+) -> NestedField:
+    """Build a (possibly nested) `NestedField` wrapping a `LongType` leaf.
+
+    E.g. `["mydict", "age"]` -> a `mydict` struct field containing `age`;
+    `["a", "b", "c"]` -> `a` containing `b` containing `c`.
+    """
+    name = field_path[0]
+    field_id = next(field_ids)
+    if len(field_path) == 1:
+        return NestedField(field_id, name, LongType())
+    return NestedField(
+        field_id,
+        name,
+        StructType(nested_field_by_path(field_path[1:], field_ids)),
+        required=False,
+    )
+
+
+def nested_cell(field_path: list[str], value: Any) -> Any:
+    """The row value for `field_path[0]`'s column matching `nested_field_by_path`."""
+    if len(field_path) == 1:
+        return value
+    return {field_path[1]: nested_cell(field_path[1:], value)}
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -373,6 +400,99 @@ class TestIcebergScanIO:
         assert (
             f"iceberg_table_filter = {Not(IsNaN('value'))!r}" in capfd.readouterr().err
         )
+
+    @pytest.mark.parametrize(
+        "field_path",
+        [
+            ["mydict", "age"],
+            ["a", "b", "c"],  # `struct_field_path` recurses - depth 2+.
+        ],
+    )
+    def test_scan_iceberg_filter_struct_field(
+        self, tmp_path: Path, field_path: list[str]
+    ) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                nested_field_by_path(field_path, itertools.count(2)),
+            ),
+        )
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3],
+                field_path[0]: [
+                    nested_cell(field_path, 17),
+                    nested_cell(field_path, 42),
+                    None,
+                ],
+            }
+        ).write_iceberg(tbl, mode="append")
+
+        expr = pl.col(field_path[0])
+        for name in field_path[1:]:
+            expr = expr.struct.field(name)
+
+        res = pl.scan_iceberg(tbl).filter(expr == 17).select("id")
+        assert res.collect().rows() == [(1,)]
+
+        res = pl.scan_iceberg(tbl).filter(expr.is_null()).select("id")
+        assert res.collect().rows() == [(3,)]
+
+    def test_scan_iceberg_filter_null_struct_with_required_child(
+        self, tmp_path: Path
+    ) -> None:
+        # Null struct, required child: PyIceberg's BoundIsNull would wrongly
+        # prune this, so we must decline to push it down.
+        catalog = SqlCatalog(
+            "default",
+            uri="sqlite:///:memory:",
+            warehouse=format_file_uri_iceberg(tmp_path),
+        )
+        catalog.create_namespace("ns")
+
+        dtype = pa.struct([pa.field("x", pa.int64(), nullable=False)])
+        data = pa.table({"s": pa.array([None], type=dtype)})
+        tbl = catalog.create_table("ns.t", schema=data.schema)
+        tbl.append(data)
+
+        q = pl.scan_iceberg(tbl).filter(pl.col("s").struct.field("x").is_null())
+        expected = [(None,)]
+
+        assert q.collect().rows() == expected
+        assert (
+            q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).rows()
+            == expected
+        )
+
+    def test_scan_iceberg_filter_struct_field_unsanitizable_name(
+        self,
+        tmp_path: Path,
+        plmonkeypatch: PlMonkeyPatch,
+        capfd: pytest.CaptureFixture[str],
+    ) -> None:
+        # Unsafe name must not be pushed down.
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                NestedField(
+                    2,
+                    "mydict",
+                    StructType(NestedField(3, "a!", LongType())),
+                    required=False,
+                ),
+            ),
+        )
+        plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+        capfd.readouterr()
+        pl.scan_iceberg(tbl).filter(pl.col("mydict").struct.field("a!") == 17).select(
+            "id"
+        ).explain()
+        log = capfd.readouterr().err
+        assert "pyarrow_predicate = None" in log
+        assert "iceberg_table_filter = None" in log
 
     @pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
     def test_scan_iceberg_nan_decimal_rejected(
@@ -575,6 +695,17 @@ class TestIcebergExpressions:
         # Not valid Python at all - nothing to convert.
         expr = try_convert_pyarrow_predicate("pa.compute.field('id') >")
         assert expr is None
+
+    def test_convert_nested_struct_field_predicate(self) -> None:
+        expr = try_convert_pyarrow_predicate(
+            "(pa.compute.field('mydict', 'age') == 17)"
+        )
+        assert expr == EqualTo("mydict.age", 17)
+
+        expr = try_convert_pyarrow_predicate(
+            "(pa.compute.field('mydict', 'age')).is_null()"
+        )
+        assert expr == IsNull("mydict.age")
 
     def test_unconvertible_disjunct_is_not_dropped(self) -> None:
         # Unlike a conjunct, dropping one side of an `|` would narrow the filter.
