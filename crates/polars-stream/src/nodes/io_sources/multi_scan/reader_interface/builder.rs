@@ -38,6 +38,13 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
         Ok(false)
     }
 
+    /// Preferred number of readers to initialize concurrently for remote sources, if it differs
+    /// from the default. Scans over many small remote files are latency-bound, readers with cheap
+    /// initialization can prefer a higher number. The multi-scan applies overrides and limits.
+    fn preferred_remote_pre_init(&self) -> Option<usize> {
+        None
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
