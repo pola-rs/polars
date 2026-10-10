@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use ir_graph::{IRNodeEdgeKeys, build_ir_traversal_graph, unpack_edges_mut};
 use polars_core::frame::UniqueKeepStrategy;
-use polars_core::prelude::PlIndexMap;
+use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use slotmap::{SlotMap, new_key_type};
@@ -16,7 +16,7 @@ use crate::plans::simplify_ordering::expr::{
     ExprOrderSimplifier, ObservableOrders, is_order_insensitive_window,
 };
 use crate::plans::simplify_ordering::ir_node_key::IRNodeKey;
-use crate::plans::{IRAggExpr, is_scalar_ae};
+use crate::plans::{ExprIR, IRAggExpr, IRPlanSorted, is_scalar_ae};
 use crate::prelude::{AExpr, IR};
 
 #[derive(Default, Debug, Clone)]
@@ -49,6 +49,13 @@ pub fn simplify_and_fetch_orderings(
     let (mut ir_nodes_stack, mut ir_node_to_edges_map, mut all_edges_map, cache_updater) =
         build_ir_traversal_graph(roots, ir_arena);
 
+    let sortedness = IRPlanSorted::resolve_without_unsliced_sorts(roots, ir_arena, expr_arena);
+    let mergeable_joins: PlIndexSet<Node> = ir_nodes_stack
+        .iter()
+        .copied()
+        .filter(|&node| join_keys_can_merge(node, &sortedness, ir_arena, expr_arena))
+        .collect();
+
     let eos_revisit_cache = &mut PlIndexMap::default();
     let ae_nodes_scratch = &mut ScratchVec::default();
     let mut deleted_idxs = vec![];
@@ -60,6 +67,7 @@ pub fn simplify_and_fetch_orderings(
         expr_arena,
         eos_revisit_cache,
         ae_nodes_scratch,
+        mergeable_joins: &mergeable_joins,
     };
 
     for (i, node) in ir_nodes_stack.iter().copied().enumerate() {
@@ -103,6 +111,8 @@ struct SimplifyIRNodeOrder<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     eos_revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
+    /// Equi joins whose inputs are both sorted on the keys in the same way.
+    mergeable_joins: &'a PlIndexSet<Node>,
 }
 
 impl SimplifyIRNodeOrder<'_> {
@@ -368,6 +378,8 @@ impl SimplifyIRNodeOrder<'_> {
             } => {
                 use polars_defs::join::JoinType;
 
+                let keys_can_merge = self.mergeable_joins.contains(&current_ir_node);
+
                 let ([in_edge_lhs, in_edge_rhs], [out_edge]) = unpack_edges!(3);
 
                 let ae_nodes_scratch = self.ae_nodes_scratch.get();
@@ -375,14 +387,17 @@ impl SimplifyIRNodeOrder<'_> {
                 let mut eos = expr_order_simplifier!();
                 ae_nodes_scratch.extend(options.options.left_on().map(|eir| eir.node()));
                 let left_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
-                // Sortedness hints on the keys pin the input order.
-                let left_keys_pin_order = eos.internally_observed_orders().contains(O::COLUMN);
+                // Sortedness hints on the keys pin the input order, and so do inputs that are
+                // both sorted on the keys, as those can be merged.
+                let left_keys_pin_order =
+                    keys_can_merge || eos.internally_observed_orders().contains(O::COLUMN);
 
                 ae_nodes_scratch.clear();
                 let mut eos = expr_order_simplifier!();
                 ae_nodes_scratch.extend(options.options.right_on().map(|eir| eir.node()));
                 let right_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
-                let right_keys_pin_order = eos.internally_observed_orders().contains(O::COLUMN);
+                let right_keys_pin_order =
+                    keys_can_merge || eos.internally_observed_orders().contains(O::COLUMN);
 
                 // Join keys should be elementwise.
                 assert!(!(left_keys_observable | right_keys_observable).contains(O::INDEPENDENT));
@@ -659,4 +674,37 @@ impl SimplifyIRNodeOrder<'_> {
 
         true
     }
+}
+
+/// Is this an equi join whose inputs are both sorted on their keys in the same way?
+fn join_keys_can_merge(
+    node: Node,
+    sortedness: &IRPlanSorted,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let IR::Join {
+        input_left,
+        input_right,
+        options,
+        ..
+    } = ir_arena.get(node)
+    else {
+        return false;
+    };
+    if !options.args.how.is_equi() {
+        return false;
+    }
+    let (left_on, right_on) = options.options.key_vecs();
+    let keys_sorted = |input: Node, on: &[ExprIR]| {
+        let schema = ir_arena.get(input).schema(ir_arena);
+        sortedness.are_keys_sorted_any(input, on, expr_arena, &schema)
+    };
+    let Some(left_sorted) = keys_sorted(*input_left, &left_on) else {
+        return false;
+    };
+    left_sorted
+        .first()
+        .is_some_and(|s| s.descending.is_some() && s.nulls_last.is_some())
+        && keys_sorted(*input_right, &right_on) == Some(left_sorted)
 }

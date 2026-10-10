@@ -15,12 +15,14 @@ use serde::{Deserialize, Serialize};
 use crate::dsl::Operator;
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::plans::IRStringFunction;
+use crate::plans::schema::join_right_output_names;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
 #[cfg(feature = "round_series")]
 use crate::plans::{DynLiteralValue, LiteralValue};
+use crate::prelude::{JoinType, MaintainOrderJoin};
 
 /// Container for sortedness state at each stage in an IR plan.
 #[derive(Debug)]
@@ -28,20 +30,42 @@ pub struct IRPlanSorted(PlIndexMap<Node, IRSorted>);
 
 impl IRPlanSorted {
     pub fn resolve(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
+        Self::resolve_impl(&[root], ir_arena, expr_arena, false)
+    }
+
+    /// Like [`IRPlanSorted::resolve`], but a sort without a slice gives no sortedness, as it
+    /// is removed when its output order is not observed.
+    pub fn resolve_without_unsliced_sorts(
+        roots: &[Node],
+        ir_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+    ) -> Self {
+        Self::resolve_impl(roots, ir_arena, expr_arena, true)
+    }
+
+    fn resolve_impl(
+        roots: &[Node],
+        ir_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+        skip_unsliced_sorts: bool,
+    ) -> Self {
         let mut seen = PlIndexSet::default();
         let mut sortedness = PlIndexMap::default();
         let mut cache_proxy = PlIndexMap::default();
         let mut names_set_scratch = ScratchIndexSet::default();
-        is_sorted_rec(
-            root,
-            ir_arena,
-            expr_arena,
-            &mut seen,
-            &mut sortedness,
-            &mut cache_proxy,
-            &mut names_set_scratch,
-            true,
-        );
+        for &root in roots {
+            is_sorted_rec(
+                root,
+                ir_arena,
+                expr_arena,
+                &mut seen,
+                &mut sortedness,
+                &mut cache_proxy,
+                &mut names_set_scratch,
+                true,
+                skip_unsliced_sorts,
+            );
+        }
         Self(sortedness)
     }
 
@@ -188,6 +212,7 @@ pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) ->
         &mut cache_proxy,
         &mut names_set_scratch,
         false,
+        false,
     )
 }
 
@@ -202,6 +227,7 @@ fn is_sorted_rec(
     cache_proxy: &mut PlIndexMap<UniqueId, Option<IRSorted>>,
     names_set_scratch: &mut ScratchIndexSet<PlSmallStr>,
     create_full_map: bool,
+    skip_unsliced_sorts: bool,
 ) -> Option<IRSorted> {
     if let Some(s) = sortedness.get(&root) {
         return Some(s.clone());
@@ -221,6 +247,7 @@ fn is_sorted_rec(
                 cache_proxy,
                 names_set_scratch,
                 create_full_map,
+                skip_unsliced_sorts,
             )
         }};
     }
@@ -389,6 +416,7 @@ fn is_sorted_rec(
                 Some(i) => Some(IRSorted(input_sorted.0.iter().take(i).cloned().collect())),
             }
         },
+        IR::Sort { slice: None, .. } if skip_unsliced_sorts => None,
         IR::Sort {
             input: _,
             by_column,
@@ -496,7 +524,56 @@ fn is_sorted_rec(
         },
 
         IR::GroupBy { .. } => None,
-        IR::Join { .. } => None,
+        IR::Join {
+            input_left,
+            input_right,
+            schema,
+            options,
+        } => {
+            use MaintainOrderJoin as MO;
+            let args = &options.args;
+            let keeps_left_order = matches!(args.maintain_order, MO::Left | MO::LeftRight);
+            let keeps_right_order = matches!(args.maintain_order, MO::Right | MO::RightLeft);
+            // The output rows follow the rows of one side, each one kept zero or more times
+            // in a row, so the sorted columns of that side stay sorted.
+            match &args.how {
+                JoinType::Inner | JoinType::Left if keeps_left_order => rec!(*input_left),
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi | JoinType::Anti if keeps_left_order => rec!(*input_left),
+                JoinType::Inner | JoinType::Right if keeps_right_order => {
+                    let (input_left, input_right) = (*input_left, *input_right);
+                    let right_sorted = rec!(input_right)?;
+                    let right_schema = ir_arena.get(input_right).schema(ir_arena);
+                    let output_names =
+                        if matches!(args.how, JoinType::Right) && args.should_coalesce() {
+                            // All right columns come last, in their input order.
+                            schema
+                                .iter_names()
+                                .skip(schema.len() - right_schema.len())
+                                .cloned()
+                                .map(Some)
+                                .collect_vec()
+                        } else {
+                            let left_schema = ir_arena.get(input_left).schema(ir_arena);
+                            join_right_output_names(&left_schema, &right_schema, options).ok()?
+                        };
+                    let sorted = right_sorted
+                        .0
+                        .iter()
+                        .map_while(|s| {
+                            let column = output_names[right_schema.index_of(&s.column)?].clone()?;
+                            Some(Sorted {
+                                column,
+                                descending: s.descending,
+                                nulls_last: s.nulls_last,
+                            })
+                        })
+                        .collect_vec();
+                    (!sorted.is_empty()).then(|| IRSorted(sorted.into()))
+                },
+                _ => None,
+            }
+        },
         IR::Gather {
             input,
             idxs,
