@@ -211,10 +211,18 @@ impl MultiScanState {
 
         config.num_pipelines.store(num_pipelines);
 
+        let preferred_remote_pre_init = config
+            .sources
+            .first()
+            .is_some_and(|x| x.run_async())
+            .then(|| config.file_reader_builder.preferred_remote_pre_init())
+            .flatten();
+
         config.n_readers_pre_init.store(calc_n_readers_pre_init(
             num_pipelines,
             config.sources.len(),
             config.pre_slice.as_ref(),
+            preferred_remote_pre_init,
         ));
 
         config.max_concurrent_scans.store(calc_max_concurrent_scans(

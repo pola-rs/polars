@@ -15,6 +15,9 @@ pub(crate) struct ChunkDataFetcher {
     pub(crate) byte_source: Arc<DynByteSource>,
     pub(crate) file_size: usize,
     pub(crate) chunk_size: usize,
+    /// Already fetched source bytes from offset 0, at most `file_size` long. Sent whole as the
+    /// first chunk, also when longer than `chunk_size`, and fetching continues after it.
+    pub(crate) prefix: Option<Buffer<u8>>,
     pub(crate) prefetch_send: Sender<(
         tokio_handle_ext::AbortOnDropHandle<PolarsResult<Buffer<u8>>>,
         OwnedSemaphorePermit,
@@ -28,6 +31,9 @@ impl ChunkDataFetcher {
         let mut byte_offset = 0;
         let file_size = self.file_size;
 
+        let mut prefix = self.prefix.take().filter(|x| !x.is_empty());
+        debug_assert!(prefix.as_ref().is_none_or(|x| x.len() <= file_size));
+
         while byte_offset < file_size {
             let fetch_permit = self
                 .prefetch_semaphore
@@ -36,7 +42,8 @@ impl ChunkDataFetcher {
                 .await
                 .unwrap();
 
-            let chunk_size = self.chunk_size;
+            let prefix = prefix.take();
+            let chunk_size = prefix.as_ref().map_or(self.chunk_size, |x| x.len());
             let current_byte_source = self.byte_source.clone();
             let memory_prefetch_func = self.memory_prefetch_func;
 
@@ -44,6 +51,10 @@ impl ChunkDataFetcher {
             let range_len = range.len();
 
             let handle = ASYNC.spawn(async move {
+                if let Some(prefix) = prefix {
+                    return Ok(prefix);
+                }
+
                 let fetched_bytes =
                     if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
                         let slice = mem_slice.0.as_ref();

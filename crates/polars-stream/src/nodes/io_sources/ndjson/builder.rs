@@ -91,6 +91,10 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
         self.io_metrics.set(io_metrics).ok().unwrap()
     }
 
+    fn preferred_remote_pre_init(&self) -> Option<usize> {
+        Some(super::CLOUD_PRE_INIT_LIMIT)
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
