@@ -58,10 +58,12 @@ fn write_csv_decimal_comma_scientific_regression() {
     let csv = std::str::from_utf8(&buf).unwrap();
     assert_eq!("1,5e0\n2,5e0\n3,5e0\n", csv);
 
-    // Guard the non-scientific decimal_comma path as well.
+    // Guard the non-scientific decimal_comma path as well. Use ';' as the
+    // separator so the decimal-comma output (e.g. "1,5") is not quoted.
     buf.clear();
     CsvWriter::new(&mut buf)
         .include_header(false)
+        .with_separator(b';')
         .with_decimal_comma(true)
         .finish(&mut df)
         .expect("csv written");
