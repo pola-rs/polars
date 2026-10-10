@@ -553,7 +553,7 @@ fn resolve_join_where(
         let dt_out = ae.to_dtype(&ToFieldContext::new(arena, &schema_merged))?;
         polars_ensure!(
             dt_out == DataType::Boolean,
-            ComputeError: "'join_where' predicates must resolve to boolean"
+            ComputeError: "'join_where' predicates must resolve to boolean, got {}", dt_out
         );
 
         ensure_lossless_binary_comparisons(

@@ -185,7 +185,7 @@ fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> 
     if let DataType::Array(inner, _) = datatype {
         Ok(DataType::List(inner.clone()))
     } else {
-        polars_bail!(ComputeError: "expected array dtype")
+        polars_bail!(ComputeError: "expected array dtype, got {}", datatype)
     }
 }
 
