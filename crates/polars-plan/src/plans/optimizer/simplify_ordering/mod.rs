@@ -16,7 +16,7 @@ use crate::plans::simplify_ordering::expr::{
     ExprOrderSimplifier, ObservableOrders, is_order_insensitive_window,
 };
 use crate::plans::simplify_ordering::ir_node_key::IRNodeKey;
-use crate::plans::{ExprIR, IRAggExpr, IRPlanSorted, is_scalar_ae};
+use crate::plans::{ExprIR, IRAggExpr, IRPlanSorted, is_scalar_ae, join_keys_sorted_together};
 use crate::prelude::{AExpr, IR};
 
 #[derive(Default, Debug, Clone)]
@@ -49,8 +49,12 @@ pub fn simplify_and_fetch_orderings(
     let (mut ir_nodes_stack, mut ir_node_to_edges_map, mut all_edges_map, cache_updater) =
         build_ir_traversal_graph(roots, ir_arena);
 
+    // Joins whose inputs are sorted on the keys in the plan as it is before this pass. Their
+    // input order is kept so lowering can pick a merge join. The set can go stale as this pass
+    // changes the plan, which is fine: it only keeps more order than needed, and lowering
+    // checks sortedness again on the final plan before it picks a merge join.
     let sortedness = IRPlanSorted::resolve_without_unsliced_sorts(roots, ir_arena, expr_arena);
-    let mergeable_joins: PlIndexSet<Node> = ir_nodes_stack
+    let merge_join_candidates: PlIndexSet<Node> = ir_nodes_stack
         .iter()
         .copied()
         .filter(|&node| join_keys_can_merge(node, &sortedness, ir_arena, expr_arena))
@@ -67,7 +71,7 @@ pub fn simplify_and_fetch_orderings(
         expr_arena,
         eos_revisit_cache,
         ae_nodes_scratch,
-        mergeable_joins: &mergeable_joins,
+        merge_join_candidates: &merge_join_candidates,
     };
 
     for (i, node) in ir_nodes_stack.iter().copied().enumerate() {
@@ -111,8 +115,7 @@ struct SimplifyIRNodeOrder<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     eos_revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
-    /// Equi joins whose inputs are both sorted on the keys in the same way.
-    mergeable_joins: &'a PlIndexSet<Node>,
+    merge_join_candidates: &'a PlIndexSet<Node>,
 }
 
 impl SimplifyIRNodeOrder<'_> {
@@ -378,7 +381,7 @@ impl SimplifyIRNodeOrder<'_> {
             } => {
                 use polars_defs::join::JoinType;
 
-                let keys_can_merge = self.mergeable_joins.contains(&current_ir_node);
+                let keys_can_merge = self.merge_join_candidates.contains(&current_ir_node);
 
                 let ([in_edge_lhs, in_edge_rhs], [out_edge]) = unpack_edges!(3);
 
@@ -700,11 +703,8 @@ fn join_keys_can_merge(
         let schema = ir_arena.get(input).schema(ir_arena);
         sortedness.are_keys_sorted_any(input, on, expr_arena, &schema)
     };
-    let Some(left_sorted) = keys_sorted(*input_left, &left_on) else {
-        return false;
-    };
-    left_sorted
-        .first()
-        .is_some_and(|s| s.descending.is_some() && s.nulls_last.is_some())
-        && keys_sorted(*input_right, &right_on) == Some(left_sorted)
+    join_keys_sorted_together(
+        keys_sorted(*input_left, &left_on).as_deref(),
+        keys_sorted(*input_right, &right_on).as_deref(),
+    )
 }

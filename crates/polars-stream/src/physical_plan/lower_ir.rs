@@ -1331,9 +1331,8 @@ fn lower_ir_inner(
                 expr_arena,
                 &input_right_schema,
             );
-            let join_keys_sorted_together =
-                Option::zip(left_on_sorted.as_ref(), right_on_sorted.as_ref())
-                    .is_some_and(|(ls, rs)| ls == rs);
+            let use_streaming_merge_join = args.how.is_equi()
+                && join_keys_sorted_together(left_on_sorted.as_deref(), right_on_sorted.as_deref());
             let mut key_descending = left_on_sorted
                 .as_ref()
                 .and_then(|v| v.first())
@@ -1342,10 +1341,6 @@ fn lower_ir_inner(
                 .as_ref()
                 .and_then(|v| v.first())
                 .and_then(|s| s.nulls_last);
-            let use_streaming_merge_join = args.how.is_equi()
-                && join_keys_sorted_together
-                && key_descending.is_some()
-                && key_nulls_last.is_some();
 
             #[cfg(feature = "asof_join")]
             let (mut by_descending, mut by_nulls_last) = (Default::default(), Default::default());

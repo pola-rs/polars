@@ -676,19 +676,39 @@ def test_merge_join_after_order_maintaining_join(
     )
 
 
-def test_no_merge_join_after_unordered_or_full_join() -> None:
-    sorted_lf = pl.LazyFrame({"a": [0, 1]}).set_sorted("a")
-    other = pl.LazyFrame({"a": [1, 0, 2]})
-    for lf in [
-        sorted_lf.join(other, on="a", how="left"),
-        sorted_lf.join(other, on="a", how="full", maintain_order="left", coalesce=True),
-        other.join(sorted_lf, on="a", how="inner", maintain_order="left"),
-        # Sorts in front of a join are removed rather than kept for a merge join.
-        other.sort("a").join(other, on="a", how="left", maintain_order="left"),
-    ]:
-        q = lf.join(sorted_lf, on="a", how="left")
-        dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-        assert "merge-join" not in dot
+_SORTED_LF = pl.LazyFrame({"a": [0, 1]}).set_sorted("a")
+_UNSORTED_LF = pl.LazyFrame({"a": [1, 0, 2]})
+
+
+@pytest.mark.parametrize(
+    "lf",
+    [
+        pytest.param(
+            _SORTED_LF.join(_UNSORTED_LF, on="a", how="left"),
+            id="join-without-maintain-order",
+        ),
+        pytest.param(
+            _SORTED_LF.join(
+                _UNSORTED_LF, on="a", how="full", maintain_order="left", coalesce=True
+            ),
+            id="full-join-appends-unmatched-right-rows",
+        ),
+        pytest.param(
+            _UNSORTED_LF.join(_SORTED_LF, on="a", how="inner", maintain_order="left"),
+            id="join-keeps-order-of-unsorted-side",
+        ),
+        pytest.param(
+            _UNSORTED_LF.sort("a").join(
+                _UNSORTED_LF, on="a", how="left", maintain_order="left"
+            ),
+            id="unsliced-sort-is-removed",
+        ),
+    ],
+)
+def test_no_merge_join_after_join(lf: pl.LazyFrame) -> None:
+    q = lf.join(_SORTED_LF, on="a", how="left")
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" not in dot
 
 
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
