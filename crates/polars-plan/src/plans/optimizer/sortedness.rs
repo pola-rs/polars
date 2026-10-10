@@ -16,12 +16,14 @@ use serde::{Deserialize, Serialize};
 use crate::dsl::Operator;
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::plans::IRStringFunction;
+use crate::plans::schema::join_right_output_names;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
 #[cfg(feature = "round_series")]
 use crate::plans::{DynLiteralValue, LiteralValue};
+use crate::prelude::{JoinType, MaintainOrderJoin};
 
 /// Container for sortedness state at each stage in an IR plan.
 #[derive(Debug)]
@@ -497,7 +499,46 @@ fn is_sorted_rec(
         },
 
         IR::GroupBy { .. } => None,
-        IR::Join { .. } => None,
+        IR::Join {
+            input_left,
+            input_right,
+            schema: _,
+            options,
+        } => {
+            use MaintainOrderJoin as MO;
+            let args = &options.args;
+            let keeps_left_order = matches!(args.maintain_order, MO::Left | MO::LeftRight);
+            let keeps_right_order = matches!(args.maintain_order, MO::Right | MO::RightLeft);
+            // The output rows follow the rows of one side, each one kept zero or more times
+            // in a row, so the sorted columns of that side stay sorted.
+            match &args.how {
+                JoinType::Inner | JoinType::Left if keeps_left_order => rec!(*input_left),
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi | JoinType::Anti if keeps_left_order => rec!(*input_left),
+                JoinType::Inner | JoinType::Right if keeps_right_order => {
+                    let (input_left, input_right) = (*input_left, *input_right);
+                    let right_sorted = rec!(input_right)?;
+                    let left_schema = ir_arena.get(input_left).schema(ir_arena);
+                    let right_schema = ir_arena.get(input_right).schema(ir_arena);
+                    let output_names =
+                        join_right_output_names(&left_schema, &right_schema, options).ok()?;
+                    let sorted = right_sorted
+                        .0
+                        .iter()
+                        .map_while(|s| {
+                            let column = output_names[right_schema.index_of(&s.column)?].clone()?;
+                            Some(Sorted {
+                                column,
+                                descending: s.descending,
+                                nulls_last: s.nulls_last,
+                            })
+                        })
+                        .collect_vec();
+                    (!sorted.is_empty()).then(|| IRSorted(sorted.into()))
+                },
+                _ => None,
+            }
+        },
         IR::Gather {
             input,
             idxs,
