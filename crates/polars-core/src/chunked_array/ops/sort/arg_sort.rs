@@ -15,6 +15,38 @@ where
         options.multithreaded,
     );
 }
+
+/// Sorts the first `limit` values to the front and returns them. Equal values keep their order, as
+/// in a full sort.
+fn sort_limit_impl<T>(
+    vals: &mut [(IdxSize, T)],
+    limit: usize,
+    options: SortOptions,
+) -> &[(IdxSize, T)]
+where
+    T: TotalOrd + Send + Sync,
+{
+    if limit >= vals.len() {
+        sort_impl(vals, options);
+        return vals;
+    }
+    let cmp = |a: &(IdxSize, T), b: &(IdxSize, T)| {
+        let ord = if options.descending {
+            b.1.tot_cmp(&a.1)
+        } else {
+            a.1.tot_cmp(&b.1)
+        };
+        ord.then(a.0.cmp(&b.0))
+    };
+    let (lower, _el, _upper) = vals.select_nth_unstable_by(limit, cmp);
+    if options.multithreaded {
+        RAYON.install(|| lower.par_sort_unstable_by(cmp));
+    } else {
+        lower.sort_unstable_by(cmp);
+    }
+    lower
+}
+
 // Compute the indexes after reversing a sorted array, maintaining
 // the order of equal elements, in linear time. Faster than sort_impl
 //  as we avoid allocating extra memory.
@@ -136,24 +168,9 @@ where
     }
 
     let vals = if let Some(limit) = options.limit {
-        let limit = limit as usize;
         // Overwrite output len.
-        len = limit;
-        let out = if limit >= vals.len() {
-            vals.as_mut_slice()
-        } else {
-            let (lower, _el, _upper) = if options.descending {
-                vals.as_mut_slice()
-                    .select_nth_unstable_by(limit, |a, b| b.1.tot_cmp(&a.1))
-            } else {
-                vals.as_mut_slice()
-                    .select_nth_unstable_by(limit, |a, b| a.1.tot_cmp(&b.1))
-            };
-            lower
-        };
-
-        sort_impl(out, options);
-        out
+        len = std::cmp::min(limit as usize, len);
+        sort_limit_impl(&mut vals, len, options)
     } else {
         sort_impl(vals.as_mut_slice(), options);
         vals.as_slice()
@@ -172,7 +189,9 @@ where
         idx.extend_from_slice(nulls_idx);
         idx
     } else if options.limit.is_some() {
-        nulls_idx.extend(iter.take(len - nulls_idx.len()));
+        nulls_idx.truncate(len);
+        let n_values = len - nulls_idx.len();
+        nulls_idx.extend(iter.take(n_values));
         nulls_idx
     } else {
         let ptr = nulls_idx.as_ptr() as usize;
@@ -235,21 +254,7 @@ where
     }
 
     let vals = if let Some(limit) = options.limit {
-        let limit = limit as usize;
-        let out = if limit >= vals.len() {
-            vals.as_mut_slice()
-        } else {
-            let (lower, _el, _upper) = if options.descending {
-                vals.as_mut_slice()
-                    .select_nth_unstable_by(limit, |a, b| b.1.tot_cmp(&a.1))
-            } else {
-                vals.as_mut_slice()
-                    .select_nth_unstable_by(limit, |a, b| a.1.tot_cmp(&b.1))
-            };
-            lower
-        };
-        sort_impl(out, options);
-        out
+        sort_limit_impl(&mut vals, limit as usize, options)
     } else {
         sort_impl(vals.as_mut_slice(), options);
         vals.as_slice()

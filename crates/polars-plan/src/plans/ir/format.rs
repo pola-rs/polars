@@ -518,10 +518,11 @@ impl Display for ExprIRDisplay<'_> {
             },
             Sort { expr, options } => {
                 let expr = self.with_root(expr).parenthesize_if_binexpr();
-                if options.descending {
-                    write!(f, "{expr}.sort(desc)")
+                let order = if options.descending { "desc" } else { "asc" };
+                if let Some(limit) = options.limit {
+                    write!(f, "{expr}.sort({order}, limit={limit})")
                 } else {
-                    write!(f, "{expr}.sort(asc)")
+                    write!(f, "{expr}.sort({order})")
                 }
             },
             SortBy {

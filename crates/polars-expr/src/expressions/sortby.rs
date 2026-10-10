@@ -92,6 +92,7 @@ fn sort_by_groups_single_by(
         nulls_last: options.nulls_last,
         // We are already in par iter.
         multithreaded: false,
+        limit: options.limit,
         ..Default::default()
     };
     let new_idx = match indicator {
@@ -176,6 +177,7 @@ fn sort_by_groups_multiple_by(
     nulls_last: &[bool],
     multithreaded: bool,
     maintain_order: bool,
+    limit: Option<IdxSize>,
 ) -> PolarsResult<(IdxSize, IdxVec)> {
     let new_idx = match indicator {
         GroupsIndicator::Idx((_first, idx)) => {
@@ -191,7 +193,7 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
-                limit: None,
+                limit,
             };
 
             let sorted_idx = arg_sort(&groups, options)?;
@@ -209,7 +211,7 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
-                limit: None,
+                limit,
             };
             let sorted_idx = arg_sort(&groups, options)?;
             map_sorted_indices_to_group_slice(&sorted_idx, first)
@@ -239,7 +241,8 @@ impl PhysicalExpr for SortByExpr {
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
-                Ok(s_sort_by.arg_sort(SortOptions::from(&self.sort_options)))
+                let sorted_idx = s_sort_by.arg_sort(SortOptions::from(&self.sort_options));
+                Ok((sorted_idx, s_sort_by.len()))
             };
             RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
@@ -271,16 +274,17 @@ impl PhysicalExpr for SortByExpr {
                     .with_order_descending_multi(descending)
                     .with_nulls_last_multi(nulls_last);
 
-                arg_sort(&s_sort_by, options)
+                Ok((arg_sort(&s_sort_by, options)?, broadcast_length))
             };
             RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         };
-        let (sorted_idx, series) = (sorted_idx?, series?);
+        let ((sorted_idx, by_len), series) = (sorted_idx?, series?);
+        // With a limit, `sorted_idx` can be shorter than `by`.
         polars_ensure!(
-            sorted_idx.len() == series.len(),
+            by_len == series.len(),
             expr = self.expr, ShapeMismatch:
             "`sort_by` produced different length ({}) than the Series that has to be sorted ({})",
-            sorted_idx.len(), series.len()
+            by_len, series.len()
         );
 
         // SAFETY: sorted index are within bounds.
@@ -380,6 +384,7 @@ impl PhysicalExpr for SortByExpr {
                         &SortOptions {
                             descending: descending[0],
                             nulls_last: nulls_last[0],
+                            limit: self.sort_options.limit,
                             ..Default::default()
                         },
                     )
@@ -407,6 +412,7 @@ impl PhysicalExpr for SortByExpr {
                             &nulls_last,
                             self.sort_options.multithreaded,
                             self.sort_options.maintain_order,
+                            self.sort_options.limit,
                         )
                     })
                     .collect::<PolarsResult<_>>()
@@ -439,5 +445,62 @@ impl PhysicalExpr for SortByExpr {
 
     fn is_scalar(&self) -> bool {
         self.input.is_scalar()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_plan::prelude::expr_ir::ExprIR;
+    use polars_plan::prelude::*;
+    use polars_utils::arena::Arena;
+
+    use super::*;
+    use crate::{ExpressionConversionState, create_physical_expr};
+
+    /// A grouped `sort_by` with a limit only outputs the first rows of each group.
+    #[test]
+    fn test_sort_by_on_groups_keeps_limit() -> PolarsResult<()> {
+        let df = df![
+            "g" => [1, 1, 1, 2, 2, 2],
+            "x" => [1, 2, 3, 4, 5, 6],
+            "a" => [3, 1, 2, 2, 1, 3],
+            "b" => [0, 0, 0, 0, 0, 0],
+        ]?;
+        let groups = df.group_by_stable(["g"])?.into_groups();
+
+        for by in [vec!["a"], vec!["a", "b"]] {
+            let mut arena = Arena::new();
+            let x = arena.add(AExpr::Column("x".into()));
+            let by = by
+                .into_iter()
+                .map(|name| arena.add(AExpr::Column(name.into())))
+                .collect();
+            let sort_by = arena.add(AExpr::SortBy {
+                expr: x,
+                by,
+                sort_options: SortMultipleOptions {
+                    limit: Some(2),
+                    ..Default::default()
+                },
+            });
+            let phys = create_physical_expr(
+                &ExprIR::from_node(sort_by, &arena),
+                &mut arena,
+                df.schema(),
+                &mut ExpressionConversionState::new(false),
+            )?;
+
+            let mut ac = phys.evaluate_on_groups(&df, &groups, &ExecutionState::new())?;
+            let out = ac.aggregated();
+            let expected = Series::new(
+                "x".into(),
+                [
+                    Series::new("".into(), [2, 3]),
+                    Series::new("".into(), [5, 4]),
+                ],
+            );
+            assert!(out.as_materialized_series().equals(&expected));
+        }
+        Ok(())
     }
 }

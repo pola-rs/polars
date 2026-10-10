@@ -49,6 +49,11 @@ impl PhysicalExpr for SortExpr {
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.physical_expr.evaluate(df, state)?;
+        if self.options.limit.is_some() {
+            let sorted_idx = series.arg_sort(self.options);
+            // SAFETY: sorted index are within bounds.
+            return Ok(unsafe { series.take_unchecked(&sorted_idx) });
+        }
         series.sort_with(self.options)
     }
 
