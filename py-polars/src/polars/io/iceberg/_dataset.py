@@ -11,7 +11,11 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
-from polars.io.iceberg._cache import CachingFileIO
+from polars.io.iceberg._cache import (
+    describe_metadata_file_cache,
+    get_metadata_file_cache,
+    load_static_table,
+)
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -80,6 +84,20 @@ def _reusable_catalog(
 SerializedTableState: TypeAlias = str | IcebergCatalogTableDescriptor
 
 
+def _load_static_table(
+    metadata_location: str, properties: dict[str, Any]
+) -> pyiceberg.table.Table:
+    table, stats = load_static_table(metadata_location, properties)
+
+    if verbose():
+        eprint(
+            "IcebergTableWrap: metadata file cache: "
+            f"{stats.describe(get_metadata_file_cache())}"
+        )
+
+    return table
+
+
 @dataclass(kw_only=True)
 class IcebergTableWrap:
     table_: NoPickleOption[pyiceberg.table.Table]
@@ -117,11 +135,8 @@ class IcebergTableWrap:
 
                 table = catalog.load_table(self.table_descriptor_.table_identifier)
             else:
-                from pyiceberg.table import StaticTable
-
-                table = StaticTable.from_metadata(
-                    metadata_location=self.table_descriptor_,
-                    properties=self.iceberg_storage_properties or {},
+                table = _load_static_table(
+                    self.table_descriptor_, self.iceberg_storage_properties or {}
                 )
 
             self.table_.set(table)
@@ -584,14 +599,10 @@ class IcebergScanResolver:
                     f"finish path expansion ({elapsed:.3f}s)"
                 )
 
-                if isinstance(scan.io, CachingFileIO):
-                    eprint(
-                        "IcebergScanResolver: to_dataset_scan(): "
-                        "metadata file cache: "
-                        f"hits: {scan.io.stats.hits}, "
-                        f"misses: {scan.io.stats.misses}, "
-                        f"cached bytes: {scan.io.cache.total_bytes}"
-                    )
+                eprint(
+                    "IcebergScanResolver: to_dataset_scan(): "
+                    f"metadata file cache: {describe_metadata_file_cache(scan.io)}"
+                )
 
         if not fallback_reason:
             if verbose:
