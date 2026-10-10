@@ -1,0 +1,6 @@
+﻿polars.Expr.is\_last\_distinct
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.is_last_distinct

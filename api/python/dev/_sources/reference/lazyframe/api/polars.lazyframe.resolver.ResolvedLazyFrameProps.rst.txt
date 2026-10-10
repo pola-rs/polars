@@ -1,0 +1,29 @@
+﻿polars.lazyframe.resolver.ResolvedLazyFrameProps
+================================================
+
+.. currentmodule:: polars.lazyframe.resolver
+
+.. autoclass:: ResolvedLazyFrameProps
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~ResolvedLazyFrameProps.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~ResolvedLazyFrameProps.applied_filters
+      ~ResolvedLazyFrameProps.version_key
+   
+   

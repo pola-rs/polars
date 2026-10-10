@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["deserialize"],"struct":["FileMetaData","ParquetStatistics"],"type":["FileMetaDataRef"]};

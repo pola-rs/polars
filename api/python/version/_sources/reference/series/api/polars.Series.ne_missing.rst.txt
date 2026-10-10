@@ -1,0 +1,6 @@
+﻿polars.Series.ne\_missing
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.ne_missing

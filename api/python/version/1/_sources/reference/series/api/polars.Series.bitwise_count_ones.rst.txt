@@ -1,0 +1,6 @@
+﻿polars.Series.bitwise\_count\_ones
+==================================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.bitwise_count_ones

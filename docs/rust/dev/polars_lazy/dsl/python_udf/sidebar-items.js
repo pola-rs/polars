@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["CALL_DF_UDF_PYTHON","CALL_SERIES_UDF_PYTHON"],"struct":["PythonFunction","PythonUdfExpression"]};

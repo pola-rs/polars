@@ -1,0 +1,6 @@
+﻿polars.Series.new\_from\_index
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.new_from_index

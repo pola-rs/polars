@@ -1,0 +1,6 @@
+﻿polars.Expr.struct.eval
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.struct.eval

@@ -1,0 +1,6 @@
+﻿polars.api.register\_dataframe\_namespace
+=========================================
+
+.. currentmodule:: polars.api
+
+.. autofunction:: register_dataframe_namespace

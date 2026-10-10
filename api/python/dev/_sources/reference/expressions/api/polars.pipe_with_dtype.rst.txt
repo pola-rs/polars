@@ -1,0 +1,6 @@
+﻿polars.pipe\_with\_dtype
+========================
+
+.. currentmodule:: polars
+
+.. autofunction:: pipe_with_dtype

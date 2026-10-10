@@ -1,0 +1,6 @@
+﻿polars.exceptions.ChronoFormatWarning
+=====================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: ChronoFormatWarning

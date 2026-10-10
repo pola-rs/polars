@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DynByteSource","DynByteSourceBuilder"],"fn":["global_read_permits"],"mod":["dio_align"],"struct":["BufferByteSource","FileByteSource","FileReadContext","ObjectStoreByteSource"],"trait":["ByteSource"]};

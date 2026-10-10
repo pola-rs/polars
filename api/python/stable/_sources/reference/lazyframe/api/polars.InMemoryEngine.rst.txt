@@ -1,0 +1,41 @@
+﻿polars.InMemoryEngine
+=====================
+
+.. currentmodule:: polars
+
+.. autoclass:: InMemoryEngine
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~InMemoryEngine.__init__
+      ~InMemoryEngine.collect
+      ~InMemoryEngine.collect_all
+      ~InMemoryEngine.collect_all_async
+      ~InMemoryEngine.collect_async
+      ~InMemoryEngine.collect_batches
+      ~InMemoryEngine.execute
+      ~InMemoryEngine.sink_batches
+      ~InMemoryEngine.sink_csv
+      ~InMemoryEngine.sink_ipc
+      ~InMemoryEngine.sink_ndjson
+      ~InMemoryEngine.sink_parquet
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~InMemoryEngine.monitoring
+      ~InMemoryEngine.name
+      ~InMemoryEngine.plan_engine
+   
+   

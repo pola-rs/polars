@@ -1,0 +1,6 @@
+﻿polars.testing.assert\_frame\_equal
+===================================
+
+.. currentmodule:: polars.testing
+
+.. autofunction:: assert_frame_equal

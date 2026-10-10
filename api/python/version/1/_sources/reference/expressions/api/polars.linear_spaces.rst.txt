@@ -1,0 +1,6 @@
+﻿polars.linear\_spaces
+=====================
+
+.. currentmodule:: polars
+
+.. autofunction:: linear_spaces

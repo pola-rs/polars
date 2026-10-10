@@ -1,0 +1,37 @@
+﻿polars.datatypes.Int128
+=======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Int128
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Int128.__init__
+      ~Int128.base_type
+      ~Int128.from_python
+      ~Int128.is_
+      ~Int128.is_decimal
+      ~Int128.is_float
+      ~Int128.is_integer
+      ~Int128.is_nested
+      ~Int128.is_numeric
+      ~Int128.is_object
+      ~Int128.is_signed_integer
+      ~Int128.is_temporal
+      ~Int128.is_unsigned_integer
+      ~Int128.max
+      ~Int128.min
+      ~Int128.to_python
+   
+   
+
+   
+   
+   

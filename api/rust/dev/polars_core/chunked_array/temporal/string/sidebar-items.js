@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["infer","patterns","strptime"],"trait":["AsString","StringMethods"]};

@@ -1,0 +1,6 @@
+﻿polars.Series.struct.eval
+=========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.struct.eval

@@ -1,0 +1,31 @@
+﻿polars.io.external\_reader.ReaderCapabilities
+=============================================
+
+.. currentmodule:: polars.io.external_reader
+
+.. autoclass:: ReaderCapabilities
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~ReaderCapabilities.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~ReaderCapabilities.negative_pre_slice
+      ~ReaderCapabilities.pre_slice
+      ~ReaderCapabilities.row_index
+      ~ReaderCapabilities.supported_filter
+   
+   

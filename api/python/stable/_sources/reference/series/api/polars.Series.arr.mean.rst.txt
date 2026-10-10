@@ -1,0 +1,6 @@
+﻿polars.Series.arr.mean
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.arr.mean

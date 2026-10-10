@@ -1,0 +1,6 @@
+﻿polars.merge\_sorted
+====================
+
+.. currentmodule:: polars
+
+.. autofunction:: merge_sorted

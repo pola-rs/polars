@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["builder","registry"],"struct":["ObjectArray"],"trait":["PolarsObject","PolarsObjectSafe"],"type":["ObjectValueIter"]};

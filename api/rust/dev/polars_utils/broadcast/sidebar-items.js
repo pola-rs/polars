@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["broadcast_len"],"trait":["BroadcastLength"]};

@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.root_names
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.root_names

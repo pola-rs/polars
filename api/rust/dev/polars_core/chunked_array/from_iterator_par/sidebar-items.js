@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["list_from_par_iter","try_list_from_par_iter"],"trait":["ChunkedCollectParIterExt","FromParIterWithDtype"]};

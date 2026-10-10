@@ -1,0 +1,6 @@
+﻿polars.get\_index\_type
+=======================
+
+.. currentmodule:: polars
+
+.. autofunction:: get_index_type
