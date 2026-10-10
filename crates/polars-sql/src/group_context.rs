@@ -299,31 +299,19 @@ impl GroupContextSplitter<'_> {
     }
 }
 
-/// The names that QUALIFY and ORDER BY can read besides the input columns: columns renamed
-/// by `SELECT * RENAME`, then SELECT aliases. Each stands for an expression over the input
-/// columns, of a type that is known if it could be inferred.
+/// The names that QUALIFY and ORDER BY can read besides the input columns: the SELECT
+/// aliases. Each stands for an expression over the input columns, of a type that is known
+/// if it could be inferred.
 pub(crate) struct OutputNames {
     names: PlHashMap<PlSmallStr, (Expr, Option<DataType>)>,
 }
 
 impl OutputNames {
-    /// The output names of `projections` and `renames` over the input `schema`. An input
+    /// The output names of `projections` over the input `schema`. An input
     /// column comes before an output name of the same name. `typed_schema` is `schema` with
     /// the columns that the projections read before the block resolves them.
-    pub(crate) fn new(
-        projections: &[Expr],
-        renames: &PlHashMap<PlSmallStr, PlSmallStr>,
-        schema: &Schema,
-        typed_schema: &Schema,
-    ) -> Self {
+    pub(crate) fn new(projections: &[Expr], schema: &Schema, typed_schema: &Schema) -> Self {
         let mut names = PlHashMap::new();
-        for (before, after) in renames {
-            if !schema.contains(after) {
-                names
-                    .entry(after.clone())
-                    .or_insert_with(|| (col(before.clone()), schema.get(before).cloned()));
-            }
-        }
         for projection in projections {
             if let Expr::Alias(inner, name) = projection
                 && !schema.contains(name)
