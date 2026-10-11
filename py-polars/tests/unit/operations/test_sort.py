@@ -4,6 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
 import pytest
 from hypothesis import given
 
@@ -1736,6 +1737,16 @@ def test_sort_by_first_last_null_key(engine: EngineType, dtype: PolarsDataType) 
     assert q.collect(engine=engine).row(0) == (7, 7)
     q = lf.group_by("g").agg(first=e.first(), last=e.last())
     assert q.collect(engine=engine).row(0) == (1, 7, 7)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sort_by_last_nan_under_null(engine: EngineType) -> None:
+    # Row 0 is null, but the value stored under it is NaN.
+    values = pa.array([float("nan"), 2.0, float("nan")]).buffers()[1]
+    k = pa.Array.from_buffers(pa.float64(), 3, [pa.py_buffer(b"\x06"), values])
+    lf = pl.LazyFrame({"x": [10, 20, 30], "k": pl.from_arrow(k)})
+    q = lf.select(pl.col("x").sort_by("k").last())
+    assert q.collect(engine=engine).item() == 30
 
 
 def _key_frame(dtype: PolarsDataType) -> pl.DataFrame:

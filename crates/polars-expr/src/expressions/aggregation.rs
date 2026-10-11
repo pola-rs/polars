@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 
 use polars_arrow::bitmap::Bitmap;
+use polars_compute::nan::first_nan_idx;
 use polars_core::frame::group_by::aggregations::{_use_rolling_kernels, rolling_numeric_minmax_by};
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
-use polars_core::utils::_split_offsets;
+use polars_core::utils::{_split_offsets, first_null};
+use polars_core::with_match_physical_float_polars_type;
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
@@ -439,16 +441,37 @@ pub(crate) fn arg_min_max_total(
         return Ok(None);
     }
     if is_max == nulls_largest && s.has_nulls() {
-        return Ok(s.is_null().first_true_idx());
+        return Ok(first_null(s.chunks().iter().map(|arr| arr.as_ref())));
     }
     if is_max && s.dtype().is_float() {
-        let is_nan = s.is_nan()?;
-        if is_nan.any() {
-            return Ok(is_nan.first_true_idx());
+        let nan_idx = with_match_physical_float_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            first_nan(ca)
+        });
+        if nan_idx.is_some() {
+            return Ok(nan_idx);
         }
     }
     let idx = if is_max { s.arg_max() } else { s.arg_min() };
     Ok(Some(idx.unwrap_or(0)))
+}
+
+/// The index of the first NaN that is not null.
+pub(crate) fn first_nan<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Option<usize> {
+    let mut offset = 0;
+    for arr in ca.downcast_iter() {
+        let values = arr.values().as_slice();
+        let mut start = 0;
+        while let Some(i) = first_nan_idx(&values[start..]) {
+            let i = start + i;
+            if arr.validity().is_none_or(|validity| validity.get_bit(i)) {
+                return Some(offset + i);
+            }
+            start = i + 1;
+        }
+        offset += arr.len();
+    }
+    None
 }
 
 pub struct AggMinMaxByExpr {

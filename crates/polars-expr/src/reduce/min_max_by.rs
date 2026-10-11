@@ -14,6 +14,7 @@ use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 
 use super::*;
+use crate::expressions::first_nan;
 use crate::reduce::first_last::new_last_reduction;
 
 pub fn new_min_by_reduction(
@@ -301,22 +302,7 @@ where
     }
 
     fn arg_ca(&self, ca: &ChunkedArray<Self::Dtype>) -> Option<usize> {
-        let mut offset = 0;
-        for arr in ca.downcast_iter() {
-            let first_nan = match arr.validity() {
-                None => arr.values().iter().position(|v| v.is_nan()),
-                Some(validity) => arr
-                    .values()
-                    .iter()
-                    .zip(validity)
-                    .position(|(v, is_valid)| is_valid && v.is_nan()),
-            };
-            if let Some(i) = first_nan {
-                return Some(offset + i);
-            }
-            offset += arr.len();
-        }
-        arg_max_numeric(ca)
+        first_nan(ca).or_else(|| arg_max_numeric(ca))
     }
 
     fn select_one(
@@ -814,22 +800,21 @@ where
         let ord_values = values[1];
         assert_eq!(ord_values.dtype(), &self.in_dtype);
         assert!((group_idx as usize) < self.values.len());
+        if self.null_keys == NullKeys::Win && self.null_picks.get(group_idx as usize) {
+            return Ok(());
+        }
 
         let ord_values = self
             .reducer
             .cast_series(ord_values.as_materialized_series());
         let ca: &ChunkedArray<R::Dtype> = ord_values.as_ref().as_ref().as_ref();
 
-        let first_null = match self.null_keys {
-            NullKeys::Skip => None,
-            NullKeys::Win | NullKeys::Lose => ca.first_null(),
-        };
-        let selected = match (self.null_keys, first_null) {
-            (NullKeys::Win, Some(i)) => Some((i, true)),
-            _ => match self.reducer.arg_ca(ca) {
-                Some(i) => Some((i, false)),
-                None => first_null.map(|i| (i, true)),
-            },
+        let first_null = || ca.first_null().map(|i| (i, true));
+        let arg = || self.reducer.arg_ca(ca).map(|i| (i, false));
+        let selected = match self.null_keys {
+            NullKeys::Skip => arg(),
+            NullKeys::Win => first_null().or_else(arg),
+            NullKeys::Lose => arg().or_else(first_null),
         };
 
         if let Some((selected, is_null)) = selected {
