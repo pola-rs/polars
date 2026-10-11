@@ -23,7 +23,7 @@ from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
     from pathlib import Path
 
     from tests.conftest import PlMonkeyPatch
@@ -584,33 +584,50 @@ def _assert_fetched_once(
     return ranges
 
 
-@pytest.mark.slow
-def test_scan_ndjson_small_files_single_request(s3: CountingS3) -> None:
-    small = [f"small_{i}_{uuid4()}.ndjson" for i in range(5)]
-    for i, key in enumerate(small):
-        s3.client.put_object(Bucket="bucket", Key=key, Body=f'{{"a":{i}}}\n'.encode())
+def _line_rows(format: str, values: Iterable[int]) -> bytes:
+    """Rows of a single Int64 column `a`, as NDJSON or CSV with a header."""
+    if format == "ndjson":
+        return "".join(f'{{"a":{v}}}\n' for v in values).encode()
+    return ("a\n" + "".join(f"{v}\n" for v in values)).encode()
 
-    empty = f"empty_{uuid4()}.ndjson"
+
+def _scan_lines_format(
+    format: str, paths: list[str], s3: CountingS3, **kwargs: Any
+) -> pl.LazyFrame:
+    scan = pl.scan_ndjson if format == "ndjson" else pl.scan_csv
+    return scan(
+        paths, schema={"a": pl.Int64}, storage_options=s3.storage_options, **kwargs
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("format", ["ndjson", "csv"])
+def test_scan_line_format_small_files_single_request(
+    s3: CountingS3, format: str
+) -> None:
+    small = [f"small_{i}_{uuid4()}.{format}" for i in range(5)]
+    for i, key in enumerate(small):
+        s3.client.put_object(Bucket="bucket", Key=key, Body=_line_rows(format, [i]))
+
+    empty = f"empty_{uuid4()}.{format}"
     s3.client.put_object(Bucket="bucket", Key=empty, Body=b"")
 
-    compressed = f"compressed_{uuid4()}.ndjson.gz"
+    compressed = f"compressed_{uuid4()}.{format}.gz"
     s3.client.put_object(
-        Bucket="bucket", Key=compressed, Body=gzip.compress(b'{"a":5}\n')
+        Bucket="bucket", Key=compressed, Body=gzip.compress(_line_rows(format, [5]))
     )
 
     # Larger than the initial fetch, reading continues after the fetched prefix.
-    large = f"large_{uuid4()}.ndjson"
+    large = f"large_{uuid4()}.{format}"
     n_large = 150_000
     s3.client.put_object(
-        Bucket="bucket",
-        Key=large,
-        Body="".join(f'{{"a":{i}}}\n' for i in range(n_large)).encode(),
+        Bucket="bucket", Key=large, Body=_line_rows(format, range(n_large))
     )
 
     paths = [f"s3://bucket/{k}" for k in [*small, empty, compressed, large]]
-    lf = pl.scan_ndjson(
-        paths, schema={"a": pl.Int64}, storage_options=s3.storage_options
-    )
+    # An empty CSV raises by default.
+    kwargs = {"raise_if_empty": False} if format == "csv" else {}
+    lf = _scan_lines_format(format, paths, s3, **kwargs)
 
     mark = len(s3.log)
     out = lf.collect()
@@ -645,31 +662,30 @@ def test_scan_ndjson_small_files_single_request(s3: CountingS3) -> None:
 
 
 @pytest.mark.slow
-def test_scan_ndjson_prefix_continuation(
-    s3: CountingS3, plmonkeypatch: PlMonkeyPatch
+@pytest.mark.parametrize("format", ["ndjson", "csv"])
+def test_scan_line_format_prefix_continuation(
+    s3: CountingS3, plmonkeypatch: PlMonkeyPatch, format: str
 ) -> None:
     # Many small chunks with few prefetch permits, after the prefix.
-    plmonkeypatch.setenv("POLARS_NDJSON_CHUNK_SIZE", str(64 * 1024))
-    plmonkeypatch.setenv("POLARS_NDJSON_CHUNK_PREFETCH_LIMIT", "2")
+    plmonkeypatch.setenv(f"POLARS_{format.upper()}_CHUNK_SIZE", str(64 * 1024))
+    plmonkeypatch.setenv(f"POLARS_{format.upper()}_CHUNK_PREFETCH_LIMIT", "2")
 
     rng = random.Random(0)
     values = [rng.getrandbits(62) for _ in range(120_000)]
-    body = "".join(f'{{"a":{v}}}\n' for v in values).encode()
+    body = _line_rows(format, values)
     # Random values compress poorly, so the gzip file is larger than the prefix.
     compressed_body = gzip.compress(body)
     assert len(compressed_body) > 256 * 1024
 
-    plain = f"plain_{uuid4()}.ndjson"
-    compressed = f"compressed_{uuid4()}.ndjson.gz"
-    small = f"small_{uuid4()}.ndjson"
+    plain = f"plain_{uuid4()}.{format}"
+    compressed = f"compressed_{uuid4()}.{format}.gz"
+    small = f"small_{uuid4()}.{format}"
     s3.client.put_object(Bucket="bucket", Key=plain, Body=body)
     s3.client.put_object(Bucket="bucket", Key=compressed, Body=compressed_body)
-    s3.client.put_object(Bucket="bucket", Key=small, Body=b'{"a":-1}\n')
+    s3.client.put_object(Bucket="bucket", Key=small, Body=_line_rows(format, [-1]))
 
-    lf = pl.scan_ndjson(
-        [f"s3://bucket/{k}" for k in [plain, small, compressed]],
-        schema={"a": pl.Int64},
-        storage_options=s3.storage_options,
+    lf = _scan_lines_format(
+        format, [f"s3://bucket/{k}" for k in [plain, small, compressed]], s3
     )
     expected = pl.DataFrame({"a": [*values, -1, *values]})
 
@@ -700,6 +716,62 @@ def test_scan_line_format_empty_local_object_store_file(
     scan = pl.scan_ndjson if format == "ndjson" else pl.scan_csv
     out = scan(format_file_uri(path), schema={"a": pl.Int64}, **kwargs).collect()
     assert_frame_equal(out, pl.DataFrame(schema={"a": pl.Int64}))
+
+
+@pytest.mark.slow
+def test_scan_csv_quoted_newlines_across_prefix(
+    s3: CountingS3, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # A quoted field with newlines spans the end of the initial fetch and several
+    # chunks after it. Wide rows put it within the rows used for schema inference,
+    # and the first float in `c` follows it.
+    plmonkeypatch.setenv("POLARS_CSV_CHUNK_SIZE", str(64 * 1024))
+    plmonkeypatch.setenv("POLARS_CSV_CHUNK_PREFETCH_LIMIT", "2")
+
+    prefix_len = 256 * 1024
+    quoted_start = prefix_len - 500
+    rows: list[tuple[int, str, float]] = []
+    quoted_row = None
+    body = io.StringIO()
+    body.write("a,b,c\n")
+    while body.tell() < 2 * 1024 * 1024:
+        i = len(rows)
+        if body.tell() < quoted_start:
+            # Padding, the last row ends exactly at `quoted_start`.
+            gap = quoted_start - body.tell() - len(f"{i},,{i}\n")
+            value = "p" * (gap if gap < 2 * 2_700 else 2_700)
+            body.write(f"{i},{value},{i}\n")
+            rows.append((i, value, i))
+        elif quoted_row is None:
+            assert body.tell() == quoted_start
+            quoted_row = i
+            value = "".join(f"line {j}, quoted\n" for j in range(15_000))
+            body.write(f'{i},"{value}",{i}\n')
+            rows.append((i, value, i))
+            assert body.tell() > prefix_len + 3 * 64 * 1024
+        elif i == quoted_row + 1:
+            body.write(f"{i},v{i},{i}.5\n")
+            rows.append((i, f"v{i}", i + 0.5))
+        else:
+            body.write(f"{i},v{i},{i}\n")
+            rows.append((i, f"v{i}", i))
+
+    # Within the default `infer_schema_length` of 100 rows.
+    assert quoted_row is not None
+    assert quoted_row + 1 < 100
+
+    key = f"quoted_{uuid4()}.csv"
+    s3.client.put_object(Bucket="bucket", Key=key, Body=body.getvalue().encode())
+
+    lf = pl.scan_csv(f"s3://bucket/{key}", storage_options=s3.storage_options)
+    expected = pl.DataFrame(
+        rows, schema={"a": pl.Int64, "b": pl.String, "c": pl.Float64}, orient="row"
+    )
+    assert_frame_equal(lf.collect(), expected)
+    assert_frame_equal(
+        lf.with_row_index().slice(len(rows) - 1_000, 1_000).collect(),
+        expected.with_row_index().slice(len(rows) - 1_000, 1_000),
+    )
 
 
 @pytest.mark.slow
@@ -734,21 +806,24 @@ def test_scan_ndjson_single_file_negative_slice(
 
 
 @pytest.mark.slow
-def test_scan_ndjson_in_memory_file_between_streamed_files(s3: CountingS3) -> None:
+@pytest.mark.parametrize("format", ["ndjson", "csv"])
+def test_scan_line_format_in_memory_file_between_streamed_files(
+    s3: CountingS3, format: str
+) -> None:
     # A file read from memory sits between two streamed files. The third file must
     # not start prefetching before the first spawned all its prefetches, which
     # deadlocked on the shared prefetch permits. A subprocess turns a hang into a
     # timeout.
-    body = "".join(f'{{"a":{i}}}\n' for i in range(1_000_000)).encode()
-    keys = [f"{i}_{uuid4()}.ndjson" for i in range(3)]
-    for key, data in zip(keys, [body, b"", body], strict=True):
+    body = _line_rows(format, range(1_000_000))
+    keys = [f"{i}_{uuid4()}.{format}" for i in range(3)]
+    for key, data in zip(keys, [body, _line_rows(format, []), body], strict=True):
         s3.client.put_object(Bucket="bucket", Key=key, Body=data)
 
     paths = [f"s3://bucket/{k}" for k in keys]
     code = f"""\
 import polars as pl
 
-lf = pl.scan_ndjson(
+lf = pl.scan_{format}(
     {paths!r}, schema={{"a": pl.Int64}}, storage_options={s3.storage_options!r}
 )
 assert lf.collect().height == 2_000_000
@@ -757,7 +832,7 @@ assert lf.collect().height == 2_000_000
         **os.environ,
         "POLARS_MAX_THREADS": "2",
         "POLARS_MAX_CONCURRENT_SCANS": "3",
-        "POLARS_NDJSON_CHUNK_SIZE": str(1024 * 1024),
-        "POLARS_NDJSON_CHUNK_PREFETCH_LIMIT": "1",
+        f"POLARS_{format.upper()}_CHUNK_SIZE": str(1024 * 1024),
+        f"POLARS_{format.upper()}_CHUNK_PREFETCH_LIMIT": "1",
     }
     subprocess.run([sys.executable, "-c", code], env=env, check=True, timeout=60)
