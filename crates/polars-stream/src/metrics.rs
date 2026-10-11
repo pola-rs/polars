@@ -173,6 +173,8 @@ impl GraphMetrics {
     }
 }
 
+/// The default registers nothing.
+#[derive(Clone, Default)]
 pub struct NodeMetricsRegistry {
     pub graph_key: GraphNodeKey,
     pub graph_metrics: Option<Arc<parking_lot::Mutex<GraphMetrics>>>,

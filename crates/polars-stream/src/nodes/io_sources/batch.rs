@@ -53,6 +53,7 @@ pub mod builder {
             _source: polars_plan::prelude::ScanSource,
             _cloud_options: Option<Arc<polars_io::cloud::CloudOptions>>,
             scan_source_idx: usize,
+            _metrics_registry: &crate::metrics::NodeMetricsRegistry,
         ) -> PolarsResult<Box<dyn FileReader>> {
             assert_eq!(scan_source_idx, 0);
 

@@ -184,6 +184,7 @@ impl FileReaderBuilder for PythonFileReaderBuilder {
         source: polars_plan::prelude::ScanSource,
         _cloud_options: Option<Arc<CloudOptions>>,
         _scan_source_idx: usize,
+        _metrics_registry: &crate::metrics::NodeMetricsRegistry,
     ) -> PolarsResult<Box<dyn FileReader>> {
         ASYNC.block_in_place(|| {
             Python::attach(|py| {

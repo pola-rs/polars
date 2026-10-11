@@ -16,6 +16,7 @@ use polars_utils::slice_enum::Slice;
 use tokio::sync::Semaphore;
 
 use crate::execute::StreamingExecutionState;
+use crate::metrics::NodeMetricsRegistry;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
 use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
@@ -39,6 +40,7 @@ pub fn initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     execution_state: StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
+    metrics_registry: NodeMetricsRegistry,
 ) -> PolarsResult<InitializedPipelineState> {
     assert!(config.num_pipelines() > 0);
 
@@ -74,6 +76,7 @@ pub fn initialize_multi_scan_pipeline(
             bridge_recv_port_tx,
             execution_state,
             io_metrics,
+            metrics_registry,
         )
         .await?;
         bridge_handle.await;
@@ -92,6 +95,7 @@ async fn finish_initialize_multi_scan_pipeline(
     bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
     execution_state: StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
+    metrics_registry: NodeMetricsRegistry,
 ) -> PolarsResult<()> {
     let verbose = config.verbose;
 
@@ -253,7 +257,13 @@ async fn finish_initialize_multi_scan_pipeline(
                 }
             }
 
-            resolve_to_positive_slice(&config, &execution_state, io_metrics.clone()).await?
+            resolve_to_positive_slice(
+                &config,
+                &execution_state,
+                io_metrics.clone(),
+                &metrics_registry,
+            )
+            .await?
         },
     };
 
@@ -410,6 +420,7 @@ async fn finish_initialize_multi_scan_pipeline(
             let sources = sources.clone();
             let cloud_options = cloud_options.clone();
             let file_reader_builder = file_reader_builder.clone();
+            let metrics_registry = metrics_registry.clone();
             let deletion_files_provider = deletion_files_provider.clone();
             let initialized_row_deletions = initialized_row_deletions.clone();
 
@@ -433,6 +444,7 @@ async fn finish_initialize_multi_scan_pipeline(
                         scan_source.clone(),
                         cloud_options.clone(),
                         scan_source_idx,
+                        &metrics_registry,
                     )?;
 
                     reader.initialize().await?;
