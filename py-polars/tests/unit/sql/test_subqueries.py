@@ -6,7 +6,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -962,6 +967,92 @@ def test_in_subquery_float_with_integer_or_decimal(predicate: str) -> None:
         compare_with="duckdb",
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "d IN (SELECT dt FROM t2)",
+        "dt NOT IN (SELECT d FROM t2)",
+        "d = ANY (SELECT dt FROM t2)",
+        "dt IN (SELECT d FROM t2 WHERE t2.g = t1.g)",
+        "d IN (TIMESTAMP '2000-01-01 00:00:00', TIMESTAMP '2000-01-02 05:00:00')",
+        "dt IN (DATE '2000-01-01', DATE '2000-01-02')",
+        "lf IN (SELECT li FROM t2)",
+        "li NOT IN (SELECT lf FROM t2)",
+        "ld IN (SELECT ldt FROM t2)",
+        "s IN (SELECT sf FROM t2)",
+        "ad IN (SELECT adt FROM t2)",
+    ],
+)
+def test_in_date_with_datetime_or_nested(predicate: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {
+                    "a": [1, 2, 3],
+                    "d": [date(2000, 1, 1), date(2000, 1, 2), None],
+                    "dt": [datetime(2000, 1, 1), datetime(2000, 1, 1, 12), None],
+                    "g": [1, 1, 2],
+                    "lf": [[1.0, 2.0], [3.0], None],
+                    "li": [[1, 2], [4], None],
+                    "ld": [[date(2000, 1, 1)], [date(2000, 1, 2)], None],
+                    "s": [{"x": 1}, {"x": 2}, None],
+                    "ad": pl.Series(
+                        [[date(2000, 1, 1)], [date(2000, 1, 2)], None],
+                        dtype=pl.Array(pl.Date, 1),
+                    ),
+                }
+            ),
+            "t2": pl.DataFrame(
+                {
+                    "d": [date(2000, 1, 1), None, date(2000, 1, 3)],
+                    "dt": [datetime(2000, 1, 1), datetime(2000, 1, 2, 5), None],
+                    "g": [1, 1, 2],
+                    "li": [[1, 2], [3], None],
+                    "lf": [[1.0, 2.0], [3.5], None],
+                    "ldt": [[datetime(2000, 1, 1)], [datetime(2000, 1, 2, 1)], []],
+                    "sf": [{"x": 1.0}, {"x": 2.5}, {"x": 3.0}],
+                    "adt": pl.Series(
+                        [[datetime(2000, 1, 1)], [datetime(2000, 1, 2, 1)], None],
+                        dtype=pl.Array(pl.Datetime("us"), 1),
+                    ),
+                }
+            ),
+        },
+        query=f"SELECT a, {predicate} AS r FROM t1 ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("needle", "values"),
+    [
+        (pl.Series([{"x": 1}]), pl.Series([{"y": 1.0}])),
+        (
+            pl.Series([[date(2000, 1, 1)]], dtype=pl.Array(pl.Date, 1)),
+            pl.Series([[datetime(2000, 1, 1)]]),
+        ),
+        (
+            pl.Series(
+                [{"k": {"x": None}}],
+                dtype=pl.Map(pl.String, pl.Struct({"x": pl.Int64})),
+            ),
+            pl.Series(
+                [{"k": {"y": None}}],
+                dtype=pl.Map(pl.String, pl.Struct({"y": pl.Float64})),
+            ),
+        ),
+    ],
+)
+def test_in_nested_shapes_differ(needle: pl.Series, values: pl.Series) -> None:
+    ctx = pl.SQLContext(
+        t1=pl.DataFrame({"a": needle}),
+        t2=pl.DataFrame({"b": values}),
+    )
+    with pytest.raises(InvalidOperationError, match="'is_in' cannot check"):
+        ctx.execute("SELECT a IN (SELECT b FROM t2) FROM t1").collect()
 
 
 def test_quantified_subquery_type_errors() -> None:
