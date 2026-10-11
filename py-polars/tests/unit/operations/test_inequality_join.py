@@ -18,7 +18,7 @@ from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
-    from polars._typing import EngineType
+    from polars._typing import EngineType, PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1138,6 +1138,82 @@ def test_cross_join_filter_decimal_scales_sorted_input(
     assert r"sort\n" not in graph
 
     expected = q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize(
+    ("predicates", "join_node"),
+    [
+        ([pl.col("p") > pl.col("lo"), pl.col("p") <= pl.col("hi")], "range-join"),
+        ([pl.col("p") == pl.col("lo")], "merge-join"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("left_dtype", "right_dtype", "max_value"),
+    [
+        (pl.Int32, pl.Int64, 2**31 - 1),
+        (pl.UInt8, pl.Int16, 255),
+        (pl.Int64, pl.Int128, 2**63 - 1),
+        (pl.Float32, pl.Float64, 3.0e38),
+    ],
+)
+def test_cross_join_filter_widened_keys_sorted_input(
+    descending: bool,
+    predicates: list[pl.Expr],
+    join_node: str,
+    left_dtype: PolarsDataType,
+    right_dtype: PolarsDataType,
+    max_value: float,
+) -> None:
+    left = (
+        pl.DataFrame({"p": [1, 3, max_value, None]}, schema={"p": left_dtype})
+        .sort("p", descending=descending)
+        .lazy()
+    )
+    right = (
+        pl.DataFrame(
+            {"lo": [0, 3, max_value, None], "hi": [max_value, 3, 4, None]},
+            schema={"lo": right_dtype, "hi": right_dtype},
+        )
+        .sort("lo", descending=descending)
+        .lazy()
+    )
+    q = left.join(right, how="cross").filter(*predicates)
+
+    # Widening the left key keeps the order of the sorted input, so no sort is added.
+    graph = str(
+        q.show_graph(plan_stage="physical", engine="streaming", raw_output=True)
+    )
+    assert f"{join_node}\\n" in graph
+    assert r"sort\n" not in graph
+
+    expected = q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.col("p").cast(pl.Int8, wrap_numerical=True),
+        pl.col("p").cast(pl.Int8, strict=False),
+        pl.col("p").cast(pl.UInt16, wrap_numerical=True),
+    ],
+)
+def test_join_where_narrowed_key_sorted_input(key: pl.Expr) -> None:
+    left = (
+        pl.DataFrame({"p": [-1, 100, 200, None]}, schema={"p": pl.Int16})
+        .sort("p")
+        .lazy()
+    )
+    right = pl.DataFrame({"lo": [-60, 0, 150]}, schema={"lo": pl.Int16}).lazy()
+    q = left.join_where(right, key > pl.col("lo"))
+
+    expected = (
+        left.join(right, how="cross")
+        .filter(key > pl.col("lo"))
+        .collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
+    )
     assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
 
 

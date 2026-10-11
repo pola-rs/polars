@@ -629,6 +629,93 @@ def test_merge_join_applicable(
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.parametrize(
+    ("how", "maintain_order", "coalesce"),
+    [
+        *(
+            (how, maintain_order, coalesce)
+            for how in ["inner", "left", "semi", "anti"]
+            for maintain_order in ["left", "left_right"]
+            for coalesce in [False, True]
+        ),
+        ("inner", "right", False),
+        ("inner", "right_left", False),
+        ("right", "right", False),
+        ("right", "right", True),
+        ("right", "right_left", True),
+    ],
+)
+def test_merge_join_after_order_maintaining_join(
+    how: JoinStrategy, maintain_order: MaintainOrderJoin, coalesce: bool
+) -> None:
+    # https://github.com/pola-rs/polars/issues/29841
+    sorted_lf = pl.LazyFrame({"a": [0, 1, 1, 3], "b": [1, 2, 3, 4]}).set_sorted("a")
+    other = pl.LazyFrame({"a": [1, 0, 2, 1], "c": [5, 6, 7, 8]})
+    if maintain_order.startswith("left"):
+        lf = sorted_lf.join(
+            other, on="a", how=how, maintain_order=maintain_order, coalesce=coalesce
+        )
+    else:
+        lf = other.join(
+            sorted_lf, on="a", how=how, maintain_order=maintain_order, coalesce=coalesce
+        )
+    key = "a_right" if not maintain_order.startswith("left") and not coalesce else "a"
+    lf = lf.select(pl.col(key).alias("key"), pl.exclude("a", "a_right"))
+
+    q = lf.join(
+        pl.LazyFrame({"key": [0, 1], "d": [9, 10]}).set_sorted("key"),
+        on="key",
+        how="left",
+        maintain_order="left",
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in dot
+    out = q.collect(engine="streaming")
+    expected = q.collect(engine="in-memory")
+    # Several matches of one row may come in any order.
+    assert_series_equal(out["key"], expected["key"])
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+_SORTED_LF = pl.LazyFrame({"a": [0, 1]}).set_sorted("a")
+_UNSORTED_LF = pl.LazyFrame({"a": [1, 0, 2]})
+
+
+@pytest.mark.parametrize(
+    ("lf", "maintain_order"),
+    [
+        pytest.param(
+            _SORTED_LF.join(_UNSORTED_LF, on="a", how="left"),
+            "left",
+            id="join-without-maintain-order",
+        ),
+        pytest.param(
+            _SORTED_LF.join(
+                _UNSORTED_LF, on="a", how="full", maintain_order="left", coalesce=True
+            ),
+            "left",
+            id="full-join-appends-unmatched-right-rows",
+        ),
+        pytest.param(
+            _UNSORTED_LF.join(_SORTED_LF, on="a", how="inner", maintain_order="left"),
+            "left",
+            id="join-keeps-order-of-unsorted-side",
+        ),
+        pytest.param(
+            _SORTED_LF.join(_UNSORTED_LF, on="a", how="left", maintain_order="left"),
+            "none",
+            id="order-not-observed",
+        ),
+    ],
+)
+def test_no_merge_join_after_join(
+    lf: pl.LazyFrame, maintain_order: MaintainOrderJoin
+) -> None:
+    q = lf.join(_SORTED_LF, on="a", how="left", maintain_order=maintain_order)
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" not in dot
+
+
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize("coalesce", [False, True])

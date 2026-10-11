@@ -2,8 +2,8 @@
 //!
 //! Counterpart of `polars.io.iceberg._cache` for scans planned by the plugin, with the same
 //! scoping (computed in Python, `plugin_storage_scope`). It is owned by the Python
-//! `IcebergMetadataFileCache`, so it has the same size (`POLARS_ICEBERG_METADATA_CACHE_MB`) and is
-//! dropped by `reset_metadata_file_cache()`.
+//! `IcebergMetadataFileCache`, so it has the same size
+//! (`POLARS_ICEBERG_METADATA_FILE_CACHE_MB`) and is dropped by `reset_metadata_file_cache()`.
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;

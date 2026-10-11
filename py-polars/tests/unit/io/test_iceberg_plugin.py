@@ -1509,7 +1509,7 @@ def test_iceberg_plugin_metadata_file_cache_disabled(
     from polars.io.iceberg._cache import reset_metadata_file_cache
 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "0")
+    plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_FILE_CACHE_MB", "0")
     reset_metadata_file_cache()
 
     for _ in range(2):
