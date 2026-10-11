@@ -7101,6 +7101,38 @@ def test_sink_iceberg_truncate_partition_near_minimum(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_truncate_partition_near_int_minimum_after_promotion(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "x", IntegerType())),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, TruncateTransform(100), "x_trunc")
+        ),
+    )
+    # One manifest whose partition summary bounds (written while `x` is an int) hide
+    # `truncate[100]` of `-2**31`, wrapped to 2147483596, below the upper bound
+    # 2147483600.
+    df = pl.DataFrame({"x": pl.Series([-(2**31), 5, 2**31 - 1], dtype=pl.Int32)})
+    tbl.append(df.to_arrow())
+    with tbl.update_schema() as update:
+        update.update_column("x", LongType())
+
+    df = df.cast(pl.Int64)
+    for predicate in [
+        pl.col("x") <= -5,
+        pl.col("x") == -(2**31),
+        pl.col("x") < 0,
+        pl.col("x") >= 2**31 - 1,
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect().sort("x"),
+            df.filter(predicate).sort("x"),
+        )
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_partition_long_values(tmp_path: Path) -> None:
     # Parquet statistics of long values are truncated.
     tbl, _ = new_iceberg_table(
