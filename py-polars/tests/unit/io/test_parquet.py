@@ -1146,6 +1146,27 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+@pytest.mark.parametrize(
+    ("statistics", "expected"),
+    [
+        ({}, (1, 3, 1)),
+        ({"min": False, "max": False}, (None, None, 1)),
+        ({"distinct_count": True}, (1, 3, 1)),
+    ],
+)
+def test_parquet_statistics_dict_defaults(
+    statistics: dict[str, bool], expected: tuple[int | None, int | None, int]
+) -> None:
+    # Keys missing from the `statistics` dict keep their default.
+    df = pl.DataFrame({"a": [1, None, 3]})
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=statistics)
+    file.seek(0)
+    stats = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert (stats.min, stats.max, stats.null_count) == expected
+
+
 def test_parquet_enum_statistics() -> None:
     df = pl.Series(
         "a", ["d", "b", "d", None, None, None], dtype=pl.Enum(["z", "d", "b", "a"])
