@@ -842,14 +842,18 @@ impl From<SizedRange> for object_store::GetRange {
 /// no satisfiable range: the backend answers 416, or `object_store` rejects the range against the
 /// size. Backends ignoring the range answer 200 instead of 206, the HEAD fallback then decides
 /// (e.g. an empty object needs no further request).
+///
+/// The rejection can be nested in the source chain, e.g. for the local file system store.
 fn is_prefix_range_rejection(err: &PolarsError) -> bool {
-    let msg = err.to_string();
+    std::iter::successors(Some(err as &dyn std::error::Error), |e| e.source()).any(|e| {
+        let msg = e.to_string();
 
-    msg.contains("416 Range Not Satisfiable")
-        || msg.contains("Wanted range starting at")
-        || msg.contains("Received non-partial response")
-        // `object_store` HTTP store.
-        || msg.contains("Range request not supported")
+        msg.contains("416 Range Not Satisfiable")
+            || msg.contains("Wanted range starting at")
+            || msg.contains("Received non-partial response")
+            // `object_store` HTTP store.
+            || msg.contains("Range request not supported")
+    })
 }
 
 /// Splits a single range into multiple smaller ranges, which can be downloaded concurrently for

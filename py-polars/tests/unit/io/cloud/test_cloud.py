@@ -20,9 +20,11 @@ import polars as pl
 from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import _is_aws_cloud
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
     from tests.conftest import PlMonkeyPatch
     from tests.unit.io.cloud.conftest import CountingS3
@@ -684,6 +686,20 @@ def test_scan_ndjson_prefix_continuation(
     assert_frame_equal(
         lf.slice(119_000, 2_000).collect(), expected.slice(119_000, 2_000)
     )
+
+
+@pytest.mark.parametrize("format", ["ndjson", "csv"])
+def test_scan_line_format_empty_local_object_store_file(
+    tmp_path: Path, format: str
+) -> None:
+    # A `file://` path is read through the object store, which rejects the prefix
+    # range of an empty file in a nested error.
+    path = tmp_path / f"empty.{format}"
+    path.write_bytes(b"")
+    kwargs = {"raise_if_empty": False} if format == "csv" else {}
+    scan = pl.scan_ndjson if format == "ndjson" else pl.scan_csv
+    out = scan(format_file_uri(path), schema={"a": pl.Int64}, **kwargs).collect()
+    assert_frame_equal(out, pl.DataFrame(schema={"a": pl.Int64}))
 
 
 @pytest.mark.slow
