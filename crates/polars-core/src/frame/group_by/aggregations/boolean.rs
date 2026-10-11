@@ -1,3 +1,4 @@
+use polars_arrow::bitmap::and_not;
 use polars_arrow::bitmap::bitmask::BitMask;
 
 use super::*;
@@ -34,21 +35,32 @@ unsafe fn arg_first_in_slices(arr: &BooleanArray, groups: &[[IdxSize; 2]], targe
     if arr.null_count() == arr.len() {
         return IdxCa::full_null(PlSmallStr::EMPTY, groups.len()).into_series();
     }
-    let values = if target {
-        arr.values().clone()
-    } else {
-        !arr.values()
+    // Without nulls the values mark the targets, and a search for false counts the leading ones.
+    let valid_targets;
+    let (targets, find_false) = match arr.validity() {
+        None => (BitMask::from_bitmap(arr.values()), !target),
+        Some(validity) => {
+            valid_targets = if target {
+                arr.values() & validity
+            } else {
+                and_not(validity, arr.values())
+            };
+            (BitMask::from_bitmap(&valid_targets), false)
+        },
     };
-    let targets = match arr.validity() {
-        Some(validity) => &values & validity,
-        None => values,
-    };
-    let targets = BitMask::from_bitmap(&targets);
     let validity = arr.validity().map(BitMask::from_bitmap);
     // SAFETY: The groups are in bounds.
     _agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
         let (first, len) = (first as usize, len as usize);
-        let i = unsafe { targets.sliced_unchecked(first, len) }.leading_zeros();
+        if len == 1 {
+            return validity.is_none_or(|v| v.get(first)).then_some(0);
+        }
+        let window = unsafe { targets.sliced_unchecked(first, len) };
+        let i = if find_false {
+            window.leading_ones()
+        } else {
+            window.leading_zeros()
+        };
         if i < len {
             return Some(i as IdxSize);
         }
