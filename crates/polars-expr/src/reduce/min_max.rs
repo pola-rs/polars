@@ -146,6 +146,19 @@ impl GroupedReduction for NullIfHasNullsReduction {
         self.has_nulls.update_group(values, group_idx, seq_id)
     }
 
+    unsafe fn update_groups_subset(
+        &mut self,
+        values: &[&Column],
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        self.inner
+            .update_groups_subset(values, subset, group_idxs, seq_id)?;
+        self.has_nulls
+            .update_groups_subset(values, subset, group_idxs, seq_id)
+    }
+
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &[&Column],
