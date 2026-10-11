@@ -5669,3 +5669,175 @@ def test_read_float16_without_arrow_schema_29829(
         pl.read_parquet(f),
         pl.DataFrame({"x": values}, schema={"x": pl.Float16}),
     )
+
+
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize(
+    ("statistics", "expected"),
+    [
+        (True, {"nan": True, "all_nan": False, "no_nan": True, "all_null": True}),
+        (
+            {"min": True, "max": True, "null_count": False},
+            {"nan": True, "all_nan": False, "no_nan": True, "all_null": True},
+        ),
+        (
+            {"min": False, "max": False, "null_count": True},
+            {"nan": False, "all_nan": False, "no_nan": False, "all_null": True},
+        ),
+        (
+            {"min": True, "max": False, "null_count": True},
+            {"nan": False, "all_nan": False, "no_nan": False, "all_null": True},
+        ),
+    ],
+)
+def test_write_column_index_without_min_max(
+    dtype: pl.DataType, statistics: bool | dict[str, bool], expected: dict[str, bool]
+) -> None:
+    # The column index may only leave out the min/max of a page without non-null values.
+    # So a page with values but without min/max leaves the column chunk without a column
+    # index. This happens if all values are NaN or if min/max are turned off.
+    df = pl.DataFrame(
+        {
+            "nan": [1.0, None, float("nan"), 2.0],
+            "all_nan": [float("nan")] * 4,
+            "no_nan": [1.0, None, 3.0, 2.0],
+            "all_null": [None] * 4,
+        },
+        schema=dict.fromkeys(expected, dtype),
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, statistics=statistics)
+
+    f.seek(0)
+    row_group = pq.ParquetFile(f).metadata.row_group(0)
+    has_column_index = {
+        row_group.column(i).path_in_schema: row_group.column(i).has_column_index
+        for i in range(row_group.num_columns)
+    }
+    assert has_column_index == expected
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+    # pyarrow can't read Int128 files, so only check that writing one succeeds. Int128
+    # always turns min/max off, and without null_count its pages have no statistics.
+    df = df.with_columns(int128=pl.Series([1, None, 3, 2], dtype=pl.Int128))
+    f = io.BytesIO()
+    df.write_parquet(f, statistics=statistics)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+def test_write_column_index_list_null_pages() -> None:
+    # Each row is a page. Pages with only null lists, empty lists or null values are
+    # null pages, so "l" keeps its column index. The page with only NaN in "l_nan" is
+    # not a null page, but it has no min/max, so "l_nan" has no column index.
+    df = pl.DataFrame(
+        {
+            "l": [[1.0, None], None, [], [None], [2.0]],
+            "l_nan": [[1.0, None], None, [], [float("nan")], [2.0]],
+        }
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, data_page_size=1)
+
+    f.seek(0)
+    row_group = pq.ParquetFile(f).metadata.row_group(0)
+    assert row_group.column(0).has_column_index
+    assert not row_group.column(1).has_column_index
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_write_statistics_without_nan_29640(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {
+            "nan": [float("nan"), 0.0, 3.0, None],
+            "all_nan": [float("nan"), None, float("nan"), None],
+        },
+        schema={"nan": dtype, "all_nan": dtype},
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    # The bounds leave out NaN, and a zero minimum is written as -0.0.
+    f.seek(0)
+    row_group = pq.ParquetFile(f).metadata.row_group(0)
+    statistics = row_group.column(0).statistics
+    assert (statistics.min, statistics.max) == (0.0, 3.0)
+    assert math.copysign(1.0, statistics.min) == -1.0
+    assert not row_group.column(1).statistics.has_min_max
+
+
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scan_parquet_nan_in_page_29640(dtype: pl.DataType, engine: EngineType) -> None:
+    # The row group has many pages, and every page in the second half has a NaN.
+    # The NaN used to drop the min/max of its page, so the row group got the max of
+    # the first half, and the scan skipped the row group for x == 100.
+    df = pl.DataFrame(
+        {"x": [1.0] * 100 + [float("nan"), 100.0] * 100}, schema={"x": dtype}
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, data_page_size=64)
+
+    f.seek(0)
+    expr = pl.col("x") == 100.0
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(expr).collect(engine=engine), df.filter(expr)
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").is_nan(),
+        pl.col("x") == float("nan"),
+        pl.col("x") > 10,
+        pl.col("x") >= 10,
+        pl.col("x") != 1.0,
+        pl.col("x").is_in([float("nan")]),
+        pl.col("x").is_not_null(),
+    ],
+)
+def test_scan_parquet_nan_predicates_29640(expr: pl.Expr, engine: EngineType) -> None:
+    # This guards the reader now that the written statistics leave out NaN. For example,
+    # the row group [1.0, NaN] gets the bounds [1, 1], and `x > 10` must still keep it.
+    # NaN is larger than every other value and equal to itself, so none of these
+    # predicates can skip a row group with a NaN.
+    df = pl.DataFrame({"x": [1.0, 2.0, 1.0, float("nan"), float("nan"), None, 1.0]})
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2)
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(expr).collect(engine=engine), df.filter(expr)
+    )
+
+
+@pytest.mark.parametrize("data_page_size", [None, 1])
+def test_write_list_null_count(data_page_size: int | None) -> None:
+    # The null count of a column under a list counts null values, null lists and empty
+    # lists, as pyarrow does. With one row per page, the null count of each page must
+    # count its null and empty lists as well.
+    df = pl.DataFrame({"l": [[1, None], None, [], [], [2]]})
+
+    f = io.BytesIO()
+    df.write_parquet(f, data_page_size=data_page_size)
+    f.seek(0)
+    statistics = pq.read_metadata(f).row_group(0).column(0).statistics
+
+    f_pa = io.BytesIO()
+    pq.write_table(df.to_arrow(), f_pa)
+    f_pa.seek(0)
+    statistics_pa = pq.read_metadata(f_pa).row_group(0).column(0).statistics
+
+    assert statistics.null_count == statistics_pa.null_count == 4
