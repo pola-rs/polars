@@ -333,8 +333,8 @@ def sequence_to_pyseries(
         if constructor == PySeries.new_object:
             try:
                 srs = PySeries.new_from_any_values(name, values, strict)
-                if _check_for_numpy(python_dtype, check_type=False) and isinstance(
-                    np.bool_(True), np.generic
+                if _check_for_numpy(python_dtype, check_type=False) and issubclass(
+                    python_dtype, np.generic
                 ):
                     dtype = numpy_char_code_to_dtype(np.dtype(python_dtype).char)
                     return srs.cast(dtype, strict=strict, wrap_numerical=False)
