@@ -154,8 +154,13 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
+        # Free-threaded CPython can't load abi3 extensions, only abi3t ones (3.15+)
+        abi: [abi3, abi3t]
         job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
         include:
+          # abi3t wheels must be built with free-threaded CPython 3.15+
+          - abi: abi3t
+            freethreaded-python: '3.15t'
           - job_config: linux-x64
             os: ubuntu-latest
             architecture: x86-64
@@ -267,6 +272,13 @@ jobs:
         with:
           swap-size-gb: 10
 
+      # Set up first so that the regular Python below stays the default for tooling
+      - name: Set up free-threaded Python
+        if: matrix.abi == 'abi3t'
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.freethreaded-python }}
+
       - name: Set up Python
         if: matrix.os != 'windows-11-arm'
         uses: actions/setup-python@v6
@@ -287,8 +299,9 @@ jobs:
 
       - name: Install yq
         run: |
-          pip install --force-reinstall --no-dependencies dist/polars-*.whl
-          rm -rf dist/*
+          mkdir polars-base
+          mv dist/* polars-base/
+          pip install --force-reinstall --no-dependencies polars-base/polars-*.whl
           pip install yq
 
       - name: Determine CPU features for x86-64
@@ -352,15 +365,19 @@ jobs:
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
+            ${{ matrix.abi == 'abi3t' && format('--interpreter python{0}', matrix.freethreaded-python) || '' }}
           manylinux: auto
           maturin-version: 1.15.0
 
       - name: Test wheel
         # Testing on entire matrix except musl targets, which are missing on all ubuntu-x images.
         if: endsWith(matrix.target, '-musl') == false
+        env:
+          PYTHON: ${{ matrix.abi == 'abi3t' && format('python{0}', matrix.freethreaded-python) || 'python' }}
         run: |
-          pip install --force-reinstall --verbose dist/*.whl
-          python -c 'import polars; polars.show_versions()' | tee versions.txt
+          "$PYTHON" -m pip install --force-reinstall --no-dependencies polars-base/polars-*.whl
+          "$PYTHON" -m pip install --force-reinstall --verbose dist/*.whl
+          "$PYTHON" -c 'import polars; polars.show_versions()' | tee versions.txt
 
           if ! grep -qE "^Build: +$POLARS_BUILD_COMMIT\$" versions.txt; then
             echo "::error::show_versions() does not report build commit $POLARS_BUILD_COMMIT"
@@ -370,7 +387,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v7
         with:
-          name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
+          name: wheel-${{ matrix.package }}-${{ matrix.abi }}-${{ matrix.job_config }}
           path: dist/*.whl
 
   publish-to-pypi:

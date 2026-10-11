@@ -44,7 +44,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.10', '3.12', '3.13', '3.14', '3.14t']
+        # Most test dependencies don't have 3.15 wheels yet, so 3.15 and 3.15t only build Polars
+        # and check that it imports
+        python-version: ['3.10', '3.12', '3.13', '3.14', '3.15', '3.15t']
         variant: [null]
         ideal_morsel_size: [100000]
         include:
@@ -97,13 +99,13 @@ jobs:
           echo "VENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
 
       - name: Install maturin
-        if: matrix.python-version == '3.14t'
+        if: startsWith(matrix.python-version, '3.15')
         run: |
           pip install uv
           uv pip install maturin
 
       - name: Install Python dependencies
-        if: matrix.python-version != '3.14t'
+        if: ${{ !startsWith(matrix.python-version, '3.15') }}
         run: |
           pip install uv
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
@@ -134,27 +136,27 @@ jobs:
           pytest tests/docs/test_user_guide.py -m docs
 
       - name: Run tests
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.variant
+        if: github.event_name == 'pull_request' && !startsWith(matrix.python-version, '3.15') && !matrix.variant
         env:
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS"
 
       - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.variant == 'engine_affinity_in_memory'
+        if: github.event_name == 'pull_request' && !startsWith(matrix.python-version, '3.15') && matrix.variant == 'engine_affinity_in_memory'
         env:
           POLARS_ENGINE_AFFINITY: in-memory
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS"
 
       - name: Run tests async reader tests
-        if: github.event_name == 'pull_request' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t' && !matrix.variant
+        if: github.event_name == 'pull_request' && matrix.os != 'windows-latest' && !startsWith(matrix.python-version, '3.15') && !matrix.variant
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/
 
       - name: Run tests multiscan force empty capabilities
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.variant
+        if: github.event_name == 'pull_request' && !startsWith(matrix.python-version, '3.15') && !matrix.variant
         env:
           POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
           POLARS_TIMEOUT_MS: 60000
@@ -164,7 +166,7 @@ jobs:
           pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_iceberg.py
 
       - name: Check import without optional dependencies
-        if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.14t')
+        if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || startsWith(matrix.python-version, '3.15'))
         run: |
           declare -a deps=("pandas"
           "pyarrow"
