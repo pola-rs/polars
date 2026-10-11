@@ -1967,6 +1967,176 @@ def test_nested_span_multiple_pages_18400() -> None:
     assert_frame_equal(df.head(1), pl.read_parquet(f, n_rows=1))
 
 
+def test_read_parquet_fixed_size_list_rows_across_pages(io_files_path: Path) -> None:
+    # Current writers keep each row within a data page, so this file was written by
+    # pyarrow (uncompressed, without dictionary) and then split into V1 data pages of 7
+    # levels each by an out-of-tree tool. Most pages start in the middle of a row.
+    n = 40
+    a = [
+        None if i % 7 == 3 else [None if j == i % 5 else i + j for j in range(3)]
+        for i in range(n)
+    ]
+    arrays = [
+        [None if (i + j) % 13 == 0 else i + j for j in range(9)] for i in range(n)
+    ]
+    b = [None if i % 11 == 5 else arrays[i : i + i % 3] for i in range(n)]
+    c = [
+        None
+        if i % 9 == 4
+        else [None if (i + j) % 4 == 0 else i + j for j in range(i % 7)]
+        for i in range(n)
+    ]
+    df = pl.DataFrame(
+        {"idx": range(n), "a": a, "b": b, "c": c},
+        schema={
+            "idx": pl.Int32,
+            "a": pl.Array(pl.Int32, 3),
+            "b": pl.List(pl.Array(pl.Int32, 9)),
+            "c": pl.List(pl.Int32),
+        },
+    )
+    path = io_files_path / "fixed_size_list_rows_across_pages.parquet"
+    _assert_nested_reads(path, df, offset=11, length=17)
+
+
+def _assert_nested_reads(
+    path: Path, expected: pl.DataFrame, *, offset: int = 1234, length: int = 1500
+) -> None:
+    """Check a full read, a slice, and a prefiltered read with a fragmented mask."""
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(
+        pl.scan_parquet(path).slice(offset, length).collect(),
+        expected.slice(offset, length),
+    )
+    predicate = pl.col("idx") % 3 != 1
+    assert_frame_equal(
+        pl.scan_parquet(path, parallel="prefiltered").filter(predicate).collect(),
+        expected.filter(predicate),
+    )
+
+
+def _write_small_pages(path: Path, columns: dict[str, Any], schema: pa.Schema) -> None:
+    """Write pages of a few dozen values, so slice and mask edges fall inside pages."""
+    pq.write_table(
+        pa.table(columns, schema=schema),
+        path,
+        data_page_size=512,
+        write_batch_size=64,
+        row_group_size=1000,
+    )
+
+
+_NESTED_STRUCT = pl.Struct({"x": pl.Int64, "y": pl.Struct({"z": pl.Int64})})
+
+
+def _nested_struct_type(nullable: bool) -> pa.DataType:
+    """The Arrow type of `_NESTED_STRUCT`, with nullable fields if `nullable`."""
+    field = functools.partial(pa.field, nullable=nullable)
+    return pa.struct(
+        [field("x", pa.int64()), field("y", pa.struct([field("z", pa.int64())]))]
+    )
+
+
+def _nested_struct_value(i: int, nullable: bool) -> dict[str, Any]:
+    """A `_NESTED_STRUCT` value with each field null for some `i` if `nullable`."""
+    return {
+        "x": None if nullable and i % 5 == 1 else i,
+        "y": None
+        if nullable and i % 4 == 2
+        else {"z": None if nullable and i % 3 == 0 else -i},
+    }
+
+
+@pytest.mark.parametrize("struct_nullable", [False, True])
+@pytest.mark.parametrize("fields_nullable", [False, True])
+def test_read_parquet_struct_without_list(
+    struct_nullable: bool, fields_nullable: bool, tmp_path: Path
+) -> None:
+    # Without a list, each value is a row, whose definition level gives the validity of
+    # each struct and of the leaf.
+    n = 3000
+    rows = [
+        None
+        if struct_nullable and i % 7 == 3
+        else _nested_struct_value(i, fields_nullable)
+        for i in range(n)
+    ]
+    schema = pa.schema(
+        [
+            pa.field("idx", pa.int32()),
+            pa.field(
+                "s", _nested_struct_type(fields_nullable), nullable=struct_nullable
+            ),
+        ]
+    )
+    path = tmp_path / "structs.parquet"
+    _write_small_pages(path, {"idx": range(n), "s": rows}, schema)
+    expected = pl.DataFrame(
+        {"idx": range(n), "s": rows}, schema={"idx": pl.Int32, "s": _NESTED_STRUCT}
+    )
+    _assert_nested_reads(path, expected)
+
+
+@pytest.mark.parametrize("nullable", [False, True])
+@pytest.mark.parametrize("width", [None, 3])
+def test_read_parquet_structs_in_list(
+    nullable: bool, width: int | None, tmp_path: Path
+) -> None:
+    # Each value of a list of structs has an item in each struct, valid as far as its
+    # definition level reaches, among null structs, null rows and empty rows (`List`).
+    n = 3000
+    rows = [
+        None
+        if nullable and i % 7 == 3
+        else [
+            None
+            if nullable and (i + j) % 6 == 5
+            else _nested_struct_value(i + j, nullable)
+            for j in range(width or i % 4)
+        ]
+        for i in range(n)
+    ]
+    item = pa.field("item", _nested_struct_type(nullable), nullable=nullable)
+    schema = pa.schema(
+        [
+            pa.field("idx", pa.int32()),
+            pa.field("a", pa.list_(item, width or -1), nullable=nullable),
+        ]
+    )
+    path = tmp_path / "structs_in_list.parquet"
+    _write_small_pages(path, {"idx": range(n), "a": rows}, schema)
+    dtype = pl.Array(_NESTED_STRUCT, width) if width else pl.List(_NESTED_STRUCT)
+    expected = pl.DataFrame(
+        {"idx": range(n), "a": rows}, schema={"idx": pl.Int32, "a": dtype}
+    )
+    _assert_nested_reads(path, expected)
+
+
+def test_read_parquet_map_with_nulls(tmp_path: Path) -> None:
+    # A map is a list of key-value structs, with null and empty maps and null values.
+    n = 3000
+    rows = [
+        None
+        if i % 7 == 3
+        else {f"k{j}": None if (i + j) % 5 == 0 else i * j for j in range(i % 4)}
+        for i in range(n)
+    ]
+    schema = pa.schema(
+        [pa.field("idx", pa.int32()), pa.field("m", pa.map_(pa.string(), pa.int64()))]
+    )
+    path = tmp_path / "map.parquet"
+    _write_small_pages(
+        path,
+        {"idx": range(n), "m": [r if r is None else list(r.items()) for r in rows]},
+        schema,
+    )
+    expected = pl.DataFrame(
+        {"idx": range(n), "m": rows},
+        schema={"idx": pl.Int32, "m": pl.Map(pl.String, pl.Int64)},
+    )
+    _assert_nested_reads(path, expected)
+
+
 @given(
     df=dataframes(
         min_size=0,
