@@ -588,7 +588,10 @@ impl PolarsObjectStore {
         let mut suffix_rejected = false;
 
         if n > 0 && self.suffix_range_supported() {
-            match self.try_get_suffix(path, n, config.strategy).await {
+            match self
+                .try_get_with_size(path, SizedRange::Suffix(n), config.strategy)
+                .await
+            {
                 Ok(v) => return Ok(v),
                 Err(e) if is_suffix_range_rejection(&e) => {
                     suffix_rejected = true;
@@ -618,35 +621,68 @@ impl PolarsObjectStore {
         Ok((bytes, size))
     }
 
-    async fn try_get_suffix(
+    /// Fetch the first `n` bytes of the object, and the total size of the object. Returns fewer
+    /// than `n` bytes if the object is smaller than `n`.
+    ///
+    /// A bounded range request carries the object size in its `Content-Range`, saving a HEAD.
+    /// Empty objects and backends ignoring the range fall back to HEAD + bounded range.
+    pub async fn get_prefix(
         &self,
         path: &Path,
         n: usize,
+        config: FetchConfig,
+    ) -> PolarsResult<(Buffer<u8>, usize)> {
+        if n > 0 {
+            match self
+                .try_get_with_size(path, SizedRange::Prefix(n), config.strategy)
+                .await
+            {
+                Err(e) if is_prefix_range_rejection(&e) => {},
+                out => return out,
+            }
+        }
+
+        let size = self.head(path, config.strategy).await?.size as usize;
+        let bytes = self.get_range(path, 0..n.min(size), config).await?;
+
+        Ok((bytes, size))
+    }
+
+    /// Range request that also returns the total object size.
+    async fn try_get_with_size(
+        &self,
+        path: &Path,
+        range: SizedRange,
         strategy: ConcurrencyStrategy,
     ) -> PolarsResult<(Buffer<u8>, usize)> {
         match strategy {
             ConcurrencyStrategy::BytesBased => {
                 let controller = self.get_or_init_concurrency();
-                let _permit = controller.acquire(n as u64).await;
-                self.try_get_suffix_inner(path, n, Some(&**controller))
+                let _permit = controller.acquire(range.len() as u64).await;
+                self.try_get_with_size_inner(path, range, Some(&**controller))
                     .await
             },
             ConcurrencyStrategy::Legacy => {
-                with_concurrency_budget(1, || self.try_get_suffix_inner(path, n, None)).await
+                with_concurrency_budget(1, || self.try_get_with_size_inner(path, range, None)).await
             },
-            ConcurrencyStrategy::Unbounded => self.try_get_suffix_inner(path, n, None).await,
+            ConcurrencyStrategy::Unbounded => self.try_get_with_size_inner(path, range, None).await,
         }
     }
 
-    async fn try_get_suffix_inner(
+    async fn try_get_with_size_inner(
         &self,
         path: &Path,
-        n: usize,
+        range: SizedRange,
         controller: Option<&ConcurrencyController>,
     ) -> PolarsResult<(Buffer<u8>, usize)> {
         let metrics = self.io_metrics();
 
-        metrics.add_bytes_requested(n as u64);
+        // A prefix range is clamped to the object size, so it is accounted for once the response
+        // carries the size, once across retries.
+        if let SizedRange::Suffix(n) = range {
+            metrics.add_bytes_requested(n as u64);
+        }
+        let prefix_requested_recorded = &std::sync::atomic::AtomicBool::new(false);
 
         let io_session = metrics.start_io_session();
 
@@ -657,7 +693,7 @@ impl PolarsObjectStore {
                     .get_opts(
                         path,
                         object_store::GetOptions {
-                            range: Some(object_store::GetRange::Suffix(n as u64)),
+                            range: Some(range.into()),
                             ..Default::default()
                         },
                     )
@@ -665,6 +701,13 @@ impl PolarsObjectStore {
                 let ttfb = t0.elapsed();
                 // `get_opts()` rewrites this from `Content-Range`: the full object size.
                 let size = response.meta.size as usize;
+
+                if let SizedRange::Prefix(n) = range
+                    && !prefix_requested_recorded.swap(true, std::sync::atomic::Ordering::Relaxed)
+                {
+                    metrics.add_bytes_requested(n.min(size) as u64);
+                }
+
                 let bytes = response.bytes().await?;
 
                 if let Some(controller) = controller {
@@ -683,7 +726,7 @@ impl PolarsObjectStore {
 
         let (bytes, size) = out?;
 
-        // A suffix response is short when the object is smaller than `n`.
+        // The response is short when the object is smaller than the range.
         metrics.add_bytes_received(bytes.len() as u64);
 
         Ok((bytes, size))
@@ -766,6 +809,47 @@ fn is_suffix_range_rejection(err: &PolarsError) -> bool {
     msg.contains("does not support suffix range requests")
         || msg.contains("Received non-partial response")
         || msg.contains("416 Range Not Satisfiable")
+}
+
+/// Range request forms whose response carries the total object size in its `Content-Range`.
+#[derive(Clone, Copy, Debug)]
+enum SizedRange {
+    /// The first `n` bytes.
+    Prefix(usize),
+    /// The last `n` bytes.
+    Suffix(usize),
+}
+
+impl SizedRange {
+    /// Number of bytes requested.
+    fn len(self) -> usize {
+        match self {
+            Self::Prefix(n) | Self::Suffix(n) => n,
+        }
+    }
+}
+
+impl From<SizedRange> for object_store::GetRange {
+    fn from(value: SizedRange) -> Self {
+        match value {
+            SizedRange::Prefix(n) => Self::Bounded(0..n as u64),
+            SizedRange::Suffix(n) => Self::Suffix(n as u64),
+        }
+    }
+}
+
+/// Whether a prefix range request was rejected rather than the object. Empty objects have
+/// no satisfiable range: the backend answers 416, or `object_store` rejects the range against the
+/// size. Backends ignoring the range answer 200 instead of 206, the HEAD fallback then decides
+/// (e.g. an empty object needs no further request).
+fn is_prefix_range_rejection(err: &PolarsError) -> bool {
+    let msg = err.to_string();
+
+    msg.contains("416 Range Not Satisfiable")
+        || msg.contains("Wanted range starting at")
+        || msg.contains("Received non-partial response")
+        // `object_store` HTTP store.
+        || msg.contains("Range request not supported")
 }
 
 /// Splits a single range into multiple smaller ranges, which can be downloaded concurrently for

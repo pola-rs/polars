@@ -255,6 +255,7 @@ impl FileReader for CsvFileReader {
                         byte_source,
                         file_size,
                         chunk_size,
+                        prefix: None,
                         prefetch_send,
                         prefetch_semaphore,
                         prefetch_current_all_spawned,
