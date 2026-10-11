@@ -1773,7 +1773,8 @@ def test_iceberg_plugin_top_k_with_deletes(
     small = next(
         p
         for p in _data_file_paths(tbl)
-        if pl.scan_parquet(p).select(pl.len()).collect().item() == 7
+        if pl.scan_parquet(p.removeprefix("file://")).select(pl.len()).collect().item()
+        == 7
     )
     tbl = _add_position_deletes(tbl, {small: [3, 6]}, deletion_vectors=deletion_vectors)
     df = pl.DataFrame(tbl.scan().to_arrow())
