@@ -1582,9 +1582,10 @@ def test_sink_iceberg_partition_key_name_collision_schema_merge(
 @pytest.mark.parametrize("metrics_mode", ["none", "counts"])
 @pytest.mark.parametrize("column_override", [False, True])
 @pytest.mark.write_disk
-def test_sink_iceberg_partitioned_requires_bounds_metrics(
+def test_sink_iceberg_partitioned_without_bounds_metrics(
     tmp_path: Path, *, metrics_mode: str, column_override: bool
 ) -> None:
+    # Partition values come from the partition keys, not from the file statistics.
     from pyiceberg.table import TableProperties
 
     property_name = (
@@ -1604,15 +1605,11 @@ def test_sink_iceberg_partitioned_requires_bounds_metrics(
         properties={property_name: metrics_mode},
     )
 
-    with pytest.raises(
-        NotImplementedError,
-        match=rf"partition_col.*'{metrics_mode}' metrics.*requires lower and upper bounds",
-    ):
-        pl.LazyFrame({"partition_col": [7, 7], "value": [1, 2]}).sink_iceberg(
-            tbl, mode="append"
-        )
+    df = pl.DataFrame({"partition_col": [7, 7, 8], "value": [1, 2, 3]})
+    df.lazy().sink_iceberg(tbl, mode="append")
 
-    assert tbl.current_snapshot() is None
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
+    assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {7, 8}
 
 
 @pytest.mark.write_disk
@@ -7010,3 +7007,317 @@ def test_convert_predicate_nanosecond_literal() -> None:
     assert try_convert_pyarrow_predicate(
         "(pa.compute.field('t') < to_py_datetime(2000,'ns'))"
     ) == LessThan("t", "1970-01-01T00:00:00.000002")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("iceberg_type", [FloatType(), DoubleType()])
+def test_sink_iceberg_identity_partition_nan_and_signed_zero(
+    tmp_path: Path, iceberg_type: Any
+) -> None:
+    # Parquet statistics have no bounds for NaN columns, and do not tell signed zeros
+    # apart; Iceberg keeps -0.0 and 0.0 in separate partitions.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "f", iceberg_type), NestedField(2, "i", LongType())
+        ),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "f")),
+    )
+    dtype = pl.Float32 if isinstance(iceberg_type, FloatType) else pl.Float64
+    df = pl.DataFrame(
+        {
+            "f": pl.Series(
+                [float("nan"), float("nan"), 1.5, None, -0.0, 0.0], dtype=dtype
+            ),
+            "i": range(6),
+        }
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    def partition_key(v: float | None) -> bytes | str | None:
+        # Tells signed zeros apart.
+        return None if v is None else "nan" if math.isnan(v) else struct.pack(">d", v)
+
+    partitions = {
+        (partition_key(task.file.partition[0]), task.file.record_count)
+        for task in tbl.scan().plan_files()
+    }
+    assert partitions == {
+        ("nan", 2),
+        (partition_key(1.5), 1),
+        (None, 1),
+        (partition_key(-0.0), 1),
+        (partition_key(0.0), 1),
+    }
+
+    for predicate in [
+        pl.col("f").is_not_null(),
+        pl.col("f").is_nan(),
+        pl.col("f").is_null(),
+        pl.col("f") == 0.0,
+        pl.col("f") > 1.0,
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect().sort("i"),
+            df.filter(predicate),
+        )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("iceberg_type", "dtype", "bits"),
+    [(IntegerType(), pl.Int32, 32), (LongType(), pl.Int64, 64)],
+)
+def test_sink_iceberg_truncate_partition_near_minimum(
+    tmp_path: Path, iceberg_type: Any, dtype: pl.DataType, bits: int
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "x", iceberg_type), NestedField(2, "i", LongType())
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, TruncateTransform(10), "x_trunc")
+        ),
+    )
+    minimum = -(1 << (bits - 1))
+    values = [minimum, minimum + 5, -1, 0]
+    df = pl.DataFrame({"x": pl.Series(values, dtype=dtype), "i": range(len(values))})
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    def wrapped_truncate(v: int) -> int:
+        # As Iceberg Java (and PyIceberg's append) write it: a wrapping subtraction.
+        t = v - v % 10
+        return (t - minimum) % (1 << bits) + minimum
+
+    assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {
+        wrapped_truncate(v) for v in values
+    }
+    for predicate in [pl.col("x") < 0, pl.col("x") == minimum, pl.col("x") >= -1]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect().sort("i"),
+            df.filter(predicate),
+        )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partition_long_values(tmp_path: Path) -> None:
+    # Parquet statistics of long values are truncated.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "s", StringType()),
+            NestedField(2, "b", BinaryType()),
+            NestedField(3, "t", StringType()),
+            NestedField(4, "i", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "s"),
+            PartitionField(2, 1001, IdentityTransform(), "b"),
+            PartitionField(3, 1002, TruncateTransform(70), "t_trunc"),
+        ),
+    )
+    long = "é" * 50 + "x" * 50
+    df = pl.DataFrame(
+        {
+            "s": [long, long, "a"],
+            "b": [long.encode(), long.encode(), b"a"],
+            "t": [long, long + "y", "a"],
+            "i": [0, 1, 2],
+        }
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    partitions = [task.file.partition for task in tbl.scan().plan_files()]
+    assert {(p[0], p[1], p[2]) for p in partitions} == {
+        (long, long.encode(), long[:70]),
+        ("a", b"a", "a"),
+    }
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).filter(pl.col("s") == long).collect().sort("i"),
+        df.head(2),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_missing_struct_with_child_initial_default_is_null(
+    tmp_path: Path,
+) -> None:
+    # A struct added after data was written is null in the older files, even if its
+    # fields have defaults.
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    tbl.append(pa.Table.from_pylist([{"a": 1}], schema=tbl.schema().as_arrow()))
+
+    md_path = Path(
+        tbl.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+    md_object["format-version"] = 3
+    md_object["schemas"][-1]["fields"].append(
+        {
+            "id": 2,
+            "name": "s",
+            "required": False,
+            "type": {
+                "type": "struct",
+                "fields": [
+                    {
+                        "id": 3,
+                        "name": "b",
+                        "required": False,
+                        "type": "long",
+                        "initial-default": 5,
+                    }
+                ],
+            },
+        }
+    )
+    md_object["last-column-id"] = 3
+    md_path.write_text(json.dumps(md_object))
+    tbl = catalog.load_table(tbl.name())
+
+    expect = pl.DataFrame(
+        {"a": [1], "s": [None]},
+        schema={"a": pl.Int64, "s": pl.Struct({"b": pl.Int64})},
+    )
+    for reader_override in [None, "pyiceberg"]:
+        lf = pl.scan_iceberg(tbl, reader_override=reader_override)  # type: ignore[arg-type]
+        assert_frame_equal(lf.collect(), expect)
+        assert_frame_equal(lf.filter(pl.col("s").is_null()).collect(), expect)
+        assert lf.filter(pl.col("s").struct.field("b") == 5).collect().height == 0
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_required_column_added_without_default(tmp_path: Path) -> None:
+    # PyIceberg and Java allow it (as an incompatible change); older files hold
+    # nulls. (PyIceberg's reader refuses these files.)
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    tbl.append(
+        pa.Table.from_pylist([{"a": 1}, {"a": 2}], schema=tbl.schema().as_arrow())
+    )
+    with tbl.update_schema(allow_incompatible_changes=True) as update:
+        update.add_column("r", LongType(), required=True)
+    tbl = catalog.load_table(tbl.name())
+
+    lf = pl.scan_iceberg(tbl)
+    assert lf.filter(pl.col("r").is_null()).collect().height == 2
+    assert lf.filter(~pl.col("r").is_not_null()).collect().height == 2
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("reader_override", [None, "pyiceberg"])
+def test_scan_iceberg_or_predicate_with_null_partition_values(
+    tmp_path: Path, reader_override: str | None
+) -> None:
+    # PyIceberg's residual evaluator fails on `i > 0` for a null partition value.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "i", IntegerType()), NestedField(2, "s", StringType())
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "i_p")
+        ),
+    )
+    arrow_schema = pa.schema([pa.field("i", pa.int32()), pa.field("s", pa.string())])
+    df = pl.DataFrame(
+        {"i": [1, None, -5, None], "s": ["a", "b", "c", "a"]},
+        schema={"i": pl.Int32, "s": pl.String},
+    )
+    tbl.append(df.head(2).to_arrow().cast(arrow_schema))
+    tbl.append(df.tail(2).to_arrow().cast(arrow_schema))
+
+    lf = pl.scan_iceberg(tbl, reader_override=reader_override)  # type: ignore[arg-type]
+    for predicate in [
+        (pl.col("i") > 0) | (pl.col("s") == "a"),
+        ~((pl.col("i") > 0) & (pl.col("s") == "b")),
+        (pl.col("i") > 0) ^ (pl.col("s") == "a"),
+    ]:
+        assert_frame_equal(
+            lf.filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_files_without_field_ids_use_name_mapping(
+    tmp_path: Path,
+) -> None:
+    # E.g. files imported with `add_files`: their columns are found by the table's
+    # name mapping, including after renames.
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "s", StructType(NestedField(3, "x", StringType()))),
+            NestedField(4, "l", ListType(5, LongType(), element_required=False)),
+        ),
+    )
+    path = tmp_path / "no-field-ids.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "a": pa.array([1, 2], pa.int64()),
+                "s": pa.array([{"x": "p"}, {"x": "q"}]),
+                "l": pa.array([[1], [2, 3]], pa.list_(pa.int64())),
+            }
+        ),
+        path,
+    )
+    tbl.add_files([format_file_uri_iceberg(path)])
+    with tbl.update_schema() as update:
+        update.rename_column("a", "b")
+    tbl = catalog.load_table(tbl.name())
+
+    expect = pl.DataFrame(
+        {"b": [1, 2], "s": [{"x": "p"}, {"x": "q"}], "l": [[1], [2, 3]]}
+    )
+    lf = pl.scan_iceberg(tbl)
+    assert_frame_equal(lf.collect(), expect)
+    assert_frame_equal(lf.filter(pl.col("b") == 2).collect(), expect.tail(1))
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_metadata_file_removed_after_load(tmp_path: Path) -> None:
+    # E.g. by `write.metadata.previous-versions-max` after newer commits.
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    df = pl.DataFrame({"a": [1, 2]})
+    tbl.append(df.to_arrow())
+    Path(tbl.metadata_location.removeprefix("file:").removeprefix("//")).unlink()
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_reader_pyiceberg_negated_predicates_keep_nulls(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "i", LongType()), NestedField(2, "s", StringType())
+        ),
+    )
+    df = pl.DataFrame({"i": [1, 2, None], "s": ["ab", "cd", None]})
+    tbl.append(df.to_arrow())
+
+    lf = pl.scan_iceberg(tbl, reader_override="pyiceberg")
+    for predicate in [
+        ~pl.col("i").is_in([1, 3], nulls_equal=True),
+        pl.col("i").ne_missing(1),
+        ~pl.col("s").str.starts_with("a"),
+    ]:
+        assert_frame_equal(
+            lf.filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )

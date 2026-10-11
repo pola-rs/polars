@@ -763,6 +763,32 @@ pub fn build_iceberg_default_value_impl(
         ICT::Struct(fields) => {
             use polars_core::prelude::StructChunked;
 
+            // A missing struct is null unless it has a default itself (`{}`, the only non-null
+            // struct default), or a nested field has an identity-partition value: only then do
+            // its fields take their own defaults.
+            fn has_partition_value(
+                provider: IcebergDefaultValueProviderRef,
+                column: &IcebergColumn,
+            ) -> bool {
+                match &column.type_ {
+                    IcebergColumnType::Primitive { .. } => {
+                        provider.has_identity_partition_value(column.physical_id)
+                    },
+                    IcebergColumnType::Struct(fields) => fields
+                        .values()
+                        .any(|field| has_partition_value(provider, field)),
+                    _ => false,
+                }
+            }
+
+            if iceberg_default_value_provider
+                .get_default_value(target_column.physical_id)?
+                .is_none()
+                && !has_partition_value(iceberg_default_value_provider, target_column)
+            {
+                return Ok(None);
+            }
+
             let mut is_input_passthrough = true;
 
             let mut field_columns = Vec::with_capacity(fields.len());

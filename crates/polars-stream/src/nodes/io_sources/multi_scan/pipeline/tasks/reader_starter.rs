@@ -447,16 +447,24 @@ async fn start_reader_impl(
         external_filter_mask,
     } = args_this_file;
 
-    let file_iceberg_schema: Option<IcebergSchema> =
-        if matches!(&file_projection_builder, ProjectionBuilder::Iceberg { .. }) {
-            reader
-                .file_arrow_schema()
-                .await?
-                .map(|x| IcebergSchema::from_arrow_schema(x.as_ref()))
-                .transpose()?
-        } else {
-            None
-        };
+    let file_iceberg_schema: Option<IcebergSchema> = if let ProjectionBuilder::Iceberg {
+        projected_iceberg_schema,
+        ..
+    } = &file_projection_builder
+    {
+        reader
+            .file_arrow_schema()
+            .await?
+            .map(|x| {
+                IcebergSchema::from_arrow_schema_with_name_mapping(
+                    x.as_ref(),
+                    projected_iceberg_schema,
+                )
+            })
+            .transpose()?
+    } else {
+        None
+    };
 
     let file_projection = file_projection_builder.build_projection(
         None,

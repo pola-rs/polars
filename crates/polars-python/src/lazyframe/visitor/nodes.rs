@@ -180,7 +180,7 @@ impl PyFileOptions {
 
                             position_deletes.set_item(*k, py_paths)?;
                         },
-                        IcebergDeletes::DeletionVector(path) => {
+                        IcebergDeletes::DeletionVector { path, .. } => {
                             deletion_vectors.set_item(*k, path.as_str())?
                         },
                     }
@@ -312,6 +312,7 @@ fn iceberg_column_to_pyobject(py: Python<'_>, column: &IcebergColumn) -> PyResul
         name,
         physical_id,
         type_,
+        mapped_names: _,
     } = column;
 
     let type_ = match type_ {

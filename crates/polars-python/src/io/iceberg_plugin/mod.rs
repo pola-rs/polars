@@ -73,7 +73,7 @@ fn dispatch(capsule: &Bound<'_, PyCapsule>) -> PolarsResult<Dispatch> {
     to_snapshot_id_inclusive, projection, filter_columns, statistics_columns, row_filter, limit,
     use_metadata_statistics, fast_deletion_count, verbose, testing_fail,
     source_url, storage_options, credential_provider, cast_options,
-    metadata_cache, metadata_cache_scope
+    metadata_cache, metadata_cache_scope, name_mapping=None
 ))]
 #[allow(clippy::too_many_arguments)]
 pub fn _iceberg_plugin_scan(
@@ -98,6 +98,7 @@ pub fn _iceberg_plugin_scan(
     cast_options: Wrap<CastColumnsPolicy>,
     metadata_cache: Option<PyRef<'_, PyIcebergMetadataFileCache>>,
     metadata_cache_scope: Option<String>,
+    name_mapping: Option<std::collections::HashMap<u32, Vec<String>>>,
 ) -> PyResult<PyLazyFrame> {
     let capsule = capsule.cast::<PyCapsule>().map_err(|_| {
         pyo3::exceptions::PyTypeError::new_err(format!(
@@ -149,6 +150,12 @@ pub fn _iceberg_plugin_scan(
                     cloud_options,
                     metadata_cache,
                     cast_columns_policy,
+                    name_mapping.map(|names| {
+                        names
+                            .into_iter()
+                            .map(|(id, n)| (id, n.into_iter().map(Into::into).collect()))
+                            .collect()
+                    }),
                 )
             })?
         },

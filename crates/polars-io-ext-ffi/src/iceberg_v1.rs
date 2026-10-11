@@ -17,9 +17,10 @@
 //!
 //! `files` columns:
 //! * `path: utf8view` (absolute URL), `size: u64` (bytes), `record_count: u64`
-//! * `deletes: large_list<struct{kind: utf8view, path: utf8view}>`, where `kind` is `position`
-//!   (Parquet position delete file) or `deletion_vector` (Puffin file); a data file has either
-//!   position delete files or a single deletion vector.
+//! * `deletes: large_list<struct{kind: utf8view, path: utf8view, content_offset: i64}>`, where
+//!   `kind` is `position` (Parquet position delete file) or `deletion_vector` (Puffin file); a
+//!   data file has either position delete files or a single deletion vector. `content_offset`
+//!   (nullable, optional) is the offset of a deletion vector's blob in its Puffin file.
 //! * `constants: struct{<field id>: <value>}` (only if non-empty): identity-partition values of
 //!   projected fields, per data file; null if the file has no value.
 //! * `stats: struct{<col>_nc: u64, <col>_min, <col>_max}` (only if statistics were requested

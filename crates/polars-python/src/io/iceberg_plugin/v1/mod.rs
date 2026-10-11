@@ -9,6 +9,8 @@ use polars_error::{PolarsError, PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io_ext_ffi::common::{FfiError, FfiErrorKind};
 use polars_io_ext_ffi::iceberg_v1::{Plugin, Request};
+use polars_utils::aliases::PlHashMap;
+use polars_utils::pl_str::PlSmallStr;
 
 use self::host::HostCtx;
 use super::metadata_cache::ScopedMetadataCache;
@@ -21,6 +23,7 @@ pub(super) fn scan(
     cloud_options: Option<CloudOptions>,
     metadata_cache: Option<ScopedMetadataCache>,
     cast_columns_policy: CastColumnsPolicy,
+    name_mapping: Option<PlHashMap<u32, Vec<PlSmallStr>>>,
 ) -> PolarsResult<DslPlan> {
     let ctx = HostCtx {
         cloud_options: cloud_options.clone(),
@@ -52,7 +55,7 @@ pub(super) fn scan(
     }
 
     let scan = convert::import_output(output)?;
-    convert::build_scan(scan, cloud_options, cast_columns_policy)
+    convert::build_scan(scan, cloud_options, cast_columns_policy, name_mapping)
 }
 
 fn ffi_to_polars_err(

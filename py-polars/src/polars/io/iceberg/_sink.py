@@ -4,12 +4,13 @@ import contextlib
 import importlib
 import importlib.util
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_ldf
+from polars.exceptions import ComputeError
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
@@ -27,11 +28,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import pyiceberg.catalog
     import pyiceberg.table
-    from pyiceberg.io.pyarrow import (
-        DataFileStatistics,
-        MetricModeTypes,
-        StatisticsCollector,
-    )
+    from pyiceberg.io.pyarrow import StatisticsCollector
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
@@ -48,7 +45,8 @@ if TYPE_CHECKING:
     from polars._typing import ParquetCompression, StorageOptionsDict
 
 
-_IcebergSinkedFile = tuple[str, int, int, bytes]
+# `(path, num_rows, num_bytes, parquet_metadata, partition_keys)`
+_IcebergSinkedFile = tuple[str, int, int, bytes, "pl.DataFrame | None"]
 
 _SINK_UUID_PROPERTY = "polars.sink-uuid"
 
@@ -159,14 +157,6 @@ def _sink_transaction(table: pyiceberg.table.Table, sink_uuid: str) -> Transacti
     return _SinkTransaction(table)
 
 
-def _nested_partition_source_ids(schema: Schema, spec: PartitionSpec) -> set[int]:
-    return {
-        field.source_id
-        for field in spec.fields
-        if schema.accessor_for_field(field.source_id).inner is not None
-    }
-
-
 def _iceberg_source_expr(schema: Schema, source_id: int) -> pl.Expr:
     from pyiceberg.types import StructType
 
@@ -188,35 +178,45 @@ def _iceberg_source_expr(schema: Schema, source_id: int) -> pl.Expr:
     return expr
 
 
-def _infer_partition_from_statistics(
-    statistics: DataFileStatistics, spec: PartitionSpec, schema: Schema
+def _partition_record(
+    partition_keys: pl.DataFrame | None, spec: PartitionSpec, schema: Schema
 ) -> Record:
+    """
+    The partition of a sinked file, from its partition keys (`_partition_key_exprs`).
+
+    Parquet statistics cannot give it: they are truncated for long values, absent for
+    NaN, and do not distinguish signed zeros.
+    """
+    import struct
+
     from pyiceberg.partitioning import partition_record_value
+    from pyiceberg.transforms import IdentityTransform
     from pyiceberg.typedef import Record
+    from pyiceberg.types import DoubleType, FloatType
+
+    if not spec.fields:
+        return Record()
+
+    if partition_keys is None or partition_keys.shape != (1, len(spec.fields)):
+        msg = (
+            "Iceberg sink: partition keys of a file do not match the partition spec: "
+            f"{None if partition_keys is None else partition_keys.schema}"
+        )
+        raise ComputeError(msg)
 
     partition_values: list[Any] = []
-    for field in spec.fields:
-        aggregate = statistics.column_aggregates.get(field.source_id)
-        if aggregate is None:
-            partition_values.append(None)
-            continue
-
+    for field, value in zip(spec.fields, partition_keys.row(0), strict=True):
         source_type = schema.find_field(field.source_id).field_type
-        transform = field.transform.transform(source_type)
-        lower_value = transform(
-            partition_record_value(field, aggregate.current_min, schema)
-        )
-        upper_value = transform(
-            partition_record_value(field, aggregate.current_max, schema)
-        )
-        # A file can contain different source values in one transformed partition.
-        if lower_value != upper_value:
-            msg = (
-                "Cannot infer partition value from Parquet metadata for partition "
-                f"field '{field.name}': {lower_value=}, {upper_value=}"
-            )
-            raise ValueError(msg)
-        partition_values.append(lower_value)
+        if value is None or not isinstance(field.transform, IdentityTransform):
+            # Transforms give partition values.
+            pass
+        elif isinstance(source_type, (FloatType, DoubleType)):
+            # The key holds the bits, to keep signed zeros apart.
+            value = struct.unpack("<d", struct.pack("<q", value))[0]
+        elif not isinstance(value, int):
+            # Temporal keys are already in the partition representation.
+            value = partition_record_value(field, value, schema)
+        partition_values.append(value)
 
     return Record(*partition_values)
 
@@ -243,12 +243,9 @@ def _temporal_transform_expr(
 def _data_files_from_sink_metadata(
     table_metadata: TableMetadata,
     sinked_files: list[_IcebergSinkedFile],
-    nested_source_ids: set[int],
     sort_order_id: int | None,
 ) -> Iterable[DataFile]:
     from pyiceberg.io.pyarrow import (
-        MetricModeTypes,
-        MetricsMode,
         compute_statistics_plan,
         parquet_path_to_id_mapping,
     )
@@ -256,14 +253,6 @@ def _data_files_from_sink_metadata(
 
     schema = table_metadata.schema()
     statistics_plan = compute_statistics_plan(schema, table_metadata.properties)
-    nested_metrics_modes = {}
-    for source_id in nested_source_ids:
-        nested_metrics_modes[source_id] = statistics_plan[source_id].mode.type
-        # Nested bounds are needed temporarily to infer the partition value.
-        statistics_plan[source_id] = replace(
-            statistics_plan[source_id],
-            mode=MetricsMode(MetricModeTypes.FULL),
-        )
     parquet_column_mapping = parquet_path_to_id_mapping(schema)
 
     executor = ExecutorFactory.get_or_create()
@@ -274,7 +263,6 @@ def _data_files_from_sink_metadata(
             sinked_file,
             statistics_plan,
             parquet_column_mapping,
-            nested_metrics_modes,
             sort_order_id,
         )
         for sinked_file in sinked_files
@@ -287,20 +275,18 @@ def _data_file_from_sink_metadata(
     sinked_file: _IcebergSinkedFile,
     statistics_plan: dict[int, StatisticsCollector],
     parquet_column_mapping: dict[str, int],
-    nested_metrics_modes: dict[int, MetricModeTypes],
     sort_order_id: int | None,
 ) -> DataFile:
     import pyarrow as pa
     import pyarrow.parquet as pq
     from pyiceberg.io.pyarrow import (
-        MetricModeTypes,
         _check_pyarrow_schema_compatible,
         data_file_statistics_from_parquet_metadata,
     )
     from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 
     schema = table_metadata.schema()
-    file_path, num_rows, num_bytes, parquet_metadata_bytes = sinked_file
+    file_path, num_rows, num_bytes, parquet_metadata_bytes, partition_keys = sinked_file
     parquet_metadata = pq.read_metadata(pa.BufferReader(parquet_metadata_bytes))
 
     if parquet_metadata.num_rows != num_rows:
@@ -316,17 +302,8 @@ def _data_file_from_sink_metadata(
         stats_columns=statistics_plan,
         parquet_column_mapping=parquet_column_mapping,
     )
-    partition = _infer_partition_from_statistics(
-        statistics, table_metadata.spec(), schema
-    )
+    partition = _partition_record(partition_keys, table_metadata.spec(), schema)
     serialized_statistics = statistics.to_serialized_dict()
-    for source_id, metrics_mode in nested_metrics_modes.items():
-        serialized_statistics["lower_bounds"].pop(source_id, None)
-        serialized_statistics["upper_bounds"].pop(source_id, None)
-        if metrics_mode is MetricModeTypes.NONE:
-            serialized_statistics["value_counts"].pop(source_id, None)
-            serialized_statistics["null_value_counts"].pop(source_id, None)
-            serialized_statistics["nan_value_counts"].pop(source_id, None)
 
     data_file_args = {
         "content": DataFileContent.DATA,
@@ -355,9 +332,6 @@ def _add_files(
     from pyiceberg.table import TableProperties
 
     table_metadata = transaction.table_metadata
-    nested_source_ids = _nested_partition_source_ids(
-        table_metadata.schema(), table_metadata.spec()
-    )
     if table_metadata.name_mapping() is None:
         transaction.set_properties(
             {
@@ -371,7 +345,6 @@ def _add_files(
         for data_file in _data_files_from_sink_metadata(
             table_metadata,
             sinked_files,
-            nested_source_ids,
             sort_order_id,
         ):
             append_files.append_data_file(data_file)
@@ -385,7 +358,6 @@ def _partition_key_exprs(
     if not spec.fields:
         return None
 
-    from pyiceberg.io.pyarrow import MetricModeTypes, compute_statistics_plan
     from pyiceberg.transforms import (
         DayTransform,
         HourTransform,
@@ -394,12 +366,20 @@ def _partition_key_exprs(
         TruncateTransform,
         YearTransform,
     )
-    from pyiceberg.types import BinaryType, IntegerType, LongType, StringType
+    from pyiceberg.types import (
+        BinaryType,
+        DateType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        LongType,
+        StringType,
+        TimeType,
+    )
+
+    import polars as pl
 
     schema = table.schema()
-    nested_source_ids = _nested_partition_source_ids(schema, spec)
-    statistics_plan = compute_statistics_plan(schema, table.metadata.properties)
-    bounds_metrics_modes = {MetricModeTypes.TRUNCATE, MetricModeTypes.FULL}
     reserved_names = {field.name for field in schema.fields}
     if source_schema is not None:
         reserved_names.update(source_schema.names)
@@ -407,28 +387,35 @@ def _partition_key_exprs(
 
     for field in spec.fields:
         source_field = schema.find_field(field.source_id)
-        statistics = statistics_plan.get(field.source_id)
-        if field.source_id not in nested_source_ids and (
-            statistics is None or statistics.mode.type not in bounds_metrics_modes
-        ):
-            source_name = schema.find_column_name(field.source_id)
-            metrics_mode = (
-                statistics.mode.type.value if statistics is not None else "unavailable"
-            )
-            msg = (
-                "sink to Iceberg table with partition field "
-                f"'{field.name}' on source column '{source_name}' with "
-                f"'{metrics_mode}' metrics; partition value inference requires "
-                "lower and upper bounds"
-            )
-            raise NotImplementedError(msg)
-
         source_type = source_field.field_type
         transform = field.transform
         expr = _iceberg_source_expr(schema, field.source_id)
 
+        # The keys are the partition values (see `_partition_record`).
         if isinstance(transform, IdentityTransform):
-            pass
+            if isinstance(source_type, (FloatType, DoubleType)):
+                # Iceberg keeps signed zeros apart, Polars' grouping does not. NaNs
+                # are one partition.
+                value = expr.cast(pl.Float64)
+                expr = (
+                    pl.when(value.is_nan())
+                    .then(pl.lit(0x7FF8000000000000, pl.Int64))
+                    .otherwise(value.reinterpret(dtype=pl.Int64))
+                )
+            elif isinstance(source_type, DateType):
+                expr = expr.cast(pl.Date).to_physical()
+            elif isinstance(source_type, TimeType):
+                expr = expr.cast(pl.Time).to_physical() // 1000
+            elif type(source_type).__name__ in {
+                "TimestampType",
+                "TimestamptzType",
+            }:
+                expr = expr.dt.cast_time_unit("us").to_physical()
+            elif type(source_type).__name__ in {
+                "TimestampNanoType",
+                "TimestamptzNanoType",
+            }:
+                expr = expr.dt.cast_time_unit("ns").to_physical()
         elif isinstance(
             transform, (YearTransform, MonthTransform, DayTransform, HourTransform)
         ):
@@ -610,6 +597,8 @@ class IcebergSinkState:
     table_: NoPickleOption[pyiceberg.table.Table]
     source_schema: pa.Schema | None
     sort_order_id: int | None
+    # The partition spec of the partition keys.
+    partition_spec_id: int | None
     commit_result_df: NoPickleOption[pl.DataFrame]
 
     @staticmethod
@@ -674,6 +663,7 @@ class IcebergSinkState:
             table_=NoPickleOption(target if not isinstance(target, str) else None),
             source_schema=None,
             sort_order_id=None,
+            partition_spec_id=None,
             commit_result_df=NoPickleOption(),
         )
 
@@ -752,6 +742,7 @@ class IcebergSinkState:
             raise NotImplementedError(msg)
 
         partition_key_exprs = _partition_key_exprs(table, self.source_schema)
+        self.partition_spec_id = table.spec().spec_id
 
         sort_order = table.sort_order()
         if sort_order.fields and self.schema_mode == "overwrite":
@@ -890,11 +881,9 @@ class IcebergSinkState:
             sinked_files = [
                 (
                     f"file://{path[8:]}" if path.startswith("file:///") else path,
-                    num_rows,
-                    num_bytes,
-                    parquet_metadata,
+                    *rest,
                 )
-                for path, num_rows, num_bytes, parquet_metadata in sinked_files
+                for path, *rest in sinked_files
             ]
 
         wrapped = Table(
@@ -913,6 +902,16 @@ class IcebergSinkState:
                     and tx.table_metadata.sort_order_by_id(self.sort_order_id) is None
                 ):
                     msg = f"Iceberg sort order {self.sort_order_id} is no longer available"
+                    raise ValueError(msg)
+                if (
+                    self.partition_spec_id is not None
+                    and tx.table_metadata.default_spec_id != self.partition_spec_id
+                ):
+                    msg = (
+                        f"Iceberg partition spec changed during the sink "
+                        f"({self.partition_spec_id} -> "
+                        f"{tx.table_metadata.default_spec_id})"
+                    )
                     raise ValueError(msg)
                 self._update_schema(tx)
 

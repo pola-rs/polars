@@ -134,6 +134,7 @@ def plugin_scan(
     from polars.io.iceberg._dataset import (
         _convert_iceberg_to_object_store_storage_options,
     )
+    from polars.io.iceberg._utils import name_mapping_by_field_id
 
     plr = _plr()
     capsule = _plugin_capsule(plr._IO_PLUGIN_IDS)
@@ -213,6 +214,7 @@ def plugin_scan(
                 else None
             ),
             metadata_cache_scope=metadata_cache_scope,
+            name_mapping=name_mapping_by_field_id(tbl),
         )
     )
 

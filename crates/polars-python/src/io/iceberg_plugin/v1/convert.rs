@@ -21,8 +21,9 @@ use polars_io_ext_ffi::common::{ArrowArrayStream, ArrowSchema};
 use polars_io_ext_ffi::iceberg_v1::{Output, OutputHeader};
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 use polars_plan::dsl::deletion::IcebergDeletes;
-use polars_utils::aliases::PlIndexMapHashable;
+use polars_utils::aliases::{PlHashMap, PlIndexMapHashable};
 use polars_utils::pl_path::PlRefPath;
+use polars_utils::pl_str::PlSmallStr;
 
 pub(super) struct ResolvedScan {
     pub schema: Schema,
@@ -162,25 +163,35 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
                 .ok_or_else(|| polars_err!(ComputeError: "iceberg plugin deletes: no 'path'"))?
                 .str()?
                 .clone();
+            // Optional: absent from plugins that predate it.
+            let content_offsets = entries
+                .iter()
+                .find(|s| s.name() == "content_offset")
+                .map(|s| s.cast(&DataType::UInt64))
+                .transpose()?;
+            let content_offsets = content_offsets.as_ref().map(|s| s.u64()).transpose()?;
 
             let mut position = vec![];
             let mut dv = None;
-            for (kind, path) in kinds.iter().zip(delete_paths.iter()) {
+            for (j, (kind, path)) in kinds.iter().zip(delete_paths.iter()).enumerate() {
                 let (Some(kind), Some(path)) = (kind, path) else {
                     polars_bail!(ComputeError: "iceberg plugin deletes: null kind or path")
                 };
                 match kind {
                     "position" => position.push(PlRefPath::new(path)),
-                    "deletion_vector" => dv = Some(PlRefPath::new(path)),
+                    "deletion_vector" => {
+                        dv = Some(IcebergDeletes::DeletionVector {
+                            path: PlRefPath::new(path),
+                            content_offset: content_offsets.and_then(|c| c.get(j)),
+                        })
+                    },
                     other => {
                         polars_bail!(ComputeError: "iceberg plugin deletes: unknown kind {other:?}")
                     },
                 }
             }
-            let value = match dv {
-                Some(dv) => IcebergDeletes::DeletionVector(dv),
-                None => IcebergDeletes::PositionDeletes(Buffer::from(position)),
-            };
+            let value =
+                dv.unwrap_or_else(|| IcebergDeletes::PositionDeletes(Buffer::from(position)));
             deletes.insert(i, value);
         }
     }
@@ -283,6 +294,7 @@ pub(super) fn build_scan(
     scan: ResolvedScan,
     cloud_options: Option<CloudOptions>,
     cast_columns_policy: CastColumnsPolicy,
+    name_mapping: Option<PlHashMap<u32, Vec<PlSmallStr>>>,
 ) -> PolarsResult<DslPlan> {
     let ResolvedScan {
         schema,
@@ -295,8 +307,11 @@ pub(super) fn build_scan(
         table_statistics,
     } = scan;
 
-    let column_mapping =
-        ColumnMapping::Iceberg(Arc::new(IcebergSchema::from_arrow_schema(&arrow_schema)?));
+    let mut iceberg_schema = IcebergSchema::from_arrow_schema(&arrow_schema)?;
+    if let Some(names) = &name_mapping {
+        iceberg_schema.apply_name_mapping(names);
+    }
+    let column_mapping = ColumnMapping::Iceberg(Arc::new(iceberg_schema));
 
     let options = ParquetOptions {
         schema: Some(Arc::new(schema)),

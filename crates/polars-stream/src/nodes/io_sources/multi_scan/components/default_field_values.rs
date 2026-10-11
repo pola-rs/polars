@@ -18,7 +18,8 @@ impl<'a> IcebergDefaultValueProviderRef<'a> {
 }
 
 impl IcebergDefaultValueProviderRef<'_> {
-    /// Note: `physical_id` should be a primitive typed field.
+    /// Note: `physical_id` should be a primitive typed field, or a struct (whose default can only
+    /// say whether it is null).
     pub fn get_default_value(&self, physical_id: u32) -> PolarsResult<Option<AnyValue<'_>>> {
         let IcebergDefaultFieldValues {
             identity_transformed_partition_fields,
@@ -49,5 +50,20 @@ impl IcebergDefaultValueProviderRef<'_> {
         };
 
         Ok(None)
+    }
+
+    /// Whether the file has a (non-null) identity-partition value for `physical_id`, which a
+    /// writer only gets from a non-null value of the field.
+    pub fn has_identity_partition_value(&self, physical_id: u32) -> bool {
+        match self
+            .default_values
+            .identity_transformed_partition_fields
+            .get(&physical_id)
+        {
+            // Loading errors surface in `get_default_value()`.
+            Some(Err(_)) => true,
+            Some(Ok(c)) => c.get(self.scan_source_idx).is_ok_and(|av| !av.is_null()),
+            None => false,
+        }
     }
 }

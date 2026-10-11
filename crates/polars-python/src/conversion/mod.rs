@@ -46,7 +46,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
+use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString, PyTuple};
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -2015,14 +2015,30 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ColumnMapping> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let (column_mapping_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+        // `(type, value)` or `(type, value, name_mapping)`.
+        let tuple = ob.cast::<PyTuple>()?;
+        let column_mapping_type: PyBackedStr = tuple.get_item(0)?.extract()?;
+        let ob = tuple.get_item(1)?;
 
         Ok(Wrap(match &*column_mapping_type {
             "iceberg-column-mapping" => {
                 let arrow_schema: Wrap<ArrowSchema> = ob.extract()?;
-                ColumnMapping::Iceberg(Arc::new(
-                    IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?,
-                ))
+                let mut schema =
+                    IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?;
+                if tuple.len() > 2 {
+                    // Names by field ID.
+                    let names: Option<std::collections::HashMap<u32, Vec<String>>> =
+                        tuple.get_item(2)?.extract()?;
+                    if let Some(names) = names {
+                        schema.apply_name_mapping(
+                            &names
+                                .into_iter()
+                                .map(|(id, n)| (id, n.into_iter().map(Into::into).collect()))
+                                .collect(),
+                        );
+                    }
+                }
+                ColumnMapping::Iceberg(Arc::new(schema))
             },
 
             v => {
@@ -2074,9 +2090,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
                     .zip(deletion_vectors.call_method0("values")?.try_iter()?)
                 {
                     let k: usize = k?.extract()?;
-                    let v: Wrap<PlRefPath> = v?.extract()?;
+                    let v = v?;
+                    // A path, or `(path, content_offset)`.
+                    let (path, content_offset): (Wrap<PlRefPath>, Option<u64>) = match v.extract() {
+                        Ok(path) => (path, None),
+                        Err(_) => v.extract()?,
+                    };
 
-                    out.insert(k, IcebergDeletes::DeletionVector(v.0));
+                    out.insert(
+                        k,
+                        IcebergDeletes::DeletionVector {
+                            path: path.0,
+                            content_offset,
+                        },
+                    );
                 }
 
                 DeletionFilesList::Iceberg(Arc::new(out))

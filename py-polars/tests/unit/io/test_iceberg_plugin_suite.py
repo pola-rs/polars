@@ -30,19 +30,27 @@ _XFAIL_METADATA_FILE_CACHE = [
 ]
 
 
-def _xfail_copy(f: Any, reason: str) -> Any:
+def _xfail_copy(f: Any, reason: str, raises: type[BaseException] | None = None) -> Any:
     # Wrap so the mark does not leak onto the test in `test_iceberg.py`.
     @functools.wraps(f)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         return f(*args, **kwargs)
 
-    return pytest.mark.xfail(reason=reason, strict=True)(wrapper)
+    return pytest.mark.xfail(reason=reason, raises=raises, strict=True)(wrapper)
 
 
 for _name in _XFAIL_METADATA_FILE_CACHE:
     globals()[_name] = _xfail_copy(
         globals()[_name], "plugin planner does not read through the PyIceberg FileIO"
     )
+
+# The plugin cannot read a removed metadata file: the scan falls back to the PyIceberg
+# planner, which the suite does not allow.
+test_scan_iceberg_metadata_file_removed_after_load = _xfail_copy(
+    test_scan_iceberg_metadata_file_removed_after_load,  # noqa: F405
+    "falls back to the PyIceberg planner",
+    raises=FileNotFoundError,
+)
 
 _in_engine_call = threading.local()
 _to_dataset_scan = iceberg_dataset.IcebergScanResolver.to_dataset_scan

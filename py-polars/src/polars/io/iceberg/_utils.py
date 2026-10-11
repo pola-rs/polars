@@ -179,10 +179,18 @@ def _scan_pyarrow_dataset_impl(
 
         scan = scan.select(*with_columns)
 
-    if iceberg_table_filter is not None:
-        scan = scan.filter(iceberg_table_filter)
-
-    batches = scan.to_arrow_batch_reader()
+    try:
+        batches = (
+            scan.filter(iceberg_table_filter)
+            if iceberg_table_filter is not None
+            else scan
+        ).to_arrow_batch_reader()
+    except TypeError:
+        if iceberg_table_filter is None:
+            raise
+        # PyIceberg's residual evaluator compares null partition values (e.g. `x > 1`
+        # under an `Or`), and fails. Polars applies the predicate itself.
+        batches = scan.to_arrow_batch_reader()
 
     return ((pl.DataFrame(batch) for batch in batches), False)
 
@@ -406,17 +414,66 @@ def pl_dtype_from_iceberg_field(field: NestedField) -> pl.DataType:
     return field_polars_dtype
 
 
-def load_puffin_deletion_file(puffin_bytes: bytes) -> dict[str, pl.Series]:
+def name_mapping_by_field_id(tbl: Table) -> dict[int, list[str]] | None:
+    """
+    The names of the fields in the table's name mapping, by field ID, or None.
+
+    Data files written without field IDs (e.g. imported with `add_files`) are read
+    with it.
+    """
+    try:
+        mapping = tbl.metadata.name_mapping()
+    except Exception:
+        return None
+
+    if mapping is None:
+        return None
+
+    out: dict[int, list[str]] = {}
+
+    def visit(fields: Iterable[Any]) -> None:
+        for field in fields:
+            if field.field_id is not None:
+                out[field.field_id] = list(field.names)
+            visit(field.fields)
+
+    visit(mapping)
+    return out
+
+
+def load_puffin_deletion_file(
+    puffin_bytes: bytes,
+) -> list[tuple[int, str, pl.Series]]:
+    """The deletion vectors of a Puffin file: `(blob offset, data file, positions)`."""
     import pyiceberg.table.puffin
+    from pyiceberg.table.deletion_vector import (
+        DeletionVector,
+        _extract_vector_payload,
+    )
 
     import polars as pl
 
-    positions = pyiceberg.table.puffin.PuffinFile(puffin_bytes).to_vector()
+    puffin = pyiceberg.table.puffin.PuffinFile(puffin_bytes)
 
-    return {
-        k: pl.Series(v, dtype=pl.Int64).reinterpret(dtype=pl.UInt64)
-        for k, v in positions.items()
-    }
+    out = []
+    for blob in puffin.footer.blobs:
+        if blob.type != "deletion-vector-v1":
+            continue
+        positions = DeletionVector(
+            blob.properties["referenced-data-file"],
+            DeletionVector._deserialize_bitmap(
+                _extract_vector_payload(puffin.get_blob_payload(blob))
+            ),
+        ).to_vector()
+        out.append(
+            (
+                blob.offset,
+                blob.properties["referenced-data-file"],
+                pl.Series(positions, dtype=pl.Int64).reinterpret(dtype=pl.UInt64),
+            )
+        )
+
+    return out
 
 
 def filter_for_pyiceberg_reader(
@@ -443,8 +500,10 @@ def filter_for_pyiceberg_reader(
         LessThanOrEqual,
         Not,
         NotEqualTo,
+        NotIn,
         NotNaN,
         NotNull,
+        NotStartsWith,
         Or,
         Reference,
         UnboundPredicate,
@@ -509,9 +568,9 @@ def filter_for_pyiceberg_reader(
                     or (isinstance(e, In) and any(is_zero_literal(v) for v in literals))
                 ):
                     return None
-            if isinstance(e, NotEqualTo):
-                # PyIceberg drops nulls, but e.g. `~is_in([x], nulls_equal=True)`
-                # (`In` of one value becomes `EqualTo`) keeps them.
+            if isinstance(e, (NotEqualTo, NotIn, NotStartsWith)):
+                # PyIceberg drops nulls, but e.g. `~is_in(xs, nulls_equal=True)` keeps
+                # them.
                 return Or(e, IsNull(e.term))  # type: ignore[call-arg]
         return e
 
@@ -628,6 +687,38 @@ def filter_for_truncate_overflow(
                 return e
             min_value = min_unwrapped.get(field_id)
             if min_value is not None and not matches_only_unwrapped(e, min_value):
+                return AlwaysTrue()
+        return e
+
+    out = visit(rewrite_not(expr))
+    return None if isinstance(out, AlwaysTrue) else out
+
+
+def filter_for_required_is_null(
+    expr: pyiceberg.expressions.BooleanExpression,
+    schema: pyiceberg.schema.Schema,
+) -> pyiceberg.expressions.BooleanExpression | None:
+    """
+    The filter to plan a scan with PyIceberg, or None.
+
+    PyIceberg binds `is_null` on a required field to `AlwaysFalse`, but a required field
+    added without an `initial-default` (which PyIceberg and Java allow) is null in files
+    written before it. These predicates are left out.
+    """
+    from pyiceberg.expressions import AlwaysTrue, And, IsNull, Or, Reference
+    from pyiceberg.expressions.visitors import rewrite_not
+
+    def visit(
+        e: pyiceberg.expressions.BooleanExpression,
+    ) -> pyiceberg.expressions.BooleanExpression:
+        if isinstance(e, (And, Or)):
+            return type(e)(visit(e.left), visit(e.right))
+        if isinstance(e, IsNull) and isinstance(e.term, Reference):
+            try:
+                field = schema.find_field(e.term.name, case_sensitive=True)
+            except ValueError:
+                return e
+            if field.required:
                 return AlwaysTrue()
         return e
 

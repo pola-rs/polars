@@ -470,6 +470,7 @@ def _add_position_deletes(
     partition: Any = None,
     path_bounds: bool = True,
     deletion_vectors: bool = False,
+    stale_deletion_vectors: dict[str, list[int]] | None = None,
 ) -> Any:
     """
     Commit a snapshot adding one position delete file per data file.
@@ -482,6 +483,8 @@ def _add_position_deletes(
 
     With `deletion_vectors`, each data file gets a deletion vector (Puffin file) with
     `referenced_data_file` set and no `file_path` bounds, as Iceberg Java writes them.
+    `stale_deletion_vectors` adds another deletion vector of the data file before it,
+    in the same Puffin file, which the delete file entry does not reference.
 
     PyIceberg cannot write merge-on-read deletes, so the delete files, the delete
     manifest and the manifest list are written with its low-level writers.
@@ -561,7 +564,19 @@ def _add_position_deletes(
         for data_path, positions in deletes.items():
             path = f"{tbl.location()}/data/dv-{uuid.uuid4()}.puffin"
             local_path = path.removeprefix("file://")
-            blob = _deletion_vector_blob(positions)
+            stale = (stale_deletion_vectors or {}).get(data_path)
+            blobs = [
+                *([_deletion_vector_blob(stale)] if stale is not None else []),
+                _deletion_vector_blob(positions),
+            ]
+            cardinalities = [
+                *([len(stale)] if stale is not None else []),
+                len(positions),
+            ]
+            offsets = [4]
+            for b in blobs[:-1]:
+                offsets.append(offsets[-1] + len(b))
+            blob = blobs[-1]
             footer = json.dumps(
                 {
                     "blobs": [
@@ -570,20 +585,23 @@ def _add_position_deletes(
                             "fields": [pos_field_id - 1],
                             "snapshot-id": -1,
                             "sequence-number": -1,
-                            "offset": 4,
-                            "length": len(blob),
+                            "offset": offset,
+                            "length": len(b),
                             "properties": {
                                 "referenced-data-file": data_path,
-                                "cardinality": str(len(positions)),
+                                "cardinality": str(cardinality),
                             },
                         }
+                        for b, offset, cardinality in zip(
+                            blobs, offsets, cardinalities, strict=True
+                        )
                     ]
                 }
             ).encode()
             puffin = b"".join(
                 [
                     b"PFA1",
-                    blob,
+                    *blobs,
                     b"PFA1",
                     footer,
                     len(footer).to_bytes(4, "little"),
@@ -601,7 +619,7 @@ def _add_position_deletes(
                 record_count=len(positions),
                 file_size_in_bytes=len(puffin),
                 referenced_data_file=data_path,
-                content_offset=4,
+                content_offset=offsets[-1],
                 content_size_in_bytes=len(blob),
             )
             data_file.spec_id = tbl.spec().spec_id
@@ -776,6 +794,54 @@ def test_iceberg_plugin_deletion_vector_scoped_to_partition(
         lf = pl.scan_iceberg(tbl, fast_deletion_count=fast_deletion_count)
         assert_frame_equal(lf.collect(), expected, check_row_order=False)
         assert lf.select(pl.len()).collect().item() == expected.height
+
+
+@pytest.mark.parametrize("stale_first", [False, True])
+def test_iceberg_plugin_deletion_vector_selected_by_offset(
+    tmp_path: Path, stale_first: bool
+) -> None:
+    # A Puffin file holding a replaced and a live deletion vector of one data file:
+    # the delete file entry's `content_offset` selects the live one.
+    tbl = _new_table(tmp_path)
+    (path,) = _data_file_paths(tbl)
+    live, stale = ([0, 2], [1, 3, 4]) if stale_first else ([1, 3, 4], [0, 2])
+    tbl = _add_position_deletes(
+        tbl,
+        {path: live},
+        deletion_vectors=True,
+        stale_deletion_vectors={path: stale},
+    )
+    expected = TEST_DF.filter(~pl.int_range(pl.len()).is_in(live))
+
+    lf = pl.scan_iceberg(tbl)
+    assert_frame_equal(lf.collect(), expected)
+    assert lf.select(pl.len()).collect().item() == expected.height
+
+
+def test_iceberg_pyiceberg_planner_rejects_ambiguous_deletion_vectors(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # PyIceberg does not read `content_offset`, so it cannot tell them apart.
+    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", "pyiceberg")
+    tbl = _new_table(tmp_path)
+    (path,) = _data_file_paths(tbl)
+    tbl = _add_position_deletes(
+        tbl, {path: [0]}, deletion_vectors=True, stale_deletion_vectors={path: [1]}
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match="several deletion vectors"):
+        pl.scan_iceberg(tbl).collect()
+
+
+def test_iceberg_plugin_verbose_filter_log_is_redacted(
+    table: Any, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    pl.scan_iceberg(table).filter(pl.col("b") == "secret-value-123").collect()
+    err = capfd.readouterr().err
+    assert "bound row filter" in err
+    assert "secret-value-123" not in err
 
 
 def test_iceberg_referenced_data_file() -> None:

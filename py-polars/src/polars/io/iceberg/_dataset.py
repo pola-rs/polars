@@ -25,9 +25,11 @@ from polars.io.iceberg._utils import (
     _normalize_windows_iceberg_file_uri,
     extract_field_initial_default,
     filter_for_pyiceberg_reader,
+    filter_for_required_is_null,
     filter_for_scan_schema,
     filter_for_truncate_overflow,
     filter_with_nan_ordering,
+    name_mapping_by_field_id,
     try_convert_pyarrow_predicate,
 )
 from polars.io.scan_options.cast_options import ScanCastOptions
@@ -498,6 +500,18 @@ class IcebergScanResolver:
                         "IcebergScanResolver: to_dataset_scan(): "
                         f"plugin planner unsupported, plan with PyIceberg: {e}"
                     )
+            except FileNotFoundError as e:
+                # The plugin reads the metadata file, which may have been removed
+                # (`write.metadata.previous-versions-max`) since `tbl` was loaded;
+                # PyIceberg plans from the loaded metadata.
+                if plugin_planner_required() or _metadata_file_exists(tbl):
+                    raise
+
+                if verbose:
+                    eprint(
+                        "IcebergScanResolver: to_dataset_scan(): "
+                        f"metadata file not found, plan with PyIceberg: {e}"
+                    )
             else:
                 return _PluginIcebergScanData(lf=lf, snapshot_id_key=snapshot_id_key)
 
@@ -511,6 +525,11 @@ class IcebergScanResolver:
         if iceberg_table_filter is not None:
             iceberg_table_filter = filter_for_truncate_overflow(
                 iceberg_table_filter, tbl
+            )
+
+        if iceberg_table_filter is not None:
+            iceberg_table_filter = filter_for_required_is_null(
+                iceberg_table_filter, tbl.schema()
             )
 
         fallback_reason = (
@@ -587,11 +606,28 @@ class IcebergScanResolver:
             )
 
             if iceberg_table_filter is not None:
-                scan = scan.filter(
-                    filter_with_nan_ordering(iceberg_table_filter, iceberg_schema)
-                )
+                try:
+                    file_infos = list(
+                        scan.filter(
+                            filter_with_nan_ordering(
+                                iceberg_table_filter, iceberg_schema
+                            )
+                        ).plan_files()
+                    )
+                except TypeError as e:
+                    # PyIceberg's residual evaluator compares null partition values
+                    # (e.g. `x > 1` under an `Or`), and fails. The filter is only
+                    # used for pruning, Polars applies the predicate itself.
+                    if verbose:
+                        eprint(
+                            "IcebergScanResolver: to_dataset_scan(): "
+                            f"PyIceberg failed to plan with the filter, plan without: {e}"
+                        )
+                    file_infos = list(scan.plan_files())
+            else:
+                file_infos = list(scan.plan_files())
 
-            for i, file_info in enumerate(scan.plan_files()):
+            for i, file_info in enumerate(file_infos):
                 if file_info.file.file_format != FileFormat.PARQUET:
                     fallback_reason = (
                         f"non-parquet format: {file_info.file.file_format}"
@@ -781,6 +817,7 @@ class IcebergScanResolver:
                 source_sizes=source_sizes,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
+                name_mapping=name_mapping_by_field_id(tbl),
                 default_values=(
                     IdentityTransformedPartitionValuesBuilder.fill_absent_with_initial_defaults(
                         identity_transformed_values,
@@ -860,6 +897,8 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     source_sizes: list[int]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
+    # Field names of the table's name mapping, by field ID.
+    name_mapping: dict[int, list[str]] | None
     default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
     position_delete_files: dict[int, list[str]]
     deletion_vectors: dict[int, str]
@@ -884,7 +923,11 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             missing_columns="insert",
             extra_columns="ignore",
             storage_options=self.storage_options,
-            _column_mapping=("iceberg-column-mapping", self.column_mapping),
+            _column_mapping=(
+                "iceberg-column-mapping",
+                self.column_mapping,
+                self.name_mapping,
+            ),
             _default_values=("iceberg", self.default_values),
             _deletion_files=(
                 "iceberg",
@@ -920,6 +963,13 @@ class _PluginIcebergScanData(_ResolvedScanDataBase):
         return self.lf
 
 
+def _metadata_file_exists(tbl: pyiceberg.table.Table) -> bool:
+    try:
+        return bool(tbl.io.new_input(tbl.metadata_location).exists())
+    except Exception:
+        return True
+
+
 def _read_puffin_deletion_vector_counts(
     io: Any, path: str, file_size: int
 ) -> dict[str, int] | None:
@@ -943,15 +993,28 @@ def _read_puffin_deletion_vector_counts(
         footer = json.loads(f.read(payload_size))
 
     try:
-        return {
-            _normalize_windows_iceberg_file_uri(
+        counts: dict[str, int] = {}
+        for blob in footer["blobs"]:
+            if blob["type"] != "deletion-vector-v1":
+                continue
+            data_file = _normalize_windows_iceberg_file_uri(
                 blob["properties"]["referenced-data-file"]
-            ): int(blob["properties"]["cardinality"])
-            for blob in footer["blobs"]
-            if blob["type"] == "deletion-vector-v1"
-        }
+            )
+            if data_file in counts:
+                # E.g. a replaced and a live deletion vector of one data file. The
+                # delete file entry's `content_offset` selects one, but PyIceberg
+                # does not read it, and its reader would pick either.
+                msg = (
+                    f"iceberg: Puffin file {path} holds several deletion vectors of "
+                    f"data file {data_file}, which the PyIceberg planner cannot tell "
+                    "apart; plan the scan with the polars_iceberg plugin"
+                )
+                raise ComputeError(msg)
+            counts[data_file] = int(blob["properties"]["cardinality"])
     except (KeyError, TypeError, ValueError):
         return None
+    else:
+        return counts
 
 
 # Reserved field ID of `file_path` in position delete files.
