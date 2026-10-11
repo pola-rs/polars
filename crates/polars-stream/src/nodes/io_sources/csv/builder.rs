@@ -19,6 +19,7 @@ use super::{CsvFileReader, DynByteSourceBuilder};
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::shared::file_init::CLOUD_PRE_INIT_LIMIT;
 
 pub struct CsvReaderBuilder {
     pub options: Arc<CsvReadOptions>,
@@ -54,6 +55,10 @@ impl FileReaderBuilder for CsvReaderBuilder {
         } else {
             RC::PRE_SLICE
         })
+    }
+
+    fn preferred_remote_pre_init(&self) -> Option<usize> {
+        Some(CLOUD_PRE_INIT_LIMIT)
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
@@ -99,7 +104,7 @@ impl FileReaderBuilder for CsvReaderBuilder {
         _scan_source_idx: usize,
     ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
-        use crate::nodes::io_sources::csv::ChunkPrefetchSync;
+        use crate::nodes::io_sources::shared::file_init::ChunkPrefetchSync;
 
         let scan_source = source;
         let verbose = config::verbose();
