@@ -837,6 +837,11 @@ class IcebergScanResolver:
                         len(sources),
                     ),
                     initial_defaults,
+                    IdentityTransformedPartitionValuesBuilder.present_masks(
+                        missing_field_defaults.present_indices,
+                        identity_transformed_values,
+                        len(sources),
+                    ),
                 ),
                 position_delete_files=position_delete_files,
                 deletion_vectors=deletion_vectors,
@@ -910,7 +915,10 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     column_mapping: pa.Schema
     # Field names of the table's name mapping, by field ID.
     name_mapping: dict[int, list[str]] | None
-    default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
+    # (identity-partition values, initial defaults, identity-partition presence)
+    default_values: tuple[
+        dict[int, pl.Series | str], dict[int, pl.Series], dict[int, pl.Series]
+    ]
     position_delete_files: dict[int, list[str]]
     deletion_vectors: dict[int, str]
     min_max_statistics: pl.DataFrame | None

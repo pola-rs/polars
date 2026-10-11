@@ -23,6 +23,7 @@ impl IcebergDefaultValueProviderRef<'_> {
     pub fn get_default_value(&self, physical_id: u32) -> PolarsResult<Option<AnyValue<'_>>> {
         let IcebergDefaultFieldValues {
             identity_transformed_partition_fields,
+            identity_partition_present: _,
             initial_defaults,
         } = self.default_values;
 
@@ -55,6 +56,19 @@ impl IcebergDefaultValueProviderRef<'_> {
     /// Whether the file has a (non-null) identity-partition value for `physical_id`, which a
     /// writer only gets from a non-null value of the field.
     pub fn has_identity_partition_value(&self, physical_id: u32) -> bool {
+        // The values of files whose partition spec lacks the identity field are the
+        // `initial-default`, not partition data.
+        if let Some(present) = self
+            .default_values
+            .identity_partition_present
+            .get(&physical_id)
+            && !present
+                .get(self.scan_source_idx)
+                .is_ok_and(|av| matches!(av, AnyValue::Boolean(true)))
+        {
+            return false;
+        }
+
         match self
             .default_values
             .identity_transformed_partition_fields

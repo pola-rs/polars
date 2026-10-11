@@ -937,6 +937,26 @@ class IdentityTransformedPartitionValuesBuilder:
         return out
 
     @staticmethod
+    def present_masks(
+        present_indices: dict[int, list[int]],
+        values: dict[int, pl.Series | str],
+        num_sources: int,
+    ) -> dict[int, pl.Series]:
+        """
+        Per field: whether each file's partition spec has the identity field.
+
+        The values of files without it are the `initial-default`, not partition data.
+        """
+        import polars as pl
+
+        return {
+            field_id: pl.Series([False] * num_sources, dtype=pl.Boolean).scatter(
+                present_indices.get(field_id, []), True
+            )
+            for field_id in values
+        }
+
+    @staticmethod
     def fill_absent_with_initial_defaults(
         values: dict[int, pl.Series | str],
         present_indices: dict[int, list[int]],

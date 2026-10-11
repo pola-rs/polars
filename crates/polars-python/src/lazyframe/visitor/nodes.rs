@@ -236,6 +236,7 @@ impl PyFileOptions {
             Some(DefaultFieldValues::Iceberg(default_values)) => {
                 let IcebergDefaultFieldValues {
                     identity_transformed_partition_fields,
+                    identity_partition_present: _,
                     initial_defaults,
                 } = default_values.as_ref();
 

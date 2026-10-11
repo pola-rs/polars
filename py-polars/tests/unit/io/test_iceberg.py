@@ -7393,6 +7393,84 @@ def test_scan_iceberg_missing_struct_with_child_initial_default_is_null(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_missing_struct_child_default_with_identity_partition(
+    tmp_path: Path,
+) -> None:
+    # The identity-partition values of files whose spec lacks the identity field hold
+    # the field's `initial-default`, which is not partition data: a struct missing from
+    # such a file stays null. A file of a spec with the identity field gets the struct
+    # from its partition value.
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    tbl.append(pa.Table.from_pylist([{"a": 1}], schema=tbl.schema().as_arrow()))
+
+    with tbl.update_schema() as update:
+        update.add_column("s", StructType(NestedField(3, "b", LongType())))
+    tbl = catalog.load_table(tbl.name())
+    b_id = tbl.schema().find_field("s.b").field_id
+    with tbl.update_spec() as update:
+        update.add_identity("s.b")
+    tbl = catalog.load_table(tbl.name())
+    tbl.append(
+        pa.Table.from_pylist([{"a": 2, "s": {"b": 7}}], schema=tbl.schema().as_arrow())
+    )
+
+    # Leave only `a` in the second file, so that `s` comes from its partition value.
+    for task in tbl.scan().plan_files():
+        if task.file.spec_id != 0:
+            pq.write_table(
+                pa.Table.from_pylist(
+                    [{"a": 2}],
+                    schema=schema_to_pyarrow(tbl.schema().select("a")),
+                ),
+                task.file.file_path.removeprefix("file://"),
+            )
+
+    md_path = Path(
+        tbl.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+    md_object["format-version"] = 3
+    for schema in md_object["schemas"]:
+        for field in schema["fields"]:
+            if field["name"] == "s":
+                field["type"]["fields"][0]["initial-default"] = 5
+                assert field["type"]["fields"][0]["id"] == b_id
+    md_path.write_text(json.dumps(md_object))
+    tbl = catalog.load_table(tbl.name())
+
+    dtype = pl.Struct({"b": pl.Int64})
+    expect = pl.DataFrame(
+        {"a": [1, 2], "s": [None, {"b": 7}]}, schema={"a": pl.Int64, "s": dtype}
+    )
+    engines: list[EngineType] = ["in-memory", "streaming"]
+    for engine in engines:
+        lf = pl.scan_iceberg(tbl, reader_override="native")
+        assert_frame_equal(
+            lf.collect(engine=engine),
+            expect,
+            check_row_order=False,
+        )
+        assert_frame_equal(
+            lf.filter(pl.col("s").is_null()).collect(engine=engine),
+            expect.head(1),
+        )
+        assert (
+            lf.filter(pl.col("s").struct.field("b") == 5).collect(engine=engine).height
+            == 0
+        )
+        # Files pruned by `a` shift the source indices of the presence masks.
+        for a, i in [(1, 0), (2, 1)]:
+            assert_frame_equal(
+                lf.filter(pl.col("a") == a).collect(engine=engine),
+                expect.slice(i, 1),
+            )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_required_column_added_without_default(tmp_path: Path) -> None:
     # PyIceberg and Java allow it (as an incompatible change); older files hold
     # nulls. (PyIceberg's reader refuses these files.)

@@ -2131,13 +2131,36 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
 
         Ok(Wrap(match &*default_values_type {
             "iceberg" => {
-                let (identity_transformed_partition_values, initial_defaults): (
+                // `(identity values, initial defaults[, identity presence])`.
+                let (identity_transformed_partition_values, initial_defaults, identity_present): (
                     Bound<'_, PyDict>,
                     Bound<'_, PyDict>,
-                ) = ob.extract()?;
+                    Option<Bound<'_, PyDict>>,
+                ) = match ob.extract::<(Bound<'_, PyDict>, Bound<'_, PyDict>, Bound<'_, PyDict>)>()
+                {
+                    Ok((a, b, c)) => (a, b, Some(c)),
+                    Err(_) => {
+                        let (a, b) = ob.extract()?;
+                        (a, b, None)
+                    },
+                };
 
                 let mut converted_identity_transformed_partition_values = PlIndexMap::new();
+                let mut converted_identity_present = PlIndexMap::new();
                 let mut converted_initial_defaults = PlIndexMap::new();
+
+                if let Some(identity_present) = identity_present {
+                    for (k, v) in identity_present
+                        .try_iter()?
+                        .zip(identity_present.call_method0("values")?.try_iter()?)
+                    {
+                        let k: u32 = k?.extract()?;
+                        let v = get_series(&v?)?
+                            .cast(&DataType::Boolean)
+                            .map_err(to_py_err)?;
+                        converted_identity_present.insert(k, v.into_column());
+                    }
+                }
 
                 for (k, v) in identity_transformed_partition_values.try_iter()?.zip(
                     identity_transformed_partition_values
@@ -2174,6 +2197,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
                     identity_transformed_partition_fields: PlIndexMapHashable(
                         converted_identity_transformed_partition_values,
                     ),
+                    identity_partition_present: PlIndexMapHashable(converted_identity_present),
                     initial_defaults: PlIndexMapHashable(converted_initial_defaults),
                 }))
             },

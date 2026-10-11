@@ -119,6 +119,14 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
     for (id, msg) in constant_errors {
         identity_values.insert(id, Err(msg));
     }
+    // Optional: absent from plugins that predate it.
+    let mut identity_present = PlIndexMap::default();
+    if let Some(present) = file_column("constants_present") {
+        for field in present.struct_()?.fields_as_series() {
+            let id = parse_field_id(field.name())?;
+            identity_present.insert(id, field.cast(&DataType::Boolean)?.into_column());
+        }
+    }
 
     let mut initial_defaults = PlIndexMap::default();
     if let Some(table_values) = &table_values
@@ -136,6 +144,7 @@ pub(super) fn import_output(output: Output) -> PolarsResult<ResolvedScan> {
 
     let default_values = IcebergDefaultFieldValues {
         identity_transformed_partition_fields: PlIndexMapHashable(identity_values),
+        identity_partition_present: PlIndexMapHashable(identity_present),
         initial_defaults: PlIndexMapHashable(initial_defaults),
     };
     let default_values =

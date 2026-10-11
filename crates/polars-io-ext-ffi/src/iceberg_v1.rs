@@ -22,7 +22,11 @@
 //!   data file has either position delete files or a single deletion vector. `content_offset`
 //!   (nullable, optional) is the offset of a deletion vector's blob in its Puffin file.
 //! * `constants: struct{<field id>: <value>}` (only if non-empty): identity-partition values of
-//!   projected fields, per data file; null if the file has no value.
+//!   projected fields, per data file; null if the file has no value. Files whose partition spec
+//!   lacks the identity field hold the field's `initial-default` (if any).
+//! * `constants_present: struct{<field id>: bool}` (optional, with `constants`): per data file,
+//!   whether its partition spec has the identity field, i.e. whether the `constants` value is
+//!   partition data rather than the `initial-default`.
 //! * `stats: struct{<col>_nc: u64, <col>_min, <col>_max}` (only if statistics were requested
 //!   and there are filter or statistics columns): per-file null counts and bounds of the filter
 //!   and statistics columns, null if unknown. Struct columns have per-leaf struct statistics.
