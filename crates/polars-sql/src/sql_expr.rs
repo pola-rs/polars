@@ -92,7 +92,8 @@ fn quantified_subquery_unsupported(
 
 // SQL `IN` under three-valued logic: false against an empty candidate set,
 // otherwise membership, which is already unknown for a null needle, widened to
-// unknown when a miss could be hiding behind a null in the set.
+// unknown when a miss could be hiding behind a null in the set. `value_set` is
+// the set before the casts of `SqlFunction::IsIn`, which never add nulls.
 pub(crate) fn sql_in_membership(membership: Expr, value_set: Expr, set_is_empty: Expr) -> Expr {
     let set_has_null = value_set.list().contains(lit(NULL), true);
     when(set_is_empty)
