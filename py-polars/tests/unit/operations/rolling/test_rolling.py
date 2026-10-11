@@ -2636,3 +2636,42 @@ def test_rolling_agg_min_max_ignore_nan(
             },
         ),
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("b", "period"),
+    [
+        ([None, False, True, None, None, False], 2),
+        ([None, None, None], 2),
+        ([None if i % 7 == 0 else i % 23 == 5 for i in range(100)], 10),
+    ],
+)
+def test_rolling_agg_arg_min_max_bool(
+    engine: EngineType, b: list[bool | None], period: int
+) -> None:
+    def first(window: list[bool | None], target: bool) -> int | None:
+        for value in (target, not target):
+            if value in window:
+                return window.index(value)
+        return None
+
+    windows = [b[max(0, t - period + 1) : t + 1] for t in range(len(b))]
+    idx = get_index_type()
+    expected = pl.DataFrame(
+        {
+            "arg_min": [first(w, False) for w in windows],
+            "arg_max": [first(w, True) for w in windows],
+        },
+        schema={"arg_min": idx, "arg_max": idx},
+    )
+    q = (
+        pl.LazyFrame({"b": b}, schema={"b": pl.Boolean})
+        .with_row_index("t")
+        .rolling("t", period=f"{period}i")
+        .agg(
+            pl.col("b").arg_min().alias("arg_min"),
+            pl.col("b").arg_max().alias("arg_max"),
+        )
+    )
+    assert_frame_equal(q.collect(engine=engine).drop("t"), expected)

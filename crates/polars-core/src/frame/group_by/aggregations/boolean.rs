@@ -3,7 +3,6 @@ use polars_arrow::bitmap::bitmask::BitMask;
 use super::*;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::from_iterator_par::{collect_bool_opt_par, collect_bool_par};
-use crate::chunked_array::{arg_max_bool, arg_min_bool};
 
 pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where
@@ -24,6 +23,40 @@ where
 {
     let ca: BooleanChunked = RAYON.install(|| collect_bool_opt_par(groups.len(), |g| f(groups[g])));
     ca.into_series()
+}
+
+/// For each group, the position of the first valid value equal to `target`, or else of the first
+/// valid value. This is the arg min (`target = false`) or arg max (`target = true`) of the group.
+///
+/// # Safety
+/// The groups must be in bounds of `arr`.
+unsafe fn arg_first_in_slices(arr: &BooleanArray, groups: &[[IdxSize; 2]], target: bool) -> Series {
+    if arr.null_count() == arr.len() {
+        return IdxCa::full_null(PlSmallStr::EMPTY, groups.len()).into_series();
+    }
+    let values = if target {
+        arr.values().clone()
+    } else {
+        !arr.values()
+    };
+    let targets = match arr.validity() {
+        Some(validity) => &values & validity,
+        None => values,
+    };
+    let targets = BitMask::from_bitmap(&targets);
+    let validity = arr.validity().map(BitMask::from_bitmap);
+    // SAFETY: The groups are in bounds.
+    _agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
+        let (first, len) = (first as usize, len as usize);
+        let i = unsafe { targets.sliced_unchecked(first, len) }.leading_zeros();
+        if i < len {
+            return Some(i as IdxSize);
+        }
+        let i = validity.map_or(0, |v| {
+            unsafe { v.sliced_unchecked(first, len) }.leading_zeros()
+        });
+        (i < len).then_some(i as IdxSize)
+    })
 }
 
 #[cfg(feature = "bitwise")]
@@ -209,17 +242,7 @@ impl BooleanChunked {
             GroupsType::Slice {
                 groups: groups_slice,
                 ..
-            } => _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize).map(|_| 0),
-                    _ => {
-                        let group_ca = _slice_from_offsets(self, first, len);
-                        arg_min_bool(&group_ca).map(|p| p as IdxSize)
-                    },
-                }
-            }),
+            } => arg_first_in_slices(arr, groups_slice, false),
         }
     }
 
@@ -258,17 +281,7 @@ impl BooleanChunked {
             GroupsType::Slice {
                 groups: groups_slice,
                 ..
-            } => _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize).map(|_| 0),
-                    _ => {
-                        let group_ca = _slice_from_offsets(self, first, len);
-                        arg_max_bool(&group_ca).map(|p| p as IdxSize)
-                    },
-                }
-            }),
+            } => arg_first_in_slices(arr, groups_slice, true),
         }
     }
 
