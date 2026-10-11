@@ -15,7 +15,7 @@ use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
     IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
-    IRStructFunction, IRTemporalFunction,
+    IRStructFunction, IRTemporalFunction, MinMaxByOrder,
 };
 #[cfg(feature = "cutqcut")]
 use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
@@ -955,16 +955,26 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Agg(aggexpr) => match aggexpr {
             IRAggExpr::Min {
+                propagate_nulls: true,
+                ..
+            } => return Err(PyNotImplementedError::new_err("min with propagate_nulls")),
+            IRAggExpr::Min {
                 input,
                 propagate_nans,
+                propagate_nulls: false,
             } => Agg {
                 name: "min".into_py_any(py)?,
                 arguments: vec![input.0],
                 options: propagate_nans.into_py_any(py)?,
             },
             IRAggExpr::Max {
+                propagate_nulls: true,
+                ..
+            } => return Err(PyNotImplementedError::new_err("max with propagate_nulls")),
+            IRAggExpr::Max {
                 input,
                 propagate_nans,
+                propagate_nulls: false,
             } => Agg {
                 name: "max".into_py_any(py)?,
                 arguments: vec![input.0],
@@ -1866,8 +1876,15 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ArgUnique => ("arg_unique",).into_py_any(py),
                 IRFunctionExpr::ArgMin => ("arg_min",).into_py_any(py),
                 IRFunctionExpr::ArgMax => ("arg_max",).into_py_any(py),
-                IRFunctionExpr::MinBy => ("min_by",).into_py_any(py),
-                IRFunctionExpr::MaxBy => ("max_by",).into_py_any(py),
+                IRFunctionExpr::MinBy {
+                    order: MinMaxByOrder::SkipNulls,
+                } => ("min_by",).into_py_any(py),
+                IRFunctionExpr::MaxBy {
+                    order: MinMaxByOrder::SkipNulls,
+                } => ("max_by",).into_py_any(py),
+                IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. } => {
+                    return Err(PyNotImplementedError::new_err("total order min_by/max_by"));
+                },
                 IRFunctionExpr::ArgSort {
                     descending,
                     nulls_last,

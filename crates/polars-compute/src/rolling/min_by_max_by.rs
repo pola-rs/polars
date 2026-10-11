@@ -2,7 +2,7 @@ use polars_arrow::array::PrimitiveArray;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::types::NativeType;
 use polars_utils::IdxSize;
-use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
+use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
 use super::arg_min_max::ArgMinMaxWindow;
 use super::no_nulls::RollingAggWindowNoNulls;
@@ -101,7 +101,7 @@ pub fn rolling_argmin_by<B: NativeType>(
     ends: &[IdxSize],
     min_periods: usize,
 ) -> PrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MinPropagateNan>(by, validity, starts, ends, min_periods)
+    rolling_arg_extremum_by::<B, MinIgnoreNan>(by, validity, starts, ends, min_periods)
 }
 
 pub fn rolling_argmax_by<B: NativeType>(
@@ -111,5 +111,5 @@ pub fn rolling_argmax_by<B: NativeType>(
     ends: &[IdxSize],
     min_periods: usize,
 ) -> PrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MaxPropagateNan>(by, validity, starts, ends, min_periods)
+    rolling_arg_extremum_by::<B, MaxIgnoreNan>(by, validity, starts, ends, min_periods)
 }

@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import re
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ClosedInterval,
+        EngineType,
         PolarsDataType,
         QuantileMethod,
         RankMethod,
@@ -2576,3 +2577,62 @@ def test_min_periods_removed() -> None:
 
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("k", "expected"),
+    [
+        (
+            [1.0, nan, 2.0, nan, nan],
+            {
+                "min": [1.0, 1.0, 1.0, 2.0, 2.0],
+                "max": [1.0, 1.0, 2.0, 2.0, 2.0],
+                "arg_min": [0, 0, 0, 1, 0],
+                "arg_max": [0, 0, 2, 1, 0],
+                "min_by": [0, 0, 0, 2, 2],
+                "max_by": [0, 0, 2, 2, 2],
+            },
+        ),
+        (
+            [1.0, nan, None, 2.0, 3.0, nan],
+            {
+                "min": [1.0, 1.0, 1.0, 2.0, 2.0, 2.0],
+                "max": [1.0, 1.0, 1.0, 2.0, 3.0, 3.0],
+                "arg_min": [0, 0, 0, 2, 1, 0],
+                "arg_max": [0, 0, 0, 2, 2, 1],
+                "min_by": [0, 0, 0, 3, 3, 3],
+                "max_by": [0, 0, 0, 3, 4, 4],
+            },
+        ),
+    ],
+)
+def test_rolling_agg_min_max_ignore_nan(
+    engine: EngineType, k: list[float | None], expected: dict[str, list[Any]]
+) -> None:
+    q = (
+        pl.LazyFrame({"k": k})
+        .with_row_index("t")
+        .rolling("t", period="3i")
+        .agg(
+            pl.col("k").min().alias("min"),
+            pl.col("k").max().alias("max"),
+            pl.col("k").arg_min().alias("arg_min"),
+            pl.col("k").arg_max().alias("arg_max"),
+            pl.col("t").min_by("k").alias("min_by"),
+            pl.col("t").max_by("k").alias("max_by"),
+        )
+    )
+    idx = get_index_type()
+    assert_frame_equal(
+        q.collect(engine=engine).drop("t"),
+        pl.DataFrame(
+            expected,
+            schema_overrides={
+                "arg_min": idx,
+                "arg_max": idx,
+                "min_by": idx,
+                "max_by": idx,
+            },
+        ),
+    )

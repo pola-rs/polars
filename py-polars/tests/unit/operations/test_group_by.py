@@ -3170,6 +3170,14 @@ def test_group_by_arg_max_arg_min_binary_27171() -> None:
     )
 
 
+@pytest.mark.parametrize("descending", [False, True])
+def test_group_by_arg_max_sorted_float_nan(descending: bool) -> None:
+    df = pl.DataFrame({"g": [1, 1], "k": [1.0, float("nan")]})
+    df = df.sort("k", descending=descending)
+    result = df.group_by("g").agg(pl.col("k").arg_max())
+    assert result["k"].item() == (1 if descending else 0)
+
+
 def test_group_by_arg_max_string_single_element_27171() -> None:
     idx_dtype = pl.get_index_type()
     df = pl.DataFrame({"key": ["a", "a", "b"], "val": ["x", "y", "z"]})

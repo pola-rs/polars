@@ -22,6 +22,8 @@ use crate::reduce::GroupedReduction;
 pub struct AggregationType {
     pub(crate) groupby: GroupByMethod,
     pub(crate) allow_threading: bool,
+    /// Only used by min and max.
+    pub(crate) propagate_nulls: bool,
 }
 
 pub(crate) struct AggregationExpr {
@@ -31,6 +33,20 @@ pub(crate) struct AggregationExpr {
 }
 
 impl AggregationExpr {
+    /// Sets the groups of `values` that contain a null to null, if the aggregation propagates
+    /// nulls.
+    ///
+    /// # Safety
+    /// `groups` must be in bounds for `values`.
+    unsafe fn propagate_nulls(&self, agg: Column, values: &Column, groups: &GroupsType) -> Column {
+        if !self.agg_type.propagate_nulls || !values.has_nulls() {
+            return agg;
+        }
+        let has_nulls = unsafe { values.is_null().agg_any(groups, true) };
+        let validity: Bitmap = has_nulls.iter().map(|b| b != Some(true)).collect();
+        agg.mask(&validity)
+    }
+
     pub fn new(
         expr: Arc<dyn PhysicalExpr>,
         agg_type: AggregationType,
@@ -55,7 +71,12 @@ impl PhysicalExpr for AggregationExpr {
         let AggregationType {
             groupby,
             allow_threading,
+            propagate_nulls,
         } = self.agg_type;
+
+        if propagate_nulls && s.has_nulls() {
+            return Ok(Column::full_null(s.name().clone(), 1, s.dtype()));
+        }
 
         let is_float = s.dtype().is_float();
         let group_by = match groupby {
@@ -227,11 +248,13 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Min => {
                     let (c, groups) = ac.get_final_aggregation();
                     let agg_c = c.agg_min(&groups);
+                    let agg_c = self.propagate_nulls(agg_c, &c, &groups);
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Max => {
                     let (c, groups) = ac.get_final_aggregation();
                     let agg_c = c.agg_max(&groups);
+                    let agg_c = self.propagate_nulls(agg_c, &c, &groups);
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::ArgMin => {
@@ -358,6 +381,7 @@ impl PhysicalExpr for AggregationExpr {
                         } else {
                             c.agg_min(&groups)
                         };
+                        let agg_c = self.propagate_nulls(agg_c, &c, &groups);
                         AggregatedScalar(agg_c.with_name(keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
@@ -378,6 +402,7 @@ impl PhysicalExpr for AggregationExpr {
                         } else {
                             c.agg_max(&groups)
                         };
+                        let agg_c = self.propagate_nulls(agg_c, &c, &groups);
                         AggregatedScalar(agg_c.with_name(keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
@@ -403,26 +428,60 @@ impl PhysicalExpr for AggregationExpr {
     }
 }
 
+/// The index of the minimum or the maximum of `s` in the order `sort` uses: NaN is the largest
+/// value, and null is the smallest or the largest value. Returns `None` only if `s` is empty.
+pub(crate) fn arg_min_max_total(
+    s: &Series,
+    is_max: bool,
+    nulls_largest: bool,
+) -> PolarsResult<Option<usize>> {
+    if s.is_empty() {
+        return Ok(None);
+    }
+    if is_max == nulls_largest && s.has_nulls() {
+        return Ok(s.is_null().first_true_idx());
+    }
+    if is_max && s.dtype().is_float() {
+        let is_nan = s.is_nan()?;
+        if is_nan.any() {
+            return Ok(is_nan.first_true_idx());
+        }
+    }
+    let idx = if is_max { s.arg_max() } else { s.arg_min() };
+    Ok(Some(idx.unwrap_or(0)))
+}
+
 pub struct AggMinMaxByExpr {
     input: Arc<dyn PhysicalExpr>,
     by: Arc<dyn PhysicalExpr>,
     is_max_by: bool,
+    order: MinMaxByOrder,
 }
 
 impl AggMinMaxByExpr {
-    pub fn new_min_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+    pub fn new_min_by(
+        input: Arc<dyn PhysicalExpr>,
+        by: Arc<dyn PhysicalExpr>,
+        order: MinMaxByOrder,
+    ) -> Self {
         Self {
             input,
             by,
             is_max_by: false,
+            order,
         }
     }
 
-    pub fn new_max_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+    pub fn new_max_by(
+        input: Arc<dyn PhysicalExpr>,
+        by: Arc<dyn PhysicalExpr>,
+        order: MinMaxByOrder,
+    ) -> Self {
         Self {
             input,
             by,
             is_max_by: true,
+            order,
         }
     }
 }
@@ -446,10 +505,13 @@ impl PhysicalExpr for AggMinMaxByExpr {
             ShapeMismatch: "'by' column in {} expression has incorrect length: expected {}, got {}",
             name, input.len(), by.len()
         );
-        let arg_extremum = if self.is_max_by {
-            by.as_materialized_series_maintain_scalar().arg_max()
-        } else {
-            by.as_materialized_series_maintain_scalar().arg_min()
+        let by = by.as_materialized_series_maintain_scalar();
+        let arg_extremum = match self.order {
+            MinMaxByOrder::SkipNulls if self.is_max_by => by.arg_max(),
+            MinMaxByOrder::SkipNulls => by.arg_min(),
+            MinMaxByOrder::Total { nulls_largest } => {
+                arg_min_max_total(&by, self.is_max_by, nulls_largest)?
+            },
         };
         let out = if let Some(idx) = arg_extremum {
             input.slice(idx as i64, 1)
@@ -487,6 +549,24 @@ impl PhysicalExpr for AggMinMaxByExpr {
         let (by_col, by_groups) = ac_by.get_final_aggregation();
         GroupsType::check_lengths(&input_groups, &by_groups)?;
 
+        let nulls_largest = match self.order {
+            MinMaxByOrder::SkipNulls => None,
+            MinMaxByOrder::Total { nulls_largest } => Some(nulls_largest),
+        };
+        // The arg max kernels may skip NaN, but `sort` puts NaN after all other values.
+        let nan_mask = match nulls_largest {
+            Some(_) if self.is_max_by && by_col.dtype().is_float() => {
+                let is_nan = by_col
+                    .as_materialized_series()
+                    .is_nan()?
+                    .rechunk()
+                    .into_owned();
+                is_nan.any().then_some(is_nan)
+            },
+            _ => None,
+        };
+        let is_exact = nulls_largest.is_none() || (!by_col.has_nulls() && nan_mask.is_none());
+
         // Fast path: rolling context with numeric by column — O(n) via deque.
         if let GroupsType::Slice {
             groups: slices,
@@ -494,6 +574,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
             monotonic,
         } = by_groups.as_ref().as_ref()
             && input_groups.is_same(&by_groups)
+            && is_exact
         {
             let by_phys = by_col.as_materialized_series().to_physical_repr();
             if by_phys.dtype().is_primitive_numeric()
@@ -527,20 +608,52 @@ impl PhysicalExpr for AggMinMaxByExpr {
             unsafe { by_col.agg_arg_min(&by_groups) }
         };
         let idxs_in_groups: &IdxCa = idxs_in_groups.as_materialized_series().as_ref().as_ref();
-        let gather_idxs: IdxCa = match input_groups.as_ref().as_ref() {
-            GroupsType::Idx(g) => idxs_in_groups
-                .iter()
-                .enumerate()
-                .map(|(group_idx, idx_in_group)| {
-                    idx_in_group.map(|i| g.all()[group_idx][i as usize])
-                })
-                .collect(),
-            GroupsType::Slice { groups, .. } => idxs_in_groups
-                .iter()
-                .enumerate()
-                .map(|(group_idx, idx_in_group)| idx_in_group.map(|i| groups[group_idx][0] + i))
-                .collect(),
+
+        // In the total order these rows come before the pick of the kernel, in this order.
+        let mut before = Vec::new();
+        if nulls_largest == Some(self.is_max_by) && by_col.has_nulls() {
+            before.push(by_col.is_null());
+        }
+        before.extend(nan_mask);
+        let before = before
+            .into_iter()
+            .map(|mask| {
+                // SAFETY: Groups are correct.
+                let pos = unsafe { mask.clone().into_series().agg_arg_max(&by_groups) };
+                Ok((pos.idx()?.clone(), mask))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let to_global = |groups: &GroupsType, group_idx: usize, i: IdxSize| match groups {
+            GroupsType::Idx(g) => g.all()[group_idx][i as usize],
+            GroupsType::Slice { groups, .. } => groups[group_idx][0] + i,
         };
+        let group_len = |group_idx: usize| match by_groups.as_ref().as_ref() {
+            GroupsType::Idx(g) => g.all()[group_idx].len(),
+            GroupsType::Slice { groups, .. } => groups[group_idx][1] as usize,
+        };
+        let first_before = |group_idx: usize| {
+            before.iter().find_map(|(pos, mask)| {
+                let i = pos.get(group_idx)?;
+                let by_idx = to_global(by_groups.as_ref().as_ref(), group_idx, i);
+                mask.get(by_idx as usize)?.then_some(i)
+            })
+        };
+        let gather_idxs: IdxCa = idxs_in_groups
+            .iter()
+            .enumerate()
+            .map(|(group_idx, idx_in_group)| {
+                // A group without a pick that is not empty only has null keys.
+                let fallback =
+                    || (nulls_largest.is_some() && group_len(group_idx) > 0).then_some(0);
+                let idx_in_group = first_before(group_idx).or(idx_in_group).or_else(fallback)?;
+                Some(to_global(
+                    input_groups.as_ref().as_ref(),
+                    group_idx,
+                    idx_in_group,
+                ))
+            })
+            .collect();
 
         // SAFETY: All non-null indices are within input_col's groups.
         let gathered = unsafe { input_col.take_unchecked(&gather_idxs) };

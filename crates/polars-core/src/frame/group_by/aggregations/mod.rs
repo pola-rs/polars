@@ -14,13 +14,11 @@ use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::legacy::kernels::take_agg::*;
 use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_arrow::types::NativeType;
-use polars_compute::rolling::no_nulls::{
-    MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
-};
+use polars_compute::rolling::no_nulls::{MomentWindow, QuantileWindow, RollingAggWindowNoNulls};
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
-    self, ArgMaxWindow, ArgMinWindow, MeanWindow, QuantileMethod, RollingFnParams,
+    self, ArgMinMaxWindow, MeanWindow, MinMaxWindow, QuantileMethod, RollingFnParams,
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
     rolling_argmin_by,
 };
@@ -30,7 +28,7 @@ use polars_utils::float::IsFloat;
 use polars_utils::float16::pf16;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::kahan_sum::KahanSum;
-use polars_utils::min_max::MinMax;
+use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMax};
 use rayon::prelude::*;
 
 use crate::chunked_array::cast::CastOptions;
@@ -50,6 +48,12 @@ use crate::utils::{Container, NoNull};
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }
+
+// Unlike `rolling_min` and `rolling_max`, group aggregations ignore NaN.
+type MinWindow<'a, T> = MinMaxWindow<'a, T, MinIgnoreNan>;
+type MaxWindow<'a, T> = MinMaxWindow<'a, T, MaxIgnoreNan>;
+type ArgMinWindow<'a, T> = ArgMinMaxWindow<'a, T, MinIgnoreNan>;
+type ArgMaxWindow<'a, T> = ArgMinMaxWindow<'a, T, MaxIgnoreNan>;
 
 // if the windows overlap, we can use the rolling_<agg> kernels
 // they maintain state, which saves a lot of compute by not naively traversing all elements every
@@ -545,14 +549,12 @@ where
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::MinWindow<_>, _, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<MinWindow<_>, _, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            None,
+                        ),
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -730,14 +732,12 @@ where
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::MaxWindow<_>, _, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<MaxWindow<_>, _, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            None,
+                        ),
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -761,7 +761,10 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        // Skipped for floats for the same reason as in `agg_max`.
+        if (!self.has_nulls() || matches!(groups, GroupsType::Slice { .. }))
+            && !T::Native::is_float()
+        {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);

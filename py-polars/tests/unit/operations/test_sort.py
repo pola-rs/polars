@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from polars._typing import EngineType, PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 @given(
@@ -1734,6 +1736,145 @@ def test_sort_by_first_last_null_key(engine: EngineType, dtype: PolarsDataType) 
     assert q.collect(engine=engine).row(0) == (7, 7)
     q = lf.group_by("g").agg(first=e.first(), last=e.last())
     assert q.collect(engine=engine).row(0) == (1, 7, 7)
+
+
+def _key_frame(dtype: PolarsDataType) -> pl.DataFrame:
+    # The codes -2, -3 and -4 are NaN, -inf and inf. Equal keys have the same `x`, so
+    # it does not matter which row of equal keys is picked.
+    is_float = dtype in (pl.Float32, pl.Float64)
+    if dtype == pl.Boolean:
+        g = [1, 1, 2, 2, 3, 4]
+        codes: list[int | None] = [1, 0, None, 1, None, 0]
+    else:
+        g = [1, 1, 1, 2, 2, 2, 3, 4, 4]
+        codes = [3, 1, 2, 2, None, 1, None, 5, 5]
+    if is_float:
+        g += [5, 5, 5, 6, 6, 7, 7, 8, 9, 10, 10, 10]
+        codes += [1, -2, None, -2, -2, -2, None, -3, -4, None, -3, -4]
+
+    def key(c: int) -> Any:
+        if dtype == pl.Boolean:
+            return bool(c)
+        if is_float:
+            return {-2: float("nan"), -3: float("-inf"), -4: float("inf")}.get(
+                c, float(c)
+            )
+        if dtype == pl.Date:
+            return date(2020, 1, c)
+        if dtype == pl.Decimal(10, 2):
+            return Decimal(c)
+        if dtype in (pl.String, pl.Categorical) or isinstance(dtype, pl.Enum):
+            return f"s{c}"
+        return c
+
+    keys = [None if c is None else key(c) for c in codes]
+    x = [-1 if c is None else c for c in codes]
+    return pl.DataFrame(
+        {"g": g, "x": x, "k": pl.Series(keys, dtype=dtype, strict=False)}
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Int64,
+        pl.Float32,
+        pl.Float64,
+        pl.String,
+        pl.Boolean,
+        pl.Date,
+        pl.Decimal(10, 2),
+        pl.Categorical,
+        pl.Enum(["s5", "s3", "s2", "s1"]),
+    ],
+)
+def test_sort_first_last_to_total_min_max(
+    engine: EngineType, dtype: PolarsDataType, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    lf = _key_frame(dtype).lazy()
+    exprs = []
+    for descending in [False, True]:
+        for nulls_last in [False, True]:
+            opts = {"descending": descending, "nulls_last": nulls_last}
+            sort_by = pl.col("x").sort_by("k", **opts)
+            sort = pl.col("k").sort(**opts)
+            # The filter leaves group 4 empty.
+            sort_filtered = pl.col("k").filter(pl.col("g") != 4).sort(**opts)
+            name = f"{descending}_{nulls_last}"
+            exprs += [
+                sort_by.first().alias(f"by_first_{name}"),
+                sort_by.last().alias(f"by_last_{name}"),
+                sort.first().alias(f"first_{name}"),
+                sort.last().alias(f"last_{name}"),
+                sort_filtered.first().alias(f"filtered_first_{name}"),
+                sort_filtered.last().alias(f"filtered_last_{name}"),
+            ]
+    no_rewrite = pl.QueryOptFlags(simplify_expression=False)
+
+    q = lf.group_by("g").agg(exprs)
+    plan = q.explain()
+    assert "min_by" in plan
+    assert "max_by" in plan
+    assert "sort" not in plan
+    assert_frame_equal(
+        q.collect(engine=engine),
+        q.collect(engine=engine, optimizations=no_rewrite),
+        check_row_order=False,
+    )
+
+    q = lf.select(exprs)
+    assert "sort" not in q.explain()
+    assert_frame_equal(
+        q.collect(engine=engine), q.collect(engine=engine, optimizations=no_rewrite)
+    )
+
+    q = lf.select(e.over("g") for e in exprs)
+    assert_frame_equal(
+        q.collect(engine=engine), q.collect(engine=engine, optimizations=no_rewrite)
+    )
+
+    q = lf.with_row_index("t").rolling("t", period="3i").agg(exprs)
+    assert_frame_equal(
+        q.collect(engine=engine), q.collect(engine=engine, optimizations=no_rewrite)
+    )
+
+
+@pytest.mark.parametrize("by", [["a"], ["a", "b"]])
+def test_sort_by_first_last_streaming_evictions(
+    by: list[str], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
+    n = 100
+    # `x` is a function of `a`, so it does not matter which row of equal keys is picked.
+    a = [None if i % 7 == 0 else (i * 31) % 101 for i in range(n)]
+    df = pl.DataFrame(
+        {
+            "g": [i % 5 for i in range(n)],
+            "x": [-1 if v is None else v for v in a],
+            "a": a,
+            "b": [i % 3 for i in range(n)],
+        }
+    )
+    exprs = [
+        pl.col("x").min_by("a").alias("min_by"),
+        pl.col("x").max_by("a").alias("max_by"),
+    ]
+    for nulls_last in [False, True]:
+        e = pl.col("x").sort_by(by, nulls_last=nulls_last)
+        exprs += [
+            e.first().alias(f"first_{nulls_last}"),
+            e.last().alias(f"last_{nulls_last}"),
+        ]
+    q = df.lazy().group_by("g").agg(exprs)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
