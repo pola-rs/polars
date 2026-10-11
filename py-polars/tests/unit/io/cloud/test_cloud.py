@@ -696,7 +696,7 @@ def test_scan_line_format_empty_local_object_store_file(
     # range of an empty file in a nested error.
     path = tmp_path / f"empty.{format}"
     path.write_bytes(b"")
-    kwargs = {"raise_if_empty": False} if format == "csv" else {}
+    kwargs: dict[str, Any] = {"raise_if_empty": False} if format == "csv" else {}
     scan = pl.scan_ndjson if format == "ndjson" else pl.scan_csv
     out = scan(format_file_uri(path), schema={"a": pl.Int64}, **kwargs).collect()
     assert_frame_equal(out, pl.DataFrame(schema={"a": pl.Int64}))
