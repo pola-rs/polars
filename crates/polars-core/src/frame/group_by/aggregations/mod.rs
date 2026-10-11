@@ -88,9 +88,6 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
         "rolling_numeric_minmax_by requires a numeric by column, got {dtype}",
     );
 
-    let starts: Vec<IdxSize> = slices.iter().map(|s| s[0]).collect();
-    let ends: Vec<IdxSize> = slices.iter().map(|s| s[0] + s[1]).collect();
-
     let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
@@ -98,9 +95,9 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
         let validity = arr.validity();
 
         if is_max_by {
-            rolling_argmax_by(values, validity, &starts, &ends, 1)
+            rolling_argmax_by(values, validity, slices, 1)
         } else {
-            rolling_argmin_by(values, validity, &starts, &ends, 1)
+            rolling_argmin_by(values, validity, slices, 1)
         }
     });
 
@@ -615,15 +612,15 @@ where
                         }
                         Some(best_pos)
                     } else {
-                        let (start_pos, mut best_val) = idx
-                            .iter()
-                            .enumerate()
-                            .find_map(|(pos, &i)| arr.get(i as usize).map(|v| (pos, v)))?;
+                        let (start_pos, mut best_val) =
+                            idx.iter().enumerate().find_map(|(pos, &i)| {
+                                unsafe { arr.get_unchecked(i as usize) }.map(|v| (pos, v))
+                            })?;
 
                         let mut best_pos: IdxSize = start_pos as IdxSize;
 
                         for (pos, &i) in idx.iter().enumerate().skip(start_pos + 1) {
-                            if let Some(v) = arr.get(i as usize) {
+                            if let Some(v) = unsafe { arr.get_unchecked(i as usize) } {
                                 if v.nan_max_lt(&best_val) {
                                     best_val = v;
                                     best_pos = pos as IdxSize;
@@ -802,15 +799,15 @@ where
 
                         Some(best_pos)
                     } else {
-                        let (start_pos, mut best_val) = idx
-                            .iter()
-                            .enumerate()
-                            .find_map(|(pos, &i)| arr.get(i as usize).map(|v| (pos, v)))?;
+                        let (start_pos, mut best_val) =
+                            idx.iter().enumerate().find_map(|(pos, &i)| {
+                                unsafe { arr.get_unchecked(i as usize) }.map(|v| (pos, v))
+                            })?;
 
                         let mut best_pos: IdxSize = start_pos as IdxSize;
 
                         for (pos, &i) in idx.iter().enumerate().skip(start_pos + 1) {
-                            if let Some(v) = arr.get(i as usize) {
+                            if let Some(v) = unsafe { arr.get_unchecked(i as usize) } {
                                 if v.nan_min_gt(&best_val) {
                                     best_val = v;
                                     best_pos = pos as IdxSize;

@@ -13,24 +13,23 @@ use super::nulls::RollingAggWindowNulls;
 /// Uses `ArgMinMaxWindow` (monotonic deque) for O(n) amortized complexity.
 ///
 /// Preconditions:
-/// - `starts` and `ends` must be monotonically non-decreasing (rolling window invariant).
-/// - All indices in `starts`/`ends` must be within bounds of `by`.
+/// - The `[start, len]` windows must be monotonically non-decreasing (rolling window invariant).
+/// - All windows must be within bounds of `by`.
 fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
     by: &[B],
     validity: Option<&Bitmap>,
-    starts: &[IdxSize],
-    ends: &[IdxSize],
+    windows: &[[IdxSize; 2]],
     min_periods: usize,
 ) -> PrimitiveArray<IdxSize> {
-    assert_eq!(starts.len(), ends.len());
-    let n = starts.len();
+    let n = windows.len();
 
     if n == 0 || by.is_empty() {
         return PrimitiveArray::new_null(IdxSize::PRIMITIVE.into(), n);
     }
 
-    let first_start = starts[0] as usize;
-    let first_end = ends[0] as usize;
+    let [first_start, first_len] = windows[0];
+    let first_start = first_start as usize;
+    let first_end = first_start + first_len as usize;
 
     match validity {
         None => {
@@ -43,15 +42,15 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
                     None,
                 );
 
-            let iter = (0..n).map(|i| {
-                let start = starts[i] as usize;
-                let end = ends[i] as usize;
+            let iter = windows.iter().enumerate().map(|(i, &[start, len])| {
+                let start = start as usize;
+                let end = start + len as usize;
 
                 if end <= start || (end - start) < min_periods {
                     return None;
                 }
 
-                // SAFETY: starts/ends are within bounds (rolling context).
+                // SAFETY: The windows are within bounds (rolling context).
                 unsafe { RollingAggWindowNoNulls::<B, IdxSize>::update(&mut window, start, end) };
 
                 RollingAggWindowNoNulls::<B, IdxSize>::get_agg(&window, i)
@@ -70,15 +69,15 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
                 None,
             );
 
-            let iter = (0..n).map(|i| {
-                let start = starts[i] as usize;
-                let end = ends[i] as usize;
+            let iter = windows.iter().enumerate().map(|(i, &[start, len])| {
+                let start = start as usize;
+                let end = start + len as usize;
 
                 if end <= start {
                     return None;
                 }
 
-                // SAFETY: starts/ends are within bounds (rolling context).
+                // SAFETY: The windows are within bounds (rolling context).
                 unsafe { RollingAggWindowNulls::<B, IdxSize>::update(&mut window, start, end) };
 
                 if !RollingAggWindowNulls::<B, IdxSize>::is_valid(&window, min_periods) {
@@ -97,19 +96,17 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
 pub fn rolling_argmin_by<B: NativeType>(
     by: &[B],
     validity: Option<&Bitmap>,
-    starts: &[IdxSize],
-    ends: &[IdxSize],
+    windows: &[[IdxSize; 2]],
     min_periods: usize,
 ) -> PrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MinIgnoreNan>(by, validity, starts, ends, min_periods)
+    rolling_arg_extremum_by::<B, MinIgnoreNan>(by, validity, windows, min_periods)
 }
 
 pub fn rolling_argmax_by<B: NativeType>(
     by: &[B],
     validity: Option<&Bitmap>,
-    starts: &[IdxSize],
-    ends: &[IdxSize],
+    windows: &[[IdxSize; 2]],
     min_periods: usize,
 ) -> PrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MaxIgnoreNan>(by, validity, starts, ends, min_periods)
+    rolling_arg_extremum_by::<B, MaxIgnoreNan>(by, validity, windows, min_periods)
 }

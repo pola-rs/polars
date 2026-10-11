@@ -605,7 +605,8 @@ impl PhysicalExpr for AggMinMaxByExpr {
                 && _use_rolling_kernels(slices, *overlapping, *monotonic, by_phys.chunks())
             {
                 let gather_idxs = rolling_numeric_minmax_by(&by_col, slices, self.is_max_by);
-                let gathered = input_col.take(&gather_idxs)?;
+                // SAFETY: The indices come from the same groups as `input_col`.
+                let gathered = unsafe { input_col.take_unchecked(&gather_idxs) };
                 let agg_state = AggregatedScalar(gathered.with_name(keep_name));
                 return Ok(AggregationContext::from_agg_state(
                     agg_state,
@@ -643,13 +644,17 @@ impl PhysicalExpr for AggMinMaxByExpr {
             .map(|mask| {
                 // SAFETY: Groups are correct.
                 let pos = unsafe { mask.clone().into_series().agg_arg_max(&by_groups) };
-                Ok((pos.idx()?.clone(), mask))
+                let pos = pos.idx()?.rechunk().downcast_as_array().clone();
+                Ok((pos, mask.rechunk().downcast_as_array().clone()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let to_global = |groups: &GroupsType, group_idx: usize, i: IdxSize| match groups {
-            GroupsType::Idx(g) => g.all()[group_idx][i as usize],
-            GroupsType::Slice { groups, .. } => groups[group_idx][0] + i,
+        // SAFETY: Callers pass a group and a position within that group.
+        let to_global = |groups: &GroupsType, group_idx: usize, i: IdxSize| unsafe {
+            match groups {
+                GroupsType::Idx(g) => *g.all().get_unchecked(group_idx).get_unchecked(i as usize),
+                GroupsType::Slice { groups, .. } => groups.get_unchecked(group_idx)[0] + i,
+            }
         };
         let group_len = |group_idx: usize| match by_groups.as_ref().as_ref() {
             GroupsType::Idx(g) => g.all()[group_idx].len(),
@@ -657,9 +662,12 @@ impl PhysicalExpr for AggMinMaxByExpr {
         };
         let first_before = |group_idx: usize| {
             before.iter().find_map(|(pos, mask)| {
-                let i = pos.get(group_idx)?;
-                let by_idx = to_global(by_groups.as_ref().as_ref(), group_idx, i);
-                mask.get(by_idx as usize)?.then_some(i)
+                // SAFETY: There is one position per group, and it is within the group.
+                unsafe {
+                    let i = pos.get_unchecked(group_idx)?;
+                    let by_idx = to_global(by_groups.as_ref().as_ref(), group_idx, i);
+                    mask.get_unchecked(by_idx as usize)?.then_some(i)
+                }
             })
         };
         let gather_idxs: IdxCa = idxs_in_groups
