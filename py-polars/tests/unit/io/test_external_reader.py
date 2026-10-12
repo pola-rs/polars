@@ -618,7 +618,7 @@ def test_external_reader_hive_slice_ends_in_file_skipped_by_predicate(
         (tmp_path / f"p={p}").mkdir()
         path = tmp_path / f"p={p}/0"
         path.write_bytes(b"")
-        data[str(path)] = pl.DataFrame({"x": range(n)})
+        data[path.as_posix()] = pl.DataFrame({"x": range(n)})
 
     class Reader(FileReader):
         def __init__(self, source: str | bytes) -> None:
