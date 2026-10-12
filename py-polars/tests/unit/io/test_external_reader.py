@@ -603,3 +603,69 @@ PROJECT */0 COLUMNS"""
     assert "explain_property_key: explain_property_value" in phys_graph
 
     assert q.collect().shape == (0, 0)
+
+
+@pytest.mark.write_disk
+def test_external_reader_hive_slice_ends_in_file_skipped_by_predicate(
+    tmp_path: Path,
+) -> None:
+    from polars._plr import PyLazyFrame
+    from polars._utils.wrap import wrap_ldf
+    from polars.io.scan_options._options import ScanOptions
+
+    data = {}
+    for p, n in [("a", 5), ("b", 11), ("c", 3)]:
+        (tmp_path / f"p={p}").mkdir()
+        path = tmp_path / f"p={p}/0"
+        path.write_bytes(b"")
+        data[str(path)] = pl.DataFrame({"x": range(n)})
+
+    class Reader(FileReader):
+        def __init__(self, source: str | bytes) -> None:
+            assert isinstance(source, str)
+            self.df = data[source]
+
+        # Ignores `limit`, which is allowed.
+        def n_rows_in_file(self, limit: int | None = None) -> int:
+            return self.df.height
+
+        def schema(self) -> SchemaDict:
+            return self.df.schema
+
+        def collect_batches(
+            self,
+            *,
+            columns: Sequence[str] = (),
+            row_index: tuple[str, int] | None = None,
+            pre_slice: tuple[int, int] | None = None,
+            filters: Sequence[FilterExpr] = (),
+            num_pipelines: int,
+        ) -> Iterator[pl.DataFrame]:
+            yield self.df.select(columns)
+
+    class ReaderBuilder(FileReaderBuilder):
+        def build_file_reader(
+            self,
+            source: str | bytes,
+            multi_scan_context: dict[Any, Any],
+        ) -> FileReader:
+            return Reader(source)
+
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_external_reader_builder(
+            sources=sorted(data),
+            reader_builder=ReaderBuilder(),
+            schema={"x": pl.Int64},
+            scan_options=ScanOptions(hive_partitioning=True),
+        )
+    )
+
+    # The slice ends inside `p=b`, which the predicate skips, and `p=c` comes after.
+    assert_frame_equal(
+        lf.slice(-16, 10).filter(pl.col("p").is_in(["a", "c"])).collect(),
+        pl.DataFrame({"x": [3, 4], "p": "a"}),
+    )
+    assert_frame_equal(
+        lf.head(8).filter(pl.col("p").is_in(["a", "c"])).collect(),
+        pl.DataFrame({"x": range(5), "p": "a"}),
+    )

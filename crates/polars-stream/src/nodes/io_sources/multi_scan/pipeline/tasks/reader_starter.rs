@@ -305,14 +305,21 @@ impl ReaderStarter {
                     {
                         let row_count = get_row_count.await?;
 
-                        // `row_position_after_slice` stops counting at the end of the slice, so
-                        // it is only the full row count if the slice does not end inside this
-                        // file. Advancing by either count is fine: if the slice ends here, no
-                        // rows of later files are read.
+                        // `row_position_after_slice` may stop counting at the end of the slice
+                        // (external readers may also return a full count cached from an earlier
+                        // call), so it is only guaranteed to be the full row count if the slice
+                        // does not end inside this file. Advancing by either count is fine: if
+                        // the slice ends here, no rows of later files are read.
                         if slice_end.is_none_or(|end| end >= n_rows_in_file.num_physical_rows()) {
                             assert_eq!(n_rows_in_file, row_count)
                         } else {
-                            assert_eq!(row_count.num_physical_rows(), slice_end.unwrap())
+                            let end = slice_end.unwrap();
+                            let n = row_count.num_physical_rows();
+                            assert!(
+                                (end..=n_rows_in_file.num_physical_rows()).contains(&n),
+                                "row_position_after_slice: {n}, slice end: {end}, \
+                                n_rows_in_file: {n_rows_in_file:?}"
+                            )
                         }
                     } else {
                         n_rows_in_file = Some(get_row_count.await?)
