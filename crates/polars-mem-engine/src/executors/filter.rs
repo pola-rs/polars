@@ -101,7 +101,11 @@ impl FilterExec {
         let masks = RAYON.install(|| {
             chunks
                 .par_iter()
-                .map(|chunk| self.predicate.evaluate(chunk, state))
+                .map(|chunk| {
+                    self.predicate
+                        .evaluate(chunk, state)?
+                        .broadcast_owned_to(chunk.height())
+                })
                 .collect::<PolarsResult<Vec<Column>>>()
         })?;
         let mut masks = masks.into_iter();
