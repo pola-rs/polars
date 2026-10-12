@@ -1117,7 +1117,11 @@ class IcebergColumnStatisticsLoader:
 
     def push_file_statistics(self, file: DataFile) -> None:
         # The metric maps are optional.
-        self.null_count.append((file.null_value_counts or {}).get(self.field_id))
+        null_count = (file.null_value_counts or {}).get(self.field_id)
+        # Negative counts (unknown) and counts that do not fit are null.
+        self.null_count.append(
+            null_count if null_count is not None and 0 <= null_count < 2**32 else None
+        )
 
         if self.load_from_bytes_impl is not None:
             self.min_values.append((file.lower_bounds or {}).get(self.field_id))

@@ -17,6 +17,7 @@ import os
 import pickle
 import re
 import sys
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -720,6 +721,29 @@ def _data_file_paths(tbl: Any) -> list[str]:
     return [task.file.file_path for task in tbl.scan().plan_files()]
 
 
+@pytest.mark.parametrize("planner", ["plugin", "pyiceberg"])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_iceberg_plugin_fast_deletion_count_duplicate_deletes(
+    tmp_path: Path, planner: str, engine: EngineType, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Two commits deleting the same rows (e.g. concurrent merge-on-read deletes). The
+    # summed deleted row count exceeds the rows of the data file.
+    plmonkeypatch.setenv("POLARS_ICEBERG_PLANNER", planner)
+
+    tbl = _new_table(tmp_path)
+    paths = _data_file_paths(tbl)
+    assert len(paths) == 1
+
+    all_rows = list(range(TEST_DF.height))
+    tbl = _add_position_deletes(tbl, {paths[0]: all_rows})
+    tbl = _add_position_deletes(tbl, {paths[0]: all_rows})
+
+    lf = pl.scan_iceberg(tbl, fast_deletion_count=True)
+    assert lf.collect(engine=engine).height == 0
+    # The count is not exact with duplicate deletes, but does not fail.
+    assert lf.select(pl.len()).collect(engine=engine).item() == 0
+
+
 @pytest.mark.parametrize("fast_deletion_count", [False, True])
 def test_iceberg_plugin_position_deletes(
     tmp_path: Path, fast_deletion_count: bool
@@ -1101,6 +1125,16 @@ def test_iceberg_plugin_gzip_metadata(metadata_path: str) -> None:
     assert_frame_equal(pl.scan_iceberg(str(gz_path)).collect(), TEST_DF)
 
 
+def test_iceberg_plugin_metadata_path_with_dot_segments(metadata_path: str) -> None:
+    local_path = Path(metadata_path.removeprefix("file://"))
+    for path in [
+        f"{local_path.parent}/./{local_path.name}",
+        f"{local_path.parent}/../{local_path.parent.name}/{local_path.name}",
+        f"{local_path.parent}//{local_path.name}",
+    ]:
+        assert_frame_equal(pl.scan_iceberg(path).collect(), TEST_DF)
+
+
 @pytest.mark.parametrize("planner", [None, "plugin"])
 def test_iceberg_plugin_unsupported_avro_codec(
     tmp_path: Path, planner: str | None, plmonkeypatch: PlMonkeyPatch
@@ -1472,6 +1506,25 @@ def test_iceberg_plugin_metadata_file_cache(
 
 
 @pytest.mark.usefixtures("_fresh_metadata_file_cache")
+@pytest.mark.usefixtures("_fresh_metadata_file_cache")
+def test_iceberg_plugin_metadata_file_cache_relative_paths(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # The same relative metadata path in different working directories.
+    name = f"00001-{uuid.uuid4()}.metadata.json"
+    for i in range(2):
+        (tmp_path / f"t{i}").mkdir()
+        tbl = _new_table(tmp_path / f"t{i}")
+        tbl.overwrite(pl.DataFrame({"a": [i], "b": [str(i)]}).to_arrow())
+        metadata = Path(tbl.metadata_location.removeprefix("file://"))
+        (tmp_path / f"cwd{i}" / "metadata").mkdir(parents=True)
+        (tmp_path / f"cwd{i}" / "metadata" / name).write_bytes(metadata.read_bytes())
+
+    for i in range(2):
+        plmonkeypatch.chdir(tmp_path / f"cwd{i}")
+        assert pl.scan_iceberg(f"metadata/{name}").collect()["a"].to_list() == [i]
+
+
 def test_iceberg_plugin_metadata_file_cache_incremental(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

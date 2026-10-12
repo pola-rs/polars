@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -458,6 +459,14 @@ class IcebergScanResolver:
                 else f"{current_snapshot_id or ''}"
             )
 
+        # The name mapping is a table property, which can change without a new
+        # snapshot. Data files without field IDs are read with it.
+        if (
+            name_mapping := tbl.metadata.properties.get("schema.name-mapping.default")
+        ) is not None:
+            digest = hashlib.sha256(name_mapping.encode()).hexdigest()[:16]
+            snapshot_id_key += f":name-mapping:{digest}"
+
         if (
             existing_resolved_version_key is not None
             and existing_resolved_version_key == snapshot_id_key
@@ -600,6 +609,7 @@ class IcebergScanResolver:
         puffin_deletion_vectors: dict[str, dict[str, int] | None] = {}
         total_physical_rows: int = 0
         total_deleted_rows: int = 0
+        record_counts_known = True
         total_position_delete_files = 0
         total_deletion_vectors = 0
 
@@ -685,6 +695,10 @@ class IcebergScanResolver:
                                     continue
 
                                 position_delete_files[i].append(deletion_file.file_path)
+
+                                if deletion_file.record_count < 0:
+                                    record_counts_known = False
+
                                 position_delete_num_rows += deletion_file.record_count
 
                             case FileFormat.PUFFIN:
@@ -772,6 +786,10 @@ class IcebergScanResolver:
                 if statistics_loader is not None:
                     statistics_loader.push_file_statistics(file_info.file)
 
+                # Some writers use -1 for an unknown record count.
+                if file_info.file.record_count < 0:
+                    record_counts_known = False
+
                 total_physical_rows += file_info.file.record_count
 
                 sources.append(
@@ -852,6 +870,7 @@ class IcebergScanResolver:
                     (total_physical_rows, total_deleted_rows)
                     if (
                         self.use_metadata_statistics
+                        and record_counts_known
                         and (self.fast_deletion_count or total_deleted_rows == 0)
                     )
                     else None

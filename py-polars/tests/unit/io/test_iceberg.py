@@ -7564,6 +7564,249 @@ def test_scan_iceberg_files_without_field_ids_use_name_mapping(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_name_mapping_projections(tmp_path: Path) -> None:
+    # Projections that leave out (nested) columns of files without field IDs, or
+    # project no column of the file at all.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "s", StructType(NestedField(3, "x", StringType()))),
+            NestedField(
+                4,
+                "m",
+                MapType(
+                    5,
+                    StringType(),
+                    6,
+                    StructType(NestedField(7, "y", LongType())),
+                    value_required=False,
+                ),
+            ),
+        ),
+    )
+    path = tmp_path / "no-field-ids.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "a": pa.array([1, 2], pa.int64()),
+                "s": pa.array([{"x": "p"}, {"x": "q"}]),
+                "m": pa.array(
+                    [[("k", {"y": 1})], []],
+                    pa.map_(pa.string(), pa.struct([("y", pa.int64())])),
+                ),
+            }
+        ),
+        path,
+    )
+    tbl.add_files([format_file_uri_iceberg(path)])
+
+    lf = pl.scan_iceberg(tbl, use_metadata_statistics=False)
+    df = lf.collect()
+    assert df.height == 2
+
+    assert_frame_equal(lf.select("a").collect(), df.select("a"))
+    assert_frame_equal(lf.drop("s").collect(), df.drop("s"))
+    assert_frame_equal(lf.select("m").collect(), df.select("m"))
+    assert lf.select(pl.len()).collect().item() == 2
+    assert lf.with_row_index().select("index").collect().to_series().to_list() == [
+        0,
+        1,
+    ]
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_name_mapping_change_rescans(tmp_path: Path) -> None:
+    # The name mapping can change without a new snapshot; collecting the same
+    # LazyFrame again uses the new one.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "b", LongType())
+        ),
+    )
+    path = tmp_path / "no-field-ids.parquet"
+    pq.write_table(
+        pa.table({"a": pa.array([1], pa.int64()), "b": pa.array([2], pa.int64())}),
+        path,
+    )
+    tbl.add_files([format_file_uri_iceberg(path)])
+
+    lf = pl.scan_iceberg(tbl)
+    assert lf.collect().rows() == [(1, 2)]
+
+    swapped = [{"field-id": 1, "names": ["b"]}, {"field-id": 2, "names": ["a"]}]
+    with tbl.transaction() as tx:
+        tx.set_properties({"schema.name-mapping.default": json.dumps(swapped)})
+    tbl.refresh()
+
+    assert lf.collect().rows() == [(2, 1)]
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_partial_field_ids(tmp_path: Path) -> None:
+    # As in Iceberg Java, a file with field IDs is read by them; its fields without
+    # one are missing.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "b", StringType()),
+            NestedField(3, "s", StructType(NestedField(4, "x", LongType()))),
+        ),
+    )
+
+    def field_id(field: pa.Field, id: int) -> pa.Field:
+        return field.with_metadata({b"PARQUET:field_id": str(id).encode()})
+
+    schema = pa.schema(
+        [
+            field_id(pa.field("a", pa.int64()), 1),
+            pa.field("b", pa.string()),
+            field_id(pa.field("s", pa.struct([pa.field("x", pa.int64())])), 3),
+        ]
+    )
+    path = tmp_path / "partial-field-ids.parquet"
+    pq.write_table(
+        pa.table(
+            {"a": [1, 2], "b": ["x", "y"], "s": [{"x": 1}, {"x": 2}]}, schema=schema
+        ),
+        path,
+    )
+    tbl.add_files([format_file_uri_iceberg(path)])
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(),
+        pl.DataFrame(
+            {
+                "a": [1, 2],
+                "b": pl.Series([None, None], dtype=pl.String),
+                "s": pl.Series([{"x": None}, {"x": None}]).cast(
+                    pl.Struct({"x": pl.Int64})
+                ),
+            }
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_timestamp_millis_files(tmp_path: Path) -> None:
+    # Iceberg Java reads TIMESTAMP_MILLIS columns, e.g. of files added with
+    # `add_files`.
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "ts", TimestampType()))
+    )
+    path = tmp_path / "millis.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "ts": pa.array(
+                    [datetime(2024, 1, 1, 12, 0, 0, 500000)], pa.timestamp("ms")
+                )
+            }
+        ),
+        path,
+    )
+    tbl.add_files([format_file_uri_iceberg(path)])
+
+    assert pl.scan_iceberg(tbl).collect().to_series().to_list() == [
+        datetime(2024, 1, 1, 12, 0, 0, 500000)
+    ]
+
+
+def _append_hand_built_data_file(
+    tbl: pyiceberg.table.Table, table: pa.Table, **data_file_args: Any
+) -> pyiceberg.table.Table:
+    """Append `table` as a data file with metadata from `data_file_args`."""
+    from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+    from pyiceberg.typedef import Record
+
+    local_path = Path(
+        tbl.location().removeprefix("file://"), "data", f"{uuid.uuid4()}.parquet"
+    )
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, local_path)
+
+    data_file = DataFile.from_args(
+        **{
+            "content": DataFileContent.DATA,
+            "file_path": format_file_uri_iceberg(local_path),
+            "file_format": FileFormat.PARQUET,
+            "partition": Record(),
+            "record_count": table.num_rows,
+            "file_size_in_bytes": local_path.stat().st_size,
+            **data_file_args,
+        }
+    )
+    data_file.spec_id = tbl.spec().spec_id
+
+    with tbl.transaction() as tx, tx.update_snapshot().fast_append() as append:
+        append.append_data_file(data_file)
+
+    return tbl.catalog.load_table(tbl.name())
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_unknown_record_count(tmp_path: Path) -> None:
+    # Some format v1 writers write -1 for an unknown record count.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "x", LongType())),
+        properties={"format-version": "1"},
+    )
+    schema = pa.schema(
+        [pa.field("x", pa.int64(), metadata={b"PARQUET:field_id": b"1"})]
+    )
+    tbl = _append_hand_built_data_file(
+        tbl, pa.table({"x": [1, 2, 3]}, schema=schema), record_count=-1
+    )
+
+    lf = pl.scan_iceberg(tbl)
+    assert lf.select(pl.len()).collect().item() == 3
+    assert lf.collect().height == 3
+
+    tbl = _append_hand_built_data_file(tbl, pa.table({"x": [4, 5]}, schema=schema))
+
+    lf = pl.scan_iceberg(tbl)
+    assert lf.select(pl.len()).collect().item() == 5
+    assert lf.collect().height == 5
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_null_count_beyond_u32(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "x", LongType()), NestedField(2, "y", LongType())
+        ),
+    )
+    schema = pa.schema(
+        [
+            pa.field("x", pa.int64(), metadata={b"PARQUET:field_id": b"1"}),
+            pa.field("y", pa.int64(), metadata={b"PARQUET:field_id": b"2"}),
+        ]
+    )
+    # Metadata as for a file with more rows than fit in a u32, of which all `x` are
+    # null.
+    n = 2**32 + 10
+    tbl = _append_hand_built_data_file(
+        tbl,
+        pa.table({"x": [None, None], "y": [1, 2]}, schema=schema),
+        record_count=n,
+        null_value_counts={1: n, 2: 0},
+    )
+
+    lf = pl.scan_iceberg(tbl)
+    assert lf.filter(pl.col("x").is_null()).select(
+        "y"
+    ).collect().to_series().to_list() == [1, 2]
+    assert lf.filter(pl.col("y") > 0).select("y").collect().to_series().to_list() == [
+        1,
+        2,
+    ]
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_metadata_file_removed_after_load(tmp_path: Path) -> None:
     # E.g. by `write.metadata.previous-versions-max` after newer commits.
     tbl, _ = new_iceberg_table(

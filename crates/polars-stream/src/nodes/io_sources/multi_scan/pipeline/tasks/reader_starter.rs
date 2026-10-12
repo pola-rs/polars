@@ -449,6 +449,7 @@ async fn start_reader_impl(
 
     let file_iceberg_schema: Option<IcebergSchema> = if let ProjectionBuilder::Iceberg {
         projected_iceberg_schema,
+        table_has_name_mapping,
         ..
     } = &file_projection_builder
     {
@@ -459,6 +460,7 @@ async fn start_reader_impl(
                 IcebergSchema::from_arrow_schema_with_name_mapping(
                     x.as_ref(),
                     projected_iceberg_schema,
+                    *table_has_name_mapping,
                 )
             })
             .transpose()?

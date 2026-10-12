@@ -289,27 +289,38 @@ impl IcebergSchema {
     }
 
     /// The schema of a data file, as [`Self::from_arrow_schema`]. A file written without field
-    /// IDs (e.g. imported with `add_files`) is read with the name mapping of `table`: its fields
+    /// IDs (e.g. imported with `add_files`) is read with the table's name mapping, which
+    /// `table` (the projected table columns) carries if `table_has_name_mapping`: its fields
     /// take the ID of the table field whose mapped names hold their name, as in Iceberg Java.
-    /// Unmapped fields get IDs that match no table field.
+    ///
+    /// Fields without an ID (unmapped fields, or fields of a file that has IDs on only some
+    /// fields) get IDs that match no table field, so they read as missing, as in Iceberg Java.
     pub fn from_arrow_schema_with_name_mapping(
         schema: &ArrowSchema,
         table: &IcebergSchema,
+        table_has_name_mapping: bool,
     ) -> PolarsResult<Self> {
-        let has_field_ids = schema.iter_values().any(|f| {
-            f.metadata
-                .as_ref()
-                .is_some_and(|md| md.contains_key(PARQUET_FIELD_ID_KEY))
-        });
-        let has_name_mapping = table.values().any(|c| !c.mapped_names.is_empty());
+        let has_field_ids = schema.iter_values().any(has_field_id);
 
-        if has_field_ids || !has_name_mapping {
+        if has_field_ids {
+            let fields = with_placeholder_ids_of_level(schema.iter_values());
+            return Self::try_from_arrow_fields_iter(fields.iter());
+        }
+
+        if !table_has_name_mapping {
             return Self::from_arrow_schema(schema);
         }
 
         let fields = with_mapped_ids_of_level(schema.iter_values(), table);
         Self::try_from_arrow_fields_iter(fields.iter())
     }
+}
+
+fn has_field_id(field: &ArrowField) -> bool {
+    field
+        .metadata
+        .as_ref()
+        .is_some_and(|md| md.contains_key(PARQUET_FIELD_ID_KEY))
 }
 
 /// The fields of one struct level with the field IDs of the `table` columns they are mapped to.
@@ -331,11 +342,72 @@ fn with_mapped_ids_of_level<'a>(
                 Some(column) => with_mapped_ids(field, column),
                 None => {
                     unmapped_id -= 1;
-                    with_field_id(field.clone(), unmapped_id)
+                    with_placeholder_ids(field, unmapped_id)
                 },
             }
         })
         .collect()
+}
+
+/// The fields of one struct level, where fields without a field ID get IDs that are unique
+/// within the level and match no table field.
+fn with_placeholder_ids_of_level<'a>(
+    fields: impl IntoIterator<Item = &'a ArrowField>,
+) -> Vec<ArrowField> {
+    let mut placeholder_id = LIST_ELEMENT_DEFAULT_ID;
+
+    fields
+        .into_iter()
+        .map(|field| {
+            placeholder_id -= 1;
+            with_placeholder_ids(field, placeholder_id)
+        })
+        .collect()
+}
+
+/// `field` with `id` if it has no field ID, and placeholder IDs for its nested fields without
+/// one. List elements without an ID are left to [`LIST_ELEMENT_DEFAULT_ID`].
+fn with_placeholder_ids(field: &ArrowField, id: u32) -> ArrowField {
+    let field = ArrowField {
+        dtype: with_placeholder_ids_dtype(&field.dtype),
+        ..field.clone()
+    };
+
+    if has_field_id(&field) {
+        field
+    } else {
+        with_field_id(field, id)
+    }
+}
+
+fn with_placeholder_ids_dtype(dtype: &ArrowDataType) -> ArrowDataType {
+    use ArrowDataType as ADT;
+
+    let list_element = |inner: &ArrowField| ArrowField {
+        dtype: with_placeholder_ids_dtype(&inner.dtype),
+        ..inner.clone()
+    };
+
+    match dtype {
+        ADT::Struct(fields) => ADT::Struct(with_placeholder_ids_of_level(fields)),
+        ADT::List(inner) => ADT::List(Box::new(list_element(inner))),
+        ADT::LargeList(inner) => ADT::LargeList(Box::new(list_element(inner))),
+        ADT::FixedSizeList(inner, width) => ADT::FixedSizeList(
+            Box::new(with_placeholder_ids(inner, LIST_ELEMENT_DEFAULT_ID - 1)),
+            *width,
+        ),
+        ADT::Map(entries, sorted) => match &entries.dtype {
+            ADT::Struct(kv) if kv.len() == 2 => {
+                let entries = ArrowField {
+                    dtype: ADT::Struct(with_placeholder_ids_of_level(kv)),
+                    ..(**entries).clone()
+                };
+                ADT::Map(Box::new(entries), *sorted)
+            },
+            dtype => dtype.clone(),
+        },
+        dtype => dtype.clone(),
+    }
 }
 
 /// `field` with the field IDs of `column` and its nested fields. List elements and map keys and
@@ -369,7 +441,7 @@ fn with_mapped_ids(field: &ArrowField, column: &IcebergColumn) -> ArrowField {
             dtype => dtype.clone(),
         },
         // Other (e.g. mismatched) types are left for the schema checks.
-        (dtype, _) => dtype.clone(),
+        (dtype, _) => with_placeholder_ids_dtype(dtype),
     };
 
     with_field_id(

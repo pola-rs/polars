@@ -144,7 +144,12 @@ class ScanCastOptions:
             _DEFAULT_CAST_OPTIONS_ICEBERG = ScanCastOptions(
                 integer_cast="upcast",
                 float_cast=["upcast", "downcast"],
-                datetime_cast=("nanosecond-downcast", "convert-timezone"),
+                # Iceberg Java reads TIMESTAMP_MILLIS Parquet columns as microseconds.
+                datetime_cast=(
+                    "nanosecond-downcast",
+                    "millisecond-upcast",
+                    "convert-timezone",
+                ),
                 missing_struct_fields="insert",
                 extra_struct_fields="ignore",
                 categorical_to_string="allow",

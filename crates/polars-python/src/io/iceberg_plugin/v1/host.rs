@@ -17,7 +17,7 @@ use polars_io_ext_ffi::common::{
 };
 use polars_io_ext_ffi::iceberg_v1::{Host, StorageHandle};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
-use polars_utils::pl_path::PlRefPath;
+use polars_utils::pl_path::{CloudScheme, PlRefPath};
 
 use crate::io::iceberg_plugin::metadata_cache::{ScopedMetadataCache, is_cacheable};
 
@@ -187,14 +187,48 @@ struct ResolvedLocation {
 
 impl HostStorage {
     async fn resolve(&self, url: &str) -> PolarsResult<ResolvedLocation> {
+        let url = PlRefPath::new(url);
+        let is_local = matches!(
+            url.scheme(),
+            None | Some(CloudScheme::File | CloudScheme::FileNoHostname)
+        );
         let (CloudLocation { prefix, .. }, store) =
-            build_object_store(PlRefPath::new(url), self.cloud_options.as_ref(), false).await?;
+            build_object_store(url, self.cloud_options.as_ref(), false).await?;
 
-        Ok(ResolvedLocation {
-            store,
-            path: object_path_from_str(&prefix)?,
-        })
+        // Object store paths have no `.`, `..` or empty segments, which local paths (e.g.
+        // `/wh/./t/metadata/...` from a table location) can have. Object keys are kept as they
+        // are: `a//b` is another key than `a/b`.
+        let path = if is_local {
+            object_path_from_str(&normalize_local_path(&prefix))?
+        } else {
+            object_path_from_str(&prefix)?
+        };
+
+        Ok(ResolvedLocation { store, path })
     }
+}
+
+/// `path` without `.` and empty segments, and with `..` segments applied lexically.
+fn normalize_local_path(path: &str) -> String {
+    let mut segments: Vec<&str> = Vec::new();
+
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {},
+            ".." => {
+                segments.pop();
+            },
+            segment => segments.push(segment),
+        }
+    }
+
+    let mut out = segments.join("/");
+
+    if path.starts_with('/') {
+        out.insert(0, '/');
+    }
+
+    out
 }
 
 unsafe fn storage_arc(storage: StorageHandle) -> Arc<HostStorage> {

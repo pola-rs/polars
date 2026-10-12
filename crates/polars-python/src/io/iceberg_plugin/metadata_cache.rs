@@ -18,10 +18,27 @@ use tokio::sync::OnceCell;
 /// Whether the file at `location` is immutable and can be cached: manifest lists and manifests
 /// (Avro files with a write-time UUID in the name), as in the Python cache, and table metadata
 /// files (`<version>-<uuid>.metadata.json`), which the plugin reads where PyIceberg reuses the
-/// loaded table.
+/// loaded table. The location must be absolute: a relative path resolves against the working
+/// directory, which can change.
 pub fn is_cacheable(location: &str) -> bool {
-    let name = location.rsplit('/').next().unwrap_or(location);
-    (name.ends_with(".avro") || name.ends_with(".metadata.json")) && contains_uuid(name)
+    // A Windows path can have a UUID in a directory name.
+    let name = location.rsplit(['/', '\\']).next().unwrap_or(location);
+    (name.ends_with(".avro") || name.ends_with(".metadata.json"))
+        && contains_uuid(name)
+        && is_absolute_location(location)
+}
+
+/// As `_is_absolute_location` in Python: a URL, or an absolute POSIX or Windows path.
+fn is_absolute_location(location: &str) -> bool {
+    let b = location.as_bytes();
+    let is_windows_drive_path =
+        b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'/' | b'\\');
+
+    location.contains("://")
+        || location.starts_with("file:/")
+        || location.starts_with('/')
+        || location.starts_with("\\\\")
+        || is_windows_drive_path
 }
 
 /// Whether `s` contains a UUID (`8-4-4-4-12` hex digits, either case).
@@ -247,6 +264,23 @@ mod tests {
         assert!(!is_cacheable(&format!("s3://b/{uuid}/data.parquet")));
         assert!(!is_cacheable(&format!("s3://b/{uuid}/x.avro")));
         assert!(!is_cacheable("1f6e4c0a-9b2d-4e5f-8a7b-0c1d2e3f4a5.avro"));
+
+        // Absolute local paths.
+        assert!(is_cacheable(&format!("/t/metadata/{uuid}-m0.avro")));
+        assert!(is_cacheable(&format!("file:/t/metadata/{uuid}-m0.avro")));
+        assert!(is_cacheable(&format!(r"C:\t\metadata\{uuid}-m0.avro")));
+        assert!(is_cacheable(&format!("C:/t/metadata/{uuid}-m0.avro")));
+        assert!(is_cacheable(&format!(r"\\host\share\{uuid}-m0.avro")));
+        // Relative paths.
+        assert!(!is_cacheable(&format!("t/metadata/{uuid}-m0.avro")));
+        assert!(!is_cacheable(&format!("{uuid}-m0.avro")));
+        assert!(!is_cacheable(&format!(
+            "../metadata/00001-{uuid}.metadata.json"
+        )));
+        // A UUID in a Windows directory name.
+        assert!(!is_cacheable(&format!(
+            r"C:\t\{uuid}\metadata\v2.metadata.json"
+        )));
     }
 
     #[test]
