@@ -367,7 +367,7 @@ fn decode_column(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
             Ok((
                 col_md,
@@ -953,7 +953,7 @@ fn decode_column_prefiltered(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
             Ok((
                 col_md,

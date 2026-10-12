@@ -11,14 +11,17 @@
 // unchanged.
 
 use polars_buffer::Buffer;
+use polars_parquet_format::{ColumnCryptoMetaData, EncryptionWithColumnKey};
 use serde::{Deserialize, Serialize};
 
 use super::compact::{
-    ByteRange, CompactColumnChunk, CompactColumnMetaData, CompactRowGroup, CompactStatistics,
+    ByteRange, CompactColumnChunk, CompactColumnCrypto, CompactColumnMetaData, CompactRowGroup,
+    CompactStatistics,
 };
 use super::schema_descriptor::SchemaDescriptor;
 use super::{ColumnChunkMetadata, ColumnOrder, FileMetadata, RowGroupMetadata};
 use crate::parquet::compression::Compression;
+use crate::parquet::error::ParquetResult;
 
 #[derive(Serialize, Deserialize)]
 struct FileMetadataWire {
@@ -75,6 +78,47 @@ struct ChunkWire {
     chunk_offset: i64,
     chunk_size: i64,
     statistics: Option<StatWire>,
+    crypto: Option<ColumnCryptoWire>,
+}
+
+/// How an encrypted column chunk is encrypted. The encrypted copy of the
+/// column metadata is dropped, as deserialized metadata never has a
+/// decryptor to decrypt it with. Keeping the crypto metadata means the
+/// column is still known to be encrypted, so reading it gives a clear error.
+#[derive(Serialize, Deserialize)]
+enum ColumnCryptoWire {
+    FooterKey,
+    ColumnKey {
+        path_in_schema: Vec<String>,
+        key_metadata: Option<Vec<u8>>,
+    },
+}
+
+impl From<&ColumnCryptoMetaData> for ColumnCryptoWire {
+    fn from(c: &ColumnCryptoMetaData) -> Self {
+        match c {
+            ColumnCryptoMetaData::ENCRYPTIONWITHFOOTERKEY(_) => Self::FooterKey,
+            ColumnCryptoMetaData::ENCRYPTIONWITHCOLUMNKEY(k) => Self::ColumnKey {
+                path_in_schema: k.path_in_schema.clone(),
+                key_metadata: k.key_metadata.clone(),
+            },
+        }
+    }
+}
+
+impl From<ColumnCryptoWire> for ColumnCryptoMetaData {
+    fn from(c: ColumnCryptoWire) -> Self {
+        match c {
+            ColumnCryptoWire::FooterKey => Self::ENCRYPTIONWITHFOOTERKEY(Default::default()),
+            ColumnCryptoWire::ColumnKey {
+                path_in_schema,
+                key_metadata,
+            } => Self::ENCRYPTIONWITHCOLUMNKEY(EncryptionWithColumnKey {
+                path_in_schema,
+                key_metadata,
+            }),
+        }
+    }
 }
 
 /// Stat wire entry. Drops `distinct_count`, which has no read-path consumer;
@@ -97,7 +141,8 @@ impl Serialize for FileMetadata {
             .row_groups
             .iter()
             .map(|rg| rg_to_wire(rg, footer))
-            .collect();
+            .collect::<Result<_, _>>()
+            .map_err(serde::ser::Error::custom)?;
 
         let wire = FileMetadataWire {
             version: self.version,
@@ -109,24 +154,24 @@ impl Serialize for FileMetadata {
     }
 }
 
-fn rg_to_wire(rg: &RowGroupMetadata, footer: &[u8]) -> RowGroupWire {
+fn rg_to_wire(rg: &RowGroupMetadata, footer: &[u8]) -> ParquetResult<RowGroupWire> {
     let columns = rg
         .parquet_columns()
         .iter()
         .map(|c| chunk_to_wire(c, footer))
-        .collect();
+        .collect::<Result<_, _>>()?;
 
-    RowGroupWire {
+    Ok(RowGroupWire {
         num_rows: rg.num_rows() as i64,
         sorting_columns: rg
             .sorting_columns()
             .map(|sc| sc.iter().map(SortingColumnWire::from).collect()),
         columns,
-    }
+    })
 }
 
-fn chunk_to_wire(c: &ColumnChunkMetadata, footer: &[u8]) -> ChunkWire {
-    let m = c.compact_metadata();
+fn chunk_to_wire(c: &ColumnChunkMetadata, footer: &[u8]) -> ParquetResult<ChunkWire> {
+    let m = c.compact_metadata()?;
     let statistics = m.statistics.as_ref().map(|s| StatWire {
         null_count: s.null_count,
         min_value: s.min_value.map(|r| r.resolve(footer).to_vec()),
@@ -137,14 +182,19 @@ fn chunk_to_wire(c: &ColumnChunkMetadata, footer: &[u8]) -> ChunkWire {
     // Pre-resolve byte_range so wire form has just (offset, len). The
     // reader's only consumers of these fields go through `byte_range()`,
     // which already does this resolution.
-    let byte_range = c.byte_range();
-    ChunkWire {
+    let byte_range = c.byte_range()?;
+    Ok(ChunkWire {
         codec: m.codec,
         num_values: m.num_values,
         chunk_offset: byte_range.start as i64,
         chunk_size: m.total_compressed_size,
         statistics,
-    }
+        crypto: c
+            .compact_column_chunk()
+            .crypto
+            .as_ref()
+            .map(|c| (&c.crypto_metadata).into()),
+    })
 }
 
 impl<'de> Deserialize<'de> for FileMetadata {
@@ -191,7 +241,7 @@ impl<'de> Deserialize<'de> for FileMetadata {
         let row_groups: Vec<RowGroupMetadata> = row_groups_compact
             .into_iter()
             .map(|rg| {
-                let md = RowGroupMetadata::from_compact(&schema_descr, rg)
+                let md = RowGroupMetadata::from_compact(&schema_descr, rg, None)
                     .map_err(serde::de::Error::custom)?;
                 max_row_group_height = max_row_group_height.max(md.num_rows());
                 Ok(md)
@@ -209,6 +259,7 @@ impl<'de> Deserialize<'de> for FileMetadata {
             schema_descr,
             column_orders,
             footer_buf,
+            decryptor: None,
         })
     }
 }
@@ -265,11 +316,17 @@ fn chunk_from_wire(c: ChunkWire, footer: &mut Vec<u8>) -> CompactColumnChunk {
     };
 
     CompactColumnChunk {
-        meta_data,
+        meta_data: Some(meta_data),
         offset_index_offset: None,
         offset_index_length: None,
         column_index_offset: None,
         column_index_length: None,
+        crypto: c.crypto.map(|crypto_metadata| {
+            Box::new(CompactColumnCrypto {
+                crypto_metadata: crypto_metadata.into(),
+                encrypted_column_metadata: None,
+            })
+        }),
     }
 }
 
@@ -279,5 +336,148 @@ fn append_to_footer(footer: &mut Vec<u8>, bytes: &[u8]) -> ByteRange {
     ByteRange {
         offset,
         len: bytes.len() as u32,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use polars_parquet_format::EncryptionWithFooterKey;
+    use polars_utils::pl_serialize;
+
+    use super::*;
+    use crate::parquet::error::ParquetError;
+    use crate::parquet::read::get_page_iterator;
+    use crate::parquet::schema::Repetition;
+    use crate::parquet::schema::types::{ParquetType, PhysicalType};
+
+    fn column_chunk(crypto_metadata: Option<ColumnCryptoMetaData>) -> CompactColumnChunk {
+        CompactColumnChunk {
+            meta_data: Some(CompactColumnMetaData {
+                codec: Compression::Uncompressed,
+                num_values: 3,
+                total_uncompressed_size: 0,
+                total_compressed_size: 0,
+                data_page_offset: 0,
+                index_page_offset: None,
+                dictionary_page_offset: None,
+                statistics: None,
+                bloom_filter_offset: None,
+                bloom_filter_length: None,
+            }),
+            offset_index_offset: None,
+            offset_index_length: None,
+            column_index_offset: None,
+            column_index_length: None,
+            crypto: crypto_metadata.map(|crypto_metadata| {
+                Box::new(CompactColumnCrypto {
+                    crypto_metadata,
+                    encrypted_column_metadata: None,
+                })
+            }),
+        }
+    }
+
+    /// Metadata as read from a file with a plaintext footer without decryption properties:
+    /// `plain` isn't encrypted, `footer_key` is encrypted with the footer key and
+    /// `column_key` is encrypted with a column key.
+    fn encrypted_file_metadata() -> FileMetadata {
+        let leaf = |name: &str| {
+            ParquetType::try_from_primitive(
+                name.into(),
+                PhysicalType::Int64,
+                Repetition::Optional,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+        };
+        let schema_descr = SchemaDescriptor::new(
+            "root".into(),
+            vec![leaf("plain"), leaf("footer_key"), leaf("column_key")],
+        );
+        let rg = CompactRowGroup {
+            columns: vec![
+                column_chunk(None),
+                column_chunk(Some(ColumnCryptoMetaData::ENCRYPTIONWITHFOOTERKEY(
+                    EncryptionWithFooterKey {},
+                ))),
+                column_chunk(Some(ColumnCryptoMetaData::ENCRYPTIONWITHCOLUMNKEY(
+                    EncryptionWithColumnKey {
+                        path_in_schema: vec!["column_key".into()],
+                        key_metadata: Some(b"kc".to_vec()),
+                    },
+                ))),
+            ],
+            total_byte_size: 0,
+            num_rows: 3,
+            sorting_columns: None,
+        };
+        let row_groups = vec![RowGroupMetadata::from_compact(&schema_descr, rg, None).unwrap()];
+        FileMetadata {
+            version: 2,
+            num_rows: 3,
+            max_row_group_height: 3,
+            created_by: None,
+            row_groups,
+            key_value_metadata: None,
+            schema_descr,
+            column_orders: None,
+            footer_buf: Buffer::default(),
+            decryptor: None,
+        }
+    }
+
+    #[test]
+    fn serde_keeps_column_crypto_metadata() {
+        let md = encrypted_file_metadata();
+        let roundtripped: FileMetadata = pl_serialize::deserialize_from_reader::<_, _, false>(
+            pl_serialize::serialize_to_bytes::<_, false>(&md)
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let columns = roundtripped.row_groups[0].parquet_columns();
+        let crypto_metadata: Vec<_> = columns
+            .iter()
+            .map(|c| {
+                c.compact_column_chunk()
+                    .crypto
+                    .as_ref()
+                    .map(|c| c.crypto_metadata.clone())
+            })
+            .collect();
+        let expected: Vec<_> = md.row_groups[0]
+            .parquet_columns()
+            .iter()
+            .map(|c| {
+                c.compact_column_chunk()
+                    .crypto
+                    .as_ref()
+                    .map(|c| c.crypto_metadata.clone())
+            })
+            .collect();
+        assert_eq!(crypto_metadata, expected);
+        assert_eq!(
+            columns.iter().map(|c| c.is_encrypted()).collect::<Vec<_>>(),
+            [false, true, true]
+        );
+
+        // Reading an encrypted column gives a clear error rather than trying to
+        // decode the encrypted pages.
+        for column in &columns[1..] {
+            let result =
+                get_page_iterator(column, Cursor::new(Buffer::default()), vec![], usize::MAX);
+            let Err(ParquetError::Encryption(message)) = result else {
+                panic!("expected an encryption error");
+            };
+            assert!(
+                message.contains("is encrypted but decryption properties were not provided"),
+                "{message}"
+            );
+        }
     }
 }
