@@ -2063,7 +2063,7 @@ def test_delta_binary_packed_prefilter_multi_page_28536() -> None:
         max_size=10,
         min_cols=1,
         max_cols=5,
-        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        excluded_dtypes=[pl.Decimal],
         include_cols=[
             column("filter_col", pl.Int8, st.integers(0, 1), allow_null=False)
         ],
@@ -2086,7 +2086,7 @@ def test_general_prefiltering(df: pl.DataFrame) -> None:
         max_size=10,
         min_cols=1,
         max_cols=5,
-        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        excluded_dtypes=[pl.Decimal],
         include_cols=[column("filter_col", pl.Boolean, allow_null=False)],
     ),
 )
@@ -2113,7 +2113,7 @@ def test_row_index_prefiltering(df: pl.DataFrame) -> None:
         max_size=40,
         min_cols=1,
         max_cols=4,
-        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        excluded_dtypes=[pl.Decimal],
         include_cols=[
             column("filter_col", pl.Int8, st.integers(0, 3), allow_null=False),
             column("a", pl.Int32, allow_null=True),
@@ -3713,6 +3713,178 @@ def test_categorical_dictionary_columns_with_plain_page_28959() -> None:
 
     assert result["cat"].dtype == pl.Categorical
     assert_frame_equal(result, df, categorical_as_str=True)
+
+
+@pytest.mark.parametrize("dtype", [pl.Categorical(), pl.Enum(["a", "b", "c", "d"])])
+@pytest.mark.parametrize(
+    "writer", ["polars", "pyarrow_plain", "pyarrow_fallback", "pyarrow_no_metadata"]
+)
+def test_categorical_prefiltering(dtype: pl.DataType, writer: str) -> None:
+    # The first two row groups have no nulls, the last two do.
+    values: list[str | None] = ["a", "b", "c", "a", "d", "b", "a", "c"] * 2
+    values += ["a", None, "b", None, "c", "a", None, "d"] * 2
+    df = pl.DataFrame(
+        {
+            "cat": pl.Series(values, dtype=dtype),
+            "other": pl.Series(values[::-1], dtype=dtype),
+            "i": range(len(values)),
+        }
+    )
+
+    f = io.BytesIO()
+    if writer == "polars":
+        df.write_parquet(f, row_group_size=8)
+    elif writer == "pyarrow_no_metadata":
+        tbl = df.to_arrow()
+        schema = pa.schema([field.remove_metadata() for field in tbl.schema])
+        pq.write_table(tbl.cast(schema), f, row_group_size=8)
+    else:
+        pq.write_table(
+            df.to_arrow(),
+            f,
+            row_group_size=8,
+            use_dictionary=writer == "pyarrow_fallback",
+            dictionary_pagesize_limit=1,
+            data_page_size=1,
+            write_batch_size=2,
+        )
+
+    for expr in [
+        pl.col("cat") == "a",
+        pl.col("cat") != "a",
+        pl.col("cat").is_in(["b", "d"]),
+        pl.col("cat").is_null(),
+        pl.col("cat").is_null() | (pl.col("cat") == "c"),
+        pl.col("i") % 3 == 0,
+    ]:
+        f.seek(0)
+        result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+        assert_frame_equal(
+            result,
+            df.filter(expr),
+            check_dtypes=writer != "pyarrow_no_metadata",
+            categorical_as_str=True,
+        )
+
+
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_enum_prefiltering_unknown_values(use_dictionary: bool) -> None:
+    tbl = pl.DataFrame(
+        {"e": pl.Series(["a", "b", None, "a"], dtype=pl.Enum(["a", "b"]))}
+    ).to_arrow()
+    metadata = (
+        pl.Series("e", [], pl.Enum(["a"])).to_frame().to_arrow().schema[0].metadata
+    )
+    schema = pa.schema([tbl.schema[0].with_metadata(metadata)])
+
+    f = io.BytesIO()
+    pq.write_table(tbl.cast(schema), f, use_dictionary=use_dictionary)
+
+    f.seek(0)
+    df = pl.read_parquet(f)
+    assert df["e"].to_list() == ["a", None, None, "a"]
+
+    for expr in [
+        pl.col("e").is_null(),
+        pl.col("e").is_not_null(),
+        pl.col("e") == "a",
+        pl.col("e") == "b",
+        pl.col("e").is_in(["a", "b"]),
+        pl.col("e").is_in(["b"]),
+        pl.col("e").is_in(["a", None], nulls_equal=True),
+        pl.col("e").eq_missing("a"),
+    ]:
+        f.seek(0)
+        result = (
+            pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+            .filter(expr)
+            .collect()
+        )
+        assert_frame_equal(result, df.filter(expr))
+
+
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_categorical_equal_prefiltering_adds_no_unused_values(
+    use_dictionary: bool,
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    dictionary = pa.array(["used", "other"] + [f"unused{i}" for i in range(10)])
+    keys = pa.array([0, None, 1, 0] * 25, pa.uint32())
+    metadata = pl.Series("c", [], dtype).to_frame().to_arrow().schema[0].metadata
+    tbl = pa.table({"c": pa.DictionaryArray.from_arrays(keys, dictionary)})
+    tbl = tbl.cast(pa.schema([tbl.schema[0].with_metadata(metadata)]))
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f, use_dictionary=use_dictionary)
+
+    for expr, expected in [
+        (pl.col("c") == "used", ["used"] * 50),
+        (pl.col("c").is_in(["used", "other"]), ["used", "other", "used"] * 25),
+    ]:
+        f.seek(0)
+        result = (
+            pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+            .filter(expr)
+            .collect()
+        )
+        assert result["c"].cast(pl.String).to_list() == expected
+    assert sorted(dtype.categories.to_series().to_list()) == ["other", "used"]
+
+
+@pytest.mark.parametrize("key_type", [pa.uint8(), pa.int32()])
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_categorical_prefiltering_unused_dictionary_values(
+    key_type: pa.DataType, use_dictionary: bool
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random(physical=pl.UInt8))
+    filler = pl.Series([f"x{i}" for i in range(250)], dtype=dtype)
+
+    # The unused dictionary values do not fit in the categories.
+    dictionary = pa.array(["used"] + [f"unused{i}" for i in range(10)])
+    keys = pa.array([None, 0, 0, None] * 25, key_type)
+    metadata = pl.Series("c", [], dtype).to_frame().to_arrow().schema[0].metadata
+    tbl = pa.table({"c": pa.DictionaryArray.from_arrays(keys, dictionary)})
+    tbl = tbl.cast(pa.schema([tbl.schema[0].with_metadata(metadata)]))
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f, use_dictionary=use_dictionary)
+
+    for expr in [pl.col("c").is_not_null(), pl.col("c") == "used"]:
+        f.seek(0)
+        result = (
+            pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+            .filter(expr)
+            .collect()
+        )
+        f.seek(0)
+        assert_frame_equal(result, pl.read_parquet(f).filter(expr))
+    assert dtype.categories.to_series().len() == 251
+    assert filler.len() == 250
+
+
+@pytest.mark.parametrize(
+    "dtype", [pl.Categorical, pl.Enum(["1", "2"]), pl.String, pl.Int64]
+)
+@pytest.mark.parametrize("has_nulls", [False, True])
+def test_prefiltering_null_predicate_fails(dtype: pl.DataType, has_nulls: bool) -> None:
+    values = ["1", None, "2", "1"] if has_nulls else ["1", "2"]
+    df = pl.DataFrame(
+        {"c": pl.Series(values * 25).cast(dtype), "x": range(len(values) * 25)}
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    # Evaluating this on a null fails.
+    expr = pl.col("c").cast(pl.String).fill_null("invalid").cast(pl.Int64) == 1
+    f.seek(0)
+    q = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False).filter(expr)
+    if has_nulls:
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            df.filter(expr)
+        with pytest.raises(pl.exceptions.PolarsError):
+            q.collect()
+    else:
+        assert_frame_equal(q.collect(), df.filter(expr))
 
 
 def test_parquet_read_timezone_22506() -> None:
