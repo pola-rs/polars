@@ -26,11 +26,7 @@ from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.io.database._cursor_proxies import OracleCursorProxy
 from polars.io.database._executor import ConnectionExecutor
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.io.database.conftest import (
-    ADBC_AVAILABLE,
-    CONNECTORX_AVAILABLE,
-    create_sqlite_engine,
-)
+from tests.unit.io.database.conftest import create_sqlite_engine
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -183,9 +179,6 @@ class ExceptionTestParams(NamedTuple):
                 expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
                 schema_overrides={"id": pl.UInt8},
             ),
-            marks=pytest.mark.skipif(
-                not CONNECTORX_AVAILABLE, reason="connectorx not available"
-            ),
             id="uri: connectorx",
         ),
         pytest.param(
@@ -202,8 +195,8 @@ class ExceptionTestParams(NamedTuple):
                 schema_overrides={"id": pl.UInt8},
             ),
             marks=pytest.mark.skipif(
-                not ADBC_AVAILABLE,
-                reason="adbc_driver_sqlite not available",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="uri: adbc",
         ),
@@ -268,8 +261,8 @@ class ExceptionTestParams(NamedTuple):
                 expected_dates=["2020-01-01", "2021-12-31"],
             ),
             marks=pytest.mark.skipif(
-                not ADBC_AVAILABLE,
-                reason="adbc_driver_sqlite not available",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc (fetchall)",
         ),
@@ -287,8 +280,8 @@ class ExceptionTestParams(NamedTuple):
                 batch_size=1,
             ),
             marks=pytest.mark.skipif(
-                not ADBC_AVAILABLE,
-                reason="adbc_driver_sqlite not available",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc (batched)",
         ),
@@ -419,8 +412,8 @@ def test_read_database(
                 expected_dates=["2020-01-01", "2021-12-31"],
             ),
             marks=pytest.mark.skipif(
-                not ADBC_AVAILABLE,
-                reason="adbc_driver_sqlite not available",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc",
         ),
@@ -438,8 +431,8 @@ def test_read_database(
                 batch_size=1,
             ),
             marks=pytest.mark.skipif(
-                not ADBC_AVAILABLE,
-                reason="adbc_driver_sqlite not available",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc (ignore batch_size)",
         ),
@@ -650,7 +643,9 @@ def test_read_database_parameterised(
         ("?", [0]),
     ],
 )
-@pytest.mark.skipif(not ADBC_AVAILABLE, reason="adbc_driver_sqlite not available")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
+)
 def test_read_database_parameterised_adbc(
     param: str, param_value: Any, tmp_sqlite_db: Path
 ) -> None:
@@ -735,7 +730,9 @@ def test_read_database_parameterised_multiple(
         (["?", "?"], [90, 100]),
     ],
 )
-@pytest.mark.skipif(not ADBC_AVAILABLE, reason="adbc_driver_sqlite not available")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
+)
 def test_read_database_parameterised_multiple_adbc(
     params: list[str], param_value: Any, tmp_sqlite_db: Path
 ) -> None:
@@ -784,7 +781,9 @@ def test_read_database_parameterised_multiple_adbc(
         ("?", [0]),
     ],
 )
-@pytest.mark.skipif(not ADBC_AVAILABLE, reason="adbc_driver_sqlite not available")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
+)
 def test_read_database_uri_parameterised(
     param: str, param_value: Any, tmp_sqlite_db: Path
 ) -> None:
@@ -839,7 +838,9 @@ def test_read_database_uri_parameterised(
         (["?", "?"], [90, 100]),
     ],
 )
-@pytest.mark.skipif(not ADBC_AVAILABLE, reason="adbc_driver_sqlite not available")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
+)
 def test_read_database_uri_parameterised_multiple(
     params: list[str], param_value: Any, tmp_sqlite_db: Path
 ) -> None:
@@ -895,8 +896,8 @@ def test_read_database_uri_parameterised_multiple(
             False,
             "fetch_arrow",
             marks=pytest.mark.skipif(
-                not ADBC_AVAILABLE,
-                reason="adbc_driver_postgresql not available",
+                sys.platform == "win32",
+                reason="adbc_driver_postgresql not available on Windows",
             ),
         ),
         pytest.param(
@@ -905,8 +906,8 @@ def test_read_database_uri_parameterised_multiple(
             False,
             "fetch_arrow",
             marks=pytest.mark.skipif(
-                not ADBC_AVAILABLE,
-                reason="adbc_driver_postgresql not available",
+                sys.platform == "win32",
+                reason="adbc_driver_postgresql not available on Windows",
             ),
         ),
         pytest.param(
@@ -915,8 +916,8 @@ def test_read_database_uri_parameterised_multiple(
             True,
             "fetch_record_batch",
             marks=pytest.mark.skipif(
-                not ADBC_AVAILABLE,
-                reason="adbc_driver_postgresql not available",
+                sys.platform == "win32",
+                reason="adbc_driver_postgresql not available on Windows",
             ),
         ),
     ],
@@ -1302,7 +1303,6 @@ def test_read_database_duplicate_column_error(
         "fakedb://my#%us3r:p433w0rd@not_a_real_host:9999/database",
     ],
 )
-@pytest.mark.skipif(not CONNECTORX_AVAILABLE, reason="connectorx not available")
 def test_read_database_cx_credentials(uri: str) -> None:
     with pytest.raises(RuntimeError, match=r"Source.*not supported"):
         pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")

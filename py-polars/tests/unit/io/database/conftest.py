@@ -6,20 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-try:
-    import adbc_driver_sqlite.dbapi  # noqa: F401
-
-    ADBC_AVAILABLE = True
-except ImportError:
-    ADBC_AVAILABLE = False
-
-try:
-    import connectorx  # noqa: F401
-
-    CONNECTORX_AVAILABLE = True
-except ImportError:
-    CONNECTORX_AVAILABLE = False
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
