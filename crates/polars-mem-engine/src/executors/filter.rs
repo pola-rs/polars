@@ -97,27 +97,22 @@ impl FilterExec {
         state: &ExecutionState,
         n_partitions: usize,
     ) -> PolarsResult<DataFrame> {
+        // Evaluate the predicate vertically in parallel, then filter the whole frame
+        // once so that the output stays single-chunk. `DataFrame::filter` already
+        // rechunks a misaligned mask and broadcasts a scalar mask.
         let chunks = df.clone().split_chunks_by_n(n_partitions, true);
         let masks = RAYON.install(|| {
             chunks
                 .par_iter()
-                .map(|chunk| {
-                    let c = self.predicate.evaluate(chunk, state)?;
-                    let mask = column_to_mask(&c, chunk.height())?.into_owned();
-                    if mask.len() == chunk.height() {
-                        Ok(mask)
-                    } else {
-                        Ok(mask.new_from_index(0, chunk.height()))
-                    }
-                })
-                .collect::<PolarsResult<Vec<BooleanChunked>>>()
+                .map(|chunk| self.predicate.evaluate(chunk, state))
+                .collect::<PolarsResult<Vec<Column>>>()
         })?;
         let mut masks = masks.into_iter();
         let mut mask = masks.next().unwrap();
         for m in masks {
-            mask.append(&m)?;
+            mask.append_owned(m)?;
         }
-        df.filter(&mask.rechunk())
+        df.filter(column_to_mask(&mask, df.height())?.as_ref())
     }
 
     fn execute_impl(
