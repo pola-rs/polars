@@ -48,10 +48,13 @@ impl ColumnPredicateExpr {
         #[cfg(feature = "parquet")]
         use SpecializedParquetColumnExpr as P;
         // A specialized predicate compares its scalars with the values as the file
-        // stores them, which polars scales for some Arrow types.
+        // stores them, which polars scales for some Arrow types. Dictionary values can
+        // also differ from the column, e.g. an Enum turns unknown values into nulls.
         #[cfg(feature = "parquet")]
         let specialized = specialized.and_then(|s| {
-            if DataType::arrow_value_scale(&source_arrow_dtype) != 1 {
+            if DataType::arrow_value_scale(&source_arrow_dtype) != 1
+                || matches!(source_arrow_dtype, ArrowDataType::Dictionary(..))
+            {
                 return None;
             }
             Some(match s {
@@ -85,24 +88,21 @@ impl ColumnPredicateExpr {
 
 #[cfg(feature = "parquet")]
 impl ParquetColumnExpr for ColumnPredicateExpr {
-    fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) {
+    fn try_evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) -> PolarsResult<()> {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
-        // @TODO: Probably these unwraps should be removed.
         let series = predicate_values_to_series(
             self.column_name.clone(),
             values,
             &self.dtype,
             &self.source_arrow_dtype,
-        )
-        .unwrap();
+        )?;
         let column = series.into_column();
         let df = unsafe { DataFrame::new_unchecked(values.len(), vec![column]) };
 
-        // @TODO: Probably these unwraps should be removed.
-        let true_mask = self.expr.evaluate_io(&df).unwrap();
-        let true_mask = true_mask.bool().unwrap();
+        let true_mask = self.expr.evaluate_io(&df)?;
+        let true_mask = true_mask.bool()?;
 
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
@@ -111,6 +111,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
                 Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
             }
         }
+        Ok(())
     }
     fn evaluate_null(&self) -> bool {
         let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
@@ -121,6 +122,11 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         let true_mask = true_mask.bool().unwrap();
 
         true_mask.get(0).unwrap_or(false)
+    }
+
+    fn can_evaluate_null_slots(&self) -> bool {
+        // Evaluating dictionary values adds them to the categories.
+        !matches!(self.source_arrow_dtype, ArrowDataType::Dictionary(..))
     }
 
     fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {
@@ -144,6 +150,27 @@ fn predicate_values_to_series(
             polars_compute::cast::CastOptionsImpl::default(),
         )?;
         Series::try_from((name, values))
+    } else if matches!(source_arrow_dtype, ArrowDataType::Dictionary(..)) {
+        // Dictionary columns are evaluated on their string values. Don't insert any of them
+        // if they don't all fit, as the dictionary can hold values no row uses.
+        #[cfg(feature = "dtype-categorical")]
+        if let DataType::Categorical(_, mapping) = dtype
+            && mapping.num_cats_upper_bound() + values.len() > mapping.max_categories()
+        {
+            let values = values
+                .as_any()
+                .downcast_ref::<polars_arrow::array::Utf8ViewArray>()
+                .unwrap();
+            let new_values: polars_utils::aliases::PlHashSet<&str> = values
+                .values_iter()
+                .filter(|v| mapping.get_cat(v).is_none())
+                .collect();
+            polars_ensure!(
+                mapping.num_cats_upper_bound() + new_values.len() <= mapping.max_categories(),
+                ComputeError: "dictionary values do not fit in the categories"
+            );
+        }
+        Series::from_chunk_and_dtype(name, values.to_boxed(), &DataType::String)?.cast(dtype)
     } else {
         Series::from_chunk_and_dtype(name, values.to_boxed(), dtype)
     }

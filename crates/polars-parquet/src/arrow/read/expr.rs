@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_arrow::array::Array;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::types::AlignedBytes;
+use polars_error::PolarsResult;
 
 #[derive(Clone)]
 pub enum ParquetScalar {
@@ -104,12 +105,23 @@ pub enum SpecializedParquetColumnExpr {
 pub type ParquetColumnExprRef = Arc<dyn ParquetColumnExpr>;
 pub trait ParquetColumnExpr: Send + Sync {
     fn evaluate(&self, values: &dyn Array) -> Bitmap {
-        let mut bm = BitmapBuilder::new();
-        self.evaluate_mut(values, &mut bm);
-        bm.freeze()
+        self.try_evaluate(values).unwrap()
     }
-    fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder);
+    fn try_evaluate(&self, values: &dyn Array) -> PolarsResult<Bitmap> {
+        let mut bm = BitmapBuilder::new();
+        self.try_evaluate_mut(values, &mut bm)?;
+        Ok(bm.freeze())
+    }
+    fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) {
+        self.try_evaluate_mut(values, bm).unwrap()
+    }
+    fn try_evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) -> PolarsResult<()>;
     fn evaluate_null(&self) -> bool;
+    /// Whether the placeholder values under null rows can be evaluated with the results thrown
+    /// away. This is not the case if evaluating them can have side effects or fail.
+    fn can_evaluate_null_slots(&self) -> bool {
+        true
+    }
 
     fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr>;
 }
