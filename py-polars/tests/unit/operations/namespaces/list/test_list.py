@@ -176,6 +176,15 @@ def test_list_categorical_get() -> None:
     )
 
 
+def test_list_gather_indices_column_name_29809() -> None:
+    # A string names a column, the same as Expr.list.get accepts, because
+    # gather parses its argument with parse_into_expression (str_as_lit=False).
+    df = pl.DataFrame({"a": [[10, 20, 30]], "idx": [[0, 2]]})
+    expected = df.select(pl.col("a").list.gather(pl.col("idx")))
+
+    assert_frame_equal(df.select(pl.col("a").list.gather("idx")), expected)
+
+
 def test_list_gather_wrong_indices_list_type() -> None:
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
     expected = pl.Series("a", [[1, 2], [4], [6, 9]])
