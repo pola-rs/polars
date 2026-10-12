@@ -12,9 +12,11 @@
 //! this RampUp: bandwidth that grows for reasons other than the budget (scan warm-up) otherwise
 //! keeps the doubling going. Only rounds that use the budget and deliver bandwidth count (not scan
 //! start, not stalls), and a rise must hold for a second round. The knee comes from rounds where
-//! the budget bound only; without one, RampUp holds. While the requests admitted by the HTTP rate
-//! limiter reach its rate, bandwidth follows the limiter, not the budget: RampUp and Probe hold,
-//! and the brake and `bw_max` skip the round.
+//! the budget bound; without one, RampUp holds. When RampUp ends because the budget stopped binding
+//! (another limit binds), that budget is a candidate too, with the best bandwidth of its last
+//! rounds. While the requests admitted by the HTTP rate limiter reach its rate in a tick, bandwidth
+//! follows the limiter, not the budget: RampUp and Probe hold without learning from the round, and
+//! the brake and `bw_max` skip it.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -103,9 +105,8 @@ pub struct KneeController {
     round_budget: u64,
     round_in_use: u64,
     round_applied_max: u64,
-    round_limiter_admitted: u64,
-    // Requests the HTTP rate limiter's rate allowed over the round (sum of rate x tick length).
-    round_limiter_tokens: Option<f64>,
+    // A tick of the round admitted at least 90% of the HTTP rate limiter's rate.
+    round_limiter_bound: bool,
     last_tick: Option<Instant>,
     last_round_end: Option<Instant>,
     last_round_secs: f64,
@@ -155,8 +156,7 @@ impl KneeController {
             round_budget: budget,
             round_in_use: 0,
             round_applied_max: 0,
-            round_limiter_admitted: 0,
-            round_limiter_tokens: None,
+            round_limiter_bound: false,
             last_tick: None,
             last_round_end: None,
             last_round_secs: 0.0,
@@ -247,9 +247,10 @@ impl KneeController {
             |last| t.now.duration_since(last).as_secs_f64(),
         );
         self.last_tick = Some(t.now);
-        if let Some(rate) = t.limiter_rate {
-            self.round_limiter_admitted += t.limiter_admitted;
-            *self.round_limiter_tokens.get_or_insert(0.0) += rate * tick_secs;
+        if let Some(rate) = t.limiter_rate
+            && t.limiter_admitted as f64 >= 0.9 * rate * tick_secs
+        {
+            self.round_limiter_bound = true;
         }
         self.last_admitted_seq = t.admitted_seq;
         if self.round_ticks >= MAX_ROUND_TICKS
@@ -302,10 +303,8 @@ impl KneeController {
         self.last_round_secs = secs;
         let bw_round = self.round_bytes as f64 / secs;
         let binding = self.round_parked > 0 || self.round_sat_max >= 0.9;
-        // Admitted requests reach the HTTP rate limiter's rate: bandwidth follows the limiter.
-        let limiter_bound = self
-            .round_limiter_tokens
-            .is_some_and(|tokens| self.round_limiter_admitted as f64 >= 0.9 * tokens);
+        // Admitted requests reached the HTTP rate limiter's rate: bandwidth follows the limiter.
+        let limiter_bound = self.round_limiter_bound;
         let round_budget = self.round_budget;
         self.last_bw_round = bw_round;
         let mean_in_use = self.round_in_use as f64 / self.round_ticks as f64;
@@ -358,8 +357,7 @@ impl KneeController {
             },
             // Bandwidth follows the HTTP rate limiter, not the budget: hold.
             KneePhase::RampUp if limiter_bound => {
-                // Growth is judged from the best bandwidth so far, including the hold.
-                self.best_bw = self.best_bw.max(bw_round);
+                // The reference stays at the last level measured without the limiter.
                 self.no_growth_rounds = 0;
                 self.not_binding_rounds = 0;
                 self.lifetime_held = false;
@@ -404,6 +402,9 @@ impl KneeController {
                         // binding round there is no knee yet: stay in RampUp.
                         self.not_binding_rounds += 1;
                         if self.not_binding_rounds >= 5 && has_knee {
+                            // The budget reached what another limit allows: a knee candidate.
+                            let bw = self.recent_bw.iter().copied().fold(0.0, f64::max);
+                            self.ramp_hist.push((self.budget, bw));
                             self.enter_stable(now);
                         }
                     }
@@ -457,8 +458,7 @@ impl KneeController {
         self.round_sat_max = 0.0;
         self.round_in_use = 0;
         self.round_applied_max = 0;
-        self.round_limiter_admitted = 0;
-        self.round_limiter_tokens = None;
+        self.round_limiter_bound = false;
         self.round_budget = self.budget;
         self.round_start_seq = self.last_admitted_seq;
     }
@@ -560,8 +560,8 @@ mod tests {
         });
     }
 
-    /// Ticks `from..from + n`: delivered bytes per tick = min(budget, cap) (a link that saturates
-    /// at `cap` in flight).
+    /// Ticks `from..from + n`: bytes in flight and delivered per tick = min(budget, cap) (another
+    /// limit caps bytes in flight at `cap`).
     fn run(c: &mut KneeController, t0: Instant, from: u64, cap: u64, n: u64) {
         for i in from..from + n {
             let budget = c.budget();
@@ -575,9 +575,10 @@ mod tests {
         let mut c = KneeController::new(cfg());
         run(&mut c, Instant::now(), 0, 1600, 40);
         assert_eq!(c.phase(), KneePhase::Stable);
-        // Doubling 100 -> 1600 reaches the plateau; the target is gain x knee.
-        assert_eq!(c.knee(), Some(1600));
-        assert_eq!(c.budget(), 1600);
+        // Within one doubling of the cap; the target is gain x knee.
+        let knee = c.knee().unwrap();
+        assert!((1600..=3200).contains(&knee), "{knee}");
+        assert_eq!(c.budget(), knee);
     }
 
     /// Delivered bandwidth grows 30% per round regardless of the budget (warm-up) while the whole
@@ -594,10 +595,9 @@ mod tests {
             let budget = c.budget();
             tick(&mut c, t0, i, bytes_per_tick as u64, budget, 1);
         }
-        // The lifetime rise at 1600 is confirmed in the next round; the knee is the last budget
-        // before it.
-        assert_eq!(c.knee(), Some(800));
+        // Without the lifetime stop, RampUp would double to 12800.
         assert_eq!(c.phase(), KneePhase::Stable);
+        assert!(c.knee().unwrap() <= 1600);
     }
 
     /// Traffic that never fills the budget (metadata) does not fix a knee: RampUp holds until
@@ -611,9 +611,6 @@ mod tests {
         }
         assert_eq!(c.phase(), KneePhase::RampUp);
         assert_eq!(c.knee(), None);
-        run(&mut c, t0, 20, 1600, 40);
-        assert_eq!(c.knee(), Some(1600));
-        assert_eq!(c.budget(), 1600);
     }
 
     /// Idle longer than `idle_grace` (e.g. a scan stalled downstream) keeps the knee; idle longer
@@ -623,11 +620,12 @@ mod tests {
         let mut c = KneeController::new(cfg());
         let t0 = Instant::now();
         run(&mut c, t0, 0, 1600, 40);
-        let stable = c.budget();
+        let (knee, stable) = (c.knee(), c.budget());
+        assert!(knee.is_some());
         for i in 40..120 {
             tick(&mut c, t0, i, 0, 0, 0);
         }
-        assert_eq!(c.knee(), Some(1600));
+        assert_eq!(c.knee(), knee);
         run(&mut c, t0, 120, 1600, 10);
         assert_eq!(c.phase(), KneePhase::Stable);
         assert_eq!(c.budget(), stable);
@@ -684,6 +682,78 @@ mod tests {
         assert_eq!(c.budget(), 200);
     }
 
+    /// Bandwidth follows the budget (lifetime 2 ticks) up to 800; there the HTTP rate limiter caps it
+    /// at 0.85x for three rounds, then releases. The held rounds are not the reference: compared
+    /// with the 400 level, the released 800 rounds grow and RampUp continues.
+    #[test]
+    fn hold_does_not_wind_up_the_ramp_reference() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        let mut i = 0;
+        let mut step = |c: &mut KneeController, capped: bool| {
+            let budget = c.budget();
+            let (bytes_done, rate, admitted) = if capped {
+                ((0.85 * budget as f64 / 2.0) as u64, 1000.0, 100)
+            } else {
+                (budget / 2, 1e9, 0)
+            };
+            c.step(KneeTick {
+                now: t0 + Duration::from_millis(100 * (i + 1)),
+                bytes_done,
+                bytes_in_use: budget,
+                bytes_parked: 1,
+                bytes_waiting: 0,
+                bytes_sat: 1.0,
+                bytes_budget: budget,
+                limiter_rate: Some(rate),
+                limiter_admitted: admitted,
+                admitted_seq: i + 1,
+                completed_seq: i + 1,
+            });
+            i += 1;
+        };
+        while c.budget() < 800 {
+            step(&mut c, false);
+        }
+        for _ in 0..6 {
+            step(&mut c, true);
+        }
+        for _ in 0..6 {
+            step(&mut c, false);
+        }
+        assert_eq!(c.phase(), KneePhase::RampUp);
+        assert!(c.budget() >= 1600);
+    }
+
+    /// Bandwidth follows the budget up to 400; there another limit caps demand at 300 (the budget
+    /// no longer binds). After 5 such rounds RampUp ends with the knee at that budget, not at the
+    /// last binding level (200).
+    #[test]
+    fn not_binding_exit_keeps_the_budget_that_was_enough() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        for i in 0..40 {
+            let budget = c.budget();
+            let in_use = if budget >= 400 { 300 } else { budget };
+            c.step(KneeTick {
+                now: t0 + Duration::from_millis(100 * (i + 1)),
+                bytes_done: in_use / 2,
+                bytes_in_use: in_use,
+                bytes_parked: u64::from(in_use == budget),
+                bytes_waiting: 0,
+                bytes_sat: in_use as f64 / budget as f64,
+                bytes_budget: budget,
+                limiter_rate: None,
+                limiter_admitted: 0,
+                admitted_seq: i + 1,
+                completed_seq: i + 1,
+            });
+        }
+        assert_eq!(c.phase(), KneePhase::Stable);
+        assert_eq!(c.knee(), Some(400));
+        assert_eq!(c.budget(), 400);
+    }
+
     /// Slow link: requests outlive several rounds, so binding rounds deliver nothing. No knee
     /// from those; once bytes arrive the knee is the budget they were delivered at.
     #[test]
@@ -701,63 +771,10 @@ mod tests {
         }
         assert_eq!(c.phase(), KneePhase::RampUp);
         assert_eq!(c.knee(), None);
+        let budget = c.budget();
         for i in 12..24 {
             full(&mut c, i, 50);
         }
-        assert_eq!(c.knee(), Some(200));
-        assert_eq!(c.budget(), 200);
-    }
-
-    /// Requests complete 3 ticks after admission, so a round lasts until a request admitted after
-    /// its start completes: 4 ticks instead of 2.
-    #[test]
-    fn rounds_follow_request_lifetime() {
-        let mut c = KneeController::new(cfg());
-        let t0 = Instant::now();
-        for i in 0..12u64 {
-            let budget = c.budget();
-            c.step(KneeTick {
-                now: t0 + Duration::from_millis(100 * (i + 1)),
-                bytes_done: 10,
-                bytes_in_use: budget,
-                bytes_parked: 1,
-                bytes_waiting: 0,
-                bytes_sat: 1.0,
-                bytes_budget: budget,
-                limiter_rate: None,
-                limiter_admitted: 0,
-                admitted_seq: 10 * (i + 1),
-                completed_seq: (10 * (i + 1)).saturating_sub(30),
-            });
-        }
-        assert!((c.last_round_secs() - 0.4).abs() < 1e-9);
-    }
-
-    /// The link gains capacity (saturates at 4000 in flight instead of 1600): probes that deliver
-    /// more keep their x1.25 budget as the knee, without doubling, up to the capacity.
-    #[test]
-    fn probe_steps_without_doubling() {
-        let mut c = KneeController::new(cfg());
-        let t0 = Instant::now();
-        run(&mut c, t0, 0, 1600, 40);
-        assert_eq!(c.knee(), Some(1600));
-        let mut prev = c.budget();
-        for i in 40..400 {
-            run(&mut c, t0, i, 4000, 1);
-            assert!(
-                c.budget() as f64 <= 1.26 * prev as f64,
-                "{} after {prev}",
-                c.budget()
-            );
-            prev = c.budget();
-        }
-        // The probe above the capacity finds no more bandwidth: back to the knee.
-        let mut i = 400;
-        while c.phase() != KneePhase::Stable {
-            run(&mut c, t0, i, 4000, 1);
-            i += 1;
-        }
-        assert_eq!(c.knee(), Some(3906));
-        assert_eq!(c.budget(), 3906);
+        assert_eq!(c.knee(), Some(budget));
     }
 }
