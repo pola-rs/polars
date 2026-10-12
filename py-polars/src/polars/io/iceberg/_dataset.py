@@ -694,7 +694,11 @@ class IcebergScanResolver:
                                     # partition.
                                     continue
 
-                                position_delete_files[i].append(deletion_file.file_path)
+                                position_delete_files[i].append(
+                                    _normalize_windows_iceberg_file_uri(
+                                        deletion_file.file_path
+                                    )
+                                )
 
                                 if deletion_file.record_count < 0:
                                     record_counts_known = False
