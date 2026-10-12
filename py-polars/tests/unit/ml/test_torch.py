@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from importlib.util import find_spec
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ torch, _ = _lazy_import("torch")
 
 pytestmark = [
     pytest.mark.ci_only,
+    pytest.mark.skipif(find_spec("torch") is None, reason="torch not installed"),
     pytest.mark.skipif(
         sys.platform == "win32" and sys.version_info >= (3, 13),
         reason="Torch does not ship wheels for Python 3.13 on Windows",

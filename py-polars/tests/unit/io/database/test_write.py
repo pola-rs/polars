@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -10,7 +9,11 @@ import polars as pl
 from polars._utils.various import parse_version
 from polars.io.database._utils import _open_adbc_connection
 from polars.testing import assert_frame_equal
-from tests.unit.io.database.conftest import close_connections, create_sqlite_engine
+from tests.unit.io.database.conftest import (
+    ADBC_AVAILABLE,
+    close_connections,
+    create_sqlite_engine,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -37,16 +40,16 @@ def _read_via_uri(query: str, uri: str) -> pl.DataFrame:
             "adbc",
             True,
             marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="adbc not available on Windows",
+                not ADBC_AVAILABLE,
+                reason="adbc not available",
             ),
         ),
         pytest.param(
             "adbc",
             False,
             marks=pytest.mark.skipif(
-                sys.platform == "win32",
-                reason="adbc not available on Windows",
+                not ADBC_AVAILABLE,
+                reason="adbc not available",
             ),
         ),
     ],
@@ -427,7 +430,7 @@ def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
+@pytest.mark.skipif(not ADBC_AVAILABLE, reason="adbc not available")
 def test_write_database_adbc_temporary_table() -> None:
     """Confirm that execution_options are passed along to create temporary tables."""
     df = pl.DataFrame({"colx": [1, 2, 3]})

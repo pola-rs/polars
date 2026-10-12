@@ -27,10 +27,10 @@ tzdata; platform_system == 'Windows'
 pytz
 # Database
 sqlalchemy
-adbc-driver-manager; platform_system != 'Windows'
-adbc-driver-sqlite; platform_system != 'Windows'
+adbc-driver-manager; platform_system != 'Windows' and python_version < '3.15'
+adbc-driver-sqlite; platform_system != 'Windows' and python_version < '3.15'
 aiosqlite
-connectorx>=0.4.5
+connectorx>=0.4.5; python_version < '3.15'
 # Cloud
 azure-identity
 boto3
