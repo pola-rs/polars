@@ -888,8 +888,12 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
-        F::MinBy => I::MinBy,
-        F::MaxBy => I::MaxBy,
+        F::MinBy => I::MinBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
+        F::MaxBy => I::MaxBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },

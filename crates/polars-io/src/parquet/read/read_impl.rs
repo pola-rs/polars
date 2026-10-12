@@ -111,7 +111,7 @@ fn column_idx_to_series(
     {
         assert_dtypes(field.dtype())
     }
-    let columns = mmap_columns(store, field_md);
+    let columns = mmap_columns(store, field_md)?;
     let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
     let mut series = Series::try_from((field, arrays))?;
     canonicalize_parquet_maps(&mut series)?;

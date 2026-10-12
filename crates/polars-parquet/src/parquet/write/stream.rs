@@ -151,10 +151,11 @@ impl<W: AsyncWrite + Unpin + Send> FileStreamer<W> {
             for (group, pages) in self.row_groups.iter_mut().zip(self.page_specs.iter()) {
                 for (column, pages) in group.columns.iter_mut().zip(pages.iter()) {
                     let offset = self.offset;
-                    column.column_index_offset = Some(offset as i64);
-                    self.offset += write_column_index_async(&mut self.writer, pages).await?;
-                    let length = self.offset - offset;
-                    column.column_index_length = Some(length as i32);
+                    if let Some(length) = write_column_index_async(&mut self.writer, pages).await? {
+                        self.offset += length;
+                        column.column_index_offset = Some(offset as i64);
+                        column.column_index_length = Some(length as i32);
+                    }
                 }
             }
         };

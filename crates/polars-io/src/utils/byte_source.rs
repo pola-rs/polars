@@ -34,6 +34,9 @@ pub trait ByteSource: Send + Sync {
     /// Fetch the last `n` bytes and the total size of the source, in a single request. Returns
     /// fewer than `n` bytes if the source is smaller than `n`.
     async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)>;
+    /// Fetch the first `n` bytes and the total size of the source, in a single request where
+    /// supported. Returns fewer than `n` bytes if the source is smaller than `n`.
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)>;
     /// # Panics
     /// Panics if `range` is not in bounds.
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>>;
@@ -74,6 +77,11 @@ impl ByteSource for BufferByteSource {
     async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
         let len = self.0.as_ref().len();
         Ok((self.0.clone().sliced(len.saturating_sub(n)..len), len))
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let len = self.0.as_ref().len();
+        Ok((self.0.clone().sliced(0..n.min(len)), len))
     }
 
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
@@ -567,6 +575,12 @@ impl ByteSource for FileByteSource {
         Ok((bytes, size))
     }
 
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let size = self.get_size().await?;
+        let bytes = self.get_range(0..n.min(size)).await?;
+        Ok((bytes, size))
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         assert!(range.end as u64 <= self.size);
 
@@ -666,6 +680,7 @@ impl ByteSource for FileByteSource {
 }
 
 #[cfg(feature = "cloud")]
+#[derive(Clone)]
 pub struct ObjectStoreByteSource {
     store: PolarsObjectStore,
     path: ObjectStorePath,
@@ -717,6 +732,10 @@ impl ByteSource for ObjectStoreByteSource {
         self.store.get_suffix(&self.path, n, self.config).await
     }
 
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        self.store.get_prefix(&self.path, n, self.config).await
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         self.store.get_range(&self.path, range, self.config).await
     }
@@ -746,6 +765,21 @@ impl DynByteSource {
             Self::File(_) => "File",
             #[cfg(feature = "cloud")]
             Self::Cloud(_) => "Cloud",
+        }
+    }
+
+    /// A clone of this object store source with a different fetch configuration. The clone
+    /// shares the underlying store, and this source keeps its configuration. Returns `None` for
+    /// non-object store sources.
+    #[cfg_attr(not(feature = "cloud"), allow(unused_variables))]
+    pub fn with_fetch_config(&self, config: FetchConfig) -> Option<Self> {
+        match self {
+            Self::Buffer(_) | Self::File(_) => None,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => Some(Self::Cloud(ObjectStoreByteSource {
+                config,
+                ..v.clone()
+            })),
         }
     }
 
@@ -800,6 +834,15 @@ impl ByteSource for DynByteSource {
             Self::File(v) => v.get_suffix(n).await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_suffix(n).await,
+        }
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        match self {
+            Self::Buffer(v) => v.get_prefix(n).await,
+            Self::File(v) => v.get_prefix(n).await,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.get_prefix(n).await,
         }
     }
 

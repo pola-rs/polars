@@ -562,23 +562,27 @@ impl Display for ExprIRDisplay<'_> {
                     Min {
                         input,
                         propagate_nans,
+                        propagate_nulls,
                     } => {
                         self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
-                        if *propagate_nans {
-                            write!(f, ".nan_min()")
+                        let name = if *propagate_nans { "nan_min" } else { "min" };
+                        if *propagate_nulls {
+                            write!(f, ".{name}(propagate_nulls)")
                         } else {
-                            write!(f, ".min()")
+                            write!(f, ".{name}()")
                         }
                     },
                     Max {
                         input,
                         propagate_nans,
+                        propagate_nulls,
                     } => {
                         self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
-                        if *propagate_nans {
-                            write!(f, ".nan_max()")
+                        let name = if *propagate_nans { "nan_max" } else { "max" };
+                        if *propagate_nulls {
+                            write!(f, ".{name}(propagate_nulls)")
                         } else {
-                            write!(f, ".max()")
+                            write!(f, ".{name}()")
                         }
                     },
                     Median(expr) => write!(

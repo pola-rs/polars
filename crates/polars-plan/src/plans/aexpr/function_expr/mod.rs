@@ -97,6 +97,17 @@ pub use self::struct_::IRStructFunction;
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
 
+/// How `min_by` and `max_by` order the `by` values.
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum MinMaxByOrder {
+    /// Null values are skipped. Only null values give null.
+    SkipNulls,
+    /// The order `sort` uses: NaN is the largest value, and null is the smallest or the largest
+    /// value.
+    Total { nulls_largest: bool },
+}
+
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum IRFunctionExpr {
@@ -192,8 +203,12 @@ pub enum IRFunctionExpr {
         descending: bool,
         nulls_last: bool,
     },
-    MinBy,
-    MaxBy,
+    MinBy {
+        order: MinMaxByOrder,
+    },
+    MaxBy {
+        order: MinMaxByOrder,
+    },
     Product,
     #[cfg(feature = "rank")]
     Rank {
@@ -552,7 +567,8 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
+            | ArgMax | Product | Shift | ShiftAndFill => {},
+            MinBy { order } | MaxBy { order } => order.hash(state),
             ArgSort {
                 descending,
                 nulls_last,
@@ -788,6 +804,20 @@ impl Hash for IRFunctionExpr {
 impl Display for IRFunctionExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.fmt_name(f)?;
+        if let Self::MinBy {
+            order: MinMaxByOrder::Total { nulls_largest },
+        }
+        | Self::MaxBy {
+            order: MinMaxByOrder::Total { nulls_largest },
+        } = self
+        {
+            let nulls = if *nulls_largest {
+                "largest"
+            } else {
+                "smallest"
+            };
+            return write!(f, "[total, nulls_{nulls}]");
+        }
         if let Some(dtype) = self.membership_needle_cast() {
             #[cfg(feature = "dtype-map")]
             if matches!(self, Self::MapExpr(_)) {
@@ -873,8 +903,8 @@ impl IRFunctionExpr {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
-            MinBy => "min_by",
-            MaxBy => "max_by",
+            MinBy { .. } => "min_by",
+            MaxBy { .. } => "max_by",
             Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
@@ -1264,7 +1294,7 @@ impl IRFunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             F::ArgMin | F::ArgMax => FunctionOptions::aggregation(),
             F::ArgSort { .. } => FunctionOptions::length_preserving(),
-            F::MinBy | F::MaxBy => FunctionOptions::aggregation(),
+            F::MinBy { .. } | F::MaxBy { .. } => FunctionOptions::aggregation(),
             // TODO: Only decimal product is order-observing, we should get schema here to indicate `NON_ORDER_OBSERVING` for other dtypes.
             F::Product => FunctionOptions::aggregation(),
             #[cfg(feature = "rank")]
