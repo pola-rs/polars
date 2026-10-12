@@ -1,12 +1,20 @@
 mod dremel;
 
 pub use dremel::num_values;
+use polars_arrow::array::Array;
 use polars_error::PolarsResult;
 
 use super::Nested;
 use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::read::levels::get_bit_width;
 use crate::parquet::write::Version;
+
+/// Returns the number of null values of a page, see
+/// [`DataPage::new`](crate::parquet::page::DataPage::new). Every non-null value of the leaf
+/// `array` is a value of the page.
+pub fn num_nulls(num_values: usize, array: &dyn Array) -> usize {
+    num_values - (array.len() - array.null_count())
+}
 
 fn write_levels_v1<F: FnOnce(&mut Vec<u8>) -> PolarsResult<()>>(
     buffer: &mut Vec<u8>,

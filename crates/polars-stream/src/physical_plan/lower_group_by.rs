@@ -442,7 +442,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         AExpr::Function {
             input,
-            function: function @ (IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy),
+            function: function @ (IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. }),
             options,
         } => {
             let (input, function, options) = (input.clone(), function.clone(), *options);

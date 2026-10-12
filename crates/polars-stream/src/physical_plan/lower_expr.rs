@@ -2291,8 +2291,8 @@ fn lower_exprs_with_ctx(
                         | IRBooleanFunction::IsEmpty { .. }
                         | IRBooleanFunction::HasNulls,
                     )
-                    | IRFunctionExpr::MinBy
-                    | IRFunctionExpr::MaxBy
+                    | IRFunctionExpr::MinBy { .. }
+                    | IRFunctionExpr::MaxBy { .. }
                     | IRFunctionExpr::NullCount,
                 ..
             } => {
@@ -2513,9 +2513,13 @@ fn lower_exprs_with_ctx(
                 let idx_builder = AExprBuilder::col(idx_name.clone(), ctx.expr_arena);
                 let col_builder = AExprBuilder::col(col_name.clone(), ctx.expr_arena);
                 let min_max_by_node = if func == IRFunctionExpr::ArgMin {
-                    idx_builder.min_by(col_builder, ctx.expr_arena).node()
+                    idx_builder
+                        .min_by(col_builder, MinMaxByOrder::SkipNulls, ctx.expr_arena)
+                        .node()
                 } else {
-                    idx_builder.max_by(col_builder, ctx.expr_arena).node()
+                    idx_builder
+                        .max_by(col_builder, MinMaxByOrder::SkipNulls, ctx.expr_arena)
+                        .node()
                 };
 
                 let (trans_stream, trans_node) =

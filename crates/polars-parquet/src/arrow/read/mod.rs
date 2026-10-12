@@ -8,6 +8,7 @@ pub mod statistics;
 
 use std::io::{Read, Seek};
 
+pub(crate) use deserialize::convert_i128;
 pub use deserialize::{
     Filter, InitNested, NestedState, PredicateFilter, column_iter_to_arrays, create_list,
     create_map, init_nested, n_columns,
@@ -44,16 +45,6 @@ fn convert_days_ms(value: &[u8]) -> polars_arrow::types::days_ms {
         i32::from_le_bytes(value[4..8].try_into().unwrap()),
         i32::from_le_bytes(value[8..12].try_into().unwrap()),
     )
-}
-
-fn convert_i128(value: &[u8], n: usize) -> i128 {
-    // Copy the fixed-size byte value to the start of a 16 byte stack
-    // allocated buffer, then use an arithmetic right shift to fill in
-    // MSBs, which accounts for leading 1's in negative (two's complement)
-    // values.
-    let mut bytes = [0u8; 16];
-    bytes[..n].copy_from_slice(value);
-    i128::from_be_bytes(bytes) >> (8 * (16 - n))
 }
 
 fn convert_i256(value: &[u8]) -> i256 {

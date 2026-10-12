@@ -25,6 +25,7 @@ pub struct CompressedDataPage {
     uncompressed_page_size: usize,
     pub(crate) descriptor: Descriptor,
     pub num_rows: Option<usize>,
+    pub num_nulls: Option<usize>,
 }
 
 impl CompressedDataPage {
@@ -36,6 +37,7 @@ impl CompressedDataPage {
         uncompressed_page_size: usize,
         descriptor: Descriptor,
         num_rows: usize,
+        num_nulls: usize,
     ) -> Self {
         Self {
             header,
@@ -44,6 +46,7 @@ impl CompressedDataPage {
             uncompressed_page_size,
             descriptor,
             num_rows: Some(num_rows),
+            num_nulls: Some(num_nulls),
         }
     }
 
@@ -63,6 +66,7 @@ impl CompressedDataPage {
             uncompressed_page_size,
             descriptor,
             num_rows: None,
+            num_nulls: None,
         }
     }
 
@@ -96,6 +100,11 @@ impl CompressedDataPage {
 
     pub fn num_rows(&self) -> Option<usize> {
         self.num_rows
+    }
+
+    /// The number of null values, see [`DataPage::new`]. Only pages that are written have it.
+    pub fn num_nulls(&self) -> Option<usize> {
+        self.num_nulls
     }
 
     pub fn null_count(&self) -> Option<usize> {
@@ -164,20 +173,25 @@ pub struct DataPage {
     pub(super) buffer: CowBuffer,
     pub descriptor: Descriptor,
     pub num_rows: Option<usize>,
+    pub num_nulls: Option<usize>,
 }
 
 impl DataPage {
+    /// `num_nulls` is the number of null values, including null and empty lists. The page holds
+    /// `num_values - num_nulls` non-null values.
     pub fn new(
         header: DataPageHeader,
         buffer: CowBuffer,
         descriptor: Descriptor,
         num_rows: usize,
+        num_nulls: usize,
     ) -> Self {
         Self {
             header,
             buffer,
             descriptor,
             num_rows: Some(num_rows),
+            num_nulls: Some(num_nulls),
         }
     }
 
@@ -192,6 +206,7 @@ impl DataPage {
             buffer,
             descriptor,
             num_rows: None,
+            num_nulls: None,
         }
     }
 
@@ -315,6 +330,13 @@ impl CompressedPage {
     pub(crate) fn num_rows(&self) -> Option<usize> {
         match self {
             CompressedPage::Data(page) => page.num_rows(),
+            CompressedPage::Dict(_) => Some(0),
+        }
+    }
+
+    pub(crate) fn num_nulls(&self) -> Option<usize> {
+        match self {
+            CompressedPage::Data(page) => page.num_nulls(),
             CompressedPage::Dict(_) => Some(0),
         }
     }
