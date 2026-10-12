@@ -1635,6 +1635,28 @@ def test_float_scientific(chunk_override: None) -> None:
     )
 
 
+def test_write_csv_float_scientific_decimal_comma_regression(chunk_override: None) -> None:
+    # Regression test for #29641: with float_scientific + decimal_comma the
+    # serializer's scratch buffer must be cleared for every item, otherwise each
+    # value after the first is appended to the previous one, silently corrupting
+    # the output by concatenating rows without separators.
+    df = pl.DataFrame({"a": [1.5, 2.5, 3.5]})
+
+    assert (
+        df.write_csv(float_scientific=True, decimal_comma=True, separator=";")
+        == "a\n1,5e0\n2,5e0\n3,5e0\n"
+    )
+    # The non-scientific decimal_comma path was already correct; guard it too.
+    assert df.write_csv(decimal_comma=True, separator=";") == "a\n1,5\n2,5\n3,5\n"
+
+    # The serializer is shared between Float32 and Float64.
+    df32 = df.with_columns(pl.col("a").cast(pl.Float32))
+    assert (
+        df32.write_csv(float_scientific=True, decimal_comma=True, separator=";")
+        == "a\n1,5e0\n2,5e0\n3,5e0\n"
+    )
+
+
 def test_skip_rows_different_field_len(chunk_override: None) -> None:
     csv = io.StringIO(
         textwrap.dedent(
