@@ -157,7 +157,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::ArgUnique => false,
         F::ArgMin | F::ArgMax => false,
         F::ArgSort { .. } => false,
-        F::MinBy | F::MaxBy => false,
+        F::MinBy { .. } | F::MaxBy { .. } => false,
         F::Product => false,
         // Only the `Random` tie-breaker is inherently non-deterministic.
         // The other `RankMethod` variants (Average, Min, Max, Dense,

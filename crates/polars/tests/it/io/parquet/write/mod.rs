@@ -220,7 +220,7 @@ fn basic() -> ParquetResult<()> {
             .unwrap()
             .next()
             .unwrap()
-            .uncompressed_size(),
+            .uncompressed_size()?,
         expected
     );
 

@@ -1,8 +1,9 @@
 """Process-wide cache for immutable Iceberg metadata files.
 
-Manifest lists and manifests are immutable at a given path, so their bytes can
-be reused across scans of the same table within a process. The cache sits at
-the PyIceberg ``FileIO`` boundary: PyIceberg reads a metadata file by calling
+Manifest lists, manifests and table metadata files with a write-time UUID in
+their name are immutable at a given path, so their bytes can be reused across
+scans of the same table within a process. The cache sits at the PyIceberg
+``FileIO`` boundary: PyIceberg reads a metadata file by calling
 ``io.new_input(path).open().read()``, and the wrapping ``FileIO`` here serves
 that read from memory when the path was seen before.
 """
@@ -16,6 +17,7 @@ import re
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
+from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.various import qualified_type_name
@@ -24,20 +26,43 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from pyiceberg.io import FileIO, InputFile, InputStream
+    from pyiceberg.table import StaticTable
 
-ENV_CACHE_MB = "POLARS_ICEBERG_METADATA_CACHE_MB"
-DEFAULT_CACHE_MB = 64
-_BYTES_PER_MB = 1_000_000
+ENV_METADATA_FILE_CACHE_MB = "POLARS_ICEBERG_METADATA_FILE_CACHE_MB"
+DEFAULT_METADATA_FILE_CACHE_MB = 64
+_BYTES_PER_MB = 2**20
 
 _UUID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
 )
 
 
-def _is_cacheable(location: str) -> bool:
-    # Manifest lists and manifests: Avro files with a write-time UUID in the name.
-    name = location.rsplit("/", 1)[-1]
-    return name.endswith(".avro") and _UUID_PATTERN.search(name) is not None
+def _is_absolute_location(location: str) -> bool:
+    # A relative path resolves against the working directory, which can change.
+    return (
+        "://" in location
+        or location.startswith("file:/")
+        or Path(location).is_absolute()
+        or PureWindowsPath(location).is_absolute()
+    )
+
+
+def _uncacheable_reason(location: str) -> str | None:
+    # Cacheable: manifest lists, manifests and table metadata files with a
+    # write-time UUID in the name, at an absolute location. A Windows path can
+    # have a UUID in a directory name.
+    name = re.split(r"[/\\]", location)[-1]
+    if not name.endswith((".avro", ".metadata.json")):
+        return "not a manifest or metadata file"
+    if _UUID_PATTERN.search(name) is None:
+        return "no UUID in file name"
+    if not _is_absolute_location(location):
+        return "relative path"
+    return None
+
+
+def _is_cacheable_metadata_file(location: str) -> bool:
+    return _uncacheable_reason(location) is None
 
 
 # Set by REST catalogs, changes on every commit to the table.
@@ -132,10 +157,25 @@ def _file_io_scope(file_io: FileIO) -> str | None:
 
 @dataclass
 class CacheStats:
-    """Hit and miss counts."""
+    """Reads through a cache, or why the cache was bypassed."""
 
     hits: int = 0
     misses: int = 0
+    # Misses not stored because they are larger than the cache.
+    too_large: int = 0
+    # Entries evicted to store the misses.
+    evicted: int = 0
+    bypass: str | None = None
+
+    def describe(self, cache: IcebergMetadataFileCache) -> str:
+        """Summary for verbose output."""
+        if self.bypass is not None:
+            return f"bypassed: {self.bypass}"
+        return (
+            f"hits: {self.hits}, misses: {self.misses}, "
+            f"too large: {self.too_large}, evicted: {self.evicted}, "
+            f"cached bytes: {cache.total_bytes}"
+        )
 
 
 class IcebergMetadataFileCache:
@@ -172,13 +212,17 @@ class IcebergMetadataFileCache:
         with self._lock:
             return self._get_locked(location)
 
-    def put(self, location: str, data: bytes) -> None:
+    def put(self, location: str, data: bytes, stats: CacheStats | None = None) -> None:
+        """Store `data`; `stats` counts data too large to store and the evictions."""
         # Keys count towards the budget, so empty entries are bounded too.
         size = len(location) + len(data)
-        if size > self.max_bytes:
-            return
 
         with self._lock:
+            if size > self.max_bytes:
+                if stats is not None:
+                    stats.too_large += 1
+                return
+
             if location in self._entries:
                 return
 
@@ -188,6 +232,8 @@ class IcebergMetadataFileCache:
             while self._total_bytes > self.max_bytes:
                 key, evicted = self._entries.popitem(last=False)
                 self._total_bytes -= len(key) + len(evicted)
+                if stats is not None:
+                    stats.evicted += 1
 
     def get_or_fetch(
         self, location: str, fetch: Callable[[], bytes], stats: CacheStats
@@ -210,7 +256,7 @@ class IcebergMetadataFileCache:
                     stats.misses += 1
 
                 data = fetch()
-                self.put(location, data)
+                self.put(location, data, stats)
         finally:
             with self._lock:
                 # A newer lock for the same path may have replaced this one.
@@ -220,14 +266,27 @@ class IcebergMetadataFileCache:
         return data
 
 
-_global_cache: IcebergMetadataFileCache | None = None
+def _bypass_reason(
+    cache: IcebergMetadataFileCache, file_io: FileIO, scope: str | None
+) -> str | None:
+    # `scope` is `_file_io_scope(file_io)`.
+    if not cache.enabled:
+        return "disabled"
+    if scope is None:
+        if qualified_type_name(type(file_io)) not in _BUILTIN_FILE_IO_CLASSES:
+            return "custom FileIO"
+        return "FileIO properties cannot be fingerprinted"
+    return None
+
+
+_global_metadata_file_cache: IcebergMetadataFileCache | None = None
 _global_cache_lock = threading.Lock()
 
 
 def _configured_size() -> int:
-    value = os.getenv(ENV_CACHE_MB)
+    value = os.getenv(ENV_METADATA_FILE_CACHE_MB)
     if value is None:
-        return DEFAULT_CACHE_MB * _BYTES_PER_MB
+        return DEFAULT_METADATA_FILE_CACHE_MB * _BYTES_PER_MB
 
     try:
         size_mb = int(value)
@@ -236,8 +295,8 @@ def _configured_size() -> int:
 
     if size_mb < 0:
         msg = (
-            f"invalid value for {ENV_CACHE_MB}: {value!r}, expected a "
-            "non-negative number of megabytes"
+            f"invalid value for {ENV_METADATA_FILE_CACHE_MB}: {value!r}, expected a "
+            "non-negative number of MiB"
         )
         raise ValueError(msg)
 
@@ -245,23 +304,67 @@ def _configured_size() -> int:
 
 
 def get_metadata_file_cache() -> IcebergMetadataFileCache:
-    """Return the process-wide cache, constructing it from the environment."""
-    global _global_cache
+    """Return the process-wide metadata file cache, built from the environment."""
+    global _global_metadata_file_cache
 
-    if _global_cache is None:
+    if _global_metadata_file_cache is None:
         with _global_cache_lock:
-            if _global_cache is None:
-                _global_cache = IcebergMetadataFileCache(_configured_size())
+            if _global_metadata_file_cache is None:
+                _global_metadata_file_cache = IcebergMetadataFileCache(
+                    _configured_size()
+                )
 
-    return _global_cache
+    return _global_metadata_file_cache
 
 
 def reset_metadata_file_cache() -> None:
     """Drop the process-wide cache; the next use rebuilds it from the environment."""
-    global _global_cache
+    global _global_metadata_file_cache
 
     with _global_cache_lock:
-        _global_cache = None
+        _global_metadata_file_cache = None
+
+
+def load_static_table(
+    metadata_location: str, properties: dict[str, Any]
+) -> tuple[StaticTable, CacheStats]:
+    """Load a table like `StaticTable.from_metadata`, through the cache.
+
+    The metadata file is read through the metadata file cache. Every load builds
+    its own table and FileIO. The returned stats count the cache read, or record
+    why the cache was bypassed.
+    """
+    from pyiceberg.catalog.noop import NoopCatalog
+    from pyiceberg.io import load_file_io
+    from pyiceberg.serializers import FromInputFile
+    from pyiceberg.table import StaticTable
+
+    if not metadata_location.endswith(".metadata.json"):
+        table = StaticTable.from_metadata(metadata_location, properties=properties)
+        return table, CacheStats(bypass="not a .metadata.json path")
+
+    # A FileIO can write to the properties it is given: adlfs adds the account name.
+    inner = load_file_io(dict(properties), location=metadata_location)
+    caching = CachingFileIO(inner, get_metadata_file_cache())
+    stats = caching.stats
+    if stats.bypass is None:
+        stats.bypass = _uncacheable_reason(metadata_location)
+    # An uncacheable read does not go through the wrapper.
+    file_io: FileIO | CachingFileIO = inner if stats.bypass is not None else caching
+
+    # `StaticTable.from_metadata` of PyIceberg 0.12, with the metadata file read
+    # through the cache.
+    metadata = FromInputFile.table_metadata(file_io.new_input(metadata_location))
+    table = StaticTable(
+        identifier=("static-table", metadata_location),
+        metadata_location=metadata_location,
+        metadata=metadata,
+        io=load_file_io(
+            {**properties, **metadata.properties}, location=metadata_location
+        ),
+        catalog=NoopCatalog("static-table"),
+    )
+    return table, stats
 
 
 class CachedInputFile:
@@ -321,16 +424,17 @@ class CachingFileIO:
         self._inner = inner
         self._cache = cache
         self.properties = inner.properties
-        self._scope = _file_io_scope(inner)
-        self.stats = CacheStats()
+        scope = _file_io_scope(inner)
+        self.stats = CacheStats(bypass=_bypass_reason(cache, inner, scope))
+        # None when reads bypass the cache.
+        self._scope = scope if self.stats.bypass is None else None
 
     @property
     def cache(self) -> IcebergMetadataFileCache:
         return self._cache
 
     def new_input(self, location: str) -> InputFile:
-        scope = self._scope
-        if scope is not None and self._cache.enabled and _is_cacheable(location):
+        if (scope := self._scope) is not None and _is_cacheable_metadata_file(location):
             return CachedInputFile(  # type: ignore[return-value]
                 self._inner, location, self._cache, scope, self.stats
             )
@@ -344,6 +448,15 @@ class CachingFileIO:
     def __reduce__(self) -> tuple[Any, ...]:
         # The cache is process-local, a copy attaches the process-wide cache.
         return (_wrap_file_io, (self._inner,))
+
+
+def describe_metadata_file_cache(file_io: FileIO) -> str:
+    """Verbose summary of the metadata file cache reads through `file_io`."""
+    if isinstance(file_io, CachingFileIO):
+        return file_io.stats.describe(file_io.cache)
+    cache = get_metadata_file_cache()
+    stats = CacheStats(bypass=_bypass_reason(cache, file_io, _file_io_scope(file_io)))
+    return stats.describe(cache)
 
 
 def _wrap_file_io(inner: FileIO) -> CachingFileIO:

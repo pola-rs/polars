@@ -1,6 +1,7 @@
 import datetime
 import re
 from datetime import timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -174,6 +175,49 @@ def test_cast_list_to_array(data: Any, inner_type: pl.DataType) -> None:
     s = s.cast(pl.Array(inner_type, 2))
     assert s.dtype == pl.Array(inner_type, shape=2)
     assert s.to_list() == data
+
+
+@pytest.mark.parametrize(
+    ("values", "inner", "new_inner", "expected"),
+    [
+        (
+            [datetime.date(2000, 1, 1), None],
+            pl.Date,
+            pl.Datetime("us"),
+            [datetime.datetime(2000, 1, 1), None],
+        ),
+        (
+            [datetime.datetime(2000, 1, 1), None],
+            pl.Datetime("us"),
+            pl.String,
+            ["2000-01-01 00:00:00.000000", None],
+        ),
+        (
+            [Decimal("1.5"), None],
+            pl.Decimal(10, 1),
+            pl.Decimal(10, 2),
+            [Decimal("1.50"), None],
+        ),
+        (["a", None], pl.String, pl.Categorical, ["a", None]),
+        (["a", None], pl.Enum(["b", "a"]), pl.Enum(["a", "b"]), ["a", None]),
+    ],
+)
+def test_cast_list_array_inner_values(
+    values: list[Any], inner: pl.DataType, new_inner: pl.DataType, expected: list[Any]
+) -> None:
+    for dtype, new_dtype in [
+        (pl.List(inner), pl.Array(new_inner, 2)),
+        (pl.Array(inner, 2), pl.List(new_inner)),
+    ]:
+        s = pl.Series([values, None], dtype=dtype).cast(new_dtype)
+        assert s.dtype == new_dtype
+        assert s.to_list() == [expected, None]
+
+
+def test_cast_array_to_list_invalid_inner() -> None:
+    s = pl.Series([[1]], dtype=pl.Array(pl.Int64, 1))
+    with pytest.raises(InvalidOperationError, match="to Categorical"):
+        s.cast(pl.List(pl.Categorical))
 
 
 @pytest.fixture

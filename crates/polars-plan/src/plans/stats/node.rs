@@ -88,7 +88,8 @@ pub(crate) fn node_stats_with_cache(
             ..
         } => {
             let rows = leaf_row_count(ir);
-            let unfiltered = rows.value()? as f64;
+            // Estimates must be at least one, but the row bound can be exactly zero.
+            let unfiltered = (rows.value()? as f64).max(MIN_CARDINALITY);
             let mut max_rows = match rows {
                 Card::Exact(rows) => Some(rows as f64),
                 _ => None,
