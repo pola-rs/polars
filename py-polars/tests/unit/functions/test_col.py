@@ -45,7 +45,6 @@ def test_col_as_attribute_class_mangling_25129() -> None:
             sys.executable,
             "-c",
             """\
-from sys import version_info
 import polars as pl
 df = pl.DataFrame({"__foo": [0]})
 
@@ -76,10 +75,9 @@ assert Mangler()._selected.columns == ["__foo"]
 assert Mangler().foo().columns == ["__foo"]
 
 # additionally detect mangling in classmethod/staticmethod
-if version_info >= (3, 11):
-    assert Mangler.misc().columns == ["__foo"]
-    assert Mangler.indirect().columns == ["__foo"]
-    assert Mangler.testing1234().columns == ["__foo"]
+assert Mangler.misc().columns == ["__foo"]
+assert Mangler.indirect().columns == ["__foo"]
+assert Mangler.testing1234().columns == ["__foo"]
 
 print("OK", end="")
 """,
