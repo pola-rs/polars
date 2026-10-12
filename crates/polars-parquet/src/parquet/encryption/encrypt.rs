@@ -409,41 +409,9 @@ impl FileEncryptor {
         )
     }
 
-    /// Encrypt the serialized column index of an encrypted column.
-    pub(crate) fn encrypt_column_index(
-        &self,
-        column: &ColumnDescriptor,
-        row_group_idx: usize,
-        column_ordinal: usize,
-        index: &[u8],
-    ) -> ParquetResult<Vec<u8>> {
-        self.encrypt_column_module(
-            column,
-            ModuleType::ColumnIndex,
-            row_group_idx,
-            column_ordinal,
-            index,
-        )
-    }
-
-    /// Encrypt the serialized offset index of an encrypted column.
-    pub(crate) fn encrypt_offset_index(
-        &self,
-        column: &ColumnDescriptor,
-        row_group_idx: usize,
-        column_ordinal: usize,
-        index: &[u8],
-    ) -> ParquetResult<Vec<u8>> {
-        self.encrypt_column_module(
-            column,
-            ModuleType::OffsetIndex,
-            row_group_idx,
-            column_ordinal,
-            index,
-        )
-    }
-
-    fn encrypt_column_module(
+    /// Encrypt a serialized module of an encrypted column, such as its column index or
+    /// offset index.
+    pub(crate) fn encrypt_column_module(
         &self,
         column: &ColumnDescriptor,
         module_type: ModuleType,

@@ -4,6 +4,6 @@
 mod ciphers;
 pub mod decrypt;
 pub mod encrypt;
-mod modules;
+pub(crate) mod modules;
 #[cfg(test)]
 mod write_tests;

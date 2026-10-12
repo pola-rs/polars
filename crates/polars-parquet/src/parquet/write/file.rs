@@ -4,11 +4,12 @@ use std::sync::Arc;
 use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 use polars_parquet_format::{ColumnCryptoMetaData, RowGroup};
 
-use super::indexes::{serialize_column_index, serialize_offset_index, write_offset_index};
+use super::indexes::{serialize_column_index, serialize_offset_index};
 use super::page::PageWriteSpec;
 use super::row_group::write_row_group;
 use super::{RowGroupIterColumns, WriteOptions, WriteThrift};
 use crate::parquet::encryption::encrypt::{FileEncryptionProperties, FileEncryptor};
+use crate::parquet::encryption::modules::ModuleType;
 use crate::parquet::error::{ParquetError, ParquetResult};
 pub use crate::parquet::metadata::KeyValue;
 use crate::parquet::metadata::{ColumnDescriptor, SchemaDescriptor, ThriftFileMetadata};
@@ -130,6 +131,36 @@ fn encrypt_column_metadata(
         }
     }
     Ok(())
+}
+
+/// Write the column index or offset index of a column chunk, encrypting it if the column
+/// is encrypted. Returns the number of bytes written.
+fn write_index<W: Write>(
+    writer: &mut W,
+    encryptor: Option<&FileEncryptor>,
+    index: &impl WriteThrift,
+    descriptor: &ColumnDescriptor,
+    module_type: ModuleType,
+    row_group_idx: usize,
+    column_ordinal: usize,
+) -> ParquetResult<u64> {
+    match column_encryptor(encryptor, descriptor) {
+        None => {
+            let mut protocol = TCompactOutputProtocol::new(writer);
+            Ok(index.write_thrift(&mut protocol)? as u64)
+        },
+        Some(encryptor) => {
+            let encrypted = encryptor.encrypt_column_module(
+                descriptor,
+                module_type,
+                row_group_idx,
+                column_ordinal,
+                &index.to_thrift_bytes()?,
+            )?;
+            writer.write_all(&encrypted)?;
+            Ok(encrypted.len() as u64)
+        },
+    }
 }
 
 /// Returns the file encryptor to use for a column, or `None` if the column isn't encrypted.
@@ -342,22 +373,15 @@ impl<W: Write> FileWriter<W> {
                         continue;
                     };
                     let offset = self.offset;
-                    self.offset += match column_encryptor(encryptor, descriptor) {
-                        None => {
-                            let mut protocol = TCompactOutputProtocol::new(&mut self.writer);
-                            index.write_to_out_protocol(&mut protocol)? as u64
-                        },
-                        Some(encryptor) => {
-                            let index = encryptor.encrypt_column_index(
-                                descriptor,
-                                row_group_idx,
-                                column_ordinal,
-                                &index.to_thrift_bytes()?,
-                            )?;
-                            self.writer.write_all(&index)?;
-                            index.len() as u64
-                        },
-                    };
+                    self.offset += write_index(
+                        &mut self.writer,
+                        encryptor,
+                        &index,
+                        descriptor,
+                        ModuleType::ColumnIndex,
+                        row_group_idx,
+                        column_ordinal,
+                    )?;
                     column.column_index_offset = Some(offset as i64);
                     column.column_index_length = Some((self.offset - offset) as i32);
                 }
@@ -371,20 +395,16 @@ impl<W: Write> FileWriter<W> {
             let columns = group.columns.iter_mut().zip(pages).zip(column_descriptors);
             for (column_ordinal, ((column, pages), descriptor)) in columns.enumerate() {
                 let offset = self.offset;
+                self.offset += write_index(
+                    &mut self.writer,
+                    encryptor,
+                    &serialize_offset_index(pages)?,
+                    descriptor,
+                    ModuleType::OffsetIndex,
+                    row_group_idx,
+                    column_ordinal,
+                )?;
                 column.offset_index_offset = Some(offset as i64);
-                self.offset += match column_encryptor(encryptor, descriptor) {
-                    None => write_offset_index(&mut self.writer, pages)?,
-                    Some(encryptor) => {
-                        let index = encryptor.encrypt_offset_index(
-                            descriptor,
-                            row_group_idx,
-                            column_ordinal,
-                            &serialize_offset_index(pages)?.to_thrift_bytes()?,
-                        )?;
-                        self.writer.write_all(&index)?;
-                        index.len() as u64
-                    },
-                };
                 column.offset_index_length = Some((self.offset - offset) as i32);
             }
         }
