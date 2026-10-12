@@ -471,10 +471,10 @@ impl SQLContext {
         )
     }
 
-    // Resolve the subquery's FROM (a single relation, possibly with joins) into
-    // the inner LazyFrame, its schema, and the set of relation names/aliases
-    // used to classify qualified correlation columns. Unqualified columns that
-    // are ambiguous between the joined relations raise.
+    // Resolve the subquery's FROM (relations, possibly with joins) into the inner
+    // LazyFrame, its schema, and the set of relation names/aliases used to
+    // classify qualified correlation columns. Also checks the SELECT and WHERE
+    // for unqualified columns that are ambiguous between the joined relations.
     fn resolve_subquery_from(
         &mut self,
         select: &Select,
@@ -508,6 +508,7 @@ impl SQLContext {
             let joined_schema = self.get_frame_schema(&mut inner_lf)?;
             self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
         }
+        self.set_join_base(&select.from);
         self.check_select_column_refs(select)?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
         Ok(Some((inner_names, inner_lf, inner_schema)))
@@ -1622,12 +1623,8 @@ fn qualifier_and_name(expr: &SQLExpr) -> Option<(Option<&str>, &str)> {
 }
 
 // Classify a correlation operand as an inner- or outer-query column and return
-// its column name in that frame. A qualified identifier (`tbl.col`) resolves by
-// its qualifier: an inner relation's name/alias means inner, anything else means
-// outer (so same-named columns like `o.id = c.id` resolve). An unqualified
-// identifier resolves by schema membership, and raises if it is an outer column
-// that is ambiguous between the outer joined relations. `None` for
-// non-identifiers or names in neither schema.
+// its column name in that frame. `None` for non-identifiers or names in neither
+// schema.
 fn classify_correlation_column(
     expr: &SQLExpr,
     inner_names: &PlHashSet<String>,
@@ -1647,14 +1644,16 @@ fn classify_correlation_column(
                 .contains(name.as_str())
                 .then(|| (CorrelationSide::Inner, name.into()))
         },
-        // Any other qualifier is taken as outer.
+        // Any other qualifier is taken as outer (so same-named columns like
+        // `o.id = c.id` resolve).
         Some(q) => {
             let name = outer.resolve_name(q, name);
             outer_schema
                 .contains(name.as_str())
                 .then(|| (CorrelationSide::Outer, name.into()))
         },
-        // An unqualified name binds to the innermost scope that holds it.
+        // An unqualified name binds to the innermost scope that holds it. An
+        // outer one raises if it is ambiguous between the outer joins.
         None => match (inner_schema.contains(name), outer_schema.contains(name)) {
             (true, _) => Some((CorrelationSide::Inner, name.into())),
             (false, true) => {

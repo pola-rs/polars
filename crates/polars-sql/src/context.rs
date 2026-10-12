@@ -692,13 +692,12 @@ impl SQLContext {
             r_name.to_string(),
             right_schema
                 .iter_names()
+                .filter(|name| left_schema.contains(name))
                 .filter_map(|name| {
                     let aliased_name = format!("{name}:{r_name}");
-                    if left_schema.contains(name) && joined_schema.contains(aliased_name.as_str()) {
-                        Some((name.to_string(), aliased_name))
-                    } else {
-                        None
-                    }
+                    joined_schema
+                        .contains(aliased_name.as_str())
+                        .then(|| (name.to_string(), aliased_name))
                 })
                 .collect(),
         );
@@ -718,25 +717,29 @@ impl SQLContext {
         }
     }
 
-    /// Check the SELECT and WHERE expressions of a block whose `FROM` is resolved for
-    /// ambiguous unqualified columns (if there were joins).
-    pub(crate) fn check_select_column_refs(&mut self, select_stmt: &Select) -> PolarsResult<()> {
-        self.join_base = select_stmt.from.first().and_then(|first| {
+    /// Set the join base of a block from its `FROM`, once its relations are resolved.
+    /// Unqualified columns of the block are checked against it.
+    pub(crate) fn set_join_base(&mut self, from: &[TableWithJoins]) {
+        self.join_base = from.first().and_then(|first| {
             Some(JoinBase {
                 table_name: get_table_name(&first.relation)?,
-                using_cols: select_stmt
-                    .from
+                using_cols: from
                     .iter()
                     .flat_map(|tbl_expr| &tbl_expr.joins)
                     .filter_map(|join| {
-                        let r_name = get_table_name(&join.relation)?;
                         let cols = get_using_cols(&join.join_operator)?;
+                        let r_name = get_table_name(&join.relation)?;
                         Some(cols.map(move |c| (r_name.clone(), c)))
                     })
                     .flatten()
                     .collect(),
             })
         });
+    }
+
+    /// Check the SELECT and WHERE expressions of a block for ambiguous unqualified
+    /// columns (if there were joins).
+    pub(crate) fn check_select_column_refs(&self, select_stmt: &Select) -> PolarsResult<()> {
         let Some(base) = &self.join_base else {
             return Ok(());
         };
@@ -1842,6 +1845,7 @@ impl SQLContext {
             lf
         };
 
+        self.set_join_base(&select_stmt.from);
         self.check_select_column_refs(select_stmt)?;
 
         // Apply `WHERE` constraint (using residual filter for implicit joins)
