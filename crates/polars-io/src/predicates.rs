@@ -24,6 +24,16 @@ pub enum SpecializedColumnPredicate {
     StartsWith(Box<[u8]>),
     EndsWith(Box<[u8]>),
     RegexMatch(Arc<regex::bytes::Regex>),
+    /// A Categorical or Enum column equal to one of these strings.
+    CategoricalEqualOneOf(Box<[PlSmallStr]>),
+}
+
+/// The strings that an `==` or `is_in` predicate on a Categorical or Enum column matches.
+#[cfg(feature = "parquet")]
+#[derive(Clone)]
+enum DictionaryNeedles {
+    One(Box<str>),
+    Many(polars_utils::aliases::PlHashSet<Box<str>>),
 }
 
 #[derive(Clone)]
@@ -33,6 +43,9 @@ pub struct ColumnPredicateExpr {
     source_arrow_dtype: ArrowDataType,
     #[cfg(feature = "parquet")]
     specialized: Option<SpecializedParquetColumnExpr>,
+    /// Lets dictionary values be compared as strings, without adding them to the categories.
+    #[cfg(feature = "parquet")]
+    dictionary_needles: Option<DictionaryNeedles>,
     expr: Arc<dyn PhysicalIoExpr>,
 }
 
@@ -47,6 +60,37 @@ impl ColumnPredicateExpr {
         use SpecializedColumnPredicate as S;
         #[cfg(feature = "parquet")]
         use SpecializedParquetColumnExpr as P;
+        #[cfg(feature = "parquet")]
+        let dictionary_needles = if matches!(source_arrow_dtype, ArrowDataType::Dictionary(..))
+            && (dtype.is_categorical() || dtype.is_enum())
+        {
+            let needles: Option<Vec<&str>> = match &specialized {
+                Some(S::Equal(scalar)) => scalar.value().get_str().map(|s| vec![s]),
+                Some(S::EqualOneOf(scalars)) => Some(
+                    scalars
+                        .iter()
+                        .filter_map(|scalar| scalar.value().get_str())
+                        .collect(),
+                ),
+                Some(S::CategoricalEqualOneOf(strings)) => {
+                    Some(strings.iter().map(|s| s.as_str()).collect())
+                },
+                _ => None,
+            };
+            needles.map(|mut needles| {
+                // Values that are not in an Enum are read as null.
+                #[cfg(feature = "dtype-categorical")]
+                if let DataType::Enum(_, mapping) = &dtype {
+                    needles.retain(|s| mapping.get_cat(s).is_some());
+                }
+                match needles.as_slice() {
+                    [needle] => DictionaryNeedles::One((*needle).into()),
+                    _ => DictionaryNeedles::Many(needles.into_iter().map(Box::from).collect()),
+                }
+            })
+        } else {
+            None
+        };
         // A specialized predicate compares its scalars with the values as the file
         // stores them, which polars scales for some Arrow types. Dictionary values can
         // also differ from the column, e.g. an Enum turns unknown values into nulls.
@@ -72,17 +116,30 @@ impl ColumnPredicateExpr {
                 S::StartsWith(s) => P::StartsWith(s),
                 S::EndsWith(s) => P::EndsWith(s),
                 S::RegexMatch(s) => P::RegexMatch(s),
+                S::CategoricalEqualOneOf(_) => return None,
             })
         });
 
-        Self {
+        #[allow(unused_mut)]
+        let mut out = Self {
             column_name,
             dtype,
             source_arrow_dtype,
             #[cfg(feature = "parquet")]
             specialized,
+            #[cfg(feature = "parquet")]
+            dictionary_needles,
             expr,
+        };
+        // Values that are not in an Enum are read as null, which this predicate can keep.
+        #[cfg(feature = "parquet")]
+        if out.dictionary_needles.is_some()
+            && out.dtype.is_enum()
+            && out.evaluate_null().unwrap_or(true)
+        {
+            out.dictionary_needles = None;
         }
+        out
     }
 }
 
@@ -91,6 +148,27 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     fn try_evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) -> PolarsResult<()> {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
+
+        if let Some(needles) = &self.dictionary_needles
+            && let Some(values) = values
+                .as_any()
+                .downcast_ref::<polars_arrow::array::Utf8ViewArray>()
+        {
+            bm.reserve(values.len());
+            match needles {
+                DictionaryNeedles::One(needle) => {
+                    for value in values.values_iter() {
+                        bm.push(value == needle.as_ref());
+                    }
+                },
+                DictionaryNeedles::Many(needles) => {
+                    for value in values.values_iter() {
+                        bm.push(needles.contains(value));
+                    }
+                },
+            }
+            return Ok(());
+        }
 
         let series = predicate_values_to_series(
             self.column_name.clone(),
@@ -125,7 +203,8 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 
     fn can_evaluate_null_slots(&self) -> bool {
         // Evaluating dictionary values adds them to the categories.
-        !matches!(self.source_arrow_dtype, ArrowDataType::Dictionary(..))
+        self.dictionary_needles.is_some()
+            || !matches!(self.source_arrow_dtype, ArrowDataType::Dictionary(..))
     }
 
     fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {

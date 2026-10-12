@@ -3767,7 +3767,8 @@ def test_categorical_prefiltering(dtype: pl.DataType, writer: str) -> None:
         )
 
 
-def test_enum_prefiltering_unknown_values() -> None:
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_enum_prefiltering_unknown_values(use_dictionary: bool) -> None:
     tbl = pl.DataFrame(
         {"e": pl.Series(["a", "b", None, "a"], dtype=pl.Enum(["a", "b"]))}
     ).to_arrow()
@@ -3777,16 +3778,57 @@ def test_enum_prefiltering_unknown_values() -> None:
     schema = pa.schema([tbl.schema[0].with_metadata(metadata)])
 
     f = io.BytesIO()
-    pq.write_table(tbl.cast(schema), f)
+    pq.write_table(tbl.cast(schema), f, use_dictionary=use_dictionary)
 
     f.seek(0)
     df = pl.read_parquet(f)
     assert df["e"].to_list() == ["a", None, None, "a"]
 
-    for expr in [pl.col("e").is_null(), pl.col("e").is_not_null(), pl.col("e") == "a"]:
+    for expr in [
+        pl.col("e").is_null(),
+        pl.col("e").is_not_null(),
+        pl.col("e") == "a",
+        pl.col("e") == "b",
+        pl.col("e").is_in(["a", "b"]),
+        pl.col("e").is_in(["b"]),
+        pl.col("e").is_in(["a", None], nulls_equal=True),
+        pl.col("e").eq_missing("a"),
+    ]:
         f.seek(0)
-        result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+        result = (
+            pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+            .filter(expr)
+            .collect()
+        )
         assert_frame_equal(result, df.filter(expr))
+
+
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_categorical_equal_prefiltering_adds_no_unused_values(
+    use_dictionary: bool,
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    dictionary = pa.array(["used", "other"] + [f"unused{i}" for i in range(10)])
+    keys = pa.array([0, None, 1, 0] * 25, pa.uint32())
+    metadata = pl.Series("c", [], dtype).to_frame().to_arrow().schema[0].metadata
+    tbl = pa.table({"c": pa.DictionaryArray.from_arrays(keys, dictionary)})
+    tbl = tbl.cast(pa.schema([tbl.schema[0].with_metadata(metadata)]))
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f, use_dictionary=use_dictionary)
+
+    for expr, expected in [
+        (pl.col("c") == "used", ["used"] * 50),
+        (pl.col("c").is_in(["used", "other"]), ["used", "other", "used"] * 25),
+    ]:
+        f.seek(0)
+        result = (
+            pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+            .filter(expr)
+            .collect()
+        )
+        assert result["c"].cast(pl.String).to_list() == expected
+    assert sorted(dtype.categories.to_series().to_list()) == ["other", "used"]
 
 
 @pytest.mark.parametrize("key_type", [pa.uint8(), pa.int32()])
