@@ -205,7 +205,11 @@ impl<W: Write> FileWriter<W> {
     /// Returns the [`ThriftFileMetadata`]. This is Some iff the [`Self::end`] has been called.
     ///
     /// This is used to write the metadata as a separate Parquet file, usually when data
-    /// is partitioned across multiple files
+    /// is partitioned across multiple files.
+    ///
+    /// For encrypted files, this is the plaintext metadata as it was before
+    /// encryption, and it may contain sensitive information like statistics of encrypted
+    /// columns. Callers are responsible for handling this appropriately.
     pub fn metadata(&self) -> Option<&ThriftFileMetadata> {
         self.metadata.as_ref()
     }

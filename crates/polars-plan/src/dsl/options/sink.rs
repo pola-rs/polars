@@ -552,6 +552,11 @@ pub struct SinkedPathInfo {
     pub path: PlRefPath,
     pub num_rows: u64,
     pub num_bytes: u64,
+    /// The serialized Parquet footer metadata of the written file.
+    ///
+    /// This is the plaintext metadata even for encrypted files, so may include the
+    /// statistics of encrypted columns. Currently only used for Iceberg, which
+    /// doesn't support encryption.
     pub parquet_metadata: Option<Vec<u8>>,
 }
 
