@@ -4,30 +4,72 @@ use num_traits::AsPrimitive;
 use polars_compute::moment::{KurtosisState, SkewState};
 use polars_core::with_match_physical_numeric_polars_type;
 
+use super::split::{SplitStage, split_reduction};
 use super::*;
 
 pub fn new_skew_reduction(dtype: DataType, bias: bool) -> PolarsResult<Box<dyn GroupedReduction>> {
+    skew_reduction(dtype, bias, SplitStage::Whole)
+}
+
+/// Like [`new_skew_reduction`], but outputs the serialized state of each group, to be merged by
+/// [`new_skew_merge_reduction`].
+#[cfg(feature = "serde")]
+pub fn new_skew_state_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // `bias` only matters when finalizing.
+    skew_reduction(dtype, false, SplitStage::State)
+}
+
+/// Merges the states of [`new_skew_state_reduction`] over values of `values_dtype`, and outputs
+/// what [`new_skew_reduction`] does.
+#[cfg(feature = "serde")]
+pub fn new_skew_merge_reduction(
+    values_dtype: DataType,
+    bias: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    skew_reduction(values_dtype, bias, SplitStage::Merge)
+}
+
+fn skew_reduction(
+    dtype: DataType,
+    bias: bool,
+    stage: SplitStage,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
-    use VecGroupedReduction as VGR;
     Ok(match dtype {
-        _ if dtype.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, SkewReducer::<$T> {
+        // `finish` ignores the input type, so one reducer merges the states of every numeric input.
+        #[cfg(feature = "serde")]
+        _ if matches!(stage, SplitStage::Merge)
+            && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
+        {
+            split_reduction(
+                dtype,
+                SkewReducer::<Float64Type> {
                     bias,
                     needs_cast: false,
                     _phantom: PhantomData,
-                }))
+                },
+                stage,
+            )
+        },
+        _ if dtype.is_primitive_numeric() => {
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
+                split_reduction(dtype, SkewReducer::<$T> {
+                    bias,
+                    needs_cast: false,
+                    _phantom: PhantomData,
+                }, stage)
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(
+        Decimal(_, _) => split_reduction(
             dtype,
             SkewReducer::<Float64Type> {
                 bias,
                 needs_cast: true,
                 _phantom: PhantomData,
             },
-        )),
+            stage,
+        ),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),
@@ -42,21 +84,64 @@ pub fn new_kurtosis_reduction(
     fisher: bool,
     bias: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
+    kurtosis_reduction(dtype, fisher, bias, SplitStage::Whole)
+}
+
+/// Like [`new_kurtosis_reduction`], but outputs the serialized state of each group, to be merged
+/// by [`new_kurtosis_merge_reduction`].
+#[cfg(feature = "serde")]
+pub fn new_kurtosis_state_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // `fisher` and `bias` only matter when finalizing.
+    kurtosis_reduction(dtype, false, false, SplitStage::State)
+}
+
+/// Merges the states of [`new_kurtosis_state_reduction`] over values of `values_dtype`, and
+/// outputs what [`new_kurtosis_reduction`] does.
+#[cfg(feature = "serde")]
+pub fn new_kurtosis_merge_reduction(
+    values_dtype: DataType,
+    fisher: bool,
+    bias: bool,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    kurtosis_reduction(values_dtype, fisher, bias, SplitStage::Merge)
+}
+
+fn kurtosis_reduction(
+    dtype: DataType,
+    fisher: bool,
+    bias: bool,
+    stage: SplitStage,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
-    use VecGroupedReduction as VGR;
     Ok(match dtype {
-        _ if dtype.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, KurtosisReducer::<$T> {
+        // `finish` ignores the input type, so one reducer merges the states of every numeric input.
+        #[cfg(feature = "serde")]
+        _ if matches!(stage, SplitStage::Merge)
+            && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
+        {
+            split_reduction(
+                dtype,
+                KurtosisReducer::<Float64Type> {
                     fisher,
                     bias,
                     needs_cast: false,
                     _phantom: PhantomData,
-                }))
+                },
+                stage,
+            )
+        },
+        _ if dtype.is_primitive_numeric() => {
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
+                split_reduction(dtype, KurtosisReducer::<$T> {
+                    fisher,
+                    bias,
+                    needs_cast: false,
+                    _phantom: PhantomData,
+                }, stage)
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(
+        Decimal(_, _) => split_reduction(
             dtype,
             KurtosisReducer::<Float64Type> {
                 fisher,
@@ -64,7 +149,8 @@ pub fn new_kurtosis_reduction(
                 needs_cast: true,
                 _phantom: PhantomData,
             },
-        )),
+            stage,
+        ),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),
