@@ -212,18 +212,16 @@ impl KneeController {
     /// Advances one control tick and returns the byte budget to apply.
     pub fn step(&mut self, t: KneeTick) -> u64 {
         if t.bytes_done > 0 || t.bytes_in_use > 0 {
-            if let Some(since) = self.idle_since.take() {
-                if t.now.duration_since(since) > self.cfg.idle_reset {
-                    *self = Self::new(self.cfg.clone());
-                } else if self.knee.is_some() {
-                    self.resume_stable(t.now);
-                } else {
-                    // No knee yet: the RampUp state is from the traffic before the idle period.
-                    *self = Self::new(self.cfg.clone());
-                }
+            if self.idle_since.take().is_some() {
+                self.resume_stable(t.now);
             }
             self.last_io = Some(t.now);
-        } else if self.idle_since.is_some() {
+        } else if let Some(since) = self.idle_since {
+            // Reset while idle, so that the next traffic is admitted under the initial budget.
+            // Without a knee, the RampUp state is from the traffic before the idle period.
+            if self.knee.is_none() || t.now.duration_since(since) > self.cfg.idle_reset {
+                *self = Self::new(self.cfg.clone());
+            }
             return self.budget;
         }
         if let Some(last) = self.last_io
@@ -614,7 +612,7 @@ mod tests {
     }
 
     /// Idle longer than `idle_grace` (e.g. a scan stalled downstream) keeps the knee; idle longer
-    /// than `idle_reset` (e.g. the next query) starts over from init.
+    /// than `idle_reset` (e.g. the next query) starts over from init, before the next traffic.
     #[test]
     fn idle_keeps_the_knee_until_reset() {
         let mut c = KneeController::new(cfg());
@@ -633,7 +631,6 @@ mod tests {
         for i in 130..530 {
             tick(&mut c, t0, i, 0, 0, 0);
         }
-        run(&mut c, t0, 530, 1600, 1);
         assert_eq!(c.knee(), None);
         assert_eq!(c.budget(), 100);
     }
