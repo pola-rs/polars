@@ -583,7 +583,7 @@ impl ExprOrderSimplifier<'_> {
 
             AExpr::Function {
                 input,
-                function: IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy,
+                function: IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. },
                 ..
             } => {
                 check_return_cached!();

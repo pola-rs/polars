@@ -48,10 +48,14 @@ pub enum IRAggExpr {
     Min {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Max {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Median(Node),
     NUnique(Node),
@@ -89,11 +93,13 @@ impl Hash for IRAggExpr {
             Self::Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls,
             }
             | Self::Max {
                 input: _,
                 propagate_nans,
-            } => propagate_nans.hash(state),
+                propagate_nulls,
+            } => (propagate_nans, propagate_nulls).hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             Self::Count {
                 input: _,
@@ -115,6 +121,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMin
@@ -125,6 +132,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Max {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMax

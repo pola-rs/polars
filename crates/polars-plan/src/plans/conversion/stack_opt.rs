@@ -32,9 +32,9 @@ impl Extend<Node> for ExtendVec<'_> {
 }
 
 impl ConversionOptimizer {
-    pub fn new(simplify: bool, type_coercion: bool, type_check: bool, lower_sorts: bool) -> Self {
+    pub fn new(simplify: bool, type_coercion: bool, type_check: bool) -> Self {
         let simplify = if simplify {
-            Some(SimplifyExprRule { lower_sorts })
+            Some(SimplifyExprRule {})
         } else {
             None
         };

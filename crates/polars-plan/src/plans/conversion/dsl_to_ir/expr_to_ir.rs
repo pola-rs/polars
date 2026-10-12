@@ -261,6 +261,7 @@ pub(super) fn to_aexpr_impl(
                         IRAggExpr::Min {
                             input,
                             propagate_nans,
+                            propagate_nulls: false,
                         },
                         output_name,
                     )
@@ -274,6 +275,7 @@ pub(super) fn to_aexpr_impl(
                         IRAggExpr::Max {
                             input,
                             propagate_nans,
+                            propagate_nulls: false,
                         },
                         output_name,
                     )
