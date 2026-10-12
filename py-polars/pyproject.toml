@@ -100,7 +100,10 @@ ignore-missing-imports = [
   "_polars_runtime_64.*",
   "_polars_runtime_compat.*",
   "IPython.*",
+  "adbc_driver_manager.*",
+  "adbc_driver_sqlite.*",
   "altair.*",
+  "connectorx.*",
   "duckdb.*",
   "pyiceberg.*",
 ]
