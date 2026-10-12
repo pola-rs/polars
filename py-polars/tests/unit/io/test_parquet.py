@@ -611,6 +611,64 @@ def test_decimal32_64_scan_parquet(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_fixed_len_byte_array_decimal(tmp_path: Path, use_dictionary: bool) -> None:
+    # pyarrow stores decimal128 as FIXED_LEN_BYTE_ARRAY of the smallest width that fits
+    # the precision; these precisions cover widths 1 to 16.
+    precisions = [1, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27, 29, 32, 34, 38]
+    n = 3_000
+    fields = [pa.field("k", pa.int64())]
+    data = {"k": pa.array(range(n), pa.int64())}
+    for p in precisions:
+        scale = min(p, 2)
+        base = [10**p - 1, -(10**p - 1), 0, 1, -1, 10 ** (p - 1), None]
+        values = [
+            None if (v := base[i % len(base)]) is None else Decimal(f"{v}e-{scale}")
+            for i in range(n)
+        ]
+        no_nulls = [v if v is not None else Decimal(0) for v in values]
+        dtype = pa.decimal128(p, scale)
+        # With nulls, nullable without nulls, non-nullable, and nested.
+        fields += [
+            pa.field(f"d{p}", dtype),
+            pa.field(f"n{p}", dtype),
+            pa.field(f"r{p}", dtype, nullable=False),
+            pa.field(f"l{p}", pa.list_(dtype)),
+        ]
+        data[f"d{p}"] = pa.array(values, dtype)
+        data[f"n{p}"] = pa.array(no_nulls, dtype)
+        data[f"r{p}"] = pa.array(no_nulls, dtype)
+        data[f"l{p}"] = pa.array([values[i : i + 3] for i in range(n)], pa.list_(dtype))
+    tbl = pa.table(data, schema=pa.schema(fields))
+    path = tmp_path / "flba.parquet"
+    pq.write_table(tbl, path, use_dictionary=use_dictionary, data_page_size=1024)
+
+    schema = pq.ParquetFile(path).schema
+    widths = {schema.column(i).length for i in range(1, len(schema))}
+    assert widths == set(range(1, 17))
+    assert {schema.column(i).physical_type for i in range(1, len(schema))} == {
+        "FIXED_LEN_BYTE_ARRAY"
+    }
+
+    expected = pl.from_arrow(tbl)
+    assert isinstance(expected, pl.DataFrame)
+    lf = pl.scan_parquet(path)
+    assert_frame_equal(lf.collect(), expected)
+    assert_frame_equal(
+        lf.filter(pl.col("k") % 3 == 0).collect(),
+        expected.filter(pl.col("k") % 3 == 0),
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("k").is_between(1_234, 1_900)).collect(),
+        expected.filter(pl.col("k").is_between(1_234, 1_900)),
+    )
+    assert_frame_equal(lf.slice(1_000, 700).collect(), expected.slice(1_000, 700))
+    for c in ["d7", "d19", "d38"]:
+        for pred in [pl.col(c) == expected[c][5], pl.col(c) > 0, pl.col(c) < 0]:
+            assert_frame_equal(lf.filter(pred).collect(), expected.filter(pred))
+
+
+@pytest.mark.write_disk
 def test_enum_parquet(tmp_path: Path) -> None:
     path = tmp_path / "enum.parquet"
     df = pl.DataFrame(
