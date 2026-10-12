@@ -8,7 +8,9 @@ use polars_parquet_format::{
 };
 use polars_utils::aliases::{PlHashMap, PlHashSet};
 
-use super::ciphers::{AesGcmBlockEncryptor, BlockEncryptor, NONCE_LEN, SIZE_LEN, TAG_LEN};
+use super::ciphers::{
+    AesGcmBlockEncryptor, BlockEncryptor, NONCE_LEN, SIZE_LEN, TAG_LEN, aes_gcm_algorithm,
+};
 use super::modules::{ModuleType, create_footer_aad, create_module_aad};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::{ColumnDescriptor, SchemaDescriptor};
@@ -228,8 +230,15 @@ impl EncryptionPropertiesBuilder {
         self
     }
 
-    /// Build the encryption properties
+    /// Build the encryption properties.
+    ///
+    /// Returns an error if any key has an unsupported length. Keys must be 16 or 32 bytes,
+    /// for AES-128 and AES-256 respectively.
     pub fn build(self) -> ParquetResult<Arc<FileEncryptionProperties>> {
+        aes_gcm_algorithm(self.footer_key.key(), "footer key")?;
+        for (column_name, column_key) in &self.column_keys {
+            aes_gcm_algorithm(column_key.key(), &format!("key for column '{column_name}'"))?;
+        }
         Ok(Arc::new(FileEncryptionProperties {
             encrypt_footer: self.encrypt_footer,
             footer_key: self.footer_key,
@@ -611,6 +620,34 @@ mod tests {
         let (algorithm, _) = aes_gcm_v1(builder);
         assert_eq!(algorithm.aad_prefix, Some(b"prefix".to_vec()));
         assert_eq!(algorithm.supply_aad_prefix, Some(false));
+    }
+
+    #[test]
+    fn test_build_validates_key_lengths() {
+        let err = FileEncryptionProperties::builder(b"short_key".to_vec())
+            .build()
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("footer key: unsupported key length: 9"),
+            "{err}"
+        );
+
+        let err = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+            .with_column_key("x", b"short_key".to_vec())
+            .build()
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("key for column 'x': unsupported key length: 9"),
+            "{err}"
+        );
+
+        // AES-256 keys are also accepted
+        FileEncryptionProperties::builder(vec![0u8; 32])
+            .with_column_key("x", vec![1u8; 32])
+            .build()
+            .unwrap();
     }
 
     #[test]

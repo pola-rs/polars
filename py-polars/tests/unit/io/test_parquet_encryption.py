@@ -800,12 +800,10 @@ def test_write_column_key_not_in_schema(tmp_path: Path) -> None:
         {"footer_key": FOOTER_KEY, "column_keys": {"secret": b"short_key"}},
     ],
 )
-def test_write_invalid_key_length(tmp_path: Path, kwargs: dict[str, Any]) -> None:
+def test_write_invalid_key_length(kwargs: dict[str, Any]) -> None:
+    # Keys are validated when the properties are constructed, before any file is opened
     with pytest.raises(pl.exceptions.ComputeError, match="unsupported key length: 9"):
-        basic_data().write_parquet(
-            tmp_path / "out.parquet",
-            encryption=pl.ParquetEncryptionProperties(**kwargs),
-        )
+        pl.ParquetEncryptionProperties(**kwargs)
 
 
 @pytest.mark.parametrize(
