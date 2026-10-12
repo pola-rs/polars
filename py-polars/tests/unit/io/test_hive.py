@@ -413,6 +413,38 @@ def test_hive_partitioned_slice_pushdown(
     ]
 
 
+@pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_hive_slice_ends_in_file_skipped_by_predicate(
+    tmp_path: Path, engine: EngineType
+) -> None:
+    # The slice ends inside `p=b`, which the predicate skips, and `p=c` comes after.
+    for p, n in [("a", 5), ("b", 11), ("c", 3)]:
+        (tmp_path / f"p={p}").mkdir()
+        pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"p={p}/0.parquet")
+
+    lf = pl.scan_parquet(tmp_path, hive_partitioning=True)
+
+    assert_frame_equal(
+        lf.head(8).filter(pl.col("p").is_in(["a", "c"])).collect(engine=engine),
+        pl.DataFrame({"x": range(5), "p": "a"}),
+    )
+    assert_frame_equal(
+        lf.with_row_index()
+        .head(8)
+        .filter(pl.col("p").is_in(["a", "c"]))
+        .collect(engine=engine),
+        pl.DataFrame({"x": range(5), "p": "a"}).with_row_index(),
+    )
+    assert_frame_equal(
+        lf.with_row_index()
+        .slice(3, 12)
+        .filter(pl.col("p").is_in(["a", "c"]))
+        .collect(engine=engine),
+        pl.DataFrame({"x": range(3, 5), "p": "a"}).with_row_index(offset=3),
+    )
+
+
 @pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk
 def test_hive_partitioned_projection_pushdown(
