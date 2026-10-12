@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 use polars_parquet_format::{
@@ -240,15 +240,37 @@ impl EncryptionPropertiesBuilder {
     }
 }
 
+/// A block encryptor that can be shared by reference and used from `&self` methods.
+///
+/// Encrypting advances the nonce sequence, so the encryptor needs to be mutable. The
+/// mutex is uncontended in practice as the file writer encrypts modules sequentially.
+type SharedBlockEncryptor = Mutex<AesGcmBlockEncryptor>;
+
+fn encrypt_with(
+    encryptor: &SharedBlockEncryptor,
+    plaintext: &[u8],
+    aad: &[u8],
+) -> ParquetResult<Vec<u8>> {
+    encryptor
+        .lock()
+        .map_err(|_| encryption_err!("Block encryptor mutex was poisoned"))?
+        .encrypt(plaintext, aad)
+}
+
 #[derive(Debug)]
 /// The encryption configuration for a single Parquet file
 pub(crate) struct FileEncryptor {
     properties: Arc<FileEncryptionProperties>,
     aad_file_unique: Vec<u8>,
     file_aad: Vec<u8>,
+    /// Encryptor for the footer, and for all columns under uniform encryption.
+    footer_encryptor: SharedBlockEncryptor,
+    /// Encryptors for columns with their own key, keyed by the column path.
+    column_encryptors: PlHashMap<String, SharedBlockEncryptor>,
 }
 
 impl FileEncryptor {
+    /// Create a [`FileEncryptor`] from encryption properties and verifies keys are valid.
     pub(crate) fn new(properties: Arc<FileEncryptionProperties>) -> ParquetResult<Self> {
         // Generate unique AAD for file
         let rng = SystemRandom::new();
@@ -260,10 +282,22 @@ impl FileEncryptor {
             Some(aad_prefix) => [aad_prefix.clone(), aad_file_unique.clone()].concat(),
         };
 
+        let footer_encryptor = Mutex::new(AesGcmBlockEncryptor::new(properties.footer_key.key())?);
+        let column_encryptors = properties
+            .column_keys
+            .iter()
+            .map(|(column_path, column_key)| {
+                let encryptor = AesGcmBlockEncryptor::new(column_key.key())?;
+                Ok((column_path.clone(), Mutex::new(encryptor)))
+            })
+            .collect::<ParquetResult<PlHashMap<_, _>>>()?;
+
         Ok(Self {
             properties,
             aad_file_unique,
             file_aad,
+            footer_encryptor,
+            column_encryptors,
         })
     }
 
@@ -282,26 +316,16 @@ impl FileEncryptor {
         }
     }
 
-    /// Get the BlockEncryptor for the footer
-    pub(crate) fn get_footer_encryptor(&self) -> ParquetResult<Box<dyn BlockEncryptor>> {
-        Ok(Box::new(AesGcmBlockEncryptor::new(
-            &self.properties.footer_key.key,
-        )?))
-    }
-
     /// Get the encryptor for a column.
     /// Will return an error if the column is not an encrypted column.
-    pub(crate) fn get_column_encryptor(
-        &self,
-        column_path: &str,
-    ) -> ParquetResult<Box<dyn BlockEncryptor>> {
+    fn get_column_encryptor(&self, column_path: &str) -> ParquetResult<&SharedBlockEncryptor> {
         if self.properties.column_keys.is_empty() {
-            return self.get_footer_encryptor();
+            // Uniform encryption
+            return Ok(&self.footer_encryptor);
         }
-        match self.properties.column_keys.get(column_path) {
-            None => Err(encryption_err!("Column '{}' is not encrypted", column_path)),
-            Some(column_key) => Ok(Box::new(AesGcmBlockEncryptor::new(column_key.key())?)),
-        }
+        self.column_encryptors
+            .get(column_path)
+            .ok_or_else(|| encryption_err!("Column '{}' is not encrypted", column_path))
     }
 
     /// Create a [`FileEncryptor`] for writing a file with the given schema.
@@ -313,12 +337,7 @@ impl FileEncryptor {
         schema: &SchemaDescriptor,
     ) -> ParquetResult<Self> {
         properties.validate_encrypted_column_names(schema)?;
-        let encryptor = Self::new(properties)?;
-        encryptor.get_footer_encryptor()?;
-        for column_path in encryptor.properties.column_keys.keys() {
-            encryptor.get_column_encryptor(column_path)?;
-        }
-        Ok(encryptor)
+        Self::new(properties)
     }
 
     /// The encryption algorithm to store in the file.
@@ -350,7 +369,7 @@ impl FileEncryptor {
     /// Encrypt a serialized footer.
     pub(crate) fn encrypt_footer(&self, footer: &[u8]) -> ParquetResult<Vec<u8>> {
         let aad = create_footer_aad(&self.file_aad)?;
-        self.get_footer_encryptor()?.encrypt(footer, &aad)
+        encrypt_with(&self.footer_encryptor, footer, &aad)
     }
 
     /// Compute the signature of a serialized plaintext footer, which is the nonce and
@@ -428,8 +447,8 @@ impl FileEncryptor {
             column_ordinal,
             None,
         )?;
-        self.get_column_encryptor(&column_path_string(column))?
-            .encrypt(plaintext, &aad)
+        let encryptor = self.get_column_encryptor(&column_path_string(column))?;
+        encrypt_with(encryptor, plaintext, &aad)
     }
 
     /// Whether data for the column should be encrypted
@@ -462,7 +481,7 @@ impl FileEncryptor {
 /// Encrypts the pages and page headers of a single column chunk.
 pub(crate) struct PageEncryptor<'a> {
     file_aad: &'a [u8],
-    block_encryptor: Box<dyn BlockEncryptor>,
+    block_encryptor: &'a SharedBlockEncryptor,
     row_group_idx: usize,
     column_ordinal: usize,
     /// Ordinal of the current data page. Dictionary pages don't have an ordinal.
@@ -482,7 +501,7 @@ impl PageEncryptor<'_> {
             ModuleType::DataPage
         };
         let aad = self.create_aad(module_type)?;
-        self.block_encryptor.encrypt(page, &aad)
+        encrypt_with(self.block_encryptor, page, &aad)
     }
 
     /// Serialize and encrypt a page header.
@@ -497,8 +516,7 @@ impl PageEncryptor<'_> {
             ModuleType::DataPageHeader
         };
         let aad = self.create_aad(module_type)?;
-        self.block_encryptor
-            .encrypt(&header.to_thrift_bytes()?, &aad)
+        encrypt_with(self.block_encryptor, &header.to_thrift_bytes()?, &aad)
     }
 
     /// Move to the next data page. Must be called after writing each data page.
