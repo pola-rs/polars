@@ -45,10 +45,10 @@ use crate::sql_expr::{
     resolve_compound_identifier, series_from_literals, to_sql_interface_err,
 };
 use crate::sql_visitors::{
-    QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
-    collect_grouping_calls, expr_contains_scalar_subquery, expr_contains_subquery,
-    expr_has_window_functions, expr_references_any_column, expr_refers_to_table,
-    sql_expr_cols_all_in_schema, statement_registers_table,
+    QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
+    check_for_ambiguous_column_refs, collect_grouping_calls, expr_contains_scalar_subquery,
+    expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
+    expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
 };
 use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
@@ -232,8 +232,18 @@ pub struct SQLContext {
     /// qualified column may name.
     active_relations: PlHashSet<String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
+    join_base: Option<JoinBase>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
     pub(crate) group_scope: GroupScope,
+}
+
+/// The first relation of the current `FROM` and the (joined table, column) pairs
+/// of its USING clauses. With `joined_aliases` this tells whether an unqualified
+/// column is ambiguous.
+#[derive(Clone)]
+struct JoinBase {
+    table_name: String,
+    using_cols: Vec<(String, String)>,
 }
 
 /// State of the query block being executed that its `GROUP BY` binds.
@@ -274,6 +284,7 @@ impl Default for SQLContext {
             table_aliases: Default::default(),
             active_relations: Default::default(),
             joined_aliases: Default::default(),
+            join_base: None,
             named_windows: Default::default(),
             group_scope: Default::default(),
             lp_arena: Default::default(),
@@ -430,6 +441,7 @@ impl SQLContext {
         self.cte_map.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
+        self.join_base = None;
         self.named_windows.clear();
     }
 
@@ -665,6 +677,95 @@ impl SQLContext {
                 Ok(expr)
             },
         }
+    }
+
+    /// Track the columns of the joined relation `r_name` that also exist on the left
+    /// side, and so are stored under an aliased name in the joined frame.
+    pub(crate) fn record_joined_aliases(
+        &mut self,
+        r_name: &str,
+        left_schema: &Schema,
+        right_schema: &Schema,
+        joined_schema: &Schema,
+    ) {
+        self.joined_aliases.insert(
+            r_name.to_string(),
+            right_schema
+                .iter_names()
+                .filter(|name| left_schema.contains(name))
+                .filter_map(|name| {
+                    let aliased_name = format!("{name}:{r_name}");
+                    joined_schema
+                        .contains(aliased_name.as_str())
+                        .then(|| (name.to_string(), aliased_name))
+                })
+                .collect(),
+        );
+    }
+
+    /// Error if the unqualified column `name` exists in more than one of the joined
+    /// relations of the current `FROM`.
+    pub(crate) fn check_unqualified_column(&self, name: &str) -> PolarsResult<()> {
+        match &self.join_base {
+            Some(base) => check_ambiguous_column(
+                name,
+                &self.joined_aliases,
+                &base.table_name,
+                &base.using_cols,
+            ),
+            None => Ok(()),
+        }
+    }
+
+    /// Set the join base of a block from its `FROM`, once its relations are resolved.
+    /// Unqualified columns of the block are checked against it.
+    pub(crate) fn set_join_base(&mut self, from: &[TableWithJoins]) {
+        self.join_base = from.first().and_then(|first| {
+            Some(JoinBase {
+                table_name: get_table_name(&first.relation)?,
+                using_cols: from
+                    .iter()
+                    .flat_map(|tbl_expr| &tbl_expr.joins)
+                    .filter_map(|join| {
+                        let cols = get_using_cols(&join.join_operator)?;
+                        let r_name = get_table_name(&join.relation)?;
+                        Some(cols.map(move |c| (r_name.clone(), c)))
+                    })
+                    .flatten()
+                    .collect(),
+            })
+        });
+    }
+
+    /// Check the SELECT and WHERE expressions of a block for ambiguous unqualified
+    /// columns (if there were joins).
+    pub(crate) fn check_select_column_refs(&self, select_stmt: &Select) -> PolarsResult<()> {
+        let Some(base) = &self.join_base else {
+            return Ok(());
+        };
+        if self.joined_aliases.is_empty() {
+            return Ok(());
+        }
+        let check_expr = |e| {
+            check_for_ambiguous_column_refs(
+                e,
+                &self.joined_aliases,
+                &base.table_name,
+                &base.using_cols,
+            )
+        };
+        for item in &select_stmt.projection {
+            match item {
+                SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => {
+                    check_expr(e)?
+                },
+                _ => {},
+            }
+        }
+        if let Some(where_expr) = &select_stmt.selection {
+            check_expr(where_expr)?;
+        }
+        Ok(())
     }
 
     pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
@@ -1353,26 +1454,8 @@ impl SQLContext {
                     },
                 };
 
-                // track join-aliased columns so we can resolve/check them later
                 let joined_schema = self.get_frame_schema(&mut lf)?;
-
-                self.joined_aliases.insert(
-                    r_name.clone(),
-                    right_schema
-                        .iter_names()
-                        .filter_map(|name| {
-                            // col exists in both tables and is aliased in the joined result
-                            let aliased_name = format!("{name}:{r_name}");
-                            if left_schema.contains(name)
-                                && joined_schema.contains(aliased_name.as_str())
-                            {
-                                Some((name.to_string(), aliased_name))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<PlHashMap<String, String>>(),
-                );
+                self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
             }
         };
         Ok(lf)
@@ -1745,9 +1828,9 @@ impl SQLContext {
 
         // Get `FROM` table/data
         let mut implicit_join_filter: Option<SQLExpr> = None;
-        let (mut lf, base_table_name) = if select_stmt.from.is_empty() {
+        let mut lf = if select_stmt.from.is_empty() {
             self.active_relations.clear();
-            (DataFrame::new(1, vec![])?.lazy(), None)
+            DataFrame::new(1, vec![])?.lazy()
         } else {
             let from = &select_stmt.from;
             let first = from.first().unwrap();
@@ -1755,44 +1838,15 @@ impl SQLContext {
             // resolves against them.
             self.active_relations = declared_relations(from);
             let mut lf = self.execute_from_statement(first)?;
-            let base_name = get_table_name(&first.relation);
             if from.len() > 1 {
                 implicit_join_filter =
                     self.process_implicit_joins(&mut lf, from, &select_stmt.selection)?;
             }
-            (lf, base_name)
+            lf
         };
 
-        // Check for ambiguous column references in SELECT and WHERE (if there were joins)
-        if let Some(ref base_name) = base_table_name {
-            if !self.joined_aliases.is_empty() {
-                // Extract USING columns from joins (these are coalesced and not ambiguous)
-                let using_cols: PlHashSet<String> = select_stmt
-                    .from
-                    .first()
-                    .into_iter()
-                    .flat_map(|t| t.joins.iter())
-                    .filter_map(|join| get_using_cols(&join.join_operator))
-                    .flatten()
-                    .collect();
-
-                // Check SELECT and WHERE expressions for ambiguous column references
-                let check_expr = |e| {
-                    check_for_ambiguous_column_refs(e, &self.joined_aliases, base_name, &using_cols)
-                };
-                for item in &select_stmt.projection {
-                    match item {
-                        SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => {
-                            check_expr(e)?
-                        },
-                        _ => {},
-                    }
-                }
-                if let Some(ref where_expr) = select_stmt.selection {
-                    check_expr(where_expr)?;
-                }
-            }
-        }
+        self.set_join_base(&select_stmt.from);
+        self.check_select_column_refs(select_stmt)?;
 
         // Apply `WHERE` constraint (using residual filter for implicit joins)
         let where_expr = if implicit_join_filter.is_some() {
@@ -2944,24 +2998,8 @@ impl SQLContext {
             };
             remaining_where = residual;
 
-            // Track join-aliased columns for later resolution
             let joined_schema = self.get_frame_schema(lf)?;
-            self.joined_aliases.insert(
-                r_name.clone(),
-                right_schema
-                    .iter_names()
-                    .filter_map(|name| {
-                        let aliased_name = format!("{name}:{r_name}");
-                        if left_schema.contains(name)
-                            && joined_schema.contains(aliased_name.as_str())
-                        {
-                            Some((name.to_string(), aliased_name))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<PlHashMap<String, String>>(),
-            );
+            self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
             joined_table_names.push(r_name);
             for join in &tbl_expr.joins {
                 if let Some(name) = get_table_name(&join.relation) {
