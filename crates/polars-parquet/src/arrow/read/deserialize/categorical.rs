@@ -206,7 +206,11 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         };
         let mut num_valid = 0;
 
-        let null_is_true = predicate.predicate.evaluate_null();
+        let null_is_true = validity.as_ref().is_some_and(|v| v.unset_bits() > 0)
+            && predicate
+                .predicate
+                .evaluate_null()
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
         let start_len = pred_true_mask.len();
         for (i, key) in keys.iter().enumerate() {
             // SAFETY: The validity has one bit per key.

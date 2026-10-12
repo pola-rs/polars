@@ -377,7 +377,10 @@ pub(super) trait Decoder: Sized {
         }
         .into_boxed();
 
-        let mask = if let Some(validity) = intermediate_array.validity()
+        let validity = intermediate_array
+            .validity()
+            .filter(|validity| validity.unset_bits() > 0);
+        let mask = if let Some(validity) = validity
             && predicate.predicate.can_evaluate_null_slots()
         {
             let ignore_validity_array = intermediate_array.with_validity(None);
@@ -386,12 +389,16 @@ pub(super) trait Decoder: Sized {
                 .try_evaluate(ignore_validity_array.as_ref())
                 .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
 
-            if predicate.predicate.evaluate_null() {
+            if predicate
+                .predicate
+                .evaluate_null()
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?
+            {
                 polars_arrow::bitmap::or_not(&mask, validity)
             } else {
                 &mask & validity
             }
-        } else if let Some(validity) = intermediate_array.validity() {
+        } else if let Some(validity) = validity {
             let valid_array = polars_compute::filter::filter_with_bitmap(
                 intermediate_array.with_validity(None).as_ref(),
                 validity,
@@ -401,7 +408,10 @@ pub(super) trait Decoder: Sized {
                 .try_evaluate(valid_array.as_ref())
                 .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
 
-            let null_is_true = predicate.predicate.evaluate_null();
+            let null_is_true = predicate
+                .predicate
+                .evaluate_null()
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))?;
             let mut valid_mask = valid_mask.iter();
             let mut mask = BitmapBuilder::with_capacity(validity.len());
             for is_valid in validity.iter() {
@@ -585,7 +595,8 @@ impl<D: Decoder> PageDecoder<D> {
             specialized_pred,
             Some(SpecializedParquetColumnExpr::Equal(ParquetScalar::Null)),
         );
-        let pred_tracks_nulls = p.predicate.evaluate_null();
+        // An error is raised when a null row is decoded.
+        let pred_tracks_nulls = p.predicate.evaluate_null().unwrap_or(true);
 
         let mut dict_predicate = None;
         if let Some(dict) = self.dict.as_ref() {

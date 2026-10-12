@@ -3741,6 +3741,31 @@ def test_categorical_prefiltering_unused_dictionary_values(
     assert filler.len() == 250
 
 
+@pytest.mark.parametrize(
+    "dtype", [pl.Categorical, pl.Enum(["1", "2"]), pl.String, pl.Int64]
+)
+@pytest.mark.parametrize("has_nulls", [False, True])
+def test_prefiltering_null_predicate_fails(dtype: pl.DataType, has_nulls: bool) -> None:
+    values = ["1", None, "2", "1"] if has_nulls else ["1", "2"]
+    df = pl.DataFrame(
+        {"c": pl.Series(values * 25).cast(dtype), "x": range(len(values) * 25)}
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    # Evaluating this on a null fails.
+    expr = pl.col("c").cast(pl.String).fill_null("invalid").cast(pl.Int64) == 1
+    f.seek(0)
+    q = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False).filter(expr)
+    if has_nulls:
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            df.filter(expr)
+        with pytest.raises(pl.exceptions.PolarsError):
+            q.collect()
+    else:
+        assert_frame_equal(q.collect(), df.filter(expr))
+
+
 def test_parquet_read_timezone_22506() -> None:
     f = io.BytesIO()
 

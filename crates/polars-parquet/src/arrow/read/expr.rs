@@ -116,7 +116,9 @@ pub trait ParquetColumnExpr: Send + Sync {
         self.try_evaluate_mut(values, bm).unwrap()
     }
     fn try_evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) -> PolarsResult<()>;
-    fn evaluate_null(&self) -> bool;
+    /// The predicate result for a null value. This can fail, e.g. when the predicate casts the
+    /// value after `fill_null`, so it should only be called if there is a null.
+    fn evaluate_null(&self) -> PolarsResult<bool>;
     /// Whether the placeholder values under null rows can be evaluated with the results thrown
     /// away. This is not the case if evaluating them can have side effects or fail.
     fn can_evaluate_null_slots(&self) -> bool {

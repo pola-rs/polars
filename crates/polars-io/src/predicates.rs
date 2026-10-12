@@ -113,15 +113,14 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         }
         Ok(())
     }
-    fn evaluate_null(&self) -> bool {
+    fn evaluate_null(&self) -> PolarsResult<bool> {
         let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
         let df = unsafe { DataFrame::new_unchecked(1, vec![column]) };
 
-        // @TODO: Probably these unwraps should be removed.
-        let true_mask = self.expr.evaluate_io(&df).unwrap();
-        let true_mask = true_mask.bool().unwrap();
+        let true_mask = self.expr.evaluate_io(&df)?;
+        let true_mask = true_mask.bool()?;
 
-        true_mask.get(0).unwrap_or(false)
+        Ok(true_mask.get(0).unwrap_or(false))
     }
 
     fn can_evaluate_null_slots(&self) -> bool {
