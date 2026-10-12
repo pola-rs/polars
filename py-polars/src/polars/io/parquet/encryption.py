@@ -37,8 +37,13 @@ class ParquetEncryptionProperties:
         readers without the footer key can read the schema and any unencrypted
         columns. The footer is still signed with the footer key.
     aad_prefix
-        The AAD (additional authenticated data) prefix. This should uniquely
-        identify the file, and protects against files being swapped or replaced.
+        The AAD (additional authenticated data) prefix. Readers that provide an
+        AAD prefix can only read files written with the same prefix, which
+        protects against a file being swapped for one written with a different
+        prefix, such as an older version of the file. The same prefix is used for
+        every file written by a single `write_parquet` or `sink_parquet` call, so
+        it does not protect against swapping files written together when
+        partitioning, or files from different calls that used the same prefix.
     store_aad_prefix
         Store the AAD prefix in the file. If this is false, readers must provide
         the AAD prefix in order to read the file.

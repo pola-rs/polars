@@ -108,7 +108,7 @@ impl FileEncryptionProperties {
         self.footer_key.key_metadata.as_ref()
     }
 
-    /// AAD prefix string uniquely identifies the file and prevents file swapping
+    /// AAD prefix used to protect against swapping files written with different prefixes
     pub fn aad_prefix(&self) -> Option<&Vec<u8>> {
         self.aad_prefix.as_ref()
     }
@@ -214,10 +214,12 @@ impl EncryptionPropertiesBuilder {
         self
     }
 
-    /// The AAD prefix uniquely identifies the file and allows to differentiate it e.g. from
-    /// older versions of the file or from other partition files in the same data set (table).
-    /// These bytes are optionally passed by a writer upon file creation. When not specified, no
-    /// AAD prefix is used.
+    /// Set the AAD (additional authenticated data) prefix. Readers that provide an AAD prefix
+    /// can only read files written with the same prefix, which protects against a file being
+    /// swapped for one written with a different prefix, e.g. an older version of the file or
+    /// a different partition file in the same data set (table). It does not protect against
+    /// swapping files that were written with the same prefix. When not specified, no AAD
+    /// prefix is used.
     pub fn with_aad_prefix(mut self, aad_prefix: Vec<u8>) -> Self {
         self.aad_prefix = Some(aad_prefix);
         self
