@@ -40,13 +40,13 @@ impl TaskState {
         // we either precede start_running (which then acquires our writes) or
         // observe RUNNING and reschedule.
         self.state
-            .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
-                Self::SCHEDULED | Self::NOTIFIED_WHILE_RUNNING => Some(state),
-                Self::RUNNING => Some(Self::NOTIFIED_WHILE_RUNNING),
-                Self::IDLE => Some(Self::SCHEDULED),
+            .update(Ordering::Release, Ordering::Relaxed, |state| match state {
+                Self::SCHEDULED | Self::NOTIFIED_WHILE_RUNNING => state,
+                Self::RUNNING => Self::NOTIFIED_WHILE_RUNNING,
+                Self::IDLE => Self::SCHEDULED,
                 _ => unreachable!("invalid TaskState"),
             })
-            .is_ok_and(|state| state == Self::IDLE)
+            == Self::IDLE
     }
 
     /// Start running this task.
@@ -59,13 +59,12 @@ impl TaskState {
     /// Done running this task. Returns true if task.schedule should be called.
     fn reschedule_after_running(&self) -> bool {
         self.state
-            .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
-                Self::RUNNING => Some(Self::IDLE),
-                Self::NOTIFIED_WHILE_RUNNING => Some(Self::SCHEDULED),
+            .update(Ordering::Release, Ordering::Relaxed, |state| match state {
+                Self::RUNNING => Self::IDLE,
+                Self::NOTIFIED_WHILE_RUNNING => Self::SCHEDULED,
                 _ => panic!("TaskState::reschedule_after_running() called on invalid state"),
             })
-            .map(|old_state| old_state == Self::NOTIFIED_WHILE_RUNNING)
-            .unwrap_or(false)
+            == Self::NOTIFIED_WHILE_RUNNING
     }
 }
 
