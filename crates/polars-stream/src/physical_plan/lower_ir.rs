@@ -6,7 +6,7 @@ use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
 use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet, SortMultipleOptions};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -23,7 +23,8 @@ use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
-    AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, window_exprs_match_keys, write_ir_non_recursive,
+    AExpr, DynamicPred, FunctionIR, IR, IRAggExpr, LiteralValue, window_exprs_match_keys,
+    write_ir_non_recursive,
 };
 use polars_plan::prelude::*;
 use polars_utils::aliases::PlIndexMap;
@@ -162,6 +163,64 @@ pub fn build_row_idx_stream(
     };
     let with_row_idx_node_key = phys_sm.insert(PhysNode::new(Arc::new(output_schema), kind));
     PhysStream::first(with_row_idx_node_key)
+}
+
+/// Adds a row index as the last sort key, so that a top-k node (which is not stable) keeps the
+/// order of equal rows. The sort itself then no longer needs to keep the order.
+pub(crate) fn add_row_idx_sort_key(
+    input: PhysStream,
+    by_column: &mut Vec<ExprIR>,
+    sort_options: &mut SortMultipleOptions,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+) -> PhysStream {
+    _broadcast_bools(by_column.len(), &mut sort_options.descending);
+    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
+    let row_idx_name = unique_column_name();
+    let stream = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
+
+    let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
+    by_column.push(ExprIR::new(
+        row_idx_node,
+        OutputName::ColumnLhs(row_idx_name),
+    ));
+    sort_options.descending.push(false);
+    sort_options.nulls_last.push(true);
+    sort_options.maintain_order = false;
+    stream
+}
+
+/// Keeps the first `k` rows in sort order, in no particular order.
+pub(crate) fn build_top_k_stream(
+    input: PhysStream,
+    by_column: Vec<ExprIR>,
+    sort_options: &SortMultipleOptions,
+    k: u64,
+    dyn_pred: Option<DynamicPred>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
+) -> PhysStream {
+    let k_node = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(k))));
+    let k_selector = ExprIR::from_node(k_node, expr_arena);
+    let k_output_schema = Schema::from_iter([(get_literal_name(), DataType::UInt64)]);
+    let k_node = phys_sm.insert(PhysNode::new(
+        Arc::new(k_output_schema),
+        PhysNodeKind::InputIndependentSelect {
+            selectors: vec![k_selector],
+        },
+    ));
+
+    PhysStream::first(phys_sm.insert(PhysNode::new(
+        input.output_schema(phys_sm).clone(),
+        PhysNodeKind::TopK {
+            input,
+            k: PhysStream::first(k_node),
+            by_column,
+            reverse: sort_options.descending.iter().map(|x| !x).collect(),
+            nulls_last: sort_options.nulls_last.clone(),
+            dyn_pred,
+        },
+    )))
 }
 
 #[derive(Clone, Copy)]
@@ -618,25 +677,14 @@ fn lower_ir_inner(
 
             let mut stream = phys_input;
 
-            // TopK is not stable, so if we need to maintain order augment with
-            // row index. The sort node itself is stable.
             if sort_options.maintain_order && limit < u64::MAX {
-                _broadcast_bools(by_column.len(), &mut sort_options.descending);
-                _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
-                let row_idx_name = unique_column_name();
-                stream = build_row_idx_stream(stream, row_idx_name.clone(), None, phys_sm);
-
-                // Add row index to sort columns.
-                let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
-                by_column.push(ExprIR::new(
-                    row_idx_node,
-                    OutputName::ColumnLhs(row_idx_name),
-                ));
-                sort_options.descending.push(false);
-                sort_options.nulls_last.push(true);
-
-                // No longer needed for the actual sort itself, handled by row index.
-                sort_options.maintain_order = false;
+                stream = add_row_idx_sort_key(
+                    stream,
+                    &mut by_column,
+                    &mut sort_options,
+                    expr_arena,
+                    phys_sm,
+                );
             }
 
             let mut output_exprs: Vec<_> = output_schema
@@ -665,28 +713,15 @@ fn lower_ir_inner(
             };
 
             if limit < u64::MAX {
-                let k_node =
-                    expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(limit))));
-                let k_selector = ExprIR::from_node(k_node, expr_arena);
-                let k_output_schema = Schema::from_iter([(get_literal_name(), DataType::UInt64)]);
-                let k_node = phys_sm.insert(PhysNode::new(
-                    Arc::new(k_output_schema),
-                    PhysNodeKind::InputIndependentSelect {
-                        selectors: vec![k_selector],
-                    },
-                ));
-
-                stream = PhysStream::first(phys_sm.insert(PhysNode::new(
-                    stream.output_schema(phys_sm).clone(),
-                    PhysNodeKind::TopK {
-                        input: stream,
-                        k: PhysStream::first(k_node),
-                        by_column: trans_by_column.clone(),
-                        reverse: sort_options.descending.iter().map(|x| !x).collect(),
-                        nulls_last: sort_options.nulls_last.clone(),
-                        dyn_pred: slice.as_ref().and_then(|t| t.2.clone()),
-                    },
-                )));
+                stream = build_top_k_stream(
+                    stream,
+                    trans_by_column.clone(),
+                    &sort_options,
+                    limit,
+                    slice.as_ref().and_then(|t| t.2.clone()),
+                    expr_arena,
+                    phys_sm,
+                );
             }
 
             stream = build_sort_stream(
@@ -910,6 +945,7 @@ fn lower_ir_inner(
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            file_read_context: std::sync::OnceLock::new(),
                             io_metrics: std::sync::OnceLock::new(),
                             task_metrics: std::sync::OnceLock::new(),
                         }) as _
@@ -1239,8 +1275,6 @@ fn lower_ir_inner(
             let mut range_point_descending = None;
             #[cfg(feature = "iejoin")]
             if args.how.is_range() {
-                use polars_core::prelude::SortMultipleOptions;
-
                 use crate::nodes::joins::range_join;
 
                 // Check this before adding the key columns, the new nodes have no known sortedness.

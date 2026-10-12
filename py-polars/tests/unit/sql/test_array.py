@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.mark.parametrize(
@@ -44,6 +45,22 @@ def test_array_agg(sort_order: str | None, limit: int | None, expected: Any) -> 
     ).collect()
 
     assert res.rows() == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT ARRAY_AGG(x) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(x ORDER BY y DESC) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(1) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(x) FILTER (WHERE y > 100) AS a FROM t",
+        "SELECT g, ARRAY_AGG(x) FILTER (WHERE y > 25) AS a FROM t GROUP BY g ORDER BY g",
+        "SELECT g, ARRAY_AGG(DISTINCT x) FILTER (WHERE y > 25) AS a FROM t GROUP BY g ORDER BY g",
+    ],
+)
+def test_array_agg_no_rows(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [1, 2, None], "y": [10, 20, 30]})
+    assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
 
 
 def test_array_literals() -> None:

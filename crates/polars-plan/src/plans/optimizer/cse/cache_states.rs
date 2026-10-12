@@ -14,7 +14,10 @@ use crate::plans::aexpr::filter_constraint::widen_over_predicates;
 use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::visitor::AexprNode;
-use crate::plans::{AExpr, ExecutionHooks, ExprIR, IR, PredicatePushDown, subplan_cost};
+use crate::plans::{
+    AExpr, ExecutionHooks, ExprIR, IR, PredicatePushDown, attach_dataset_scan_statistics,
+    subplan_cost,
+};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names_iter;
 
@@ -343,6 +346,11 @@ pub(crate) fn set_cache_states(
                 let mut remove_caches = true;
                 // Summed over the copies; `None` once any of them is not modelled.
                 let mut removal_cost = row_estimate.then_some(0.0);
+                if row_estimate {
+                    for &child in &v.children {
+                        attach_dataset_scan_statistics(child, lp_arena, expr_arena);
+                    }
+                }
 
                 for (&cache, parents) in v.cache_nodes.iter().zip(v.parents.iter()) {
                     // Restart predicate and projection pushdown from most top parent.

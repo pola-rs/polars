@@ -48,6 +48,7 @@ use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::prelude::*;
+use polars_utils::UnitVec;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
@@ -675,6 +676,48 @@ impl<'a> AggregationContext<'a> {
                 });
             },
         }
+    }
+
+    /// Repeats each unit-length group to the length of the matching group in `other`, returning
+    /// whether any group was repeated.
+    pub(crate) fn broadcast_unit_groups_to(&mut self, other: &mut AggregationContext) -> bool {
+        let other_groups = other.groups();
+        let needs_broadcast = self
+            .groups()
+            .iter()
+            .zip(other_groups.iter())
+            .any(|(g, o)| g.len() == 1 && o.len() != 1);
+        if !needs_broadcast {
+            return false;
+        }
+
+        let other_lengths = other_groups.iter().map(|g| g.len());
+        let groups: GroupsIdx = match self.groups.as_ref().as_ref() {
+            GroupsType::Idx(i) => i
+                .iter()
+                .zip(other_lengths)
+                .map(|((fst, idxs), l)| {
+                    if idxs.len() != l && idxs.len() == 1 {
+                        (fst, UnitVec::from_iter(std::iter::repeat_n(fst, l)))
+                    } else {
+                        (fst, idxs.clone())
+                    }
+                })
+                .collect(),
+            GroupsType::Slice { groups, .. } => groups
+                .iter()
+                .zip(other_lengths)
+                .map(|(&[start, length], l)| {
+                    if length as usize != l && length == 1 {
+                        (start, UnitVec::from_iter(std::iter::repeat_n(start, l)))
+                    } else {
+                        (start, UnitVec::from_iter(start..start + length))
+                    }
+                })
+                .collect(),
+        };
+        self.with_groups(GroupsType::Idx(groups).into_sliceable());
+        true
     }
 
     pub fn into_static(&self) -> AggregationContext<'static> {

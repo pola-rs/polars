@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use polars_async::executor::{TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
+use polars_core::prelude::{
+    ArrowDataType, ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn,
+};
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
@@ -367,7 +369,7 @@ fn decode_column(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
             Ok((
                 col_md,
@@ -953,7 +955,7 @@ fn decode_column_prefiltered(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
             Ok((
                 col_md,
@@ -964,7 +966,8 @@ fn decode_column_prefiltered(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let prefilter = !arrow_field.dtype.is_nested();
+    let prefilter = !arrow_field.dtype.is_nested()
+        || matches!(arrow_field.dtype, ArrowDataType::Dictionary(..));
 
     let deserialize_filter =
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));

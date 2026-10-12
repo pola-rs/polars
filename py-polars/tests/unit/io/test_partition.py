@@ -361,11 +361,13 @@ def test_partitioned_parquet_nested_dictionary_null_statistics(
         compression="uncompressed",
     )
 
+    # The second row group holds the `None` list, which counts as one null in the
+    # leaf column, as pyarrow writes it.
     metadata = pq.ParquetFile(tmp_path / "00000001.parquet").metadata
     assert [
         metadata.row_group(i).column(0).statistics.null_count
         for i in range(metadata.num_row_groups)
-    ] == [0, 0]
+    ] == [0, 1]
 
 
 @pytest.mark.parametrize(("io_type"), io_types)

@@ -98,26 +98,32 @@ fn cast_impl_inner(
         _ => cast_chunks(chunks, &dtype.to_physical(), options)?,
     };
 
-    let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
-        Date => out.into_date(),
-        Datetime(tu, tz) => match tz {
-            #[cfg(feature = "timezones")]
-            Some(tz) => {
-                TimeZone::validate_time_zone(tz)?;
-                out.into_datetime(*tu, Some(tz.clone()))
-            },
-            _ => out.into_datetime(*tu, None),
+        // `Series::try_from` reads `LargeBinary` arrays as `Binary`.
+        BinaryOffset => unsafe { BinaryOffsetChunked::from_chunks(name, chunks) }.into_series(),
+        _ => {
+            let out = Series::try_from((name, chunks))?;
+            match dtype {
+                Date => out.into_date(),
+                Datetime(tu, tz) => match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        TimeZone::validate_time_zone(tz)?;
+                        out.into_datetime(*tu, Some(tz.clone()))
+                    },
+                    _ => out.into_datetime(*tu, None),
+                },
+                Duration(tu) => out.into_duration(*tu),
+                #[cfg(feature = "dtype-time")]
+                Time => out.into_time(),
+                #[cfg(feature = "dtype-decimal")]
+                Decimal(precision, scale) => out.into_decimal(*precision, *scale)?,
+                #[cfg(feature = "dtype-extension")]
+                Extension(typ, _) => out.into_extension(typ.clone()),
+                _ => out,
+            }
         },
-        Duration(tu) => out.into_duration(*tu),
-        #[cfg(feature = "dtype-time")]
-        Time => out.into_time(),
-        #[cfg(feature = "dtype-decimal")]
-        Decimal(precision, scale) => out.into_decimal(*precision, *scale)?,
-        #[cfg(feature = "dtype-extension")]
-        Extension(typ, _) => out.into_extension(typ.clone()),
-        _ => out,
     };
 
     Ok(out)
@@ -456,17 +462,18 @@ impl ChunkCast for ListChunked {
             },
             #[cfg(feature = "dtype-array")]
             Array(child_type, width) => {
-                let physical_type = dtype.to_physical();
-
-                // cast to the physical type to avoid logical chunks.
+                // Cast the values as a List first, the Array cast below keeps the inner type.
+                let s = ca.cast_with_options(&List(child_type.clone()), options)?;
+                let ca = s.list().unwrap();
+                let inner_dtype = ca.inner_dtype();
+                let physical_type = Array(Box::new(inner_dtype.to_physical()), *width);
                 let chunks = cast_chunks(ca.chunks(), &physical_type, options)?;
                 // SAFETY: we just cast so the dtype matches.
-                // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(
                         ca.name().clone(),
                         chunks,
-                        &Array(child_type.clone(), *width),
+                        &Array(Box::new(inner_dtype.clone()), *width),
                     ))
                 }
             },
@@ -567,20 +574,7 @@ impl ChunkCast for ArrayChunked {
                     },
                 }
             },
-            List(child_type) => {
-                let physical_type = dtype.to_physical();
-                // cast to the physical type to avoid logical chunks.
-                let chunks = cast_chunks(ca.chunks(), &physical_type, options)?;
-                // SAFETY: we just cast so the dtype matches.
-                // we must take this path to correct for physical types.
-                unsafe {
-                    Ok(Series::from_chunks_and_dtype_unchecked(
-                        ca.name().clone(),
-                        chunks,
-                        &List(child_type.clone()),
-                    ))
-                }
-            },
+            List(_) => ca.to_list().cast_with_options(dtype, options),
             _ => {
                 polars_bail!(
                     InvalidOperation: "cannot cast Array type (inner: '{:?}', to: '{:?}')",
@@ -618,7 +612,6 @@ fn cast_list(
     let new_inner = s.cast_with_options(child_type, options)?;
 
     let inner_dtype = new_inner.dtype().clone();
-    debug_assert_eq!(&inner_dtype, child_type);
 
     let new_values = new_inner.array_ref(0).clone();
 
@@ -683,7 +676,6 @@ fn cast_fixed_size_list(
     let new_inner = s.cast_with_options(child_type, options)?;
 
     let inner_dtype = new_inner.dtype().clone();
-    debug_assert_eq!(&inner_dtype, child_type);
 
     let new_values = new_inner.array_ref(0).clone();
 

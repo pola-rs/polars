@@ -28,8 +28,9 @@ fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsRe
     let mask: BooleanChunked = if n > 0 {
         let len = s.len();
         let mut bits = BitmapBuilder::with_capacity(s.len());
-        bits.extend_constant(n as usize, false);
-        bits.extend_constant(len.saturating_sub(n as usize), true);
+        let n = std::cmp::min(n as usize, len);
+        bits.extend_constant(n, false);
+        bits.extend_constant(len - n, true);
         let mask = BooleanArray::from_data_default(bits.freeze(), None);
         mask.into()
     } else {
@@ -38,7 +39,7 @@ fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsRe
         let tipping_point = std::cmp::max(length + n, 0);
         let mut bits = BitmapBuilder::with_capacity(s.len());
         bits.extend_constant(tipping_point as usize, true);
-        bits.extend_constant(-n as usize, false);
+        bits.extend_constant(std::cmp::min(-n as usize, s.len()), false);
         let mask = BooleanArray::from_data_default(bits.freeze(), None);
         mask.into()
     };

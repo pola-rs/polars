@@ -493,11 +493,14 @@ fn attach_to_scan(
 ) {
     let IR::Scan {
         predicate: existing,
+        predicate_file_skip_applied,
         ..
     } = ir_arena.get_mut(scan)
     else {
         unreachable!()
     };
+    // Files are skipped by the scan predicate after these filters are attached.
+    debug_assert!(predicate_file_skip_applied.is_none());
     *existing = Some(match existing.take() {
         None => predicate,
         Some(existing) => {

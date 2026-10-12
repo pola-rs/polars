@@ -11,7 +11,11 @@ import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
-from polars.io.iceberg._cache import CachingFileIO
+from polars.io.iceberg._cache import (
+    describe_metadata_file_cache,
+    get_metadata_file_cache,
+    load_static_table,
+)
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -80,6 +84,20 @@ def _reusable_catalog(
 SerializedTableState: TypeAlias = str | IcebergCatalogTableDescriptor
 
 
+def _load_static_table(
+    metadata_location: str, properties: dict[str, Any]
+) -> pyiceberg.table.Table:
+    table, stats = load_static_table(metadata_location, properties)
+
+    if verbose():
+        eprint(
+            "IcebergTableWrap: metadata file cache: "
+            f"{stats.describe(get_metadata_file_cache())}"
+        )
+
+    return table
+
+
 @dataclass(kw_only=True)
 class IcebergTableWrap:
     table_: NoPickleOption[pyiceberg.table.Table]
@@ -117,11 +135,8 @@ class IcebergTableWrap:
 
                 table = catalog.load_table(self.table_descriptor_.table_identifier)
             else:
-                from pyiceberg.table import StaticTable
-
-                table = StaticTable.from_metadata(
-                    metadata_location=self.table_descriptor_,
-                    properties=self.iceberg_storage_properties or {},
+                table = _load_static_table(
+                    self.table_descriptor_, self.iceberg_storage_properties or {}
                 )
 
             self.table_.set(table)
@@ -289,6 +304,7 @@ class IcebergScanResolver:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
@@ -298,6 +314,7 @@ class IcebergScanResolver:
                 limit=limit,
                 projection=projection,
                 filter_columns=filter_columns,
+                statistics_columns=statistics_columns,
                 pyarrow_predicate=pyarrow_predicate,
             )
         ) is None:
@@ -312,6 +329,7 @@ class IcebergScanResolver:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -345,6 +363,7 @@ class IcebergScanResolver:
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
+                f"statistics_columns: {statistics_columns}, "
                 f"pyarrow_predicate: {pyarrow_predicate_display}, "
                 f"iceberg_table_filter: {iceberg_table_filter_display}, "
                 f"self.use_metadata_statistics: {self.use_metadata_statistics}"
@@ -463,9 +482,20 @@ class IcebergScanResolver:
             tbl,
             projected_iceberg_schema,
         )
+        # Statistics of columns that are not filtered on are best effort.
+        best_effort_statistics_columns = [
+            c for c in statistics_columns or [] if c not in (filter_columns or [])
+        ]
         statistics_loader: IcebergStatisticsLoader | None = (
-            IcebergStatisticsLoader(tbl, iceberg_schema.select(*filter_columns))
-            if self.use_metadata_statistics and filter_columns is not None
+            IcebergStatisticsLoader(
+                tbl,
+                iceberg_schema.select(
+                    *(filter_columns or []), *best_effort_statistics_columns
+                ),
+                best_effort_columns=best_effort_statistics_columns,
+            )
+            if self.use_metadata_statistics
+            and (filter_columns is not None or best_effort_statistics_columns)
             else None
         )
         position_delete_files: dict[int, list[str]] = {}
@@ -568,14 +598,10 @@ class IcebergScanResolver:
                     f"finish path expansion ({elapsed:.3f}s)"
                 )
 
-                if isinstance(scan.io, CachingFileIO):
-                    eprint(
-                        "IcebergScanResolver: to_dataset_scan(): "
-                        "metadata file cache: "
-                        f"hits: {scan.io.stats.hits}, "
-                        f"misses: {scan.io.stats.misses}, "
-                        f"cached bytes: {scan.io.cache.total_bytes}"
-                    )
+                eprint(
+                    "IcebergScanResolver: to_dataset_scan(): "
+                    f"metadata file cache: {describe_metadata_file_cache(scan.io)}"
+                )
 
         if not fallback_reason:
             if verbose:
