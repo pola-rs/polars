@@ -32,8 +32,8 @@ fn filter_while_decoding(projection: &ArrowFieldProjection) -> bool {
         return false;
     };
     match arrow_field.dtype() {
-        A::Dictionary(..)
-        | A::Decimal(..)
+        A::Dictionary(..) => true,
+        A::Decimal(..)
         | A::Decimal32(..)
         | A::Decimal64(..)
         | A::Decimal256(..)

@@ -1,6 +1,7 @@
 use polars_arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_error::PolarsResult;
 use polars_utils::aliases::PlIndexSet;
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
@@ -498,7 +499,7 @@ impl utils::Decoder for BinViewDecoder {
         &self,
         dict: &Self::Dict,
         predicate: &PredicateFilter,
-    ) -> ParquetResult<Bitmap> {
+    ) -> PolarsResult<Bitmap> {
         let utf8_array;
         let mut dict_arr = dict as &dyn Array;
 
@@ -507,7 +508,7 @@ impl utils::Decoder for BinViewDecoder {
             dict_arr = &utf8_array
         }
 
-        Ok(predicate.predicate.evaluate(dict_arr))
+        predicate.predicate.try_evaluate(dict_arr)
     }
 
     fn evaluate_predicate(
