@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import io
+import re
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -358,6 +358,32 @@ def test_encryption_properties_keys_must_be_bytes(
 ) -> None:
     with pytest.raises(TypeError, match=match):
         pl.ParquetEncryptionProperties(**kwargs)
+
+
+def test_scan_parquet_decryption_wrong_type(tmp_path: Path) -> None:
+    path = tmp_path / "out.parquet"
+    basic_data().write_parquet(path)
+    match = re.escape(
+        "`decryption` must be a `ParquetDecryptionProperties`, "
+        "got 'ParquetEncryptionProperties'"
+    )
+    with pytest.raises(TypeError, match=match):
+        pl.scan_parquet(path, decryption=basic_encryption_properties())  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match=match):
+        pl.read_parquet(path, decryption=basic_encryption_properties())  # type: ignore[arg-type]
+
+
+def test_write_parquet_encryption_wrong_type(tmp_path: Path) -> None:
+    path = tmp_path / "out.parquet"
+    match = re.escape(
+        "`encryption` must be a `ParquetEncryptionProperties`, "
+        "got 'ParquetDecryptionProperties'"
+    )
+    with pytest.raises(TypeError, match=match):
+        basic_data().write_parquet(path, encryption=basic_decryption_properties())  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match=match):
+        basic_data().lazy().sink_parquet(path, encryption=basic_decryption_properties())  # type: ignore[call-overload]
+    assert not path.exists()
 
 
 def test_encryption_properties_store_aad_prefix_requires_aad_prefix() -> None:

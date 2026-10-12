@@ -94,6 +94,15 @@ def _sink_parquet_plan(
         msg = "`encryption` parameter is considered unstable"
         issue_unstable_warning(msg)
 
+        from polars.io.parquet.encryption import ParquetEncryptionProperties
+
+        if not isinstance(encryption, ParquetEncryptionProperties):
+            msg = (
+                "`encryption` must be a `ParquetEncryptionProperties`, "
+                f"got {qualified_type_name(encryption)!r}"
+            )
+            raise TypeError(msg)
+
     default_statistics = {
         "min": True,
         "max": True,
