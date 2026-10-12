@@ -7302,6 +7302,46 @@ def test_scan_iceberg_truncate_partition_near_int_minimum_after_promotion(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_truncate_partition_near_int_minimum_merged_manifest(
+    tmp_path: Path,
+) -> None:
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "x", IntegerType())),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, TruncateTransform(100), "x_trunc")
+        ),
+        properties={
+            "commit.manifest-merge.enabled": "true",
+            "commit.manifest.min-count-to-merge": "2",
+        },
+    )
+    df = pl.DataFrame({"x": pl.Series([-(2**31), 2147483400], dtype=pl.Int32)})
+    tbl.append(df.to_arrow())
+    with tbl.update_schema() as update:
+        update.update_column("x", LongType())
+    tbl = catalog.load_table(tbl.name())
+
+    # Merged into one manifest with the int-era files: its upper bound lies beyond
+    # the int range, and `truncate[100]` of `-2**31`, wrapped to 2147483596, between
+    # its bounds.
+    appended = pl.DataFrame({"x": [3_000_000_000]})
+    tbl.append(appended.to_arrow())
+    assert len(tbl.current_snapshot().manifests(tbl.io)) == 1  # type: ignore[union-attr]
+
+    df = pl.concat([df.cast(pl.Int64), appended])
+    for predicate in [
+        pl.col("x") < 0,
+        pl.col("x") == -(2**31),
+        pl.col("x") >= 3_000_000_000,
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect().sort("x"),
+            df.filter(predicate).sort("x"),
+        )
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_partition_long_values(tmp_path: Path) -> None:
     # Parquet statistics of long values are truncated.
     tbl, _ = new_iceberg_table(
@@ -7583,6 +7623,15 @@ def test_scan_iceberg_name_mapping_projections(tmp_path: Path) -> None:
                     value_required=False,
                 ),
             ),
+            NestedField(
+                8,
+                "l",
+                ListType(
+                    9,
+                    StructType(NestedField(10, "z", LongType())),
+                    element_required=False,
+                ),
+            ),
         ),
     )
     path = tmp_path / "no-field-ids.parquet"
@@ -7594,6 +7643,9 @@ def test_scan_iceberg_name_mapping_projections(tmp_path: Path) -> None:
                 "m": pa.array(
                     [[("k", {"y": 1})], []],
                     pa.map_(pa.string(), pa.struct([("y", pa.int64())])),
+                ),
+                "l": pa.array(
+                    [[{"z": 1}], None], pa.list_(pa.struct([("z", pa.int64())]))
                 ),
             }
         ),
@@ -7608,6 +7660,8 @@ def test_scan_iceberg_name_mapping_projections(tmp_path: Path) -> None:
     assert_frame_equal(lf.select("a").collect(), df.select("a"))
     assert_frame_equal(lf.drop("s").collect(), df.drop("s"))
     assert_frame_equal(lf.select("m").collect(), df.select("m"))
+    assert_frame_equal(lf.select("l").collect(), df.select("l"))
+    assert_frame_equal(lf.drop("l", "m").collect(), df.drop("l", "m"))
     assert lf.select(pl.len()).collect().item() == 2
     assert lf.with_row_index().select("index").collect().to_series().to_list() == [
         0,
