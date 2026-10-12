@@ -347,6 +347,7 @@ pub(super) trait Decoder: Sized {
         is_optional: bool,
     ) -> ParquetResult<()>;
 
+    #[allow(clippy::too_many_arguments)]
     fn unspecialized_predicate_decode(
         &mut self,
         state: State<'_, Self>,
