@@ -97,9 +97,6 @@ impl FilterExec {
         state: &ExecutionState,
         n_partitions: usize,
     ) -> PolarsResult<DataFrame> {
-        // Evaluate the predicate vertically in parallel, then filter the whole frame
-        // once so that the output stays single-chunk. `DataFrame::filter` already
-        // rechunks a misaligned mask and broadcasts a scalar mask.
         let chunks = df.clone().split_chunks_by_n(n_partitions, true);
         let masks = RAYON.install(|| {
             chunks
