@@ -598,6 +598,7 @@ class IcebergSinkState:
     table_name: str
     mode: Literal["append", "overwrite"]
     schema_mode: Literal["merge", "overwrite"] | None
+    create_if_not_exists: bool
     snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
     compression: ParquetCompression
@@ -618,6 +619,7 @@ class IcebergSinkState:
         *,
         mode: Literal["append", "overwrite"] = "append",
         schema_mode: Literal["merge", "overwrite"] | None = None,
+        create_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
@@ -629,6 +631,10 @@ class IcebergSinkState:
         if schema_mode == "overwrite" and mode != "overwrite":
             msg = "schema_mode='overwrite' requires mode='overwrite'"
             raise ValueError(msg)
+
+        if create_if_not_exists and not isinstance(target, str):
+            msg = "create_if_not_exists=True requires a table identifier as `target`"
+            raise TypeError(msg)
 
         catalog_config = (
             (
@@ -664,6 +670,7 @@ class IcebergSinkState:
             table_name=target if isinstance(target, str) else ".".join(target.name()),
             mode=mode,
             schema_mode=schema_mode,
+            create_if_not_exists=create_if_not_exists,
             snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
             compression=compression,
@@ -690,9 +697,35 @@ class IcebergSinkState:
                 catalog_class = getattr(catalog_class, part)
 
             catalog = catalog_class(self.catalog_name, **self.catalog_properties)
-            self.table_.set(catalog.load_table(self.table_name))
+            self.table_.set(self._load_or_create_table(catalog))
 
         return self.table_.get()  # type: ignore[return-value]
+
+    def _load_or_create_table(
+        self, catalog: pyiceberg.catalog.Catalog
+    ) -> pyiceberg.table.Table:
+        from pyiceberg.exceptions import NoSuchTableError
+
+        # Load first: this also runs at commit time, possibly in another process,
+        # where the table normally exists already.
+        try:
+            return catalog.load_table(self.table_name)
+        except NoSuchTableError:
+            if not self.create_if_not_exists:
+                raise
+
+        try:
+            # Tolerates a concurrent create of the same table.
+            return catalog.create_table_if_not_exists(
+                self.table_name, schema=self._get_source_schema()
+            )
+        except Exception:
+            # The create may have landed with its response lost.
+            try:
+                return catalog.load_table(self.table_name)
+            except NoSuchTableError:
+                pass
+            raise
 
     def _get_converted_storage_options(self) -> dict[str, str]:
         return _convert_iceberg_to_object_store_storage_options(
@@ -700,7 +733,7 @@ class IcebergSinkState:
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
-        if self.schema_mode is not None:
+        if self.schema_mode is not None or self.create_if_not_exists:
             self.source_schema = lf.collect_schema().to_arrow()
         return wrap_ldf(lf._ldf.sink_iceberg(self))
 

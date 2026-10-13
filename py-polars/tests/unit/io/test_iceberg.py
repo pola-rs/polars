@@ -899,6 +899,95 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_sink_iceberg_create_if_not_exists(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None],
+            "b": ["x", None, "z"],
+            "c": [[1], [], None],
+            "d": [{"x": 1.0}, None, {"x": None}],
+            "e": [date(2020, 1, 1), None, date(1970, 1, 1)],
+            "f": [datetime(2020, 1, 1), None, None],
+        }
+    )
+
+    with pytest.raises(pyiceberg.exceptions.NoSuchTableError):
+        df.lazy().sink_iceberg("ns.t", mode="append", catalog=catalog)
+
+    assert not catalog.table_exists("ns.t")
+
+    df.lazy().sink_iceberg(
+        "ns.t", mode="append", create_if_not_exists=True, catalog=catalog
+    )
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("ns.t")).collect(), df)
+
+    # Existing table is appended to.
+    df.lazy().sink_iceberg(
+        "ns.t", mode="append", create_if_not_exists=True, catalog=catalog
+    )
+    assert_frame_equal(
+        pl.scan_iceberg(catalog.load_table("ns.t")).collect(), pl.concat([df, df])
+    )
+
+    tbl = catalog.load_table("ns.t")
+    with pytest.raises(TypeError, match="requires a table identifier"):
+        df.lazy().sink_iceberg(tbl, mode="append", create_if_not_exists=True)
+
+    # The plan is resolved after a serialization roundtrip (e.g. on a remote
+    # worker), where the table is created from the serialized schema.
+    state = IcebergSinkState.new("ns.t2", create_if_not_exists=True, catalog=catalog)
+    lf = state.attach_sink(df.lazy())
+    pl.LazyFrame.deserialize(io.BytesIO(lf.serialize())).collect()
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("ns.t2")).collect(), df)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_create_if_not_exists_lost_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+
+    create_table = SqlCatalog.create_table
+
+    def create_table_lost_response(self: SqlCatalog, *args: Any, **kwargs: Any) -> Any:
+        create_table(self, *args, **kwargs)
+        msg = "lost response"
+        raise ConnectionError(msg)
+
+    monkeypatch.setattr(SqlCatalog, "create_table", create_table_lost_response)
+
+    df = pl.DataFrame({"a": [1, 2]})
+    df.lazy().sink_iceberg(
+        "ns.t", mode="append", create_if_not_exists=True, catalog=catalog
+    )
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("ns.t")).collect(), df)
+
+    # Errors are raised if the table was not created.
+    def create_table_fails(self: SqlCatalog, *args: Any, **kwargs: Any) -> Any:
+        msg = "create failed"
+        raise ConnectionError(msg)
+
+    monkeypatch.setattr(SqlCatalog, "create_table", create_table_fails)
+
+    with pytest.raises(ConnectionError, match="create failed"):
+        df.lazy().sink_iceberg(
+            "ns.t2", mode="append", create_if_not_exists=True, catalog=catalog
+        )
+
+
 _ICEBERG_TEMPORAL_SORT_TRANSFORMS: list[Any] = [
     YearTransform(),
     MonthTransform(),
