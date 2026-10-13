@@ -208,7 +208,8 @@ def test_encrypted_table_uses_native_scan(
     for i, manifest in enumerate(manifests):
         entries = manifest.fetch_manifest_entry(table.io)
         for j, entry in enumerate(entries):
-            original = pq.read_table(entry.data_file.file_path)
+            with table.io.new_input(entry.data_file.file_path).open() as stream:
+                original = pq.read_table(stream)
             path = tmp_path / f"data-{i}-{j}.parquet"
             key, aad = os.urandom(16), os.urandom(16)
             pq.write_table(
@@ -353,7 +354,10 @@ def write_encrypted_snapshot_metadata(
                         table.io, discard_deleted=False
                     )
                     for j, entry in enumerate(entries):
-                        original = pq.read_table(entry.data_file.file_path)
+                        with table.io.new_input(
+                            entry.data_file.file_path
+                        ).open() as stream:
+                            original = pq.read_table(stream)
                         data_path = tmp_path / f"data-{len(rewritten)}-{j}.parquet"
                         key, aad = os.urandom(16), os.urandom(16)
                         pq.write_table(
