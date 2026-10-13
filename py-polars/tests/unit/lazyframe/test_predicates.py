@@ -2001,17 +2001,18 @@ def test_filter_constraint_decimal_mixed_scale_29901() -> None:
     )
     assert_frame_equal(q.collect(), lf.collect())
 
-    # An `is_between` with an endpoint that isn't a value of the column is kept.
-    lf_d = pl.LazyFrame({"d": [Decimal("1")]})
+    # An `is_between` with endpoints that aren't values of the column is kept.
+    lf_d = pl.LazyFrame({"d": [0, 1, 2]}, schema={"d": pl.Decimal(38, 0)})
     q = lf_d.filter(
-        pl.col("d").is_between(Decimal("0.5"), Decimal("6"))
-        & (pl.col("d") >= Decimal("2"))
+        pl.col("d").is_between(Decimal("0"), Decimal("1.5")) & (pl.col("d") <= 2)
     )
-    assert q.collect().is_empty()
-    q = lf_d.filter(
-        pl.col("d").is_between(Decimal("0"), Decimal("1.5")) & (pl.col("d") <= 0)
+    assert q.collect()["d"].to_list() == [Decimal("0"), Decimal("1")]
+    lf_i = pl.LazyFrame({"i": [0, 1, 2, 3]})
+    q = lf_i.filter(
+        pl.col("i").is_between(pl.lit(1, pl.Int32), pl.lit(5, pl.Int16))
+        & (pl.col("i") <= 2)
     )
-    assert q.collect().is_empty()
+    assert q.collect()["i"].to_list() == [1, 2]
 
     # Across `a == b`, set members that aren't values of the other column drop out.
     lf_ab = pl.LazyFrame(
