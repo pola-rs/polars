@@ -135,9 +135,9 @@ dependencies = [
 
 [[package]]
 name = "argminmax"
-version = "0.6.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70f13d10a41ac8d2ec79ee34178d61e6f47a29c2edfe7ef1721c7383b0359e65"
+checksum = "b6c5fb0d1ac4352a9581c758c2e942e0228ae4476ec32ddcc9fcc95b82d1a183"
 dependencies = [
  "half",
  "num-traits",
