@@ -1,7 +1,7 @@
 //! This module supports mapping SQL datatypes to Polars datatypes.
 //!
 //! It also provides utility functions for working with SQL datatypes.
-use polars_core::datatypes::{DataType, TimeUnit};
+use polars_core::datatypes::{DataType, TimeUnit, TimeZone};
 use polars_error::{PolarsResult, polars_bail};
 use polars_plan::dsl::Expr;
 use polars_plan::dsl::functions::lit;
@@ -11,8 +11,9 @@ use sqlparser::ast::{
 };
 
 polars_utils::regex_cache::cached_regex! {
-    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?$";
+    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?(?:Z|[+-](?:[01][0-9]|2[0-3])(?::?[0-5][0-9])?)?$";
     static DATE_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d$";
+    static UTC_OFFSET_RE = r"[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}(?::?\d{2})?)$";
     static TIME_LITERAL_RE = r"^(?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?$";
 }
 
@@ -36,6 +37,14 @@ pub fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
 
 pub fn is_iso_datetime(value: &str) -> bool {
     DATETIME_LITERAL_RE.is_match(value)
+}
+
+/// `value` without a UTC offset after its time, if it has one.
+pub fn strip_utc_offset(value: &str) -> &str {
+    match UTC_OFFSET_RE.captures(value).and_then(|c| c.get(1)) {
+        Some(offset) => &value[..offset.start()],
+        None => value,
+    }
 }
 
 pub fn is_iso_date(value: &str) -> bool {
@@ -167,17 +176,18 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
             DataType::Duration(time_unit)
         },
         SQLDataType::Time(_, tz) => match tz {
-            TimezoneInfo::None => DataType::Time,
+            TimezoneInfo::None | TimezoneInfo::WithoutTimeZone => DataType::Time,
             _ => {
                 polars_bail!(SQLInterface: "`time` with timezone is not supported; found tz={}", tz)
             },
         },
         SQLDataType::Datetime(prec) => DataType::Datetime(timeunit_from_precision(prec)?, None),
-        SQLDataType::Timestamp(prec, tz) => match tz {
-            TimezoneInfo::None => DataType::Datetime(timeunit_from_precision(prec)?, None),
-            _ => {
-                polars_bail!(SQLInterface: "`timestamp` with timezone is not (yet) supported")
-            },
+        SQLDataType::Timestamp(prec, tz) => {
+            let time_zone = match tz {
+                TimezoneInfo::None | TimezoneInfo::WithoutTimeZone => None,
+                TimezoneInfo::WithTimeZone | TimezoneInfo::Tz => Some(TimeZone::UTC),
+            };
+            DataType::Datetime(timeunit_from_precision(prec)?, time_zone)
         },
 
         // ---------------------------------
