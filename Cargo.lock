@@ -3825,6 +3825,7 @@ dependencies = [
  "polars-core",
  "polars-defs",
  "polars-error",
+ "polars-io",
  "polars-lazy",
  "polars-ops",
  "polars-plan",
@@ -3833,6 +3834,7 @@ dependencies = [
  "regex",
  "serde",
  "sqlparser",
+ "tempfile",
 ]
 
 [[package]]
