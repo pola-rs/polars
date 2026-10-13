@@ -3349,6 +3349,7 @@ dependencies = [
  "polars-defs",
  "polars-io",
  "polars-json",
+ "polars-ooc",
  "polars-ops",
  "polars-plan",
  "polars-row",

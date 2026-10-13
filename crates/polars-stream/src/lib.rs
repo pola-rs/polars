@@ -11,6 +11,7 @@ pub use dispatch::build_streaming_query_executor;
 pub(crate) mod expression;
 mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
+mod hash_shuffle;
 pub use skeleton::StreamingQuery;
 mod metrics;
 pub use metrics::{

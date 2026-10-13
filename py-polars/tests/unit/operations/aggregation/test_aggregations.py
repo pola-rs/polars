@@ -1042,19 +1042,20 @@ def test_agg_empty_sum_after_filter_14734() -> None:
         .collect
     )
 
-    last = f()
+    last = f(engine="in-memory")
 
-    # We need both possible output orders, which should happen within
-    # 1000 iterations (during testing it usually happens within 10).
+    # We need both possible output orders, which the in-memory engine gives
+    # within 1000 iterations (during testing it usually happens within 10).
     limit = 1000
     i = 0
-    while (curr := f()).equals(last):
+    while (curr := f(engine="in-memory")).equals(last):
         i += 1
         assert i != limit
 
     expect = pl.Series("b", [0, 0]).to_frame()
     assert_frame_equal(expect, last.select("b"))
     assert_frame_equal(expect, curr.select("b"))
+    assert_frame_equal(expect, f(engine="streaming").select("b"))
 
 
 @pytest.mark.slow
