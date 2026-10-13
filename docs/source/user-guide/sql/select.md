@@ -110,8 +110,3 @@ Values are SQL literals:
 - Escape sequences need an `E''` string, as in `separator => E'\t'` for tab-separated files.
 
 Unlike `scan_csv`, `read_csv` tries to parse dates by default (`try_parse_dates => true`).
-
-For files without a header whose rows have different numbers of fields, use
-`has_header => false`. Shorter rows are padded with nulls. If the widest row may come after the
-first 100 rows, add `infer_schema_length => NULL`. `truncate_ragged_lines => true` is not a
-substitute: it drops the fields beyond the inferred width.
