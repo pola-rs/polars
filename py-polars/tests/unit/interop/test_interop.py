@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
@@ -1034,9 +1034,9 @@ def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
         type=pa.timestamp("us", tz=fixed_offset),
     )
     result = cast("pl.Series", pl.from_arrow(arr))
-    expected = pl.Series(
-        [datetime(2021, 1, 1, tzinfo=timezone.utc)]
-    ).dt.convert_time_zone(etc_tz)
+    expected = pl.Series([datetime(2021, 1, 1, tzinfo=UTC)]).dt.convert_time_zone(
+        etc_tz
+    )
     assert_series_equal(result, expected)
 
 

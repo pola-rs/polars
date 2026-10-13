@@ -24,20 +24,14 @@ from polars.lazyframe.engine_config import (
 )
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable
     from types import TracebackType
-    from typing import TypeAlias
+    from typing import Self, TypeAlias, Unpack
 
     from polars._typing import Alignment, EngineType, FloatFmt
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
-
-    if sys.version_info >= (3, 11):
-        from typing import Self, Unpack
-    else:
-        from typing_extensions import Self, Unpack
 
 
 __all__ = ["Config"]

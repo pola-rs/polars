@@ -7,7 +7,7 @@ import math
 import re
 import subprocess
 import sys
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -514,7 +514,7 @@ def test_parquet_cat_roundtrip() -> None:
 def test_tz_aware_parquet_9586(io_files_path: Path) -> None:
     result = pl.read_parquet(io_files_path / "tz_aware.parquet")
     expected = pl.DataFrame(
-        {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=timezone.utc)]}
+        {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=UTC)]}
     ).select(pl.col("*").cast(pl.Datetime("ns", "UTC")))
     assert_frame_equal(result, expected)
 

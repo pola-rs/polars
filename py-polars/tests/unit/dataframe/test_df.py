@@ -5,7 +5,7 @@ import sys
 import typing
 from collections import OrderedDict
 from collections.abc import Iterator, Mapping
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from itertools import chain, repeat
@@ -2907,14 +2907,14 @@ def test_init_datetimes_with_timezone() -> None:
             "-08:00",
             "UTC",
             "UTC",
-            datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, 8, tzinfo=UTC),
         ),
         (
             timezone(timedelta(hours=-8)),
             "-08:00",
             None,
             "UTC",
-            datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, 8, tzinfo=UTC),
         ),
     ],
 )
