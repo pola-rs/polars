@@ -122,12 +122,12 @@ def test_not_bool() -> None:
 
 
 def test_datetimes() -> None:
-    d = datetime.datetime(2023, 4, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    d = datetime.datetime(2023, 4, 1, 0, 0, 0, tzinfo=datetime.UTC)
     td = datetime.timedelta
 
     assert_skp_series(
         "a",
-        pl.Datetime(time_zone=datetime.timezone.utc),
+        pl.Datetime(time_zone=datetime.UTC),
         pl.col("a") == d,
         [
             {

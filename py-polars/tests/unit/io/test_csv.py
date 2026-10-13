@@ -7,7 +7,7 @@ import sys
 import textwrap
 import warnings
 import zlib
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -1246,16 +1246,16 @@ def test_tz_aware_try_parse_dates(chunk_override: None) -> None:
     expected = pl.DataFrame(
         {
             "a": [
-                datetime(2020, 1, 1, 1, tzinfo=timezone.utc),
-                datetime(2020, 1, 1, 2, tzinfo=timezone.utc),
+                datetime(2020, 1, 1, 1, tzinfo=UTC),
+                datetime(2020, 1, 1, 2, tzinfo=UTC),
             ],
             "b": [
-                datetime(2021, 4, 27, 22, tzinfo=timezone.utc),
-                datetime(2021, 4, 28, 22, tzinfo=timezone.utc),
+                datetime(2021, 4, 27, 22, tzinfo=UTC),
+                datetime(2021, 4, 28, 22, tzinfo=UTC),
             ],
             "c": [
-                datetime(2021, 3, 27, 23, tzinfo=timezone.utc),
-                datetime(2021, 3, 28, 22, tzinfo=timezone.utc),
+                datetime(2021, 3, 27, 23, tzinfo=UTC),
+                datetime(2021, 3, 28, 22, tzinfo=UTC),
             ],
             "d": [2, 3],
         }
@@ -1489,7 +1489,7 @@ def test_datetime_format(chunk_override: None, fmt: str, expected: str) -> None:
         ("%R%z", "dt\n00:00+0000\n"),
     ],
 )
-@pytest.mark.parametrize("tzinfo", [timezone.utc, timezone(timedelta(hours=0))])
+@pytest.mark.parametrize("tzinfo", [UTC, timezone(timedelta(hours=0))])
 def test_datetime_format_tz_aware(
     chunk_override: None, fmt: str, expected: str, tzinfo: timezone
 ) -> None:
@@ -2491,9 +2491,9 @@ def test_csv_try_parse_dates_leading_zero_8_digits_22167(chunk_override: None) -
     expected = pl.DataFrame(
         {
             "a": [
-                datetime(2025, 4, 6, 18, 56, 42, 617736, tzinfo=timezone.utc),
-                datetime(2025, 4, 6, 18, 57, 42, 777561, tzinfo=timezone.utc),
-                datetime(2025, 4, 6, 18, 58, 44, 569287, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 56, 42, 617736, tzinfo=UTC),
+                datetime(2025, 4, 6, 18, 57, 42, 777561, tzinfo=UTC),
+                datetime(2025, 4, 6, 18, 58, 44, 569287, tzinfo=UTC),
             ]
         }
     )

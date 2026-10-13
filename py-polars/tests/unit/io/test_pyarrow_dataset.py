@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -581,19 +581,19 @@ def test_scan_pyarrow_dataset_filter_with_timezone_26029() -> None:
     table = pa.table(
         {
             "valid_from": [
-                datetime(2025, 8, 26, 10, 0, 0, tzinfo=timezone.utc),
-                datetime(2025, 8, 26, 11, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 10, 0, 0, tzinfo=UTC),
+                datetime(2025, 8, 26, 11, 0, 0, tzinfo=UTC),
             ],
             "valid_to": [
-                datetime(2025, 8, 26, 12, 0, 0, tzinfo=timezone.utc),
-                datetime(2025, 8, 26, 13, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 12, 0, 0, tzinfo=UTC),
+                datetime(2025, 8, 26, 13, 0, 0, tzinfo=UTC),
             ],
             "value": [1, 2],
         }
     )
     dataset = ds.dataset(table)
 
-    lower_bound_time = datetime(2025, 8, 26, 11, 30, 0, tzinfo=timezone.utc)
+    lower_bound_time = datetime(2025, 8, 26, 11, 30, 0, tzinfo=UTC)
     lf = pl.scan_pyarrow_dataset(dataset).filter(
         (pl.col("valid_from") <= lower_bound_time)
         & (pl.col("valid_to") > lower_bound_time)
