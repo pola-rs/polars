@@ -338,51 +338,7 @@ class IcebergScanResolver:
 
         verbose = polars._utils.logging.verbose()
 
-        iceberg_table_filter = None
-
-        if (
-            pyarrow_predicate is not None
-            and self.use_metadata_statistics
-            and self.use_pyiceberg_filter
-        ):
-            iceberg_table_filter = try_convert_pyarrow_predicate(pyarrow_predicate)
-
-        if verbose:
-            pyarrow_predicate_display = (
-                "Some(<redacted>)" if pyarrow_predicate is not None else "None"
-            )
-            iceberg_table_filter_display = (
-                "Some(<redacted>)" if iceberg_table_filter is not None else "None"
-            )
-
-            eprint(
-                "IcebergScanResolver: to_dataset_scan(): "
-                f"snapshot ID: {self.snapshot_id}, "
-                f"from snapshot ID exclusive: {self.from_snapshot_id_exclusive}, "
-                f"to snapshot ID inclusive: {self.to_snapshot_id_inclusive}, "
-                f"limit: {limit}, "
-                f"projection: {projection}, "
-                f"filter_columns: {filter_columns}, "
-                f"statistics_columns: {statistics_columns}, "
-                f"pyarrow_predicate: {pyarrow_predicate_display}, "
-                f"iceberg_table_filter: {iceberg_table_filter_display}, "
-                f"self.use_metadata_statistics: {self.use_metadata_statistics}"
-            )
-
-        verbose_print_sensitive(
-            lambda: (
-                f"IcebergScanResolver: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
-            )
-        )
-
         tbl = self.table.get()
-
-        if verbose:
-            eprint(
-                "IcebergScanResolver: to_dataset_scan(): "
-                f"tbl.metadata.current_snapshot_id: {tbl.metadata.current_snapshot_id}"
-            )
-
         snapshot_id = self.snapshot_id
         is_incremental = (
             self.from_snapshot_id_exclusive is not None
@@ -425,6 +381,51 @@ class IcebergScanResolver:
                 f"{resolved_end_snapshot_id}:schema:{schema_id}"
                 if is_incremental
                 else f"{current_snapshot_id or ''}"
+            )
+
+        iceberg_table_filter = None
+
+        if (
+            pyarrow_predicate is not None
+            and self.use_metadata_statistics
+            and self.use_pyiceberg_filter
+        ):
+            iceberg_table_filter = try_convert_pyarrow_predicate(
+                pyarrow_predicate, iceberg_schema
+            )
+
+        if verbose:
+            pyarrow_predicate_display = (
+                "Some(<redacted>)" if pyarrow_predicate is not None else "None"
+            )
+            iceberg_table_filter_display = (
+                "Some(<redacted>)" if iceberg_table_filter is not None else "None"
+            )
+
+            eprint(
+                "IcebergScanResolver: to_dataset_scan(): "
+                f"snapshot ID: {self.snapshot_id}, "
+                f"from snapshot ID exclusive: {self.from_snapshot_id_exclusive}, "
+                f"to snapshot ID inclusive: {self.to_snapshot_id_inclusive}, "
+                f"limit: {limit}, "
+                f"projection: {projection}, "
+                f"filter_columns: {filter_columns}, "
+                f"statistics_columns: {statistics_columns}, "
+                f"pyarrow_predicate: {pyarrow_predicate_display}, "
+                f"iceberg_table_filter: {iceberg_table_filter_display}, "
+                f"self.use_metadata_statistics: {self.use_metadata_statistics}"
+            )
+
+        verbose_print_sensitive(
+            lambda: (
+                f"IcebergScanResolver: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
+            )
+        )
+
+        if verbose:
+            eprint(
+                "IcebergScanResolver: to_dataset_scan(): "
+                f"tbl.metadata.current_snapshot_id: {tbl.metadata.current_snapshot_id}"
             )
 
         if (
