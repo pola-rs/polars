@@ -658,6 +658,11 @@ impl PredicatePushDown {
             lp @ SinkMultiple { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
+            // Without a length preserving expression the height does not follow the input: a
+            // select of only scalars gives one row, also on an empty input.
+            lp @ Select { .. } if !lp.exprs().any(|e| e.is_length_preserving(expr_arena)) => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
             // Pushed down passed these nodes
             lp @ HStack { .. } | lp @ Select { .. } | lp @ SimpleProjection { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)

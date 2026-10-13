@@ -41,10 +41,11 @@ fn maybe_bytes(uncompressed: usize, compressed: usize) -> ParquetResult<(i32, i3
 /// Contains page write metrics.
 pub struct PageWriteSpec {
     pub header: ParquetPageHeader,
-    #[allow(dead_code)]
     pub num_values: usize,
     /// The number of actual rows. For non-nested values, this is equal to the number of values.
     pub num_rows: usize,
+    /// The number of null values, see [`DataPage::new`](crate::parquet::page::DataPage::new).
+    pub num_nulls: usize,
     pub header_size: u64,
     pub offset: u64,
     pub bytes_written: u64,
@@ -61,6 +62,9 @@ pub fn write_page<W: Write>(
     let num_rows = compressed_page
         .num_rows()
         .expect("We should have num_rows when we are writing");
+    let num_nulls = compressed_page
+        .num_nulls()
+        .expect("We should have num_nulls when we are writing");
 
     let header = match &compressed_page {
         CompressedPage::Data(compressed_page) => assemble_data_page_header(compressed_page),
@@ -95,6 +99,7 @@ pub fn write_page<W: Write>(
         statistics,
         num_values,
         num_rows,
+        num_nulls,
     })
 }
 
@@ -109,6 +114,9 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
     let num_rows = compressed_page
         .num_rows()
         .expect("We should have the num_rows when we are writing");
+    let num_nulls = compressed_page
+        .num_nulls()
+        .expect("We should have the num_nulls when we are writing");
 
     let header = match &compressed_page {
         CompressedPage::Data(compressed_page) => assemble_data_page_header(compressed_page),
@@ -143,6 +151,7 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
         statistics,
         num_rows,
         num_values,
+        num_nulls,
     })
 }
 

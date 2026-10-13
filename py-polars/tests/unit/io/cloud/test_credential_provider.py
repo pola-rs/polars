@@ -3,7 +3,7 @@ import os
 import pickle
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -774,7 +774,7 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
 
     assert expiry is not None
 
-    assert datetime.fromtimestamp(expiry, tz=timezone.utc) == datetime.fromisoformat(
+    assert datetime.fromtimestamp(expiry, tz=UTC) == datetime.fromisoformat(
         "2099-01-01T00:00:00+00:00"
     )
 

@@ -165,59 +165,91 @@ fn maybe_quote(s: &str, force: bool) -> String {
 }
 
 /// Visitor that checks for unqualified references to columns that exist in
-/// multiple tables (columns appearing in a USING clause are excluded from
-/// the check as they are implicitly coalesced).
+/// multiple tables (see `check_ambiguous_column`). Subqueries are skipped, as
+/// their columns resolve against their own FROM first.
 struct AmbiguousColumnVisitor<'a> {
     joined_aliases: &'a PlHashMap<String, PlHashMap<String, String>>,
     base_table_name: &'a str,
-    using_cols: &'a PlHashSet<String>,
+    using_cols: &'a [(String, String)],
+    subquery_depth: usize,
 }
 
 impl SQLVisitor for AmbiguousColumnVisitor<'_> {
     type Break = PolarsError;
 
-    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
-        if let SQLExpr::Identifier(ident) = expr {
-            let col = &ident.value;
-            if self.using_cols.contains(col) {
-                return ControlFlow::Continue(());
-            }
-            let mut tables: Vec<_> = self
-                .joined_aliases
-                .iter()
-                .filter_map(|(t, cols)| cols.contains_key(col).then_some(t.as_str()))
-                .collect();
+    fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<Self::Break> {
+        self.subquery_depth += 1;
+        ControlFlow::Continue(())
+    }
 
-            if !tables.is_empty() {
-                tables.push(self.base_table_name);
-                tables.sort();
-                let col_hint = maybe_quote(col, false);
-                let hints = tables
-                    .iter()
-                    .map(|t| format!("{}.{}", maybe_quote(t, false), col_hint));
-                return ControlFlow::Break(polars_err!(
-                    SQLInterface: "ambiguous reference to column {} (use one of: {})",
-                    maybe_quote(col, true), hints.collect::<Vec<_>>().join(", ")
-                ));
+    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<Self::Break> {
+        self.subquery_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
+        if self.subquery_depth > 0 {
+            return ControlFlow::Continue(());
+        }
+        if let SQLExpr::Identifier(ident) = expr {
+            if let Err(err) = check_ambiguous_column(
+                &ident.value,
+                self.joined_aliases,
+                self.base_table_name,
+                self.using_cols,
+            ) {
+                return ControlFlow::Break(err);
             }
         }
         ControlFlow::Continue(())
     }
 }
 
+/// Check that an unqualified column name exists in at most one of the joined
+/// tables. `using_cols` holds the (joined table, column) pairs of USING clauses,
+/// which are coalesced with the same column on the left of that join.
+pub(crate) fn check_ambiguous_column(
+    col: &str,
+    joined_aliases: &PlHashMap<String, PlHashMap<String, String>>,
+    base_table_name: &str,
+    using_cols: &[(String, String)],
+) -> PolarsResult<()> {
+    let mut tables: Vec<_> = joined_aliases
+        .iter()
+        .filter(|(t, cols)| {
+            cols.contains_key(col) && !using_cols.iter().any(|(ut, uc)| ut == *t && uc == col)
+        })
+        .map(|(t, _)| t.as_str())
+        .collect();
+
+    if !tables.is_empty() {
+        tables.push(base_table_name);
+        tables.sort();
+        let col_hint = maybe_quote(col, false);
+        let hints = tables
+            .iter()
+            .map(|t| format!("{}.{}", maybe_quote(t, false), col_hint));
+        polars_bail!(
+            SQLInterface: "ambiguous reference to column {} (use one of: {})",
+            maybe_quote(col, true), hints.collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(())
+}
+
 /// Check a SQL expression for unqualified references to columns that
-/// exist in multiple tables (columns appearing in a USING clause are
-/// excluded from the check as they are implicitly coalesced).
+/// exist in multiple tables (see `check_ambiguous_column`).
 pub(crate) fn check_for_ambiguous_column_refs(
     expr: &SQLExpr,
     joined_aliases: &PlHashMap<String, PlHashMap<String, String>>,
     base_table_name: &str,
-    using_cols: &PlHashSet<String>,
+    using_cols: &[(String, String)],
 ) -> PolarsResult<()> {
     match expr.visit(&mut AmbiguousColumnVisitor {
         joined_aliases,
         base_table_name,
         using_cols,
+        subquery_depth: 0,
     }) {
         ControlFlow::Break(err) => Err(err),
         ControlFlow::Continue(()) => Ok(()),

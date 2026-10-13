@@ -11,7 +11,9 @@ pub enum SqlFunction {
     /// takes the float's type, as a float literal would.
     Binary(SqlBinaryOp),
     /// `IN`: number literals tested against a float take the float's type. Other floats
-    /// tested against integers or decimals, or the reverse, compare as floats.
+    /// tested against integers or decimals compare as floats, dates against datetimes as
+    /// datetimes, and nested values of the same shape as their supertype. This only gives the
+    /// membership; the SQL frontend adds the SQL null and empty set logic.
     #[cfg(feature = "is_in")]
     IsIn { nulls_equal: bool },
     /// A decimal as `Float64`, for SQL functions without decimal implementations.

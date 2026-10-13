@@ -31,7 +31,7 @@ or set 'streaming'",
 
 #[cfg(feature = "cloud")]
 pub use async_impl::ParquetObjectStore;
-pub use options::{ParallelStrategy, ParquetOptions};
+pub use options::{ParallelStrategy, ParquetOptions, PlFileDecryptionProperties};
 use polars_error::{ErrString, PolarsError};
 pub use polars_parquet::arrow::read::infer_schema;
 pub use polars_parquet::read::FileMetadata;

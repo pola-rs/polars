@@ -24,6 +24,16 @@ pub enum SpecializedColumnPredicate {
     StartsWith(Box<[u8]>),
     EndsWith(Box<[u8]>),
     RegexMatch(Arc<regex::bytes::Regex>),
+    /// A Categorical or Enum column equal to one of these strings.
+    CategoricalEqualOneOf(Box<[PlSmallStr]>),
+}
+
+/// The strings that an `==` or `is_in` predicate on a Categorical or Enum column matches.
+#[cfg(feature = "parquet")]
+#[derive(Clone)]
+enum DictionaryNeedles {
+    One(Box<str>),
+    Many(polars_utils::aliases::PlHashSet<Box<str>>),
 }
 
 #[derive(Clone)]
@@ -33,6 +43,9 @@ pub struct ColumnPredicateExpr {
     source_arrow_dtype: ArrowDataType,
     #[cfg(feature = "parquet")]
     specialized: Option<SpecializedParquetColumnExpr>,
+    /// Lets dictionary values be compared as strings, without adding them to the categories.
+    #[cfg(feature = "parquet")]
+    dictionary_needles: Option<DictionaryNeedles>,
     expr: Arc<dyn PhysicalIoExpr>,
 }
 
@@ -47,11 +60,45 @@ impl ColumnPredicateExpr {
         use SpecializedColumnPredicate as S;
         #[cfg(feature = "parquet")]
         use SpecializedParquetColumnExpr as P;
+        #[cfg(feature = "parquet")]
+        let dictionary_needles = if matches!(source_arrow_dtype, ArrowDataType::Dictionary(..))
+            && (dtype.is_categorical() || dtype.is_enum())
+        {
+            let needles: Option<Vec<&str>> = match &specialized {
+                Some(S::Equal(scalar)) => scalar.value().get_str().map(|s| vec![s]),
+                Some(S::EqualOneOf(scalars)) => Some(
+                    scalars
+                        .iter()
+                        .filter_map(|scalar| scalar.value().get_str())
+                        .collect(),
+                ),
+                Some(S::CategoricalEqualOneOf(strings)) => {
+                    Some(strings.iter().map(|s| s.as_str()).collect())
+                },
+                _ => None,
+            };
+            needles.map(|mut needles| {
+                // Values that are not in an Enum are read as null.
+                #[cfg(feature = "dtype-categorical")]
+                if let DataType::Enum(_, mapping) = &dtype {
+                    needles.retain(|s| mapping.get_cat(s).is_some());
+                }
+                match needles.as_slice() {
+                    [needle] => DictionaryNeedles::One((*needle).into()),
+                    _ => DictionaryNeedles::Many(needles.into_iter().map(Box::from).collect()),
+                }
+            })
+        } else {
+            None
+        };
         // A specialized predicate compares its scalars with the values as the file
-        // stores them, which polars scales for some Arrow types.
+        // stores them, which polars scales for some Arrow types. Dictionary values can
+        // also differ from the column, e.g. an Enum turns unknown values into nulls.
         #[cfg(feature = "parquet")]
         let specialized = specialized.and_then(|s| {
-            if DataType::arrow_value_scale(&source_arrow_dtype) != 1 {
+            if DataType::arrow_value_scale(&source_arrow_dtype) != 1
+                || matches!(source_arrow_dtype, ArrowDataType::Dictionary(..))
+            {
                 return None;
             }
             Some(match s {
@@ -69,40 +116,71 @@ impl ColumnPredicateExpr {
                 S::StartsWith(s) => P::StartsWith(s),
                 S::EndsWith(s) => P::EndsWith(s),
                 S::RegexMatch(s) => P::RegexMatch(s),
+                S::CategoricalEqualOneOf(_) => return None,
             })
         });
 
-        Self {
+        #[allow(unused_mut)]
+        let mut out = Self {
             column_name,
             dtype,
             source_arrow_dtype,
             #[cfg(feature = "parquet")]
             specialized,
+            #[cfg(feature = "parquet")]
+            dictionary_needles,
             expr,
+        };
+        // Values that are not in an Enum are read as null, which this predicate can keep.
+        #[cfg(feature = "parquet")]
+        if out.dictionary_needles.is_some()
+            && out.dtype.is_enum()
+            && out.evaluate_null().unwrap_or(true)
+        {
+            out.dictionary_needles = None;
         }
+        out
     }
 }
 
 #[cfg(feature = "parquet")]
 impl ParquetColumnExpr for ColumnPredicateExpr {
-    fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) {
+    fn try_evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) -> PolarsResult<()> {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
-        // @TODO: Probably these unwraps should be removed.
+        if let Some(needles) = &self.dictionary_needles
+            && let Some(values) = values
+                .as_any()
+                .downcast_ref::<polars_arrow::array::Utf8ViewArray>()
+        {
+            bm.reserve(values.len());
+            match needles {
+                DictionaryNeedles::One(needle) => {
+                    for value in values.values_iter() {
+                        bm.push(value == needle.as_ref());
+                    }
+                },
+                DictionaryNeedles::Many(needles) => {
+                    for value in values.values_iter() {
+                        bm.push(needles.contains(value));
+                    }
+                },
+            }
+            return Ok(());
+        }
+
         let series = predicate_values_to_series(
             self.column_name.clone(),
             values,
             &self.dtype,
             &self.source_arrow_dtype,
-        )
-        .unwrap();
+        )?;
         let column = series.into_column();
         let df = unsafe { DataFrame::new_unchecked(values.len(), vec![column]) };
 
-        // @TODO: Probably these unwraps should be removed.
-        let true_mask = self.expr.evaluate_io(&df).unwrap();
-        let true_mask = true_mask.bool().unwrap();
+        let true_mask = self.expr.evaluate_io(&df)?;
+        let true_mask = true_mask.bool()?;
 
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
@@ -111,16 +189,22 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
                 Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
             }
         }
+        Ok(())
     }
-    fn evaluate_null(&self) -> bool {
+    fn evaluate_null(&self) -> PolarsResult<bool> {
         let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
         let df = unsafe { DataFrame::new_unchecked(1, vec![column]) };
 
-        // @TODO: Probably these unwraps should be removed.
-        let true_mask = self.expr.evaluate_io(&df).unwrap();
-        let true_mask = true_mask.bool().unwrap();
+        let true_mask = self.expr.evaluate_io(&df)?;
+        let true_mask = true_mask.bool()?;
 
-        true_mask.get(0).unwrap_or(false)
+        Ok(true_mask.get(0).unwrap_or(false))
+    }
+
+    fn can_evaluate_null_slots(&self) -> bool {
+        // Evaluating dictionary values adds them to the categories.
+        self.dictionary_needles.is_some()
+            || !matches!(self.source_arrow_dtype, ArrowDataType::Dictionary(..))
     }
 
     fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {
@@ -144,6 +228,27 @@ fn predicate_values_to_series(
             polars_compute::cast::CastOptionsImpl::default(),
         )?;
         Series::try_from((name, values))
+    } else if matches!(source_arrow_dtype, ArrowDataType::Dictionary(..)) {
+        // Dictionary columns are evaluated on their string values. Don't insert any of them
+        // if they don't all fit, as the dictionary can hold values no row uses.
+        #[cfg(feature = "dtype-categorical")]
+        if let DataType::Categorical(_, mapping) = dtype
+            && mapping.num_cats_upper_bound() + values.len() > mapping.max_categories()
+        {
+            let values = values
+                .as_any()
+                .downcast_ref::<polars_arrow::array::Utf8ViewArray>()
+                .unwrap();
+            let new_values: polars_utils::aliases::PlHashSet<&str> = values
+                .values_iter()
+                .filter(|v| mapping.get_cat(v).is_none())
+                .collect();
+            polars_ensure!(
+                mapping.num_cats_upper_bound() + new_values.len() <= mapping.max_categories(),
+                ComputeError: "dictionary values do not fit in the categories"
+            );
+        }
+        Series::from_chunk_and_dtype(name, values.to_boxed(), &DataType::String)?.cast(dtype)
     } else {
         Series::from_chunk_and_dtype(name, values.to_boxed(), dtype)
     }

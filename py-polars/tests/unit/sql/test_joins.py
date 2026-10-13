@@ -1643,6 +1643,138 @@ def test_ambiguous_column_detection_in_joins() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        "s.DUID IN (SELECT DUID FROM dd)",
+        "EXISTS (SELECT 1 FROM dd WHERE dd.DUID = s.DUID AND DUID IS NOT NULL)",
+        "s.v = (SELECT MIN(v) FROM (SELECT 1 AS v, DUID FROM dd))",
+    ],
+)
+def test_unqualified_column_in_subquery_after_join(where_clause: str) -> None:
+    # https://github.com/pola-rs/polars/issues/29876
+    s = pl.DataFrame({"DUID": ["A", "B"], "v": [1, 2]})
+    d = pl.DataFrame({"DUID": ["A", "B"], "region": ["X", "Y"]})
+    dd = pl.DataFrame({"DUID": ["A"]})
+
+    res = pl.SQLContext(s=s, d=d, dd=dd).execute(
+        f"""
+        SELECT s.DUID, (SELECT COUNT(DUID) FROM dd) AS n
+        FROM s JOIN d ON s.DUID = d.DUID
+        WHERE {where_clause}
+        """,
+        eager=True,
+    )
+    assert_frame_equal(
+        res,
+        pl.DataFrame({"DUID": ["A"], "n": [1]}),
+        check_dtypes=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        # outer reference that is ambiguous in the outer query
+        "EXISTS (SELECT 1 FROM dd WHERE dd.x = id)",
+        "EXISTS (SELECT 999 AS id FROM dd WHERE dd.x = id)",
+        "EXISTS (SELECT 1 FROM dd, a WHERE dd.x = id)",
+        "s.id IN (SELECT x FROM dd WHERE x = id)",
+        "s.v = (SELECT MIN(x) FROM dd WHERE x = id)",
+        # reference that is ambiguous in the subquery's own join
+        "s.id IN (SELECT id FROM s JOIN d ON s.v = d.v)",
+        "EXISTS (SELECT 1 FROM s JOIN d ON s.v = d.v WHERE id = 1)",
+        "s.id IN (SELECT id FROM s, d)",
+        "EXISTS (SELECT 1 FROM s, d WHERE s.v = d.v AND id = 1)",
+        "s.v = (SELECT MIN(id) FROM s, d)",
+    ],
+)
+def test_ambiguous_column_in_subquery_after_join(where_clause: str) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    dd = pl.DataFrame({"x": [1]})
+    a = pl.DataFrame({"k": [1]})
+
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r'ambiguous reference to column "id" \(use one of: d\."id", s\."id"\)',
+    ):
+        pl.SQLContext(s=s, d=d, dd=dd, a=a).execute(
+            f"SELECT s.id FROM s JOIN d ON s.v = d.v WHERE {where_clause}",
+            eager=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("where_clause", "expected"),
+    [
+        ("EXISTS (SELECT 1 FROM dd WHERE dd.x = s.id)", [1]),
+        ("EXISTS (SELECT 1 FROM dd WHERE dd.x = d.id)", [2]),
+        ("s.id IN (SELECT x FROM dd WHERE x = d.id)", []),
+        ("s.v > (SELECT MIN(x) FROM dd WHERE x = d.id)", [2]),
+    ],
+)
+def test_qualified_outer_column_in_subquery_after_join(
+    where_clause: str, expected: list[int]
+) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    dd = pl.DataFrame({"x": [1, 4]})
+
+    res = pl.SQLContext(s=s, d=d, dd=dd).execute(
+        f"SELECT s.id FROM s JOIN d ON s.v = d.v WHERE {where_clause} ORDER BY s.id",
+        eager=True,
+    )
+    assert res["id"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        "k IN (SELECT d.id FROM s JOIN d ON s.v = d.v)",
+        "k IN (SELECT d.id FROM s, d WHERE s.v = d.v)",
+        "EXISTS (SELECT 1 FROM s JOIN d ON s.v = d.v WHERE d.id = a.k)",
+        "EXISTS (SELECT 1 FROM s, d WHERE s.v = d.v AND d.id = a.k)",
+        "k = (SELECT MAX(d.id) FROM s JOIN d ON s.v = d.v WHERE d.id = a.k)",
+    ],
+)
+def test_qualified_inner_column_in_subquery_join(where_clause: str) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    a = pl.DataFrame({"k": [1, 2, 3, 4]})
+
+    res = pl.SQLContext(s=s, d=d, a=a).execute(
+        f"SELECT k FROM a WHERE {where_clause} ORDER BY k",
+        eager=True,
+    )
+    assert res["k"].to_list() == [3, 4]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id AS k FROM s, d JOIN e USING(id) ORDER BY k",
+        "SELECT k FROM a WHERE k IN (SELECT id FROM s, d JOIN e USING(id)) ORDER BY k",
+    ],
+)
+def test_using_column_in_later_from_entry(query: str) -> None:
+    a = pl.DataFrame({"k": [1, 2, 3, 4]})
+    s = pl.DataFrame({"x": [1]})
+    d = pl.DataFrame({"id": [1, 2]})
+    e = pl.DataFrame({"id": [1, 2]})
+
+    res = pl.SQLContext(a=a, s=s, d=d, e=e).execute(query, eager=True)
+    assert res["k"].to_list() == [1, 2]
+
+    # USING only merges `d.id` and `e.id`, not `s.id`
+    s = pl.DataFrame({"id": [9]})
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r'ambiguous reference to column "id" \(use one of: d\."id", s\."id"\)',
+    ):
+        pl.SQLContext(a=a, s=s, d=d, e=e).execute(query, eager=True)
+
+
 def test_duplicate_column_detection_via_wildcard() -> None:
     # selecting a column explicitly that is already included in a qualified
     # wildcard from the same table should raise a duplicate column error

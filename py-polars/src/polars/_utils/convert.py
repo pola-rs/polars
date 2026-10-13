@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from decimal import Context
 from functools import lru_cache
 from typing import (
@@ -81,7 +81,7 @@ def date_to_int(d: date) -> int:
 
 def time_to_int(t: time) -> int:
     """Convert a Python time object to an integer."""
-    t = t.replace(tzinfo=timezone.utc)
+    t = t.replace(tzinfo=UTC)
     seconds = t.hour * SECONDS_PER_HOUR + t.minute * 60 + t.second
     microseconds = t.microsecond
     return seconds * NS_PER_SECOND + microseconds * 1_000
@@ -91,7 +91,7 @@ def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
     """Convert a Python datetime object to an integer."""
     # Make sure to use UTC rather than system time zone
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
 
     td = dt - EPOCH_UTC
     seconds = td.days * SECONDS_PER_DAY + td.seconds

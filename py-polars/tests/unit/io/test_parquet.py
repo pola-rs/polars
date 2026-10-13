@@ -7,7 +7,7 @@ import math
 import re
 import subprocess
 import sys
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -514,7 +514,7 @@ def test_parquet_cat_roundtrip() -> None:
 def test_tz_aware_parquet_9586(io_files_path: Path) -> None:
     result = pl.read_parquet(io_files_path / "tz_aware.parquet")
     expected = pl.DataFrame(
-        {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=timezone.utc)]}
+        {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=UTC)]}
     ).select(pl.col("*").cast(pl.Datetime("ns", "UTC")))
     assert_frame_equal(result, expected)
 
@@ -608,6 +608,64 @@ def test_decimal32_64_scan_parquet(tmp_path: Path) -> None:
         Decimal("20.02"),
         Decimal("30.03"),
     ]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_fixed_len_byte_array_decimal(tmp_path: Path, use_dictionary: bool) -> None:
+    # pyarrow stores decimal128 as FIXED_LEN_BYTE_ARRAY of the smallest width that fits
+    # the precision; these precisions cover widths 1 to 16.
+    precisions = [1, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27, 29, 32, 34, 38]
+    n = 3_000
+    fields = [pa.field("k", pa.int64())]
+    data = {"k": pa.array(range(n), pa.int64())}
+    for p in precisions:
+        scale = min(p, 2)
+        base = [10**p - 1, -(10**p - 1), 0, 1, -1, 10 ** (p - 1), None]
+        values = [
+            None if (v := base[i % len(base)]) is None else Decimal(f"{v}e-{scale}")
+            for i in range(n)
+        ]
+        no_nulls = [v if v is not None else Decimal(0) for v in values]
+        dtype = pa.decimal128(p, scale)
+        # With nulls, nullable without nulls, non-nullable, and nested.
+        fields += [
+            pa.field(f"d{p}", dtype),
+            pa.field(f"n{p}", dtype),
+            pa.field(f"r{p}", dtype, nullable=False),
+            pa.field(f"l{p}", pa.list_(dtype)),
+        ]
+        data[f"d{p}"] = pa.array(values, dtype)
+        data[f"n{p}"] = pa.array(no_nulls, dtype)
+        data[f"r{p}"] = pa.array(no_nulls, dtype)
+        data[f"l{p}"] = pa.array([values[i : i + 3] for i in range(n)], pa.list_(dtype))
+    tbl = pa.table(data, schema=pa.schema(fields))
+    path = tmp_path / "flba.parquet"
+    pq.write_table(tbl, path, use_dictionary=use_dictionary, data_page_size=1024)
+
+    schema = pq.ParquetFile(path).schema
+    widths = {schema.column(i).length for i in range(1, len(schema))}
+    assert widths == set(range(1, 17))
+    assert {schema.column(i).physical_type for i in range(1, len(schema))} == {
+        "FIXED_LEN_BYTE_ARRAY"
+    }
+
+    expected = pl.from_arrow(tbl)
+    assert isinstance(expected, pl.DataFrame)
+    lf = pl.scan_parquet(path)
+    assert_frame_equal(lf.collect(), expected)
+    assert_frame_equal(
+        lf.filter(pl.col("k") % 3 == 0).collect(),
+        expected.filter(pl.col("k") % 3 == 0),
+    )
+    assert_frame_equal(
+        lf.filter(pl.col("k").is_between(1_234, 1_900)).collect(),
+        expected.filter(pl.col("k").is_between(1_234, 1_900)),
+    )
+    assert_frame_equal(lf.slice(1_000, 700).collect(), expected.slice(1_000, 700))
+    for c in ["d7", "d19", "d38"]:
+        for pred in [pl.col(c) == expected[c][5], pl.col(c) > 0, pl.col(c) < 0]:
+            assert_frame_equal(lf.filter(pred).collect(), expected.filter(pred))
 
 
 @pytest.mark.write_disk
@@ -1144,6 +1202,27 @@ def test_parquet_statistics_uint64_16683() -> None:
 
     assert statistics.min == 0
     assert statistics.max == u64_max
+
+
+@pytest.mark.parametrize(
+    ("statistics", "expected"),
+    [
+        ({}, (1, 3, 1)),
+        ({"min": False, "max": False}, (None, None, 1)),
+        ({"distinct_count": True}, (1, 3, 1)),
+    ],
+)
+def test_parquet_statistics_dict_defaults(
+    statistics: dict[str, bool], expected: tuple[int | None, int | None, int]
+) -> None:
+    # Keys missing from the `statistics` dict keep their default.
+    df = pl.DataFrame({"a": [1, None, 3]})
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=statistics)
+    file.seek(0)
+    stats = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert (stats.min, stats.max, stats.null_count) == expected
 
 
 def test_parquet_enum_statistics() -> None:
@@ -1984,7 +2063,7 @@ def test_delta_binary_packed_prefilter_multi_page_28536() -> None:
         max_size=10,
         min_cols=1,
         max_cols=5,
-        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        excluded_dtypes=[pl.Decimal],
         include_cols=[
             column("filter_col", pl.Int8, st.integers(0, 1), allow_null=False)
         ],
@@ -2007,7 +2086,7 @@ def test_general_prefiltering(df: pl.DataFrame) -> None:
         max_size=10,
         min_cols=1,
         max_cols=5,
-        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        excluded_dtypes=[pl.Decimal],
         include_cols=[column("filter_col", pl.Boolean, allow_null=False)],
     ),
 )
@@ -2034,7 +2113,7 @@ def test_row_index_prefiltering(df: pl.DataFrame) -> None:
         max_size=40,
         min_cols=1,
         max_cols=4,
-        excluded_dtypes=[pl.Decimal, pl.Categorical, pl.Enum],
+        excluded_dtypes=[pl.Decimal],
         include_cols=[
             column("filter_col", pl.Int8, st.integers(0, 3), allow_null=False),
             column("a", pl.Int32, allow_null=True),
@@ -3634,6 +3713,178 @@ def test_categorical_dictionary_columns_with_plain_page_28959() -> None:
 
     assert result["cat"].dtype == pl.Categorical
     assert_frame_equal(result, df, categorical_as_str=True)
+
+
+@pytest.mark.parametrize("dtype", [pl.Categorical(), pl.Enum(["a", "b", "c", "d"])])
+@pytest.mark.parametrize(
+    "writer", ["polars", "pyarrow_plain", "pyarrow_fallback", "pyarrow_no_metadata"]
+)
+def test_categorical_prefiltering(dtype: pl.DataType, writer: str) -> None:
+    # The first two row groups have no nulls, the last two do.
+    values: list[str | None] = ["a", "b", "c", "a", "d", "b", "a", "c"] * 2
+    values += ["a", None, "b", None, "c", "a", None, "d"] * 2
+    df = pl.DataFrame(
+        {
+            "cat": pl.Series(values, dtype=dtype),
+            "other": pl.Series(values[::-1], dtype=dtype),
+            "i": range(len(values)),
+        }
+    )
+
+    f = io.BytesIO()
+    if writer == "polars":
+        df.write_parquet(f, row_group_size=8)
+    elif writer == "pyarrow_no_metadata":
+        tbl = df.to_arrow()
+        schema = pa.schema([field.remove_metadata() for field in tbl.schema])
+        pq.write_table(tbl.cast(schema), f, row_group_size=8)
+    else:
+        pq.write_table(
+            df.to_arrow(),
+            f,
+            row_group_size=8,
+            use_dictionary=writer == "pyarrow_fallback",
+            dictionary_pagesize_limit=1,
+            data_page_size=1,
+            write_batch_size=2,
+        )
+
+    for expr in [
+        pl.col("cat") == "a",
+        pl.col("cat") != "a",
+        pl.col("cat").is_in(["b", "d"]),
+        pl.col("cat").is_null(),
+        pl.col("cat").is_null() | (pl.col("cat") == "c"),
+        pl.col("i") % 3 == 0,
+    ]:
+        f.seek(0)
+        result = pl.scan_parquet(f, parallel="prefiltered").filter(expr).collect()
+        assert_frame_equal(
+            result,
+            df.filter(expr),
+            check_dtypes=writer != "pyarrow_no_metadata",
+            categorical_as_str=True,
+        )
+
+
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_enum_prefiltering_unknown_values(use_dictionary: bool) -> None:
+    tbl = pl.DataFrame(
+        {"e": pl.Series(["a", "b", None, "a"], dtype=pl.Enum(["a", "b"]))}
+    ).to_arrow()
+    metadata = (
+        pl.Series("e", [], pl.Enum(["a"])).to_frame().to_arrow().schema[0].metadata
+    )
+    schema = pa.schema([tbl.schema[0].with_metadata(metadata)])
+
+    f = io.BytesIO()
+    pq.write_table(tbl.cast(schema), f, use_dictionary=use_dictionary)
+
+    f.seek(0)
+    df = pl.read_parquet(f)
+    assert df["e"].to_list() == ["a", None, None, "a"]
+
+    for expr in [
+        pl.col("e").is_null(),
+        pl.col("e").is_not_null(),
+        pl.col("e") == "a",
+        pl.col("e") == "b",
+        pl.col("e").is_in(["a", "b"]),
+        pl.col("e").is_in(["b"]),
+        pl.col("e").is_in(["a", None], nulls_equal=True),
+        pl.col("e").eq_missing("a"),
+    ]:
+        f.seek(0)
+        result = (
+            pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+            .filter(expr)
+            .collect()
+        )
+        assert_frame_equal(result, df.filter(expr))
+
+
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_categorical_equal_prefiltering_adds_no_unused_values(
+    use_dictionary: bool,
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random())
+    dictionary = pa.array(["used", "other"] + [f"unused{i}" for i in range(10)])
+    keys = pa.array([0, None, 1, 0] * 25, pa.uint32())
+    metadata = pl.Series("c", [], dtype).to_frame().to_arrow().schema[0].metadata
+    tbl = pa.table({"c": pa.DictionaryArray.from_arrays(keys, dictionary)})
+    tbl = tbl.cast(pa.schema([tbl.schema[0].with_metadata(metadata)]))
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f, use_dictionary=use_dictionary)
+
+    for expr, expected in [
+        (pl.col("c") == "used", ["used"] * 50),
+        (pl.col("c").is_in(["used", "other"]), ["used", "other", "used"] * 25),
+    ]:
+        f.seek(0)
+        result = (
+            pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+            .filter(expr)
+            .collect()
+        )
+        assert result["c"].cast(pl.String).to_list() == expected
+    assert sorted(dtype.categories.to_series().to_list()) == ["other", "used"]
+
+
+@pytest.mark.parametrize("key_type", [pa.uint8(), pa.int32()])
+@pytest.mark.parametrize("use_dictionary", [True, False])
+def test_categorical_prefiltering_unused_dictionary_values(
+    key_type: pa.DataType, use_dictionary: bool
+) -> None:
+    dtype = pl.Categorical(pl.Categories.random(physical=pl.UInt8))
+    filler = pl.Series([f"x{i}" for i in range(250)], dtype=dtype)
+
+    # The unused dictionary values do not fit in the categories.
+    dictionary = pa.array(["used"] + [f"unused{i}" for i in range(10)])
+    keys = pa.array([None, 0, 0, None] * 25, key_type)
+    metadata = pl.Series("c", [], dtype).to_frame().to_arrow().schema[0].metadata
+    tbl = pa.table({"c": pa.DictionaryArray.from_arrays(keys, dictionary)})
+    tbl = tbl.cast(pa.schema([tbl.schema[0].with_metadata(metadata)]))
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f, use_dictionary=use_dictionary)
+
+    for expr in [pl.col("c").is_not_null(), pl.col("c") == "used"]:
+        f.seek(0)
+        result = (
+            pl.scan_parquet(f, parallel="prefiltered", use_statistics=False)
+            .filter(expr)
+            .collect()
+        )
+        f.seek(0)
+        assert_frame_equal(result, pl.read_parquet(f).filter(expr))
+    assert dtype.categories.to_series().len() == 251
+    assert filler.len() == 250
+
+
+@pytest.mark.parametrize(
+    "dtype", [pl.Categorical, pl.Enum(["1", "2"]), pl.String, pl.Int64]
+)
+@pytest.mark.parametrize("has_nulls", [False, True])
+def test_prefiltering_null_predicate_fails(dtype: pl.DataType, has_nulls: bool) -> None:
+    values = ["1", None, "2", "1"] if has_nulls else ["1", "2"]
+    df = pl.DataFrame(
+        {"c": pl.Series(values * 25).cast(dtype), "x": range(len(values) * 25)}
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    # Evaluating this on a null fails.
+    expr = pl.col("c").cast(pl.String).fill_null("invalid").cast(pl.Int64) == 1
+    f.seek(0)
+    q = pl.scan_parquet(f, parallel="prefiltered", use_statistics=False).filter(expr)
+    if has_nulls:
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            df.filter(expr)
+        with pytest.raises(pl.exceptions.PolarsError):
+            q.collect()
+    else:
+        assert_frame_equal(q.collect(), df.filter(expr))
 
 
 def test_parquet_read_timezone_22506() -> None:
@@ -5669,3 +5920,175 @@ def test_read_float16_without_arrow_schema_29829(
         pl.read_parquet(f),
         pl.DataFrame({"x": values}, schema={"x": pl.Float16}),
     )
+
+
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize(
+    ("statistics", "expected"),
+    [
+        (True, {"nan": True, "all_nan": False, "no_nan": True, "all_null": True}),
+        (
+            {"min": True, "max": True, "null_count": False},
+            {"nan": True, "all_nan": False, "no_nan": True, "all_null": True},
+        ),
+        (
+            {"min": False, "max": False, "null_count": True},
+            {"nan": False, "all_nan": False, "no_nan": False, "all_null": True},
+        ),
+        (
+            {"min": True, "max": False, "null_count": True},
+            {"nan": False, "all_nan": False, "no_nan": False, "all_null": True},
+        ),
+    ],
+)
+def test_write_column_index_without_min_max(
+    dtype: pl.DataType, statistics: bool | dict[str, bool], expected: dict[str, bool]
+) -> None:
+    # The column index may only leave out the min/max of a page without non-null values.
+    # So a page with values but without min/max leaves the column chunk without a column
+    # index. This happens if all values are NaN or if min/max are turned off.
+    df = pl.DataFrame(
+        {
+            "nan": [1.0, None, float("nan"), 2.0],
+            "all_nan": [float("nan")] * 4,
+            "no_nan": [1.0, None, 3.0, 2.0],
+            "all_null": [None] * 4,
+        },
+        schema=dict.fromkeys(expected, dtype),
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, statistics=statistics)
+
+    f.seek(0)
+    row_group = pq.ParquetFile(f).metadata.row_group(0)
+    has_column_index = {
+        row_group.column(i).path_in_schema: row_group.column(i).has_column_index
+        for i in range(row_group.num_columns)
+    }
+    assert has_column_index == expected
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+    # pyarrow can't read Int128 files, so only check that writing one succeeds. Int128
+    # always turns min/max off, and without null_count its pages have no statistics.
+    df = df.with_columns(int128=pl.Series([1, None, 3, 2], dtype=pl.Int128))
+    f = io.BytesIO()
+    df.write_parquet(f, statistics=statistics)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+def test_write_column_index_list_null_pages() -> None:
+    # Each row is a page. Pages with only null lists, empty lists or null values are
+    # null pages, so "l" keeps its column index. The page with only NaN in "l_nan" is
+    # not a null page, but it has no min/max, so "l_nan" has no column index.
+    df = pl.DataFrame(
+        {
+            "l": [[1.0, None], None, [], [None], [2.0]],
+            "l_nan": [[1.0, None], None, [], [float("nan")], [2.0]],
+        }
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, data_page_size=1)
+
+    f.seek(0)
+    row_group = pq.ParquetFile(f).metadata.row_group(0)
+    assert row_group.column(0).has_column_index
+    assert not row_group.column(1).has_column_index
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_write_statistics_without_nan_29640(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {
+            "nan": [float("nan"), 0.0, 3.0, None],
+            "all_nan": [float("nan"), None, float("nan"), None],
+        },
+        schema={"nan": dtype, "all_nan": dtype},
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    # The bounds leave out NaN, and a zero minimum is written as -0.0.
+    f.seek(0)
+    row_group = pq.ParquetFile(f).metadata.row_group(0)
+    statistics = row_group.column(0).statistics
+    assert (statistics.min, statistics.max) == (0.0, 3.0)
+    assert math.copysign(1.0, statistics.min) == -1.0
+    assert not row_group.column(1).statistics.has_min_max
+
+
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scan_parquet_nan_in_page_29640(dtype: pl.DataType, engine: EngineType) -> None:
+    # The row group has many pages, and every page in the second half has a NaN.
+    # The NaN used to drop the min/max of its page, so the row group got the max of
+    # the first half, and the scan skipped the row group for x == 100.
+    df = pl.DataFrame(
+        {"x": [1.0] * 100 + [float("nan"), 100.0] * 100}, schema={"x": dtype}
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, data_page_size=64)
+
+    f.seek(0)
+    expr = pl.col("x") == 100.0
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(expr).collect(engine=engine), df.filter(expr)
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").is_nan(),
+        pl.col("x") == float("nan"),
+        pl.col("x") > 10,
+        pl.col("x") >= 10,
+        pl.col("x") != 1.0,
+        pl.col("x").is_in([float("nan")]),
+        pl.col("x").is_not_null(),
+    ],
+)
+def test_scan_parquet_nan_predicates_29640(expr: pl.Expr, engine: EngineType) -> None:
+    # This guards the reader now that the written statistics leave out NaN. For example,
+    # the row group [1.0, NaN] gets the bounds [1, 1], and `x > 10` must still keep it.
+    # NaN is larger than every other value and equal to itself, so none of these
+    # predicates can skip a row group with a NaN.
+    df = pl.DataFrame({"x": [1.0, 2.0, 1.0, float("nan"), float("nan"), None, 1.0]})
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2)
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(expr).collect(engine=engine), df.filter(expr)
+    )
+
+
+@pytest.mark.parametrize("data_page_size", [None, 1])
+def test_write_list_null_count(data_page_size: int | None) -> None:
+    # The null count of a column under a list counts null values, null lists and empty
+    # lists, as pyarrow does. With one row per page, the null count of each page must
+    # count its null and empty lists as well.
+    df = pl.DataFrame({"l": [[1, None], None, [], [], [2]]})
+
+    f = io.BytesIO()
+    df.write_parquet(f, data_page_size=data_page_size)
+    f.seek(0)
+    statistics = pq.read_metadata(f).row_group(0).column(0).statistics
+
+    f_pa = io.BytesIO()
+    pq.write_table(df.to_arrow(), f_pa)
+    f_pa.seek(0)
+    statistics_pa = pq.read_metadata(f_pa).row_group(0).column(0).statistics
+
+    assert statistics.null_count == statistics_pa.null_count == 4

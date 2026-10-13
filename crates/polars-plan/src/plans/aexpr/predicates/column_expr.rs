@@ -206,6 +206,20 @@ fn specialize(
             options: _,
         } => {
             into_column(input[0].node(), expr_arena)?;
+            if dtype.is_categorical() || dtype.is_enum() {
+                if let Some((values, _)) = super::try_extract_is_in_haystack(
+                    input[1].node(),
+                    expr_arena,
+                    schema,
+                    &DataType::String,
+                    usize::MAX,
+                ) {
+                    let values = values.str().ok()?;
+                    return Some(SpecializedColumnPredicate::CategoricalEqualOneOf(
+                        values.iter().flatten().map(PlSmallStr::from).collect(),
+                    ));
+                }
+            }
             if !function.membership_compares_in_needle_dtype(
                 &dtype,
                 input[1].dtype(schema, expr_arena).ok()?,
@@ -251,6 +265,14 @@ fn specialize(
             let ((_, _), (lv, lv_node)) =
                 get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
             let lv = lv?;
+            if (dtype.is_categorical() || dtype.is_enum())
+                && matches!(op, Operator::Eq | Operator::EqValidity)
+                && let Some(s) = lv.extract_str()
+            {
+                return Some(SpecializedColumnPredicate::CategoricalEqualOneOf(
+                    [PlSmallStr::from(s)].into(),
+                ));
+            }
             if lv.get_datatype() != dtype {
                 return None;
             }
