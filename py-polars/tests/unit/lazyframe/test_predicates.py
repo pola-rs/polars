@@ -1937,10 +1937,8 @@ def test_filter_cross_column_equality_propagation() -> None:
 
 
 def test_filter_constraint_nested_scalar_no_panic() -> None:
-    # Repeated comparisons against a List scalar reach the constraint model's
-    # scalar ordering, and `AnyValue`'s partial ordering panics on nested dtypes
-    # ("ordering for List dtype is not supported"). Nested scalars must be
-    # treated as incomparable (no tightening, no contradiction) instead.
+    # Nested dtypes have no order, so comparisons on them are kept as they are
+    # (`AnyValue`'s ordering panics on them).
     lf = pl.LazyFrame({"a": [[1, 2], [3]], "b": [1, 2]})
 
     q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") == [1, 2]))
@@ -1949,7 +1947,6 @@ def test_filter_constraint_nested_scalar_no_panic() -> None:
     q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") != [3]))
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [[1, 2]], "b": [1]}))
 
-    # Values that can't be ordered against each other must all be kept.
     q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") == [3]))
     assert q.collect().is_empty()
 
@@ -2003,6 +2000,32 @@ def test_filter_constraint_decimal_mixed_scale_29901() -> None:
         & (pl.col("b") != Decimal("0"))
     )
     assert_frame_equal(q.collect(), lf.collect())
+
+    # An `is_between` with an endpoint that isn't a value of the column is kept.
+    lf_d = pl.LazyFrame({"d": [Decimal("1")]})
+    q = lf_d.filter(
+        pl.col("d").is_between(Decimal("0.5"), Decimal("6"))
+        & (pl.col("d") >= Decimal("2"))
+    )
+    assert q.collect().is_empty()
+    q = lf_d.filter(
+        pl.col("d").is_between(Decimal("0"), Decimal("1.5")) & (pl.col("d") <= 0)
+    )
+    assert q.collect().is_empty()
+
+    # Across `a == b`, set members that aren't values of the other column drop out.
+    lf_ab = pl.LazyFrame(
+        {"a": [Decimal("1.0"), Decimal("2.5")], "b": [Decimal("1"), Decimal("2")]},
+        schema={"a": pl.Decimal(10, 1), "b": pl.Decimal(10, 0)},
+    )
+    q = lf_ab.filter(
+        (pl.col("a") == pl.col("b"))
+        & pl.col("a").is_in([Decimal("1.0"), Decimal("2.5")])
+    )
+    assert_frame_equal(q.collect(), lf_ab.head(1).collect())
+    q = lf_ab.filter((pl.col("a") == pl.col("b")) & pl.col("a").is_in([Decimal("2.5")]))
+    assert "FILTER" not in q.explain()
+    assert q.collect().is_empty()
 
     # `is_in` sets of different scales hold equal values that don't hash the same.
     lf = pl.LazyFrame(

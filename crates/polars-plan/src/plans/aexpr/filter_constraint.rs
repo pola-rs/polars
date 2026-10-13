@@ -739,7 +739,7 @@ pub(crate) fn merge_filter_constraints(
         return None;
     }
 
-    // Materialize the nodes (the only `Scalar` clones) now that we know we rewrite.
+    // Materialize the nodes now that we know we rewrite.
     opaque.extend(memberships);
     for (name, op, value) in comparisons {
         opaque.push(comparison_node(name, op, value.clone(), expr_arena));
@@ -784,9 +784,9 @@ fn propagate_equalities(
 
 // Classifies one conjunct, folding any `col op lit` bound into its column.
 // A leading `!(...)` is pushed inward (`classify_negation`). Unmodeled shapes are
-// reported as `Opaque` and kept verbatim by the caller; `is_in` / `is_null` /
-// `is_not_null` are also `Opaque` but record (haystack / nullability) for
-// contradiction detection.
+// reported as `Opaque` and kept verbatim by the caller. `is_in` is `Membership`
+// and `is_null` / `is_not_null` are `Opaque`; both are kept verbatim but record
+// (haystack / nullability) for contradiction detection.
 fn classify_into_constraints(
     ae: &AExpr,
     schema: &Schema,
