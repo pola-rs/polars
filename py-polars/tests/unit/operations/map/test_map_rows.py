@@ -98,3 +98,12 @@ def test_map_rows_ragged(last_row: tuple[Any, ...], msg: str) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     with pytest.raises(ShapeError, match=re.escape(msg)):
         df.map_rows(lambda r: (r[0],) if r[0] < 3 else last_row)
+
+
+def test_map_rows_nested_across_batches() -> None:
+    df = pl.DataFrame({"a": range(3000)})
+    result = df.map_rows(lambda r: (r[0], [r[0], None], {"x": r[0]}))
+    assert result.dtypes == [pl.Int64, pl.List(pl.Int64), pl.Struct({"x": pl.Int64})]
+    assert result.n_chunks("all") == [1, 1, 1]
+    assert result["column_1"].flags["FAST_EXPLODE"]
+    assert result.rows() == [(i, [i, None], {"x": i}) for i in range(3000)]

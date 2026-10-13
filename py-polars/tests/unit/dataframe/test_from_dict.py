@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import UserDict
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -10,6 +10,11 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars._typing import PolarsDataType
 
 
 def test_from_dict_with_column_order() -> None:
@@ -281,3 +286,90 @@ def test_from_dicts_rejected_value(
 ) -> None:
     with pytest.raises(ComputeError, match=f"could not append value: {value}"):
         pl.from_dicts(data, schema=schema, infer_schema_length=infer_schema_length)
+
+
+# nested values convert in batches of 1024 rows
+@pytest.mark.parametrize("n_rows", [1023, 1024, 2049])
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        (pl.List(pl.Int64), lambda i: [i, None]),
+        (pl.Array(pl.Int64, 2), lambda i: [i, i + 1]),
+        (pl.Struct({"x": pl.Int64, "y": pl.String}), lambda i: {"x": i, "y": str(i)}),
+        (pl.Struct({}), lambda _: {}),
+        (pl.List(pl.Struct({"x": pl.Int64})), lambda i: [{"x": i}] * (i % 3)),
+        (pl.List(pl.List(pl.Int64)), lambda i: [[i], []]),
+        (pl.List(pl.Array(pl.Int64, 2)), lambda i: [[i, i + 1]]),
+        (pl.List(pl.Categorical), lambda i: [str(i % 7)]),
+        (pl.List(pl.Enum(["a", "b", "c"])), lambda i: ["abc"[i % 3]]),
+    ],
+)
+def test_from_dicts_nested_across_batches(
+    n_rows: int, dtype: pl.DataType, value: Callable[[int], Any]
+) -> None:
+    rows = [{"id": i, "value": None if i % 5 == 0 else value(i)} for i in range(n_rows)]
+    result = pl.from_dicts(rows, schema={"id": pl.Int64, "value": dtype})
+    assert result.dtypes == [pl.Int64, dtype]
+    assert result.n_chunks("all") == [1, 1]
+    assert result.rows(named=True) == rows
+
+
+@pytest.mark.parametrize("n_rows", [1023, 1024, 2049])
+def test_from_dicts_nested_fast_explode(n_rows: int) -> None:
+    rows: list[dict[str, Any]] = [{"x": [i]} for i in range(n_rows)]
+    assert pl.from_dicts(rows)["x"].flags["FAST_EXPLODE"]
+    for idx, value in ((0, []), (-1, None)):
+        odd = rows.copy()
+        odd[idx] = {"x": value}
+        assert not pl.from_dicts(odd)["x"].flags["FAST_EXPLODE"]
+
+
+def test_from_dicts_nested_cast_across_batches() -> None:
+    schema: dict[str, PolarsDataType] = {
+        "items": pl.List(pl.Int64),
+        "details": pl.Struct({"value": pl.Int64, "label": pl.String}),
+    }
+    rows: list[dict[str, Any]] = [{"items": None, "details": None}] * 1024
+    rows += [{"items": ["1", "bad"], "details": {"value": 1}}] * 1025
+    result = pl.from_dicts(rows, schema=schema)
+    assert result.schema == schema
+    assert result.row(1023) == (None, None)
+    for i in (1024, -1):
+        assert result.row(i) == ([1, None], {"value": 1, "label": None})
+
+
+@pytest.mark.parametrize(
+    ("dtype", "first", "last", "expected_dtype"),
+    [
+        (pl.List(pl.Null), [], [1], pl.List(pl.Int64)),
+        (
+            pl.Struct({"a": pl.Null}),
+            {"a": None},
+            {"a": 1},
+            pl.Struct({"a": pl.Int64}),
+        ),
+    ],
+)
+def test_from_dicts_nested_null_leaf(
+    dtype: pl.DataType,
+    first: Any,
+    last: Any,
+    expected_dtype: pl.DataType,
+) -> None:
+    result = pl.from_dicts(
+        [{"value": first}] * 1024 + [{"value": last}],
+        schema={"value": dtype},
+    )
+    assert result.schema == {"value": expected_dtype}
+    assert result.row(0) == (first,)
+    assert result.row(-1) == (last,)
+
+
+def test_from_dicts_nested_inference_across_batches() -> None:
+    rows = [{"id": i, "nested": [{"x": i}]} for i in range(2050)]
+    result = pl.from_dicts(rows, infer_schema_length=2049)
+    assert result.schema == {
+        "id": pl.Int64,
+        "nested": pl.List(pl.Struct({"x": pl.Int64})),
+    }
+    assert result.rows(named=True) == rows

@@ -137,7 +137,7 @@ pub(super) fn optimize_functions(
             }
         },
         #[cfg(feature = "is_in")]
-        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) if ctx.in_filter => {
+        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) if ctx.is_filter_predicate => {
             let haystack = expr_arena.get(input[1].node());
             let empty = match haystack {
                 AExpr::Literal(LiteralValue::Series(s)) => s.is_empty(),

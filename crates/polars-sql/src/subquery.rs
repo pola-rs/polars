@@ -228,14 +228,16 @@ impl SQLContext {
         // Resolve and parse the inner relation in an isolated context so its
         // table/alias registrations don't leak into the outer query's scope.
         let mut ctx = self.isolated();
-        let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from)?
-        else {
+        let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
-        if let Some(conjuncts) =
-            ctx.split_subquery_conjuncts(&selection, &inner_names, &inner_schema, outer_schema)?
-        {
+        if let Some(conjuncts) = ctx.split_subquery_conjuncts(
+            &selection,
+            &inner_names,
+            &inner_schema,
+            outer_schema,
+            self,
+        )? {
             // An uncorrelated EXISTS (no correlation key found) has no join key
             // to build from, so leave it to the existing path.
             return Ok(if conjuncts.left_on.is_empty() {
@@ -258,6 +260,7 @@ impl SQLContext {
             &inner_names,
             &inner_schema,
             outer_schema,
+            self,
             negated,
         )
     }
@@ -275,14 +278,20 @@ impl SQLContext {
         inner_names: &PlHashSet<String>,
         inner_schema: &Schema,
         outer_schema: &Schema,
+        outer: &SQLContext,
         negated: bool,
     ) -> PolarsResult<Option<LazyFrame>> {
         let mut corr_preds = Vec::new();
         let mut local_filters = Vec::new();
         for conj in MintermIter::new(selection) {
-            if let Some(pred) =
-                scalar_correlation_predicate(conj, inner_names, inner_schema, outer_schema)
-            {
+            if let Some(pred) = scalar_correlation_predicate(
+                conj,
+                inner_names,
+                inner_schema,
+                outer_schema,
+                &self,
+                outer,
+            )? {
                 corr_preds.push(pred);
             } else if let Some(filter) =
                 self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
@@ -379,9 +388,7 @@ impl SQLContext {
         };
 
         let mut ctx = self.isolated();
-        let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from)?
-        else {
+        let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
         // The membership key must be a plain expression over the inner relation;
@@ -403,6 +410,7 @@ impl SQLContext {
                     &inner_names,
                     &inner_schema,
                     outer_schema,
+                    self,
                 )?
                 else {
                     return Ok(None);
@@ -463,13 +471,15 @@ impl SQLContext {
         )
     }
 
-    // Resolve the subquery's FROM (a single relation, possibly with joins) into
-    // the inner LazyFrame, its schema, and the set of relation names/aliases
-    // used to classify qualified correlation columns.
+    // Resolve the subquery's FROM (relations, possibly with joins) into the inner
+    // LazyFrame, its schema, and the set of relation names/aliases used to
+    // classify qualified correlation columns. Also checks the SELECT and WHERE
+    // for unqualified columns that are ambiguous between the joined relations.
     fn resolve_subquery_from(
         &mut self,
-        from: &[TableWithJoins],
+        select: &Select,
     ) -> PolarsResult<Option<(PlHashSet<String>, LazyFrame, SchemaRef)>> {
+        let from = select.from.as_slice();
         let Some(inner_names) = from
             .iter()
             .flat_map(|tbl_expr| {
@@ -488,9 +498,18 @@ impl SQLContext {
         // Comma-separated relations cross join; the equalities linking them are
         // inner-only filters.
         for tbl_expr in rest {
-            let rf = self.execute_from_statement(tbl_expr)?;
-            inner_lf = inner_lf.cross_join(rf, None);
+            let Some(r_name) = get_table_name(&tbl_expr.relation) else {
+                return Ok(None);
+            };
+            let mut rf = self.execute_from_statement(tbl_expr)?;
+            let left_schema = self.get_frame_schema(&mut inner_lf)?;
+            let right_schema = self.get_frame_schema(&mut rf)?;
+            inner_lf = inner_lf.cross_join(rf, Some(format_pl_smallstr!(":{r_name}")));
+            let joined_schema = self.get_frame_schema(&mut inner_lf)?;
+            self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
         }
+        self.set_join_base(&select.from);
+        self.check_select_column_refs(select)?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
         Ok(Some((inner_names, inner_lf, inner_schema)))
     }
@@ -505,13 +524,14 @@ impl SQLContext {
         inner_names: &PlHashSet<String>,
         inner_schema: &Schema,
         outer_schema: &Schema,
+        outer: &SQLContext,
     ) -> PolarsResult<Option<SubqueryConjuncts>> {
         let mut left_on = Vec::new();
         let mut right_on = Vec::new();
         let mut local_filters = Vec::new();
         for conj in MintermIter::new(selection) {
             if let Some((outer_key, inner_key)) =
-                correlation_key_pair(conj, inner_names, inner_schema, outer_schema)
+                correlation_key_pair(conj, inner_names, inner_schema, outer_schema, self, outer)?
             {
                 left_on.push(col(outer_key));
                 right_on.push(col(inner_key));
@@ -558,14 +578,20 @@ impl SQLContext {
         inner_names: &PlHashSet<String>,
         inner_schema: &Schema,
         outer_schema: &Schema,
+        outer: &SQLContext,
     ) -> PolarsResult<Option<(Vec<CorrPredicate>, Vec<Expr>)>> {
         let mut corr_preds: Vec<CorrPredicate> = Vec::new();
         let mut local_filters = Vec::new();
         let selection = factored_selection(selection);
         for conj in MintermIter::new(&selection) {
-            if let Some(pred) =
-                scalar_correlation_predicate(conj, inner_names, inner_schema, outer_schema)
-            {
+            if let Some(pred) = scalar_correlation_predicate(
+                conj,
+                inner_names,
+                inner_schema,
+                outer_schema,
+                self,
+                outer,
+            )? {
                 if !corr_preds.iter().any(|p| p.same_comparison(&pred)) {
                     corr_preds.push(pred);
                 }
@@ -759,9 +785,7 @@ impl SQLContext {
         };
 
         let mut ctx = self.isolated();
-        let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from)?
-        else {
+        let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
 
@@ -774,8 +798,13 @@ impl SQLContext {
             return Ok(None);
         }
 
-        let Some((corr_preds, local_filters)) =
-            ctx.split_correlation_conjuncts(selection, &inner_names, &inner_schema, outer_schema)?
+        let Some((corr_preds, local_filters)) = ctx.split_correlation_conjuncts(
+            selection,
+            &inner_names,
+            &inner_schema,
+            outer_schema,
+            self,
+        )?
         else {
             return Ok(None);
         };
@@ -921,9 +950,7 @@ impl SQLContext {
         };
 
         let mut ctx = self.isolated();
-        let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from)?
-        else {
+        let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
         let Some(value) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)? else {
@@ -931,8 +958,13 @@ impl SQLContext {
         };
         let value = value.meta().undo_aliases();
 
-        let Some((corr_preds, local_filters)) =
-            ctx.split_correlation_conjuncts(selection, &inner_names, &inner_schema, outer_schema)?
+        let Some((corr_preds, local_filters)) = ctx.split_correlation_conjuncts(
+            selection,
+            &inner_names,
+            &inner_schema,
+            outer_schema,
+            self,
+        )?
         else {
             return Ok(None);
         };
@@ -1026,9 +1058,7 @@ impl SQLContext {
         };
 
         let mut ctx = self.isolated();
-        let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from)?
-        else {
+        let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
 
@@ -1039,6 +1069,7 @@ impl SQLContext {
                     &inner_names,
                     &inner_schema,
                     outer_schema,
+                    self,
                 )?
                 else {
                     return Ok(None);
@@ -1520,24 +1551,32 @@ fn correlation_key_pair(
     inner_names: &PlHashSet<String>,
     inner_schema: &Schema,
     outer_schema: &Schema,
-) -> Option<(PlSmallStr, PlSmallStr)> {
+    inner: &SQLContext,
+    outer: &SQLContext,
+) -> PolarsResult<Option<(PlSmallStr, PlSmallStr)>> {
     let SQLExpr::BinaryOp {
         left,
         op: SQLBinaryOperator::Eq,
         right,
     } = conj
     else {
-        return None;
+        return Ok(None);
     };
-    let (lside, lname) =
-        classify_correlation_column(left, inner_names, inner_schema, outer_schema)?;
-    let (rside, rname) =
-        classify_correlation_column(right, inner_names, inner_schema, outer_schema)?;
-    match (lside, rside) {
+    let Some((lside, lname)) =
+        classify_correlation_column(left, inner_names, inner_schema, outer_schema, inner, outer)?
+    else {
+        return Ok(None);
+    };
+    let Some((rside, rname)) =
+        classify_correlation_column(right, inner_names, inner_schema, outer_schema, inner, outer)?
+    else {
+        return Ok(None);
+    };
+    Ok(match (lside, rside) {
         (CorrelationSide::Outer, CorrelationSide::Inner) => Some((lname, rname)),
         (CorrelationSide::Inner, CorrelationSide::Outer) => Some((rname, lname)),
         _ => None,
-    }
+    })
 }
 
 // Whether every column the expression references resolves to the inner relation,
@@ -1584,39 +1623,46 @@ fn qualifier_and_name(expr: &SQLExpr) -> Option<(Option<&str>, &str)> {
 }
 
 // Classify a correlation operand as an inner- or outer-query column and return
-// its bare name. A qualified identifier (`tbl.col`) resolves by its qualifier:
-// an inner relation's name/alias means inner, anything else means outer (so
-// same-named columns like `o.id = c.id` resolve). An unqualified identifier
-// resolves by schema membership. `None` for non-identifiers or names that can't
-// be placed (in neither schema, or ambiguous).
+// its column name in that frame. `None` for non-identifiers or names in neither
+// schema.
 fn classify_correlation_column(
     expr: &SQLExpr,
     inner_names: &PlHashSet<String>,
     inner_schema: &Schema,
     outer_schema: &Schema,
-) -> Option<(CorrelationSide, PlSmallStr)> {
-    let (qualifier, name) = qualifier_and_name(expr)?;
-    let name: PlSmallStr = name.into();
-    match qualifier {
-        Some(q) if inner_names.contains(q) => inner_schema
-            .contains(name.as_str())
-            .then_some((CorrelationSide::Inner, name)),
-        // Any other qualifier is taken as outer: the outer query may span
-        // several relations and their names/aliases aren't visible here, so
-        // only the column's schema membership can be checked.
-        Some(_) => outer_schema
-            .contains(name.as_str())
-            .then_some((CorrelationSide::Outer, name)),
-        // An unqualified name binds to the innermost scope that holds it.
-        None => match (
-            inner_schema.contains(name.as_str()),
-            outer_schema.contains(name.as_str()),
-        ) {
-            (true, _) => Some((CorrelationSide::Inner, name)),
-            (false, true) => Some((CorrelationSide::Outer, name)),
+    inner: &SQLContext,
+    outer: &SQLContext,
+) -> PolarsResult<Option<(CorrelationSide, PlSmallStr)>> {
+    let Some((qualifier, name)) = qualifier_and_name(expr) else {
+        return Ok(None);
+    };
+    // A joined relation's column may be stored under another name.
+    Ok(match qualifier {
+        Some(q) if inner_names.contains(q) => {
+            let name = inner.resolve_name(q, name);
+            inner_schema
+                .contains(name.as_str())
+                .then(|| (CorrelationSide::Inner, name.into()))
+        },
+        // Any other qualifier is taken as outer (so same-named columns like
+        // `o.id = c.id` resolve).
+        Some(q) => {
+            let name = outer.resolve_name(q, name);
+            outer_schema
+                .contains(name.as_str())
+                .then(|| (CorrelationSide::Outer, name.into()))
+        },
+        // An unqualified name binds to the innermost scope that holds it. An
+        // outer one raises if it is ambiguous between the outer joins.
+        None => match (inner_schema.contains(name), outer_schema.contains(name)) {
+            (true, _) => Some((CorrelationSide::Inner, name.into())),
+            (false, true) => {
+                outer.check_unqualified_column(name)?;
+                Some((CorrelationSide::Outer, name.into()))
+            },
             (false, false) => None,
         },
-    }
+    })
 }
 
 // Shared eligibility gate for the rewrites: bail on any clause that changes
@@ -2355,9 +2401,11 @@ fn scalar_correlation_predicate(
     inner_names: &PlHashSet<String>,
     inner_schema: &Schema,
     outer_schema: &Schema,
-) -> Option<CorrPredicate> {
+    inner: &SQLContext,
+    outer: &SQLContext,
+) -> PolarsResult<Option<CorrPredicate>> {
     let SQLExpr::BinaryOp { left, op, right } = conj else {
-        return None;
+        return Ok(None);
     };
     if !matches!(
         op,
@@ -2368,13 +2416,19 @@ fn scalar_correlation_predicate(
             | SQLBinaryOperator::Gt
             | SQLBinaryOperator::GtEq
     ) {
-        return None;
+        return Ok(None);
     }
-    let (lside, lname) =
-        classify_correlation_column(left, inner_names, inner_schema, outer_schema)?;
-    let (rside, rname) =
-        classify_correlation_column(right, inner_names, inner_schema, outer_schema)?;
-    match (lside, rside) {
+    let Some((lside, lname)) =
+        classify_correlation_column(left, inner_names, inner_schema, outer_schema, inner, outer)?
+    else {
+        return Ok(None);
+    };
+    let Some((rside, rname)) =
+        classify_correlation_column(right, inner_names, inner_schema, outer_schema, inner, outer)?
+    else {
+        return Ok(None);
+    };
+    Ok(match (lside, rside) {
         (CorrelationSide::Inner, CorrelationSide::Outer) => Some(CorrPredicate {
             outer: rname,
             inner: lname,
@@ -2388,5 +2442,5 @@ fn scalar_correlation_predicate(
             inner_on_left: false,
         }),
         _ => None,
-    }
+    })
 }

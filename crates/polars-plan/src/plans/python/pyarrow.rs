@@ -113,6 +113,25 @@ fn any_value_dtype(av: &AnyValue<'_>) -> Option<DataType> {
     }
 }
 
+/// `pl.col('a').struct.field('b')` -> `["a", "b"]`. `None` if not a plain
+/// column rooting a `.struct.field(...)` chain.
+#[cfg(feature = "dtype-struct")]
+fn struct_field_path(node: Node, expr_arena: &Arena<AExpr>) -> Option<Vec<PlSmallStr>> {
+    match expr_arena.get(node) {
+        AExpr::Column(name) => Some(vec![name.clone()]),
+        AExpr::Function {
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(field_name)),
+            input,
+            ..
+        } => {
+            let mut path = struct_field_path(input.first()?.node(), expr_arena)?;
+            path.push(field_name.clone());
+            Some(path)
+        },
+        _ => None,
+    }
+}
+
 /// Render a flat `Series` as a Python list literal, e.g. `[1,2,3]`.
 ///
 /// Returns `None` for values we cannot faithfully (or safely) write out as
@@ -330,6 +349,18 @@ pub fn predicate_to_pa(
             };
             let prefix = sanitize(lv.extract_str()?)?;
             Some(format!("pa.compute.starts_with({col}, pattern='{prefix}')"))
+        },
+        #[cfg(feature = "dtype-struct")]
+        AExpr::Function {
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(_)),
+            ..
+        } => {
+            let path = struct_field_path(predicate, expr_arena)?;
+            let quoted = path
+                .iter()
+                .map(|name| Some(format!("'{}'", sanitize(name)?)))
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!("pa.compute.field({})", quoted.join(", ")))
         },
         AExpr::Function {
             function, input, ..

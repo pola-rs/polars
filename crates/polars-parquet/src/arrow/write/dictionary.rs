@@ -386,7 +386,7 @@ fn serialize_keys_range<K: DictionaryKey>(
     array: &DictionaryArray<K>,
     type_: &PrimitiveType,
     nested: &[Nested],
-    mut statistics: Option<ParquetStatistics>,
+    statistics: Option<ParquetStatistics>,
     options: WriteOptions,
 ) -> PolarsResult<Page> {
     let mut buffer = vec![];
@@ -413,16 +413,14 @@ fn serialize_keys_range<K: DictionaryKey>(
     };
 
     let null_count = validity.as_ref().map_or(0, Bitmap::unset_bits);
-
-    if let Some(statistics) = statistics.as_mut() {
-        statistics.null_count = options.statistics.null_count.then_some(null_count as i64);
-    }
+    // Like `nested::num_nulls`, but with the normalized validity.
+    let num_nulls = num_values - (array.len() - null_count);
 
     utils::build_plain_page(
         buffer,
         num_values,
         num_rows,
-        null_count,
+        num_nulls,
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,

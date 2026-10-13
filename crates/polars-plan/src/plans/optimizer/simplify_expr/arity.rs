@@ -9,7 +9,9 @@ pub(super) fn simplify_binary(
     maintain_errors: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<AExpr> {
-    let in_filter = ctx.in_filter;
+    // These rewrites may turn `null` into `false` or a column into a scalar, see
+    // `OptimizeExprContext::is_filter_predicate`.
+    let is_filter_predicate = ctx.is_filter_predicate;
 
     use Operator as O;
     match op {
@@ -21,7 +23,7 @@ pub(super) fn simplify_binary(
             if matches!(
                 left_ae,
                 AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && in_filter
+            ) && is_filter_predicate
             {
                 // Only in filter as we might change the name from "literal"
                 // to whatever lhs columns is.
@@ -40,7 +42,7 @@ pub(super) fn simplify_binary(
             // TODO: we need an optimizer redesign to allow x & false to be optimized
             // in general as we can forget the length of a series otherwise.
             // In filter we allow it as the length is not important there.
-            if (is_scalar_ae(left, expr_arena) | in_filter)
+            if (is_scalar_ae(left, expr_arena) | is_filter_predicate)
                 && matches!(
                     right_ae,
                     AExpr::Literal(lv) if lv.bool() == Some(false)
@@ -49,7 +51,7 @@ pub(super) fn simplify_binary(
                 return Some(AExpr::Literal(Scalar::from(false).into()));
             }
 
-            if in_filter {
+            if is_filter_predicate {
                 // `A AND NOT(A)` is always false (either operand may be the
                 // `NOT`). Catches cases the earlier rewrites left alone, like
                 // `NOT(col)` on a bool column or `NOT(is_in(col, values))`.
@@ -98,7 +100,7 @@ pub(super) fn simplify_binary(
             if matches!(
                 left_ae,
                 AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) && in_filter
+            ) && is_filter_predicate
             {
                 // Only in filter as we might change the name from "literal"
                 // to whatever lhs columns is.
@@ -116,7 +118,7 @@ pub(super) fn simplify_binary(
             // TODO: we need an optimizer redesign to allow true | x to be optimized
             // in general as we can forget the length of a series otherwise.
             // In filter we allow it as the length is not important there.
-            if (is_scalar_ae(left, expr_arena) | in_filter)
+            if (is_scalar_ae(left, expr_arena) | is_filter_predicate)
                 && matches!(
                     right_ae,
                     AExpr::Literal(lv) if lv.bool() == Some(true)
@@ -132,7 +134,7 @@ pub(super) fn simplify_binary(
             if matches!(
                 left_ae,
                     AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && (is_scalar_ae(right, expr_arena) | in_filter)
+            ) && (is_scalar_ae(right, expr_arena) | is_filter_predicate)
             {
                 return Some(AExpr::Literal(Scalar::from(true).into()));
             }
