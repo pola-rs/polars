@@ -659,11 +659,11 @@ def test_write_roundtrip(
 ) -> None:
     df = roundtrip_data()
     path = tmp_path / "out.parquet"
+    encryption_options: dict[str, Any] = {"footer_key": FOOTER_KEY, **encryption_kwargs}
+    decryption_options: dict[str, Any] = {"footer_key": FOOTER_KEY, **decryption_kwargs}
     df.write_parquet(
         path,
-        encryption=pl.ParquetEncryptionProperties(
-            **{"footer_key": FOOTER_KEY, **encryption_kwargs}
-        ),
+        encryption=pl.ParquetEncryptionProperties(**encryption_options),
         **WRITE_OPTIONS,
     )
 
@@ -672,9 +672,7 @@ def test_write_roundtrip(
         is_encrypted = marker not in data
         assert is_encrypted == (column in encrypted_columns), column
 
-    decryption_properties = pl.ParquetDecryptionProperties(
-        **{"footer_key": FOOTER_KEY, **decryption_kwargs}
-    )
+    decryption_properties = pl.ParquetDecryptionProperties(**decryption_options)
     assert_frame_equal(pl.read_parquet(path, decryption=decryption_properties), df)
 
 
