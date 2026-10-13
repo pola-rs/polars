@@ -884,6 +884,9 @@ impl PyExpr {
     fn cum_sum(&self, reverse: bool) -> Self {
         self.inner.clone().cum_sum(reverse).into()
     }
+    fn cum_n_unique(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_n_unique(reverse).into()
+    }
     fn cum_max(&self, reverse: bool) -> Self {
         self.inner.clone().cum_max(reverse).into()
     }

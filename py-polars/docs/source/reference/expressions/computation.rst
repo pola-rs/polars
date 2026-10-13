@@ -29,6 +29,7 @@ Computation
     Expr.cum_count
     Expr.cum_max
     Expr.cum_min
+    Expr.cum_n_unique
     Expr.cum_prod
     Expr.cum_sum
     Expr.cumulative_eval
