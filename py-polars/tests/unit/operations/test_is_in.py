@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Collection
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
@@ -1355,7 +1355,7 @@ def test_is_in_native_pair_with_a_scalar_haystack(
             pl.Series([datetime(2020, 1, 1, 2)]).dt.replace_time_zone(
                 "Europe/Amsterdam"
             ),
-            [datetime(2020, 1, 1, 1, tzinfo=timezone.utc)],
+            [datetime(2020, 1, 1, 1, tzinfo=UTC)],
             id="datetime-other-zone",
         ),
     ],
