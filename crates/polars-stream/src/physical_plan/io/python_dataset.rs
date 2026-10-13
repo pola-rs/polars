@@ -32,7 +32,8 @@ pub fn python_dataset_scan_to_reader_builder(
                         let generator = generator.bind(py);
 
                         match generator.call_method0(intern!(py, "__next__")) {
-                            Ok(out) => python_df_to_rust(py, out).map(Some),
+                            // SAFETY: The PyArrow scan contract requires yielded values to be Polars DataFrames.
+                            Ok(out) => unsafe { python_df_to_rust(py, out) }.map(Some),
                             Err(err) if err.matches(py, PyStopIteration::type_object(py))? => {
                                 Ok(None)
                             },
