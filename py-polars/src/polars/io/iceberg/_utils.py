@@ -613,6 +613,10 @@ def filter_for_truncate_overflow(
     with a wrapping subtraction, giving a large positive partition value, which
     PyIceberg prunes for predicates on these integers. Such predicates on columns with
     `truncate` partition fields are left out.
+
+    A long column may have been an int when older manifests were written: metadata
+    cleanup can remove the int schema, so the remaining schemas do not show the
+    promotion.
     """
     from pyiceberg.expressions import (
         AlwaysTrue,
@@ -647,10 +651,9 @@ def filter_for_truncate_overflow(
                     continue
 
                 if isinstance(field_type, (IntegerType, LongType)):
-                    bits = 32 if isinstance(field_type, IntegerType) else 64
                     min_unwrapped[partition_field.source_id] = max(
                         min_unwrapped.get(partition_field.source_id, -(2**63)),
-                        -(2 ** (bits - 1)) + partition_field.transform.width,
+                        -(2**31) + partition_field.transform.width,
                     )
 
     if not min_unwrapped:

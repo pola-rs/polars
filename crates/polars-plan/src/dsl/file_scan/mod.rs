@@ -559,7 +559,13 @@ pub enum ExtraColumnsPolicy {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ColumnMapping {
-    Iceberg(IcebergSchemaRef),
+    Iceberg {
+        schema: IcebergSchemaRef,
+        /// Whether the table has a name mapping (`schema.name-mapping.default`), which data
+        /// files without field IDs are read with. Mapped names are only kept for the fields of
+        /// `schema`, so a mapping that only names fields the schema no longer has leaves none.
+        has_name_mapping: bool,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -199,7 +199,7 @@ impl HostStorage {
         // `/wh/./t/metadata/...` from a table location) can have. Object keys are kept as they
         // are: `a//b` is another key than `a/b`.
         let path = if is_local {
-            object_path_from_str(&normalize_local_path(&prefix))?
+            object_path_from_str(&resolve_local_path(&prefix))?
         } else {
             object_path_from_str(&prefix)?
         };
@@ -208,7 +208,25 @@ impl HostStorage {
     }
 }
 
-/// `path` without `.` and empty segments, and with `..` segments applied lexically.
+/// `path` with its `..` segments applied as the filesystem applies them. On Unix, `link/..` is
+/// the parent of the symlink's target rather than the directory holding `link`, so a path with
+/// `..` is resolved by the filesystem. Paths that do not resolve (e.g. missing files) are
+/// normalized lexically, leaving the error to the read.
+fn resolve_local_path(path: &str) -> String {
+    #[cfg(unix)]
+    if path.split('/').any(|s| s == "..") {
+        if let Ok(Some(resolved)) =
+            std::fs::canonicalize(path).map(|p| p.to_str().map(str::to_owned))
+        {
+            return resolved;
+        }
+    }
+
+    normalize_local_path(path)
+}
+
+/// `path` without `.` and empty segments, and with `..` segments applied lexically, as Windows
+/// applies them.
 fn normalize_local_path(path: &str) -> String {
     let mut segments: Vec<&str> = Vec::new();
 

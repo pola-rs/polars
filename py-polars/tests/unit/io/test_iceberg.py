@@ -7342,6 +7342,50 @@ def test_scan_iceberg_truncate_partition_near_int_minimum_merged_manifest(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_truncate_partition_near_int_minimum_int_schema_removed(
+    tmp_path: Path,
+) -> None:
+    from pyiceberg.table.update import RemoveSchemasUpdate
+
+    tbl, catalog = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "x", IntegerType())),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, TruncateTransform(100), "x_trunc")
+        ),
+    )
+    # The manifest's partition summary bounds hide `truncate[100]` of `-2**31`,
+    # wrapped to 2147483596, below the upper bound 2147483600.
+    df = pl.DataFrame({"x": pl.Series([-(2**31), 5, 2**31 - 1], dtype=pl.Int32)})
+    tbl.append(df.to_arrow())
+    first_snapshot_id = tbl.current_snapshot().snapshot_id  # type: ignore[union-attr]
+    with tbl.update_schema() as update:
+        update.update_column("x", LongType())
+    tbl = catalog.load_table(tbl.name())
+    appended = pl.DataFrame({"x": [7]})
+    tbl.append(appended.to_arrow())
+
+    # Metadata cleanup: once no snapshot uses the int schema, it can be removed. The
+    # manifest written while `x` was an int is unchanged.
+    tbl.maintenance.expire_snapshots().by_id(first_snapshot_id).commit()
+    with tbl.transaction() as tx:
+        tx._apply((RemoveSchemasUpdate.model_validate({"schema-ids": [0]}),))
+    tbl = catalog.load_table(tbl.name())
+    assert [s.schema_id for s in tbl.metadata.schemas] == [1]
+
+    df = pl.concat([df.cast(pl.Int64), appended])
+    for predicate in [
+        pl.col("x") < 0,
+        pl.col("x") == -(2**31),
+        pl.col("x") <= -5,
+    ]:
+        assert_frame_equal(
+            pl.scan_iceberg(tbl).filter(predicate).collect().sort("x"),
+            df.filter(predicate).sort("x"),
+        )
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_partition_long_values(tmp_path: Path) -> None:
     # Parquet statistics of long values are truncated.
     tbl, _ = new_iceberg_table(
@@ -7667,6 +7711,36 @@ def test_scan_iceberg_name_mapping_projections(tmp_path: Path) -> None:
         0,
         1,
     ]
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_name_mapping_of_dropped_columns_only(tmp_path: Path) -> None:
+    # The name mapping only names a column that has been dropped, so it maps no
+    # current column. It still exists: the file's unmapped columns are not read by
+    # name, and the current column is missing from the file.
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    path = tmp_path / "no-field-ids.parquet"
+    pq.write_table(pa.table({"a": pa.array([1, 2], pa.int64())}), path)
+    tbl.add_files([format_file_uri_iceberg(path)])
+    with tbl.update_schema() as update:
+        update.add_column("b", LongType())
+        update.delete_column("a")
+    with tbl.transaction() as tx:
+        tx.set_properties(
+            {
+                "schema.name-mapping.default": json.dumps(
+                    [{"field-id": 1, "names": ["a"]}]
+                )
+            }
+        )
+    tbl = catalog.load_table(tbl.name())
+
+    expect = pl.DataFrame({"b": pl.Series([None, None], dtype=pl.Int64)})
+    lf = pl.scan_iceberg(tbl)
+    assert_frame_equal(lf.collect(), expect)
+    assert_frame_equal(lf.filter(pl.col("b").is_null()).collect(), expect)
 
 
 @pytest.mark.write_disk

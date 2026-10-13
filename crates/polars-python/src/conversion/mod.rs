@@ -2025,20 +2025,26 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ColumnMapping> {
                 let arrow_schema: Wrap<ArrowSchema> = ob.extract()?;
                 let mut schema =
                     IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?;
-                if tuple.len() > 2 {
-                    // Names by field ID.
-                    let names: Option<std::collections::HashMap<u32, Vec<String>>> =
-                        tuple.get_item(2)?.extract()?;
-                    if let Some(names) = names {
-                        schema.apply_name_mapping(
-                            &names
-                                .into_iter()
-                                .map(|(id, n)| (id, n.into_iter().map(Into::into).collect()))
-                                .collect(),
-                        );
-                    }
+                // Names by field ID.
+                let names: Option<std::collections::HashMap<u32, Vec<String>>> = if tuple.len() > 2
+                {
+                    tuple.get_item(2)?.extract()?
+                } else {
+                    None
+                };
+                let has_name_mapping = names.is_some();
+                if let Some(names) = names {
+                    schema.apply_name_mapping(
+                        &names
+                            .into_iter()
+                            .map(|(id, n)| (id, n.into_iter().map(Into::into).collect()))
+                            .collect(),
+                    );
                 }
-                ColumnMapping::Iceberg(Arc::new(schema))
+                ColumnMapping::Iceberg {
+                    schema: Arc::new(schema),
+                    has_name_mapping,
+                }
             },
 
             v => {

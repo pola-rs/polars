@@ -208,7 +208,7 @@ impl PyFileOptions {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
-            Some(ColumnMapping::Iceberg(schema)) => (
+            Some(ColumnMapping::Iceberg { schema, .. }) => (
                 "iceberg-column-mapping",
                 iceberg_schema_to_pyobject(py, schema)?,
             )

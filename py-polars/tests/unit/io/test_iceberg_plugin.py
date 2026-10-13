@@ -1135,6 +1135,30 @@ def test_iceberg_plugin_metadata_path_with_dot_segments(metadata_path: str) -> N
         assert_frame_equal(pl.scan_iceberg(path).collect(), TEST_DF)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks")
+def test_iceberg_plugin_metadata_path_through_symlink_parent(tmp_path: Path) -> None:
+    # `link/..` is the parent of the symlink's target, not the directory holding
+    # `link`.
+    (tmp_path / "t").mkdir()
+    (tmp_path / "other").mkdir()
+    tbl = _new_table(tmp_path / "t")
+    other = _new_table(tmp_path / "other")
+    other.append(TEST_DF.head(1).to_arrow())
+
+    metadata = Path(tbl.metadata_location.removeprefix("file://"))
+    (metadata.parent / "sub").mkdir()
+    wrong_dir = tmp_path / "wrong"
+    wrong_dir.mkdir()
+    (wrong_dir / "link").symlink_to(metadata.parent / "sub")
+    # Where removing `link/..` without the filesystem would lead to.
+    (wrong_dir / metadata.name).write_bytes(
+        Path(other.metadata_location.removeprefix("file://")).read_bytes()
+    )
+
+    path = f"{wrong_dir}/link/../{metadata.name}"
+    assert_frame_equal(pl.scan_iceberg(path).collect(), TEST_DF)
+
+
 @pytest.mark.parametrize("planner", [None, "plugin"])
 def test_iceberg_plugin_unsupported_avro_codec(
     tmp_path: Path, planner: str | None, plmonkeypatch: PlMonkeyPatch

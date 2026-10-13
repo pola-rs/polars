@@ -320,7 +320,10 @@ pub(super) fn build_scan(
     if let Some(names) = &name_mapping {
         iceberg_schema.apply_name_mapping(names);
     }
-    let column_mapping = ColumnMapping::Iceberg(Arc::new(iceberg_schema));
+    let column_mapping = ColumnMapping::Iceberg {
+        schema: Arc::new(iceberg_schema),
+        has_name_mapping: name_mapping.is_some(),
+    };
 
     let options = ParquetOptions {
         schema: Some(Arc::new(schema)),
