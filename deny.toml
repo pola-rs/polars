@@ -8,11 +8,6 @@ ignore = [
 
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
-  # Transitive dependency of the Arrow-rs Parquet reader used by iceberg-rust
-  "RUSTSEC-2024-0436",
-  # Transitive dependency of OpenDAL's GCS and ADLS credential signers.
-  # No patched rsa release exists.
-  "RUSTSEC-2023-0071",
 ]
 
 [licenses]
@@ -51,9 +46,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # don't use a given patch (these patches are only active in compute-plane).
 unknown-git = "deny"
 allow-git = [
-  "https://github.com/apache/iceberg-rust",
-  # Temporary development dependency for apache/iceberg-rust#3173.
-  "https://github.com/zakariya-s/iceberg-rust",
   "https://github.com/pola-rs/jemallocator",
   "https://github.com/pola-rs/hashbrown",
 ]

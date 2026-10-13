@@ -78,10 +78,8 @@ from polars.io.iceberg._dataset import (
     IcebergScanResolver,
     IcebergScanTableSerializer,
     IcebergTableWrap,
-    _convert_iceberg_to_rust_storage_options,
     _load_kms_config,
     _NativeIcebergScanData,
-    _RustIcebergScanData,
 )
 from polars.io.iceberg._sink import (
     _SINK_UUID_PROPERTY,
@@ -223,68 +221,6 @@ def iceberg_kms_endpoint() -> Iterator[
         finally:
             server.shutdown()
             thread.join()
-
-
-@pytest.mark.parametrize(
-    ("location", "properties", "expected"),
-    [
-        (
-            "s3://bucket/metadata.json",
-            {
-                "aws_endpoint_url": "http://localhost:9000",
-                "aws_access_key_id": "access-key",
-                "aws_secret_access_key": "secret-key",
-                "aws_session_token": "session-token",
-                "aws_region": "us-east-1",
-                "aws_virtual_hosted_style_request": "true",
-            },
-            {
-                "s3.endpoint": "http://localhost:9000",
-                "s3.access-key-id": "access-key",
-                "s3.secret-access-key": "secret-key",
-                "s3.session-token": "session-token",
-                "s3.region": "us-east-1",
-                "s3.path-style-access": "false",
-            },
-        ),
-        (
-            "gs://bucket/metadata.json",
-            {
-                "bearer_token": "token",
-                "google_service_account_key": '{"type":"service_account"}',
-                "google_url": "http://localhost:9000",
-            },
-            {
-                "gcs.oauth2.token": "token",
-                "gcs.credentials-json": '{"type":"service_account"}',
-                "gcs.service.host": "http://localhost:9000",
-            },
-        ),
-        (
-            "abfss://container@account.dfs.core.windows.net/metadata.json",
-            {
-                "azure_storage_account_name": "account",
-                "azure_storage_account_key": "key",
-                "azure_storage_tenant_id": "tenant",
-                "azure_storage_client_id": "client",
-                "azure_storage_client_secret": "secret",
-            },
-            {
-                "adls.account-name": "account",
-                "adls.account-key": "key",
-                "adls.tenant-id": "tenant",
-                "adls.client-id": "client",
-                "adls.client-secret": "secret",
-            },
-        ),
-    ],
-)
-def test_convert_iceberg_to_rust_storage_options(
-    location: str, properties: dict[str, str], expected: dict[str, str]
-) -> None:
-    result = _convert_iceberg_to_rust_storage_options(location, properties)
-
-    assert result.items() >= expected.items()
 
 
 @pytest.fixture(autouse=True)
@@ -478,11 +414,12 @@ class TestIcebergScanIO:
         scan_data = new_iceberg_scan_resolver(table)
         resolved = scan_data._to_dataset_scan_impl(projection=["str"])
 
-        assert isinstance(resolved, _RustIcebergScanData)
+        assert isinstance(resolved, _NativeIcebergScanData)
         assert resolved.projected_iceberg_schema.column_names == ["str"]
-        assert resolved.kms_client.properties["config-property"] == "config"
-        assert resolved.kms_client.properties["property-precedence"] == "table"
-        assert resolved.storage_properties["config-property"] == "config"
+        config = _load_kms_config(table)
+        assert config is not None
+        assert config.client.properties["config-property"] == "config"
+        assert config.client.properties["property-precedence"] == "table"
 
     @pytest.mark.parametrize(
         ("kms_impl", "error", "match"),

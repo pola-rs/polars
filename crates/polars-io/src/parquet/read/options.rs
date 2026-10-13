@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
 use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
+use polars_utils::aliases::PlHashMap;
+use polars_utils::pl_path::PlRefPath;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +38,22 @@ impl Default for ParquetOptions {
 /// These hold secret keys, so can't be serialized, and are compared and hashed
 /// by pointer.
 #[derive(Clone)]
-pub struct PlFileDecryptionProperties(pub Arc<FileDecryptionProperties>);
+pub struct PlFileDecryptionProperties(pub Arc<ParquetDecryptionKeys>);
+
+#[derive(Debug)]
+pub enum ParquetDecryptionKeys {
+    Uniform(Arc<FileDecryptionProperties>),
+    PerFile(PlHashMap<PlRefPath, Arc<FileDecryptionProperties>>),
+}
+
+impl PlFileDecryptionProperties {
+    pub fn for_path(&self, path: Option<&PlRefPath>) -> Option<&Arc<FileDecryptionProperties>> {
+        match self.0.as_ref() {
+            ParquetDecryptionKeys::Uniform(properties) => Some(properties),
+            ParquetDecryptionKeys::PerFile(files) => path.and_then(|path| files.get(path)),
+        }
+    }
+}
 
 impl Debug for PlFileDecryptionProperties {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

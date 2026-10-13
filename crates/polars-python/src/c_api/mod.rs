@@ -125,8 +125,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyCategories>().unwrap();
     m.add_class::<PyArrowCStreamReader>().unwrap();
     #[cfg(feature = "iceberg")]
-    m.add_class::<crate::iceberg::IcebergBatchIterator>()
-        .unwrap();
+    m.add_class::<crate::iceberg::PyIcebergKmsClient>().unwrap();
 
     #[cfg(feature = "pymethods")]
     m.add_class::<crate::polars_cloud_observer::CloudStreamingMetricsHandle>()
@@ -145,7 +144,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(_expr_nodes))?;
 
     #[cfg(feature = "iceberg")]
-    m.add_wrapped(wrap_pyfunction!(crate::iceberg::_scan_iceberg_rust))
+    m.add_wrapped(wrap_pyfunction!(crate::iceberg::_iceberg_decrypt))
         .unwrap();
 
     // Functions - eager

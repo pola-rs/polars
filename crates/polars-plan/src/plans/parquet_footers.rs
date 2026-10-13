@@ -230,7 +230,7 @@ pub(crate) async fn read_parquet_metadata(
         let mut cursor = Cursor::new(memslice);
         let md = polars_parquet::parquet::read::read_metadata_with_decryption(
             &mut cursor,
-            decryption_properties.map(|p| &p.0),
+            decryption_properties.and_then(|p| p.for_path(source.as_path())),
             None,
         )?;
         Ok(std::sync::Arc::new(md))
@@ -258,7 +258,7 @@ pub(crate) async fn read_parquet_num_rows(
         let mut cursor = Cursor::new(memslice);
         polars_parquet::parquet::read::read_num_rows(
             &mut cursor,
-            decryption_properties.map(|p| &p.0),
+            decryption_properties.and_then(|p| p.for_path(source.as_path())),
         )
         .map_err(Into::into)
     }

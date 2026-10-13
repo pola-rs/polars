@@ -78,8 +78,8 @@ def scan_iceberg(
         Custom Python KMS implementations can be configured with ``py-kms-impl``.
 
         Encrypted scan support is unstable. It supports local filesystem, S3,
-        GCS, and Azure Data Lake Storage tables. Predicates are evaluated by
-        Polars after scanning rather than pushed into the Iceberg reader.
+        GCS, and Azure Data Lake Storage tables. Predicates and projections use
+        the native Polars scan optimizations.
         Incremental append scans with encryption are not supported.
     reader_override
         Overrides the reader used to read the data.

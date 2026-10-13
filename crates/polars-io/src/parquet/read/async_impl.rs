@@ -20,6 +20,7 @@ use crate::parquet::read::PlFileDecryptionProperties;
 pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
+    uri: PlRefPath,
     metadata: Option<FileMetadataRef>,
     schema: Option<ArrowSchemaRef>,
     decryption_properties: Option<PlFileDecryptionProperties>,
@@ -31,12 +32,14 @@ impl ParquetObjectStore {
         options: Option<&CloudOptions>,
         metadata: Option<FileMetadataRef>,
     ) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options, false).await?;
+        let (CloudLocation { prefix, .. }, store) =
+            build_object_store(uri.clone(), options, false).await?;
         let path = object_path_from_str(&prefix)?;
 
         Ok(ParquetObjectStore {
             store,
             path,
+            uri,
             metadata,
             schema: None,
             decryption_properties: None,
@@ -64,7 +67,9 @@ impl ParquetObjectStore {
             let footer = fetch_footer_bytes(&self.store, &self.path).await?;
             self.metadata = Some(Arc::new(deserialize_metadata(
                 footer,
-                self.decryption_properties.as_ref().map(|p| &p.0),
+                self.decryption_properties
+                    .as_ref()
+                    .and_then(|p| p.for_path(Some(&self.uri))),
             )?));
         }
         Ok(self.metadata.as_ref().unwrap())
@@ -76,7 +81,9 @@ impl ParquetObjectStore {
         let footer = fetch_footer_bytes(&self.store, &self.path).await?;
         Ok(deserialize_num_rows(
             footer,
-            self.decryption_properties.as_ref().map(|p| &p.0),
+            self.decryption_properties
+                .as_ref()
+                .and_then(|p| p.for_path(Some(&self.uri))),
         )?)
     }
 

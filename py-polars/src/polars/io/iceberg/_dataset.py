@@ -26,6 +26,7 @@ from polars.io.iceberg._utils import (
     extract_field_initial_default,
     try_convert_pyarrow_predicate,
 )
+from polars.io.parquet.decryption import ParquetDecryptionProperties
 from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
@@ -333,7 +334,7 @@ class IcebergScanResolver:
         filter_columns: list[str] | None = None,
         statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
-    ) -> _NativeIcebergScanData | _PyIcebergScanData | _RustIcebergScanData | None:
+    ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         import polars._utils.logging
@@ -479,27 +480,28 @@ class IcebergScanResolver:
             is not None
         }
 
-        if (
-            kms_config := _load_kms_config(tbl, self.table.iceberg_storage_properties)
-        ) is not None:
+        kms_config = _load_kms_config(tbl, self.table.iceberg_storage_properties)
+        if kms_config is not None:
             if is_incremental:
                 msg = (
                     "incremental append scans with Iceberg encryption are not supported"
                 )
                 raise NotImplementedError(msg)
-            return _RustIcebergScanData(
-                metadata_location=tbl.metadata_location,
-                projected_iceberg_schema=projected_iceberg_schema,
-                kms_client=kms_config.client,
-                kms_properties=kms_config.properties,
-                storage_properties=_rust_iceberg_storage_properties(
-                    tbl, self.table.iceberg_storage_properties
-                ),
-                snapshot_id=snapshot_id,
-                with_columns=projection,
-                n_rows=limit,
-                snapshot_id_key=snapshot_id_key,
-            )
+            if reader_override == "pyiceberg":
+                msg = "encrypted Iceberg scans require the native Parquet reader"
+                raise NotImplementedError(msg)
+        decryption_keys: dict[str, tuple[bytes, bytes | None]] = {}
+
+        def register_key(data_file: Any) -> None:
+            if data_file.key_metadata:
+                from polars.io.iceberg._encryption import decode_key_metadata
+
+                key, aad, _ = decode_key_metadata(data_file.key_metadata)
+                path = _normalize_windows_iceberg_file_uri(data_file.file_path)
+                if path in decryption_keys and decryption_keys[path] != (key, aad):
+                    msg = "Conflicting Iceberg encryption keys for the same file"
+                    raise ComputeError(msg)
+                decryption_keys[path] = (key, aad)
 
         sources = []
         source_sizes = []
@@ -547,10 +549,23 @@ class IcebergScanResolver:
                 selected_fields=selected_fields,
             )
 
+            if kms_config is not None:
+                from polars.io.iceberg._encryption import EncryptedFileIO
+
+                kms_client = kms_config.client
+                if kms_client is None:
+                    from polars._plr import PyIcebergKmsClient
+
+                    kms_client = PyIcebergKmsClient(kms_config.properties)
+                scan.io = EncryptedFileIO(tbl, scan.io, snapshot_id, kms_client)
+                # REST scan tasks do not carry the file encryption keys.
+                scan.catalog = None
+
             if iceberg_table_filter is not None:
                 scan = scan.filter(iceberg_table_filter)
 
             for i, file_info in enumerate(scan.plan_files()):
+                register_key(file_info.file)
                 if file_info.file.file_format != FileFormat.PARQUET:
                     fallback_reason = (
                         f"non-parquet format: {file_info.file.file_format}"
@@ -563,6 +578,7 @@ class IcebergScanResolver:
                     deletion_vector_num_rows = 0
 
                     for deletion_file in file_info.delete_files:
+                        register_key(deletion_file)
                         if deletion_file.content != DataFileContent.POSITION_DELETES:
                             fallback_reason = (
                                 "unsupported deletion file type: "
@@ -652,16 +668,38 @@ class IcebergScanResolver:
                 else None
             )
 
+            iceberg_storage_properties = self.table.iceberg_storage_properties
+            if kms_config is not None:
+                iceberg_storage_properties = {
+                    **{
+                        key: value
+                        for properties in (
+                            getattr(tbl.io, "properties", {}),
+                            getattr(tbl, "config", {}),
+                        )
+                        for key, value in properties.items()
+                        if key in ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP
+                        or key.startswith(("aws_", "azure_", "google_"))
+                    },
+                    **(iceberg_storage_properties or {}),
+                }
+                for key in ("py-kms-impl", "profile_name", "region_name"):
+                    iceberg_storage_properties.pop(key, None)
             storage_options = (
                 _convert_iceberg_to_object_store_storage_options(
-                    self.table.iceberg_storage_properties
+                    iceberg_storage_properties
                 )
-                if self.table.iceberg_storage_properties is not None
+                if iceberg_storage_properties is not None
                 else None
             )
 
             return _NativeIcebergScanData(
                 sources=sources,
+                decryption=ParquetDecryptionProperties._from_iceberg_keys(
+                    decryption_keys
+                )
+                if decryption_keys
+                else None,
                 source_sizes=source_sizes,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
@@ -682,7 +720,7 @@ class IcebergScanResolver:
                 snapshot_id_key=snapshot_id_key,
             )
 
-        elif reader_override == "native":
+        elif reader_override == "native" or kms_config is not None:
             msg = f"iceberg reader_override='native' failed: {fallback_reason}"
             raise ComputeError(msg)
 
@@ -727,6 +765,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for a native Iceberg scan."""
 
     sources: list[str]
+    decryption: ParquetDecryptionProperties | None = None
     source_sizes: list[int]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
@@ -749,6 +788,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
 
         return scan_parquet(
             self.sources,
+            decryption=self.decryption,
             glob=False,
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
@@ -858,67 +898,6 @@ def _load_kms_config(
     return _IcebergKmsConfig(properties={}, client=kms_client)
 
 
-def _scan_iceberg_rust_impl(
-    metadata_location: str,
-    kms_client: Any,
-    kms_properties: dict[str, str],
-    storage_properties: dict[str, str],
-    snapshot_id: int | None,
-    with_columns: list[str] | None = None,
-    _predicate: bytes | None = None,
-    n_rows: int | None = None,
-    batch_size: int | None = None,
-) -> tuple[Any, bool]:
-    from polars import _plr
-    from polars._utils.wrap import wrap_df
-
-    batches = _plr._scan_iceberg_rust(
-        metadata_location,
-        kms_client,
-        kms_properties,
-        storage_properties,
-        snapshot_id,
-        with_columns,
-        n_rows,
-        batch_size,
-    )
-    return ((wrap_df(batch) for batch in batches), False)
-
-
-@dataclass(kw_only=True)
-class _RustIcebergScanData(_ResolvedScanDataBase):
-    metadata_location: str
-    projected_iceberg_schema: pyiceberg.schema.Schema
-    kms_client: Any
-    kms_properties: dict[str, str]
-    storage_properties: dict[str, str]
-    snapshot_id: int | None
-    with_columns: list[str] | None
-    n_rows: int | None
-    snapshot_id_key: str
-
-    def to_lazyframe(self) -> pl.LazyFrame:
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-        scan_fn = partial(
-            _scan_iceberg_rust_impl,
-            self.metadata_location,
-            self.kms_client,
-            self.kms_properties,
-            self.storage_properties,
-            self.snapshot_id,
-            with_columns=self.with_columns,
-            n_rows=self.n_rows,
-        )
-        return pl.LazyFrame._scan_python_function(
-            schema_to_pyarrow(self.projected_iceberg_schema),
-            scan_fn,
-            pyarrow=True,
-            is_pure=True,
-            explain_name="ICEBERG-RUST",
-        )
-
-
 def _redact_dict_values(obj: Any) -> Any:
     return (
         dict.fromkeys(obj.keys(), "REDACTED")
@@ -953,124 +932,6 @@ def _convert_iceberg_to_object_store_storage_options(
         # Otherwise, unknown keys are ignored / not passed. This is to avoid
         # interfering with credential provider auto-init, which bails on
         # unknown keys.
-
-    return storage_options
-
-
-def _rust_iceberg_storage_properties(
-    table: pyiceberg.table.Table,
-    storage_properties: StorageOptionsDict | None,
-) -> dict[str, str]:
-    properties = _convert_iceberg_to_rust_storage_options(
-        table.metadata_location, getattr(table.io, "properties", {})
-    )
-    properties.update(
-        _convert_iceberg_to_rust_storage_options(
-            table.metadata_location, getattr(table, "config", {})
-        )
-    )
-    properties.update(
-        _convert_iceberg_to_rust_storage_options(
-            table.metadata_location, storage_properties or {}
-        )
-    )
-    return properties
-
-
-def _convert_iceberg_to_rust_storage_options(
-    location: str, properties: dict[str, Any]
-) -> dict[str, str]:
-    storage_options = {key: str(value) for key, value in properties.items()}
-
-    aliases = {
-        "client.access-key-id": "s3.access-key-id",
-        "client.secret-access-key": "s3.secret-access-key",
-        "client.session-token": "s3.session-token",
-        "client.role-arn": "client.assume-role.arn",
-        "client.role-session-name": "client.assume-role.session-name",
-        "s3.role-arn": "client.assume-role.arn",
-        "s3.role-session-name": "client.assume-role.session-name",
-        "s3.anonymous": "s3.allow-anonymous",
-        "gcs.service.path": "gcs.service.host",
-    }
-
-    scheme = location.partition(":")[0].lower()
-    if scheme in {"s3", "s3a", "s3n"}:
-        aliases.update(
-            {
-                "aws_endpoint": "s3.endpoint",
-                "aws_endpoint_url": "s3.endpoint",
-                "endpoint": "s3.endpoint",
-                "endpoint_url": "s3.endpoint",
-                "aws_access_key_id": "s3.access-key-id",
-                "access_key_id": "s3.access-key-id",
-                "aws_secret_access_key": "s3.secret-access-key",
-                "secret_access_key": "s3.secret-access-key",
-                "aws_session_token": "s3.session-token",
-                "aws_token": "s3.session-token",
-                "session_token": "s3.session-token",
-                "aws_region": "s3.region",
-                "region": "s3.region",
-            }
-        )
-    elif scheme in {"gs", "gcs"}:
-        aliases.update(
-            {
-                "bearer_token": "gcs.oauth2.token",
-                "google_service_account_key": "gcs.credentials-json",
-                "service_account_key": "gcs.credentials-json",
-                "google_url": "gcs.service.host",
-            }
-        )
-    elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
-        aliases.update(
-            {
-                "azure_storage_account_name": "adls.account-name",
-                "account_name": "adls.account-name",
-                "azure_storage_account_key": "adls.account-key",
-                "azure_storage_access_key": "adls.account-key",
-                "azure_storage_master_key": "adls.account-key",
-                "access_key": "adls.account-key",
-                "account_key": "adls.account-key",
-                "master_key": "adls.account-key",
-                "azure_storage_sas_key": "adls.sas-token",
-                "azure_storage_sas_token": "adls.sas-token",
-                "sas_key": "adls.sas-token",
-                "sas_token": "adls.sas-token",
-                "azure_storage_tenant_id": "adls.tenant-id",
-                "azure_storage_authority_id": "adls.tenant-id",
-                "azure_tenant_id": "adls.tenant-id",
-                "azure_authority_id": "adls.tenant-id",
-                "tenant_id": "adls.tenant-id",
-                "authority_id": "adls.tenant-id",
-                "azure_storage_client_id": "adls.client-id",
-                "azure_client_id": "adls.client-id",
-                "client_id": "adls.client-id",
-                "azure_storage_client_secret": "adls.client-secret",
-                "azure_client_secret": "adls.client-secret",
-                "client_secret": "adls.client-secret",
-                "azure_storage_authority_host": "adls.authority-host",
-                "azure_authority_host": "adls.authority-host",
-                "authority_host": "adls.authority-host",
-            }
-        )
-
-    for source, target in aliases.items():
-        if source in storage_options:
-            storage_options.setdefault(target, storage_options[source])
-
-    if "s3.path-style-access" not in storage_options:
-        for key in (
-            "s3.force-virtual-addressing",
-            "aws_virtual_hosted_style_request",
-            "virtual_hosted_style_request",
-        ):
-            if key in storage_options:
-                value = storage_options[key].lower()
-                storage_options["s3.path-style-access"] = str(
-                    value not in {"1", "on", "true", "yes", "y"}
-                ).lower()
-                break
 
     return storage_options
 
