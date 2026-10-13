@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import base64
+import importlib
 import io
 import json
 import threading
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pyiceberg.avro.decoder import new_decoder
 from pyiceberg.io import FileIO, InputFile
@@ -12,11 +14,97 @@ from pyiceberg.manifest import read_manifest_list
 from pyiceberg.serializers import Compressor
 
 from polars import _plr
+from polars._utils.unstable import issue_unstable_warning
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from pyiceberg.io import InputStream, OutputFile
     from pyiceberg.table import Table
+
+    from polars._typing import StorageOptionsDict
+
+
+class _KmsClient(Protocol):
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes: ...
+
+
+@dataclass(kw_only=True)
+class _IcebergKmsConfig:
+    properties: dict[str, str]
+    client: _KmsClient | None = None
+
+
+def _load_kms_config(
+    table: Table,
+    storage_properties: StorageOptionsDict | None = None,
+) -> _IcebergKmsConfig | None:
+    kms_properties: dict[str, Any] = {}
+
+    if (catalog := getattr(table, "catalog", None)) is not None:
+        kms_properties.update(getattr(catalog, "properties", {}))
+
+    kms_properties.update(getattr(table, "config", {}))
+    kms_properties.update(storage_properties or {})
+
+    kms_impl = kms_properties.get("py-kms-impl")
+    kms_type = kms_properties.get("encryption.kms-type")
+    if kms_type is not None:
+        if kms_impl is not None:
+            msg = "configure only one of 'encryption.kms-type' and 'py-kms-impl'"
+            raise ValueError(msg)
+        if "encryption.key-id" not in table.metadata.properties:
+            return None
+        if kms_type != "aws":
+            msg = f"unsupported Iceberg KMS type: {kms_type!r}; expected 'aws'"
+            raise NotImplementedError(msg)
+        issue_unstable_warning("encrypted Iceberg scans are considered unstable.")
+        return _IcebergKmsConfig(
+            properties={key: str(value) for key, value in kms_properties.items()}
+        )
+    if kms_impl is None:
+        return None
+    issue_unstable_warning("encrypted Iceberg scans are considered unstable.")
+    if not isinstance(kms_impl, str):
+        msg = "Iceberg property 'py-kms-impl' must be a string"
+        raise TypeError(msg)
+
+    module_name, separator, class_name = kms_impl.rpartition(".")
+    if not separator or not module_name or not class_name:
+        msg = (
+            "Iceberg property 'py-kms-impl' must be a fully qualified "
+            f"class name, got {kms_impl!r}"
+        )
+        raise ValueError(msg)
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as error:
+        msg = f"failed to import Iceberg KMS module {module_name!r}"
+        raise ImportError(msg) from error
+
+    try:
+        kms_class = getattr(module, class_name)
+    except AttributeError as error:
+        msg = f"Iceberg KMS class {class_name!r} not found in module {module_name!r}"
+        raise ImportError(msg) from error
+
+    try:
+        kms_client = kms_class()
+    except TypeError as error:
+        msg = f"failed to construct Iceberg KMS implementation {kms_impl!r}"
+        raise TypeError(msg) from error
+
+    initialize = getattr(kms_client, "initialize", None)
+    if not callable(initialize):
+        msg = f"Iceberg KMS implementation {kms_impl!r} has no initialize() method"
+        raise TypeError(msg)
+
+    if not callable(getattr(kms_client, "unwrap_key", None)):
+        msg = f"Iceberg KMS implementation {kms_impl!r} has no unwrap_key() method"
+        raise TypeError(msg)
+
+    initialize({**kms_properties, **table.metadata.properties})
+    return _IcebergKmsConfig(properties={}, client=kms_client)
 
 
 def decode_key_metadata(value: bytes) -> tuple[bytes, bytes | None, int | None]:
@@ -70,6 +158,9 @@ class _EncryptedInputFile(InputFile):  # type: ignore[misc]
         super().__init__(inner.location)
         self._inner = inner
         self._key, self._aad, self._length = decode_key_metadata(metadata)
+        if self._length is None:
+            msg = "Iceberg encrypted metadata requires file length in key metadata"
+            raise ComputeError(msg)
 
     def __len__(self) -> int:
         with self.open() as stream:
@@ -81,7 +172,7 @@ class _EncryptedInputFile(InputFile):  # type: ignore[misc]
     def open(self, seekable: bool = True) -> InputStream:  # noqa: ARG002, FBT001
         with self._inner.open() as stream:
             ciphertext = stream.read()
-        if self._length is not None and len(ciphertext) != self._length:
+        if len(ciphertext) != self._length:
             msg = "Iceberg encrypted file length does not match key metadata"
             raise ComputeError(msg)
         plaintext = _plr._iceberg_decrypt(ciphertext, self._key, self._aad or b"", True)
@@ -93,7 +184,7 @@ class _EncryptedInputFile(InputFile):  # type: ignore[misc]
 
 
 class EncryptedFileIO(FileIO):  # type: ignore[misc]
-    def __init__(self, table: Table, inner: FileIO, kms_client: Any) -> None:
+    def __init__(self, table: Table, inner: FileIO, kms_client: _KmsClient) -> None:
         super().__init__(inner.properties)
         self._inner = inner
         self._kms_client = kms_client

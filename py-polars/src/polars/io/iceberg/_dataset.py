@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -10,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
-from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
 from polars.io.iceberg._cache import (
@@ -480,6 +478,8 @@ class IcebergScanResolver:
             is not None
         }
 
+        from polars.io.iceberg._encryption import _load_kms_config
+
         kms_config = _load_kms_config(tbl, self.table.iceberg_storage_properties)
         if kms_config is not None and reader_override == "pyiceberg":
             msg = "encrypted Iceberg scans require the native Parquet reader"
@@ -664,22 +664,6 @@ class IcebergScanResolver:
             )
 
             iceberg_storage_properties = self.table.iceberg_storage_properties
-            if kms_config is not None:
-                iceberg_storage_properties = {
-                    **{
-                        key: value
-                        for properties in (
-                            getattr(tbl.io, "properties", {}),
-                            getattr(tbl, "config", {}),
-                        )
-                        for key, value in properties.items()
-                        if key in ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP
-                        or key.startswith(("aws_", "azure_", "google_"))
-                    },
-                    **(iceberg_storage_properties or {}),
-                }
-                for key in ("py-kms-impl", "profile_name", "region_name"):
-                    iceberg_storage_properties.pop(key, None)
             storage_options = (
                 _convert_iceberg_to_object_store_storage_options(
                     iceberg_storage_properties
@@ -687,6 +671,28 @@ class IcebergScanResolver:
                 if iceberg_storage_properties is not None
                 else None
             )
+            if kms_config is not None:
+                resolved_storage_options = {}
+                for properties in (
+                    getattr(tbl, "config", {}),
+                    getattr(tbl.io, "properties", {}),
+                ):
+                    resolved_storage_options.update(
+                        _convert_iceberg_to_object_store_storage_options(
+                            {
+                                key: value
+                                for key, value in properties.items()
+                                if key in ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP
+                                or key.startswith(("aws_", "azure_", "google_"))
+                            }
+                        )
+                    )
+                storage_options = {
+                    **resolved_storage_options,
+                    **(storage_options or {}),
+                }
+                for key in ("py-kms-impl", "profile_name", "region_name"):
+                    storage_options.pop(key, None)
 
             return _NativeIcebergScanData(
                 sources=sources,
@@ -814,85 +820,6 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
         return self.lf
 
 
-@dataclass(kw_only=True)
-class _IcebergKmsConfig:
-    properties: dict[str, str]
-    client: Any = None
-
-
-def _load_kms_config(
-    table: pyiceberg.table.Table,
-    storage_properties: StorageOptionsDict | None = None,
-) -> _IcebergKmsConfig | None:
-    kms_properties: dict[str, Any] = {}
-
-    if (catalog := getattr(table, "catalog", None)) is not None:
-        kms_properties.update(getattr(catalog, "properties", {}))
-
-    kms_properties.update(getattr(table, "config", {}))
-    kms_properties.update(storage_properties or {})
-
-    kms_impl = kms_properties.get("py-kms-impl")
-    kms_type = kms_properties.get("encryption.kms-type")
-    if kms_type is not None:
-        if kms_impl is not None:
-            msg = "configure only one of 'encryption.kms-type' and 'py-kms-impl'"
-            raise ValueError(msg)
-        if "encryption.key-id" not in table.metadata.properties:
-            return None
-        if kms_type != "aws":
-            msg = f"unsupported Iceberg KMS type: {kms_type!r}; expected 'aws'"
-            raise NotImplementedError(msg)
-        issue_unstable_warning("encrypted Iceberg scans are considered unstable.")
-        return _IcebergKmsConfig(
-            properties={key: str(value) for key, value in kms_properties.items()}
-        )
-    if kms_impl is None:
-        return None
-    issue_unstable_warning("encrypted Iceberg scans are considered unstable.")
-    if not isinstance(kms_impl, str):
-        msg = "Iceberg property 'py-kms-impl' must be a string"
-        raise TypeError(msg)
-
-    module_name, separator, class_name = kms_impl.rpartition(".")
-    if not separator or not module_name or not class_name:
-        msg = (
-            "Iceberg property 'py-kms-impl' must be a fully qualified "
-            f"class name, got {kms_impl!r}"
-        )
-        raise ValueError(msg)
-
-    try:
-        module = importlib.import_module(module_name)
-    except ImportError as error:
-        msg = f"failed to import Iceberg KMS module {module_name!r}"
-        raise ImportError(msg) from error
-
-    try:
-        kms_class = getattr(module, class_name)
-    except AttributeError as error:
-        msg = f"Iceberg KMS class {class_name!r} not found in module {module_name!r}"
-        raise ImportError(msg) from error
-
-    try:
-        kms_client = kms_class()
-    except TypeError as error:
-        msg = f"failed to construct Iceberg KMS implementation {kms_impl!r}"
-        raise TypeError(msg) from error
-
-    initialize = getattr(kms_client, "initialize", None)
-    if not callable(initialize):
-        msg = f"Iceberg KMS implementation {kms_impl!r} has no initialize() method"
-        raise TypeError(msg)
-
-    if not callable(getattr(kms_client, "unwrap_key", None)):
-        msg = f"Iceberg KMS implementation {kms_impl!r} has no unwrap_key() method"
-        raise TypeError(msg)
-
-    initialize({**kms_properties, **table.metadata.properties})
-    return _IcebergKmsConfig(properties={}, client=kms_client)
-
-
 def _redact_dict_values(obj: Any) -> Any:
     return (
         dict.fromkeys(obj.keys(), "REDACTED")
@@ -922,7 +849,8 @@ def _convert_iceberg_to_object_store_storage_options(
             # keys. We identify Iceberg keys by checking for a dot - from
             # observation nearly all Iceberg config keys contain dots, whereas
             # native config keys do not contain them.
-            storage_options[k] = v
+            # Iceberg aliases take precedence, matching PyIceberg FileIO.
+            storage_options.setdefault(k, v)
 
         # Otherwise, unknown keys are ignored / not passed. This is to avoid
         # interfering with credential provider auto-init, which bails on

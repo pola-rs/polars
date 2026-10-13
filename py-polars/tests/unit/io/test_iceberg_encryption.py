@@ -1,24 +1,19 @@
 from __future__ import annotations
 
 import base64
-import copy
 import gzip
-import io
 import json
-import os
 import pickle
-from typing import TYPE_CHECKING, ClassVar
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pyarrow.parquet as pq
 import pyarrow.parquet.encryption as pe
 import pytest
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from pyiceberg.avro.encoder import BinaryEncoder
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import (
     clear_manifest_cache,
-    write_manifest,
-    write_manifest_list,
 )
 from pyiceberg.schema import Schema
 from pyiceberg.table import StaticTable
@@ -27,71 +22,102 @@ from pyiceberg.types import LongType, NestedField
 
 import polars as pl
 from polars import _plr
+from polars.io.iceberg._dataset import _NativeIcebergScanData
 from polars.io.iceberg._encryption import (
     _BytesInputFile,
     _EncryptedInputFile,
+    _load_kms_config,
     decode_key_metadata,
 )
 from polars.testing import assert_frame_equal
-from tests.unit.io.test_iceberg import (
+from tests.unit.io.iceberg_encryption_utils import (
+    encrypt_block,
+    encrypt_stream,
+    key_metadata,
+    write_encrypted_snapshot_metadata,
+)
+from tests.unit.io.iceberg_utils import (
+    iceberg_path_fixture,  # noqa: F401
+    new_iceberg_scan_resolver,
     new_iceberg_table,
     sqlcatalog_uses_null_pool_connections,  # noqa: F401
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
-
-    from pyiceberg.manifest import ManifestFile
-    from pyiceberg.table import Table
 
     from polars._typing import EngineType
 
 
-KEK = b"0123456789abcdef"
+class _TestKmsClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[bytes, str]] = []
+        self.properties: dict[str, str] = {}
+
+    def initialize(self, properties: dict[str, str]) -> None:
+        self.properties = properties
+
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        self.calls.append((wrapped_key, wrapping_key_id))
+        msg = "unencrypted table should not request a key"
+        raise AssertionError(msg)
 
 
-class _TestKms:
+class _IdentityKms:
     def initialize(self, properties: dict[str, str]) -> None:
         pass
 
     def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
-        assert wrapped_key == b"wrapped-kek"
-        assert wrapping_key_id == "master"
-        return KEK
+        assert wrapping_key_id == "test-master"
+        return wrapped_key
 
 
-def key_metadata(key: bytes, aad: bytes, length: int | None = None) -> bytes:
-    output = io.BytesIO(b"\x01")
-    output.seek(1)
-    encoder = BinaryEncoder(output)
-    encoder.write_bytes(key)
-    encoder.write_int(1)
-    encoder.write_bytes(aad)
-    encoder.write_int(int(length is not None))
-    if length is not None:
-        encoder.write_int(length)
-    return output.getvalue()
+class _KmsWithoutInitialize:
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        return wrapped_key
 
 
-def encrypt_block(plaintext: bytes, key: bytes, aad: bytes) -> bytes:
-    nonce = os.urandom(12)
-    return nonce + AESGCM(key).encrypt(nonce, plaintext, aad)
+class _KmsWithoutUnwrap:
+    def initialize(self, properties: dict[str, str]) -> None:
+        pass
 
 
-def encrypt_stream(plaintext: bytes, key: bytes, aad: bytes) -> bytes:
-    block_size = 1024 * 1024
-    return (
-        b"AGS1"
-        + block_size.to_bytes(4, "little")
-        + b"".join(
-            encrypt_block(
-                plaintext[start : start + block_size],
-                key,
-                aad + i.to_bytes(4, "little"),
-            )
-            for i, start in enumerate(range(0, max(len(plaintext), 1), block_size))
-        )
-    )
+class _KmsWithRequiredArgument:
+    def __init__(self, value: str) -> None:
+        pass
+
+
+@pytest.fixture
+def iceberg_kms_endpoint() -> Iterator[
+    tuple[str, list[tuple[str | None, dict[str, Any]]], dict[str, str]]
+]:
+    calls: list[tuple[str | None, dict[str, Any]]] = []
+    response = {
+        "Plaintext": base64.b64encode(
+            bytes.fromhex("fa501fc8fcba0566490e925879392260")
+        ).decode(),
+        "KeyId": "master-1",
+        "EncryptionAlgorithm": "SYMMETRIC_DEFAULT",
+    }
+
+    class KmsHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            calls.append((self.headers.get("X-Amz-Target"), json.loads(body)))
+            self.send_response(400 if "__type" in response else 200)
+            self.send_header("Content-Type", "application/x-amz-json-1.1")
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode())
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), KmsHandler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}", calls, response
+        finally:
+            server.shutdown()
+            thread.join()
 
 
 @pytest.mark.parametrize("engine", ["streaming", "in-memory"])
@@ -204,84 +230,13 @@ def test_encrypted_table_uses_native_scan(
     table.append(pl.DataFrame({"x": [4, 5, 6]}).to_arrow())
     snapshot = table.current_snapshot()
     assert snapshot is not None
-    manifests = snapshot.manifests(table.io)
-    for i, manifest in enumerate(manifests):
-        entries = manifest.fetch_manifest_entry(table.io)
-        for j, entry in enumerate(entries):
-            with table.io.new_input(entry.data_file.file_path).open() as stream:
-                original = pq.read_table(stream)
-            path = tmp_path / f"data-{i}-{j}.parquet"
-            key, aad = os.urandom(16), os.urandom(16)
-            pq.write_table(
-                original,
-                path,
-                encryption_properties=pe.create_encryption_properties(
-                    key, aad_prefix=aad, store_aad_prefix=False
-                ),
-            )
-            entry.data_file[1] = str(path)
-            entry.data_file[5] = path.stat().st_size
-            entry.data_file[12] = key_metadata(key, aad)
-        manifest_path = tmp_path / f"manifest-{i}.avro"
-        with write_manifest(
-            2,
-            table.spec(),
-            table.schema(),
-            table.io.new_output(str(manifest_path)),
-            snapshot.snapshot_id,
-            "null",
-        ) as writer:
-            for entry in entries:
-                writer.add_entry(entry)
-        content = manifest_path.read_bytes()
-        key, aad = os.urandom(24), os.urandom(16)
-        manifest_path.write_bytes(encrypt_stream(content, key, aad))
-        manifest[0] = str(manifest_path)
-        manifest[1] = manifest_path.stat().st_size
-        manifest[14] = key_metadata(key, aad, manifest_path.stat().st_size)
-    list_path = tmp_path / "manifest-list.avro"
-    with write_manifest_list(
-        2,
-        table.io.new_output(str(list_path)),
-        snapshot.snapshot_id,
-        snapshot.parent_snapshot_id,
-        snapshot.sequence_number,
-        "null",
-    ) as writer:
-        writer.add_manifests(manifests)
-    content = list_path.read_bytes()
-    key, aad = os.urandom(32), os.urandom(16)
-    list_path.write_bytes(encrypt_stream(content, key, aad))
-    metadata = table.metadata.model_dump(mode="json")
-    for item in metadata["snapshots"]:
-        if item["snapshot-id"] == snapshot.snapshot_id:
-            item["manifest-list"] = str(list_path)
-            item["key-id"] = "list-key"
-    metadata["properties"]["encryption.key-id"] = "master"
-    metadata["encryption-keys"] = [
-        {
-            "key-id": "kek",
-            "encrypted-by-id": "master",
-            "encrypted-key-metadata": base64.b64encode(b"wrapped-kek").decode(),
-            "properties": {"KEY_TIMESTAMP": "123"},
-        },
-        {
-            "key-id": "list-key",
-            "encrypted-by-id": "kek",
-            "encrypted-key-metadata": base64.b64encode(
-                encrypt_block(
-                    key_metadata(key, aad, list_path.stat().st_size), KEK, b"123"
-                )
-            ).decode(),
-        },
-    ]
-    metadata_path = tmp_path / (
-        "v1.gz.metadata.json" if compressed else "v1.metadata.json"
-    )
-    payload = json.dumps(metadata).encode()
-    metadata_path.write_bytes(gzip.compress(payload) if compressed else payload)
+    metadata_path = write_encrypted_snapshot_metadata(table, tmp_path, [None, "a"])
+    if compressed:
+        compressed_path = tmp_path / "v1.gz.metadata.json"
+        compressed_path.write_bytes(gzip.compress(metadata_path.read_bytes()))
+        metadata_path = compressed_path
     clear_manifest_cache()
-    storage_options = {"py-kms-impl": f"{__name__}._TestKms"}
+    storage_options = {"py-kms-impl": f"{__name__}._RotatingKms"}
     q = pl.scan_iceberg(str(metadata_path), storage_options=storage_options)
     expected = pl.DataFrame({"x": [1, 2, 3, 4, 5, 6]})
     assert "Parquet SCAN" in q.explain()
@@ -325,102 +280,6 @@ class _RotatingKms:
             msg = "access denied"
             raise PermissionError(msg)
         return wrapping_key_id.encode() * 16
-
-
-def write_encrypted_snapshot_metadata(
-    table: Table, tmp_path: Path, key_ids: list[str | None]
-) -> Path:
-    metadata = table.metadata.model_dump(mode="json")
-    metadata["properties"]["encryption.key-id"] = "current-master"
-    keys = [
-        {
-            "key-id": f"kek-{key_id}",
-            "encrypted-by-id": key_id,
-            "encrypted-key-metadata": base64.b64encode(key_id.encode()).decode(),
-            "properties": {"KEY_TIMESTAMP": "123"},
-        }
-        for key_id in sorted({key_id for key_id in key_ids if key_id is not None})
-    ]
-    rewritten: dict[str, ManifestFile] = {}
-    for snapshot, item, key_id in zip(
-        table.snapshots(), metadata["snapshots"], key_ids, strict=True
-    ):
-        manifests = []
-        for original_manifest in snapshot.manifests(table.io):
-            if original_manifest.manifest_path not in rewritten:
-                manifest = copy.deepcopy(original_manifest)
-                if key_id is not None:
-                    entries = manifest.fetch_manifest_entry(
-                        table.io, discard_deleted=False
-                    )
-                    for j, entry in enumerate(entries):
-                        with table.io.new_input(
-                            entry.data_file.file_path
-                        ).open() as stream:
-                            original = pq.read_table(stream)
-                        data_path = tmp_path / f"data-{len(rewritten)}-{j}.parquet"
-                        key, aad = os.urandom(16), os.urandom(16)
-                        pq.write_table(
-                            original,
-                            data_path,
-                            encryption_properties=pe.create_encryption_properties(
-                                key, aad_prefix=aad, store_aad_prefix=False
-                            ),
-                        )
-                        entry.data_file[1] = str(data_path)
-                        entry.data_file[5] = data_path.stat().st_size
-                        entry.data_file[12] = key_metadata(key, aad)
-                    manifest_path = tmp_path / f"manifest-{len(rewritten)}.avro"
-                    with write_manifest(
-                        2,
-                        table.spec(),
-                        table.schema(),
-                        table.io.new_output(str(manifest_path)),
-                        snapshot.snapshot_id,
-                        "null",
-                    ) as writer:
-                        for entry in entries:
-                            writer.add_entry(entry)
-                    content = manifest_path.read_bytes()
-                    key, aad = os.urandom(24), os.urandom(16)
-                    manifest_path.write_bytes(encrypt_stream(content, key, aad))
-                    manifest[0] = str(manifest_path)
-                    manifest[1] = manifest_path.stat().st_size
-                    manifest[14] = key_metadata(key, aad, manifest_path.stat().st_size)
-                rewritten[original_manifest.manifest_path] = manifest
-            manifests.append(copy.deepcopy(rewritten[original_manifest.manifest_path]))
-        list_path = tmp_path / f"list-{snapshot.snapshot_id}.avro"
-        with write_manifest_list(
-            2,
-            table.io.new_output(str(list_path)),
-            snapshot.snapshot_id,
-            snapshot.parent_snapshot_id,
-            snapshot.sequence_number,
-            "null",
-        ) as writer:
-            writer.add_manifests(manifests)
-        if key_id is not None:
-            key, aad = os.urandom(32), os.urandom(16)
-            list_path.write_bytes(encrypt_stream(list_path.read_bytes(), key, aad))
-            item["key-id"] = f"list-{snapshot.snapshot_id}"
-            keys.append(
-                {
-                    "key-id": item["key-id"],
-                    "encrypted-by-id": f"kek-{key_id}",
-                    "encrypted-key-metadata": base64.b64encode(
-                        encrypt_block(
-                            key_metadata(key, aad, list_path.stat().st_size),
-                            key_id.encode() * 16,
-                            b"123",
-                        )
-                    ).decode(),
-                }
-            )
-        item["manifest-list"] = str(list_path)
-    metadata["encryption-keys"] = keys
-    path = tmp_path / "encrypted.metadata.json"
-    path.write_text(json.dumps(metadata))
-    return path
 
 
 @pytest.mark.parametrize("engine", ["streaming", "in-memory"])
@@ -625,3 +484,371 @@ def test_puffin_deletion_vector_with_encryption(
     assert_frame_equal(q.collect(engine=engine), expected)
     assert_frame_equal(q.tail(1).collect(engine=engine), expected.tail(1))
     assert q.select(pl.len()).collect(engine=engine).item() == 2
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.filterwarnings(
+    "ignore:No preferred file implementation for scheme*:UserWarning"
+)
+@pytest.mark.ci_only
+class TestIcebergKms:
+    """KMS configuration and encrypted scan integration."""
+
+    def test_scan_iceberg_kms_implementation(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.catalog.properties.update(
+            {
+                "py-kms-impl": f"{__name__}._TestKmsClient",
+                "property-precedence": "catalog",
+            }
+        )
+        table.config = {
+            "config-property": "config",
+            "property-precedence": "config",
+        }
+        table.metadata.properties["property-precedence"] = "table"
+
+        q = pl.scan_iceberg(table)
+        assert q.select("id").head(2).collect().shape == (2, 1)
+        assert q.filter(pl.col("id") > 1).select("str").sort(
+            "str"
+        ).collect().rows() == [
+            ("2",),
+            ("3",),
+        ]
+
+        scan_data = new_iceberg_scan_resolver(table)
+        resolved = scan_data._to_dataset_scan_impl(projection=["str"])
+
+        assert isinstance(resolved, _NativeIcebergScanData)
+        assert resolved.projected_iceberg_schema.column_names == ["str"]
+        config = _load_kms_config(table)
+        assert config is not None
+        assert isinstance(config.client, _TestKmsClient)
+        assert config.client.properties["config-property"] == "config"
+        assert config.client.properties["property-precedence"] == "table"
+
+    @pytest.mark.parametrize(
+        ("kms_impl", "error", "match"),
+        [
+            ("InvalidKms", ValueError, "fully qualified class name"),
+            ("invalid_module.InvalidKms", ImportError, "failed to import"),
+            (
+                f"{__name__}.InvalidKms",
+                ImportError,
+                "KMS class 'InvalidKms' not found",
+            ),
+            (123, TypeError, "must be a string"),
+            (
+                f"{__name__}._KmsWithRequiredArgument",
+                TypeError,
+                "failed to construct",
+            ),
+            (
+                f"{__name__}._KmsWithoutInitialize",
+                TypeError,
+                "has no initialize",
+            ),
+            (
+                f"{__name__}._KmsWithoutUnwrap",
+                TypeError,
+                "has no unwrap_key",
+            ),
+        ],
+    )
+    def test_load_invalid_kms_implementation(
+        self,
+        iceberg_path: str,
+        kms_impl: Any,
+        error: type[Exception],
+        match: str,
+    ) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.config = {"py-kms-impl": kms_impl}
+
+        with pytest.raises(error, match=match):
+            _load_kms_config(table)
+
+    def test_kms_implementation_is_not_loaded_from_table_metadata(
+        self, iceberg_path: str
+    ) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["py-kms-impl"] = f"{__name__}._TestKmsClient"
+
+        assert _load_kms_config(table) is None
+
+    @pytest.mark.parametrize("source", ["catalog", "config", "storage_options"])
+    def test_native_kms_configuration(self, iceberg_path: str, source: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        properties = {"encryption.kms-type": "aws", "region_name": "us-east-1"}
+        storage_options = None
+        if source == "catalog":
+            table.catalog.properties.update(properties)
+        elif source == "config":
+            table.config = properties
+        else:
+            storage_options = properties
+
+        assert _load_kms_config(table, storage_options) is None
+        table.metadata.properties.update(
+            {
+                "encryption.key-id": "master-1",
+                "encryption.kms-type": "untrusted",
+                "kms.endpoint": "https://untrusted.invalid",
+                "region_name": "untrusted",
+            }
+        )
+        config = _load_kms_config(table, storage_options)
+        assert config is not None
+        assert config.client is None
+        assert config.properties["encryption.kms-type"] == "aws"
+        assert config.properties["region_name"] == "us-east-1"
+        assert "kms.endpoint" not in config.properties
+
+    @pytest.mark.parametrize("kms_type", ["azure", "gcp", "unknown"])
+    def test_unsupported_native_kms(self, iceberg_path: str, kms_type: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.config = {"encryption.kms-type": kms_type}
+
+        with pytest.raises(NotImplementedError, match="unsupported Iceberg KMS type"):
+            pl.scan_iceberg(table).collect()
+
+    def test_conflicting_kms_configuration(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.config = {
+            "encryption.kms-type": "aws",
+            "py-kms-impl": f"{__name__}._TestKmsClient",
+        }
+        with pytest.raises(ValueError, match="configure only one"):
+            pl.scan_iceberg(table).collect()
+
+    def test_native_kms_configuration_precedence(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.catalog.properties.update(
+            {"encryption.kms-type": "aws", "region_name": "catalog"}
+        )
+        table.config = {"region_name": "config"}
+        config = _load_kms_config(table)
+        assert config is not None
+        assert config.properties["region_name"] == "config"
+        config = _load_kms_config(table, {"region_name": "explicit"})
+        assert config is not None
+        assert config.properties["region_name"] == "explicit"
+
+    def test_native_kms_incremental_scan_validates_range(
+        self, iceberg_path: str
+    ) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.config = {
+            "encryption.kms-type": "aws",
+            "region_name": "us-east-1",
+            "aws_access_key_id": "test",
+            "aws_secret_access_key": "test",
+        }
+        with pytest.raises(ValueError, match="not a parent ancestor"):
+            pl.scan_iceberg(table, from_snapshot_id_exclusive=1).collect()
+
+    @pytest.mark.parametrize("kms_type", ["python", "aws", "aws_env", "aws_denied"])
+    @pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+    @pytest.mark.parametrize("deletes", ["positions", "vectors"])
+    @pytest.mark.filterwarnings(
+        "ignore:Call to to_vector, deprecated:DeprecationWarning"
+    )
+    def test_scan_iceberg_upstream_encrypted_deletes(
+        self,
+        io_files_path: Path,
+        kms_type: str,
+        engine: EngineType,
+        deletes: str,
+        monkeypatch: pytest.MonkeyPatch,
+        iceberg_kms_endpoint: tuple[
+            str, list[tuple[str | None, dict[str, Any]]], dict[str, str]
+        ],
+    ) -> None:
+        fixture_path = io_files_path / "iceberg-encrypted"
+        monkeypatch.chdir(fixture_path)
+        metadata_path = fixture_path / f"{deletes}.metadata.json"
+        metadata = json.loads(metadata_path.read_text())
+        wrapping_key = next(
+            key
+            for key in metadata["encryption-keys"]
+            if key["encrypted-by-id"] == "test-master"
+        )
+        endpoint, calls, response = iceberg_kms_endpoint
+        response["Plaintext"] = wrapping_key["encrypted-key-metadata"]
+        response["KeyId"] = "test-master"
+        storage_options = (
+            {"py-kms-impl": f"{__name__}._IdentityKms"}
+            if kms_type == "python"
+            else {
+                "encryption.kms-type": "aws",
+                "kms.endpoint": endpoint,
+                "region_name": "us-east-1",
+                "aws_access_key_id": "test",
+                "aws_secret_access_key": "test",
+            }
+        )
+        if kms_type == "aws_env":
+            monkeypatch.setenv(
+                "AWS_ACCESS_KEY_ID", storage_options.pop("aws_access_key_id")
+            )
+            monkeypatch.setenv(
+                "AWS_SECRET_ACCESS_KEY", storage_options.pop("aws_secret_access_key")
+            )
+            monkeypatch.setenv("AWS_REGION", storage_options.pop("region_name"))
+        q = pl.scan_iceberg(str(metadata_path), storage_options=storage_options)
+        if kms_type == "aws_denied":
+            response.clear()
+            response.update({"__type": "AccessDeniedException", "message": "denied"})
+            with pytest.raises(
+                pl.exceptions.ComputeError, match="AWS KMS Decrypt failed"
+            ):
+                q.collect(engine=engine)
+            assert len(calls) == 1
+            return
+        expected = pl.DataFrame({"x": [0, 2]})
+        assert_frame_equal(q.collect(engine=engine), expected)
+        if kms_type in {"aws", "aws_env"}:
+            assert calls == [
+                (
+                    "TrentService.Decrypt",
+                    {
+                        "CiphertextBlob": wrapping_key["encrypted-key-metadata"],
+                        "KeyId": "test-master",
+                        "EncryptionAlgorithm": "SYMMETRIC_DEFAULT",
+                    },
+                )
+            ]
+        else:
+            assert calls == []
+        assert_frame_equal(
+            q.filter(pl.col("x") > 0).collect(engine=engine), expected.tail(1)
+        )
+        assert_frame_equal(q.tail(1).collect(engine=engine), expected.tail(1))
+        assert q.select(pl.len()).collect(engine=engine).item() == 2
+
+
+@pytest.mark.parametrize("include_length", [False, True])
+def test_scan_iceberg_rejects_whole_block_truncation(
+    tmp_path: Path, include_length: bool
+) -> None:
+    import copy
+
+    from pyiceberg.manifest import write_manifest_list
+
+    from polars.io.iceberg._encryption import EncryptedFileIO
+
+    table, _ = new_iceberg_table(
+        tmp_path, schema=Schema(NestedField(1, "x", LongType()))
+    )
+    table.append(pl.DataFrame({"x": [42]}).to_arrow())
+    table.append(pl.DataFrame({"x": [43]}).to_arrow())
+    metadata_path = write_encrypted_snapshot_metadata(table, tmp_path, [None, "a"])
+    loaded = StaticTable.from_metadata(str(metadata_path))
+    snapshot = loaded.current_snapshot()
+    assert snapshot is not None
+    manifests = [
+        copy.deepcopy(manifest)
+        for manifest in snapshot.manifests(
+            EncryptedFileIO(loaded, loaded.io, _RotatingKms())
+        )
+    ]
+    list_path = tmp_path / "aligned-list.avro"
+    padding = 0
+    # Align Avro and AGS1 blocks so truncation leaves valid Avro.
+    for _ in range(4):
+        writer = write_manifest_list(
+            2,
+            table.io.new_output(str(list_path)),
+            snapshot.snapshot_id,
+            snapshot.parent_snapshot_id,
+            snapshot.sequence_number,
+            "null",
+        )
+        writer._meta["padding"] = "x" * padding
+        with writer:
+            writer.add_manifests(manifests[:1])
+            boundary = writer._writer.tell()
+            writer.add_manifests(manifests[1:])
+        if boundary == 1024 * 1024:
+            break
+        padding += 1024 * 1024 - boundary
+    assert boundary == 1024 * 1024
+    key, aad = b"k" * 16, b"manifest-list"
+    ciphertext = encrypt_stream(list_path.read_bytes(), key, aad)
+    list_path.write_bytes(ciphertext)
+    metadata = json.loads(metadata_path.read_text())
+    item = metadata["snapshots"][-1]
+    item["manifest-list"] = str(list_path)
+    entry = next(
+        key for key in metadata["encryption-keys"] if key["key-id"] == item["key-id"]
+    )
+    entry["encrypted-key-metadata"] = base64.b64encode(
+        encrypt_block(key_metadata(key, aad, len(ciphertext)), b"a" * 16, b"123")
+    ).decode()
+    metadata_path.write_text(json.dumps(metadata))
+    options = {"py-kms-impl": f"{__name__}._RotatingKms"}
+    assert_frame_equal(
+        pl.scan_iceberg(str(metadata_path), storage_options=options)
+        .sort("x")
+        .collect(),
+        pl.DataFrame({"x": [42, 43]}),
+    )
+    if not include_length:
+        entry["encrypted-key-metadata"] = base64.b64encode(
+            encrypt_block(key_metadata(key, aad), b"a" * 16, b"123")
+        ).decode()
+        metadata_path.write_text(json.dumps(metadata))
+    list_path.write_bytes(ciphertext[: 8 + 1024 * 1024 + 12 + 16])
+    clear_manifest_cache()
+    with pytest.raises(pl.exceptions.ComputeError, match="file length"):
+        pl.scan_iceberg(str(metadata_path), storage_options=options).collect()
+
+
+@pytest.mark.parametrize("config_native", [False, True])
+@pytest.mark.parametrize("explicit", [None, "iceberg", "native"])
+def test_encrypted_scan_storage_credential_precedence(
+    tmp_path: Path, config_native: bool, explicit: str | None
+) -> None:
+    table, _ = new_iceberg_table(
+        tmp_path, schema=Schema(NestedField(1, "x", LongType()))
+    )
+    table.append(pl.DataFrame({"x": [42]}).to_arrow())
+    metadata_path = write_encrypted_snapshot_metadata(table, tmp_path, ["a"])
+    table = StaticTable.from_metadata(str(metadata_path))
+    iceberg_keys = ["s3.access-key-id", "s3.secret-access-key", "s3.session-token"]
+    native_keys = ["aws_access_key_id", "aws_secret_access_key", "aws_session_token"]
+    table.config = {
+        "py-kms-impl": f"{__name__}._RotatingKms",
+        **dict.fromkeys(native_keys if config_native else iceberg_keys, "stale"),
+    }
+    table.io.properties.update(dict.fromkeys(iceberg_keys, "vended"))
+    resolver = new_iceberg_scan_resolver(table)
+    if explicit:
+        resolver.table.iceberg_storage_properties = dict.fromkeys(
+            native_keys if explicit == "native" else iceberg_keys, "explicit"
+        )
+    resolved = resolver._to_dataset_scan_impl()
+    assert isinstance(resolved, _NativeIcebergScanData)
+    assert resolved.storage_options == dict.fromkeys(
+        native_keys, "explicit" if explicit else "vended"
+    )
+    assert_frame_equal(resolved.to_lazyframe().collect(), pl.DataFrame({"x": [42]}))
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_iceberg_storage_aliases_match_file_io_precedence(reverse: bool) -> None:
+    from polars.io.iceberg._dataset import (
+        _convert_iceberg_to_object_store_storage_options,
+    )
+
+    items = [("s3.access-key-id", "vended"), ("aws_access_key_id", "catalog")]
+    if reverse:
+        items.reverse()
+    assert _convert_iceberg_to_object_store_storage_options(dict(items)) == {
+        "aws_access_key_id": "vended"
+    }
