@@ -80,3 +80,38 @@ functions `read_xxx`.
 ```python exec="on" result="text" session="user-guide/sql/select"
 --8<-- "python/user-guide/sql/select.py:tablefunctions"
 ```
+
+`read_csv` also accepts named options after the path, with the same names and meaning as the
+options of `scan_csv`. Write them as `name => value` (or `name := value`):
+
+{{code_block('user-guide/sql/select','tablefunctionoptions',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionoptions"
+```
+
+The supported options are:
+
+- Layout: `has_header`, `separator`, `quote_char`, `comment_prefix`, `skip_rows`,
+  `skip_rows_after_header`, `skip_lines`, `encoding`.
+- Names and types: `new_columns`, `schema`, `schema_overrides`, `infer_schema`,
+  `infer_schema_length`, `try_parse_dates`, `decimal_comma`.
+- Values and errors: `null_values`, `ignore_errors`.
+- Ragged rows and multiple files: `truncate_ragged_lines`, `include_file_paths`.
+
+Values are SQL literals:
+
+- `NULL` stands for `None`, as in `infer_schema_length => NULL` to infer the schema from the whole
+  file, or `quote_char => NULL` to turn quoting off.
+- Lists use brackets: `new_columns => ['a', 'b']`.
+- `schema`, `schema_overrides` and per-column `null_values` take a dictionary, with types written as
+  SQL type names: `schema_overrides => {'id': 'INT', 'name': 'VARCHAR'}`. `schema_overrides` also
+  accepts a list of type names, by position.
+- Escape sequences need an `E''` string, as in `separator => E'\t'` for tab-separated files.
+
+Unlike `scan_csv`, `read_csv` tries to parse dates by default (`try_parse_dates => true`).
+
+For files without a header whose rows have different numbers of fields, use
+`has_header => false`. Shorter rows are padded with nulls. If the widest row may come after the
+first 100 rows, add `infer_schema_length => NULL`. `truncate_ragged_lines => true` is not a
+substitute: it drops the fields beyond the inferred width.
