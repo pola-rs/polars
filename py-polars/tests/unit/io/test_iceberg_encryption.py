@@ -313,7 +313,7 @@ def test_puffin_deletion_vector_with_encryption(
 ) -> None:
     import zlib
 
-    from pyroaring import BitMap
+    from pyroaring import BitMap  # type: ignore[import-not-found]
 
     data_path = tmp_path / "data.parquet"
     pl.DataFrame({"x": [10, 11, 12, 13]}).write_parquet(data_path)

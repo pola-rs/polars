@@ -45,7 +45,7 @@ def decode_key_metadata(value: bytes) -> tuple[bytes, bytes | None, int | None]:
     return key, aad, length
 
 
-class _BytesInputFile(InputFile):
+class _BytesInputFile(InputFile):  # type: ignore[misc]
     def __init__(self, location: str, content: bytes) -> None:
         super().__init__(location)
         self._content = content
@@ -64,7 +64,7 @@ class _BytesInputFile(InputFile):
         raise TypeError(msg)
 
 
-class _EncryptedInputFile(InputFile):
+class _EncryptedInputFile(InputFile):  # type: ignore[misc]
     def __init__(self, inner: InputFile, metadata: bytes) -> None:
         super().__init__(inner.location)
         self._inner = inner
@@ -91,7 +91,7 @@ class _EncryptedInputFile(InputFile):
         raise TypeError(msg)
 
 
-class EncryptedFileIO(FileIO):
+class EncryptedFileIO(FileIO):  # type: ignore[misc]
     def __init__(
         self, table: Table, inner: FileIO, snapshot_id: int | None, kms_client: Any
     ) -> None:
