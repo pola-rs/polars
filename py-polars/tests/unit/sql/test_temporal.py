@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Literal
 
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -818,3 +823,195 @@ def test_date_part_functions() -> None:
         },
         compare_with="duckdb",
     )
+
+
+@pytest.mark.parametrize(
+    "sql_type",
+    ["TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE", "TIMESTAMP(3) WITH TIME ZONE"],
+)
+def test_cast_to_timestamp_with_time_zone(sql_type: str) -> None:
+    df = pl.DataFrame(
+        {
+            "with_offset": ["2026-09-17 04:30:00+10:00", "2026-09-17 04:30:00Z"],
+            "naive": ["2026-09-17 04:30:00", None],
+            "dt": [datetime(2026, 9, 17, 4, 30), None],
+        }
+    )
+    res = df.sql(
+        f"""
+        SELECT
+          CAST(with_offset AS {sql_type}) AS with_offset,
+          CAST(naive AS {sql_type}) AS naive,
+          CAST(dt AS {sql_type}) AS dt,
+          CAST('2026-09-17 04:30:00-02:00' AS {sql_type}) AS lit
+        FROM self
+        """
+    )
+    tu = "ms" if "(3)" in sql_type else "us"
+    dtype = pl.Datetime(tu, "UTC")  # type: ignore[arg-type]
+    utc = timezone.utc
+    expected = pl.DataFrame(
+        {
+            "with_offset": [
+                datetime(2026, 9, 16, 18, 30, tzinfo=utc),
+                datetime(2026, 9, 17, 4, 30, tzinfo=utc),
+            ],
+            "naive": [datetime(2026, 9, 17, 4, 30, tzinfo=utc), None],
+            "dt": [datetime(2026, 9, 17, 4, 30, tzinfo=utc), None],
+            "lit": [datetime(2026, 9, 17, 6, 30, tzinfo=utc)] * 2,
+        },
+        schema=dict.fromkeys(["with_offset", "naive", "dt", "lit"], dtype),
+    )
+    assert_frame_equal(res, expected)
+
+
+def test_timestamp_without_time_zone() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          CAST('2026-09-17 04:30:00' AS TIMESTAMP WITHOUT TIME ZONE) AS ts,
+          CAST('04:30:00' AS TIME WITHOUT TIME ZONE) AS t,
+          TIMESTAMP WITHOUT TIME ZONE '2026-09-17 04:30:00-05:00' AS lit
+        """,
+        eager=True,
+    )
+    assert res.schema == {
+        "ts": pl.Datetime("us"),
+        "t": pl.Time,
+        "lit": pl.Datetime("us"),
+    }
+    assert res.row(0) == (
+        datetime(2026, 9, 17, 4, 30),
+        time(4, 30),
+        datetime(2026, 9, 17, 4, 30),
+    )
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected"),
+    [
+        # a naive timestamp ignores the offset
+        ("TIMESTAMP '2026-09-17 04:30:00+10:00'", datetime(2026, 9, 17, 4, 30)),
+        ("TIMESTAMP '2026-09-17T04:30:00Z'", datetime(2026, 9, 17, 4, 30)),
+        (
+            "TIMESTAMPTZ '2026-09-17 04:30:00.5-0130'",
+            datetime(2026, 9, 17, 6, 0, 0, 500000, tzinfo=timezone.utc),
+        ),
+        (
+            "TIMESTAMPTZ '2026-09-17 04:30:00'",
+            datetime(2026, 9, 17, 4, 30, tzinfo=timezone.utc),
+        ),
+    ],
+)
+def test_timestamp_literal_with_offset(literal: str, expected: datetime) -> None:
+    assert pl.sql(f"SELECT {literal} AS x", eager=True).item() == expected
+
+
+def test_at_time_zone() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [datetime(2026, 1, 15, 12), datetime(2026, 7, 15, 12), None],
+            "tz": [datetime(2026, 1, 15, 12), datetime(2026, 7, 15, 12), None],
+        },
+        schema={"ts": pl.Datetime("us"), "tz": pl.Datetime("us", "UTC")},
+    )
+    res = df.sql(
+        """
+        SELECT
+          ts AT TIME ZONE 'Europe/Amsterdam' AS naive_to_utc,
+          tz AT TIME ZONE 'Europe/Amsterdam' AS aware_to_naive,
+          ts AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York' AS utc_to_local,
+          CAST('2026-07-15 12:00:00+02:00' AS TIMESTAMPTZ) AT TIME ZONE 'UTC' AS lit
+        FROM self
+        """
+    )
+    assert res.schema == {
+        "naive_to_utc": pl.Datetime("us", "UTC"),
+        "aware_to_naive": pl.Datetime("us"),
+        "utc_to_local": pl.Datetime("us"),
+        "lit": pl.Datetime("us"),
+    }
+    assert res["naive_to_utc"].to_list() == [
+        datetime(2026, 1, 15, 11, tzinfo=timezone.utc),
+        datetime(2026, 7, 15, 10, tzinfo=timezone.utc),
+        None,
+    ]
+    assert res["aware_to_naive"].to_list() == [
+        datetime(2026, 1, 15, 13),
+        datetime(2026, 7, 15, 14),
+        None,
+    ]
+    assert res["utc_to_local"].to_list() == [
+        datetime(2026, 1, 15, 7),
+        datetime(2026, 7, 15, 8),
+        None,
+    ]
+    assert res["lit"].to_list() == [datetime(2026, 7, 15, 10)] * 3
+
+
+def test_at_time_zone_errors() -> None:
+    df = pl.DataFrame({"d": [date(2026, 1, 1)], "ts": [datetime(2026, 1, 1)]})
+    with pytest.raises(SQLInterfaceError, match="AT TIME ZONE expects a timestamp"):
+        df.sql("SELECT d AT TIME ZONE 'UTC' FROM self")
+    with pytest.raises(SQLInterfaceError, match="AT TIME ZONE expects a timestamp"):
+        df.sql("SELECT '2026-01-01 00:00:00' AT TIME ZONE 'UTC' FROM self")
+    with pytest.raises(SQLInterfaceError, match="string literal time zone"):
+        df.sql("SELECT ts AT TIME ZONE d FROM self")
+    with pytest.raises(ComputeError, match="unable to parse time zone"):
+        df.sql("SELECT ts AT TIME ZONE 'Mars/Olympus' FROM self")
+    with pytest.raises(SQLInterfaceError, match="expects a time zone; found ''"):
+        df.sql("SELECT ts AT TIME ZONE '' FROM self")
+
+
+def test_at_time_zone_compare_and_add() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          TIMESTAMP '2026-01-01 01:00:00' AT TIME ZONE 'Europe/Amsterdam'
+            = '2026-01-01 00:00:00' AS eq_str,
+          TIMESTAMP '2026-01-01 01:00:00' AT TIME ZONE 'Europe/Amsterdam'
+            = TIMESTAMPTZ '2026-01-01 00:00:00Z' AS eq_tz,
+          (TIMESTAMP '2026-03-28 12:00:00' AT TIME ZONE 'Europe/Amsterdam'
+            + INTERVAL '1 day') AT TIME ZONE 'UTC' AS plus_day
+        """,
+        eager=True,
+    )
+    assert res.row(0) == (True, True, datetime(2026, 3, 29, 11))
+
+
+def test_at_time_zone_sql_expr() -> None:
+    df = pl.DataFrame({"ts": [datetime(2026, 1, 15, 12)]})
+    expr = pl.sql_expr("CAST(ts AS TIMESTAMP) AT TIME ZONE 'Europe/Amsterdam'")
+    assert df.select(expr).item() == datetime(2026, 1, 15, 11, tzinfo=timezone.utc)
+
+
+def test_timestamptz_array_literal_mixed_offsets() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          [TIMESTAMPTZ '2026-01-01 00:00:00Z', TIMESTAMPTZ '2026-01-02 00:00:00'] AS tz,
+          [TIMESTAMP '2026-01-01 00:00:00+05:00', TIMESTAMP '2026-01-02'] AS naive
+        """,
+        eager=True,
+    )
+    utc = timezone.utc
+    assert res.row(0) == (
+        [datetime(2026, 1, 1, tzinfo=utc), datetime(2026, 1, 2, tzinfo=utc)],
+        [datetime(2026, 1, 1), datetime(2026, 1, 2)],
+    )
+
+
+def test_timestamp_array_literal_invalid_value() -> None:
+    res = pl.sql(
+        "SELECT [TIMESTAMP '2026-01-01', TRY_CAST('bad' AS TIMESTAMP)] AS x",
+        eager=True,
+    )
+    assert res.item().to_list() == [datetime(2026, 1, 1), None]
+    with pytest.raises(ComputeError, match="could not find an appropriate format"):
+        pl.sql("SELECT [CAST('bad' AS TIMESTAMP)] AS x", eager=True)
+
+
+@pytest.mark.parametrize("zone", ["$$UTC$$", "('UTC')"])
+def test_at_time_zone_string_forms(zone: str) -> None:
+    res = pl.sql(f"SELECT TIMESTAMP '2026-01-01' AT TIME ZONE {zone} AS x", eager=True)
+    assert res.item() == datetime(2026, 1, 1, tzinfo=timezone.utc)

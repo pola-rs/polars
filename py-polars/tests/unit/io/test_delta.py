@@ -4,7 +4,7 @@ import os
 import pickle
 import re
 import warnings
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -106,10 +106,10 @@ def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
         os.utime(str(file_path), (dt_epoch, dt_epoch))
 
     df1 = pl.scan_delta(
-        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=timezone.utc)
+        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=UTC)
     ).collect()
     df2 = pl.scan_delta(
-        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=timezone.utc)
+        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=UTC)
     ).collect()
 
     assert_frame_equal(df1, df_sample)
@@ -203,12 +203,8 @@ def test_read_delta_timestamp_version(tmp_path: Path) -> None:
         file_path = log_dir / file_name
         os.utime(str(file_path), (dt_epoch, dt_epoch))
 
-    df1 = pl.read_delta(
-        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=timezone.utc)
-    )
-    df2 = pl.read_delta(
-        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=timezone.utc)
-    )
+    df1 = pl.read_delta(str(tmp_path), version=datetime(2010, 1, 1, tzinfo=UTC))
+    df2 = pl.read_delta(str(tmp_path), version=datetime(2024, 1, 1, tzinfo=UTC))
 
     assert_frame_equal(df1, df_sample)
     assert_frame_equal(df2, pl.concat([df_sample, df_sample2]), check_row_order=False)

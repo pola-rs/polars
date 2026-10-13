@@ -12,7 +12,7 @@ authors = [
 # example: 1.35.0b1
 version = "2.0.0"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
@@ -24,10 +24,10 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
@@ -48,7 +48,7 @@ rt64 = ["polars-runtime-64 == 2.0.0"]
 rtcompat = ["polars-runtime-compat == 2.0.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-polars_cloud = ["polars_cloud >= 0.11.0"]
+polars_cloud = ["polars_cloud >= 0.13.0"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]

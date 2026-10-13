@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
@@ -686,7 +686,7 @@ def test_incompatible_lit_dtype() -> None:
         match=r"time zone of dtype \('Asia/Kathmandu'\) differs from time zone of value \(datetime.timezone.utc\)",
     ):
         pl.lit(
-            datetime(2020, 1, 1, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, tzinfo=UTC),
             dtype=pl.Datetime("us", "Asia/Kathmandu"),
         )
 
@@ -699,7 +699,7 @@ def test_lit_dtype_utc() -> None:
         )
     )
     expected = pl.DataFrame(
-        {"literal": [datetime(2019, 12, 31, 18, 15, tzinfo=timezone.utc)]}
+        {"literal": [datetime(2019, 12, 31, 18, 15, tzinfo=UTC)]}
     ).select(pl.col("literal").dt.convert_time_zone("Asia/Kathmandu"))
     assert_frame_equal(result, expected)
 

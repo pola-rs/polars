@@ -52,7 +52,7 @@ num-traits = { workspace = true }
 numpy = { workspace = true }
 object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods", "uuid"] }
+pyo3 = { workspace = true, features = ["abi3-py311", "chrono", "chrono-tz", "multiple-pymethods", "uuid"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
