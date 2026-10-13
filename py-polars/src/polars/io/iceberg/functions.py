@@ -80,7 +80,7 @@ def scan_iceberg(
         Encrypted scan support is unstable. It supports local filesystem, S3,
         GCS, and Azure Data Lake Storage tables. Predicates and projections use
         the native Polars scan optimizations.
-        Incremental append scans with encryption are not supported.
+        Incremental append scans can span snapshots with different encryption keys.
     reader_override
         Overrides the reader used to read the data.
 

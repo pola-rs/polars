@@ -530,11 +530,18 @@ class TestIcebergScanIO:
         assert config is not None
         assert config.properties["region_name"] == "explicit"
 
-    def test_native_kms_incremental_scan_rejected(self, iceberg_path: str) -> None:
+    def test_native_kms_incremental_scan_validates_range(
+        self, iceberg_path: str
+    ) -> None:
         table = StaticTable.from_metadata(iceberg_path)
         table.metadata.properties["encryption.key-id"] = "master-1"
-        table.config = {"encryption.kms-type": "aws"}
-        with pytest.raises(NotImplementedError, match="incremental append scans"):
+        table.config = {
+            "encryption.kms-type": "aws",
+            "region_name": "us-east-1",
+            "aws_access_key_id": "test",
+            "aws_secret_access_key": "test",
+        }
+        with pytest.raises(ValueError, match="not a parent ancestor"):
             pl.scan_iceberg(table, from_snapshot_id_exclusive=1).collect()
 
     @pytest.mark.parametrize("kms_type", ["python", "aws", "aws_env", "aws_denied"])

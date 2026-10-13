@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import threading
 from typing import TYPE_CHECKING, Any
 
 from pyiceberg.avro.decoder import new_decoder
@@ -92,64 +93,68 @@ class _EncryptedInputFile(InputFile):  # type: ignore[misc]
 
 
 class EncryptedFileIO(FileIO):  # type: ignore[misc]
-    def __init__(
-        self, table: Table, inner: FileIO, snapshot_id: int | None, kms_client: Any
-    ) -> None:
+    def __init__(self, table: Table, inner: FileIO, kms_client: Any) -> None:
         super().__init__(inner.properties)
         self._inner = inner
-        self._manifest_lists: dict[str, bytes] = {}
+        self._kms_client = kms_client
         self._keys: dict[str, bytes] = {}
+        self._unwrapped_keys: dict[str, bytes] = {}
+        self._lock = threading.Lock()
         with inner.new_input(table.metadata_location).open() as stream:
             compression = Compressor.get_compressor(table.metadata_location)
             with compression.stream_decompressor(stream) as decompressed:
                 metadata = json.load(decompressed)
-        encryption_keys = {
+        self._encryption_keys = {
             entry["key-id"]: entry for entry in metadata.get("encryption-keys", [])
         }
-        selected_id = (
-            snapshot_id
-            if snapshot_id is not None
-            else table.metadata.current_snapshot_id
-        )
-        for snapshot in metadata.get("snapshots", []):
-            if snapshot["snapshot-id"] != selected_id:
-                continue
-            location = snapshot["manifest-list"]
-            source = inner.new_input(location)
-            if (key_id := snapshot.get("key-id")) is not None:
-                try:
-                    entry = encryption_keys[key_id]
-                    kek = encryption_keys[entry["encrypted-by-id"]]
-                    # The timestamp is authenticated when the file key is wrapped.
-                    aad = kek["properties"]["KEY_TIMESTAMP"].encode()
-                    wrapped_kek = base64.b64decode(
-                        kek["encrypted-key-metadata"], validate=True
-                    )
-                    wrapping_key_id = kek["encrypted-by-id"]
-                    wrapped_metadata = base64.b64decode(
-                        entry["encrypted-key-metadata"], validate=True
-                    )
-                except (KeyError, ValueError, TypeError):
-                    msg = "Invalid Iceberg encryption key hierarchy"
-                    raise ComputeError(msg) from None
-                try:
-                    kek_bytes = kms_client.unwrap_key(wrapped_kek, wrapping_key_id)
-                except Exception:
-                    msg = "Iceberg KMS unwrap_key failed (AWS KMS Decrypt failed for native AWS)"
-                    raise ComputeError(msg) from None
-                key_metadata = _plr._iceberg_decrypt(
-                    wrapped_metadata, kek_bytes, aad, False
-                )
-                source = _EncryptedInputFile(source, key_metadata)
-            with source.open() as stream:
-                content = stream.read()
-            self._manifest_lists[location] = content
-            for manifest in read_manifest_list(_BytesInputFile(location, content)):
-                if manifest.key_metadata:
-                    self._keys[manifest.manifest_path] = manifest.key_metadata
+        self._manifest_list_keys = {
+            snapshot["manifest-list"]: snapshot.get("key-id")
+            for snapshot in metadata.get("snapshots", [])
+        }
+
+    def _key_metadata(self, key_id: str) -> bytes:
+        try:
+            entry = self._encryption_keys[key_id]
+            kek_id = entry["encrypted-by-id"]
+            kek = self._encryption_keys[kek_id]
+            # The timestamp is authenticated when the file key is wrapped.
+            aad = kek["properties"]["KEY_TIMESTAMP"].encode()
+            wrapped_kek = base64.b64decode(kek["encrypted-key-metadata"], validate=True)
+            wrapping_key_id = kek["encrypted-by-id"]
+            wrapped_metadata = base64.b64decode(
+                entry["encrypted-key-metadata"], validate=True
+            )
+        except (KeyError, ValueError, TypeError):
+            msg = "Invalid Iceberg encryption key hierarchy"
+            raise ComputeError(msg) from None
+        if (kek_bytes := self._unwrapped_keys.get(kek_id)) is None:
+            try:
+                kek_bytes = self._kms_client.unwrap_key(wrapped_kek, wrapping_key_id)
+            except Exception:
+                msg = "Iceberg KMS unwrap_key failed (AWS KMS Decrypt failed for native AWS)"
+                raise ComputeError(msg) from None
+            self._unwrapped_keys[kek_id] = kek_bytes
+        return _plr._iceberg_decrypt(wrapped_metadata, kek_bytes, aad, False)
+
+    def _read_manifest_list(self, location: str) -> bytes:
+        source = self._inner.new_input(location)
+        if (key_id := self._manifest_list_keys[location]) is not None:
+            source = _EncryptedInputFile(source, self._key_metadata(key_id))
+        with source.open() as stream:
+            content = stream.read()
+        for manifest in read_manifest_list(_BytesInputFile(location, content)):
+            if manifest.key_metadata:
+                previous = self._keys.get(manifest.manifest_path)
+                if previous is not None and previous != manifest.key_metadata:
+                    msg = "Conflicting Iceberg encryption keys for the same manifest"
+                    raise ComputeError(msg)
+                self._keys[manifest.manifest_path] = manifest.key_metadata
+        return content
 
     def new_input(self, location: str) -> InputFile:
-        if (content := self._manifest_lists.get(location)) is not None:
+        if location in self._manifest_list_keys:
+            with self._lock:
+                content = self._read_manifest_list(location)
             return _BytesInputFile(location, content)
         source = self._inner.new_input(location)
         if (metadata := self._keys.get(location)) is not None:

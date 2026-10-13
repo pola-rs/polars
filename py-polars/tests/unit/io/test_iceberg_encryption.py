@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import base64
+import copy
 import gzip
 import io
 import json
 import os
 import pickle
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import pyarrow.parquet as pq
 import pyarrow.parquet.encryption as pe
@@ -21,6 +22,7 @@ from pyiceberg.manifest import (
 )
 from pyiceberg.schema import Schema
 from pyiceberg.table import StaticTable
+from pyiceberg.table.snapshots import Operation
 from pyiceberg.types import LongType, NestedField
 
 import polars as pl
@@ -38,6 +40,9 @@ from tests.unit.io.test_iceberg import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from pyiceberg.manifest import ManifestFile
+    from pyiceberg.table import Table
 
     from polars._typing import EngineType
 
@@ -303,6 +308,253 @@ def test_encrypted_table_uses_native_scan(
         .collect(engine=engine),
         expected,
     )
+
+
+class _RotatingKms:
+    calls: ClassVar[list[str]] = []
+    denied: ClassVar[set[str]] = set()
+
+    def initialize(self, properties: dict[str, str]) -> None:
+        pass
+
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        self.calls.append(wrapping_key_id)
+        assert wrapped_key == wrapping_key_id.encode()
+        if wrapping_key_id in self.denied:
+            msg = "access denied"
+            raise PermissionError(msg)
+        return wrapping_key_id.encode() * 16
+
+
+def write_encrypted_snapshot_metadata(
+    table: Table, tmp_path: Path, key_ids: list[str | None]
+) -> Path:
+    metadata = table.metadata.model_dump(mode="json")
+    metadata["properties"]["encryption.key-id"] = "current-master"
+    keys = [
+        {
+            "key-id": f"kek-{key_id}",
+            "encrypted-by-id": key_id,
+            "encrypted-key-metadata": base64.b64encode(key_id.encode()).decode(),
+            "properties": {"KEY_TIMESTAMP": "123"},
+        }
+        for key_id in sorted({key_id for key_id in key_ids if key_id is not None})
+    ]
+    rewritten: dict[str, ManifestFile] = {}
+    for snapshot, item, key_id in zip(
+        table.snapshots(), metadata["snapshots"], key_ids, strict=True
+    ):
+        manifests = []
+        for original_manifest in snapshot.manifests(table.io):
+            if original_manifest.manifest_path not in rewritten:
+                manifest = copy.deepcopy(original_manifest)
+                if key_id is not None:
+                    entries = manifest.fetch_manifest_entry(
+                        table.io, discard_deleted=False
+                    )
+                    for j, entry in enumerate(entries):
+                        original = pq.read_table(entry.data_file.file_path)
+                        data_path = tmp_path / f"data-{len(rewritten)}-{j}.parquet"
+                        key, aad = os.urandom(16), os.urandom(16)
+                        pq.write_table(
+                            original,
+                            data_path,
+                            encryption_properties=pe.create_encryption_properties(
+                                key, aad_prefix=aad, store_aad_prefix=False
+                            ),
+                        )
+                        entry.data_file[1] = str(data_path)
+                        entry.data_file[5] = data_path.stat().st_size
+                        entry.data_file[12] = key_metadata(key, aad)
+                    manifest_path = tmp_path / f"manifest-{len(rewritten)}.avro"
+                    with write_manifest(
+                        2,
+                        table.spec(),
+                        table.schema(),
+                        table.io.new_output(str(manifest_path)),
+                        snapshot.snapshot_id,
+                        "null",
+                    ) as writer:
+                        for entry in entries:
+                            writer.add_entry(entry)
+                    content = manifest_path.read_bytes()
+                    key, aad = os.urandom(24), os.urandom(16)
+                    manifest_path.write_bytes(encrypt_stream(content, key, aad))
+                    manifest[0] = str(manifest_path)
+                    manifest[1] = manifest_path.stat().st_size
+                    manifest[14] = key_metadata(key, aad, manifest_path.stat().st_size)
+                rewritten[original_manifest.manifest_path] = manifest
+            manifests.append(copy.deepcopy(rewritten[original_manifest.manifest_path]))
+        list_path = tmp_path / f"list-{snapshot.snapshot_id}.avro"
+        with write_manifest_list(
+            2,
+            table.io.new_output(str(list_path)),
+            snapshot.snapshot_id,
+            snapshot.parent_snapshot_id,
+            snapshot.sequence_number,
+            "null",
+        ) as writer:
+            writer.add_manifests(manifests)
+        if key_id is not None:
+            key, aad = os.urandom(32), os.urandom(16)
+            list_path.write_bytes(encrypt_stream(list_path.read_bytes(), key, aad))
+            item["key-id"] = f"list-{snapshot.snapshot_id}"
+            keys.append(
+                {
+                    "key-id": item["key-id"],
+                    "encrypted-by-id": f"kek-{key_id}",
+                    "encrypted-key-metadata": base64.b64encode(
+                        encrypt_block(
+                            key_metadata(key, aad, list_path.stat().st_size),
+                            key_id.encode() * 16,
+                            b"123",
+                        )
+                    ).decode(),
+                }
+            )
+        item["manifest-list"] = str(list_path)
+    metadata["encryption-keys"] = keys
+    path = tmp_path / "encrypted.metadata.json"
+    path.write_text(json.dumps(metadata))
+    return path
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_encrypted_incremental_append_key_rotation(
+    tmp_path: Path, engine: EngineType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    table, _ = new_iceberg_table(
+        tmp_path, schema=Schema(NestedField(1, "x", LongType()))
+    )
+    for i in range(5):
+        table.append(pl.DataFrame({"x": [i * 10, i * 10 + 1]}).to_arrow())
+    ids = [snapshot.snapshot_id for snapshot in table.snapshots()]
+    path = write_encrypted_snapshot_metadata(
+        table, tmp_path, [None, "a", "b", "b", "c"]
+    )
+    monkeypatch.setattr(_RotatingKms, "calls", [])
+    monkeypatch.setattr(_RotatingKms, "denied", {"c"})
+    options = {"py-kms-impl": f"{__name__}._RotatingKms"}
+    q = pl.scan_iceberg(
+        str(path),
+        storage_options=options,
+        from_snapshot_id_exclusive=ids[0],
+        to_snapshot_id_inclusive=ids[3],
+    )
+    expected = pl.DataFrame({"x": [10, 11, 20, 21, 30, 31]})
+    assert_frame_equal(q.sort("x").collect(engine=engine), expected)
+    assert sorted(_RotatingKms.calls) == ["a", "b"]
+    assert_frame_equal(
+        q.filter(pl.col("x") > 20).sort("x").collect(engine=engine), expected.tail(3)
+    )
+    assert_frame_equal(q.sort("x").tail(2).collect(engine=engine), expected.tail(2))
+    assert q.select(pl.len()).collect(engine=engine).item() == 6
+
+    _RotatingKms.calls.clear()
+    monkeypatch.setattr(_RotatingKms, "denied", {"a", "c"})
+    assert_frame_equal(
+        pl.scan_iceberg(
+            str(path),
+            storage_options=options,
+            from_snapshot_id_exclusive=ids[1],
+            to_snapshot_id_inclusive=ids[3],
+        )
+        .sort("x")
+        .collect(engine=engine),
+        expected.tail(4),
+    )
+    assert _RotatingKms.calls == ["b"]
+    with pytest.raises(pl.exceptions.ComputeError, match="KMS unwrap_key failed"):
+        pl.scan_iceberg(
+            str(path),
+            storage_options=options,
+            from_snapshot_id_exclusive=ids[0],
+            to_snapshot_id_inclusive=ids[3],
+        ).collect(engine=engine)
+
+    monkeypatch.setattr(_RotatingKms, "denied", {"c"})
+    assert_frame_equal(
+        pl.scan_iceberg(
+            str(path),
+            storage_options=options,
+            to_snapshot_id_inclusive=ids[3],
+        )
+        .sort("x")
+        .collect(engine=engine),
+        pl.DataFrame({"x": [0, 1, 10, 11, 20, 21, 30, 31]}),
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match="KMS unwrap_key failed"):
+        pl.scan_iceberg(
+            str(path),
+            storage_options=options,
+            from_snapshot_id_exclusive=ids[0],
+        ).collect(engine=engine)
+
+    loaded_table = StaticTable.from_metadata(str(path))
+    loaded_table.metadata = loaded_table.metadata.model_copy(
+        update={"current_snapshot_id": ids[2]}
+    )
+    growing = pl.scan_iceberg(
+        loaded_table, storage_options=options, from_snapshot_id_exclusive=ids[0]
+    )
+    fixed = pl.scan_iceberg(
+        loaded_table,
+        storage_options=options,
+        from_snapshot_id_exclusive=ids[0],
+        to_snapshot_id_inclusive=ids[2],
+    )
+    assert_frame_equal(growing.sort("x").collect(engine=engine), expected.head(4))
+    assert_frame_equal(fixed.sort("x").collect(engine=engine), expected.head(4))
+    loaded_table.metadata = loaded_table.metadata.model_copy(
+        update={"current_snapshot_id": ids[3]}
+    )
+    assert_frame_equal(growing.sort("x").collect(engine=engine), expected)
+    assert_frame_equal(fixed.sort("x").collect(engine=engine), expected.head(4))
+
+    _RotatingKms.calls.clear()
+    with pytest.raises(ValueError, match="not a parent ancestor"):
+        pl.scan_iceberg(
+            str(path),
+            storage_options=options,
+            from_snapshot_id_exclusive=ids[3],
+            to_snapshot_id_inclusive=ids[1],
+        ).collect(engine=engine)
+    assert _RotatingKms.calls == []
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize(
+    ("delete_filter", "operation"),
+    [("x == 1", Operation.OVERWRITE), ("x >= 1", Operation.DELETE)],
+)
+def test_encrypted_incremental_append_skips_non_append(
+    tmp_path: Path,
+    engine: EngineType,
+    monkeypatch: pytest.MonkeyPatch,
+    delete_filter: str,
+    operation: Operation,
+) -> None:
+    table, _ = new_iceberg_table(
+        tmp_path, schema=Schema(NestedField(1, "x", LongType()))
+    )
+    table.append(pl.DataFrame({"x": [1, 2]}).to_arrow())
+    first = table.current_snapshot()
+    assert first is not None
+    table.delete(delete_filter)
+    current = table.current_snapshot()
+    assert current is not None
+    assert current.summary is not None
+    assert current.summary.operation == operation
+    path = write_encrypted_snapshot_metadata(table, tmp_path, ["a", "b"])
+    monkeypatch.setattr(_RotatingKms, "calls", [])
+    monkeypatch.setattr(_RotatingKms, "denied", {"a", "b"})
+    result = pl.scan_iceberg(
+        str(path),
+        storage_options={"py-kms-impl": f"{__name__}._RotatingKms"},
+        from_snapshot_id_exclusive=first.snapshot_id,
+    ).collect(engine=engine)
+    assert_frame_equal(result, pl.DataFrame(schema={"x": pl.Int64}))
+    assert _RotatingKms.calls == []
 
 
 @pytest.mark.parametrize("engine", ["streaming", "in-memory"])

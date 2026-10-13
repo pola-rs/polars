@@ -481,15 +481,9 @@ class IcebergScanResolver:
         }
 
         kms_config = _load_kms_config(tbl, self.table.iceberg_storage_properties)
-        if kms_config is not None:
-            if is_incremental:
-                msg = (
-                    "incremental append scans with Iceberg encryption are not supported"
-                )
-                raise NotImplementedError(msg)
-            if reader_override == "pyiceberg":
-                msg = "encrypted Iceberg scans require the native Parquet reader"
-                raise NotImplementedError(msg)
+        if kms_config is not None and reader_override == "pyiceberg":
+            msg = "encrypted Iceberg scans require the native Parquet reader"
+            raise NotImplementedError(msg)
         decryption_keys: dict[str, tuple[bytes, bytes | None]] = {}
 
         def register_key(data_file: Any) -> None:
@@ -557,9 +551,10 @@ class IcebergScanResolver:
                     from polars._plr import PyIcebergKmsClient
 
                     kms_client = PyIcebergKmsClient(kms_config.properties)
-                scan.io = EncryptedFileIO(tbl, scan.io, snapshot_id, kms_client)
-                # REST scan tasks do not carry the file encryption keys.
-                scan.catalog = None
+                scan.io = EncryptedFileIO(tbl, scan.io, kms_client)
+                if not is_incremental:
+                    # REST scan tasks do not carry the file encryption keys.
+                    scan.catalog = None
 
             if iceberg_table_filter is not None:
                 scan = scan.filter(iceberg_table_filter)
