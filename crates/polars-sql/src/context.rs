@@ -362,7 +362,9 @@ impl SQLContext {
         }
 
         desugar_quantified_subqueries(&mut stmt);
-        let res = self.execute_statement(&stmt)?;
+        let res = self.execute_statement(&stmt).inspect_err(|_| {
+            self.clear_statement_state();
+        })?;
 
         // Ensure the result uses the proper arenas.
         // This will instantiate new arenas with a new version.
@@ -503,10 +505,6 @@ impl SQLContext {
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
-        self.execute_query_no_ctes(query)
-    }
-
-    pub(crate) fn execute_query_no_ctes(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.validate_query(query)?;
 
         let lf = self.process_query(&query.body, query)?;
@@ -788,7 +786,8 @@ impl SQLContext {
         match expr {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
             SetExpr::Query(nested_query) => {
-                let lf = self.execute_query_no_ctes(nested_query)?;
+                // The CTEs of a parenthesized query stay visible to the ORDER BY wrapping it.
+                let lf = self.execute_query(nested_query)?;
                 self.process_order_by(lf, &query.order_by, None)
             },
             SetExpr::SetOperation {
@@ -1231,6 +1230,9 @@ impl SQLContext {
     }
 
     fn register_cte(&mut self, name: &str, lf: LazyFrame) {
+        // Lookups ignore case, so a new name must replace an outer one that differs only in case.
+        self.cte_map
+            .retain(|key, _| !key.eq_ignore_ascii_case(name));
         self.cte_map.insert(name.to_owned(), lf);
     }
 
@@ -3187,10 +3189,9 @@ impl SQLContext {
 
                 // Execute the subquery in isolation so that outer join state
                 // doesn't leak into it and cause spurious ambiguous-column errors
+                let lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
                 if let Some(alias) = alias {
-                    let mut lf =
-                        self.execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
-                    lf = self.rename_columns_from_table_alias(lf, alias)?;
+                    let lf = self.rename_columns_from_table_alias(lf, alias)?;
                     let name = alias.name.value.clone();
                     {
                         let mut table_map = self.table_map.write().unwrap();
@@ -3202,7 +3203,6 @@ impl SQLContext {
                     self.register_cte(&name, lf.clone());
                     Ok((name, lf))
                 } else {
-                    let lf = self.execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
                     Ok(("".to_string(), lf))
                 }
             },
