@@ -12,11 +12,20 @@
 //!    the now final bounds; needs propagated bounds, so runs after stage 2.
 //! 4. **Emit**: `false` if impossible (gated on `maintain_errors`), else the
 //!    tightest rebuilt chain, or `None` if unchanged.
+//!
+//! Every value in a `ColumnConstraints` has its column's dtype, which is one of
+//! `is_modeled_dtype`. A literal that isn't exactly a value of that dtype keeps its
+//! conjunct out of the model.
 
 use std::cmp::Ordering;
 
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{dec128_eq, dec128_fits, dec128_rescale};
+#[cfg(any(feature = "dtype-decimal", feature = "is_in"))]
+use polars_core::prelude::AnyValue;
+use polars_core::prelude::DataType;
 #[cfg(feature = "is_in")]
-use polars_core::prelude::{AnyValue, Series};
+use polars_core::prelude::Series;
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
@@ -48,8 +57,12 @@ enum Classification {
     // A `col == col` equality, whose two columns form a cross-column propagation
     // edge (the node is kept verbatim unless its class becomes fixed).
     Equality(PlSmallStr, PlSmallStr),
+    // An `is_in` whose haystack went into its column's allowed set. The node is
+    // kept verbatim.
+    #[cfg(feature = "is_in")]
+    Membership,
     // Node kept verbatim: either unmodeled (UDFs, null-aware ops, arithmetic) or
-    // modeled only for contradiction (`is_in` / `!is_in` / `is_null` / `is_not_null` /
+    // modeled only for contradiction (`!is_in` / `is_null` / `is_not_null` /
     // non-`==` column-column comparisons record but aren't rewritten).
     Opaque,
 }
@@ -76,16 +89,53 @@ enum Nullability {
     NonNull,
 }
 
-// Whether the comparisons in `node` order their column the way they order the
-// literals it is compared against. A categorical or an enum orders by its
-// categories instead, so nothing here may reason about its bounds. A column that
-// is not in `schema` is treated the same way. So is an `is_in` that doesn't
-// compare in its column's dtype, such as strings searched for an enum.
+// Dtypes whose values order, compare and hash the way the engine compares them.
+// Others, such as a categorical or an enum (ordered by their categories) or nested
+// dtypes (no order), are never modeled.
+fn is_modeled_dtype(dtype: &DataType) -> bool {
+    dtype.is_primitive_numeric()
+        || dtype.is_decimal()
+        || dtype.is_temporal()
+        || matches!(
+            dtype,
+            DataType::Boolean | DataType::String | DataType::Binary
+        )
+}
+
+// `value` as a value of a column of `dtype`, if it is exactly such a value. A
+// decimal of another scale is rescaled when that loses no digits.
+fn column_value(value: &Scalar, dtype: &DataType) -> Option<Scalar> {
+    if value.dtype() == dtype {
+        return (!value.is_null()).then(|| value.clone());
+    }
+    #[cfg(feature = "dtype-decimal")]
+    if let (AnyValue::Decimal(v, _, old_scale), DataType::Decimal(precision, scale)) =
+        (value.as_any_value(), dtype)
+    {
+        let rescaled = dec128_rescale(v, old_scale, *precision, *scale)?;
+        // `dec128_rescale` skips the precision check when the scale is unchanged.
+        let exact = dec128_fits(rescaled, *precision) && dec128_eq(rescaled, *scale, v, old_scale);
+        return exact.then(|| {
+            Scalar::new(
+                dtype.clone(),
+                AnyValue::Decimal(rescaled, *precision, *scale),
+            )
+        });
+    }
+    None
+}
+
+// Whether `a == b` on two columns of these dtypes compares their values exactly,
+// so constraints carry over (converted with `column_value`).
+fn values_compare_exactly(a: &DataType, b: &DataType) -> bool {
+    a == b || (a.is_decimal() && b.is_decimal())
+}
+
+// Whether every column in `node` is in `schema` with a modeled dtype, and every
+// `is_in` compares in its column's dtype (not, e.g., strings searched for an enum).
 fn compares_in_literal_order(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
     expr_arena.iter(node).all(|(_, ae)| match ae {
-        AExpr::Column(name) => schema
-            .get(name)
-            .is_some_and(|dtype| !dtype.contains_categoricals() && !dtype.contains_enums()),
+        AExpr::Column(name) => schema.get(name).is_some_and(is_modeled_dtype),
         #[cfg(feature = "is_in")]
         AExpr::Function {
             function: function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
@@ -104,22 +154,20 @@ fn compares_in_literal_order(node: Node, schema: &Schema, expr_arena: &Arena<AEx
     })
 }
 
-// Orders two scalars; incomparable pairs give `None`, so we never declare a
-// contradiction we aren't sure of. The dtype guard is load-bearing: `AnyValue`'s
-// `PartialOrd` panics on nested/mixed/object dtypes rather than returning `None`.
-// Decimals of different scales compare by value.
-fn scalar_cmp(a: &Scalar, b: &Scalar) -> Option<Ordering> {
-    let same_dtype = a.dtype() == b.dtype() || (a.dtype().is_decimal() && b.dtype().is_decimal());
-    if !same_dtype || a.dtype().is_nested() || a.dtype().is_object() {
-        return None;
-    }
-    a.as_any_value().partial_cmp(&b.as_any_value())
+// Orders two values of one column.
+fn scalar_cmp(a: &Scalar, b: &Scalar) -> Ordering {
+    debug_assert_eq!(a.dtype(), b.dtype());
+    a.as_any_value()
+        .partial_cmp(&b.as_any_value())
+        .expect("modeled dtypes are totally ordered")
 }
 
 // `PlIndexSet` (not a hash set) keeps insertion order so the rebuilt conjuncts stay
 // deterministic.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct ColumnConstraints {
+    // The column's dtype; every value below has it.
+    dtype: DataType,
     // `bool` = inclusive (`>=`/`<=` vs `>`/`<`). `== x` is an inclusive `[x, x]`.
     lower: Option<(Scalar, bool)>,
     upper: Option<(Scalar, bool)>,
@@ -139,40 +187,51 @@ struct ColumnConstraints {
 }
 
 impl ColumnConstraints {
-    // Keep the tighter bound, returning whether the slot changed, or `None` if the
-    // values can't be ordered. Then the slot can't hold both bounds, so the caller
-    // must keep the new bound's conjunct. `tighter` is the new-vs-existing ordering
-    // that means the new bound wins (`Greater` lower, `Less` upper).
+    fn new(dtype: DataType) -> Self {
+        Self {
+            dtype,
+            lower: None,
+            upper: None,
+            excluded: PlIndexSet::new(),
+            allowed: None,
+            disallowed: PlIndexSet::new(),
+            nullability: Nullability::Unconstrained,
+            unsat: false,
+        }
+    }
+
+    // Keep the tighter bound, returning whether the slot changed. `tighter` is the
+    // new-vs-existing ordering that means the new bound wins (`Greater` lower, `Less` upper).
     fn tighten(
         slot: &mut Option<(Scalar, bool)>,
         value: Scalar,
         inclusive: bool,
         tighter: Ordering,
-    ) -> Option<bool> {
+    ) -> bool {
         let Some((existing, existing_inclusive)) = slot else {
             *slot = Some((value, inclusive));
-            return Some(true);
+            return true;
         };
-        match scalar_cmp(&value, existing)? {
+        match scalar_cmp(&value, existing) {
             // Strictly tighter value wins; the bound always changes.
             ord if ord == tighter => {
                 *slot = Some((value, inclusive));
-                Some(true)
+                true
             },
             // Same value: an exclusive bound is tighter than an inclusive one.
             Ordering::Equal => {
                 let changed = *existing_inclusive && !inclusive;
                 *existing_inclusive &= inclusive;
-                Some(changed)
+                changed
             },
             // Less tight: keep the existing bound.
-            _ => Some(false),
+            _ => false,
         }
     }
 
-    // Keep the wider bound, dropping it when `other` has none or the values cannot be
-    // ordered. `wider` is the other-vs-existing ordering that means the other bound
-    // wins (`Less` lower, `Greater` upper).
+    // Keep the wider bound, dropping it when `other` has none. `wider` is the
+    // other-vs-existing ordering that means the other bound wins (`Less` lower,
+    // `Greater` upper).
     fn widen_slot(
         slot: &mut Option<(Scalar, bool)>,
         other: &Option<(Scalar, bool)>,
@@ -184,11 +243,10 @@ impl ColumnConstraints {
             return;
         };
         match scalar_cmp(other_value, value) {
-            Some(ord) if ord == wider => *slot = Some((other_value.clone(), *other_inclusive)),
+            ord if ord == wider => *slot = Some((other_value.clone(), *other_inclusive)),
             // Same value: the inclusive bound is the wider of the two.
-            Some(Ordering::Equal) => *slot = Some((value.clone(), *inclusive || *other_inclusive)),
-            Some(_) => {},
-            None => *slot = None,
+            Ordering::Equal => *slot = Some((value.clone(), *inclusive || *other_inclusive)),
+            _ => {},
         }
     }
 
@@ -200,20 +258,18 @@ impl ColumnConstraints {
         self.lower.is_some() || self.upper.is_some()
     }
 
-    // Returns whether the bound changed, or `None` if it can't be ordered against
-    // the existing bound (see `tighten`).
-    fn add_lower(&mut self, value: Scalar, inclusive: bool) -> Option<bool> {
+    fn add_lower(&mut self, value: Scalar, inclusive: bool) -> bool {
         if self.unsat {
-            return Some(false);
+            return false;
         }
         let changed = Self::tighten(&mut self.lower, value, inclusive, Ordering::Greater);
         self.check_bound_consistency();
         changed
     }
 
-    fn add_upper(&mut self, value: Scalar, inclusive: bool) -> Option<bool> {
+    fn add_upper(&mut self, value: Scalar, inclusive: bool) -> bool {
         if self.unsat {
-            return Some(false);
+            return false;
         }
         let changed = Self::tighten(&mut self.upper, value, inclusive, Ordering::Less);
         self.check_bound_consistency();
@@ -237,16 +293,6 @@ impl ColumnConstraints {
             None => {
                 self.allowed = Some(values);
                 true
-            },
-            // Values of different dtypes (e.g. decimal scales) can be equal without
-            // being hash-equal, so only intersect sets of the same dtype.
-            Some(existing)
-                if existing
-                    .first()
-                    .zip(values.first())
-                    .is_some_and(|(e, v)| e.dtype() != v.dtype()) =>
-            {
-                false
             },
             // A second `is_in` intersects: keep only values present in both.
             Some(existing) => {
@@ -294,7 +340,9 @@ impl ColumnConstraints {
 
     // Intersects another column's constraints into this one (for `col == col`: on a
     // surviving row the two are equal, so each bound/exclusion/`is_in`/`!is_in` holds
-    // for both). Returns `(emitted, any)` change flags. The split matters: bounds and
+    // for both). Values of `other` that aren't values of this column's dtype can't be
+    // equal to any value here: such a bound isn't carried over (its own conjunct
+    // stays), and such a set member is dropped. Returns `(emitted, any)` change flags. The split matters: bounds and
     // `!=` feed the rebuilt chain, so they may trigger a rewrite; `is_in`/`!is_in`
     // only detect contradictions and are never emitted, so counting them as a rewrite
     // trigger would re-fire the rule on its own (unchanged) output every pass, and
@@ -304,24 +352,30 @@ impl ColumnConstraints {
         if self.unsat {
             return (false, false);
         }
+        let dtype = self.dtype.clone();
+        let convert = |value: &Scalar| column_value(value, &dtype);
         let mut emitted = false;
         let mut any = false;
-        if let Some((value, inclusive)) = &other.lower {
-            emitted |= self.add_lower(value.clone(), *inclusive) == Some(true);
+        if let Some((value, inclusive)) = &other.lower
+            && let Some(value) = convert(value)
+        {
+            emitted |= self.add_lower(value, *inclusive);
         }
-        if let Some((value, inclusive)) = &other.upper {
-            emitted |= self.add_upper(value.clone(), *inclusive) == Some(true);
+        if let Some((value, inclusive)) = &other.upper
+            && let Some(value) = convert(value)
+        {
+            emitted |= self.add_upper(value, *inclusive);
         }
-        for value in &other.excluded {
-            emitted |= self.add_excluded(value.clone());
+        for value in other.excluded.iter().filter_map(convert) {
+            emitted |= self.add_excluded(value);
         }
         #[cfg(feature = "is_in")]
         if let Some(values) = &other.allowed {
-            any |= self.add_allowed(values.clone());
+            any |= self.add_allowed(values.iter().filter_map(convert).collect());
         }
         #[cfg(feature = "is_in")]
         {
-            any |= self.add_disallowed(other.disallowed.iter().cloned());
+            any |= self.add_disallowed(other.disallowed.iter().filter_map(convert));
         }
         any |= emitted;
         (emitted, any)
@@ -334,8 +388,8 @@ impl ColumnConstraints {
         }
         if let (Some((lo, lo_inc)), Some((hi, hi_inc))) = (&self.lower, &self.upper) {
             match scalar_cmp(lo, hi) {
-                Some(Ordering::Greater) => self.unsat = true,
-                Some(Ordering::Equal) if !(*lo_inc && *hi_inc) => self.unsat = true,
+                Ordering::Greater => self.unsat = true,
+                Ordering::Equal if !(*lo_inc && *hi_inc) => self.unsat = true,
                 _ => {},
             }
         }
@@ -399,20 +453,19 @@ impl ColumnConstraints {
         }
     }
 
-    // Whether `value` survives the bounds, exclusions, and `is_in` set. Incomparable
-    // types count as feasible, so we never declare a contradiction we aren't sure of.
+    // Whether `value` survives the bounds, exclusions, and `is_in` set.
     fn is_feasible(&self, value: &Scalar) -> bool {
         if let Some((lo, lo_inc)) = &self.lower {
             match scalar_cmp(value, lo) {
-                Some(Ordering::Less) => return false,
-                Some(Ordering::Equal) if !lo_inc => return false,
+                Ordering::Less => return false,
+                Ordering::Equal if !lo_inc => return false,
                 _ => {},
             }
         }
         if let Some((hi, hi_inc)) = &self.upper {
             match scalar_cmp(value, hi) {
-                Some(Ordering::Greater) => return false,
-                Some(Ordering::Equal) if !hi_inc => return false,
+                Ordering::Greater => return false,
+                Ordering::Equal if !hi_inc => return false,
                 _ => {},
             }
         }
@@ -436,8 +489,8 @@ impl ColumnConstraints {
     fn classify_excluded(&self, value: &Scalar) -> ExcludedResolution {
         if let Some((lo, lo_inc)) = &self.lower {
             match scalar_cmp(value, lo) {
-                Some(Ordering::Less) => return ExcludedResolution::Drop,
-                Some(Ordering::Equal) => {
+                Ordering::Less => return ExcludedResolution::Drop,
+                Ordering::Equal => {
                     return if *lo_inc {
                         ExcludedResolution::TightenLower
                     } else {
@@ -449,8 +502,8 @@ impl ColumnConstraints {
         }
         if let Some((hi, hi_inc)) = &self.upper {
             match scalar_cmp(value, hi) {
-                Some(Ordering::Greater) => return ExcludedResolution::Drop,
-                Some(Ordering::Equal) => {
+                Ordering::Greater => return ExcludedResolution::Drop,
+                Ordering::Equal => {
                     return if *hi_inc {
                         ExcludedResolution::TightenUpper
                     } else {
@@ -469,6 +522,8 @@ struct ConstraintModel {
     constraints: PlIndexMap<PlSmallStr, ColumnConstraints>,
     // Conjuncts the model does not describe, kept for a rebuild.
     opaque: Vec<Node>,
+    // `is_in` conjuncts in the model's allowed sets, also kept for a rebuild.
+    memberships: Vec<Node>,
     num_bound_conjuncts: usize,
     normalized: bool,
     propagated: bool,
@@ -483,6 +538,8 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
     // impossible (the whole filter is then false).
     let mut constraints: PlIndexMap<PlSmallStr, ColumnConstraints> = PlIndexMap::new();
     let mut opaque: Vec<Node> = Vec::new();
+    #[cfg_attr(not(feature = "is_in"), allow(unused_mut))]
+    let mut memberships: Vec<Node> = Vec::new();
     let mut edges: Vec<(PlSmallStr, PlSmallStr, Node)> = Vec::new();
     let mut num_bound_conjuncts = 0usize;
     let mut normalized = false;
@@ -496,7 +553,12 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
             opaque.push(conjunct);
             continue;
         }
-        match classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints) {
+        match classify_into_constraints(
+            expr_arena.get(conjunct),
+            schema,
+            expr_arena,
+            &mut constraints,
+        ) {
             Classification::Unsat => {
                 unsat = true;
                 break;
@@ -507,6 +569,8 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
                 normalized = true;
             },
             Classification::Equality(a, b) => edges.push((a, b, conjunct)),
+            #[cfg(feature = "is_in")]
+            Classification::Membership => memberships.push(conjunct),
             Classification::Opaque => opaque.push(conjunct),
         }
     }
@@ -514,11 +578,14 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
     // Cross-column propagation: merge each equality class's constraints across its
     // members (`a == b AND a > 5` gives `b > 5`). Before `resolve_deferred`, so
     // `!=`/`is_in` resolve against any propagated bounds.
-    let mut propagated = false;
+    let mut unpropagated = None;
     let mut dropped_equality = false;
     // No `col == col` edges means nothing to propagate.
     if !unsat && !edges.is_empty() {
-        propagated = propagate_equalities(&mut constraints, &edges);
+        let before = constraints.clone();
+        if propagate_equalities(&mut constraints, &edges) {
+            unpropagated = Some(before);
+        }
 
         // Drop `a == b` once both ends are fixed to the same value (redundant);
         // otherwise keep it among the opaque conjuncts for the rebuild.
@@ -529,7 +596,7 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
         };
         for (a, b, node) in &edges {
             if let (Some(x), Some(y)) = (fixed_value(a), fixed_value(b))
-                && scalar_cmp(x, y) == Some(Ordering::Equal)
+                && column_value(x, y.dtype()).as_ref() == Some(y)
             {
                 dropped_equality = true;
             } else {
@@ -548,9 +615,21 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
         });
     }
 
+    // A propagated `!=` can resolve away again, so compare what is emitted with and
+    // without propagation. Counting it as a change would rewrite the same chain on
+    // every optimizer pass.
+    let propagated = !unsat
+        && unpropagated.is_some_and(|mut before| {
+            before
+                .values_mut()
+                .for_each(ColumnConstraints::resolve_deferred);
+            emitted_comparisons(&before) != emitted_comparisons(&constraints)
+        });
+
     ConstraintModel {
         constraints,
         opaque,
+        memberships,
         num_bound_conjuncts,
         normalized,
         propagated,
@@ -587,12 +666,6 @@ pub(crate) fn and_chain_bounds(
     expr_arena: &Arena<AExpr>,
 ) -> AndChainBounds {
     let model = model_and_chain(predicate, schema, expr_arena);
-    let other = model
-        .opaque
-        .iter()
-        .copied()
-        .filter(|&node| !is_in_allowed_set(node, &model.constraints, expr_arena))
-        .collect();
     let columns = model
         .constraints
         .into_iter()
@@ -613,38 +686,8 @@ pub(crate) fn and_chain_bounds(
     AndChainBounds {
         unsat: model.unsat,
         columns,
-        other,
+        other: model.opaque,
     }
-}
-
-// Whether `node` is an `is_in` whose haystack went into its column's allowed set.
-#[cfg(feature = "is_in")]
-fn is_in_allowed_set(
-    node: Node,
-    constraints: &PlIndexMap<PlSmallStr, ColumnConstraints>,
-    expr_arena: &Arena<AExpr>,
-) -> bool {
-    let AExpr::Function {
-        input,
-        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
-        ..
-    } = expr_arena.get(node)
-    else {
-        return false;
-    };
-    as_column(expr_arena.get(input[0].node()))
-        .and_then(|name| constraints.get(&name))
-        .is_some_and(|cc| cc.allowed.is_some())
-        && value_set_series(expr_arena.get(input[1].node())).is_some()
-}
-
-#[cfg(not(feature = "is_in"))]
-fn is_in_allowed_set(
-    _node: Node,
-    _constraints: &PlIndexMap<PlSmallStr, ColumnConstraints>,
-    _expr_arena: &Arena<AExpr>,
-) -> bool {
-    false
 }
 
 /// Rewrites `predicate`'s `AND` chain to a tighter equivalent, or `None` if
@@ -661,6 +704,7 @@ pub(crate) fn merge_filter_constraints(
     let ConstraintModel {
         constraints,
         mut opaque,
+        memberships,
         num_bound_conjuncts,
         normalized,
         propagated,
@@ -686,10 +730,7 @@ pub(crate) fn merge_filter_constraints(
     // `col op lit` is sound regardless of `maintain_errors` (each is pure/infallible
     // and every other conjunct is kept). Built arena-free, so the common no-op path
     // adds no nodes.
-    let mut comparisons: Vec<(&PlSmallStr, Operator, &Scalar)> = Vec::new();
-    for (name, cc) in &constraints {
-        collect_column_comparisons(name, cc, &mut comparisons);
-    }
+    let comparisons = emitted_comparisons(&constraints);
 
     // Rewrite only if we tightened, normalized a negation, propagated, or dropped an
     // `a == b`; else leave the plan alone (no churn, no optimizer loop).
@@ -699,6 +740,7 @@ pub(crate) fn merge_filter_constraints(
     }
 
     // Materialize the nodes (the only `Scalar` clones) now that we know we rewrite.
+    opaque.extend(memberships);
     for (name, op, value) in comparisons {
         opaque.push(comparison_node(name, op, value.clone(), expr_arena));
     }
@@ -747,12 +789,13 @@ fn propagate_equalities(
 // contradiction detection.
 fn classify_into_constraints(
     ae: &AExpr,
+    schema: &Schema,
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
     match ae {
         AExpr::BinaryExpr { left, op, right } => {
-            classify_comparison(*left, *op, *right, expr_arena, constraints)
+            classify_comparison(*left, *op, *right, schema, expr_arena, constraints)
         },
         AExpr::Function {
             input,
@@ -767,7 +810,7 @@ fn classify_into_constraints(
                 // `!(...)`: push the negation inward over the shapes we model (a
                 // comparison, `is_in`, `is_null` / `is_not_null`).
                 IRBooleanFunction::Not => {
-                    classify_negation(input[0].node(), expr_arena, constraints)
+                    classify_negation(input[0].node(), schema, expr_arena, constraints)
                 },
                 #[cfg(feature = "is_between")]
                 IRBooleanFunction::IsBetween { closed } => {
@@ -781,6 +824,7 @@ fn classify_into_constraints(
                         input[1].node(),
                         input[2].node(),
                         *closed,
+                        schema,
                         expr_arena,
                         constraints,
                     )
@@ -791,26 +835,32 @@ fn classify_into_constraints(
                 // column's values.
                 #[cfg(feature = "is_in")]
                 IRBooleanFunction::IsIn { .. } => {
-                    if let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
-                        if let Some(values) = as_value_set(expr_arena.get(input[1].node())) {
-                            let allowed = values.into_iter().collect();
-                            constraints
-                                .entry(col_name)
-                                .or_default()
-                                .add_allowed(allowed);
-                        }
+                    let Some(col_name) = as_column(expr_arena.get(input[0].node())) else {
+                        return Classification::Opaque;
+                    };
+                    let cc = column_constraints(constraints, schema, col_name);
+                    match as_value_set(expr_arena.get(input[1].node()), &cc.dtype) {
+                        Some(values) => {
+                            cc.add_allowed(values.into_iter().collect());
+                            Classification::Membership
+                        },
+                        None => Classification::Opaque,
                     }
-                    Classification::Opaque
                 },
                 // `is_null` / `is_not_null` record a nullability requirement for
                 // contradiction detection (`a.is_null() AND a > 5` is impossible since
                 // any comparison drops nulls); the node is kept verbatim.
-                IRBooleanFunction::IsNull => {
-                    classify_null(input[0].node(), Nullability::Null, expr_arena, constraints)
-                },
+                IRBooleanFunction::IsNull => classify_null(
+                    input[0].node(),
+                    Nullability::Null,
+                    schema,
+                    expr_arena,
+                    constraints,
+                ),
                 IRBooleanFunction::IsNotNull => classify_null(
                     input[0].node(),
                     Nullability::NonNull,
+                    schema,
                     expr_arena,
                     constraints,
                 ),
@@ -850,6 +900,7 @@ fn classify_comparison(
     left: Node,
     op: Operator,
     right: Node,
+    schema: &Schema,
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
@@ -873,15 +924,13 @@ fn classify_comparison(
             // yields a cross-column propagation edge (both ends share a value on
             // every surviving row); the others are kept verbatim.
             if op.is_null_propagating_comparison() {
-                constraints
-                    .entry(a.clone())
-                    .or_default()
+                column_constraints(constraints, schema, a.clone())
                     .require_nullability(Nullability::NonNull);
-                constraints
-                    .entry(b.clone())
-                    .or_default()
+                column_constraints(constraints, schema, b.clone())
                     .require_nullability(Nullability::NonNull);
-                if op == Operator::Eq {
+                if op == Operator::Eq
+                    && values_compare_exactly(&constraints[a].dtype, &constraints[b].dtype)
+                {
                     return Classification::Equality(a.clone(), b.clone());
                 }
             }
@@ -890,22 +939,31 @@ fn classify_comparison(
         _ => return Classification::Opaque,
     };
 
-    let cc = constraints.entry(col_name).or_default();
-    let ordered = match op {
-        Operator::Gt => cc.add_lower(lit, false).is_some(),
-        Operator::GtEq => cc.add_lower(lit, true).is_some(),
-        Operator::Lt => cc.add_upper(lit, false).is_some(),
-        Operator::LtEq => cc.add_upper(lit, true).is_some(),
+    let cc = column_constraints(constraints, schema, col_name);
+    let Some(lit) = column_value(&lit, &cc.dtype) else {
+        return Classification::Opaque;
+    };
+    match op {
+        Operator::Gt => {
+            cc.add_lower(lit, false);
+        },
+        Operator::GtEq => {
+            cc.add_lower(lit, true);
+        },
+        Operator::Lt => {
+            cc.add_upper(lit, false);
+        },
+        Operator::LtEq => {
+            cc.add_upper(lit, true);
+        },
         // `== x` is an inclusive lower and upper bound, both `x`.
         Operator::Eq => {
-            let lower = cc.add_lower(lit.clone(), true);
-            let upper = cc.add_upper(lit, true);
-            lower.is_some() && upper.is_some()
+            cc.add_lower(lit.clone(), true);
+            cc.add_upper(lit, true);
         },
         // `!= x` is an excluded value, resolved against the bounds in `resolve_deferred`.
         Operator::NotEq => {
             cc.add_excluded(lit);
-            true
         },
         // Null-aware comparisons (`eq_missing` / `ne_missing`) keep nulls, so they
         // don't map to a value constraint. Must stay `Opaque`: modeling `ne_missing`
@@ -925,20 +983,27 @@ fn classify_comparison(
         | Operator::TrueDivide
         | Operator::FloorDivide
         | Operator::Modulus => return Classification::Opaque,
-    };
-    bound_classification(cc.unsat, ordered)
+    }
+    if cc.unsat {
+        Classification::Unsat
+    } else {
+        Classification::Bound
+    }
 }
 
-// A bound that couldn't be ordered against the existing one isn't in the model,
-// so its conjunct must be kept.
-fn bound_classification(unsat: bool, ordered: bool) -> Classification {
-    if unsat {
-        Classification::Unsat
-    } else if ordered {
-        Classification::Bound
-    } else {
-        Classification::Opaque
-    }
+// The constraints of column `name`, which `compares_in_literal_order` checked is
+// in `schema`.
+fn column_constraints<'a>(
+    constraints: &'a mut PlIndexMap<PlSmallStr, ColumnConstraints>,
+    schema: &Schema,
+    name: PlSmallStr,
+) -> &'a mut ColumnConstraints {
+    constraints.entry(name).or_insert_with_key(|name| {
+        let dtype = schema
+            .get(name)
+            .expect("checked by `compares_in_literal_order`");
+        ColumnConstraints::new(dtype.clone())
+    })
 }
 
 // Pushes a logical `NOT` inward, the only negations we model:
@@ -952,6 +1017,7 @@ fn bound_classification(unsat: bool, ordered: bool) -> Classification {
 // other inner stays opaque.
 fn classify_negation(
     inner: Node,
+    schema: &Schema,
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
@@ -963,7 +1029,7 @@ fn classify_negation(
             // A folded bound becomes `Normalized` (forces the rewrite that drops the
             // `!` node); `Unsat` / `Equality` (`!(a != b)` is `a == b`) / `Opaque`
             // (`!(a == b)`, two columns) pass through unchanged.
-            match classify_comparison(*left, negated, *right, expr_arena, constraints) {
+            match classify_comparison(*left, negated, *right, schema, expr_arena, constraints) {
                 Classification::Bound => Classification::Normalized,
                 other => other,
             }
@@ -978,14 +1044,11 @@ fn classify_negation(
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
             ..
         } => {
-            if let (Some(col_name), Some(values)) = (
-                as_column(expr_arena.get(input[0].node())),
-                as_value_set(expr_arena.get(input[1].node())),
-            ) {
-                constraints
-                    .entry(col_name)
-                    .or_default()
-                    .add_disallowed(values);
+            if let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
+                let cc = column_constraints(constraints, schema, col_name);
+                if let Some(values) = as_value_set(expr_arena.get(input[1].node()), &cc.dtype) {
+                    cc.add_disallowed(values);
+                }
             }
             Classification::Opaque
         },
@@ -998,6 +1061,7 @@ fn classify_negation(
         } => classify_null(
             input[0].node(),
             Nullability::NonNull,
+            schema,
             expr_arena,
             constraints,
         ),
@@ -1005,7 +1069,13 @@ fn classify_negation(
             input,
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
             ..
-        } => classify_null(input[0].node(), Nullability::Null, expr_arena, constraints),
+        } => classify_null(
+            input[0].node(),
+            Nullability::Null,
+            schema,
+            expr_arena,
+            constraints,
+        ),
         // Negation of any other shape isn't a constraint we model; kept verbatim.
         AExpr::Function { .. }
         | AExpr::Element
@@ -1040,13 +1110,14 @@ fn classify_negation(
 fn classify_null(
     col: Node,
     required: Nullability,
+    schema: &Schema,
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
     let Some(col_name) = as_column(expr_arena.get(col)) else {
         return Classification::Opaque;
     };
-    let cc = constraints.entry(col_name).or_default();
+    let cc = column_constraints(constraints, schema, col_name);
     cc.require_nullability(required);
     if cc.unsat {
         Classification::Unsat
@@ -1062,16 +1133,18 @@ fn classify_is_between(
     lo: Node,
     hi: Node,
     closed: ClosedInterval,
+    schema: &Schema,
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
     let Some(col_name) = as_column(expr_arena.get(col)) else {
         return Classification::Opaque;
     };
-    let Some(lo_lit) = as_scalar_lit(expr_arena.get(lo)) else {
+    let cc = column_constraints(constraints, schema, col_name);
+    let Some(lo_lit) = as_column_value(expr_arena.get(lo), &cc.dtype) else {
         return Classification::Opaque;
     };
-    let Some(hi_lit) = as_scalar_lit(expr_arena.get(hi)) else {
+    let Some(hi_lit) = as_column_value(expr_arena.get(hi), &cc.dtype) else {
         return Classification::Opaque;
     };
     let (lo_inclusive, hi_inclusive) = match closed {
@@ -1080,10 +1153,13 @@ fn classify_is_between(
         ClosedInterval::Right => (false, true),
         ClosedInterval::None => (false, false),
     };
-    let cc = constraints.entry(col_name).or_default();
-    let lower = cc.add_lower(lo_lit, lo_inclusive);
-    let upper = cc.add_upper(hi_lit, hi_inclusive);
-    bound_classification(cc.unsat, lower.is_some() && upper.is_some())
+    cc.add_lower(lo_lit, lo_inclusive);
+    cc.add_upper(hi_lit, hi_inclusive);
+    if cc.unsat {
+        Classification::Unsat
+    } else {
+        Classification::Bound
+    }
 }
 
 fn as_column(ae: &AExpr) -> Option<PlSmallStr> {
@@ -1094,16 +1170,13 @@ fn as_column(ae: &AExpr) -> Option<PlSmallStr> {
     }
 }
 
-// Returns `None` for a null literal, so we only reason about real values.
+// A literal as a value of a column of `dtype` (see `column_value`); `None` for a
+// null literal, so we only reason about real values.
 #[cfg(feature = "is_between")]
-fn as_scalar_lit(ae: &AExpr) -> Option<Scalar> {
-    if let AExpr::Literal(LiteralValue::Scalar(s)) = ae {
-        if s.is_null() {
-            return None;
-        }
-        Some(s.clone())
-    } else {
-        None
+fn as_column_value(ae: &AExpr, dtype: &DataType) -> Option<Scalar> {
+    match ae {
+        AExpr::Literal(LiteralValue::Scalar(s)) => column_value(s, dtype),
+        _ => None,
     }
 }
 
@@ -1124,17 +1197,15 @@ fn list_inner(av: &AnyValue) -> Option<Series> {
     }
 }
 
-// An `is_in` haystack as scalars.
+// An `is_in` haystack as values of a column of `dtype` (see `column_value`).
 #[cfg(feature = "is_in")]
-fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
+fn as_value_set(ae: &AExpr, dtype: &DataType) -> Option<Vec<Scalar>> {
     let values = value_set_series(ae)?;
-    let dtype = values.dtype();
-    Some(
-        values
-            .iter()
-            .map(|av| Scalar::new(dtype.clone(), av.into_static()))
-            .collect(),
-    )
+    let values_dtype = values.dtype();
+    values
+        .iter()
+        .map(|av| column_value(&Scalar::new(values_dtype.clone(), av.into_static()), dtype))
+        .collect()
 }
 
 // An `is_in` haystack. The haystack is one list of values, wrapped either as a
@@ -1154,6 +1225,17 @@ fn value_set_series(ae: &AExpr) -> Option<Series> {
     (values.len() <= MAX_IS_IN_VALUES && !values.has_nulls()).then_some(values)
 }
 
+// The tightest comparisons of all columns; see `collect_column_comparisons`.
+fn emitted_comparisons(
+    constraints: &PlIndexMap<PlSmallStr, ColumnConstraints>,
+) -> Vec<(&PlSmallStr, Operator, &Scalar)> {
+    let mut out = Vec::new();
+    for (name, cc) in constraints {
+        collect_column_comparisons(name, cc, &mut out);
+    }
+    out
+}
+
 // Collects the tightest comparisons for one column as borrowed `(name, op, value)`.
 // Kept arena- and clone-free so the caller can count them and bail before cloning
 // or adding any node on the common no-op path.
@@ -1162,27 +1244,26 @@ fn collect_column_comparisons<'a>(
     cc: &'a ColumnConstraints,
     out: &mut Vec<(&'a PlSmallStr, Operator, &'a Scalar)>,
 ) {
-    // A pinned column is just `col == value`. Only exclusions that can't be
-    // ordered against the value survive next to it.
+    // A pinned column is just `col == value` (no exclusion survives a point range).
     if let Some(value) = cc.fixed_value() {
         out.push((name, Operator::Eq, value));
-    } else {
-        if let Some((lo, inclusive)) = &cc.lower {
-            let op = if *inclusive {
-                Operator::GtEq
-            } else {
-                Operator::Gt
-            };
-            out.push((name, op, lo));
-        }
-        if let Some((hi, inclusive)) = &cc.upper {
-            let op = if *inclusive {
-                Operator::LtEq
-            } else {
-                Operator::Lt
-            };
-            out.push((name, op, hi));
-        }
+        return;
+    }
+    if let Some((lo, inclusive)) = &cc.lower {
+        let op = if *inclusive {
+            Operator::GtEq
+        } else {
+            Operator::Gt
+        };
+        out.push((name, op, lo));
+    }
+    if let Some((hi, inclusive)) = &cc.upper {
+        let op = if *inclusive {
+            Operator::LtEq
+        } else {
+            Operator::Lt
+        };
+        out.push((name, op, hi));
     }
     for value in &cc.excluded {
         out.push((name, Operator::NotEq, value));
@@ -1258,11 +1339,7 @@ pub(crate) fn widen_over_predicates(
     let Some(widened) = widened else {
         return Vec::new();
     };
-    let mut comparisons: Vec<(&PlSmallStr, Operator, &Scalar)> = Vec::new();
-    for (name, cc) in &widened {
-        collect_column_comparisons(name, cc, &mut comparisons);
-    }
-    comparisons
+    emitted_comparisons(&widened)
         .into_iter()
         .map(|(name, op, value)| comparison_node(name, op, value.clone(), expr_arena))
         .collect()
@@ -1303,7 +1380,7 @@ fn predicate_bounds(
         *cc = ColumnConstraints {
             lower: cc.lower.take(),
             upper: cc.upper.take(),
-            ..Default::default()
+            ..ColumnConstraints::new(cc.dtype.clone())
         };
         true
     });

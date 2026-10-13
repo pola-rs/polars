@@ -1966,12 +1966,17 @@ def test_filter_constraint_nested_scalar_no_panic() -> None:
 def test_filter_constraint_decimal_mixed_scale_29901() -> None:
     lf = pl.LazyFrame({"d": [Decimal("1")]})
 
+    # 0.5 is not a value of the scale-0 column, so its bound is kept as is.
     q = lf.filter((pl.col("d") >= Decimal("0.5")) & (pl.col("d") >= Decimal("6")))
-    assert q.explain() == lf.filter(pl.col("d") >= Decimal("6")).explain()
+    assert q.explain().count('col("d")') == 2
     assert q.collect().is_empty()
 
     q = lf.filter((pl.col("d") <= Decimal("6")) & (pl.col("d") <= Decimal("0.5")))
-    assert q.explain() == lf.filter(pl.col("d") <= Decimal("0.5")).explain()
+    assert q.collect().is_empty()
+
+    # 6.00 is exactly 6 at scale 0, so the bounds merge.
+    q = lf.filter((pl.col("d") >= Decimal("0")) & (pl.col("d") >= Decimal("6.00")))
+    assert q.explain() == lf.filter(pl.col("d") >= Decimal("6")).explain()
     assert q.collect().is_empty()
 
     # Same value at different scales: the exclusive bound wins.
@@ -1979,6 +1984,24 @@ def test_filter_constraint_decimal_mixed_scale_29901() -> None:
     assert q.collect().is_empty()
 
     q = lf.filter((pl.col("d") == Decimal("1.00")) & (pl.col("d") >= Decimal("0.5")))
+    assert_frame_equal(q.collect(), lf.collect())
+
+    # 100 doesn't fit the column's precision, so it isn't a value of the column.
+    lf = pl.LazyFrame({"d": [Decimal("1")]}, schema={"d": pl.Decimal(1, 0)})
+    q = lf.filter((pl.col("d") < Decimal("100")) & (pl.col("d") < Decimal("200")))
+    assert_frame_equal(q.collect(), lf.collect())
+
+    # `b != 0` carries over to `a` but resolves away against `a >= 0.5`, which
+    # can't carry over to the scale-0 `b`. This must not rewrite on every pass.
+    lf = pl.LazyFrame(
+        {"a": [Decimal("1.0")], "b": [Decimal("1")]},
+        schema={"a": pl.Decimal(10, 1), "b": pl.Decimal(10, 0)},
+    )
+    q = lf.filter(
+        (pl.col("a") == pl.col("b"))
+        & (pl.col("a") >= Decimal("0.5"))
+        & (pl.col("b") != Decimal("0"))
+    )
     assert_frame_equal(q.collect(), lf.collect())
 
     # `is_in` sets of different scales hold equal values that don't hash the same.
