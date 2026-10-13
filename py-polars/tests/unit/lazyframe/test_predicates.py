@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -1947,6 +1948,50 @@ def test_filter_constraint_nested_scalar_no_panic() -> None:
 
     q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") != [3]))
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [[1, 2]], "b": [1]}))
+
+    # Values that can't be ordered against each other must all be kept.
+    q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") == [3]))
+    assert q.collect().is_empty()
+
+    q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") != [1, 2]))
+    assert q.collect().is_empty()
+
+    lf = pl.LazyFrame({"a": [[1], [3]], "b": [[2], [3]]})
+    q = lf.filter(
+        (pl.col("a") == pl.col("b")) & (pl.col("a") == [1]) & (pl.col("b") == [2])
+    )
+    assert q.collect().is_empty()
+
+
+def test_filter_constraint_decimal_mixed_scale_29901() -> None:
+    lf = pl.LazyFrame({"d": [Decimal("1")]})
+
+    q = lf.filter((pl.col("d") >= Decimal("0.5")) & (pl.col("d") >= Decimal("6")))
+    assert q.explain() == lf.filter(pl.col("d") >= Decimal("6")).explain()
+    assert q.collect().is_empty()
+
+    q = lf.filter((pl.col("d") <= Decimal("6")) & (pl.col("d") <= Decimal("0.5")))
+    assert q.explain() == lf.filter(pl.col("d") <= Decimal("0.5")).explain()
+    assert q.collect().is_empty()
+
+    # Same value at different scales: the exclusive bound wins.
+    q = lf.filter((pl.col("d") >= Decimal("1.0")) & (pl.col("d") > Decimal("1")))
+    assert q.collect().is_empty()
+
+    q = lf.filter((pl.col("d") == Decimal("1.00")) & (pl.col("d") >= Decimal("0.5")))
+    assert_frame_equal(q.collect(), lf.collect())
+
+    # `is_in` sets of different scales hold equal values that don't hash the same.
+    lf = pl.LazyFrame(
+        {"a": [Decimal("1.0")], "b": [Decimal("1.00")]},
+        schema={"a": pl.Decimal(10, 1), "b": pl.Decimal(10, 2)},
+    )
+    q = lf.filter(
+        (pl.col("a") == pl.col("b"))
+        & pl.col("a").is_in([Decimal("1.0")])
+        & pl.col("b").is_in([Decimal("1.00")])
+    )
+    assert_frame_equal(q.collect(), lf.collect())
 
 
 def test_filter_constraint_column_with_its_own_order() -> None:

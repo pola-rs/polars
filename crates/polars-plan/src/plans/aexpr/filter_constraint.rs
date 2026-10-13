@@ -107,8 +107,10 @@ fn compares_in_literal_order(node: Node, schema: &Schema, expr_arena: &Arena<AEx
 // Orders two scalars; incomparable pairs give `None`, so we never declare a
 // contradiction we aren't sure of. The dtype guard is load-bearing: `AnyValue`'s
 // `PartialOrd` panics on nested/mixed/object dtypes rather than returning `None`.
+// Decimals of different scales compare by value.
 fn scalar_cmp(a: &Scalar, b: &Scalar) -> Option<Ordering> {
-    if a.dtype() != b.dtype() || a.dtype().is_nested() || a.dtype().is_object() {
+    let same_dtype = a.dtype() == b.dtype() || (a.dtype().is_decimal() && b.dtype().is_decimal());
+    if !same_dtype || a.dtype().is_nested() || a.dtype().is_object() {
         return None;
     }
     a.as_any_value().partial_cmp(&b.as_any_value())
@@ -137,38 +139,34 @@ struct ColumnConstraints {
 }
 
 impl ColumnConstraints {
-    // Keep the tighter bound, returning whether the slot changed. `tighter` is the
-    // new-vs-existing ordering that means the new bound wins (`Greater` lower, `Less` upper).
+    // Keep the tighter bound, returning whether the slot changed, or `None` if the
+    // values can't be ordered. Then the slot can't hold both bounds, so the caller
+    // must keep the new bound's conjunct. `tighter` is the new-vs-existing ordering
+    // that means the new bound wins (`Greater` lower, `Less` upper).
     fn tighten(
         slot: &mut Option<(Scalar, bool)>,
         value: Scalar,
         inclusive: bool,
         tighter: Ordering,
-    ) -> bool {
-        match slot.take() {
-            None => {
+    ) -> Option<bool> {
+        let Some((existing, existing_inclusive)) = slot else {
+            *slot = Some((value, inclusive));
+            return Some(true);
+        };
+        match scalar_cmp(&value, existing)? {
+            // Strictly tighter value wins; the bound always changes.
+            ord if ord == tighter => {
                 *slot = Some((value, inclusive));
-                true
+                Some(true)
             },
-            Some((existing, existing_inclusive)) => match scalar_cmp(&value, &existing) {
-                // Strictly tighter value wins; the bound always changes.
-                Some(ord) if ord == tighter => {
-                    *slot = Some((value, inclusive));
-                    true
-                },
-                // Same value: an exclusive bound is tighter than an inclusive one.
-                Some(Ordering::Equal) => {
-                    let new_inclusive = inclusive && existing_inclusive;
-                    let changed = new_inclusive != existing_inclusive;
-                    *slot = Some((existing, new_inclusive));
-                    changed
-                },
-                // Less tight, or incomparable types: keep the existing bound.
-                _ => {
-                    *slot = Some((existing, existing_inclusive));
-                    false
-                },
+            // Same value: an exclusive bound is tighter than an inclusive one.
+            Ordering::Equal => {
+                let changed = *existing_inclusive && !inclusive;
+                *existing_inclusive &= inclusive;
+                Some(changed)
             },
+            // Less tight: keep the existing bound.
+            _ => Some(false),
         }
     }
 
@@ -202,18 +200,20 @@ impl ColumnConstraints {
         self.lower.is_some() || self.upper.is_some()
     }
 
-    fn add_lower(&mut self, value: Scalar, inclusive: bool) -> bool {
+    // Returns whether the bound changed, or `None` if it can't be ordered against
+    // the existing bound (see `tighten`).
+    fn add_lower(&mut self, value: Scalar, inclusive: bool) -> Option<bool> {
         if self.unsat {
-            return false;
+            return Some(false);
         }
         let changed = Self::tighten(&mut self.lower, value, inclusive, Ordering::Greater);
         self.check_bound_consistency();
         changed
     }
 
-    fn add_upper(&mut self, value: Scalar, inclusive: bool) -> bool {
+    fn add_upper(&mut self, value: Scalar, inclusive: bool) -> Option<bool> {
         if self.unsat {
-            return false;
+            return Some(false);
         }
         let changed = Self::tighten(&mut self.upper, value, inclusive, Ordering::Less);
         self.check_bound_consistency();
@@ -237,6 +237,16 @@ impl ColumnConstraints {
             None => {
                 self.allowed = Some(values);
                 true
+            },
+            // Values of different dtypes (e.g. decimal scales) can be equal without
+            // being hash-equal, so only intersect sets of the same dtype.
+            Some(existing)
+                if existing
+                    .first()
+                    .zip(values.first())
+                    .is_some_and(|(e, v)| e.dtype() != v.dtype()) =>
+            {
+                false
             },
             // A second `is_in` intersects: keep only values present in both.
             Some(existing) => {
@@ -297,10 +307,10 @@ impl ColumnConstraints {
         let mut emitted = false;
         let mut any = false;
         if let Some((value, inclusive)) = &other.lower {
-            emitted |= self.add_lower(value.clone(), *inclusive);
+            emitted |= self.add_lower(value.clone(), *inclusive) == Some(true);
         }
         if let Some((value, inclusive)) = &other.upper {
-            emitted |= self.add_upper(value.clone(), *inclusive);
+            emitted |= self.add_upper(value.clone(), *inclusive) == Some(true);
         }
         for value in &other.excluded {
             emitted |= self.add_excluded(value.clone());
@@ -510,13 +520,16 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
     if !unsat && !edges.is_empty() {
         propagated = propagate_equalities(&mut constraints, &edges);
 
-        // Drop `a == b` once its class is fixed (both ends become `== v`, redundant);
+        // Drop `a == b` once both ends are fixed to the same value (redundant);
         // otherwise keep it among the opaque conjuncts for the rebuild.
-        for (a, _, node) in &edges {
-            if constraints
-                .get(a)
+        let fixed_value = |name| {
+            constraints
+                .get(name)
                 .and_then(ColumnConstraints::fixed_value)
-                .is_some()
+        };
+        for (a, b, node) in &edges {
+            if let (Some(x), Some(y)) = (fixed_value(a), fixed_value(b))
+                && scalar_cmp(x, y) == Some(Ordering::Equal)
             {
                 dropped_equality = true;
             } else {
@@ -878,27 +891,21 @@ fn classify_comparison(
     };
 
     let cc = constraints.entry(col_name).or_default();
-    match op {
-        Operator::Gt => {
-            cc.add_lower(lit, false);
-        },
-        Operator::GtEq => {
-            cc.add_lower(lit, true);
-        },
-        Operator::Lt => {
-            cc.add_upper(lit, false);
-        },
-        Operator::LtEq => {
-            cc.add_upper(lit, true);
-        },
+    let ordered = match op {
+        Operator::Gt => cc.add_lower(lit, false).is_some(),
+        Operator::GtEq => cc.add_lower(lit, true).is_some(),
+        Operator::Lt => cc.add_upper(lit, false).is_some(),
+        Operator::LtEq => cc.add_upper(lit, true).is_some(),
         // `== x` is an inclusive lower and upper bound, both `x`.
         Operator::Eq => {
-            cc.add_lower(lit.clone(), true);
-            cc.add_upper(lit, true);
+            let lower = cc.add_lower(lit.clone(), true);
+            let upper = cc.add_upper(lit, true);
+            lower.is_some() && upper.is_some()
         },
         // `!= x` is an excluded value, resolved against the bounds in `resolve_deferred`.
         Operator::NotEq => {
             cc.add_excluded(lit);
+            true
         },
         // Null-aware comparisons (`eq_missing` / `ne_missing`) keep nulls, so they
         // don't map to a value constraint. Must stay `Opaque`: modeling `ne_missing`
@@ -918,11 +925,19 @@ fn classify_comparison(
         | Operator::TrueDivide
         | Operator::FloorDivide
         | Operator::Modulus => return Classification::Opaque,
-    }
-    if cc.unsat {
+    };
+    bound_classification(cc.unsat, ordered)
+}
+
+// A bound that couldn't be ordered against the existing one isn't in the model,
+// so its conjunct must be kept.
+fn bound_classification(unsat: bool, ordered: bool) -> Classification {
+    if unsat {
         Classification::Unsat
-    } else {
+    } else if ordered {
         Classification::Bound
+    } else {
+        Classification::Opaque
     }
 }
 
@@ -1066,13 +1081,9 @@ fn classify_is_between(
         ClosedInterval::None => (false, false),
     };
     let cc = constraints.entry(col_name).or_default();
-    cc.add_lower(lo_lit, lo_inclusive);
-    cc.add_upper(hi_lit, hi_inclusive);
-    if cc.unsat {
-        Classification::Unsat
-    } else {
-        Classification::Bound
-    }
+    let lower = cc.add_lower(lo_lit, lo_inclusive);
+    let upper = cc.add_upper(hi_lit, hi_inclusive);
+    bound_classification(cc.unsat, lower.is_some() && upper.is_some())
 }
 
 fn as_column(ae: &AExpr) -> Option<PlSmallStr> {
@@ -1151,26 +1162,27 @@ fn collect_column_comparisons<'a>(
     cc: &'a ColumnConstraints,
     out: &mut Vec<(&'a PlSmallStr, Operator, &'a Scalar)>,
 ) {
-    // A pinned column is just `col == value` (no exclusion survives a point range).
+    // A pinned column is just `col == value`. Only exclusions that can't be
+    // ordered against the value survive next to it.
     if let Some(value) = cc.fixed_value() {
         out.push((name, Operator::Eq, value));
-        return;
-    }
-    if let Some((lo, inclusive)) = &cc.lower {
-        let op = if *inclusive {
-            Operator::GtEq
-        } else {
-            Operator::Gt
-        };
-        out.push((name, op, lo));
-    }
-    if let Some((hi, inclusive)) = &cc.upper {
-        let op = if *inclusive {
-            Operator::LtEq
-        } else {
-            Operator::Lt
-        };
-        out.push((name, op, hi));
+    } else {
+        if let Some((lo, inclusive)) = &cc.lower {
+            let op = if *inclusive {
+                Operator::GtEq
+            } else {
+                Operator::Gt
+            };
+            out.push((name, op, lo));
+        }
+        if let Some((hi, inclusive)) = &cc.upper {
+            let op = if *inclusive {
+                Operator::LtEq
+            } else {
+                Operator::Lt
+            };
+            out.push((name, op, hi));
+        }
     }
     for value in &cc.excluded {
         out.push((name, Operator::NotEq, value));
