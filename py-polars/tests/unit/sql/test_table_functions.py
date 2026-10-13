@@ -98,9 +98,8 @@ def test_read_csv_options_match_scan_csv(
 
     # SQL keeps `try_parse_dates=True` as its default; the same path spelling as in the
     # query keeps `include_file_paths` identical on every platform
-    expected = pl.scan_csv(
-        path.as_posix(), **{"try_parse_dates": True, **kwargs}
-    ).collect()
+    scan_kwargs: dict[str, Any] = {"try_parse_dates": True, **kwargs}
+    expected = pl.scan_csv(path.as_posix(), **scan_kwargs).collect()
     assert_frame_equal(_read_csv_sql(path, options), expected)
 
 

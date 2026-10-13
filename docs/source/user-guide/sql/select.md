@@ -81,8 +81,8 @@ functions `read_xxx`.
 --8<-- "python/user-guide/sql/select.py:tablefunctions"
 ```
 
-`read_csv` also accepts named options after the path, with the same names and meaning as the
-options of `scan_csv`. Write them as `name => value` (or `name := value`):
+`read_csv` also accepts named options after the path, with the same names and meaning as the options
+of `scan_csv`. Write them as `name => value` (or `name := value`):
 
 {{code_block('user-guide/sql/select','tablefunctionoptions',['SQLexecute'])}}
 

@@ -27,11 +27,11 @@ serde = { workspace = true }
 sqlparser = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
 # to display dataframes in case of test failures
 polars-core = { workspace = true, features = ["fmt"] }
 # required for local runs of the 'iss_23134' test
 polars-lazy = { workspace = true, features = ["streaming"] }
+tempfile = "3"
 
 [features]
 default = []
