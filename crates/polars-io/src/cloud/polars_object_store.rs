@@ -684,7 +684,7 @@ impl PolarsObjectStore {
         }
         let prefix_requested_recorded = &std::sync::atomic::AtomicBool::new(false);
 
-        let io_session = metrics.start_io_session();
+        let io_session = metrics.start_rx_session();
 
         let out = self
             .exec_with_rebuild_retry_on_err(|s| async move {

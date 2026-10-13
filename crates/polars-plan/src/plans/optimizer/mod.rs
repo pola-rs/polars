@@ -56,7 +56,9 @@ use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{
     AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
 };
-pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
+pub use stack_opt::{
+    OptimizationRule, OptimizeExprContext, StackOptimizer, passes_on_filter_predicate,
+};
 
 #[cfg(feature = "merge_sorted")]
 use self::flatten_merge_sorted::FlattenMergeSortedRule;

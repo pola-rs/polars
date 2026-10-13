@@ -15,7 +15,7 @@ pub use skeleton::StreamingQuery;
 mod metrics;
 pub use metrics::{
     AggMode, CustomMetric, GraphMetrics, Metric, MetricKind, MetricReporter, NodeMetrics,
-    NodeMetricsRegistry, kind,
+    NodeMetricsRegistry, QueryMetrics, kind,
 };
 mod observer_metrics;
 pub use observer_metrics::StreamingQueryMetricsSnapshotter;
