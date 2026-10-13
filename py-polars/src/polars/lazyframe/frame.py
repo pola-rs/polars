@@ -124,6 +124,7 @@ if TYPE_CHECKING:
 
     import deltalake
     import pyiceberg.catalog
+    import pyiceberg.expressions
     import pyiceberg.table
 
     import polars.io.iceberg
@@ -3025,6 +3026,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         mode: Literal["append", "overwrite"],
         schema_mode: Literal["merge", "overwrite"] | None = None,
+        overwrite_filter: Expr
+        | pyiceberg.expressions.BooleanExpression
+        | str
+        | None = None,
+        partition_overwrite: Literal["dynamic"] | None = None,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
@@ -3064,6 +3070,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - If 'overwrite', replace the table schema with the incoming schema.
               This requires ``mode='overwrite'``.
             - If None, require the schemas to match.
+        overwrite_filter
+            With ``mode='overwrite'``, only delete the existing rows matching this
+            filter instead of all rows. Incoming rows are not checked against the
+            filter.
+
+            - A Polars expression, e.g. ``pl.col("date") == date(2026, 10, 1)``,
+              deletes the rows for which it evaluates to true. It must be
+              convertible to an Iceberg expression with the same semantics,
+              otherwise an error is raised before any data is written: it may
+              only use comparisons with literals, ``is_in``, ``is_between``,
+              ``is_null``, ``is_not_null`` and ``str.starts_with`` combined with
+              ``&``, ``|`` and ``~``. Floating-point columns, and columns nested
+              within a nullable struct, are not supported.
+            - A PyIceberg ``BooleanExpression`` or filter string, e.g.
+              ``"date = '2026-10-01'"``, is used as-is, with the semantics of
+              PyIceberg's ``Table.overwrite(overwrite_filter=...)``.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        partition_overwrite : {'dynamic'}
+            With ``mode='overwrite'``, only delete the existing rows of the
+            partitions that the incoming data is written to. Requires a table
+            whose partition spec uses only identity transforms. If there is no
+            incoming data, nothing is deleted.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         snapshot_properties
             Custom properties to add to the Iceberg snapshot summary.
         catalog
@@ -3103,8 +3138,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         bounds (``full`` or ``truncate``). Bucket, void, and decimal truncation are
         not supported.
 
-        ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
-        is not supported. ``schema_mode="overwrite"`` is not supported for
+        ``mode="overwrite"`` replaces all table data, unless ``overwrite_filter`` or
+        ``partition_overwrite`` is given. The delete and the append are committed
+        in a single transaction. Data files that only partially match the delete
+        filter are rewritten by PyIceberg during the commit.
+        ``schema_mode="overwrite"`` is not supported for
         partitioned tables or tables with a sort order. Custom location providers
         are not supported.
 
@@ -3120,6 +3158,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             target,
             mode=mode,
             schema_mode=schema_mode,
+            overwrite_filter=overwrite_filter,
+            partition_overwrite=partition_overwrite,
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
