@@ -88,10 +88,6 @@ pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
     unsafe { Vec::from_raw_parts(ptr, len, cap) }
 }
 
-pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
-    reinterpret_vec(buf)
-}
-
 #[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);

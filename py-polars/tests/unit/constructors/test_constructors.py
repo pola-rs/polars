@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict, UserDict, namedtuple
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -25,18 +25,11 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable
+    from typing import Self, assert_type
 
     from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
-    from typing_extensions import assert_type
 
 
 # -----------------------------------------------------------------------------------
@@ -937,7 +930,7 @@ def test_init_1d_sequence() -> None:
     df = pl.DataFrame([datetime(2020, 1, 1)], schema={"ts": pl.Datetime("ms")})
     assert df.schema == {"ts": pl.Datetime("ms")}
     df = pl.DataFrame(
-        [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
+        [datetime(2020, 1, 1, tzinfo=UTC)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
     df = pl.DataFrame(
@@ -1363,6 +1356,26 @@ def test_from_rows_owned_values() -> None:
         "bin": pl.Binary,
         "st": pl.Struct({"a": pl.String}),
     }
+    assert df.rows() == rows
+
+
+def test_from_rows_nested_across_batches() -> None:
+    rows = [(i, [i, None], {"x": i}, [i, i + 1]) for i in range(3000)]
+    df = pl.DataFrame(
+        rows,
+        schema=["id", "list", "struct", "array"],
+        schema_overrides={"array": pl.Array(pl.Int64, 2)},
+        orient="row",
+        infer_schema_length=1500,
+    )
+    assert df.dtypes == [
+        pl.Int64,
+        pl.List(pl.Int64),
+        pl.Struct({"x": pl.Int64}),
+        pl.Array(pl.Int64, 2),
+    ]
+    assert df.n_chunks("all") == [1, 1, 1, 1]
+    assert df["list"].flags["FAST_EXPLODE"]
     assert df.rows() == rows
 
 
@@ -1868,7 +1881,7 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
         ZoneInfo("Asia/Tokyo"),
         ZoneInfo("Europe/Amsterdam"),
         ZoneInfo("UTC"),
-        timezone.utc,
+        UTC,
     ],
 )
 def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
@@ -1888,7 +1901,7 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
         ZoneInfo("Asia/Tokyo"),
         ZoneInfo("Europe/Amsterdam"),
         ZoneInfo("UTC"),
-        timezone.utc,
+        UTC,
     ],
 )
 def test_init_list_of_nested_dicts_with_timezone(tz: Any) -> None:
