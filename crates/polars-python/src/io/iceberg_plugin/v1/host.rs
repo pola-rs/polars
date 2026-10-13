@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use object_store::ObjectStoreExt;
 use polars_core::runtime::ASYNC;
-use polars_error::{PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_err};
 use polars_io::cloud::concurrency_config::ConcurrencyStrategy;
 use polars_io::cloud::{
     CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
@@ -199,7 +199,7 @@ impl HostStorage {
         // `/wh/./t/metadata/...` from a table location) can have. Object keys are kept as they
         // are: `a//b` is another key than `a/b`.
         let path = if is_local {
-            object_path_from_str(&resolve_local_path(&prefix))?
+            object_path_from_str(&resolve_local_path(&prefix)?)?
         } else {
             object_path_from_str(&prefix)?
         };
@@ -210,19 +210,22 @@ impl HostStorage {
 
 /// `path` with its `..` segments applied as the filesystem applies them. On Unix, `link/..` is
 /// the parent of the symlink's target rather than the directory holding `link`, so a path with
-/// `..` is resolved by the filesystem. Paths that do not resolve (e.g. missing files) are
-/// normalized lexically, leaving the error to the read.
-fn resolve_local_path(path: &str) -> String {
+/// `..` is resolved by the filesystem. A path that does not resolve (e.g. a missing file) is an
+/// error: its lexical normalization can name another, existing file.
+fn resolve_local_path(path: &str) -> PolarsResult<String> {
     #[cfg(unix)]
     if path.split('/').any(|s| s == "..") {
-        if let Ok(Some(resolved)) =
-            std::fs::canonicalize(path).map(|p| p.to_str().map(str::to_owned))
-        {
-            return resolved;
-        }
+        let resolved = std::fs::canonicalize(path).map_err(|e| PolarsError::IO {
+            msg: Some(format!("{e}: {path}").into()),
+            error: Arc::new(e),
+        })?;
+        return resolved
+            .into_os_string()
+            .into_string()
+            .map_err(|p| polars_err!(ComputeError: "resolved path is not UTF-8: {}", p.display()));
     }
 
-    normalize_local_path(path)
+    Ok(normalize_local_path(path))
 }
 
 /// `path` without `.` and empty segments, and with `..` segments applied lexically, as Windows

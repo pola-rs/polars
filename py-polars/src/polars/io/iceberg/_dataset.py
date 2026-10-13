@@ -6,6 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import partial
+from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 
@@ -1008,6 +1009,11 @@ class _PluginIcebergScanData(_ResolvedScanDataBase):
 
 def _metadata_file_exists(tbl: pyiceberg.table.Table) -> bool:
     try:
+        # PyIceberg applies `..` lexically to local paths without a scheme, which
+        # across a symlink can name another file.
+        if "://" not in tbl.metadata_location:
+            return Path(tbl.metadata_location).exists()
+
         return bool(tbl.io.new_input(tbl.metadata_location).exists())
     except Exception:
         return True

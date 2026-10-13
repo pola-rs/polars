@@ -1159,6 +1159,37 @@ def test_iceberg_plugin_metadata_path_through_symlink_parent(tmp_path: Path) -> 
     assert_frame_equal(pl.scan_iceberg(path).collect(), TEST_DF)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks")
+def test_iceberg_plugin_missing_metadata_path_through_symlink_parent(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    from pyiceberg.table import StaticTable
+
+    plmonkeypatch.delenv("POLARS_ICEBERG_PLANNER")
+
+    (tmp_path / "t").mkdir()
+    (tmp_path / "other").mkdir()
+    tbl = _new_table(tmp_path / "t")
+    other = _new_table(tmp_path / "other")
+    other.append(TEST_DF.head(1).to_arrow())
+
+    metadata = Path(tbl.metadata_location.removeprefix("file://"))
+    (metadata.parent / "sub").mkdir()
+    wrong_dir = tmp_path / "wrong"
+    wrong_dir.mkdir()
+    (wrong_dir / "link").symlink_to(metadata.parent / "sub")
+    (wrong_dir / metadata.name).write_bytes(
+        Path(other.metadata_location.removeprefix("file://")).read_bytes()
+    )
+
+    tbl = StaticTable.from_metadata(f"file://{wrong_dir}/link/../{metadata.name}")
+    metadata.unlink()
+
+    # Not the file where removing `link/..` without the filesystem would lead to:
+    # planned with PyIceberg from the loaded metadata.
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), TEST_DF)
+
+
 @pytest.mark.parametrize("planner", [None, "plugin"])
 def test_iceberg_plugin_unsupported_avro_codec(
     tmp_path: Path, planner: str | None, plmonkeypatch: PlMonkeyPatch
