@@ -215,7 +215,7 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
 }
 
 #[inline(never)]
-fn decode_optional<B: AlignedBytes>(
+pub(super) fn decode_optional<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
     mut validity: Bitmap,
     target: &mut Vec<B>,
@@ -301,7 +301,7 @@ fn decode_optional<B: AlignedBytes>(
 }
 
 #[inline(never)]
-fn decode_masked_required<B: AlignedBytes>(
+pub(super) fn decode_masked_required<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
     mut mask: Bitmap,
     target: &mut Vec<B>,
@@ -378,7 +378,7 @@ fn decode_masked_required<B: AlignedBytes>(
 }
 
 #[inline(never)]
-fn decode_masked_optional<B: AlignedBytes>(
+pub(super) fn decode_masked_optional<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
     mut validity: Bitmap,
     mut mask: Bitmap,

@@ -394,10 +394,14 @@ pub fn initialize_scan_predicate(
             );
         }
 
-        let statistics = table_statistics.0.as_ref();
+        let statistics = super::table_statistics::fill_missing_statistics(
+            table_statistics.0.as_ref(),
+            &predicate.live_columns,
+            skip_batch_predicate.schema(),
+        )?;
         #[cfg(feature = "dtype-categorical")]
         let statistics = super::table_statistics::normalize_enum_statistics(
-            statistics,
+            &statistics,
             skip_batch_predicate.schema(),
         )?;
         let stats_exclusion_bitmap = skip_batch_predicate.evaluate_with_stat_df(&statistics)?;

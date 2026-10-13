@@ -635,7 +635,7 @@ class IcebergSinkState:
                 IcebergCatalogConfig._from_api_parameter_or_environment_default(
                     catalog,
                     fn_name="sink_iceberg",
-                )
+                )[0]
             )
             if isinstance(target, str)
             else (

@@ -429,6 +429,40 @@ def test_in_all_literal_fast_path_unaffected() -> None:
     assert res["a"].to_list() == [1, 2, 4]
 
 
+def test_in_float_with_integer_values() -> None:
+    # Integer literals take the type of a Float32 column, as with `=`.
+    df = pl.DataFrame(
+        {
+            "i": [1, 2, None],
+            "f": [1.0, 1.5, None],
+            "h": pl.Series([16777216.0, 1.5, None], dtype=pl.Float32),
+            "l": [[1, 2], [3], [1]],
+        }
+    )
+    res = df.sql(
+        """
+        SELECT
+          f IN (1, 2) AS in_list,
+          f NOT IN (1, 2) AS not_in_list,
+          f = ANY (ARRAY[1, 2]) AS any_array,
+          f = ANY (l) AS any_column,
+          i IN (1e0, 2.5e0) AS int_in_floats,
+          h IN (16777217, 2) AS f32_in_list,
+          h = ANY (ARRAY[16777217, 2]) AS f32_any_array
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "in_list": [True, False, None],
+        "not_in_list": [False, True, None],
+        "any_array": [True, False, None],
+        "any_column": [True, False, None],
+        "int_in_floats": [True, False, None],
+        "f32_in_list": [True, False, None],
+        "f32_any_array": [True, False, None],
+    }
+
+
 def test_not_in_null_subquery_3vl() -> None:
     t = pl.DataFrame({"a": [1, 2, None, 3]}, schema={"a": pl.Int64})
     u = pl.DataFrame({"b": [1, None, 4]}, schema={"b": pl.Int64})

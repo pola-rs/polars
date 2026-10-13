@@ -5,11 +5,15 @@
 //! over a whole subtree.
 
 mod cost;
+#[cfg(any(feature = "python", test))]
+mod dataset;
 mod node;
 
 use std::sync::Arc;
 
 pub(crate) use cost::subplan_cost;
+#[cfg(feature = "python")]
+pub(crate) use dataset::dataset_scan_stats;
 pub use node::{NodeStats, composite_key_domain, join_cardinality, key_domain, node_stats};
 pub(crate) use node::{StatsCache, node_stats_with_cache};
 #[allow(clippy::disallowed_types)]
@@ -90,8 +94,8 @@ impl Card {
     }
 }
 
-/// Statistics for one column, keyed on the file column name, i.e. before column
-/// mapping and renames.
+/// Statistics for one column, keyed on the output column name, i.e. after column
+/// mapping.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -116,8 +120,15 @@ impl ScanColumnStats {
     /// Values the column could hold, from its integer range.
     pub fn int_domain(&self) -> Option<f64> {
         let (min, max) = self.int_range?;
-        (max >= min).then(|| (max - min + 1) as f64)
+        (max >= min).then(|| range_width(min, max))
     }
+}
+
+/// Values in `min..=max`. The count can exceed `i128`, e.g. for a 128-bit decimal.
+pub(crate) fn range_width(min: i128, max: i128) -> f64 {
+    max.checked_sub(min)
+        .and_then(|width| width.checked_add(1))
+        .map_or(max as f64 - min as f64 + 1.0, |width| width as f64)
 }
 
 // We don't index
@@ -177,5 +188,20 @@ pub fn leaf_row_count(ir: &IR) -> Card {
         IR::Scan { file_info, .. } => file_info.stats.rows,
         IR::DataFrameScan { df, .. } => Card::Exact(df.height() as u64),
         _ => Card::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn int_domain_beyond_i128() {
+        let max = 10i128.pow(38) - 1;
+        let stats = ScanColumnStats {
+            int_range: Some((-max, max)),
+            ..Default::default()
+        };
+        assert_eq!(stats.int_domain(), Some(2e38));
     }
 }

@@ -92,6 +92,7 @@ if TYPE_CHECKING:
     from builtins import str as str_
     from collections.abc import Callable, Iterable
     from io import IOBase
+    from typing import Concatenate, ParamSpec
 
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
@@ -117,13 +118,6 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
     from polars.datatypes import DataType
-
-    if sys.version_info >= (3, 11):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing import Concatenate
-
-        from typing_extensions import ParamSpec
 
     T = TypeVar("T")
     P = ParamSpec("P")

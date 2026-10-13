@@ -1,9 +1,16 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, OutOfBoundsError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_negative_index() -> None:
@@ -533,3 +540,41 @@ def test_gather_null_on_oob_group_by() -> None:
     )
     with pytest.raises(OutOfBoundsError):
         lf.select(pl.col("x").gather(wide_idx)).collect()
+
+
+@pytest.mark.parametrize(
+    "idx",
+    [
+        [0, 2**32],
+        [-1, 2**32],
+        [-(2**32) - 1, 0],
+        pl.Series([0, 2**32], dtype=pl.UInt64),
+        pl.Series([0, 2**63, -(2**63) - 1], dtype=pl.Int128),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_gather_group_by_large_index_raises(
+    idx: list[int] | pl.Series, engine: EngineType
+) -> None:
+    q = (
+        pl.LazyFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+        .group_by("g")
+        .agg(pl.col("x").gather(idx))
+    )
+    with pytest.raises(OutOfBoundsError):
+        q.collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "idx",
+    [
+        pl.Series([-1, 0], dtype=pl.Int8),
+        pl.Series([-1, 0], dtype=pl.Int128),
+        pl.Series([1, 0], dtype=pl.UInt64),
+    ],
+)
+def test_gather_group_by_index_dtypes(idx: pl.Series) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2, 2], "x": [1, 2, 3, 4]})
+    q = lf.group_by("g", maintain_order=True).agg(pl.col("x").gather(idx))
+    expected = pl.DataFrame({"g": [1, 2], "x": [[2, 1], [4, 3]]})
+    assert_frame_equal(q.collect(), expected)

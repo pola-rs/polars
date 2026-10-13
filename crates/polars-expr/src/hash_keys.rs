@@ -170,14 +170,27 @@ impl HashKeys {
             };
             let keys = keys.rechunk().downcast_as_array().clone();
 
-            let hashes = if keys.has_nulls() {
-                keys.iter()
-                    .map(|opt_k| opt_k.map(|k| random_state.hash_one(k)).unwrap_or(0))
-                    .collect()
-            } else {
-                keys.values_iter()
-                    .map(|k| random_state.hash_one(k))
-                    .collect()
+            let views = keys.views();
+            let buffers = keys.data_buffers();
+            let hashes = unsafe {
+                if keys.has_nulls() {
+                    views
+                        .iter()
+                        .zip(keys.validity().unwrap())
+                        .map(|(v, is_valid)| {
+                            if is_valid {
+                                v.hash_with_buffers_unchecked(buffers, &random_state)
+                            } else {
+                                0
+                            }
+                        })
+                        .collect()
+                } else {
+                    views
+                        .iter()
+                        .map(|v| v.hash_with_buffers_unchecked(buffers, &random_state))
+                        .collect()
+                }
             };
 
             Self::Binview(BinviewKeys {

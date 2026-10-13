@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import gzip
 import io
 import itertools
 import json
@@ -20,7 +21,7 @@ from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -93,7 +94,7 @@ from tests.unit.io.conftest import normalize_path_separator_pl
 from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from pyiceberg.table.snapshots import Snapshot
 
@@ -228,6 +229,33 @@ def new_iceberg_table(
     return catalog.create_table(
         (namespace, name), schema, **create_table_kwargs
     ), catalog
+
+
+def nested_field_by_path(
+    field_path: list[str], field_ids: Iterator[int]
+) -> NestedField:
+    """Build a (possibly nested) `NestedField` wrapping a `LongType` leaf.
+
+    E.g. `["mydict", "age"]` -> a `mydict` struct field containing `age`;
+    `["a", "b", "c"]` -> `a` containing `b` containing `c`.
+    """
+    name = field_path[0]
+    field_id = next(field_ids)
+    if len(field_path) == 1:
+        return NestedField(field_id, name, LongType())
+    return NestedField(
+        field_id,
+        name,
+        StructType(nested_field_by_path(field_path[1:], field_ids)),
+        required=False,
+    )
+
+
+def nested_cell(field_path: list[str], value: Any) -> Any:
+    """The row value for `field_path[0]`'s column matching `nested_field_by_path`."""
+    if len(field_path) == 1:
+        return value
+    return {field_path[1]: nested_cell(field_path[1:], value)}
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -372,6 +400,99 @@ class TestIcebergScanIO:
         assert (
             f"iceberg_table_filter = {Not(IsNaN('value'))!r}" in capfd.readouterr().err
         )
+
+    @pytest.mark.parametrize(
+        "field_path",
+        [
+            ["mydict", "age"],
+            ["a", "b", "c"],  # `struct_field_path` recurses - depth 2+.
+        ],
+    )
+    def test_scan_iceberg_filter_struct_field(
+        self, tmp_path: Path, field_path: list[str]
+    ) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                nested_field_by_path(field_path, itertools.count(2)),
+            ),
+        )
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3],
+                field_path[0]: [
+                    nested_cell(field_path, 17),
+                    nested_cell(field_path, 42),
+                    None,
+                ],
+            }
+        ).write_iceberg(tbl, mode="append")
+
+        expr = pl.col(field_path[0])
+        for name in field_path[1:]:
+            expr = expr.struct.field(name)
+
+        res = pl.scan_iceberg(tbl).filter(expr == 17).select("id")
+        assert res.collect().rows() == [(1,)]
+
+        res = pl.scan_iceberg(tbl).filter(expr.is_null()).select("id")
+        assert res.collect().rows() == [(3,)]
+
+    def test_scan_iceberg_filter_null_struct_with_required_child(
+        self, tmp_path: Path
+    ) -> None:
+        # Null struct, required child: PyIceberg's BoundIsNull would wrongly
+        # prune this, so we must decline to push it down.
+        catalog = SqlCatalog(
+            "default",
+            uri="sqlite:///:memory:",
+            warehouse=format_file_uri_iceberg(tmp_path),
+        )
+        catalog.create_namespace("ns")
+
+        dtype = pa.struct([pa.field("x", pa.int64(), nullable=False)])
+        data = pa.table({"s": pa.array([None], type=dtype)})
+        tbl = catalog.create_table("ns.t", schema=data.schema)
+        tbl.append(data)
+
+        q = pl.scan_iceberg(tbl).filter(pl.col("s").struct.field("x").is_null())
+        expected = [(None,)]
+
+        assert q.collect().rows() == expected
+        assert (
+            q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).rows()
+            == expected
+        )
+
+    def test_scan_iceberg_filter_struct_field_unsanitizable_name(
+        self,
+        tmp_path: Path,
+        plmonkeypatch: PlMonkeyPatch,
+        capfd: pytest.CaptureFixture[str],
+    ) -> None:
+        # Unsafe name must not be pushed down.
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "id", LongType()),
+                NestedField(
+                    2,
+                    "mydict",
+                    StructType(NestedField(3, "a!", LongType())),
+                    required=False,
+                ),
+            ),
+        )
+        plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+        capfd.readouterr()
+        pl.scan_iceberg(tbl).filter(pl.col("mydict").struct.field("a!") == 17).select(
+            "id"
+        ).explain()
+        log = capfd.readouterr().err
+        assert "pyarrow_predicate = None" in log
+        assert "iceberg_table_filter = None" in log
 
     @pytest.mark.parametrize("method", ["is_nan", "is_not_nan"])
     def test_scan_iceberg_nan_decimal_rejected(
@@ -574,6 +695,17 @@ class TestIcebergExpressions:
         # Not valid Python at all - nothing to convert.
         expr = try_convert_pyarrow_predicate("pa.compute.field('id') >")
         assert expr is None
+
+    def test_convert_nested_struct_field_predicate(self) -> None:
+        expr = try_convert_pyarrow_predicate(
+            "(pa.compute.field('mydict', 'age') == 17)"
+        )
+        assert expr == EqualTo("mydict.age", 17)
+
+        expr = try_convert_pyarrow_predicate(
+            "(pa.compute.field('mydict', 'age')).is_null()"
+        )
+        assert expr == IsNull("mydict.age")
 
     def test_unconvertible_disjunct_is_not_dropped(self) -> None:
         # Unlike a conjunct, dropping one side of an `|` would narrow the filter.
@@ -5407,8 +5539,8 @@ def test_scan_iceberg_renamed_column_with_pruned_metadata(
     assert lf.select("new").collect().to_series().to_list() == [1, 2, 3]
 
 
-def _count_avro_opens(
-    monkeypatch: pytest.MonkeyPatch, tbl: pyiceberg.table.Table
+def _count_opens(
+    monkeypatch: pytest.MonkeyPatch, tbl: pyiceberg.table.Table, suffix: str = ".avro"
 ) -> list[str]:
     from polars.io.iceberg._cache import CachingFileIO
 
@@ -5419,7 +5551,7 @@ def _count_avro_opens(
     opened: list[str] = []
 
     def new_input(self: Any, location: str) -> Any:
-        if location.endswith(".avro"):
+        if location.endswith(suffix):
             opened.append(location)
         return original_new_input(self, location)
 
@@ -5442,7 +5574,7 @@ def test_scan_iceberg_metadata_file_cache(
         for i in range(3):
             pl.DataFrame({"a": [i]}).write_iceberg(tbl, mode="append")
 
-        opened = _count_avro_opens(monkeypatch, tbl)
+        opened = _count_opens(monkeypatch, tbl)
         expected = pl.DataFrame({"a": [0, 1, 2]})
 
         assert_frame_equal(
@@ -5473,11 +5605,15 @@ def test_scan_iceberg_metadata_file_cache(
 
 @pytest.mark.write_disk
 def test_scan_iceberg_metadata_file_cache_disabled(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plmonkeypatch: PlMonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
 ) -> None:
     from polars.io.iceberg._cache import reset_metadata_file_cache
 
-    plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "0")
+    plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_FILE_CACHE_MB", "0")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     reset_metadata_file_cache()
 
     try:
@@ -5486,7 +5622,7 @@ def test_scan_iceberg_metadata_file_cache_disabled(
         )
         pl.DataFrame({"a": [1]}).write_iceberg(tbl, mode="append")
 
-        opened = _count_avro_opens(monkeypatch, tbl)
+        opened = _count_opens(monkeypatch, tbl)
 
         assert pl.scan_iceberg(tbl).collect().item() == 1
         first_scan = len(opened)
@@ -5495,23 +5631,27 @@ def test_scan_iceberg_metadata_file_cache_disabled(
         opened.clear()
         assert pl.scan_iceberg(tbl).collect().item() == 1
         assert len(opened) == first_scan
+        assert "metadata file cache: bypassed: disabled" in capfd.readouterr().err
     finally:
         reset_metadata_file_cache()
 
 
 def test_iceberg_metadata_file_cache_eviction() -> None:
-    from polars.io.iceberg._cache import IcebergMetadataFileCache
+    from polars.io.iceberg._cache import CacheStats, IcebergMetadataFileCache
 
     cache = IcebergMetadataFileCache(max_bytes=10)
+    stats = CacheStats()
 
-    cache.put("a", b"123456")
-    cache.put("b", b"123456")
+    cache.put("a", b"123456", stats)
+    cache.put("b", b"123456", stats)
     assert cache.get("a") is None
     assert cache.get("b") == b"123456"
+    assert stats.evicted == 1
 
     # Entries larger than the budget are not stored.
-    cache.put("c", b"12345678901")
+    cache.put("c", b"12345678901", stats)
     assert cache.get("c") is None
+    assert stats.too_large == 1
 
     fetches: list[str] = []
 
@@ -5519,18 +5659,105 @@ def test_iceberg_metadata_file_cache_eviction() -> None:
         fetches.append("fetch")
         return b"1234"
 
-    assert cache.get_or_fetch("d", fetch) == b"1234"
-    assert cache.get_or_fetch("d", fetch) == b"1234"
+    assert cache.get_or_fetch("d", fetch, stats) == b"1234"
+    assert cache.get_or_fetch("d", fetch, stats) == b"1234"
     assert len(fetches) == 1
+    assert (stats.hits, stats.misses) == (1, 1)
+    # The miss on `d` evicted `b`.
+    assert stats.evicted == 2
 
     def fetch_fail() -> bytes:
         raise OSError
 
     # A failed fetch is not cached.
     with pytest.raises(OSError):
-        cache.get_or_fetch("e", fetch_fail)
-    assert cache.get_or_fetch("e", fetch) == b"1234"
+        cache.get_or_fetch("e", fetch_fail, stats)
+    assert cache.get_or_fetch("e", fetch, stats) == b"1234"
     assert len(fetches) == 2
+
+
+_UUID = "0b9d4f5e-1c2a-4b3d-8e7f-6a5b4c3d2e1f"
+
+
+@pytest.mark.parametrize(
+    ("location", "cacheable"),
+    [
+        (f"s3://bucket/tbl/metadata/snap-1-1-{_UUID}.avro", True),
+        (f"s3://bucket/{_UUID}/metadata/snap-1-1-2.avro", False),
+        (f"s3://bucket/tbl/metadata/00001-{_UUID}.metadata.json", True),
+        (f"s3://bucket/tbl/metadata/00001-{_UUID}.gz.metadata.json", True),
+        (f"s3://bucket/{_UUID}/metadata/v1.metadata.json", False),
+        (f"C:\\warehouse\\tbl\\metadata\\snap-1-1-{_UUID}.avro", True),
+        (f"C:\\warehouse\\{_UUID}\\metadata\\v1.metadata.json", False),
+        (f"tbl/metadata/00001-{_UUID}.metadata.json", False),
+        (f"file:tbl/metadata/snap-1-1-{_UUID}.avro", False),
+    ],
+)
+def test_iceberg_metadata_file_cacheable(location: str, cacheable: bool) -> None:
+    from polars.io.iceberg._cache import _is_cacheable_metadata_file
+
+    assert _is_cacheable_metadata_file(location) is cacheable
+
+
+@pytest.mark.write_disk
+def test_iceberg_load_static_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+    from pyiceberg.table import StaticTable
+
+    from polars.io.iceberg._cache import load_static_table, reset_metadata_file_cache
+
+    reset_metadata_file_cache()
+
+    try:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+        )
+        location = tbl.metadata_location
+        properties = {"s3.region": "eu-central-1"}
+
+        # Matches `StaticTable.from_metadata`.
+        expected = StaticTable.from_metadata(location, properties=properties)
+        first, stats = load_static_table(location, properties)
+        assert type(first) is type(expected)
+        assert first.name() == expected.name()
+        assert first.metadata_location == expected.metadata_location
+        assert first.metadata == expected.metadata
+        assert type(first.io) is type(expected.io)
+        assert first.io.properties == expected.io.properties
+        assert type(first.catalog) is type(expected.catalog)
+        assert (stats.hits, stats.misses) == (0, 1)
+
+        # Later loads read the cached file and build their own table and FileIO.
+        second, stats = load_static_table(location, properties)
+        assert (stats.hits, stats.misses) == (1, 0)
+        assert second is not first
+        assert second.io is not first.io
+        assert second.metadata == first.metadata
+
+        # Relative paths resolve against the working directory.
+        monkeypatch.chdir(tmp_path)
+        relative = os.path.relpath(location.removeprefix("file://"))
+        _, stats = load_static_table(relative, properties)
+        assert stats.bypass == "relative path"
+
+        # A FileIO that writes to its properties, as adlfs does, changes neither
+        # the caller's properties nor the cache scope.
+        original_new_input = PyArrowFileIO.new_input
+
+        def new_input(self: Any, location: str) -> Any:
+            self.properties.setdefault("adls.account-name", "onelake")
+            return original_new_input(self, location)
+
+        monkeypatch.setattr(PyArrowFileIO, "new_input", new_input)
+        reset_metadata_file_cache()
+        load_static_table(location, properties)
+        _, stats = load_static_table(location, properties)
+        assert (stats.hits, stats.misses) == (1, 0)
+        assert properties == {"s3.region": "eu-central-1"}
+    finally:
+        reset_metadata_file_cache()
 
 
 def test_iceberg_metadata_file_cache_invalid_size(
@@ -5543,20 +5770,23 @@ def test_iceberg_metadata_file_cache_invalid_size(
 
     try:
         for value in ("256MiB", "-1"):
-            plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", value)
+            plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_FILE_CACHE_MB", value)
             reset_metadata_file_cache()
-            with pytest.raises(ValueError, match="POLARS_ICEBERG_METADATA_CACHE_MB"):
+            with pytest.raises(
+                ValueError, match="POLARS_ICEBERG_METADATA_FILE_CACHE_MB"
+            ):
                 get_metadata_file_cache()
 
-        plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_CACHE_MB", "5")
+        plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_FILE_CACHE_MB", "5")
         reset_metadata_file_cache()
-        assert get_metadata_file_cache().max_bytes == 5_000_000
+        assert get_metadata_file_cache().max_bytes == 5 * 2**20
     finally:
         reset_metadata_file_cache()
 
 
 @pytest.mark.write_disk
 def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
+    from pyiceberg.catalog.rest.auth import NoopAuthManager
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
     from polars.io.iceberg._cache import CachingFileIO, IcebergMetadataFileCache
@@ -5568,49 +5798,67 @@ def test_iceberg_caching_file_io_scope(tmp_path: Path) -> None:
     no_uuid = tmp_path / "manifest.avro"
     no_uuid.write_bytes(b"data")
 
-    def read(properties: dict[str, Any], path: Path) -> bytes:
-        file_io = CachingFileIO(PyArrowFileIO(properties), cache)
-        with file_io.new_input(format_file_uri_iceberg(path)).open() as f:
-            return f.read()  # type: ignore[no-any-return]
+    # (hits, misses) of one read.
+    miss, hit, bypass = (0, 1), (1, 0), (0, 0)
 
-    assert read({"s3.access-key-id": "a"}, manifest) == b"data"
-    assert (cache.hits, cache.misses) == (0, 1)
+    def read(
+        properties: dict[str, Any], path: Path = manifest, file_io_cls: Any = None
+    ) -> tuple[int, int]:
+        file_io = CachingFileIO((file_io_cls or PyArrowFileIO)(properties), cache)
+        with file_io.new_input(format_file_uri_iceberg(path)).open() as f:
+            assert f.read() == b"data"
+        return file_io.stats.hits, file_io.stats.misses
+
+    assert read({"s3.access-key-id": "a"}) == miss
 
     # Table metadata pointers do not change the scope.
     pointers = {"metadata_location": "v2", "previous_metadata_location": "v1"}
-    assert read({"s3.access-key-id": "a", **pointers}, manifest) == b"data"
-    assert (cache.hits, cache.misses) == (1, 1)
+    assert read({"s3.access-key-id": "a", **pointers}) == hit
 
     # Entries are not shared across credentials.
-    assert read({"s3.access-key-id": "b"}, manifest) == b"data"
-    assert (cache.hits, cache.misses) == (1, 2)
+    assert read({"s3.access-key-id": "b"}) == miss
 
-    # Values that are not of a plain type bypass the cache.
+    # Values that are not plain bypass the cache.
     class Redacted(str):
         def __repr__(self) -> str:
             return "'***'"
 
+    class CustomAuthManager(NoopAuthManager):  # type: ignore[misc]
+        pass
+
+    cyclic: dict[str, Any] = {}
+    cyclic["self"] = cyclic
+
     for opaque in (
-        {"auth": {"type": "basic", "basic": {"username": "a", "password": "x"}}},
-        {"auth.manager": object()},
         {"s3.secret-access-key": Redacted("x")},
+        {"auth": cyclic},
+        {"auth": {"type": "basic", "basic": {"password": Redacted("x")}}},
+        {"auth": {1: "x"}},
+        {"auth": [[0] * 200] * 200},
+        {"auth.manager": CustomAuthManager()},
     ):
-        assert read({"s3.access-key-id": "a", **opaque}, manifest) == b"data"
-    assert (cache.hits, cache.misses) == (1, 2)
+        assert read({"s3.access-key-id": "a", **opaque}) == bypass
+
+    # Nested settings are scoped by content.
+    basic_a = {"auth": {"type": "basic", "basic": {"username": "a", "password": "x"}}}
+    basic_b = {"auth": {"type": "basic", "basic": {"username": "b", "password": "y"}}}
+    assert read({"s3.access-key-id": "a", **basic_a}) == miss
+    assert read({"s3.access-key-id": "a", **basic_a}) == hit
+    assert read({"s3.access-key-id": "a", **basic_b}) == miss
+
+    # PyIceberg's built-in REST auth managers do not change the scope.
+    for m in (NoopAuthManager(), NoopAuthManager()):
+        assert read({"s3.access-key-id": "a", "auth.manager": m}) == hit
 
     # FileIO classes other than PyIceberg's built-in ones bypass the cache.
     class CustomFileIO(PyArrowFileIO):  # type: ignore[misc]
         pass
 
-    custom = CachingFileIO(CustomFileIO({"s3.access-key-id": "a"}), cache)
-    with custom.new_input(format_file_uri_iceberg(manifest)).open() as f:
-        assert f.read() == b"data"
-    assert (cache.hits, cache.misses) == (1, 2)
+    assert read({"s3.access-key-id": "a"}, file_io_cls=CustomFileIO) == bypass
 
     # File names without a UUID are not cached.
-    assert read({"s3.access-key-id": "a"}, no_uuid) == b"data"
-    assert (cache.hits, cache.misses) == (1, 2)
-    assert len(cache) == 2
+    assert read({"s3.access-key-id": "a"}, no_uuid) == bypass
+    assert len(cache) == 4
 
 
 @pytest.mark.write_disk
@@ -5666,7 +5914,7 @@ def test_scan_iceberg_metadata_file_cache_incremental(
             pl.DataFrame({"a": [i]}).write_iceberg(tbl, mode="append")
 
         snapshots = tbl.snapshots()
-        opened = _count_avro_opens(monkeypatch, tbl)
+        opened = _count_opens(monkeypatch, tbl)
         expected = pl.DataFrame({"a": [1, 2]})
 
         def scan() -> pl.DataFrame:
@@ -5684,3 +5932,529 @@ def test_scan_iceberg_metadata_file_cache_incremental(
         assert opened == []
     finally:
         reset_metadata_file_cache()
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_reuses_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    import polars.io.iceberg._dataset as dataset_module
+
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.DataFrame({"a": [1, 2]}).write_iceberg(tbl, mode="append")
+    name = ".".join(tbl.name())
+    expected = pl.DataFrame({"a": [1, 2]})
+
+    constructed = 0
+    original_init = SqlCatalog.__init__
+
+    def init(self: Any, *args: Any, **kwargs: Any) -> None:
+        nonlocal constructed
+        constructed += 1
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(SqlCatalog, "__init__", init)
+
+    def scan_twice(catalog: Any) -> None:
+        lfs = [pl.scan_iceberg(name, catalog=catalog) for _ in range(2)]
+        assert_frame_equal(
+            pl.concat(lfs).collect(),
+            pl.concat([expected, expected]),
+            check_row_order=False,
+        )
+
+    # The passed catalog is used for table loads, also by several scans in one query.
+    scan_twice(catalog)
+    assert constructed == 0
+
+    # The catalog is not pickled; the config is the fallback.
+    lf = pickle.loads(pickle.dumps(pl.scan_iceberg(name, catalog=catalog)))
+    assert_frame_equal(lf.collect(), expected, check_row_order=False)
+    assert constructed == 1
+
+    # Subclasses are used directly as well.
+    class SubCatalog(SqlCatalog):  # type: ignore[misc]
+        pass
+
+    sub = SubCatalog(catalog.name, **catalog.properties)
+    constructed = 0
+    scan_twice(sub)
+    assert constructed == 0
+
+    # Other catalog classes get a new catalog per scan.
+    monkeypatch.setattr(dataset_module, "_REUSABLE_CATALOG_CLASSES", frozenset())
+    scan_twice(catalog)
+    assert constructed == 2
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_catalog_descriptor_without_instance(tmp_path: Path) -> None:
+    from polars.io.iceberg._dataset import (
+        IcebergCatalogConfig,
+        IcebergCatalogTableDescriptor,
+    )
+
+    tbl, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.DataFrame({"a": [1]}).write_iceberg(tbl, mode="append")
+
+    descriptor = IcebergCatalogTableDescriptor(
+        table_identifier=".".join(tbl.name()),
+        catalog_config=IcebergCatalogConfig.from_catalog(catalog),
+    )
+    # Descriptors pickled by earlier versions have no `catalog_`.
+    del descriptor.catalog_
+
+    wrap = IcebergTableWrap(
+        table_=NoPickleOption(),
+        table_descriptor_=descriptor,
+        serializer=IcebergScanTableSerializer(),
+        iceberg_storage_properties=None,
+    )
+    assert (
+        wrap.get().metadata_location == catalog.load_table(tbl.name()).metadata_location
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_metadata_path_file_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    from polars.io.iceberg._cache import reset_metadata_file_cache
+
+    reset_metadata_file_cache()
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    def metadata_file_reads() -> list[str]:
+        # The metadata file cache read of each scan, up to the hit and miss counts.
+        prefix = "IcebergTableWrap: metadata file cache: "
+        return [
+            ", ".join(line.removeprefix(prefix).split(", ")[:2])
+            for line in capfd.readouterr().err.splitlines()
+            if line.startswith(prefix)
+        ]
+
+    try:
+        tbl, _ = new_iceberg_table(
+            tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+        )
+        pl.DataFrame({"a": [1]}).write_iceberg(tbl, mode="append")
+        opened = _count_opens(monkeypatch, tbl, ".metadata.json")
+        capfd.readouterr()
+
+        for _ in range(2):
+            assert pl.scan_iceberg(tbl.metadata_location).collect().item() == 1
+        assert len(opened) == 1
+        assert metadata_file_reads() == [
+            "hits: 0, misses: 1",
+            "hits: 1, misses: 0",
+        ]
+
+        metadata = Path(tbl.metadata_location.removeprefix("file://")).read_bytes()
+
+        # Compressed metadata files are cached as well.
+        gz = tmp_path / f"00002-{uuid.uuid4()}.gz.metadata.json"
+        gz.write_bytes(gzip.compress(metadata))
+        opened.clear()
+        for _ in range(2):
+            assert pl.scan_iceberg(format_file_uri_iceberg(gz)).collect().item() == 1
+        assert len(opened) == 1
+        assert metadata_file_reads() == [
+            "hits: 0, misses: 1",
+            "hits: 1, misses: 0",
+        ]
+
+        # Metadata file names without a write-time UUID are read on every scan.
+        copied = tmp_path / "v1.metadata.json"
+        copied.write_bytes(metadata)
+        opened.clear()
+        for _ in range(2):
+            path = format_file_uri_iceberg(copied)
+            assert pl.scan_iceberg(path).collect().item() == 1
+        assert len(opened) == 2
+        assert metadata_file_reads() == ["bypassed: no UUID in file name"] * 2
+
+        # So is every metadata file when the cache is disabled.
+        plmonkeypatch.setenv("POLARS_ICEBERG_METADATA_FILE_CACHE_MB", "0")
+        reset_metadata_file_cache()
+        opened.clear()
+        for _ in range(2):
+            assert pl.scan_iceberg(tbl.metadata_location).collect().item() == 1
+        assert len(opened) == 2
+        assert metadata_file_reads() == ["bypassed: disabled"] * 2
+    finally:
+        reset_metadata_file_cache()
+
+
+def join_structure(lf: pl.LazyFrame) -> list[str]:
+    return [
+        line.strip()
+        for line in lf.explain().splitlines()
+        if "JOIN" in line or "ON:" in line or "SCAN" in line
+    ]
+
+
+def small_build_side(*keys: int, key: str) -> pl.LazyFrame:
+    # Only a filtered build side publishes a runtime filter.
+    lf = pl.LazyFrame({key: list(keys), "e": list(range(len(keys)))})
+    return lf.filter(pl.col("e") >= 0)
+
+
+def write_iceberg_tables(
+    tmp_path: Path, frames: dict[str, pl.DataFrame]
+) -> tuple[dict[str, pyiceberg.table.Table], dict[str, list[str]]]:
+    """Write each frame to its own table; return the tables and their data files."""
+    iceberg_types = {pl.Int64: LongType(), pl.Boolean: BooleanType()}
+    tables = {}
+    for name, df in frames.items():
+        fields = (
+            NestedField(i + 1, column, iceberg_types[dtype])  # type: ignore[index]
+            for i, (column, dtype) in enumerate(df.schema.items())
+        )
+        tbl, _ = new_iceberg_table(tmp_path, schema=IcebergSchema(*fields), name=name)
+        df.write_iceberg(tbl, mode="append")
+        tables[name] = tbl
+
+    files = {
+        name: [
+            _normalize_windows_iceberg_file_uri(f.file.file_path)
+            for f in tbl.scan().plan_files()
+        ]
+        for name, tbl in tables.items()
+    }
+    return tables, files
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_join_order_matches_parquet(tmp_path: Path) -> None:
+    n = 1000
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "a": pl.DataFrame({"k": [i % 5 for i in range(n)], "x": range(n)}),
+            "b": pl.DataFrame({"k": [i % 5 for i in range(n)], "y": range(n)}),
+            "d": pl.DataFrame({"k": range(5), "flag": [True] + 4 * [False]}),
+        },
+    )
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        return (
+            scan("a")
+            .join(scan("b"), on="k")
+            .join(scan("d").filter(pl.col("flag")), on="k")
+        )
+
+    iceberg = query(lambda name: pl.scan_iceberg(tables[name]))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+
+    structure = join_structure(iceberg)
+    assert structure == join_structure(parquet)
+
+    # The filtered dimension is joined before the other fact.
+    plan = "\n".join(structure)
+    assert plan.index(files["d"][0]) < plan.index(files["b"][0])
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_join_order_with_a_filter_above_a_shared_scan(
+    tmp_path: Path,
+) -> None:
+    n = 1000
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "a": pl.DataFrame(
+                {
+                    "k": [i % 5 for i in range(n)],
+                    "dk": range(n),
+                    "ek": range(n),
+                    "y": range(n),
+                }
+            ),
+            "b": pl.DataFrame({"k": [i % 5 for i in range(n)]}),
+            "d": pl.DataFrame(
+                {"dk": range(n), "year": [1900 + i // 5 for i in range(n)]}
+            ),
+            "e": pl.DataFrame({"ek": range(n), "flag": [i % 20 for i in range(n)]}),
+        },
+    )
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        # `d` is read twice, so its filter stays above the shared scan instead of
+        # being pushed into it.
+        d = scan("d")
+        return (
+            scan("a")
+            .join(scan("b"), on="k")
+            .join(d.filter(pl.col("year") == 1999), on="dk")
+            .join(scan("e").filter(pl.col("flag") == 0), on="ek")
+            .join(d.select(y="dk"), on="y")
+        )
+
+    iceberg = query(lambda name: pl.scan_iceberg(tables[name]))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+    assert 'FILTER col("year") == 1999' in iceberg.explain()
+
+    structure = join_structure(iceberg)
+    assert structure == join_structure(parquet)
+
+    # The statistics of `year` show the filter keeps far fewer rows than the one on
+    # `flag`.
+    plan = "\n".join(structure)
+    assert plan.index(files["d"][0]) < plan.index(files["e"][0])
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_cache_decision_matches_parquet_29822(tmp_path: Path) -> None:
+    rows = 20_000
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "fact": pl.DataFrame(
+                {
+                    "key": [i % 100 for i in range(rows)],
+                    "grp": [i % 7 for i in range(rows)],
+                    "val": range(rows),
+                }
+            ),
+            "dim": pl.DataFrame({"key": range(100), "name": range(100)}),
+        },
+    )
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        # Each branch filters the shared subplan on its own, so the caches are only
+        # kept if the statistics show that sharing the subplan is cheaper.
+        base = (
+            scan("fact")
+            .join(scan("dim"), on="key")
+            .group_by("grp", "name")
+            .agg(pl.col("val").sum())
+        )
+        return pl.concat(
+            [base.filter(pl.col("grp") != i).select("name", "val") for i in range(8)]
+        )
+
+    iceberg = query(lambda name: pl.scan_iceberg(tables[name]))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+
+    assert parquet.explain().count("CACHE[id:") == 8
+    assert iceberg.explain().count("CACHE[id:") == 8
+    assert_frame_equal(iceberg.collect(), parquet.collect(), check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_statistics_do_not_read_filtered_out_metadata(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "k", LongType()), NestedField(2, "v", LongType())
+        ),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "k")),
+    )
+    for k in [1, 2]:
+        pl.DataFrame({"k": [k] * 10, "v": range(10)}).write_iceberg(tbl, mode="append")
+    snapshot = tbl.current_snapshot()
+    assert snapshot is not None
+    # Only a read of partition `k = 2` needs this manifest.
+    for manifest in snapshot.manifests(tbl.io):
+        entries = manifest.fetch_manifest_entry(tbl.io)
+        if all(e.data_file.partition[0] == 2 for e in entries):
+            Path(manifest.manifest_path.removeprefix("file://")).unlink()
+
+    scan = pl.scan_iceberg(tbl)
+    k1 = scan.filter(pl.col("k") == 1)
+    # Different filters over a shared scan, so the cache decision asks for estimates.
+    q = pl.concat([k1.filter(pl.col("v") < 5), k1.filter(pl.col("v") >= 5)])
+    assert q.collect(engine="in-memory").height == 10
+    assert q.collect(engine="streaming").height == 10
+
+    sql = "SELECT k FROM o WHERE s < (SELECT SUM(v) FROM i WHERE i.k = o.k AND i.k = 1)"
+    ctx = pl.SQLContext(o=pl.DataFrame({"k": [1], "s": [0]}), i=scan)
+    assert ctx.execute(sql).collect().height == 1
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_shared_scan_reads_one_snapshot(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "x", LongType())), name="a"
+    )
+    pl.DataFrame({"x": [1]}).write_iceberg(tbl, mode="append")
+    scan = pl.scan_iceberg(tbl)
+
+    original = IcebergScanResolver.to_dataset_scan
+    calls = 0
+
+    def to_dataset_scan(self: IcebergScanResolver, **kwargs: Any) -> Any:
+        nonlocal calls
+        resolved = original(self, **kwargs)
+        calls += 1
+        if calls == 1:
+            # A writer commits between two reads of the same scan.
+            pl.DataFrame({"x": [2]}).write_iceberg(tbl, mode="append")
+        return resolved
+
+    with patch.object(IcebergScanResolver, "to_dataset_scan", to_dataset_scan):
+        out = pl.concat([scan, scan]).collect(engine="streaming")
+
+    # Both reads of one scan see the same snapshot.
+    assert out["x"].to_list() == [1, 1]
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_sql_correlated_aggregate_restricted_like_parquet(
+    tmp_path: Path,
+) -> None:
+    tables, files = write_iceberg_tables(
+        tmp_path,
+        {
+            "o": pl.DataFrame({"k": range(10), "s": range(10)}),
+            "i": pl.DataFrame({"k": [i % 20 for i in range(100)], "v": range(100)}),
+        },
+    )
+    query = "SELECT k FROM o WHERE s < (SELECT SUM(v) FROM i WHERE i.k = o.k)"
+
+    def plan_and_result(
+        scan: Callable[[str], pl.LazyFrame],
+    ) -> tuple[str, pl.DataFrame]:
+        lf = pl.SQLContext({name: scan(name) for name in tables}).execute(query)
+        return lf.explain(), lf.collect()
+
+    iceberg_plan, iceberg = plan_and_result(lambda n: pl.scan_iceberg(tables[n]))
+    parquet_plan, parquet = plan_and_result(lambda n: pl.scan_parquet(files[n]))
+
+    # The inner table is over twice the outer one, so the aggregate is restricted to
+    # the outer keys.
+    assert "SEMI JOIN" in parquet_plan
+    assert "SEMI JOIN" in iceberg_plan
+    assert_frame_equal(iceberg, parquet, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_join_on_full_range_decimal_keys(tmp_path: Path) -> None:
+    big = 10**38 - 1
+    df = pl.from_arrow(
+        pa.table({"k": pa.array([D(-big), D(big)], pa.decimal128(38, 0))})
+    )
+    assert isinstance(df, pl.DataFrame)
+
+    scans = []
+    for name in "abc":
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(NestedField(1, "k", DecimalType(38, 0))),
+            name=name,
+        )
+        df.write_iceberg(tbl, mode="append")
+        scans.append(pl.scan_iceberg(tbl))
+
+    a, b, c = scans
+    q = a.join(b, on="k").join(c, on="k")
+    assert_frame_equal(q.collect(), df, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_join_planning_reads_no_data_files(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "b", LongType())
+        ),
+    )
+    pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_iceberg(tbl, mode="append")
+
+    for f in tbl.scan().plan_files():
+        Path(f.file.file_path.removeprefix("file://")).unlink()
+
+    lf = pl.scan_iceberg(tbl)
+    plan = lf.join(lf.select("a", c="b"), on="a").explain()
+    assert "ESTIMATED ROWS: 3" in plan
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_fallback_join_keeps_projection(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "b", LongType()),
+            NestedField(3, "c", LongType()),
+        ),
+    )
+    pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]}).write_iceberg(
+        tbl, mode="append"
+    )
+
+    q = (
+        pl.scan_iceberg(tbl, reader_override="pyiceberg")
+        .select("a", "b")
+        .join(pl.LazyFrame({"a": [2, 3]}), on="a")
+    )
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    calls = [
+        line
+        for line in capfd.readouterr().err.splitlines()
+        if line.startswith("IcebergScanResolver: to_dataset_scan(): snapshot ID")
+    ]
+
+    # The Python scan is built with the final projection.
+    assert "projection: ['a', 'b']" in calls[-1]
+    assert_frame_equal(
+        out, pl.DataFrame({"a": [2, 3], "b": [5, 6]}), check_row_order=False
+    )
+
+
+@pytest.mark.parametrize("renamed", [False, True])
+@pytest.mark.write_disk
+def test_scan_iceberg_runtime_join_filter(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    renamed: bool,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "x", LongType()), NestedField(2, "f", LongType())
+        ),
+    )
+    # One file per append.
+    for i in range(3):
+        pl.DataFrame(
+            {"x": range(100 * i, 100 * i + 100), "f": range(100)}
+        ).write_iceberg(tbl, mode="append")
+
+    # The table statistics hold `f`. They only hold `x` if the join key has its name.
+    probe = pl.scan_iceberg(tbl).filter(pl.col("f") >= 0)
+    key = "k" if renamed else "x"
+    q = probe.rename({"x": key}).join(small_build_side(150, 160, key=key), on=key)
+    assert 'col("x").dynamic_predicate()' in q.explain(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+
+    assert err.count("reading 0 / 1 row groups") == 2
+    assert err.count("reading 1 / 1 row groups") == 1
+    assert_frame_equal(
+        out,
+        pl.DataFrame({key: [150, 160], "f": [50, 60], "e": [0, 1]}),
+        check_row_order=False,
+    )

@@ -69,9 +69,8 @@ if TYPE_CHECKING:
 
 
 # note: reversed views don't match as instances of MappingView
-if sys.version_info >= (3, 11):
-    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
-    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
+_views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
+_reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 
 def _process_null_values(
@@ -85,12 +84,8 @@ def _process_null_values(
 
 def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
     return (
-        (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
-        or isinstance(val, MappingView)
-        or (
-            sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views)  # pyrefly: ignore[unknown-name]
-        )
-    )
+        isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized)
+    ) or isinstance(val, (MappingView, *_reverse_mapping_views))
 
 
 def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> bool:

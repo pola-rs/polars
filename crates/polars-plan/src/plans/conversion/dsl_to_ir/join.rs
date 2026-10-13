@@ -706,7 +706,13 @@ fn build_upcast_node_list(
                             left.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         let dtype_right =
                             right.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
-                        if dtype_left != dtype_right {
+                        // A decimal compares exactly with another decimal or an integer, and
+                        // a cast to a common decimal type can overflow.
+                        let is_exact = |dt: &DataType| dt.is_decimal() || dt.is_integer();
+                        let decimal_compare = (dtype_left.is_decimal() || dtype_right.is_decimal())
+                            && is_exact(&dtype_left)
+                            && is_exact(&dtype_right);
+                        if dtype_left != dtype_right && !decimal_compare {
                             // Ensure that we have a lossless cast between the two types.
                             // Decimal has no lossless numeric upcast.
                             let either_decimal =

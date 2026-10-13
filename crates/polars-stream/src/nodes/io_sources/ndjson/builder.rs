@@ -19,6 +19,7 @@ use super::{DynByteSourceBuilder, FileReader, NDJsonFileReader};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
+use crate::nodes::io_sources::shared::file_init::CLOUD_PRE_INIT_LIMIT;
 
 pub struct NDJsonReaderBuilder {
     pub options: Arc<NDJsonReadOptions>,
@@ -91,6 +92,10 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
         self.io_metrics.set(io_metrics).ok().unwrap()
     }
 
+    fn preferred_remote_pre_init(&self) -> Option<usize> {
+        Some(CLOUD_PRE_INIT_LIMIT)
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
@@ -98,7 +103,7 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
         _scan_source_idx: usize,
     ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
-        use crate::nodes::io_sources::ndjson::ChunkPrefetchSync;
+        use crate::nodes::io_sources::shared::file_init::ChunkPrefetchSync;
 
         let scan_source = source;
         let chunk_reader_builder = ChunkReaderBuilder::NDJson {

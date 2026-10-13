@@ -27,6 +27,7 @@ pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
 mod extract_window;
+pub use expand_datasets::attach_dataset_scan_statistics;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
@@ -55,7 +56,9 @@ use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{
     AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
 };
-pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
+pub use stack_opt::{
+    OptimizationRule, OptimizeExprContext, StackOptimizer, passes_on_filter_predicate,
+};
 
 #[cfg(feature = "merge_sorted")]
 use self::flatten_merge_sorted::FlattenMergeSortedRule;
@@ -226,6 +229,17 @@ pub fn optimize(
             expr_arena,
             ir_arena,
             root,
+        )?;
+    }
+
+    // Gives the dataset scans the statistics that the join passes need.
+    #[cfg(feature = "python")]
+    if opt_flags.join_order() && get_or_init_members!().has_joins {
+        expand_datasets::expand_datasets_early(
+            root,
+            ir_arena,
+            expr_arena,
+            expand_datasets::EarlyExpansion::ForJoinOrder,
         )?;
     }
 

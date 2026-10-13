@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
@@ -1642,6 +1643,138 @@ def test_ambiguous_column_detection_in_joins() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        "s.DUID IN (SELECT DUID FROM dd)",
+        "EXISTS (SELECT 1 FROM dd WHERE dd.DUID = s.DUID AND DUID IS NOT NULL)",
+        "s.v = (SELECT MIN(v) FROM (SELECT 1 AS v, DUID FROM dd))",
+    ],
+)
+def test_unqualified_column_in_subquery_after_join(where_clause: str) -> None:
+    # https://github.com/pola-rs/polars/issues/29876
+    s = pl.DataFrame({"DUID": ["A", "B"], "v": [1, 2]})
+    d = pl.DataFrame({"DUID": ["A", "B"], "region": ["X", "Y"]})
+    dd = pl.DataFrame({"DUID": ["A"]})
+
+    res = pl.SQLContext(s=s, d=d, dd=dd).execute(
+        f"""
+        SELECT s.DUID, (SELECT COUNT(DUID) FROM dd) AS n
+        FROM s JOIN d ON s.DUID = d.DUID
+        WHERE {where_clause}
+        """,
+        eager=True,
+    )
+    assert_frame_equal(
+        res,
+        pl.DataFrame({"DUID": ["A"], "n": [1]}),
+        check_dtypes=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        # outer reference that is ambiguous in the outer query
+        "EXISTS (SELECT 1 FROM dd WHERE dd.x = id)",
+        "EXISTS (SELECT 999 AS id FROM dd WHERE dd.x = id)",
+        "EXISTS (SELECT 1 FROM dd, a WHERE dd.x = id)",
+        "s.id IN (SELECT x FROM dd WHERE x = id)",
+        "s.v = (SELECT MIN(x) FROM dd WHERE x = id)",
+        # reference that is ambiguous in the subquery's own join
+        "s.id IN (SELECT id FROM s JOIN d ON s.v = d.v)",
+        "EXISTS (SELECT 1 FROM s JOIN d ON s.v = d.v WHERE id = 1)",
+        "s.id IN (SELECT id FROM s, d)",
+        "EXISTS (SELECT 1 FROM s, d WHERE s.v = d.v AND id = 1)",
+        "s.v = (SELECT MIN(id) FROM s, d)",
+    ],
+)
+def test_ambiguous_column_in_subquery_after_join(where_clause: str) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    dd = pl.DataFrame({"x": [1]})
+    a = pl.DataFrame({"k": [1]})
+
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r'ambiguous reference to column "id" \(use one of: d\."id", s\."id"\)',
+    ):
+        pl.SQLContext(s=s, d=d, dd=dd, a=a).execute(
+            f"SELECT s.id FROM s JOIN d ON s.v = d.v WHERE {where_clause}",
+            eager=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("where_clause", "expected"),
+    [
+        ("EXISTS (SELECT 1 FROM dd WHERE dd.x = s.id)", [1]),
+        ("EXISTS (SELECT 1 FROM dd WHERE dd.x = d.id)", [2]),
+        ("s.id IN (SELECT x FROM dd WHERE x = d.id)", []),
+        ("s.v > (SELECT MIN(x) FROM dd WHERE x = d.id)", [2]),
+    ],
+)
+def test_qualified_outer_column_in_subquery_after_join(
+    where_clause: str, expected: list[int]
+) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    dd = pl.DataFrame({"x": [1, 4]})
+
+    res = pl.SQLContext(s=s, d=d, dd=dd).execute(
+        f"SELECT s.id FROM s JOIN d ON s.v = d.v WHERE {where_clause} ORDER BY s.id",
+        eager=True,
+    )
+    assert res["id"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        "k IN (SELECT d.id FROM s JOIN d ON s.v = d.v)",
+        "k IN (SELECT d.id FROM s, d WHERE s.v = d.v)",
+        "EXISTS (SELECT 1 FROM s JOIN d ON s.v = d.v WHERE d.id = a.k)",
+        "EXISTS (SELECT 1 FROM s, d WHERE s.v = d.v AND d.id = a.k)",
+        "k = (SELECT MAX(d.id) FROM s JOIN d ON s.v = d.v WHERE d.id = a.k)",
+    ],
+)
+def test_qualified_inner_column_in_subquery_join(where_clause: str) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    a = pl.DataFrame({"k": [1, 2, 3, 4]})
+
+    res = pl.SQLContext(s=s, d=d, a=a).execute(
+        f"SELECT k FROM a WHERE {where_clause} ORDER BY k",
+        eager=True,
+    )
+    assert res["k"].to_list() == [3, 4]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id AS k FROM s, d JOIN e USING(id) ORDER BY k",
+        "SELECT k FROM a WHERE k IN (SELECT id FROM s, d JOIN e USING(id)) ORDER BY k",
+    ],
+)
+def test_using_column_in_later_from_entry(query: str) -> None:
+    a = pl.DataFrame({"k": [1, 2, 3, 4]})
+    s = pl.DataFrame({"x": [1]})
+    d = pl.DataFrame({"id": [1, 2]})
+    e = pl.DataFrame({"id": [1, 2]})
+
+    res = pl.SQLContext(a=a, s=s, d=d, e=e).execute(query, eager=True)
+    assert res["k"].to_list() == [1, 2]
+
+    # USING only merges `d.id` and `e.id`, not `s.id`
+    s = pl.DataFrame({"id": [9]})
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r'ambiguous reference to column "id" \(use one of: d\."id", s\."id"\)',
+    ):
+        pl.SQLContext(a=a, s=s, d=d, e=e).execute(query, eager=True)
+
+
 def test_duplicate_column_detection_via_wildcard() -> None:
     # selecting a column explicitly that is already included in a qualified
     # wildcard from the same table should raise a duplicate column error
@@ -2261,3 +2394,233 @@ def test_join_on_repeated_key(query: str) -> None:
     assert_sql_matches(
         frames, query=query, compare_with="duckdb", check_row_order=False
     )
+
+
+@pytest.fixture
+def asof_frames() -> dict[str, pl.DataFrame]:
+    # neither frame is sorted on `ts`
+    return {
+        "trades": pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4, 5],
+                "sym": ["a", "b", "a", "b", None],
+                "ts": [5, 5, 2, 12, 5],
+            }
+        ),
+        "quotes": pl.DataFrame(
+            {
+                "sym": ["a", "b", "a", "b", "a", None],
+                "ts": [6, 1, 2, 9, 4, 5],
+                "px": [60, 10, 20, 90, 40, 50],
+            }
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("match_condition", "px"),
+    [
+        ("t.ts >= q.ts", [40, 10, 20, 90, None]),
+        ("q.ts <= t.ts", [40, 10, 20, 90, None]),
+        ("t.ts > q.ts", [40, 10, None, 90, None]),
+        ("q.ts < t.ts", [40, 10, None, 90, None]),
+        ("t.ts <= q.ts", [60, 90, 20, None, None]),
+        ("q.ts >= t.ts", [60, 90, 20, None, None]),
+        ("(t.ts < q.ts)", [60, 90, 40, None, None]),
+        ("q.ts > t.ts", [60, 90, 40, None, None]),
+    ],
+)
+@pytest.mark.parametrize("constraint", ["ON t.sym = q.sym", "USING (sym)"])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_asof_join(
+    asof_frames: dict[str, pl.DataFrame],
+    match_condition: str,
+    px: list[int | None],
+    constraint: str,
+    engine: Literal["in-memory", "streaming"],
+) -> None:
+    query = f"""
+        SELECT t.id, q.px
+        FROM trades t ASOF JOIN quotes q MATCH_CONDITION ({match_condition})
+        {constraint}
+        ORDER BY t.id
+    """
+    result = pl.SQLContext(asof_frames).execute(query).collect(engine=engine)
+    expected = pl.DataFrame({"id": [1, 2, 3, 4, 5], "px": px})
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_without_keys(asof_frames: dict[str, pl.DataFrame]) -> None:
+    query = """
+        SELECT t.id, q.px
+        FROM trades t ASOF JOIN quotes q MATCH_CONDITION (t.ts >= q.ts)
+        ORDER BY t.id
+    """
+    result = pl.SQLContext(asof_frames, eager=True).execute(query)
+    expected = pl.DataFrame({"id": [1, 2, 3, 4, 5], "px": [50, 50, 20, 90, 50]})
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_select_star() -> None:
+    population = pl.DataFrame(
+        {
+            "date": [date(2019, 1, 1), date(2015, 6, 1), date(2018, 8, 1)],
+            "population": [83.12, 81.5, 82.66],
+        }
+    )
+    gdp = pl.DataFrame(
+        {
+            "date": pl.date_range(date(2016, 1, 1), date(2020, 1, 1), "1y", eager=True),
+            "gdp": [4164, 4411, 4566, 4696, 4827],
+        }
+    )
+    query = """
+        SELECT * FROM population p
+        ASOF JOIN gdp g MATCH_CONDITION (p.date >= g.date)
+        ORDER BY p.date
+    """
+    result = pl.SQLContext(population=population, gdp=gdp, eager=True).execute(query)
+    expected = pl.DataFrame(
+        {
+            "date": [date(2015, 6, 1), date(2018, 8, 1), date(2019, 1, 1)],
+            "population": [81.5, 82.66, 83.12],
+            "date:g": [None, date(2018, 1, 1), date(2019, 1, 1)],
+            "gdp": [None, 4566, 4696],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_key_expressions_and_dtypes() -> None:
+    left = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "sym": ["A", "b", "a"],
+            "region": pl.Series([1, 2, 1], dtype=pl.Int8),
+            "d": [date(2024, 1, 2), date(2024, 1, 2), date(2024, 1, 1)],
+        }
+    )
+    right = pl.DataFrame(
+        {
+            "sym": ["a", "b", "a"],
+            "region": pl.Series([1, 2, 1], dtype=pl.Int64),
+            "ts": [
+                datetime(2024, 1, 1, 12),
+                datetime(2024, 1, 1, 6),
+                datetime(2024, 1, 2, 0),
+            ],
+            "v": [10, 20, 30],
+        }
+    )
+    query = """
+        SELECT l.id, r.v, r.sym
+        FROM l ASOF JOIN r MATCH_CONDITION (l.d > r.ts - INTERVAL '1 hour')
+        ON LOWER(l.sym) = r.sym AND l.region = r.region
+        ORDER BY l.id
+    """
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    expected = pl.DataFrame(
+        {"id": [1, 2, 3], "v": [30, 20, None], "sym": ["a", "b", None]}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_keeps_finest_time_unit() -> None:
+    left = pl.DataFrame(
+        {"ts": pl.Series([datetime(2024, 1, 1, 0, 0, 2)], dtype=pl.Datetime("ms"))}
+    )
+    right = pl.DataFrame(
+        {
+            "ts": pl.Series(
+                [datetime(2024, 1, 1, 0, 0, 1, 2), datetime(2024, 1, 1, 0, 0, 1, 1)],
+                dtype=pl.Datetime("us"),
+            ),
+            "v": [2, 1],
+        }
+    )
+    query = "SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION (l.ts >= r.ts)"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [2]
+
+
+@pytest.mark.parametrize(
+    "left_ts",
+    [
+        pl.Series([datetime(2500, 1, 1)], dtype=pl.Datetime("ms", "UTC")),
+        pl.Series([date(2500, 1, 1)]),
+    ],
+)
+def test_asof_join_keeps_time_range(left_ts: pl.Series) -> None:
+    left = pl.DataFrame({"ts": left_ts})
+    right = pl.DataFrame(
+        {
+            "ts": pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("ns", "UTC")),
+            "v": [1],
+        }
+    )
+    query = "SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION (l.ts >= r.ts)"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [1]
+
+
+@pytest.mark.parametrize("match_condition", ["y.ts >= z.ts", "z.ts <= y.ts"])
+def test_asof_join_after_join(match_condition: str) -> None:
+    frames = {
+        "x": pl.DataFrame({"id": [1, 2]}),
+        "y": pl.DataFrame({"id": [1, 2], "ts": [5, 10]}),
+        "z": pl.DataFrame({"ts": [1, 7], "v": [10, 70]}),
+    }
+    query = f"""
+        SELECT x.id, z.v
+        FROM x JOIN y ON x.id = y.id
+        ASOF JOIN z MATCH_CONDITION ({match_condition})
+        ORDER BY x.id
+    """
+    result = pl.SQLContext(frames, eager=True).execute(query)
+    assert_frame_equal(result, pl.DataFrame({"id": [1, 2], "v": [10, 70]}))
+
+
+@pytest.mark.parametrize("match_condition", ["L.lt >= R.rt", "R.rt <= L.lt"])
+def test_asof_join_qualifier_case(match_condition: str) -> None:
+    left = pl.DataFrame({"lt": [5]})
+    right = pl.DataFrame({"rt": [4], "v": [1]})
+    query = f"SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION ({match_condition})"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [1]
+
+
+@pytest.mark.parametrize(
+    "match_condition", ["nested.x >= rnested.x", "rnested.x <= nested.x"]
+)
+def test_asof_join_struct_fields(match_condition: str) -> None:
+    left = pl.DataFrame({"nested": [{"x": 5}, {"x": 3}]})
+    right = pl.DataFrame({"rnested": [{"x": 4}], "v": [1]})
+    query = f"""
+        SELECT l.nested.x, r.v
+        FROM l ASOF JOIN r MATCH_CONDITION ({match_condition})
+        ORDER BY l.nested.x
+    """
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.rows() == [(3, None), (5, 1)]
+
+
+@pytest.mark.parametrize(
+    ("join", "error"),
+    [
+        ("MATCH_CONDITION (t.ts = q.ts)", "single `>=`, `>`, `<=` or `<` comparison"),
+        ("MATCH_CONDITION (t.ts >= 5)", "must compare a column of each table"),
+        ("MATCH_CONDITION (t.ts >= t.ts)", "must compare a column of each table"),
+        ("MATCH_CONDITION (q.ts < q.ts)", "must compare a column of each table"),
+        ("MATCH_CONDITION (ts >= ts)", "MATCH_CONDITION is ambiguous"),
+        (
+            "MATCH_CONDITION (t.ts >= q.ts) ON t.sym = q.sym AND t.id > q.px",
+            "only supports `=` conditions in ON",
+        ),
+    ],
+)
+def test_asof_join_errors(
+    asof_frames: dict[str, pl.DataFrame], join: str, error: str
+) -> None:
+    query = f"SELECT * FROM trades t ASOF JOIN quotes q {join}"
+    with pytest.raises(SQLSyntaxError, match=error):
+        pl.SQLContext(asof_frames).execute(query).collect()

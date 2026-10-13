@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pytest
 
@@ -203,3 +204,21 @@ def test_streaming_shift_with_head_26098() -> None:
         q.collect(engine="streaming"),
         pl.DataFrame({"a": [2]}),
     )
+
+
+@pytest.mark.parametrize("n", [3, -3])
+@pytest.mark.parametrize("length", [0, 2])
+@pytest.mark.parametrize(
+    ("values", "fill_value", "dtype"),
+    [
+        ([{"a": 1}, {"a": 2}], {"a": 0}, pl.Struct({"a": pl.Int64})),
+        (["x", "y"], "z", pl.Enum(["x", "y", "z"])),
+    ],
+)
+def test_shift_and_fill_n_exceeds_len(
+    n: int, length: int, values: list[Any], fill_value: Any, dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"s": pl.Series(values[:length], dtype=dtype)})
+    out = df.select(pl.col("s").shift(n, fill_value=pl.lit(fill_value, dtype=dtype)))
+    expected = pl.DataFrame({"s": pl.Series([fill_value] * length, dtype=dtype)})
+    assert_frame_equal(out, expected)
