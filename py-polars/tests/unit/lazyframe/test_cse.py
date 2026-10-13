@@ -2318,3 +2318,22 @@ def test_cspe_filter_on_redefined_column_not_pushed_into_cache_29788(
 
     expected = pl.DataFrame({"c": ["ax", "ax"], "x": [1, 3]})
     assert_frame_equal(q.collect(engine=engine), expected)
+
+
+def test_cse_scalar_multichunk_projection_29902() -> None:
+    # The first chunk must be large enough to trigger chunk-wise evaluation.
+    n = 2 * pl.thread_pool_size() + 10
+    df = pl.concat(
+        [pl.DataFrame({"x": range(n)}), pl.DataFrame({"x": [n]})], rechunk=False
+    )
+    assert df.n_chunks() == 2
+
+    q = df.lazy().select(
+        a=pl.col("x") + pl.col("x").sum(),
+        b=pl.col("x").sum(),
+    )
+    total = sum(range(n + 1))
+    expected = pl.DataFrame(
+        {"a": [x + total for x in range(n + 1)], "b": [total] * (n + 1)}
+    )
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
