@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 
 import pytest
@@ -849,7 +849,7 @@ def test_cast_to_timestamp_with_time_zone(sql_type: str) -> None:
     )
     tu = "ms" if "(3)" in sql_type else "us"
     dtype = pl.Datetime(tu, "UTC")  # type: ignore[arg-type]
-    utc = timezone.utc
+    utc = UTC
     expected = pl.DataFrame(
         {
             "with_offset": [
@@ -895,11 +895,11 @@ def test_timestamp_without_time_zone() -> None:
         ("TIMESTAMP '2026-09-17T04:30:00Z'", datetime(2026, 9, 17, 4, 30)),
         (
             "TIMESTAMPTZ '2026-09-17 04:30:00.5-0130'",
-            datetime(2026, 9, 17, 6, 0, 0, 500000, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 6, 0, 0, 500000, tzinfo=UTC),
         ),
         (
             "TIMESTAMPTZ '2026-09-17 04:30:00'",
-            datetime(2026, 9, 17, 4, 30, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 4, 30, tzinfo=UTC),
         ),
     ],
 )
@@ -932,8 +932,8 @@ def test_at_time_zone() -> None:
         "lit": pl.Datetime("us"),
     }
     assert res["naive_to_utc"].to_list() == [
-        datetime(2026, 1, 15, 11, tzinfo=timezone.utc),
-        datetime(2026, 7, 15, 10, tzinfo=timezone.utc),
+        datetime(2026, 1, 15, 11, tzinfo=UTC),
+        datetime(2026, 7, 15, 10, tzinfo=UTC),
         None,
     ]
     assert res["aware_to_naive"].to_list() == [
@@ -982,7 +982,7 @@ def test_at_time_zone_compare_and_add() -> None:
 def test_at_time_zone_sql_expr() -> None:
     df = pl.DataFrame({"ts": [datetime(2026, 1, 15, 12)]})
     expr = pl.sql_expr("CAST(ts AS TIMESTAMP) AT TIME ZONE 'Europe/Amsterdam'")
-    assert df.select(expr).item() == datetime(2026, 1, 15, 11, tzinfo=timezone.utc)
+    assert df.select(expr).item() == datetime(2026, 1, 15, 11, tzinfo=UTC)
 
 
 def test_timestamptz_array_literal_mixed_offsets() -> None:
@@ -994,7 +994,7 @@ def test_timestamptz_array_literal_mixed_offsets() -> None:
         """,
         eager=True,
     )
-    utc = timezone.utc
+    utc = UTC
     assert res.row(0) == (
         [datetime(2026, 1, 1, tzinfo=utc), datetime(2026, 1, 2, tzinfo=utc)],
         [datetime(2026, 1, 1), datetime(2026, 1, 2)],
@@ -1014,4 +1014,4 @@ def test_timestamp_array_literal_invalid_value() -> None:
 @pytest.mark.parametrize("zone", ["$$UTC$$", "('UTC')"])
 def test_at_time_zone_string_forms(zone: str) -> None:
     res = pl.sql(f"SELECT TIMESTAMP '2026-01-01' AT TIME ZONE {zone} AS x", eager=True)
-    assert res.item() == datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert res.item() == datetime(2026, 1, 1, tzinfo=UTC)
