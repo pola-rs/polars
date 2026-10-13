@@ -909,7 +909,7 @@ def _scan_sorted(tbl: pyiceberg.table.Table) -> pl.DataFrame:
     "overwrite_filter",
     [
         "a != 2",
-        pyiceberg.expressions.NotEqualTo("a", 2),
+        pyiceberg.expressions.NotEqualTo("a", 2),  # type: ignore[call-arg, arg-type]
         pl.col("a") != 2,
     ],
 )
