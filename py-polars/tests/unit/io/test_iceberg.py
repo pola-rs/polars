@@ -10,6 +10,7 @@ import json
 import math
 import os
 import pickle
+import re
 import struct
 import sys
 import uuid
@@ -986,6 +987,125 @@ def test_sink_iceberg_create_if_not_exists_lost_response(
         df.lazy().sink_iceberg(
             "ns.t2", mode="append", create_if_not_exists=True, catalog=catalog
         )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("schema_mode", [None, "merge"])
+def test_sink_iceberg_create_if_not_exists_dtypes(
+    tmp_path: Path, schema_mode: Literal["merge"] | None
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+
+    dt = datetime(2020, 1, 1, 1, 2, 3, 456000)
+    # (values, dtype, iceberg type, dtype read back)
+    columns: dict[str, tuple[list[Any], pl.DataType, str, pl.DataType]] = {
+        "bool": ([True], pl.Boolean(), "boolean", pl.Boolean()),
+        "i8": ([-128], pl.Int8(), "int", pl.Int32()),
+        "i16": ([-32768], pl.Int16(), "int", pl.Int32()),
+        "i32": ([-(2**31)], pl.Int32(), "int", pl.Int32()),
+        "i64": ([-(2**63)], pl.Int64(), "long", pl.Int64()),
+        "u8": ([255], pl.UInt8(), "int", pl.Int32()),
+        "u16": ([65535], pl.UInt16(), "int", pl.Int32()),
+        "u32": ([2**32 - 1], pl.UInt32(), "long", pl.Int64()),
+        "f16": ([1.5], pl.Float16(), "float", pl.Float32()),
+        "f32": ([1.5], pl.Float32(), "float", pl.Float32()),
+        "f64": ([1.5], pl.Float64(), "double", pl.Float64()),
+        "dec": ([D("1.25")], pl.Decimal(38, 2), "decimal(38, 2)", pl.Decimal(38, 2)),
+        "str": (["x"], pl.String(), "string", pl.String()),
+        "cat": (["x"], pl.Categorical(), "string", pl.String()),
+        "enum": (["x"], pl.Enum(["x", "y"]), "string", pl.String()),
+        "bin": ([b"x"], pl.Binary(), "binary", pl.Binary()),
+        "date": ([date(2020, 1, 1)], pl.Date(), "date", pl.Date()),
+        "time": ([dt.time()], pl.Time(), "time", pl.Time()),
+        "dt_ms": ([dt], pl.Datetime("ms"), "timestamp", pl.Datetime("us")),
+        "dt_us": ([dt], pl.Datetime("us"), "timestamp", pl.Datetime("us")),
+        "dt_tz": (
+            [dt],
+            pl.Datetime("ms", "Asia/Tokyo"),
+            "timestamptz",
+            pl.Datetime("us", "UTC"),
+        ),
+        "list": ([[1, None]], pl.List(pl.UInt8), "list<int>", pl.List(pl.Int32)),
+        "arr": ([[1, 2]], pl.Array(pl.Int16, 2), "list<int>", pl.List(pl.Int32)),
+        "struct": (
+            [{"x": 1, "y": "a", "z": [[1]]}],
+            pl.Struct(
+                {
+                    "x": pl.UInt32,
+                    "y": pl.Enum(["a"]),
+                    "z": pl.List(pl.Array(pl.Int8, 1)),
+                }
+            ),
+            "struct<x: long, y: string, z: list<list<int>>>",
+            pl.Struct({"x": pl.Int64, "y": pl.String, "z": pl.List(pl.List(pl.Int32))}),
+        ),
+    }
+
+    df = pl.DataFrame(
+        [
+            pl.Series(name, values + [None], dtype=dtype)
+            for name, (values, dtype, _, _) in columns.items()
+        ]
+    )
+    expected = df.cast({name: c[3] for name, c in columns.items()})
+
+    for _ in range(2):  # Created, then appended to.
+        df.lazy().sink_iceberg(
+            "ns.t",
+            mode="append",
+            schema_mode=schema_mode,
+            create_if_not_exists=True,
+            catalog=catalog,
+        )
+
+    tbl = catalog.load_table("ns.t")
+    assert {
+        f.name: re.sub(r"\d+: |optional ", "", str(f.field_type))
+        for f in tbl.schema().fields
+    } == {name: c[2] for name, c in columns.items()}
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), pl.concat([expected, expected]))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("dtype", "match"),
+    [
+        (pl.UInt64(), r"'c' \(UInt64\)"),
+        (pl.Int128(), r"'c' \(Int128\)"),
+        (
+            pl.Datetime("ns"),
+            r"'c' \(Datetime\(time_unit='ns'.*cast to Datetime\('us'\)",
+        ),
+        (pl.Duration("us"), r"'c' \(Duration"),
+        (pl.Null(), r"'c' \(Null\)"),
+        (pl.Object(), r"'c' \(Object\)"),
+        (pl.List(pl.UInt64), r"'c\[\]' \(UInt64\)"),
+        (pl.Struct({"x": pl.Int64, "y": pl.Duration("ms")}), r"'c.y' \(Duration"),
+    ],
+)
+def test_sink_iceberg_create_if_not_exists_unsupported_dtypes(
+    tmp_path: Path, dtype: pl.DataType, match: str
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("ns")
+
+    lf = pl.LazyFrame({"a": [1], "c": [None]}, schema={"a": pl.Int64, "c": dtype})
+    with pytest.raises(TypeError, match=match):
+        lf.sink_iceberg(
+            "ns.t", mode="append", create_if_not_exists=True, catalog=catalog
+        )
+
+    assert not catalog.table_exists("ns.t")
 
 
 _ICEBERG_TEMPORAL_SORT_TRANSFORMS: list[Any] = [

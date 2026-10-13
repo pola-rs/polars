@@ -45,7 +45,11 @@ if TYPE_CHECKING:
 
     import polars as pl
     from polars._plr import PyLazyFrame
-    from polars._typing import ParquetCompression, StorageOptionsDict
+    from polars._typing import (
+        ParquetCompression,
+        PolarsDataType,
+        StorageOptionsDict,
+    )
 
 
 _IcebergSinkedFile = tuple[str, int, int, bytes]
@@ -459,6 +463,119 @@ def _partition_key_exprs(
     return exprs
 
 
+def _create_table_schema(
+    schema: pl.Schema,
+) -> tuple[Schema, dict[str, pl.DataType]]:
+    """Iceberg schema of a table created from `schema`.
+
+    Also returns the casts that make the data match the table schema, all of which
+    are lossless. Raises if a column has no lossless Iceberg equivalent.
+    """
+    from itertools import count
+
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import (
+        BinaryType,
+        BooleanType,
+        DateType,
+        DecimalType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        ListType,
+        LongType,
+        NestedField,
+        StringType,
+        StructType,
+        TimestampType,
+        TimestamptzType,
+        TimeType,
+    )
+
+    import polars as pl
+
+    field_ids = count(1)
+    unsupported: list[str] = []
+
+    def convert(
+        dtype: PolarsDataType, path: str
+    ) -> tuple[IcebergType, pl.DataType] | None:
+        if dtype == pl.Boolean:
+            return BooleanType(), pl.Boolean()
+        if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.UInt8, pl.UInt16):
+            return IntegerType(), pl.Int32()
+        if dtype in (pl.Int64, pl.UInt32):
+            return LongType(), pl.Int64()
+        if dtype in (pl.Float16, pl.Float32):
+            return FloatType(), pl.Float32()
+        if dtype == pl.Float64:
+            return DoubleType(), pl.Float64()
+        if isinstance(dtype, pl.Decimal):
+            return DecimalType(dtype.precision, dtype.scale), dtype
+        if dtype in (pl.String, pl.Categorical, pl.Enum):
+            return StringType(), pl.String()
+        if dtype == pl.Binary:
+            return BinaryType(), pl.Binary()
+        if dtype == pl.Date:
+            return DateType(), pl.Date()
+        if dtype == pl.Time:
+            # Microsecond precision, like any Iceberg time column.
+            return TimeType(), pl.Time()
+        if isinstance(dtype, pl.Datetime):
+            if dtype.time_unit == "ns":
+                unsupported.append(
+                    f"'{path}' ({dtype}): Iceberg timestamps have microsecond "
+                    "precision, cast to Datetime('us')"
+                )
+                return None
+            # A time zone is only a display setting: the instants are preserved.
+            if dtype.time_zone is None:
+                return TimestampType(), pl.Datetime("us")
+            return TimestamptzType(), pl.Datetime("us", "UTC")
+        if isinstance(dtype, (pl.List, pl.Array)):
+            element_id = next(field_ids)
+            if (inner := convert(dtype.inner, f"{path}[]")) is None:
+                return None
+            element_type, element_dtype = inner
+            return (
+                ListType(element_id, element_type, element_required=False),
+                pl.List(element_dtype),
+            )
+        if isinstance(dtype, pl.Struct):
+            fields, struct_fields = [], []
+            for field in dtype.fields:
+                field_id = next(field_ids)
+                if (inner := convert(field.dtype, f"{path}.{field.name}")) is None:
+                    continue
+                fields.append(NestedField(field_id, field.name, inner[0]))
+                struct_fields.append(pl.Field(field.name, inner[1]))
+            if len(struct_fields) < len(dtype.fields):
+                return None
+            return StructType(*fields), pl.Struct(struct_fields)
+
+        unsupported.append(f"'{path}' ({dtype})")
+        return None
+
+    fields, casts = [], {}
+    for name, dtype in schema.items():
+        field_id = next(field_ids)
+        if (converted := convert(dtype, name)) is None:
+            continue
+        iceberg_type, cast_dtype = converted
+        fields.append(NestedField(field_id, name, iceberg_type))
+        if cast_dtype != dtype:
+            casts[name] = cast_dtype
+
+    if unsupported:
+        msg = (
+            "create_if_not_exists: columns without a lossless Iceberg type: "
+            + ", ".join(unsupported)
+        )
+        raise TypeError(msg)
+
+    return Schema(*fields), casts
+
+
 class _SortTransform:
     """Apply an Iceberg sort transform without pickling its cached callable."""
 
@@ -733,7 +850,18 @@ class IcebergSinkState:
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
-        if self.schema_mode is not None or self.create_if_not_exists:
+        if self.create_if_not_exists:
+            from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+            # Cast the data to match a table created from it, which can only have
+            # Iceberg types.
+            table_schema, casts = _create_table_schema(lf.collect_schema())
+            if casts:
+                lf = lf.cast(casts)  # type: ignore[arg-type]
+            self.source_schema = schema_to_pyarrow(
+                table_schema, include_field_ids=False
+            )
+        elif self.schema_mode is not None:
             self.source_schema = lf.collect_schema().to_arrow()
         return wrap_ldf(lf._ldf.sink_iceberg(self))
 
