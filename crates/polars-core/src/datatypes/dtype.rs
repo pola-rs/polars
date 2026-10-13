@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{
+use polars_arrow::datatypes::{
     DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
     Metadata, PL_KEY,
 };
@@ -355,6 +355,7 @@ impl DataType {
     }
 
     /// Get the inner data type of a nested type.
+    #[inline]
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
             DataType::List(inner) => Some(inner),
@@ -607,6 +608,21 @@ impl DataType {
         self.is_primitive_numeric() || self.is_bool() || self.is_null()
     }
 
+    /// Whether `arr.dot` has a kernel for this inner dtype.
+    pub fn is_supported_array_dot_input(&self) -> bool {
+        use DataType::*;
+        match self {
+            Int8 | Int16 | Int32 | Int64 => true,
+            #[cfg(feature = "dtype-i128")]
+            Int128 => true,
+            UInt8 | UInt16 | UInt32 | UInt64 => true,
+            #[cfg(feature = "dtype-u128")]
+            UInt128 => true,
+            Float32 | Float64 => true,
+            _ => false,
+        }
+    }
+
     /// Check if this [`DataType`] is a logical type
     pub fn is_logical(&self) -> bool {
         self != &self.to_physical()
@@ -634,6 +650,7 @@ impl DataType {
     }
 
     /// Check if this [`DataType`] is a boolean.
+    #[inline]
     pub fn is_bool(&self) -> bool {
         matches!(self, DataType::Boolean)
     }
@@ -895,6 +912,7 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     /// Note, this also includes `Unknown(UnknownKind::Float)`.
+    #[inline]
     pub fn is_float(&self) -> bool {
         matches!(
             self,
@@ -906,6 +924,7 @@ impl DataType {
     }
 
     /// Check if this [`DataType`] is an integer. Note, this also includes `Unknown(UnknownKind::Int)`.
+    #[inline]
     pub fn is_integer(&self) -> bool {
         matches!(
             self,
@@ -1100,6 +1119,23 @@ impl DataType {
         };
         key.ensure_valid_map_key()?;
         value.ensure_valid_map_value()
+    }
+
+    /// Validate every `Map` nested in this dtype. Unlike [`Self::ensure_valid_map_dtype`],
+    /// this accepts dtypes that are not a `Map` themselves.
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_dtypes(&self) -> PolarsResult<()> {
+        // Keep it cheap for non-Map dtypes.
+        if !self.contains_map() {
+            return Ok(());
+        }
+
+        self.try_visit_with(|dtype| {
+            if dtype.is_map() {
+                dtype.ensure_valid_map_dtype()?;
+            }
+            Ok(())
+        })
     }
 
     pub fn is_extension(&self) -> bool {
@@ -1324,7 +1360,7 @@ impl DataType {
             },
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
-                arrow::datatypes::ExtensionType {
+                polars_arrow::datatypes::ExtensionType {
                     name: typ.name().into(),
                     inner: inner.try_to_arrow(compat_level)?,
                     metadata: typ.serialize_metadata().map(|m| m.into()),
@@ -1734,6 +1770,7 @@ pub fn unpack_dtypes(dtype: &DataType, include_compound_types: bool) -> PlHashSe
 pub struct CompatLevel(pub(crate) u16);
 
 impl CompatLevel {
+    #[inline]
     pub const fn newest() -> CompatLevel {
         CompatLevel(1)
     }

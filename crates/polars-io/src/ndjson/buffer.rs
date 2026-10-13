@@ -1,12 +1,14 @@
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+use polars_core::chunked_array::temporal::string::infer::{
+    DatetimeInfer, TryFromWithUnit, infer_pattern_single,
+};
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+use polars_core::chunked_array::temporal::string::patterns::Pattern;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
-#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::string::Pattern;
-#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::string::infer::{DatetimeInfer, TryFromWithUnit, infer_pattern_single};
 use polars_utils::format_pl_smallstr;
 use simd_json::prelude::*;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};

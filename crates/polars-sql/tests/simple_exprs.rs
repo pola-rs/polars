@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
 use polars_lazy::prelude::*;
 use polars_sql::*;
-use polars_time::Duration;
 
 fn create_sample_df() -> DataFrame {
     let a = Column::new(
@@ -1044,4 +1044,16 @@ fn test_struct_field_selection() {
     }
     .unwrap();
     assert!(df_sql.equals(&df_expected));
+}
+
+#[test]
+fn test_quantified_subquery() -> PolarsResult<()> {
+    let mut context = SQLContext::new();
+    context.register("t", df! { "y" => [2.0, f64::NAN] }?.lazy());
+    let df_sql = context
+        .execute("SELECT 1.0 < ANY (SELECT y FROM t) AS a, 2.0 = ALL (SELECT y FROM t) AS b")?
+        .collect()?;
+    let df_expected = df! { "a" => [true], "b" => [false] }?;
+    assert!(df_sql.equals(&df_expected));
+    Ok(())
 }

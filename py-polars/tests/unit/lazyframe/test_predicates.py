@@ -16,6 +16,7 @@ from polars.testing.asserts.series import assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -244,6 +245,54 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
             out.explain(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
         )
         is None
+    )
+
+
+def test_no_predicate_pushdown_with_non_elementwise_keys_29456() -> None:
+    df = pl.DataFrame({"flag": [1, 1, 0, 0, 1, 0]}).lazy()
+    out = (
+        df.group_by(
+            after="flag",
+            before=pl.col("flag").shift(1),
+            maintain_order=True,
+        )
+        .len()
+        .filter(pl.col("after") == 0)
+    )
+
+    assert out.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=True)
+    ).startswith("FILTER")
+
+    assert_frame_equal(
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+def test_no_predicate_pushdown_with_non_elementwise_predicate_29456() -> None:
+    df = pl.DataFrame({"x": [0, 1, 1, 0]}).lazy()
+    out = df.group_by("x", maintain_order=True).len().filter(pl.col("x").shift(1) == 0)
+
+    assert out.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=True)
+    ).startswith("FILTER")
+
+    assert_frame_equal(
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+    df2 = pl.DataFrame({"x": [1, 1, 1]}).lazy()
+    out2 = df.group_by("x", maintain_order=True).len().filter(pl.len() == 3)
+
+    assert out2.explain(
+        optimizations=pl.QueryOptFlags(predicate_pushdown=True)
+    ).startswith("FILTER")
+
+    assert_frame_equal(
+        out2.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
+        out2.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
     )
 
 
@@ -508,6 +557,56 @@ def test_or_factoring_hoists_shared_conjunct() -> None:
 
     expected = pl.DataFrame({"a": [2, 3], "b": [5, 6], "c": [8, 9]})
     assert_frame_equal(query.collect(), expected)
+
+
+def test_or_implied_predicates_pushed_past_join() -> None:
+    # `(s == x AND p < 20) OR (s == y AND p > 50)` cannot cross the join, but it
+    # implies `s == x OR s == y` on one side and `p < 20 OR p > 50` on the other.
+    # Those go into the scans; the disjunction itself is still applied at the join.
+    fact = pl.LazyFrame({"k": [1, 1, 2, 2, 3, 3], "p": [10, 60, 10, 60, 10, 60]})
+    dim = pl.LazyFrame({"k": [1, 2, 3], "s": ["x", "y", "z"]})
+    query = fact.join(dim, on="k").filter(
+        ((pl.col("s") == "x") & (pl.col("p") < 20))
+        | ((pl.col("s") == "y") & (pl.col("p") > 50))
+    )
+    plan = query.explain()
+    join_at = plan.index("JOIN")
+    assert plan.index('(col("p") < 20) | (col("p") > 50)') > join_at, plan
+    assert plan.index('(col("s") == "x") | (col("s") == "y")') > join_at, plan
+    assert plan.count('(col("s") == "x") & (col("p") < 20)') == 1, plan
+
+    expected = pl.DataFrame({"k": [1, 2], "p": [10, 60], "s": ["x", "y"]})
+    assert_frame_equal(query.collect().sort("k"), expected)
+    assert_frame_equal(
+        query.collect().sort("k"),
+        query.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "k"
+        ),
+    )
+
+
+def test_or_implied_predicates_not_derived_without_a_join() -> None:
+    # On a single relation the implied predicate would only repeat work.
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [1, 1, 2, 2]})
+    query = lf.filter(((pl.col("a") > 1) & (pl.col("b") == 1)) | (pl.col("a") == 4))
+    plan = query.explain()
+    assert plan.count('col("a") == 4') == 1, plan
+    assert_frame_equal(query.collect(), pl.DataFrame({"a": [2, 4], "b": [1, 2]}))
+
+
+def test_or_implied_predicates_skip_nondeterministic() -> None:
+    # Pushing an implied predicate evaluates its terms a second time, which is
+    # unsound when they could disagree with the evaluation at the join.
+    fact = pl.LazyFrame({"k": [1, 2, 3], "a": [1, 2, 3]})
+    dim = pl.LazyFrame({"k": [1, 2, 3], "s": ["x", "y", "z"]})
+    udf = pl.col("a").map_elements(lambda x: bool(hash(x) % 2), return_dtype=pl.Boolean)
+    query = fact.join(dim, on="k").filter(
+        (udf & (pl.col("s") == "x")) | (udf.not_() & (pl.col("s") == "y"))
+    )
+    plan = query.explain()
+    assert plan.count("python_udf") == 2, plan
+    # The deterministic side is still derived.
+    assert plan.index('(col("s") == "x") | (col("s") == "y")') > plan.index("JOIN")
 
 
 def test_cse_skips_inherently_nondeterministic_subexpressions() -> None:
@@ -1244,6 +1343,7 @@ def test_predicate_pushdown_auto_disable_strict() -> None:
     assert plan.index("FILTER") > plan.index("MARKER")
 
 
+@pytest.mark.may_fail_lazy_schema  # reason: declared-schema
 def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     def generator(
         with_columns: list[str] | None,
@@ -1646,6 +1746,62 @@ def test_filter_contradiction_keeps_nondeterministic_eval_body() -> None:
     assert plan.count("shuffle") == 2, plan
 
 
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        (pl.col("b") & ~pl.col("b")) ^ True,
+        ((pl.col("x") > 1) & (pl.col("x") <= 1)) ^ True,
+        (pl.col("b") & ~pl.col("b")) == False,  # noqa: E712
+        (pl.col("b") & ~pl.col("b")).is_null(),
+        ~((~pl.col("b") | pl.col("b")).not_() ^ False),
+        ~pl.col("s").is_in(pl.Series([], dtype=pl.String)),
+        pl.col("s").is_in(pl.Series([], dtype=pl.String)).is_null(),
+        pl.col("c") | ((pl.col("b") & ~pl.col("b")) ^ True),
+        # Rewrites that replace a column with a scalar change the length.
+        (pl.col("b") | True).sum() == 3,
+        (pl.col("b") & False).len() == 3,
+        pl.col("s").is_in(pl.Series([], dtype=pl.String)).len() == 3,
+    ],
+)
+def test_filter_simplify_only_at_predicate_root(predicate: pl.Expr) -> None:
+    # Rewrites like `A & ~A -> false` treat null as false, which is only valid where
+    # the value is used as the filter predicate, not when nested under e.g. NOT/XOR.
+    df = pl.DataFrame(
+        {
+            "b": [True, False, None],
+            "c": [False, False, False],
+            "x": [0, 2, None],
+            "s": ["a", "b", None],
+        }
+    )
+    expected = df.filter(df.select(predicate.fill_null(False)).to_series())
+    assert_frame_equal(df.filter(predicate), expected)
+    assert_frame_equal(df.lazy().filter(predicate).collect(), expected)
+
+
+def test_filter_simplify_through_and_or_at_predicate_root() -> None:
+    # Below AND/OR at the root only whether a value is true matters, so the
+    # null-as-false rewrites still apply there.
+    lf = pl.LazyFrame({"a": [1, None, 3], "b": [True, None, False]})
+    contradiction = pl.col("b") & ~pl.col("b")
+    for predicate, removed in [
+        ((pl.col("a") > 1) | contradiction, 'col("b")'),
+        ((pl.col("a") > 1) | pl.col("a").is_in([]), "is_in"),
+        ((pl.col("a") > 1) & ((pl.col("a") < 3) | contradiction), 'col("b")'),
+    ]:
+        q = lf.filter(predicate)
+        assert removed not in q.explain()
+        assert removed in q.explain(
+            optimizations=pl.QueryOptFlags(simplify_expression=False)
+        )
+        assert_frame_equal(
+            q.collect(),
+            lf.collect().filter(
+                lf.select(predicate.fill_null(False)).collect().to_series()
+            ),
+        )
+
+
 def test_filter_range_tightening() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
 
@@ -1849,7 +2005,8 @@ def test_predicate_normalization() -> None:
     def scans(branch1: Any, branch2: Any) -> Any:
         counter = [0]
         lf = make_source(counter)
-        pl.collect_all([branch1(lf), branch2(lf)])
+        # The streaming engine reads a pure source per branch instead of caching it.
+        pl.collect_all([branch1(lf), branch2(lf)], engine="in-memory")
         return counter[0]
 
     out = scans(lambda lf: lf.filter((A & B) & C), lambda lf: lf.filter(A & (B & C)))
@@ -1866,7 +2023,7 @@ def test_predicate_simplification_stable_28267() -> None:
 
     plan = q.explain()
 
-    assert plan.find("is_between") > plan.find("&")
+    assert plan.find("is_between") < plan.find("&")
 
 
 def test_or_factoring_skips_udf_conjunct() -> None:
@@ -1906,3 +2063,33 @@ def test_or_factoring_skips_nondeterminism_in_eval_body() -> None:
 
     plan = query.explain()
     assert plan.count("shuffle") == 2, plan
+
+
+def test_predicate_pushdown_fallible_inside_list_eval() -> None:
+    lf = pl.LazyFrame({"k": [1, 2], "a": [["1"], ["bad"]]})
+
+    q = lf.filter(pl.col("k") == 1).filter(
+        pl.col("a").list.eval(pl.element().cast(pl.Int64)).list.first() == 1
+    )
+
+    plan = q.explain()
+    assert plan.index("list.eval") < plan.index('FILTER col("k")')
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": [1], "a": [["1"]]}))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_predicate_not_pushed_below_scalar_select(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 2], "x": [1, 2]})
+
+    q = lf.select(pl.lit(None).alias("g")).filter(pl.lit(False))
+    assert q.collect(engine=engine).height == 0
+
+    q = lf.select(pl.len()).select(pl.lit(1).alias("g")).filter(pl.lit(False))
+    assert q.collect(engine=engine).height == 0
+
+    q = pl.sql(
+        "SELECT g, SUM(x) AS s FROM lf GROUP BY GROUPING SETS ((g), ()) HAVING FALSE",
+        eager=False,
+    )
+    assert q.collect(engine=engine).height == 0

@@ -22,8 +22,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SCCACHE_GHA_ENABLED: 'true'
-  RUSTC_WRAPPER: sccache
   RUST_BACKTRACE: 1
 
 jobs:
@@ -66,12 +64,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          workspaces: py-polars
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
-
-      - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
+          # This job builds with `-C target-cpu=native`, which the cache key does
+          # not capture, so reusing artifacts across runner CPUs risks SIGILL and
+          # makes timings incomparable; cache the registry only.
+          cache-targets: false
 
       - name: Build Polars release build
         working-directory: py-polars

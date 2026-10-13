@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::{IcebergSchema, IcebergSchemaRef};
@@ -156,6 +156,10 @@ impl ProjectionBuilder {
                                 );
                         },
                     }
+                }
+
+                if mapping.is_none() && missing_columns_mask.is_none() {
+                    return Ok(Projection::Plain(projected_schema.clone()));
                 }
 
                 Projection::Mapped {

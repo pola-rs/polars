@@ -11,7 +11,13 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
 from polars._utils.unstable import issue_unstable_warning
+from polars._utils.various import qualified_type_name
 from polars.exceptions import ComputeError
+from polars.io.iceberg._cache import (
+    describe_metadata_file_cache,
+    get_metadata_file_cache,
+    load_static_table,
+)
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
@@ -50,9 +56,48 @@ class IcebergScanTableSerializer(IcebergTableSerializer):
 class IcebergCatalogTableDescriptor:
     table_identifier: str | pyiceberg.typedef.Identifier
     catalog_config: IcebergCatalogConfig
+    # Used for table loads when set; `catalog_config` is the fallback after
+    # unpickling, and for descriptors pickled without this field.
+    catalog_: NoPickleOption[pyiceberg.catalog.Catalog] | None = None
+
+
+# Catalog classes whose instances, and those of their subclasses, can load tables
+# from concurrent threads.
+_REUSABLE_CATALOG_CLASSES: Final = frozenset(
+    (
+        "pyiceberg.catalog.glue.GlueCatalog",
+        "pyiceberg.catalog.rest.RestCatalog",
+        "pyiceberg.catalog.sql.SqlCatalog",
+    )
+)
+
+
+def _reusable_catalog(
+    catalog: pyiceberg.catalog.Catalog | None,
+) -> pyiceberg.catalog.Catalog | None:
+    if catalog is None or not any(
+        qualified_type_name(cls) in _REUSABLE_CATALOG_CLASSES
+        for cls in type(catalog).__mro__
+    ):
+        return None
+    return catalog
 
 
 SerializedTableState: TypeAlias = str | IcebergCatalogTableDescriptor
+
+
+def _load_static_table(
+    metadata_location: str, properties: dict[str, Any]
+) -> pyiceberg.table.Table:
+    table, stats = load_static_table(metadata_location, properties)
+
+    if verbose():
+        eprint(
+            "IcebergTableWrap: metadata file cache: "
+            f"{stats.describe(get_metadata_file_cache())}"
+        )
+
+    return table
 
 
 @dataclass(kw_only=True)
@@ -79,18 +124,21 @@ class IcebergTableWrap:
             assert self.table_descriptor_ is not None
 
             if isinstance(self.table_descriptor_, IcebergCatalogTableDescriptor):
-                catalog = self.table_descriptor_.catalog_config.class_(
-                    self.table_descriptor_.catalog_config.name,
-                    **self.table_descriptor_.catalog_config.properties,
-                )
+                catalog_ = self.table_descriptor_.catalog_
+                catalog = catalog_.get() if catalog_ is not None else None
+
+                if catalog is None:
+                    catalog = self.table_descriptor_.catalog_config.class_(
+                        self.table_descriptor_.catalog_config.name,
+                        **self.table_descriptor_.catalog_config.properties,
+                    )
+                elif verbose():
+                    eprint("IcebergTableWrap: reuse catalog instance")
 
                 table = catalog.load_table(self.table_descriptor_.table_identifier)
             else:
-                from pyiceberg.table import StaticTable
-
-                table = StaticTable.from_metadata(
-                    metadata_location=self.table_descriptor_,
-                    properties=self.iceberg_storage_properties or {},
+                table = _load_static_table(
+                    self.table_descriptor_, self.iceberg_storage_properties or {}
                 )
 
             self.table_.set(table)
@@ -152,17 +200,21 @@ class IcebergCatalogConfig:
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None,
         *,
         fn_name: Literal["scan_iceberg", "sink_iceberg"],
-    ) -> IcebergCatalogConfig:
+    ) -> tuple[IcebergCatalogConfig, pyiceberg.catalog.Catalog | None]:
+        """Return the catalog config, and the catalog instance when one is known."""
         import pyiceberg.catalog
         from pyiceberg.catalog.noop import NoopCatalog
 
         import polars._utils.logging
         from polars._utils.logging import eprint
 
+        instance: pyiceberg.catalog.Catalog | None = None
+
         if isinstance(catalog, IcebergCatalogConfig):
             catalog_config = catalog
         elif isinstance(catalog, pyiceberg.catalog.Catalog):
             catalog_config = IcebergCatalogConfig.from_catalog(catalog)
+            instance = catalog
         elif catalog is not None:
             msg = f"unknown type for `catalog` parameter: {type(catalog)}"
             raise TypeError(msg)
@@ -194,12 +246,13 @@ class IcebergCatalogConfig:
                 raise ComputeError(msg) from error
 
             catalog_config = IcebergCatalogConfig.from_catalog(default_catalog)
+            instance = default_catalog
 
         if catalog_config.class_ == NoopCatalog:
             msg = f"cannot use NoopCatalog with {fn_name}()"
             raise TypeError(msg)
 
-        return catalog_config
+        return catalog_config, instance
 
 
 @dataclass(kw_only=True)
@@ -225,7 +278,26 @@ class IcebergScanResolver:
 
     def schema(self) -> pa.schema:
         """Fetch the schema of the table."""
-        return self.table.arrow_schema()
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        if self.snapshot_id is None:
+            return self.table.arrow_schema()
+
+        snapshot = self.table.get().snapshot_by_id(self.snapshot_id)
+
+        if snapshot is None:
+            msg = f"iceberg snapshot ID not found: {self.snapshot_id}"
+            raise ValueError(msg)
+
+        schema_id = snapshot.schema_id
+
+        if schema_id is None:
+            msg = (
+                f"IcebergScanResolver: requested snapshot {self.snapshot_id} "
+                "did not contain a schema ID"
+            )
+            raise ValueError(msg)
+        return schema_to_pyarrow(self.table.get().schemas()[schema_id])
 
     def to_dataset_scan(
         self,
@@ -234,6 +306,7 @@ class IcebergScanResolver:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
@@ -243,6 +316,7 @@ class IcebergScanResolver:
                 limit=limit,
                 projection=projection,
                 filter_columns=filter_columns,
+                statistics_columns=statistics_columns,
                 pyarrow_predicate=pyarrow_predicate,
             )
         ) is None:
@@ -257,6 +331,7 @@ class IcebergScanResolver:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> _NativeIcebergScanData | _PyIcebergScanData | _RustIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -265,50 +340,7 @@ class IcebergScanResolver:
 
         verbose = polars._utils.logging.verbose()
 
-        iceberg_table_filter = None
-
-        if (
-            pyarrow_predicate is not None
-            and self.use_metadata_statistics
-            and self.use_pyiceberg_filter
-        ):
-            iceberg_table_filter = try_convert_pyarrow_predicate(pyarrow_predicate)
-
-        if verbose:
-            pyarrow_predicate_display = (
-                "Some(<redacted>)" if pyarrow_predicate is not None else "None"
-            )
-            iceberg_table_filter_display = (
-                "Some(<redacted>)" if iceberg_table_filter is not None else "None"
-            )
-
-            eprint(
-                "IcebergScanResolver: to_dataset_scan(): "
-                f"snapshot ID: {self.snapshot_id}, "
-                f"from snapshot ID exclusive: {self.from_snapshot_id_exclusive}, "
-                f"to snapshot ID inclusive: {self.to_snapshot_id_inclusive}, "
-                f"limit: {limit}, "
-                f"projection: {projection}, "
-                f"filter_columns: {filter_columns}, "
-                f"pyarrow_predicate: {pyarrow_predicate_display}, "
-                f"iceberg_table_filter: {iceberg_table_filter_display}, "
-                f"self.use_metadata_statistics: {self.use_metadata_statistics}"
-            )
-
-        verbose_print_sensitive(
-            lambda: (
-                f"IcebergScanResolver: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
-            )
-        )
-
         tbl = self.table.get()
-
-        if verbose:
-            eprint(
-                "IcebergScanResolver: to_dataset_scan(): "
-                f"tbl.metadata.current_snapshot_id: {tbl.metadata.current_snapshot_id}"
-            )
-
         snapshot_id = self.snapshot_id
         is_incremental = (
             self.from_snapshot_id_exclusive is not None
@@ -351,6 +383,51 @@ class IcebergScanResolver:
                 f"{resolved_end_snapshot_id}:schema:{schema_id}"
                 if is_incremental
                 else f"{current_snapshot_id or ''}"
+            )
+
+        iceberg_table_filter = None
+
+        if (
+            pyarrow_predicate is not None
+            and self.use_metadata_statistics
+            and self.use_pyiceberg_filter
+        ):
+            iceberg_table_filter = try_convert_pyarrow_predicate(
+                pyarrow_predicate, iceberg_schema
+            )
+
+        if verbose:
+            pyarrow_predicate_display = (
+                "Some(<redacted>)" if pyarrow_predicate is not None else "None"
+            )
+            iceberg_table_filter_display = (
+                "Some(<redacted>)" if iceberg_table_filter is not None else "None"
+            )
+
+            eprint(
+                "IcebergScanResolver: to_dataset_scan(): "
+                f"snapshot ID: {self.snapshot_id}, "
+                f"from snapshot ID exclusive: {self.from_snapshot_id_exclusive}, "
+                f"to snapshot ID inclusive: {self.to_snapshot_id_inclusive}, "
+                f"limit: {limit}, "
+                f"projection: {projection}, "
+                f"filter_columns: {filter_columns}, "
+                f"statistics_columns: {statistics_columns}, "
+                f"pyarrow_predicate: {pyarrow_predicate_display}, "
+                f"iceberg_table_filter: {iceberg_table_filter_display}, "
+                f"self.use_metadata_statistics: {self.use_metadata_statistics}"
+            )
+
+        verbose_print_sensitive(
+            lambda: (
+                f"IcebergScanResolver: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
+            )
+        )
+
+        if verbose:
+            eprint(
+                "IcebergScanResolver: to_dataset_scan(): "
+                f"tbl.metadata.current_snapshot_id: {tbl.metadata.current_snapshot_id}"
             )
 
         if (
@@ -425,13 +502,25 @@ class IcebergScanResolver:
             )
 
         sources = []
+        source_sizes = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
             tbl,
             projected_iceberg_schema,
         )
+        # Statistics of columns that are not filtered on are best effort.
+        best_effort_statistics_columns = [
+            c for c in statistics_columns or [] if c not in (filter_columns or [])
+        ]
         statistics_loader: IcebergStatisticsLoader | None = (
-            IcebergStatisticsLoader(tbl, iceberg_schema.select(*filter_columns))
-            if self.use_metadata_statistics and filter_columns is not None
+            IcebergStatisticsLoader(
+                tbl,
+                iceberg_schema.select(
+                    *(filter_columns or []), *best_effort_statistics_columns
+                ),
+                best_effort_columns=best_effort_statistics_columns,
+            )
+            if self.use_metadata_statistics
+            and (filter_columns is not None or best_effort_statistics_columns)
             else None
         )
         position_delete_files: dict[int, list[str]] = {}
@@ -525,12 +614,18 @@ class IcebergScanResolver:
                 sources.append(
                     _normalize_windows_iceberg_file_uri(file_info.file.file_path)
                 )
+                source_sizes.append(file_info.file.file_size_in_bytes)
 
             if verbose:
                 elapsed = perf_counter() - start_time
                 eprint(
                     "IcebergScanResolver: to_dataset_scan(): "
                     f"finish path expansion ({elapsed:.3f}s)"
+                )
+
+                eprint(
+                    "IcebergScanResolver: to_dataset_scan(): "
+                    f"metadata file cache: {describe_metadata_file_cache(scan.io)}"
                 )
 
         if not fallback_reason:
@@ -567,6 +662,7 @@ class IcebergScanResolver:
 
             return _NativeIcebergScanData(
                 sources=sources,
+                source_sizes=source_sizes,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
                 default_values=(identity_transformed_values, initial_defaults),
@@ -631,6 +727,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for a native Iceberg scan."""
 
     sources: list[str]
+    source_sizes: list[int]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
     default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
@@ -652,6 +749,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
 
         return scan_parquet(
             self.sources,
+            glob=False,
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
             extra_columns="ignore",
@@ -664,6 +762,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             ),
             _table_statistics=self.min_max_statistics,
             _row_count=self.row_count,
+            _source_sizes=self.source_sizes,
         )
 
 

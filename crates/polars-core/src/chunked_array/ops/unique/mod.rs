@@ -1,7 +1,7 @@
 use std::hash::Hash;
 use std::ops::Deref;
 
-use arrow::bitmap::MutableBitmap;
+use polars_arrow::bitmap::MutableBitmap;
 use polars_compute::unique::BooleanUniqueKernelState;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 

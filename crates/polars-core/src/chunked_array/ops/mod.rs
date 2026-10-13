@@ -1,5 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::prelude::*;
@@ -11,6 +11,7 @@ mod apply;
 #[cfg(feature = "approx_unique")]
 mod approx_n_unique;
 pub mod arity;
+pub mod binning;
 mod bit_repr;
 mod bits;
 #[cfg(feature = "bitwise")]

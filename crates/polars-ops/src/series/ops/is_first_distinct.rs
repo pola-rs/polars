@@ -1,9 +1,9 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::bit_util::*;
-use arrow::legacy::utils::CustomIterTools;
+use polars_arrow::array::BooleanArray;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::legacy::bit_util::*;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::with_match_physical_float_polars_type;
@@ -119,6 +119,7 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },
+        BinaryOffset => return is_first_distinct_by_groups(&s),
         dt if dt.is_float() => {
             with_match_physical_float_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

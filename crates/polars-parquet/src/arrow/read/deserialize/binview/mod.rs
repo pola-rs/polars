@@ -1,6 +1,7 @@
-use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_error::PolarsResult;
 use polars_utils::aliases::PlIndexSet;
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
@@ -498,7 +499,7 @@ impl utils::Decoder for BinViewDecoder {
         &self,
         dict: &Self::Dict,
         predicate: &PredicateFilter,
-    ) -> ParquetResult<Bitmap> {
+    ) -> PolarsResult<Bitmap> {
         let utf8_array;
         let mut dict_arr = dict as &dyn Array;
 
@@ -507,7 +508,7 @@ impl utils::Decoder for BinViewDecoder {
             dict_arr = &utf8_array
         }
 
-        Ok(predicate.predicate.evaluate(dict_arr))
+        predicate.predicate.try_evaluate(dict_arr)
     }
 
     fn evaluate_predicate(
@@ -586,12 +587,18 @@ impl utils::Decoder for BinViewDecoder {
                 |v| v.ends_with(pattern),
                 pred_true_mask,
             )?,
-            (St::Plain(iter), Spce::RegexMatch(regex)) => predicate::decode_matches(
-                iter.max_num_values,
-                iter.values,
-                |v| regex.is_match(v),
-                pred_true_mask,
-            )?,
+            // A shared regex pools its scratch cache behind a mutex for all but the owning thread.
+            (St::Plain(iter), Spce::RegexMatch(regex)) => {
+                polars_utils::regex_cache::with_regex_cache(|cache| {
+                    let re = cache.get_or_insert_bytes(regex);
+                    predicate::decode_matches(
+                        iter.max_num_values,
+                        iter.values,
+                        |v| re.is_match(v),
+                        pred_true_mask,
+                    )
+                })?
+            },
             _ => return Ok(false),
         }
 

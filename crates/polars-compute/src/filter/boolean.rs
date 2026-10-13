@@ -1,4 +1,4 @@
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_utils::clmul::prefix_xorsum;
 
 const U56_MAX: u64 = (1 << 56) - 1;

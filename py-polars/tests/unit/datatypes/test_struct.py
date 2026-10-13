@@ -4,7 +4,7 @@ import io
 import operator
 import re
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -24,7 +24,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import PolarsDataType, SerializationFormat
+    from polars._typing import EngineType, PolarsDataType, SerializationFormat
 
 
 def test_struct_to_list() -> None:
@@ -885,6 +885,361 @@ def test_struct_arithmetic_schema_match(
     lhs = pl.col("ab")
     q = df.lazy().select(op(lhs, rhs))
     assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize(
+    ("engine", "field_order", "rhs", "op", "reverse", "float_dtype"),
+    [
+        ("in-memory", ("i", "f"), pl.lit(1.5), operator.add, False, pl.Float32),
+        ("streaming", ("f", "i"), pl.lit(1.5), operator.add, True, pl.Float32),
+        (
+            "in-memory",
+            ("i", "f"),
+            pl.lit(1.5, dtype=pl.Float64),
+            operator.add,
+            False,
+            pl.Float64,
+        ),
+        ("streaming", ("f", "i"), pl.col("x"), operator.add, False, pl.Float64),
+        ("in-memory", ("i", "f"), pl.lit(1.5), operator.sub, True, pl.Float32),
+    ],
+)
+def test_struct_arithmetic_numeric_supertype(
+    engine: EngineType,
+    field_order: tuple[str, str],
+    rhs: pl.Expr,
+    op: Callable[[Any, Any], Any],
+    reverse: bool,
+    float_dtype: PolarsDataType,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "i": [1, None, 3],
+            "f": pl.Series([2, 4, 6], dtype=pl.Float32),
+            "x": [1.5, 2.5, 3.5],
+        }
+    ).with_columns(
+        pl.when(pl.int_range(pl.len()) < 2).then(pl.struct(field_order)).alias("s")
+    )
+    expected_fields = [
+        op(rhs, pl.col(name)).alias(name)
+        if reverse
+        else op(pl.col(name), rhs).alias(name)
+        for name in field_order
+    ]
+    expected = df.select(
+        pl.when(pl.col("s").is_not_null())
+        .then(pl.struct(*expected_fields))
+        .alias("result")
+    )
+    expected_dtype = pl.Struct(
+        {name: pl.Float64 if name == "i" else float_dtype for name in field_order}
+    )
+    assert expected.schema == {"result": expected_dtype}
+
+    expr = op(rhs, pl.col("s")) if reverse else op(pl.col("s"), rhs)
+    q = df.lazy().select(expr.alias("result"))
+    assert q.collect_schema() == expected.schema
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_struct_arithmetic_evaluates_operand_once_and_preserves_names(
+    reverse: bool,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "s": pl.Series(
+                [{"i": 1, "f": 2.0}],
+                dtype=pl.Struct({"i": pl.Int64, "f": pl.Float32}),
+            ),
+            "x": [1.5],
+        }
+    )
+    calls = 0
+
+    def count_calls(s: pl.Series) -> pl.Series:
+        nonlocal calls
+        calls += 1
+        return s
+
+    rhs = pl.col("x").map_batches(count_calls, return_dtype=pl.Float64)
+    expr = rhs + pl.col("s") if reverse else pl.col("s") + rhs
+    expected = pl.DataFrame({"x" if reverse else "s": [{"i": 2.5, "f": 3.5}]})
+    assert_frame_equal(df.select(expr), expected)
+    assert calls == 1
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("input_value", "reverse"),
+    [(1.0, False), (1.0, True), (1, False), (None, False), (None, True)],
+)
+def test_struct_arithmetic_scalar_broadcast(
+    engine: EngineType, input_value: float | None, reverse: bool
+) -> None:
+    struct_expr = (
+        pl.lit({"a": input_value})
+        if input_value is not None
+        else pl.lit(None, dtype=pl.Struct({"a": pl.Float64}))
+    )
+    expr = pl.col("x") + struct_expr if reverse else struct_expr + pl.col("x")
+    q = pl.DataFrame({"x": [1.5, 2.5, 3.5]}).lazy().select(expr)
+    values = (
+        [None] * 3
+        if input_value is None
+        else [{"a": value} for value in (2.5, 3.5, 4.5)]
+    )
+    expected = pl.Series(
+        "x" if reverse else "literal",
+        values,
+        dtype=pl.Struct({"a": pl.Float64}),
+    )
+    assert q.collect_schema() == {expected.name: expected.dtype}
+    assert_series_equal(q.collect(engine=engine).to_series(), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_struct_arithmetic_generated_numeric_broadcast(engine: EngineType) -> None:
+    q = pl.LazyFrame(
+        {"s": pl.Series([{"a": 1.0}], dtype=pl.Struct({"a": pl.Float64}))}
+    ).select(pl.col("s") + pl.int_range(0, 3).cast(pl.Float64))
+    expected = pl.DataFrame({"s": [{"a": 1.0}, {"a": 2.0}, {"a": 3.0}]})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_struct_arithmetic_grouped(engine: EngineType) -> None:
+    q = (
+        pl.DataFrame(
+            {
+                "g": [1, 1],
+                "a": [1, 2],
+                "b": pl.Series([2, 3], dtype=pl.Float32),
+            }
+        )
+        .lazy()
+        .group_by("g")
+        .agg(pl.struct("a", "b") + 1.5)
+    )
+    expected_schema = {
+        "g": pl.Int64,
+        "a": pl.List(pl.Struct({"a": pl.Float64, "b": pl.Float32})),
+    }
+    out = q.collect(engine=engine)
+    assert q.collect_schema() == out.schema == expected_schema
+    assert out.to_dict(as_series=False) == {
+        "g": [1],
+        "a": [[{"a": 2.5, "b": 3.5}, {"a": 3.5, "b": 4.5}]],
+    }
+
+
+@pytest.mark.parametrize(
+    ("op", "rhs", "engine"),
+    [
+        (operator.add, 2, "in-memory"),
+        (operator.sub, 1.5, "streaming"),
+        (operator.mul, 1.5, "in-memory"),
+        (operator.truediv, 1.5, "streaming"),
+        (operator.floordiv, 1.5, "in-memory"),
+        (operator.mod, 1.5, "streaming"),
+    ],
+)
+def test_struct_arithmetic_nested_list_array_fields(
+    op: Callable[[Any, Any], Any], rhs: float, engine: EngineType
+) -> None:
+    df = pl.DataFrame(
+        {
+            "int": pl.Series([1, 3, None], dtype=pl.Int32),
+            "flt": pl.Series([1.5, None, 3.5], dtype=pl.Float32),
+            "lst": pl.Series([[1, 3], None, [None]], dtype=pl.List(pl.Int32)),
+            "arr": pl.Series([[1, 3], None, [None, 3]], dtype=pl.Array(pl.Int32, 2)),
+            "int8_lst": pl.Series([[127, 3], None, [None]], dtype=pl.List(pl.Int8)),
+            "int8_arr": pl.Series(
+                [[127, 3], None, [None, 3]], dtype=pl.Array(pl.Int8, 2)
+            ),
+            "flt32_lst": pl.Series([[0.1, 3], None, [None]], dtype=pl.List(pl.Float32)),
+            "flt32_arr": pl.Series(
+                [[0.1, 3], None, [None, 3]], dtype=pl.Array(pl.Float32, 2)
+            ),
+            "null_lst": pl.Series([[None], None, [None]], dtype=pl.List(pl.Null)),
+            "null_arr": pl.Series(
+                [[None, None], None, [None, None]], dtype=pl.Array(pl.Null, 2)
+            ),
+        }
+    ).with_columns(
+        pl.when(pl.int_range(pl.len()) < 2)
+        .then(pl.struct("int", "flt"))
+        .alias("nested")
+    )
+    for reverse in (False, True):
+        field_names = [name for name in df.columns if name != "nested"]
+        fields = [
+            (op(rhs, pl.col(name)) if reverse else op(pl.col(name), rhs)).alias(name)
+            for name in field_names
+        ]
+        nested = (
+            pl.when(pl.col("_nested_valid"))
+            .then(pl.struct("int", "flt"))
+            .alias("nested")
+        )
+        struct = (
+            op(rhs, pl.struct(pl.all())) if reverse else op(pl.struct(pl.all()), rhs)
+        )
+        expected = df.select(
+            *fields, pl.col("nested").is_not_null().alias("_nested_valid")
+        ).select(pl.struct(*field_names, nested).alias("st"))
+        q = df.lazy().select(struct.alias("st"))
+        assert q.collect_schema() == expected.schema
+        assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.String,
+        pl.Date,
+        pl.Duration,
+        *[
+            container
+            for leaf in (pl.Date, pl.Datetime, pl.Duration, pl.Decimal(10, 2))
+            for container in (pl.List(leaf), pl.Array(leaf, 1))
+        ],
+        pl.List(pl.Array(pl.Int32, 1)),
+        pl.Array(pl.List(pl.Int32), 1),
+    ],
+)
+@pytest.mark.parametrize("op", [operator.add, operator.truediv])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_struct_arithmetic_rejects_non_numeric_fields(
+    dtype: PolarsDataType, op: Callable[[Any, Any], Any], reverse: bool
+) -> None:
+    df = pl.DataFrame(schema={"s": pl.Struct({"nested": pl.Struct({"bad": dtype})})})
+    expr = op(1.5, pl.col("s")) if reverse else op(pl.col("s"), 1.5)
+    q = df.lazy().select(expr)
+    with pytest.raises(InvalidOperationError, match=r"non-numeric field.*bad"):
+        q.collect_schema()
+    for engine in ("in-memory", "streaming"):
+        with pytest.raises(InvalidOperationError, match=r"non-numeric field.*bad"):
+            q.collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value", "rhs", "op", "reverse", "expected_dtype", "result"),
+    [
+        (pl.Int8, 4, 1, operator.add, False, pl.Int8, 5),
+        (pl.Float32, 4, 1.5, operator.truediv, True, pl.Float32, 1.5 / 4),
+        (pl.Null, None, 1, operator.add, False, pl.Int32, None),
+        (pl.Null, None, 1.5, operator.add, False, pl.Float64, None),
+        (
+            pl.Struct({"i": pl.Int64, "d": pl.Duration}),
+            {"i": 4, "d": timedelta(days=1)},
+            2,
+            operator.mul,
+            False,
+            pl.Struct({"i": pl.Int64, "d": pl.Duration}),
+            {"i": 8, "d": timedelta(days=2)},
+        ),
+        (
+            pl.Struct({"i": pl.Int64, "d": pl.Duration}),
+            {"i": 4, "d": timedelta(days=1)},
+            1.5,
+            operator.mul,
+            True,
+            pl.Struct({"i": pl.Float64, "d": pl.Duration}),
+            {"i": 6.0, "d": timedelta(days=1.5)},
+        ),
+        (
+            pl.Struct({"i": pl.Int64, "b": pl.Boolean}),
+            {"i": 1, "b": True},
+            1,
+            operator.add,
+            False,
+            pl.Struct({"i": pl.Int64, "b": pl.Int32}),
+            {"i": 2, "b": 2},
+        ),
+        *[
+            (dtype, value, rhs, operator.add, reverse, expected_dtype, result)
+            for dtype, value, rhs, expected_dtype, result in (
+                (
+                    pl.List(pl.UInt64),
+                    [2**63],
+                    -1,
+                    pl.List(pl.Int128),
+                    [2**63 - 1],
+                ),
+                (
+                    pl.Array(pl.UInt64, 1),
+                    [2**63],
+                    -1,
+                    pl.Array(pl.Int128, 1),
+                    [2**63 - 1],
+                ),
+                (
+                    pl.List(pl.Boolean),
+                    [True, False],
+                    1.5,
+                    pl.List(pl.Float64),
+                    [2.5, 1.5],
+                ),
+                (
+                    pl.Array(pl.Boolean, 2),
+                    [True, False],
+                    1.5,
+                    pl.Array(pl.Float64, 2),
+                    [2.5, 1.5],
+                ),
+            )
+            for reverse in (False, True)
+        ],
+        *[
+            (
+                dtype,
+                value,
+                rhs,
+                operator.truediv,
+                reverse,
+                expected_dtype,
+                None if value is None else (2.0 if reverse else 0.5),
+            )
+            for dtype, value, rhs, expected_dtype in (
+                (pl.Null, None, pl.lit(2), pl.Float64),
+                (pl.Boolean, True, pl.lit(2), pl.Float64),
+                (pl.Boolean, True, pl.lit(2, dtype=pl.Float32), pl.Float32),
+            )
+            for reverse in (False, True)
+        ],
+    ],
+)
+def test_struct_arithmetic_field_dtypes(
+    dtype: PolarsDataType,
+    value: Any,
+    rhs: Any,
+    op: Callable[[Any, Any], Any],
+    reverse: bool,
+    expected_dtype: PolarsDataType,
+    result: Any,
+) -> None:
+    df = pl.LazyFrame({"s": pl.Series([{"a": value}], dtype=pl.Struct({"a": dtype}))})
+    expr = op(rhs, pl.col("s")) if reverse else op(pl.col("s"), rhs)
+    q = df.select(expr.alias("result"))
+    expected = pl.Series(
+        "result", [{"a": result}], dtype=pl.Struct({"a": expected_dtype})
+    )
+    assert q.collect_schema() == {"result": expected.dtype}
+    for engine in ("in-memory", "streaming"):
+        assert_series_equal(q.collect(engine=engine).to_series(), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_struct_arithmetic_empty(engine: EngineType, reverse: bool) -> None:
+    df = pl.DataFrame({"s": pl.Series([], dtype=pl.Struct({"a": pl.Int64}))})
+    expr = 1.5 + pl.col("s") if reverse else pl.col("s") + 1.5
+    expected = pl.Series("result", [], dtype=pl.Struct({"a": pl.Float64}))
+    q = df.lazy().select(expr.alias("result"))
+    assert q.collect_schema() == {"result": expected.dtype}
+    assert_series_equal(q.collect(engine=engine).to_series(), expected)
 
 
 def test_struct_field() -> None:
@@ -2007,3 +2362,249 @@ def test_numeric_op_on_struct_raises_28563(op: Any) -> None:
     lf = pl.LazyFrame({"meta": [{"id": 1}, {"id": 2}]})
     with pytest.raises(InvalidOperationError):
         lf.select(op(pl.col("meta"))).collect()
+
+
+# `struct.eval` is available both as an expression and on `Series`; tests that only
+# reference struct fields (and no outer columns) are run against both.
+def _eval_via_expr(df: pl.DataFrame, *exprs: Any, **named_exprs: Any) -> pl.DataFrame:
+    return df.select(pl.col.s.struct.eval(*exprs, **named_exprs))
+
+
+def _eval_via_series(df: pl.DataFrame, *exprs: Any, **named_exprs: Any) -> pl.DataFrame:
+    return df.get_column("s").struct.eval(*exprs, **named_exprs).to_frame()
+
+
+parametrize_struct_eval = pytest.mark.parametrize(
+    "struct_eval", [_eval_via_expr, _eval_via_series], ids=["expr", "series"]
+)
+
+
+@parametrize_struct_eval
+def test_struct_eval(struct_eval: Any) -> None:
+    df = pl.DataFrame(
+        {"s": [{"field_1": [1, 2, 3]}]},
+        schema={"s": pl.Struct({"field_1": pl.List(pl.Int64)})},
+    )
+    out = struct_eval(df, pl.field("field_1").list.sum().alias("field_1_total"))
+    expected = pl.DataFrame(
+        {"s": [{"field_1_total": 6}]},
+        schema={"s": pl.Struct({"field_1_total": pl.Int64})},
+    )
+
+    assert out.schema == expected.schema
+    assert_frame_equal(out, expected)
+
+
+@parametrize_struct_eval
+def test_struct_eval_drops_unselected_fields(struct_eval: Any) -> None:
+    df = pl.DataFrame({"s": [{"x": 1, "y": 2, "z": 3}, {"x": 4, "y": 5, "z": 6}]})
+
+    out = struct_eval(df, pl.field("y"))
+    expected = pl.DataFrame({"s": [{"y": 2}, {"y": 5}]})
+    assert_frame_equal(out, expected)
+
+    # Compare against `with_fields`, which retains the unselected fields.
+    out = df.select(pl.col.s.struct.with_fields(pl.field("y")))
+    assert_frame_equal(out, df)
+
+
+def test_struct_eval_field_order_and_rename() -> None:
+    df = pl.DataFrame({"a": [10, 20], "s": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]})
+
+    out = df.select(
+        pl.col.s.struct.eval(
+            pl.field("y").alias("first"),
+            pl.field("x").alias("second"),
+            third=pl.field("x") * pl.col("a"),
+        )
+    )
+    expected = pl.DataFrame(
+        {
+            "s": [
+                {"first": 2, "second": 1, "third": 10},
+                {"first": 4, "second": 3, "third": 60},
+            ]
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@parametrize_struct_eval
+def test_struct_eval_empty(struct_eval: Any) -> None:
+    df = pl.DataFrame({"s": [{"x": 1}, {"x": 2}, {"x": 3}]})
+
+    out = struct_eval(df)
+    expected = pl.DataFrame({"s": [{}, {}, {}]}, schema={"s": pl.Struct({})})
+
+    assert out.schema == expected.schema
+    assert out.height == df.height
+    assert_frame_equal(out, expected)
+
+
+@parametrize_struct_eval
+def test_struct_eval_preserves_outer_validity(struct_eval: Any) -> None:
+    df = pl.DataFrame({"s": [{"x": 1, "y": 2}, None, {"x": 3, "y": 4}]})
+
+    out = struct_eval(df, pl.field("x") * 2)
+    expected = pl.DataFrame({"s": [{"x": 2}, None, {"x": 6}]})
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_non_elementwise() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "s": [{"x": 10}, {"x": 20}, {"x": 30}]})
+
+    out = df.select(
+        pl.col.s.struct.eval(pl.field("x").cum_sum(), pl.col("a").reverse())
+    )
+    expected = pl.DataFrame(
+        {"s": [{"x": 10, "a": 3}, {"x": 30, "a": 2}, {"x": 60, "a": 1}]}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_raises_on_duplicate_field() -> None:
+    df = pl.DataFrame({"a": [1], "s": [{"x": 1}]})
+    with pytest.raises(DuplicateError):
+        df.select(pl.col.s.struct.eval(pl.col.a + 1, pl.col.a - 1))
+
+
+def test_struct_eval_raises_on_non_struct() -> None:
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(InvalidOperationError, match=r"struct\.eval"):
+        df.select(pl.col.a.struct.eval(pl.field("x")))
+
+
+def test_struct_eval_group_by() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "b", "a", "b"],
+            "s": [{"x": 1, "y": 1}, {"x": 2, "y": 2}, {"x": 3, "y": 3}, None],
+        }
+    )
+    q = lf.group_by("g").agg(pl.col.s.struct.eval(pl.field("x") * 2))
+    out = q.collect().sort("g")
+    expected = pl.DataFrame(
+        {"g": ["a", "b"], "s": [[{"x": 2}, {"x": 6}], [{"x": 4}, None]]}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_over() -> None:
+    lf = pl.LazyFrame({"g": ["a", "b", "a", "b"], "x": [1, 10, 2, 20]})
+    s = pl.struct(v=pl.col("x"), w=pl.col("x"))
+    q = lf.select(pl.col("g"), s.struct.eval(pl.field("v").cum_sum()).over("g"))
+    out = q.collect()
+    expected = pl.DataFrame(
+        {"g": ["a", "b", "a", "b"], "v": [{"v": 1}, {"v": 10}, {"v": 3}, {"v": 30}]}
+    )
+    assert_frame_equal(out, expected)
+
+
+@parametrize_struct_eval
+def test_struct_eval_nested(struct_eval: Any) -> None:
+    df = pl.DataFrame(
+        {"s": [{"a": 1, "b": {"c": 2, "d": 3}}, {"a": 4, "b": {"c": 5, "d": 6}}]}
+    )
+    out = struct_eval(df, pl.field("b").struct.eval(pl.field("d") * 10))
+    expected = pl.DataFrame({"s": [{"b": {"d": 30}}, {"b": {"d": 60}}]})
+    assert_frame_equal(out, expected)
+
+
+def test_struct_eval_in_list_eval() -> None:
+    df = pl.DataFrame({"s": [[{"a": 1, "b": 1}, {"a": 2, "b": 3}, None], None]})
+    q = df.lazy().select(
+        pl.col.s.list.eval(pl.element().struct.eval(pl.field("a").cum_sum()))
+    )
+    expected = pl.DataFrame({"s": [[{"a": 1}, {"a": 3}, None], None]})
+    assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.field("a").explode(),
+        pl.field("a").list.get(0).filter(pl.field("a").list.len() > 1),
+        pl.field("a").slice(0, 1),
+        pl.field("a").head(1),
+        pl.field("a").list.len().sum().over(pl.len(), mapping_strategy="explode"),
+    ],
+    ids=["explode", "filter", "slice", "head", "over_explode"],
+)
+@pytest.mark.parametrize("variant", ["eval", "with_fields"])
+def test_struct_eval_forbid_non_length_preserving(expr: pl.Expr, variant: str) -> None:
+    df = pl.DataFrame({"s": [{"a": [0, 1]}]})
+    struct_expr = getattr(pl.col.s.struct, variant)(expr.alias("a"))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=rf"`struct\.{variant}` is not allowed with non-length preserving",
+    ):
+        df.lazy().select(struct_expr).collect()
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.field("a").list.sum(),
+        pl.field("a").list.sum().first(),
+        pl.lit(1),
+        pl.int_range(0, pl.len()),
+        pl.field("a").list.len().reverse(),
+        pl.repeat(1, pl.len()),
+        pl.field("a").list.len().gather(0),
+        pl.field("a").list.len().map_batches(lambda s: s * 2),
+        pl.field("a").list.len().search_sorted(pl.field("a").list.len()),
+        pl.fold(
+            acc=pl.lit(0),
+            function=operator.add,
+            exprs=[pl.field("a").list.len(), pl.field("a").list.sum()],
+        ),
+        pl.reduce(
+            function=operator.add,
+            exprs=[pl.field("a").list.len(), pl.field("a").list.sum()],
+        ),
+    ],
+    ids=[
+        "elementwise",
+        "scalar",
+        "literal",
+        "range",
+        "length_preserving",
+        "repeat",
+        "gather_scalar",
+        "map_batches",
+        "search_sorted",
+        "fold",
+        "reduce",
+    ],
+)
+@pytest.mark.parametrize("variant", ["eval", "with_fields"])
+def test_struct_eval_allows_length_preserving(expr: pl.Expr, variant: str) -> None:
+    # An expression whose height is not statically known is not the same as one that
+    # changes the height; only the latter may be rejected. See the "forbid" test above.
+    df = pl.DataFrame({"s": [{"a": [0, 1]}, {"a": [2]}]})
+    out = df.select(getattr(pl.col.s.struct, variant)(expr.alias("r")))
+    assert out.height == df.height
+
+    dtype = out.schema["s"]
+    assert isinstance(dtype, pl.Struct)
+    assert "r" in dtype.to_schema()
+
+
+@pytest.mark.parametrize(
+    "input_expr",
+    [pl.col.s, pl.col.s.sort(), pl.col.s.unique(maintain_order=True)],
+    ids=["elementwise", "sort", "unique"],
+)
+def test_struct_eval_empty_non_elementwise_input(input_expr: pl.Expr) -> None:
+    # A non-elementwise input takes a different lowering path in the streaming engine,
+    # where an empty projection used to build an `as_struct` without any fields.
+    lf = pl.LazyFrame({"s": [{"x": 10}, {"x": 10}, None]})
+    q = lf.select(input_expr.struct.eval())
+
+    assert q.collect_schema() == pl.Schema({"s": pl.Struct({})})
+    out = q.collect()
+    assert out.schema == pl.Schema({"s": pl.Struct({})})
+    # The field-less struct keeps the height and the outer validity of the input.
+    assert out.height == lf.select(input_expr).collect().height
+    assert out["s"].null_count() == 1

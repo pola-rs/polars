@@ -1,9 +1,9 @@
 use std::any::Any;
 
-use arrow::array::builder::ArrayBuilder;
-use arrow::datatypes::IntegerType;
-use arrow::types::NativeType;
 use num_traits::AsPrimitive;
+use polars_arrow::array::builder::ArrayBuilder;
+use polars_arrow::datatypes::IntegerType;
+use polars_arrow::types::NativeType;
 use polars_compute::cast::utf8view_to_utf8;
 
 use crate::prelude::*;

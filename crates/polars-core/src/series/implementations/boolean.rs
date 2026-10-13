@@ -196,6 +196,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.deposit(validity).into_series()
     }
 
+    #[inline]
     fn len(&self) -> usize {
         self.0.len()
     }

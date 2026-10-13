@@ -44,7 +44,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.10', '3.12', '3.13', '3.14', '3.14t']
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.14t']
         variant: [null]
         ideal_morsel_size: [100000]
         include:
@@ -118,9 +118,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          workspaces: py-polars
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Install Polars
         run: |

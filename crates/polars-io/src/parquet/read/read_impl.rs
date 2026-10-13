@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_buffer::Buffer;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::config;
@@ -111,7 +111,7 @@ fn column_idx_to_series(
     {
         assert_dtypes(field.dtype())
     }
-    let columns = mmap_columns(store, field_md);
+    let columns = mmap_columns(store, field_md)?;
     let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
     let mut series = Series::try_from((field, arrays))?;
     canonicalize_parquet_maps(&mut series)?;
@@ -475,7 +475,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     })
 }
 
-pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
+pub fn calc_prefilter_cost(mask: &polars_arrow::bitmap::Bitmap) -> f64 {
     let num_edges = mask.num_edges() as f64;
     let rg_len = mask.len() as f64;
 

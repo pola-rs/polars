@@ -13,6 +13,7 @@ from polars.io.iceberg._dataset import (
     IcebergScanResolver,
     IcebergScanTableSerializer,
     IcebergTableWrap,
+    _reusable_catalog,
 )
 
 if TYPE_CHECKING:
@@ -127,6 +128,14 @@ def scan_iceberg(
     -------
     LazyFrame
 
+    Notes
+    -----
+    Iceberg manifest lists and manifests, and the metadata file of a scanned
+    metadata path, are cached in memory for the lifetime of the process when their
+    file name carries a UUID, and shared between scans with the same storage and
+    catalog properties. The cache assumes that credentials taken from the
+    environment stay the same for the lifetime of the process.
+
     Examples
     --------
     Creates a scan for an Iceberg table from local filesystem, or object store.
@@ -233,21 +242,25 @@ def scan_iceberg(
         if isinstance(source, pyiceberg.table.Table):
             table = source
 
-    table_descriptor_ = None
+    table_descriptor_: str | IcebergCatalogTableDescriptor | None = None
 
     if table is None:
         source = str(source)
-        table_descriptor_ = (
-            source  # Inferred as static metadata path
-            if "/" in source or "\\" in source
-            else IcebergCatalogTableDescriptor(
-                table_identifier=source,
-                catalog_config=IcebergCatalogConfig._from_api_parameter_or_environment_default(
+
+        if "/" in source or "\\" in source:
+            table_descriptor_ = source  # Inferred as static metadata path
+        else:
+            catalog_config, catalog_instance = (
+                IcebergCatalogConfig._from_api_parameter_or_environment_default(
                     catalog,
                     fn_name="scan_iceberg",
-                ),
+                )
             )
-        )
+            table_descriptor_ = IcebergCatalogTableDescriptor(
+                table_identifier=source,
+                catalog_config=catalog_config,
+                catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
+            )
 
     dataset = IcebergScanResolver(
         table=IcebergTableWrap(

@@ -2,12 +2,15 @@ use std::sync::{Arc, LazyLock};
 use std::time::UNIX_EPOCH;
 
 use polars_error::{PolarsError, PolarsResult};
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 
 use super::cache::{FILE_CACHE, get_env_file_cache_ttl};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
-use crate::cloud::{CloudLocation, CloudOptions, build_object_store, object_path_from_str};
+use crate::cloud::{
+    CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
+};
 use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init};
 
 pub static FILE_CACHE_PREFIX: LazyLock<PlRefPath> = LazyLock::new(|| {
@@ -72,21 +75,51 @@ async fn init_entries_from_uri_list_impl(
         .unwrap_or_else(get_env_file_cache_ttl);
 
     if first_uri.has_scheme() {
-        let shared_object_store = if !matches!(
+        let uri_list: Vec<PlRefPath> = uri_list.collect();
+
+        // Http URIs can differ in origin.
+        let is_http = matches!(
             first_uri.scheme(),
-            Some(CloudScheme::Http | CloudScheme::Https) // Object stores for http are tied to the path.
-        ) {
-            let (_, object_store) = build_object_store(first_uri, cloud_options, false).await?;
-            Some(object_store)
+            Some(CloudScheme::Http | CloudScheme::Https)
+        );
+
+        let authorities: Vec<&str> = if is_http {
+            Vec::new()
         } else {
-            None
+            uri_list
+                .iter()
+                .map(|uri| &uri.as_str()[..uri.authority_end_position()])
+                .collect()
         };
 
-        futures::future::try_join_all(uri_list.map(|uri| {
-            let shared_object_store = shared_object_store.clone();
+        // One object store per bucket, held here so that global cache evictions cannot
+        // affect this call.
+        let mut representatives: PlHashMap<&str, &PlRefPath> = PlHashMap::default();
+        for (uri, authority) in uri_list.iter().zip(&authorities) {
+            representatives.entry(authority).or_insert(uri);
+        }
+
+        let shared_object_stores: PlHashMap<&str, PolarsObjectStore> =
+            futures::future::try_join_all(representatives.into_iter().map(
+                |(authority, uri)| async move {
+                    let (_, object_store) =
+                        build_object_store(uri.clone(), cloud_options, false).await?;
+                    PolarsResult::Ok((authority, object_store))
+                },
+            ))
+            .await?
+            .into_iter()
+            .collect();
+
+        futures::future::try_join_all(uri_list.iter().enumerate().map(|(i, uri)| {
+            let uri = uri.clone();
+            let shared_object_store = authorities
+                .get(i)
+                .and_then(|authority| shared_object_stores.get(authority))
+                .cloned();
 
             async move {
-                let object_store = if let Some(shared_object_store) = shared_object_store.clone() {
+                let object_store = if let Some(shared_object_store) = shared_object_store {
                     shared_object_store
                 } else {
                     let (_, object_store) =

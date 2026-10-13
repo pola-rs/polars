@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 
 ON = pl.QueryOptFlags(join_order=True)
 OFF = pl.QueryOptFlags(join_order=False)
+# Pushdown normally folds a leaf's filter into its scan; disabling it leaves the
+# filter where this pass meets it.
+ON_NO_PPD = pl.QueryOptFlags(join_order=True, predicate_pushdown=False)
+OFF_NO_PPD = pl.QueryOptFlags(join_order=False, predicate_pushdown=False)
 
 
 def star_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
@@ -920,3 +924,358 @@ def test_two_keys_reading_one_column_count_it_once(tmp_path: Path) -> None:
     on = two.collect(optimizations=ON)
     assert on.height > 0
     assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
+
+
+def test_filter_on_a_leaf_is_estimated(tmp_path: Path) -> None:
+    # Pushdown usually folds such a filter into the scan. When something above blocks
+    # it, the filter reaches this pass sitting on the leaf, and the leaf has to be
+    # measured through it: dim_a keeps one row, dim_b all twenty.
+    lf = star_query(star_frames(tmp_path))
+
+    assert_reordered(
+        lf,
+        ["fact", "dim_b", "dim_a"],
+        ["fact", "dim_a", "dim_b"],
+        on_flags=ON_NO_PPD,
+        off_flags=OFF_NO_PPD,
+    )
+
+
+def repeated_dimension_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
+    """Three dimensions sharing every column name, as a repeated dimension does."""
+    fact = pl.DataFrame(
+        {
+            "k_x": [i % 50 for i in range(1000)],
+            "k_y": [i % 20 for i in range(1000)],
+            "k_z": [i % 50 for i in range(1000)],
+            "f_val": list(range(1000)),
+        }
+    )
+
+    def dim(n: int) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "d_key": list(range(n)),
+                "d_grp": [i % 5 for i in range(n)],
+                "d_flag": [i == 7 for i in range(n)],
+            }
+        )
+
+    return write_scans(tmp_path, fact=fact, dim_x=dim(50), dim_y=dim(5), dim_z=dim(50))
+
+
+def test_repeated_dimension_filters_stay_on_their_own_relation(tmp_path: Path) -> None:
+    # Each relation carries a different filter on identically named columns. Carried
+    # above the joins instead, the predicates could no longer be told apart, and the
+    # cluster was abandoned rather than reordered.
+    frames = repeated_dimension_frames(tmp_path)
+    lf = (
+        frames["fact"]
+        .join(
+            frames["dim_x"].filter(pl.col("d_grp") == 0),
+            left_on="k_x",
+            right_on="d_key",
+            coalesce=False,
+        )
+        .join(
+            frames["dim_y"].filter(pl.col("d_grp") == 1),
+            left_on="k_y",
+            right_on="d_key",
+            coalesce=False,
+            suffix="_y",
+        )
+        .join(
+            frames["dim_z"].filter(pl.col("d_flag")),
+            left_on="k_z",
+            right_on="d_key",
+            coalesce=False,
+            suffix="_z",
+        )
+    )
+
+    plan = lf.explain(optimizations=ON_NO_PPD)
+    # The cluster forms: its leaves are renamed apart, which only happens once they
+    # are candidates for reordering.
+    assert plan != lf.explain(optimizations=OFF_NO_PPD)
+    # Every filter reaches its own relation rather than the joined chain.
+    lines = [line.strip() for line in plan.splitlines()]
+    for dim in ("dim_x", "dim_y", "dim_z"):
+        scan = next(i for i, line in enumerate(lines) if f"{dim}.parquet" in line)
+        assert any(line.startswith("FILTER") for line in lines[scan - 3 : scan]), dim
+
+    assert_frame_equal(
+        lf.collect(optimizations=OFF_NO_PPD).sort(pl.all()),
+        lf.collect(optimizations=ON_NO_PPD).sort(pl.all()),
+    )
+
+
+def test_filter_above_a_rename_on_a_leaf(tmp_path: Path) -> None:
+    # The two filters are written in different namespaces: the inner one reads
+    # `a_val`, the outer one the `v` the rename produces. Both belong to one leaf,
+    # and a predicate moved to the wrong side of the rename reads a column that is
+    # not there.
+    frames = star_frames(tmp_path)
+    # `star_frames`' dim_a carries a flag; this needs a column to compare and rename.
+    frames |= write_scans(
+        tmp_path,
+        dim_a=pl.DataFrame({"a_key": list(range(50)), "a_val": list(range(50))}),
+    )
+    narrowed = (
+        frames["dim_a"]
+        .filter(pl.col("a_val") > 0)
+        .rename({"a_val": "v"})
+        .filter(pl.col("v") > 47)
+    )
+    lf = (
+        frames["fact"]
+        .join(frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False)
+        .join(narrowed, left_on="f_dim_a", right_on="a_key", coalesce=False)
+    )
+
+    reordered = assert_reordered(
+        lf,
+        ["fact", "dim_b", "dim_a"],
+        ["fact", "dim_a", "dim_b"],
+        on_flags=ON_NO_PPD,
+        off_flags=OFF_NO_PPD,
+    )
+    assert "v" in reordered.columns
+
+
+def test_filter_on_top_of_the_run_is_applied_where_its_columns_join(
+    tmp_path: Path,
+) -> None:
+    # The two-relation predicate cannot be pushed below the `dim_a` join, which is
+    # written last, so it sits on top of the run. Reordering folds `dim_a` in first,
+    # so the predicate has to follow that join down instead of staying on top.
+    frames = star_frames(tmp_path)
+    frames["dim_a"] = frames["dim_a"].with_columns(
+        a_name=pl.format("a{}", pl.col("a_key"))
+    )
+    lf = star_query(frames).filter(
+        (pl.col("a_name") == "a7") | (pl.col("f_val") % 2 == 0)
+    )
+
+    plan = lf.explain(optimizations=ON)
+    assert scan_order(plan) == ["fact", "dim_a", "dim_b"]
+    assert plan.index('col("a_name") == "a7"') > plan.index("JOIN"), plan
+
+    assert_frame_equal(
+        lf.collect(optimizations=ON),
+        lf.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def test_fallible_filter_on_top_of_the_run_stays_on_top() -> None:
+    # `"bad"` only survives to the cast if the filter runs before the joins drop it,
+    # which is what predicate pushdown also refuses to do.
+    a = pl.LazyFrame({"ka": [1, 2], "s": ["1", "bad"]})
+    b = pl.LazyFrame({"kb": [1], "vb": [1]})
+    c = pl.LazyFrame({"kc": [1], "vc": [1]})
+    lf = (
+        a.join(b, left_on="ka", right_on="kb", coalesce=False)
+        .join(c, left_on="ka", right_on="kc", coalesce=False)
+        .filter(pl.col("s").cast(pl.Int64) > 0)
+    )
+
+    assert lf.explain(optimizations=ON).startswith("FILTER")
+    assert_frame_equal(lf.collect(optimizations=ON), lf.collect(optimizations=OFF))
+
+
+def test_filter_above_a_reordering_projection() -> None:
+    # The projection swaps `v` and `v_right` out of join order; the filter's columns
+    # are tracked back to the leaves that hold them.
+    a = pl.LazyFrame({"ka": [1, 2], "v": [10, 20]})
+    b = pl.LazyFrame({"kb": [1, 2], "v": [100, 200]})
+    c = pl.LazyFrame({"kc": [1, 2], "w": [1, 2]})
+    lf = (
+        a.join(b, left_on="ka", right_on="kb", coalesce=False)
+        .join(c, left_on="ka", right_on="kc", coalesce=False)
+        .select("ka", "v_right", "kb", "v", "kc")
+        .filter(pl.col("v") < pl.col("v_right"))
+    )
+
+    expected = lf.collect(optimizations=OFF_NO_PPD)
+    assert expected.height == 2
+    for flags in (ON_NO_PPD, ON):
+        assert_frame_equal(
+            lf.collect(optimizations=flags), expected, check_row_order=False
+        )
+
+
+def test_nondeterministic_filter_is_not_moved_across_a_fan_out() -> None:
+    # `c` duplicates every row 50 times. Sampling once per output row is not the
+    # same as sampling once before the fan-out.
+    a = pl.LazyFrame({"ka": [1], "xs": [[0, 1]]})
+    c = pl.LazyFrame({"kc": [1] * 50, "vc": list(range(50))})
+    b = pl.LazyFrame({"kb": [1], "vb": [1]})
+    lf = (
+        a.join(c, left_on="ka", right_on="kc", coalesce=False)
+        .join(b, left_on="ka", right_on="kb", coalesce=False)
+        .filter((pl.col("xs").list.sample(1).list.first() == 1) | (pl.col("vb") == 0))
+    )
+
+    plan = lf.explain(optimizations=ON)
+    assert plan.index("sample") < plan.index("JOIN"), plan
+
+
+def test_projection_between_joins_swapping_same_named_columns() -> None:
+    # `v` and `v_right` share a name and dtype; each is tracked back to its leaf
+    # through the projection that reordered them.
+    a = pl.LazyFrame({"ka": [1, 2], "v": [10, 20]})
+    b = pl.LazyFrame({"kb": [1, 2], "v": [100, 200]})
+    c = pl.LazyFrame({"kc": [1, 2]})
+    lf = (
+        a.join(b, left_on="ka", right_on="kb", coalesce=False)
+        .select("ka", "v_right", "kb", "v")
+        .filter(pl.col("v") < pl.col("v_right"))
+        .join(c, left_on="ka", right_on="kc", coalesce=False)
+    )
+
+    expected = lf.collect(optimizations=OFF_NO_PPD)
+    assert expected.height == 2
+    for flags in (ON_NO_PPD, ON):
+        assert_frame_equal(
+            lf.collect(optimizations=flags), expected, check_row_order=False
+        )
+    # Without the filter the restoring projection still tells them apart.
+    lf = (
+        a.join(b, left_on="ka", right_on="kb", coalesce=False)
+        .select("ka", "v_right", "kb", "v")
+        .join(c, left_on="ka", right_on="kc", coalesce=False)
+    )
+    assert_frame_equal(
+        lf.collect(optimizations=ON),
+        lf.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def test_suffix_differing_between_joins_keeps_one_cluster(tmp_path: Path) -> None:
+    # Only the root join's settings are inherited; a different suffix on an inner
+    # join is not a reason to leave the run alone.
+    frames = star_frames(tmp_path)
+    lf = (
+        frames["fact"]
+        .join(frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False)
+        .join(
+            frames["dim_b"].select(b_key="b_key", b_name="b_name"),
+            left_on="f_dim_b",
+            right_on="b_key",
+            coalesce=False,
+            suffix="_other",
+        )
+        .join(
+            frames["dim_a"].filter(pl.col("a_flag")),
+            left_on="f_dim_a",
+            right_on="a_key",
+            coalesce=False,
+        )
+    )
+
+    assert scan_order(lf.explain(optimizations=ON))[1] == "dim_a"
+    assert_frame_equal(
+        lf.collect(optimizations=ON),
+        lf.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def test_join_key_renamed_from_a_suffixed_column() -> None:
+    # The projection reads `b.v` under the name `a.v` had, and the last join keys on
+    # it. The key has to be tracked to `b`, not matched by name to `a`.
+    a = pl.LazyFrame({"ka": [1], "v": [10]})
+    b = pl.LazyFrame({"kb": [1], "v": [20]})
+    c = pl.LazyFrame({"kc": [20]})
+    lf = (
+        a.join(b, left_on="ka", right_on="kb", coalesce=False)
+        .select("ka", "kb", pl.col("v_right").alias("v"))
+        .join(c, left_on="v", right_on="kc", coalesce=False)
+    )
+
+    expected = lf.collect(optimizations=OFF)
+    assert expected.height == 1
+    for flags in (ON, ON_NO_PPD):
+        assert_frame_equal(lf.collect(optimizations=flags), expected)
+
+
+def test_transitive_keys_join_filtered_input_first(tmp_path: Path) -> None:
+    scans = write_scans(
+        tmp_path,
+        part=pl.DataFrame({"p_key": range(100), "p_name": ["green"] + ["red"] * 99}),
+        partsupp=pl.DataFrame(
+            {
+                "ps_key": [i // 4 for i in range(400)],
+                "ps_supp": [i % 4 for i in range(400)],
+            }
+        ),
+        lineitem=pl.DataFrame(
+            {
+                "l_key": [i % 100 for i in range(10000)],
+                "l_supp": [i % 4 for i in range(10000)],
+            }
+        ),
+    )
+    query = pl.SQLContext(scans).execute("""
+        SELECT p_key, ps_key, ps_supp, l_key, l_supp
+        FROM part, lineitem, partsupp
+        WHERE p_key = l_key AND ps_key = l_key AND ps_supp = l_supp
+          AND p_name LIKE '%green%'
+    """)
+    assert set(scan_order(query.explain(optimizations=ON))[:2]) == {"part", "partsupp"}
+    assert_frame_equal(
+        query.collect(optimizations=ON),
+        query.collect(optimizations=OFF),
+        check_row_order=False,
+    )
+
+
+def test_transitive_keys_do_not_cross_lossy_casts() -> None:
+    frames = {
+        "a": pl.DataFrame({"ak": [2**53, 2**53 + 1]}),
+        "b": pl.DataFrame({"bk": [float(2**53)]}),
+        "c": pl.DataFrame({"ck": [2**53, 2**53 + 1]}),
+    }
+    query = pl.SQLContext(frames).execute(
+        "SELECT * FROM a, b, c WHERE CAST(ak AS DOUBLE) = bk AND bk = CAST(ck AS DOUBLE)"
+    )
+    expected = query.collect(optimizations=OFF)
+    assert expected.height == 4
+    assert_frame_equal(query.collect(optimizations=ON), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("large", ["a", "b", "c"])
+def test_transitive_keys_with_multiple_columns_per_leaf(
+    nulls_equal: bool, large: str
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"a1": [1, 1, 2, None, None], "a2": [1, 2, 2, 1, None]}),
+        "b": pl.DataFrame({"b": [1, 2, None]}),
+        "c": pl.DataFrame({"c": [1, 2, None]}),
+    }
+    frames[large] = pl.concat([frames[large]] * 10)
+    query = (
+        frames["a"]
+        .lazy()
+        .join(
+            frames["b"].lazy(),
+            left_on="a1",
+            right_on="b",
+            coalesce=False,
+            nulls_equal=nulls_equal,
+        )
+        .join(
+            frames["c"].lazy(),
+            left_on=["a2", "b"],
+            right_on=["c", "c"],
+            coalesce=False,
+            nulls_equal=nulls_equal,
+        )
+    )
+    assert_frame_equal(
+        query.collect(optimizations=ON),
+        query.collect(optimizations=OFF),
+        check_row_order=False,
+    )

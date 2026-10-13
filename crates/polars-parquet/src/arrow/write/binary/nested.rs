@@ -1,5 +1,5 @@
-use arrow::array::{Array, BinaryArray};
-use arrow::offset::Offset;
+use polars_arrow::array::BinaryArray;
+use polars_arrow::offset::Offset;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};
@@ -35,11 +35,12 @@ where
         None
     };
 
+    let num_values = nested::num_values(nested);
     utils::build_plain_page(
         buffer,
-        nested::num_values(nested),
+        num_values,
         nested[0].len(),
-        array.null_count(),
+        nested::num_nulls(num_values, array),
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,

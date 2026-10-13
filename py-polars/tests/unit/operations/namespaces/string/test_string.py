@@ -447,6 +447,9 @@ def test_str_to_lowercase() -> None:
     expected = pl.Series(["hello", "world"])
     assert_series_equal(s.str.to_lowercase(), expected)
 
+    vals = ["ΟΔΟΣ", "ABCDEFGHIJKLMNOPΣ", "ABCDEFGHIJKLMNOPΣ ABC", "ABCDEFGHIJKLMNOP ΣA"]
+    assert pl.Series(vals).str.to_lowercase().to_list() == [v.lower() for v in vals]
+
 
 def test_str_to_uppercase() -> None:
     s = pl.Series(["Hello", "WORLD"])
@@ -1103,6 +1106,20 @@ def test_contains() -> None:
         assert sum(expected) == len(
             df.filter(pl.col("text").str.contains(pattern, literal=as_literal))
         )
+
+
+def test_contains_dotall_literal_chain() -> None:
+    s = pl.Series(["", "ab", "a\nb", "ba", "aXbXc", None])
+    for pattern in [
+        "(?s)a.*b",
+        "(?s)^.*a.*b.*$",
+        "(?s)^a.*b$",
+        "a.*b",
+        "(?s)a.*b.*c",
+    ]:
+        rx = re.compile(pattern)
+        expected = [None if v is None else rx.search(v) is not None for v in s]
+        assert s.str.contains(pattern).to_list() == expected
 
 
 def test_contains_expr() -> None:
@@ -2003,6 +2020,13 @@ def test_titlecase() -> None:
                 "and\ta\t tab",
                 "by jean-paul sartre, 'esq'",
                 "SOMETIMES/life/gives/you/a/2nd/chance",
+                "İstanbul",
+                "İSTANBUL",
+                "ΟΔΟΣ ΣΟΦΙΑΣ",
+                "straße ßa",
+                "ǆungla ǈ",
+                "ﬁne ﬂow",
+                "ᾳ ᾀa",
             ]
         }
     )

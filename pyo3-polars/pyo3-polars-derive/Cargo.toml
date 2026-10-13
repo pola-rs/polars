@@ -17,7 +17,7 @@ name = "tests"
 path = "tests/run.rs"
 
 [dependencies]
-arrow = { workspace = true }
+polars-arrow = { workspace = true }
 polars-core = { workspace = true, features = ["allow_unused"] }
 polars-ffi = { workspace = true }
 polars-plan = { workspace = true, features = ["allow_unused"] }

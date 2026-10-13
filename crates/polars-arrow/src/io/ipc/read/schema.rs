@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::{FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef};
+use polars_arrow_format::ipc::planus::ReadAsRoot;
+use polars_arrow_format::ipc::{
+    FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef,
+};
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -26,7 +28,9 @@ fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(
     Ok((a, b))
 }
 
-fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Field, IpcField)> {
+fn deserialize_field(
+    ipc_field: polars_arrow_format::ipc::FieldRef,
+) -> PolarsResult<(Field, IpcField)> {
     let metadata = read_metadata(&ipc_field)?;
 
     let extension = metadata.as_ref().and_then(get_extension);
@@ -47,7 +51,7 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Fi
     Ok((field, ipc_field_))
 }
 
-fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Option<Metadata>> {
+fn read_metadata(field: &polars_arrow_format::ipc::FieldRef) -> PolarsResult<Option<Metadata>> {
     Ok(if let Some(list) = field.custom_metadata()? {
         let mut metadata_map = Metadata::new();
         for kv in list {
@@ -62,7 +66,7 @@ fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Option<Met
     })
 }
 
-fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerType> {
+fn deserialize_integer(int: polars_arrow_format::ipc::IntRef) -> PolarsResult<IntegerType> {
     Ok(match (int.bit_width()?, int.is_signed()?) {
         (8, true) => IntegerType::Int8,
         (8, false) => IntegerType::UInt8,
@@ -78,8 +82,8 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerTy
     })
 }
 
-fn deserialize_timeunit(time_unit: arrow_format::ipc::TimeUnit) -> PolarsResult<TimeUnit> {
-    use arrow_format::ipc::TimeUnit::*;
+fn deserialize_timeunit(time_unit: polars_arrow_format::ipc::TimeUnit) -> PolarsResult<TimeUnit> {
+    use polars_arrow_format::ipc::TimeUnit::*;
     Ok(match time_unit {
         Second => TimeUnit::Second,
         Millisecond => TimeUnit::Millisecond,
@@ -115,7 +119,7 @@ fn deserialize_timestamp(timestamp: TimestampRef) -> PolarsResult<(ArrowDataType
 }
 
 fn deserialize_union(union_: UnionRef, field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
-    let mode = UnionMode::sparse(union_.mode()? == arrow_format::ipc::UnionMode::Sparse);
+    let mode = UnionMode::sparse(union_.mode()? == polars_arrow_format::ipc::UnionMode::Sparse);
     let ids = union_.type_ids()?.map(|x| x.iter().collect());
 
     let fields = field
@@ -239,7 +243,7 @@ fn deserialize_fixed_size_list(
 
 /// Get the Arrow data type from the flatbuffer Field table
 fn get_dtype(
-    field: arrow_format::ipc::FieldRef,
+    field: polars_arrow_format::ipc::FieldRef,
     extension: Extension,
     may_be_dictionary: bool,
 ) -> PolarsResult<(ArrowDataType, IpcField)> {
@@ -275,7 +279,7 @@ fn get_dtype(
         .type_()?
         .ok_or_else(|| polars_err!(oos = "IPC: field type is mandatory"))?;
 
-    use arrow_format::ipc::TypeRef::*;
+    use polars_arrow_format::ipc::TypeRef::*;
     Ok(match type_ {
         Null(_) => (ArrowDataType::Null, IpcField::default()),
         Bool(_) => (ArrowDataType::Boolean, IpcField::default()),
@@ -300,16 +304,16 @@ fn get_dtype(
         ),
         FloatingPoint(float) => {
             let dtype = match float.precision()? {
-                arrow_format::ipc::Precision::Half => ArrowDataType::Float16,
-                arrow_format::ipc::Precision::Single => ArrowDataType::Float32,
-                arrow_format::ipc::Precision::Double => ArrowDataType::Float64,
+                polars_arrow_format::ipc::Precision::Half => ArrowDataType::Float16,
+                polars_arrow_format::ipc::Precision::Single => ArrowDataType::Float32,
+                polars_arrow_format::ipc::Precision::Double => ArrowDataType::Float64,
             };
             (dtype, IpcField::default())
         },
         Date(date) => {
             let dtype = match date.unit()? {
-                arrow_format::ipc::DateUnit::Day => ArrowDataType::Date32,
-                arrow_format::ipc::DateUnit::Millisecond => ArrowDataType::Date64,
+                polars_arrow_format::ipc::DateUnit::Day => ArrowDataType::Date32,
+                polars_arrow_format::ipc::DateUnit::Millisecond => ArrowDataType::Date64,
             };
             (dtype, IpcField::default())
         },
@@ -317,13 +321,13 @@ fn get_dtype(
         Timestamp(timestamp) => deserialize_timestamp(timestamp)?,
         Interval(interval) => {
             let dtype = match interval.unit()? {
-                arrow_format::ipc::IntervalUnit::YearMonth => {
+                polars_arrow_format::ipc::IntervalUnit::YearMonth => {
                     ArrowDataType::Interval(IntervalUnit::YearMonth)
                 },
-                arrow_format::ipc::IntervalUnit::DayTime => {
+                polars_arrow_format::ipc::IntervalUnit::DayTime => {
                     ArrowDataType::Interval(IntervalUnit::DayTime)
                 },
-                arrow_format::ipc::IntervalUnit::MonthDayNano => {
+                polars_arrow_format::ipc::IntervalUnit::MonthDayNano => {
                     ArrowDataType::Interval(IntervalUnit::MonthDayNano)
                 },
             };
@@ -372,14 +376,14 @@ fn get_dtype(
 pub fn deserialize_schema(
     message: &[u8],
 ) -> PolarsResult<(ArrowSchema, IpcSchema, Option<Metadata>)> {
-    let message = arrow_format::ipc::MessageRef::read_as_root(message)
+    let message = polars_arrow_format::ipc::MessageRef::read_as_root(message)
         .map_err(|err| polars_err!(oos = format!("Unable deserialize message: {err:?}")))?;
 
     let schema = match message
         .header()?
         .ok_or_else(|| polars_err!(oos = "Unable to convert header to a schema".to_string()))?
     {
-        arrow_format::ipc::MessageHeaderRef::Schema(schema) => PolarsResult::Ok(schema),
+        polars_arrow_format::ipc::MessageHeaderRef::Schema(schema) => PolarsResult::Ok(schema),
         _ => polars_bail!(ComputeError: "The message is expected to be a Schema message"),
     }?;
 
@@ -388,7 +392,7 @@ pub fn deserialize_schema(
 
 /// Deserialize the raw Schema table from IPC format to Schema data type
 pub(super) fn fb_to_schema(
-    schema: arrow_format::ipc::SchemaRef,
+    schema: polars_arrow_format::ipc::SchemaRef,
 ) -> PolarsResult<(ArrowSchema, IpcSchema, Option<Metadata>)> {
     let fields = schema
         .fields()?
@@ -404,8 +408,8 @@ pub(super) fn fb_to_schema(
     }
 
     let is_little_endian = match schema.endianness()? {
-        arrow_format::ipc::Endianness::Little => true,
-        arrow_format::ipc::Endianness::Big => false,
+        polars_arrow_format::ipc::Endianness::Little => true,
+        polars_arrow_format::ipc::Endianness::Big => false,
     };
 
     let custom_schema_metadata = match schema.custom_metadata()? {
@@ -439,14 +443,14 @@ pub(super) fn fb_to_schema(
 }
 
 pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMetadata> {
-    let message = arrow_format::ipc::MessageRef::read_as_root(meta)
+    let message = polars_arrow_format::ipc::MessageRef::read_as_root(meta)
         .map_err(|err| polars_err!(oos = format!("Unable to get root as message: {err:?}")))?;
     let version = message.version()?;
     // message header is a Schema, so read it
     let header = message
         .header()?
         .ok_or_else(|| polars_err!(oos = "Unable to read the first IPC message"))?;
-    let schema = if let arrow_format::ipc::MessageHeaderRef::Schema(schema) = header {
+    let schema = if let polars_arrow_format::ipc::MessageHeaderRef::Schema(schema) = header {
         schema
     } else {
         polars_bail!(oos = "The first IPC message of the stream must be a schema")

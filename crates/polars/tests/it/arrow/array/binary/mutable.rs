@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
-use arrow::array::{BinaryArray, MutableArray, MutableBinaryArray, TryExtendFromSelf};
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::{BinaryArray, MutableArray, MutableBinaryArray, TryExtendFromSelf};
+use polars_arrow::bitmap::Bitmap;
 use polars_error::PolarsError;
 
 #[test]

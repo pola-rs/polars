@@ -1,13 +1,14 @@
 use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write as _};
 use std::io::ErrorKind;
 
 use polars::prelude::PolarsError;
 use polars_error::PolarsWarning;
 use pyo3::PyTypeInfo;
 use pyo3::exceptions::{
+    PyConnectionAbortedError, PyConnectionError, PyConnectionRefusedError, PyConnectionResetError,
     PyDeprecationWarning, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
-    PyRuntimeError, PyUserWarning,
+    PyRuntimeError, PyTimeoutError, PyUserWarning,
 };
 use pyo3::prelude::*;
 use pyo3::pyclass::PyClassGuardError;
@@ -79,24 +80,52 @@ impl From<PyPolarsErr> for PyErr {
                     InvalidOperationError::new_err(err.to_string())
                 },
                 PolarsError::IO { error, msg } => {
-                    let msg = if let Some(msg) = msg {
-                        msg.to_string()
+                    let (mut msg, mut source) = if let Some(msg) = msg {
+                        (msg.to_string(), Some(&*error as &(dyn Error + 'static)))
                     } else {
-                        error.to_string()
+                        (error.to_string(), error.source())
                     };
                     // This error might have an underlying PolarsError, so
                     // if we can find one of those, use it instead.
-                    let mut source = error.source();
+                    // Otherwise, append the causes not already in the message.
+                    let mut causes: Vec<String> = Vec::new();
                     while let Some(error) = source {
                         if let Some(e) = error.downcast_ref::<PolarsError>() {
                             return PyPolarsErr::Polars(e.to_owned()).into();
                         }
+                        let s = error.to_string();
+                        let dup = match causes.last() {
+                            None => msg.contains(&s),
+                            Some(c) => *c == s,
+                        };
+                        if !dup {
+                            causes.push(s);
+                        }
                         source = error.source();
+                    }
+                    if !causes.is_empty() {
+                        // Same layout as anyhow's Debug output.
+                        msg.push_str("\n\nCaused by:");
+                        if let [c] = causes.as_slice() {
+                            msg.push_str("\n    ");
+                            msg.push_str(c);
+                        } else {
+                            for (i, c) in causes.iter().enumerate() {
+                                write!(msg, "\n{i:>5}: {c}").unwrap();
+                            }
+                        }
                     }
                     match error.kind() {
                         ErrorKind::NotFound => PyFileNotFoundError::new_err(msg),
                         ErrorKind::PermissionDenied => PyPermissionError::new_err(msg),
                         ErrorKind::AlreadyExists => PyFileExistsError::new_err(msg),
+                        ErrorKind::ConnectionRefused => PyConnectionRefusedError::new_err(msg),
+                        ErrorKind::ConnectionReset => PyConnectionResetError::new_err(msg),
+                        ErrorKind::ConnectionAborted => PyConnectionAbortedError::new_err(msg),
+                        ErrorKind::TimedOut => PyTimeoutError::new_err(msg),
+                        ErrorKind::NotConnected
+                        | ErrorKind::HostUnreachable
+                        | ErrorKind::NetworkUnreachable => PyConnectionError::new_err(msg),
                         _ => PyIOError::new_err(msg),
                     }
                 },

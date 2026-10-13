@@ -7,7 +7,8 @@ use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
 use sqlparser::ast::{
-    Expr as SQLExpr, ObjectName, Query, SetExpr, Statement, TableFactor, Visit,
+    Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
+    FunctionArguments, ObjectName, Query, SetExpr, Statement, TableFactor, Visit,
     Visitor as SQLVisitor, visit_expressions,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
@@ -164,59 +165,91 @@ fn maybe_quote(s: &str, force: bool) -> String {
 }
 
 /// Visitor that checks for unqualified references to columns that exist in
-/// multiple tables (columns appearing in a USING clause are excluded from
-/// the check as they are implicitly coalesced).
+/// multiple tables (see `check_ambiguous_column`). Subqueries are skipped, as
+/// their columns resolve against their own FROM first.
 struct AmbiguousColumnVisitor<'a> {
     joined_aliases: &'a PlHashMap<String, PlHashMap<String, String>>,
     base_table_name: &'a str,
-    using_cols: &'a PlHashSet<String>,
+    using_cols: &'a [(String, String)],
+    subquery_depth: usize,
 }
 
 impl SQLVisitor for AmbiguousColumnVisitor<'_> {
     type Break = PolarsError;
 
-    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
-        if let SQLExpr::Identifier(ident) = expr {
-            let col = &ident.value;
-            if self.using_cols.contains(col) {
-                return ControlFlow::Continue(());
-            }
-            let mut tables: Vec<_> = self
-                .joined_aliases
-                .iter()
-                .filter_map(|(t, cols)| cols.contains_key(col).then_some(t.as_str()))
-                .collect();
+    fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<Self::Break> {
+        self.subquery_depth += 1;
+        ControlFlow::Continue(())
+    }
 
-            if !tables.is_empty() {
-                tables.push(self.base_table_name);
-                tables.sort();
-                let col_hint = maybe_quote(col, false);
-                let hints = tables
-                    .iter()
-                    .map(|t| format!("{}.{}", maybe_quote(t, false), col_hint));
-                return ControlFlow::Break(polars_err!(
-                    SQLInterface: "ambiguous reference to column {} (use one of: {})",
-                    maybe_quote(col, true), hints.collect::<Vec<_>>().join(", ")
-                ));
+    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<Self::Break> {
+        self.subquery_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
+        if self.subquery_depth > 0 {
+            return ControlFlow::Continue(());
+        }
+        if let SQLExpr::Identifier(ident) = expr {
+            if let Err(err) = check_ambiguous_column(
+                &ident.value,
+                self.joined_aliases,
+                self.base_table_name,
+                self.using_cols,
+            ) {
+                return ControlFlow::Break(err);
             }
         }
         ControlFlow::Continue(())
     }
 }
 
+/// Check that an unqualified column name exists in at most one of the joined
+/// tables. `using_cols` holds the (joined table, column) pairs of USING clauses,
+/// which are coalesced with the same column on the left of that join.
+pub(crate) fn check_ambiguous_column(
+    col: &str,
+    joined_aliases: &PlHashMap<String, PlHashMap<String, String>>,
+    base_table_name: &str,
+    using_cols: &[(String, String)],
+) -> PolarsResult<()> {
+    let mut tables: Vec<_> = joined_aliases
+        .iter()
+        .filter(|(t, cols)| {
+            cols.contains_key(col) && !using_cols.iter().any(|(ut, uc)| ut == *t && uc == col)
+        })
+        .map(|(t, _)| t.as_str())
+        .collect();
+
+    if !tables.is_empty() {
+        tables.push(base_table_name);
+        tables.sort();
+        let col_hint = maybe_quote(col, false);
+        let hints = tables
+            .iter()
+            .map(|t| format!("{}.{}", maybe_quote(t, false), col_hint));
+        polars_bail!(
+            SQLInterface: "ambiguous reference to column {} (use one of: {})",
+            maybe_quote(col, true), hints.collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(())
+}
+
 /// Check a SQL expression for unqualified references to columns that
-/// exist in multiple tables (columns appearing in a USING clause are
-/// excluded from the check as they are implicitly coalesced).
+/// exist in multiple tables (see `check_ambiguous_column`).
 pub(crate) fn check_for_ambiguous_column_refs(
     expr: &SQLExpr,
     joined_aliases: &PlHashMap<String, PlHashMap<String, String>>,
     base_table_name: &str,
-    using_cols: &PlHashSet<String>,
+    using_cols: &[(String, String)],
 ) -> PolarsResult<()> {
     match expr.visit(&mut AmbiguousColumnVisitor {
         joined_aliases,
         base_table_name,
         using_cols,
+        subquery_depth: 0,
     }) {
         ControlFlow::Break(err) => Err(err),
         ControlFlow::Continue(()) => Ok(()),
@@ -324,10 +357,26 @@ impl SQLVisitor for ColumnRefFinder {
     type Break = ();
 
     fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
-        if matches!(
-            expr,
-            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)
-        ) {
+        let is_column_ref = match expr {
+            SQLExpr::Identifier(_)
+            | SQLExpr::CompoundIdentifier(_)
+            | SQLExpr::Wildcard(_)
+            | SQLExpr::QualifiedWildcard(..) => true,
+            // wildcard arguments, eg: COUNT(*) / COLUMNS(*)
+            SQLExpr::Function(func) => match &func.args {
+                FunctionArguments::List(args) => args.args.iter().any(|arg| {
+                    matches!(
+                        arg,
+                        FunctionArg::Unnamed(
+                            FunctionArgExpr::Wildcard | FunctionArgExpr::QualifiedWildcard(_)
+                        )
+                    )
+                }),
+                _ => false,
+            },
+            _ => false,
+        };
+        if is_column_ref {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
@@ -351,14 +400,88 @@ pub(crate) fn is_subquery_expr(expr: &SQLExpr) -> bool {
 
 /// Check if a SQL expression contains a subquery, in any of its forms.
 pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
+    expr_contains(expr, is_subquery_expr)
+}
+
+/// Check if a SQL expression contains a scalar subquery (`(SELECT ...)` used as
+/// a value), as opposed to a predicate subquery (`EXISTS`, `IN`).
+pub(crate) fn expr_contains_scalar_subquery(expr: &SQLExpr) -> bool {
+    expr_contains(expr, |e| matches!(e, SQLExpr::Subquery(_)))
+}
+
+fn expr_contains(expr: &SQLExpr, is_match: impl Fn(&SQLExpr) -> bool) -> bool {
     visit_expressions(expr, |e| {
-        if is_subquery_expr(e) {
+        if is_match(e) {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
         }
     })
     .is_break()
+}
+
+/// The argument expressions of a `GROUPING()` / `GROUPING_ID()` call; `None` for
+/// any other function or an argument list that is not plain expressions.
+pub(crate) fn grouping_call_args(func: &SQLFunction) -> Option<Vec<SQLExpr>> {
+    let is_grouping = func
+        .name
+        .0
+        .last()
+        .and_then(|p| p.as_ident())
+        .is_some_and(|i| {
+            i.value.eq_ignore_ascii_case("grouping") || i.value.eq_ignore_ascii_case("grouping_id")
+        });
+    if !is_grouping {
+        return None;
+    }
+    let FunctionArguments::List(FunctionArgumentList { args, .. }) = &func.args else {
+        return None;
+    };
+    args.iter()
+        .map(|arg| match arg {
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) => Some(e.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Collect the argument lists of the `GROUPING()` calls in a SQL expression,
+/// leaving out those inside subqueries, which belong to their own query block.
+pub(crate) fn collect_grouping_calls(expr: &SQLExpr) -> Vec<Vec<SQLExpr>> {
+    struct Collector {
+        subquery_depth: usize,
+        calls: Vec<Vec<SQLExpr>>,
+    }
+    impl SQLVisitor for Collector {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if self.subquery_depth == 0 {
+                if let SQLExpr::Function(f) = expr {
+                    if let Some(args) = grouping_call_args(f) {
+                        self.calls.push(args);
+                    }
+                }
+            }
+            ControlFlow::Continue(())
+        }
+    }
+    let mut collector = Collector {
+        subquery_depth: 0,
+        calls: Vec::new(),
+    };
+    let _ = expr.visit(&mut collector);
+    collector.calls
 }
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,34 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
 
 
+def _table_root(table_uri: str) -> str:
+    """Return the table prefix used by native scan paths."""
+    # Match file_uris() for local paths and our lakefs-to-s3 rewrite.
+    root = table_uri.removeprefix("file://").replace("lakefs://", "s3://", 1)
+    # Windows: "file:///C:/t" -> "/C:/t", but file_uris() gives "C:/t".
+    if len(root) > 2 and root[0] == "/" and root[2] == ":" and root[1].isalpha():
+        root = root[1:]
+    return root if root.endswith("/") else root + "/"
+
+
+def _source_sizes(
+    paths: list[str], root: str, sizes: dict[str, int]
+) -> list[int] | None:
+    """Return sizes in scan order using exact table-relative paths.
+
+    Return None if any path is outside the root or has no logged size.
+    """
+    out = []
+    for path in paths:
+        if not path.startswith(root):
+            return None
+        size = sizes.get(path[len(root) :])
+        if size is None:
+            return None
+        out.append(size)
+    return out
+
+
 @dataclass(kw_only=True)
 class DeltaDataset:
     """Dataset interface for Delta."""
@@ -58,6 +86,7 @@ class DeltaDataset:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
+        statistics_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
@@ -73,6 +102,7 @@ class DeltaDataset:
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
+                f"statistics_columns: {statistics_columns}, "
                 f"use_pyarrow: {self.use_pyarrow}"
             )
 
@@ -162,14 +192,30 @@ class DeltaDataset:
                 f"path expansion time: {elapsed:.3f}s"
             )
 
+        # Private delta-rs API: fetch sizes without materializing add-action statistics.
+        source_sizes = _source_sizes(
+            paths, _table_root(table.table_uri), table._table.get_add_file_sizes()
+        )
+
+        if source_sizes is None and verbose:
+            eprint(
+                "DeltaDataset: to_dataset_scan(): "
+                "cannot pair add file sizes with file_uris(), skipping sizes"
+            )
+
+        # Statistics of columns that are not filtered on are best effort.
+        best_effort_statistics_columns = [
+            c for c in statistics_columns or [] if c not in (filter_columns or [])
+        ]
         table_statistics = (
             _extract_table_statistics_from_delta_add_actions(
                 pl.DataFrame(table.get_add_actions()),
-                filter_columns=filter_columns,
+                filter_columns=filter_columns or [],
+                best_effort_columns=best_effort_statistics_columns,
                 schema=schema,
                 verbose=verbose,
             )
-            if filter_columns is not None
+            if filter_columns is not None or best_effort_statistics_columns
             else None
         )
 
@@ -223,6 +269,7 @@ class DeltaDataset:
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             _table_statistics=table_statistics,
             _deletion_files=deletion_files,
+            _source_sizes=source_sizes,
         ), version_key
 
     #

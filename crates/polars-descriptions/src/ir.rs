@@ -52,6 +52,7 @@ pub enum IrPropsDescription {
         how: String,
         left_on: Vec<String>,
         right_on: Vec<String>,
+        fused_predicate: Option<Vec<String>>,
         nulls_equal: bool,
         coalesce: String,
         maintain_order: String,
@@ -165,10 +166,31 @@ pub enum IrPropsDescription {
         schema_names: Vec<String>,
         is_pure: bool,
         validate_schema: bool,
+        explain_name: Option<String>,
+        explain_detail: Option<String>,
     },
     UnoptimizedDispatch {
         num_inputs: usize,
         operation: String,
+    },
+    Resolver {
+        name: Option<String>,
+        schema_names: Vec<String>,
+        projection: Option<Vec<String>>,
+        slice: Option<(i64, u64)>,
+        filters: Vec<String>,
+        filter_drop_columns_idx: Option<usize>,
+        num_cached_resolves: usize,
+        /// Whether the resolver has already been resolved into an IR subplan. If so, that subplan
+        /// is this node's input.
+        is_resolved: bool,
+    },
+    Window {
+        partition_by: Vec<String>,
+        order_by: Option<SortColumnDescription>,
+        exprs: Vec<String>,
+        maintain_order: bool,
+        ordered_eval: bool,
     },
 
     #[default]

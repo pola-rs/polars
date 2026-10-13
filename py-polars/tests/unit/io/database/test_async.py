@@ -129,6 +129,27 @@ def test_read_async(tmp_sqlite_db: Path) -> None:
     asyncio.run(_test_impl())
 
 
+def test_read_async_without_async_sessionmaker(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sqlalchemy.ext import asyncio as sa_async
+
+    monkeypatch.delattr(sa_async, "async_sessionmaker", raising=False)
+
+    async def _test_impl() -> None:
+        async_engine = create_async_engine("sqlite+aiosqlite://")
+        try:
+            async with (
+                async_engine.connect() as conn,
+                sa_async.AsyncSession(async_engine) as session,
+            ):
+                for connection in (async_engine, conn, session):
+                    df = pl.read_database("SELECT 1 AS x", connection=connection)
+                    assert_frame_equal(df, pl.DataFrame({"x": [1]}))
+        finally:
+            await async_engine.dispose()
+
+    asyncio.run(_test_impl())
+
+
 @pytest.mark.skipif(
     parse_version(sqlalchemy.__version__) < (2, 0),
     reason="SQLAlchemy 2.0+ required for async tests",

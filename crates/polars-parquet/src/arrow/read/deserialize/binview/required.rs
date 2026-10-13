@@ -1,4 +1,4 @@
-use arrow::array::MutableBinaryViewArray;
+use polars_arrow::array::MutableBinaryViewArray;
 
 use super::decode_plain_generic;
 use crate::parquet::error::ParquetResult;

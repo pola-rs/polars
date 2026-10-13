@@ -1,9 +1,9 @@
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
-use arrow::datatypes::Metadata;
-use arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
-use arrow::io::ipc::write::WriteOptions;
+use polars_arrow::datatypes::Metadata;
+use polars_arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
+use polars_arrow::io::ipc::write::WriteOptions;
 use polars_error::{PolarsResult, polars_err, to_compute_err};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_serialize::deserialize_map_bytes;
@@ -39,8 +39,10 @@ impl DataFrame {
             ));
         }
 
-        let mut ipc_writer =
-            arrow::io::ipc::write::StreamWriter::new(writer, WriteOptions { compression: None });
+        let mut ipc_writer = polars_arrow::io::ipc::write::StreamWriter::new(
+            writer,
+            WriteOptions { compression: None },
+        );
 
         ipc_writer.set_custom_schema_metadata(Arc::new(Metadata::from_iter(
             self.columns().iter().map(|c| {

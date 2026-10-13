@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -103,7 +104,7 @@ def test_string_left_right_reverse() -> None:
     }
     for func, invalid_arg, invalid_err in (
         ("LEFT", "'xyz'", '"xyz"'),
-        ("RIGHT", "6.66", "(dyn float: 6.66)"),
+        ("RIGHT", "6.66", "6.66"),
     ):
         with pytest.raises(
             SQLSyntaxError,
@@ -273,6 +274,42 @@ def test_string_like_multiline() -> None:
     # exact match
     for s in (s1, s2, s3):
         assert df.sql(f"SELECT txt FROM self WHERE txt LIKE '{s}'").item() == s
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "%a%b%",
+        "%ab%ab%",
+        "a%b",
+        "a%a",
+        "a%",
+        "%b",
+        "a%b%",
+        "%a%b",
+        "%b%a%",
+        "%€%b%",
+        "%a_b%",
+        "_%a%",
+        "%",
+        "%%",
+        "%a%%b%",
+        "%.%*%",
+    ],
+)
+def test_string_like_wildcards(pattern: str) -> None:
+    txt = [
+        "", "a", "b", "ab", "ba", "aab", "abab", "a\nb", "xaybz", "aXb",
+        "abXab", "é€b", "bXa", "a.b*c", None,
+    ]  # fmt: skip
+    rx = re.compile(re.escape(pattern).replace("%", ".*").replace("_", "."), re.DOTALL)
+    df = pl.DataFrame({"txt": txt})
+
+    res = df.sql(f"SELECT txt LIKE '{pattern}' AS m FROM self")["m"].to_list()
+    assert res == [None if s is None else rx.fullmatch(s) is not None for s in txt]
+
+    res = df.sql(f"SELECT txt NOT LIKE '{pattern}' AS m FROM self")["m"].to_list()
+    assert res == [None if s is None else rx.fullmatch(s) is None for s in txt]
 
 
 @pytest.mark.parametrize("form", ["NFKC", "NFKD"])

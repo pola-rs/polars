@@ -1,5 +1,5 @@
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_error::*;
 
 use super::{Version, WriteOptions};
@@ -57,14 +57,18 @@ pub fn build_plain_page(
     buffer: Vec<u8>,
     num_values: usize,
     num_rows: usize,
-    null_count: usize,
+    num_nulls: usize,
     repetition_levels_byte_length: usize,
     definition_levels_byte_length: usize,
-    statistics: Option<ParquetStatistics>,
+    mut statistics: Option<ParquetStatistics>,
     type_: PrimitiveType,
     options: WriteOptions,
     encoding: Encoding,
 ) -> PolarsResult<DataPage> {
+    // The null count of the leaf array misses null and empty lists, so use `num_nulls` instead.
+    if let Some(null_count) = statistics.as_mut().and_then(|s| s.null_count.as_mut()) {
+        *null_count = num_nulls as i64;
+    }
     let header = match options.version {
         Version::V1 => DataPageHeader::V1(DataPageHeaderV1 {
             num_values: num_values as i32,
@@ -76,7 +80,7 @@ pub fn build_plain_page(
         Version::V2 => DataPageHeader::V2(DataPageHeaderV2 {
             num_values: num_values as i32,
             encoding: encoding.into(),
-            num_nulls: null_count as i32,
+            num_nulls: num_nulls as i32,
             num_rows: num_rows as i32,
             definition_levels_byte_length: definition_levels_byte_length as i32,
             repetition_levels_byte_length: repetition_levels_byte_length as i32,
@@ -93,6 +97,7 @@ pub fn build_plain_page(
             max_rep_level: 0,
         },
         num_rows,
+        num_nulls,
     ))
 }
 

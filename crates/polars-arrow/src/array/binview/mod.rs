@@ -255,6 +255,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         )
     }
 
+    #[inline]
     pub fn data_buffers(&self) -> &Buffer<Buffer<u8>> {
         &self.buffers
     }
@@ -439,6 +440,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
+    #[inline]
     pub fn values_iter(&self) -> BinaryViewValueIter<'_, T> {
         BinaryViewValueIter::new(self)
     }
@@ -679,6 +681,7 @@ impl Utf8ViewArray {
 }
 
 impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
+    #[inline]
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -702,6 +705,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
         &mut self.dtype
     }
 
+    #[inline]
     fn validity(&self) -> Option<&Bitmap> {
         self.validity.as_ref()
     }

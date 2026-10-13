@@ -1,7 +1,7 @@
-use arrow::types::{
+use num_traits::{FromBytes, ToBytes, Zero};
+use polars_arrow::types::{
     AlignedBytes, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
 };
-use num_traits::{FromBytes, ToBytes, Zero};
 use polars_utils::float16::pf16;
 
 use crate::parquet::schema::types::PhysicalType;
@@ -45,6 +45,12 @@ pub trait NativeType:
     #[inline]
     fn norm_max(self) -> Self {
         self
+    }
+
+    /// Whether the value is a NaN, which the Parquet specification leaves out of min/max statistics.
+    #[inline]
+    fn is_nan(self) -> bool {
+        false
     }
 
     const TYPE: PhysicalType;
@@ -92,6 +98,11 @@ macro_rules! native {
             #[inline]
             fn norm_max(self) -> Self {
                 if self == $zero { $zero } else { self }
+            }
+
+            #[inline]
+            fn is_nan(self) -> bool {
+                <$type>::is_nan(self)
             }
             )?
 
@@ -155,6 +166,11 @@ impl NativeType for pf16 {
         } else {
             self
         }
+    }
+
+    #[inline]
+    fn is_nan(self) -> bool {
+        pf16::is_nan(self)
     }
 }
 

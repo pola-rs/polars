@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::sync::OnceLock;
 
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
 use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
@@ -336,7 +336,7 @@ impl IdxCa {
     pub fn with_nullable_idx<T, F: FnOnce(&IdxCa) -> T>(idx: &[NullableIdxSize], f: F) -> T {
         let validity: Bitmap = idx.iter().map(|idx| !idx.is_null_idx()).collect_trusted();
         let idx = bytemuck::cast_slice::<_, IdxSize>(idx);
-        let arr = unsafe { arrow::ffi::mmap::slice(idx) };
+        let arr = unsafe { polars_arrow::ffi::mmap::slice(idx) };
         let arr = arr.with_validity_typed(Some(validity));
         let ca = IdxCa::with_chunk(PlSmallStr::EMPTY, arr);
 

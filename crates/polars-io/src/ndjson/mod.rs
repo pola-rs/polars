@@ -1,7 +1,7 @@
 use core::json_lines;
 use std::num::NonZeroUsize;
 
-use arrow::array::StructArray;
+use polars_arrow::array::StructArray;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

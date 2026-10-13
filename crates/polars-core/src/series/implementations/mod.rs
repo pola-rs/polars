@@ -32,7 +32,7 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 use polars_compute::rolling::QuantileMethod;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 
@@ -59,6 +59,7 @@ impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
 }
 
 unsafe impl<T: PolarsPhysicalType> IntoSeries for ChunkedArray<T> {
+    #[inline]
     fn into_series(self) -> Series {
         T::ca_into_series(self)
     }
@@ -75,6 +76,7 @@ macro_rules! impl_dyn_series {
                 Cow::Borrowed(self.0.ref_field())
             }
 
+            #[inline]
             fn _dtype(&self) -> &DataType {
                 self.0.ref_field().dtype()
             }
@@ -307,6 +309,7 @@ macro_rules! impl_dyn_series {
                 self.0.deposit(validity).into_series()
             }
 
+            #[inline(always)]
             fn len(&self) -> usize {
                 self.0.len()
             }

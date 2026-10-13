@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use polars_arrow::array::Array;
 
 /// Kernel to calculate the number of unique elements where the elements are already sorted.
 pub trait SortedUniqueKernel: Array {

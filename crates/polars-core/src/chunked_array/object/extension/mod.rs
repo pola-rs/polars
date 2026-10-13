@@ -4,9 +4,9 @@ pub(crate) mod polars_extension;
 
 use std::mem;
 
-use arrow::array::FixedSizeBinaryArray;
-use arrow::bitmap::BitmapBuilder;
-use arrow::datatypes::ExtensionType;
+use polars_arrow::array::FixedSizeBinaryArray;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::datatypes::ExtensionType;
 use polars_buffer::Buffer;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;

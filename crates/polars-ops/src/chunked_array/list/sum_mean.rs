@@ -1,11 +1,11 @@
 use std::ops::Div;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
-use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::utils::combine_validities_and;
+use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
+use polars_arrow::types::NativeType;
 use polars_utils::float16::pf16;
 
 use super::*;
@@ -72,6 +72,15 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
 
 pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
+    // A sum needs the full precision, as for `Series::sum`.
+    #[cfg(feature = "dtype-decimal")]
+    if let Decimal(precision, scale) = inner_dtype
+        && *precision < polars_compute::decimal::DEC128_MAX_PREC
+    {
+        let wide = Decimal(polars_compute::decimal::DEC128_MAX_PREC, *scale);
+        let ca = ca.cast(&List(Box::new(wide.clone())))?;
+        return sum_with_nulls(ca.list()?, &wide);
+    }
     let mut out = match inner_dtype {
         Boolean => {
             let out: IdxCa =

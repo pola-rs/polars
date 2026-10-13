@@ -743,8 +743,20 @@ def _sequence_of_elements_to_pydf(
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,  # noqa: ARG001
+    orient: Orientation | None,
+    **kwargs: Any,
 ) -> PyDataFrame:
+    if orient == "row":
+        return _sequence_of_sequence_to_pydf(
+            first_element=data,
+            data=[data],
+            schema=schema,
+            schema_overrides=schema_overrides,
+            strict=strict,
+            orient=orient,
+            **kwargs,
+        )
+
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=1
     )
@@ -1017,11 +1029,20 @@ def iterable_to_pydf(
         )._df
 
     def to_frame_chunk(values: list[Any], schema: SchemaDefinition | None) -> DataFrame:
+        first_element = get_first_non_none(values)
+        row_oriented = (
+            isinstance(first_element, (Sequence, Generator))
+            and not isinstance(first_element, str)
+        ) or (
+            _check_for_numpy(first_element)
+            and isinstance(first_element, np.ndarray)
+            and first_element.ndim > 0
+        )
         return pl.DataFrame(
             data=values,
             schema=schema,
             strict=strict,
-            orient="row",
+            orient="row" if row_oriented else None,
             infer_schema_length=infer_schema_length,
             schema_overrides=schema_overrides,
         )

@@ -12,9 +12,9 @@ use std::cmp::Ordering;
 
 pub(crate) use arg_sort::arg_sort_row_fmt;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::legacy::trusted_len::TrustedLenPush;
 use compare_inner::NonNull;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_buffer::Buffer;
 use polars_utils::nulls::IsNull;
 use polars_utils::sort::reorder_cmp;
@@ -854,6 +854,8 @@ pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> Po
             maintain_order: sort_options.maintain_order,
             limit: sort_options.limit,
         }))
+    } else if let Some(limit) = sort_options.limit {
+        Ok(arg_bottom_k::_arg_bottom_k(limit as usize, columns, &mut sort_options)?.into_inner())
     } else if sort_options.nulls_last.iter().all(|&x| x)
         || columns.iter().any(|c| c.dtype().is_nested())
         || std::env::var("POLARS_ROW_FMT_SORT").is_ok()

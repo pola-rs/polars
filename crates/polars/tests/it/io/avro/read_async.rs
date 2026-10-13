@@ -1,7 +1,7 @@
 use apache_avro::{Codec, DeflateSettings};
-use arrow::io::avro::avro_schema::read_async::{block_stream, read_metadata};
-use arrow::io::avro::read;
 use futures::{StreamExt, pin_mut};
+use polars_arrow::io::avro::avro_schema::read_async::{block_stream, read_metadata};
+use polars_arrow::io::avro::read;
 use polars_error::PolarsResult;
 
 use super::read::{schema, write_avro};

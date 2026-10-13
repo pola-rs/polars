@@ -15,6 +15,11 @@ pub fn is_scalar_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     }
 }
 
+/// A literal with exactly one value, including a single row `Series`.
+pub fn is_single_literal_ae(node: Node, arena: &Arena<AExpr>) -> bool {
+    matches!(arena.get(node), AExpr::Literal(lv) if lv.is_single_value())
+}
+
 pub fn is_length_preserving_ae(node: Node, arena: &Arena<AExpr>) -> bool {
     use ExprProjectionHeight as H;
 

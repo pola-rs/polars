@@ -40,6 +40,8 @@ A-io-json:
   - '/json/i'
 A-io-parquet:
   - '/parquet/i'
+A-io-partitioning:
+  - '/\bHive\b/i'
 A-io-spreadsheet:
   - '/spreadsheet|excel|\bods\b/i'
 A-panic:

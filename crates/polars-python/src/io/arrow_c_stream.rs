@@ -1,7 +1,7 @@
-use arrow::array::{Array, StructArray};
-use arrow::ffi::{ArrowArrayStream, ArrowArrayStreamReader};
 use parking_lot::Mutex;
 use polars::prelude::*;
+use polars_arrow::array::{Array, StructArray};
+use polars_arrow::ffi::{ArrowArrayStream, ArrowArrayStreamReader};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 

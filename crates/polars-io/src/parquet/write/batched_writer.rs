@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::sync::Mutex;
 
-use arrow::record_batch::RecordBatch;
+use polars_arrow::record_batch::RecordBatch;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;

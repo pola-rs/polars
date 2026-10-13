@@ -1,5 +1,5 @@
-use arrow::bitmap::BitmapBuilder;
-use arrow::types::AlignedBytes;
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::types::AlignedBytes;
 
 use super::ArrayChunks;
 

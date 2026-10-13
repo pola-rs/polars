@@ -3,9 +3,9 @@ use std::mem::MaybeUninit;
 #[cfg(target_arch = "x86_64")]
 use std::simd::{Mask, Select, Simd, SimdElement};
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType;
 
 use super::{
     IfThenElseKernel, if_then_else_loop, if_then_else_loop_broadcast_both,

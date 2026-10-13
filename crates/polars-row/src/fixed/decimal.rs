@@ -6,9 +6,9 @@
 
 use std::mem::MaybeUninit;
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::BitmapBuilder;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;

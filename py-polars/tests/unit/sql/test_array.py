@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.mark.parametrize(
@@ -46,8 +47,24 @@ def test_array_agg(sort_order: str | None, limit: int | None, expected: Any) -> 
     assert res.rows() == expected
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT ARRAY_AGG(x) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(x ORDER BY y DESC) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(1) AS a FROM t WHERE y > 100",
+        "SELECT ARRAY_AGG(x) FILTER (WHERE y > 100) AS a FROM t",
+        "SELECT g, ARRAY_AGG(x) FILTER (WHERE y > 25) AS a FROM t GROUP BY g ORDER BY g",
+        "SELECT g, ARRAY_AGG(DISTINCT x) FILTER (WHERE y > 25) AS a FROM t GROUP BY g ORDER BY g",
+    ],
+)
+def test_array_agg_no_rows(query: str) -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [1, 2, None], "y": [10, 20, 30]})
+    assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
+
+
 def test_array_literals() -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
+    with pl.SQLContext(df=pl.DataFrame({"x": [0]}), eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
@@ -66,6 +83,7 @@ def test_array_literals() -> None:
                 ['a','b','c'] AS a2,
               FROM df
             ) tbl
+            GROUP BY a1, a2
             """
         )
         assert_frame_equal(
@@ -358,3 +376,10 @@ def test_array_typed_literals_mixed_error() -> None:
         match="expected consistent dtypes",
     ):
         pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']").collect()
+
+
+def test_array_literal_default_name() -> None:
+    res = pl.sql("SELECT ARRAY[1, 2]", eager=True)
+    assert res.columns == [""]
+    res = pl.sql('SELECT t."" AS arr FROM (SELECT ARRAY[1, 2]) t', eager=True)
+    assert res.to_dict(as_series=False) == {"arr": [[1, 2]]}

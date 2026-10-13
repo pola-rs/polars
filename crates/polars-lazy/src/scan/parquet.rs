@@ -70,6 +70,7 @@ impl LazyFileListReader for LazyParquetReader {
             parallel: self.args.parallel,
             low_memory: self.args.low_memory,
             use_statistics: self.args.use_statistics,
+            decryption_properties: None,
         };
 
         let unified_scan_args = UnifiedScanArgs {
@@ -79,6 +80,7 @@ impl LazyFileListReader for LazyParquetReader {
             rechunk: self.args.rechunk,
             cache: self.args.cache,
             glob: self.args.glob,
+            expand_paths: true,
             hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
@@ -100,6 +102,8 @@ impl LazyFileListReader for LazyParquetReader {
             deletion_files: None,
             table_statistics: None,
             row_count: None,
+            source_sizes: None,
+            resolve_heavy_sources: None,
         };
 
         let mut lf: LazyFrame =

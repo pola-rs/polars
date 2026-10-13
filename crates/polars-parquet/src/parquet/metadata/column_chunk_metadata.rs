@@ -3,7 +3,8 @@ use polars_parquet_format::Statistics as ParquetStatistics;
 use super::column_descriptor::{ColumnDescriptor, ColumnDescriptorRef};
 use super::compact::{CompactColumnChunk, CompactColumnMetaData, CompactStatistics};
 use crate::parquet::compression::Compression;
-use crate::parquet::error::ParquetResult;
+use crate::parquet::encryption::decrypt::{ColumnChunkDecryption, CryptoContext};
+use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PhysicalType;
 use crate::parquet::statistics::Statistics;
 
@@ -23,19 +24,42 @@ use crate::parquet::statistics::Statistics;
 pub struct ColumnChunkMetadata {
     column_chunk: CompactColumnChunk,
     column_descr: ColumnDescriptorRef,
+    /// Set for encrypted columns if the file was read with decryption properties.
+    decryption: Option<Box<ColumnChunkDecryption>>,
 }
 
 // Represents common operations for a column chunk.
 impl ColumnChunkMetadata {
-    /// The compact column metadata for this chunk. Always present;
-    /// encrypted columns are rejected at footer-decode time.
+    /// The compact column metadata for this chunk.
+    ///
+    /// Errors if the metadata is missing, which only happens for encrypted columns whose
+    /// metadata could not be decrypted because the column key is unavailable. Such
+    /// columns can't be read.
     ///
     /// Crate-internal: callers outside `polars-parquet` should use the
     /// typed accessors below (`compression()`, `num_values()`, etc.)
     /// rather than reaching into the compact representation directly.
     #[inline]
-    pub(crate) fn compact_metadata(&self) -> &CompactColumnMetaData {
-        &self.column_chunk.meta_data
+    pub(crate) fn compact_metadata(&self) -> ParquetResult<&CompactColumnMetaData> {
+        match &self.column_chunk.meta_data {
+            Some(meta_data) => Ok(meta_data),
+            None => Err(self.missing_metadata_error()),
+        }
+    }
+
+    #[cold]
+    fn missing_metadata_error(&self) -> ParquetError {
+        // Get the reason from the crypto context, e.g. a missing column key.
+        let reason = match self.crypto_context() {
+            Err(ParquetError::Encryption(message)) => message,
+            Err(e) => e.to_string(),
+            Ok(_) => "the column key may be unavailable".to_string(),
+        };
+        encryption_err!(
+            "Metadata for column '{}' is encrypted and could not be decrypted: {}",
+            self.descriptor().path_in_schema.join("."),
+            reason
+        )
     }
 
     /// The full `CompactColumnChunk` wrapper. Used by the prune pass
@@ -48,8 +72,15 @@ impl ColumnChunkMetadata {
 
     /// The [`ColumnDescriptor`] for this column. This descriptor contains
     /// the physical and logical type of the pages.
+    #[inline]
     pub fn descriptor(&self) -> &ColumnDescriptor {
         &self.column_descr
+    }
+
+    /// Position of this column among the leaves of the file's schema.
+    #[inline]
+    pub fn leaf_index(&self) -> usize {
+        self.column_descr.leaf_index()
     }
 
     /// The [`PhysicalType`] of this column.
@@ -67,7 +98,7 @@ impl ColumnChunkMetadata {
     /// `footer_buf` must be the same buffer this chunk was decoded from,
     /// typically [`super::FileMetadata::footer_buf`].
     pub fn statistics(&self, footer_buf: &[u8]) -> Option<ParquetResult<Statistics>> {
-        let stats = self.compact_metadata().statistics.as_ref()?;
+        let stats = self.column_chunk.meta_data.as_ref()?.statistics.as_ref()?;
         let parquet_stats = compact_stats_to_parquet(stats, footer_buf);
         Some(Statistics::deserialize(
             &parquet_stats,
@@ -75,66 +106,92 @@ impl ColumnChunkMetadata {
         ))
     }
 
+    /// The plain-encoded min and max of the chunk, borrowed from `footer_buf`;
+    /// `None` when the chunk has no statistics.
+    pub fn raw_bounds<'a>(&self, footer_buf: &'a [u8]) -> Option<RawBounds<'a>> {
+        let stats = self.column_chunk.meta_data.as_ref()?.statistics.as_ref()?;
+        Some(RawBounds {
+            min: stats.min_value.map(|range| range.resolve(footer_buf)),
+            max: stats.max_value.map(|range| range.resolve(footer_buf)),
+            min_is_exact: stats.is_min_value_exact != Some(false),
+            max_is_exact: stats.is_max_value_exact != Some(false),
+        })
+    }
+
     /// Total number of values in this column chunk. Note that this is not
     /// necessarily the number of rows. E.g. the (nested) array `[[1, 2], [3]]`
     /// has 2 rows and 3 values.
-    pub fn num_values(&self) -> i64 {
-        self.compact_metadata().num_values
+    #[inline]
+    pub fn num_values(&self) -> ParquetResult<i64> {
+        Ok(self.compact_metadata()?.num_values)
     }
 
-    /// Null count from the chunk statistics
+    /// Null count from the chunk statistics.
+    /// `None` if there are no statistics, or the column metadata is missing.
     pub fn null_count(&self) -> Option<i64> {
-        self.compact_metadata().statistics.as_ref()?.null_count
+        self.column_chunk
+            .meta_data
+            .as_ref()?
+            .statistics
+            .as_ref()?
+            .null_count
     }
 
-    /// Distinct count from the chunk statistics
+    /// Distinct count from the chunk statistics.
+    /// `None` if there are no statistics, or the column metadata is missing.
     pub fn distinct_count(&self) -> Option<i64> {
-        self.compact_metadata().statistics.as_ref()?.distinct_count
+        self.column_chunk
+            .meta_data
+            .as_ref()?
+            .statistics
+            .as_ref()?
+            .distinct_count
     }
 
     /// [`Compression`] for this column.
-    pub fn compression(&self) -> Compression {
-        self.compact_metadata().codec
+    pub fn compression(&self) -> ParquetResult<Compression> {
+        Ok(self.compact_metadata()?.codec)
     }
 
     /// Returns the total compressed data size of this column chunk.
-    pub fn compressed_size(&self) -> i64 {
-        self.compact_metadata().total_compressed_size
+    pub fn compressed_size(&self) -> ParquetResult<i64> {
+        Ok(self.compact_metadata()?.total_compressed_size)
     }
 
     /// Returns the total uncompressed data size of this column chunk.
-    pub fn uncompressed_size(&self) -> i64 {
-        self.compact_metadata().total_uncompressed_size
+    #[inline]
+    pub fn uncompressed_size(&self) -> ParquetResult<i64> {
+        Ok(self.compact_metadata()?.total_uncompressed_size)
     }
 
     /// Returns the offset for the column data.
-    pub fn data_page_offset(&self) -> i64 {
-        self.compact_metadata().data_page_offset
+    pub fn data_page_offset(&self) -> ParquetResult<i64> {
+        Ok(self.compact_metadata()?.data_page_offset)
     }
 
     /// Returns `true` if this column chunk contains an index page, `false` otherwise.
-    pub fn has_index_page(&self) -> bool {
-        self.compact_metadata().index_page_offset.is_some()
+    pub fn has_index_page(&self) -> ParquetResult<bool> {
+        Ok(self.compact_metadata()?.index_page_offset.is_some())
     }
 
     /// Returns the offset for the index page.
-    pub fn index_page_offset(&self) -> Option<i64> {
-        self.compact_metadata().index_page_offset
+    pub fn index_page_offset(&self) -> ParquetResult<Option<i64>> {
+        Ok(self.compact_metadata()?.index_page_offset)
     }
 
     /// Returns the offset for the dictionary page, if any.
-    pub fn dictionary_page_offset(&self) -> Option<i64> {
-        self.compact_metadata().dictionary_page_offset
+    pub fn dictionary_page_offset(&self) -> ParquetResult<Option<i64>> {
+        Ok(self.compact_metadata()?.dictionary_page_offset)
     }
 
     /// Bloom filter byte offset, if present.
-    pub fn bloom_filter_offset(&self) -> Option<i64> {
-        self.compact_metadata().bloom_filter_offset
+    pub fn bloom_filter_offset(&self) -> ParquetResult<Option<i64>> {
+        Ok(self.compact_metadata()?.bloom_filter_offset)
     }
 
     /// Bloom filter byte length, if present.
-    pub fn bloom_filter_length(&self) -> Option<i32> {
-        self.compact_metadata().bloom_filter_length
+    pub fn bloom_filter_length(&self) -> ParquetResult<Option<i32>> {
+        Ok(self.compact_metadata()?.bloom_filter_length)
     }
 
     /// PageIndex `OffsetIndex` byte offset, if present.
@@ -158,22 +215,61 @@ impl ColumnChunkMetadata {
     }
 
     /// Returns the offset and length in bytes of the column chunk within the file.
-    pub fn byte_range(&self) -> core::ops::Range<u64> {
-        column_metadata_byte_range_compact(self.compact_metadata())
+    pub fn byte_range(&self) -> ParquetResult<core::ops::Range<u64>> {
+        Ok(column_metadata_byte_range_compact(self.compact_metadata()?))
     }
 
     /// Build from a [`CompactColumnChunk`] + descriptor handle.
-    /// Infallible: the decoder rejects malformed chunks (missing
-    /// `meta_data`) up front, so by here the invariant is type-enforced.
+    /// Infallible: the decoder only allows chunks without `meta_data` if they
+    /// have encrypted column metadata, in which case accessing the metadata errors.
+    #[inline]
     pub(crate) fn from_compact(
         column_descr: ColumnDescriptorRef,
         column_chunk: CompactColumnChunk,
+        decryption: Option<Box<ColumnChunkDecryption>>,
     ) -> Self {
         Self {
             column_chunk,
             column_descr,
+            decryption,
         }
     }
+
+    /// Whether this column chunk is encrypted with Parquet modular encryption.
+    pub fn is_encrypted(&self) -> bool {
+        self.column_chunk.crypto.is_some()
+    }
+
+    /// The context needed to decrypt this column chunk's pages, or `None` if it isn't encrypted.
+    pub(crate) fn crypto_context(&self) -> ParquetResult<Option<CryptoContext>> {
+        let Some(crypto) = self.column_chunk.crypto.as_deref() else {
+            return Ok(None);
+        };
+        let Some(decryption) = &self.decryption else {
+            return Err(encryption_err!(
+                "Column '{}' is encrypted but decryption properties were not provided",
+                self.descriptor().path_in_schema.join(".")
+            ));
+        };
+        CryptoContext::for_column(
+            &decryption.file_decryptor,
+            &crypto.crypto_metadata,
+            decryption.row_group_idx,
+            decryption.column_ordinal,
+        )
+        .map(Some)
+    }
+}
+
+/// The min and max of a chunk as the footer stores them, see
+/// [`ColumnChunkMetadata::raw_bounds`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RawBounds<'a> {
+    pub min: Option<&'a [u8]>,
+    pub max: Option<&'a [u8]>,
+    /// Whether the value is the true bound; an inexact one bounds nothing.
+    pub min_is_exact: bool,
+    pub max_is_exact: bool,
 }
 
 /// Materialise a `polars_parquet_format::Statistics` from a `CompactStatistics`

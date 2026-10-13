@@ -18,6 +18,7 @@ pub struct BitmapBuilder {
 }
 
 impl BitmapBuilder {
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }

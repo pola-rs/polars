@@ -1,7 +1,7 @@
 use std::ops::Range;
 
-use arrow::array::Splitable;
-use arrow::bitmap::Bitmap;
+use polars_arrow::array::Splitable;
+use polars_arrow::bitmap::Bitmap;
 
 use crate::read::expr::ParquetColumnExprRef;
 
@@ -39,6 +39,7 @@ impl Filter {
         }
     }
 
+    #[inline]
     pub fn max_offset(&self, total_num_rows: usize) -> usize {
         match self {
             Self::Range(range) => range.end,

@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute::utils::combine_validities_and;
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::chunked_array::cast::CastOptions;
@@ -227,6 +227,7 @@ pub trait SeriesTrait:
     }
 
     /// Get datatype of series.
+    #[inline(always)]
     fn dtype(&self) -> &DataType {
         self._dtype()
     }

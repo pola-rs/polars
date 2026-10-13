@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
-use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::{ArrowDataType, PhysicalType};
-use arrow::offset::{Offset, OffsetsBuffer};
+use polars_arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_arrow::offset::{Offset, OffsetsBuffer};
 use polars_error::{PolarsResult, polars_bail};
 
 use super::{Encoding, WriteOptions, array_to_pages};
@@ -578,10 +578,13 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::*;
-    use arrow::datatypes::*;
+    use polars_arrow::array::*;
+    use polars_arrow::datatypes::*;
 
-    use super::super::{FieldInfo, ParquetPhysicalType};
+    use super::super::{
+        CompressionOptions, FieldInfo, ParquetPhysicalType, StatisticsOptions, Version,
+        to_parquet_type,
+    };
     use super::*;
     use crate::parquet::schema::Repetition;
     use crate::parquet::schema::types::{
@@ -951,5 +954,48 @@ mod tests {
                 ],
             ]
         );
+    }
+
+    #[test]
+    fn test_list_num_nulls() {
+        // [[1, null], null, [], [2]], where the null list hides the value 9.
+        let values = Int32Array::from([Some(1), None, Some(9), Some(2)]).boxed();
+        let array = ListArray::new(
+            ArrowDataType::List(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int32,
+                true,
+            ))),
+            vec![0i32, 2, 3, 3, 4].try_into().unwrap(),
+            values,
+            Some(Bitmap::from([true, false, true, true])),
+        );
+        let type_ = to_parquet_type(&Field::new("a".into(), array.dtype().clone(), true)).unwrap();
+
+        for version in [Version::V1, Version::V2] {
+            let options = WriteOptions {
+                statistics: StatisticsOptions::full(),
+                version,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: None,
+            };
+            let mut columns = array_to_columns(
+                array.clone().boxed(),
+                type_.clone(),
+                options,
+                &[Encoding::Plain],
+            )
+            .unwrap();
+            let Some(Ok(Page::Data(page))) = columns[0].next() else {
+                panic!("expected a data page");
+            };
+
+            // The values 1 and 2 are the only non-null values of the 5 values.
+            assert_eq!(page.num_values(), 5);
+            assert_eq!(page.num_nulls, Some(3));
+            if version == Version::V2 {
+                assert_eq!(page.null_count(), Some(3));
+            }
+        }
     }
 }

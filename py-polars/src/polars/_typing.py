@@ -244,6 +244,8 @@ PivotAgg: TypeAlias = Literal[
 QuantileMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"
 ]
+ApproxQuantileMethod: TypeAlias = Literal["auto", "kll", "req_lo", "req_hi", "req_both"]
+ApproxQuantileErrorBound: TypeAlias = Literal["empirical", "formal"]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
 RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
@@ -474,6 +476,8 @@ DeprecationType: TypeAlias = Literal[
 __all__ = [
     "Alignment",
     "Ambiguous",
+    "ApproxQuantileErrorBound",
+    "ApproxQuantileMethod",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
     "AsofJoinStrategy",

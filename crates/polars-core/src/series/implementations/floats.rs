@@ -13,6 +13,7 @@ macro_rules! impl_dyn_series {
             fn _field(&self) -> Cow<'_, Field> {
                 Cow::Borrowed(self.0.ref_field())
             }
+            #[inline]
             fn _dtype(&self) -> &DataType {
                 self.0.ref_field().dtype()
             }

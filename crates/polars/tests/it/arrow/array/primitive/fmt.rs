@@ -1,6 +1,6 @@
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::types::{days_ms, months_days_ns};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::types::{days_ms, months_days_ns};
 
 #[test]
 fn debug_int32() {

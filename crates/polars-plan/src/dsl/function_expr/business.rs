@@ -1,6 +1,6 @@
 use std::fmt;
 
-use polars_ops::prelude::Roll;
+use polars_defs::expr::Roll;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

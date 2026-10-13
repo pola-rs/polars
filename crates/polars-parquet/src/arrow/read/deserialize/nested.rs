@@ -1,5 +1,5 @@
-use arrow::array::StructArray;
-use arrow::datatypes::{
+use polars_arrow::array::StructArray;
+use polars_arrow::datatypes::{
     DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
     DTYPE_ENUM_VALUES_NEW, IntegerType,
 };

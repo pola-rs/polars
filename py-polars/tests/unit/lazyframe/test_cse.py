@@ -18,6 +18,7 @@ from polars.testing import assert_frame_equal, assert_frame_not_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1019,11 +1020,19 @@ def test_cse_custom_io_source_same_object() -> None:
     assert io_source.call_count == 0
 
     assert_frame_equal(
-        pl.concat(pl.collect_all(lfs)),
+        pl.concat(pl.collect_all(lfs, engine="in-memory")),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
     )
 
     assert io_source.call_count == 1
+
+    # The streaming engine reads a pure source again instead of caching it.
+    assert_frame_equal(
+        pl.concat(pl.collect_all(lfs, engine="streaming")),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]}),
+    )
+
+    assert io_source.call_count == 3
 
     io_source = Mock(wraps=lambda *_: iter([df]))
 
@@ -1574,6 +1583,33 @@ def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> Non
     assert_frame_equal(q4.select(pl.col.x.min()).collect(), pl.DataFrame({"x": [1]}))
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("cache_mode", ["manual", "source", "automatic"])
+@pytest.mark.parametrize("projection", [["k"], ["v", "k"]])
+def test_nested_cache_preserves_projection_29707(
+    engine: EngineType,
+    cache_mode: str,
+    projection: list[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1")
+
+    source = pl.LazyFrame({"k": [1, 2, 3], "v": [1, 2, 2]})
+    if cache_mode != "automatic":
+        source = source.cache()
+    projected = source.select(projection)
+    if cache_mode == "manual":
+        projected = projected.cache()
+    query = pl.concat([projected, projected]).join(source, on="k")
+
+    expected = pl.DataFrame({"k": [1, 2, 3, 1, 2, 3], "v": [1, 2, 2, 1, 2, 2]})
+    if projection == ["v", "k"]:
+        expected = expected.select("v", "k", pl.col("v").alias("v_right"))
+
+    assert query.collect_schema() == expected.schema
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
 def test_csee_height_mismatch_28364() -> None:
     buf = io.BytesIO()
     pl.LazyFrame({"x": [1, 2]}).sink_ipc(buf, record_batch_size=1)
@@ -1675,12 +1711,19 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
     assert "CACHE[id:" not in result.explain()
 
 
-def wide_subplan_referenced(tmp_path: Path, n: int) -> pl.LazyFrame:
+def wide_subplan_referenced(
+    tmp_path: Path, n: int, *, cross: bool = False, overlapping: bool = False
+) -> pl.LazyFrame:
     """`n` branches over one join-and-aggregate subplan, each with its own predicate.
 
     The predicates are all pushable, so the caches are removable; whether removing
     them is worth `n` copies of the join is the question. Written to parquet because
     the cost model reads its row counts from scan metadata.
+
+    Each branch keeps one group, or with `overlapping` all groups but one.
+
+    With `cross`, the join is written as a cross join plus an equality, the form
+    predicate pushdown rewrites into an equi join.
     """
     rows = 20_000
     pl.DataFrame(
@@ -1694,33 +1737,57 @@ def wide_subplan_referenced(tmp_path: Path, n: int) -> pl.LazyFrame:
         {"key": list(range(100)), "name": [f"n{i}" for i in range(100)]}
     ).write_parquet(tmp_path / "dim.parquet")
 
-    base = (
-        pl.scan_parquet(tmp_path / "fact.parquet")
-        .join(pl.scan_parquet(tmp_path / "dim.parquet"), on="key")
-        .group_by("grp", "name")
-        .agg(pl.col("val").sum())
+    fact = pl.scan_parquet(tmp_path / "fact.parquet")
+    dim = pl.scan_parquet(tmp_path / "dim.parquet")
+    joined = (
+        fact.join(dim, how="cross").filter(pl.col("key") == pl.col("key_right"))
+        if cross
+        else fact.join(dim, on="key")
     )
+    base = joined.group_by("grp", "name").agg(pl.col("val").sum())
     return pl.concat(
-        [base.filter(pl.col("grp") == i).select("name", "val") for i in range(n)]
+        [
+            base.filter(
+                pl.col("grp") != i if overlapping else pl.col("grp") == i
+            ).select("name", "val")
+            for i in range(n)
+        ]
     )
 
 
 @pytest.mark.parametrize(
-    ("references", "caches"),
+    ("overlapping", "caches"),
     [
-        # Three narrowed copies cost less than evaluating the join and aggregate once
-        # and reading it back three times.
-        (3, 0),
-        # Eight of them do not: the predicates narrow too little to pay for redoing
-        # the join that often, so the subplan stays shared.
-        (8, 8),
+        # Together the narrowed copies read the subplan about once, which costs less
+        # than evaluating it once and reading it back per branch.
+        (False, 0),
+        # Each copy redoes nearly the whole join, so the subplan stays shared.
+        (True, 8),
     ],
 )
-def test_cspe_reference_count_drives_cache_removal(
-    tmp_path: Path, references: int, caches: int
+def test_cspe_predicate_overlap_drives_cache_removal(
+    tmp_path: Path, overlapping: bool, caches: int
 ) -> None:
-    q = wide_subplan_referenced(tmp_path, references)
+    q = wide_subplan_referenced(tmp_path, 8, overlapping=overlapping)
     assert q.explain().count("CACHE[id:") == caches
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_cross_join_subplan_is_costed_after_pushdown(tmp_path: Path) -> None:
+    # The subplan sits under the cache as a cross join, since pushdown does not
+    # descend into caches. Costed in that form its join prices as a cross product,
+    # which no shared subplan can beat.
+    q = wide_subplan_referenced(tmp_path, 8, cross=True, overlapping=True)
+
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 8
+    # The shared subplan is joined once, not once per branch.
+    assert plan.count("INNER JOIN:") == 1
 
     assert_frame_equal(
         q.collect(),
@@ -1732,9 +1799,45 @@ def test_cspe_reference_count_drives_cache_removal(
 def test_cspe_row_estimate_flag_controls_cache_removal(tmp_path: Path) -> None:
     # Without the estimates the decision falls back to the structural rule, which
     # removes the caches whenever the predicates can be pushed.
-    q = wide_subplan_referenced(tmp_path, 8)
+    q = wide_subplan_referenced(tmp_path, 8, overlapping=True)
+    assert q.explain().count("CACHE[id:") == 8
     plan = q.explain(optimizations=pl.QueryOptFlags(row_estimate=False))
     assert "CACHE[id:" not in plan
+
+
+def test_cspe_shared_subplan_is_costed_with_the_common_bounds(tmp_path: Path) -> None:
+    # Together the branches keep `0 <= grp < 57`, under a tenth of the rows. Costed
+    # without that bound the shared subplan looks more expensive than eight
+    # narrowed copies.
+    rows = 20_000
+    pl.DataFrame(
+        {
+            "key": [i % 100 for i in range(rows)],
+            "grp": [i % 1_000 for i in range(rows)],
+            "val": list(range(rows)),
+        }
+    ).write_parquet(tmp_path / "fact.parquet")
+    pl.DataFrame(
+        {"key": list(range(100)), "name": [f"n{i}" for i in range(100)]}
+    ).write_parquet(tmp_path / "dim.parquet")
+    fact = pl.scan_parquet(tmp_path / "fact.parquet")
+    dim = pl.scan_parquet(tmp_path / "dim.parquet")
+    base = fact.join(dim, on="key").group_by("grp", "name").agg(pl.col("val").sum())
+    q = pl.concat(
+        [
+            base.filter(pl.col("grp") >= i, pl.col("grp") < i + 50).select(
+                "name", "val"
+            )
+            for i in range(8)
+        ]
+    )
+
+    assert q.explain().count("CACHE[id:") == 8
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
 
 
 def test_cspe_cache_removal_keeps_nested_caches(
@@ -1827,6 +1930,11 @@ def test_cspe_nested_cache_under_shared_subplan_no_union_28945() -> None:
         q.collect(),
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
     )
+
+    # The shared pushable filter is moved past the cache into the subplan.
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 2, plan
+    assert plan.count("FILTER") == 1, plan
 
 
 def test_cspe_nested_user_caches_28945() -> None:
@@ -1938,6 +2046,66 @@ def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
     # can be cached
     plan = copied.explain()
     assert plan.count("WITH_COLUMNS") == 1, plan
+
+
+@pytest.mark.parametrize(
+    ("expr", "n_filters"),
+    [
+        # CSPE caches each deterministic filter once.
+        (pl.col("id").is_unique(), 1),
+        (pl.col("id") > pl.col("id").mean(), 1),
+        # Each reference keeps its own non-deterministic filter.
+        (pl.col("id").shuffle(seed=1) == pl.col("id"), 2),
+    ],
+)
+def test_cspe_explicit_cache_shared_barrier_filter_29414(
+    expr: pl.Expr, n_filters: int
+) -> None:
+    # These predicates must stay above the explicit cache without causing a panic.
+    cached = pl.LazyFrame({"id": range(10)}).cache()
+    filtered = cached.filter(expr)
+    q = pl.concat([filtered, filtered])
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 2, plan
+    assert plan.count("FILTER") == n_filters, plan
+
+
+def test_cspe_shared_nondeterministic_filter_29414() -> None:
+    # CSPE inserts a cache below the shuffle filter.
+    lf = pl.LazyFrame({"id": range(10)})
+    f = lf.filter(pl.col("id").shuffle(seed=1) == pl.col("id"))
+    q = pl.concat([f, f])
+
+    # The seed makes the optimized and unoptimized results comparable.
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+    plan = q.explain()
+    assert "CACHE[id:" in plan, plan
+    assert plan.count("FILTER") == 2, plan
+
+
+def test_cspe_explicit_cache_shared_fallible_filter_29414(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # A strict cast crosses the cache only when `maintain_errors` is disabled.
+    cached = pl.LazyFrame({"id": [1, 2, 3]}).cache()
+    filtered = cached.filter(pl.col("id").cast(pl.Int32) > 1)
+    q = pl.concat([filtered, filtered])
+    expected = pl.DataFrame({"id": [2, 3, 2, 3]})
+
+    assert_frame_equal(q.collect(), expected)
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 2, plan
+    assert plan.count("FILTER") == 1, plan
+
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    assert_frame_equal(q.collect(), expected)
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 2, plan
+    assert plan.count("FILTER") == 1, plan
 
 
 def year_totals() -> pl.LazyFrame:
@@ -2126,3 +2294,49 @@ def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows(dead: pl.Expr) -> No
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("method", ["select", "with_columns"])
+def test_cspe_filter_on_redefined_column_not_pushed_into_cache_29788(
+    engine: EngineType, method: str
+) -> None:
+    base = pl.LazyFrame(
+        {"c": ["a", "b"], "d": ["x", "y"], "e": [1, 2], "v": [1, 2], "w": [3, 4]}
+    ).filter(pl.col("e") > 0)
+
+    def proj(v: str) -> pl.LazyFrame:
+        # Redefines "c" in terms of the original "c".
+        exprs = [(pl.col("c") + pl.col("d")).alias("c"), pl.col(v).alias("x")]
+        if method == "select":
+            lf = base.select(exprs)
+        else:
+            lf = base.with_columns(exprs)
+        return lf.select("c", "x")
+
+    q = pl.concat([proj("v"), proj("w")]).filter(pl.col("c") == "ax")
+
+    expected = pl.DataFrame({"c": ["ax", "ax"], "x": [1, 3]})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("method", ["select", "with_columns"])
+def test_cse_scalar_multichunk_projection_29902(method: str) -> None:
+    # The first chunk must be large enough to trigger chunk-wise evaluation.
+    n = 2 * pl.thread_pool_size() + 10
+    df = pl.concat(
+        [pl.DataFrame({"x": range(n)}), pl.DataFrame({"x": [n]})], rechunk=False
+    )
+    assert df.n_chunks() == 2
+
+    exprs = {"a": pl.col("x") + pl.col("x").sum(), "b": pl.col("x").sum()}
+    lf = df.lazy()
+    q = lf.select(**exprs) if method == "select" else lf.with_columns(**exprs)
+
+    total = sum(range(n + 1))
+    expected = pl.DataFrame(
+        {"a": [x + total for x in range(n + 1)], "b": [total] * (n + 1)}
+    )
+    if method == "with_columns":
+        expected = pl.concat([df.rechunk(), expected], how="horizontal")
+    assert_frame_equal(q.collect(engine="in-memory"), expected)

@@ -26,6 +26,7 @@ aimd = "aimd"
 
 [default.extend-identifiers]
 AKS = "AKS"
+ba_field = "ba_field"
 
 [type.py]
 extend-ignore-re = ['\.flags\.writeable\b']

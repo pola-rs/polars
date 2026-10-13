@@ -360,6 +360,7 @@ impl SlicePushDown {
                     predicate,
                     predicate_file_skip_applied,
                     scan_type,
+                    maintain_order,
                 },
                 Some(state),
             ) if predicate.is_none()
@@ -384,6 +385,8 @@ impl SlicePushDown {
 
                     FileScanIR::ExpandedPaths { .. } => false,
 
+                    FileScanIR::ExternalReaderBuilder { .. } => true,
+
                     // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                     FileScanIR::Anonymous { .. } => state.offset == 0,
                 } =>
@@ -405,6 +408,7 @@ impl SlicePushDown {
                             unified_scan_args,
                             predicate,
                             predicate_file_skip_applied,
+                            maintain_order,
                         };
 
                         lp_arena.replace(ir_node, lp);
@@ -419,6 +423,7 @@ impl SlicePushDown {
                             unified_scan_args,
                             predicate,
                             predicate_file_skip_applied,
+                            maintain_order,
                         };
 
                         self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
@@ -436,6 +441,7 @@ impl SlicePushDown {
                     unified_scan_args,
                     predicate,
                     predicate_file_skip_applied,
+                    maintain_order,
                 };
 
                 Ok(lp)
@@ -503,7 +509,9 @@ impl SlicePushDown {
                     mut options,
                 },
                 Some(state),
-            ) if !matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. }) => {
+            ) if !matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. })
+                && !options.options.has_fused_predicate() =>
+            {
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).args.slice {
                     return if let Some(combined) = combine_outer_inner_slice(
                         state,

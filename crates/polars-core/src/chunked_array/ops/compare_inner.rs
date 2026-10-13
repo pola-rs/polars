@@ -16,12 +16,14 @@ use crate::series::implementations::null::NullChunked;
 pub struct NonNull<T>(pub T);
 
 impl<T: TotalEq> TotalEq for NonNull<T> {
+    #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
         self.0.tot_eq(&other.0)
     }
 }
 
 impl<T: TotalOrd> TotalOrd for NonNull<T> {
+    #[inline]
     fn tot_cmp(&self, other: &Self) -> Ordering {
         self.0.tot_cmp(&other.0)
     }
@@ -31,9 +33,12 @@ impl<T> IsNull for NonNull<T> {
     const HAS_NULLS: bool = false;
     type Inner = T;
 
+    #[inline(always)]
     fn is_null(&self) -> bool {
         false
     }
+
+    #[inline(always)]
     fn unwrap_inner(self) -> Self::Inner {
         self.0
     }
@@ -46,6 +51,8 @@ pub trait GetInner {
 
 impl<'a, T: PolarsDataType> GetInner for &'a ChunkedArray<T> {
     type Item = Option<T::Physical<'a>>;
+
+    #[inline(always)]
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         ChunkedArray::get_unchecked(self, idx)
     }
@@ -53,6 +60,8 @@ impl<'a, T: PolarsDataType> GetInner for &'a ChunkedArray<T> {
 
 impl<'a, T: StaticArray> GetInner for &'a T {
     type Item = Option<T::ValueT<'a>>;
+
+    #[inline(always)]
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         <T as StaticArray>::get_unchecked(self, idx)
     }
@@ -60,6 +69,8 @@ impl<'a, T: StaticArray> GetInner for &'a T {
 
 impl<'a, T: PolarsDataType> GetInner for NonNull<&'a ChunkedArray<T>> {
     type Item = NonNull<T::Physical<'a>>;
+
+    #[inline(always)]
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         NonNull(self.0.value_unchecked(idx))
     }
@@ -67,6 +78,8 @@ impl<'a, T: PolarsDataType> GetInner for NonNull<&'a ChunkedArray<T>> {
 
 impl<'a, T: StaticArray> GetInner for NonNull<&'a T> {
     type Item = NonNull<T::ValueT<'a>>;
+
+    #[inline(always)]
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item {
         NonNull(self.0.value_unchecked(idx))
     }

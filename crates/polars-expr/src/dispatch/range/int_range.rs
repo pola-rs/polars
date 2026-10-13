@@ -1,6 +1,6 @@
 use polars_core::prelude::*;
+use polars_core::series::ops::int_range::new_int_range;
 use polars_core::with_match_physical_integer_polars_type;
-use polars_ops::series::new_int_range;
 
 use super::utils::{ensure_items_contain_exactly_one_value, numeric_ranges_impl_broadcast};
 

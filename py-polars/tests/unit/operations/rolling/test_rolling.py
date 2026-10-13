@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import re
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ClosedInterval,
+        EngineType,
         PolarsDataType,
         QuantileMethod,
         RankMethod,
@@ -294,7 +295,7 @@ def test_rolling_skew_kurtosis_empty_28515(rolling_fn: str) -> None:
 def test_rolling_crossing_dst(
     time_zone: str | None,
     rolling_fn: str,
-    expected_values: list[int | None | float],
+    expected_values: list[int | float | None],
     expected_dtype: PolarsDataType,
 ) -> None:
     ts = pl.datetime_range(
@@ -1933,6 +1934,66 @@ def test_rolling_median_23480() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_rolling_weighted_median_center_29170() -> None:
+    # A centered window is truncated at the tail, but the weighted kernel used to read
+    # `window_size` values past the window start regardless, running off the end of the
+    # array.
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    result = s.rolling_median(
+        window_size=3, min_samples=1, weights=[1.0, 1.0, 1.0], center=True
+    )
+
+    # Windows are [1, 2], [1, 2, 3] and [2, 3].
+    expected = pl.Series([1.5, 2.0, 2.5])
+    assert_series_equal(result, expected)
+    # Uniform weights must agree with the unweighted kernel.
+    assert_series_equal(
+        result, s.rolling_median(window_size=3, min_samples=1, center=True)
+    )
+
+
+def test_rolling_weighted_median_partial_window_29170() -> None:
+    # With `min_samples` below `window_size` the leading windows are shorter than
+    # `window_size`. The weighted kernel used to fill them with values from *after* the
+    # window instead, so a backwards-looking rolling median looked forwards.
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    result = s.rolling_median(window_size=3, min_samples=1, weights=[1.0, 1.0, 1.0])
+
+    # Windows are [1], [1, 2] and [1, 2, 3].
+    expected = pl.Series([1.0, 1.5, 2.0])
+    assert_series_equal(result, expected)
+    # Uniform weights must agree with the unweighted kernel.
+    assert_series_equal(result, s.rolling_median(window_size=3, min_samples=1))
+
+
+def test_rolling_weighted_median_all_zero_weights_in_window() -> None:
+    # A truncated window can cover only zero weights,
+    # leaving nothing to take a quantile over.
+    # The result is undefined, represented as a null.
+    s = pl.Series([1.0, 2.0, 3.0])
+    result = s.rolling_median(window_size=3, min_samples=1, weights=[1.0, 0.0, 0.0])
+
+    # The first window covers only the last weight, which is zero.
+    # The second covers the last two, also both zero.
+    # The third now has a valid weight.
+    expected = pl.Series([None, None, 1.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
+
+
+def test_rolling_weighted_median_all_zero_weights_in_centered_window_29170() -> None:
+    s = pl.Series([1.0, 2.0, 3.0])
+    result = s.rolling_median(
+        window_size=5, min_samples=1, weights=[1.0, 0.0, 0.0, 0.0, 1.0], center=True
+    )
+
+    # The windows cover weights[2:5], weights[1:4] and weights[0:3]; only the middle one
+    # is left without a value to take a quantile over.
+    expected = pl.Series([3.0, None, 1.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
@@ -2351,6 +2412,32 @@ def test_rolling_rank_closed_left_26147() -> None:
     assert_frame_equal(actual, expected)
 
 
+def test_rolling_rank_by_null_in_shared_window() -> None:
+    # All `by` values are equal, so every row is ranked against the same
+    # window. A null in that window must only null out its own row.
+    df = pl.DataFrame(
+        {"index": [0, 0, 0, 0], "x": [1, 2, None, 4], "y": [1, 2, 4, None]}
+    )
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("index", window_size="4i"),
+        y_ranked=pl.col("y").rolling_rank_by("index", window_size="4i"),
+    )
+    expected = df.with_columns(
+        x_ranked=pl.Series([1.0, 2.0, None, 3.0]),
+        y_ranked=pl.Series([1.0, 2.0, 3.0, None]),
+    )
+    assert_frame_equal(actual, expected)
+
+
+def test_rolling_rank_by_unsorted_by() -> None:
+    df = pl.DataFrame({"index": [3, 1, 2], "x": [30, None, 20]})
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("index", window_size="3i"),
+    )
+    expected = df.with_columns(x_ranked=pl.Series([2.0, None, 1.0]))
+    assert_frame_equal(actual, expected)
+
+
 def test_rolling_cov_no_panic_26741() -> None:
     result = (
         pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})
@@ -2490,3 +2577,101 @@ def test_min_periods_removed() -> None:
 
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("k", "expected"),
+    [
+        (
+            [1.0, nan, 2.0, nan, nan],
+            {
+                "min": [1.0, 1.0, 1.0, 2.0, 2.0],
+                "max": [1.0, 1.0, 2.0, 2.0, 2.0],
+                "arg_min": [0, 0, 0, 1, 0],
+                "arg_max": [0, 0, 2, 1, 0],
+                "min_by": [0, 0, 0, 2, 2],
+                "max_by": [0, 0, 2, 2, 2],
+            },
+        ),
+        (
+            [1.0, nan, None, 2.0, 3.0, nan],
+            {
+                "min": [1.0, 1.0, 1.0, 2.0, 2.0, 2.0],
+                "max": [1.0, 1.0, 1.0, 2.0, 3.0, 3.0],
+                "arg_min": [0, 0, 0, 2, 1, 0],
+                "arg_max": [0, 0, 0, 2, 2, 1],
+                "min_by": [0, 0, 0, 3, 3, 3],
+                "max_by": [0, 0, 0, 3, 4, 4],
+            },
+        ),
+    ],
+)
+def test_rolling_agg_min_max_ignore_nan(
+    engine: EngineType, k: list[float | None], expected: dict[str, list[Any]]
+) -> None:
+    q = (
+        pl.LazyFrame({"k": k})
+        .with_row_index("t")
+        .rolling("t", period="3i")
+        .agg(
+            pl.col("k").min().alias("min"),
+            pl.col("k").max().alias("max"),
+            pl.col("k").arg_min().alias("arg_min"),
+            pl.col("k").arg_max().alias("arg_max"),
+            pl.col("t").min_by("k").alias("min_by"),
+            pl.col("t").max_by("k").alias("max_by"),
+        )
+    )
+    idx = get_index_type()
+    assert_frame_equal(
+        q.collect(engine=engine).drop("t"),
+        pl.DataFrame(
+            expected,
+            schema_overrides={
+                "arg_min": idx,
+                "arg_max": idx,
+                "min_by": idx,
+                "max_by": idx,
+            },
+        ),
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("b", "period"),
+    [
+        ([None, False, True, None, None, False], 2),
+        ([None, None, None], 2),
+        ([None if i % 7 == 0 else i % 23 == 5 for i in range(100)], 10),
+    ],
+)
+def test_rolling_agg_arg_min_max_bool(
+    engine: EngineType, b: list[bool | None], period: int
+) -> None:
+    def first(window: list[bool | None], target: bool) -> int | None:
+        for value in (target, not target):
+            if value in window:
+                return window.index(value)
+        return None
+
+    windows = [b[max(0, t - period + 1) : t + 1] for t in range(len(b))]
+    idx = get_index_type()
+    expected = pl.DataFrame(
+        {
+            "arg_min": [first(w, False) for w in windows],
+            "arg_max": [first(w, True) for w in windows],
+        },
+        schema={"arg_min": idx, "arg_max": idx},
+    )
+    q = (
+        pl.LazyFrame({"b": b}, schema={"b": pl.Boolean})
+        .with_row_index("t")
+        .rolling("t", period=f"{period}i")
+        .agg(
+            pl.col("b").arg_min().alias("arg_min"),
+            pl.col("b").arg_max().alias("arg_max"),
+        )
+    )
+    assert_frame_equal(q.collect(engine=engine).drop("t"), expected)

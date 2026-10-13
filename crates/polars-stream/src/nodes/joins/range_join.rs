@@ -1,19 +1,20 @@
 use std::mem;
 use std::ops::BitAnd;
 
-use arrow::array::builder::ShareStrategy;
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_arrow::array::builder::ShareStrategy;
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
+use polars_defs::join::{IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
+use polars_ops::frame::_finish_join;
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
-use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
+use crate::nodes::{ComputeNode, NodeMemoryUsage};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 pub fn left_is_point<T>(left_on: &[T], right_on: &[T], args: &JoinArgs) -> bool {
@@ -85,6 +86,7 @@ impl RangeJoinNode {
         descending: bool,
         args: JoinArgs,
         options: IEJoinOptions,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
         let left_is_point = left_is_point(&left_on, &right_on, &args);
         let ops_n = if options.operator2.is_some() { 2 } else { 1 };
@@ -167,7 +169,7 @@ impl RangeJoinNode {
             args,
         };
         RangeJoinNode {
-            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema)),
+            state: RangeJoinState::Build(InMemorySinkNode::new(point_schema, task_metrics)),
             params,
         }
     }
@@ -178,8 +180,12 @@ impl ComputeNode for RangeJoinNode {
         "range-join"
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        !matches!(self.state, RangeJoinState::Done)
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            RangeJoinState::Build(_) => NodeMemoryUsage::Accumulating,
+            RangeJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
+            RangeJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn update_state(

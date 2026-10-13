@@ -541,3 +541,133 @@ def test_streaming_group_by_nested_agg_fallback() -> None:
     )
     expected = {("aaa", n // 3), ("bbb", n - n // 3)}
     assert expected == set(res.rows())
+
+
+@pytest.mark.parametrize("n_groups", [3, 5000])
+def test_streaming_group_by_shared_agg_subexpression(n_groups: int) -> None:
+    n = 20_000
+    df = pl.DataFrame(
+        {
+            "g": [i % n_groups for i in range(n)],
+            "a": [float(i) for i in range(n)],
+            "b": [None if i % 11 == 0 else (i % 7) / 10 for i in range(n)],
+            "c": [(i % 5) / 10 for i in range(n)],
+        }
+    )
+    shared = pl.col("a") * (1 - pl.col("b"))
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(
+            shared.sum().alias("s1"),
+            (shared * (1 + pl.col("c"))).sum().alias("s2"),
+            (shared * (1 + pl.col("c"))).max().alias("m2"),
+            pl.col("b").mean(),
+        )
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("key_dtype", [pl.Int64, pl.String])
+def test_streaming_group_by_hot_table_growth(
+    key_dtype: pl.DataType,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1000")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "256")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    # Frequent keys, more than the initial hot table holds, mixed with keys that
+    # occur only once.
+    n = 200_000
+    rng = np.random.default_rng(0)
+    heavy = rng.integers(0, 30, n)
+    unique = np.arange(1_000_000, 1_000_000 + n)
+    key = np.where(rng.random(n) < 0.7, heavy, unique)
+    df = pl.DataFrame({"g": key, "v": np.arange(n)}).with_columns(
+        pl.col("g").cast(key_dtype)
+    )
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(pl.col("v").sum().alias("sum"), pl.col("v").first().alias("first"))
+    )
+
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    assert "[group-by]: hot table" in capfd.readouterr().err
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [
+        [pl.col("a")],
+        [pl.col("s")],
+        [pl.col("a"), pl.col("b")],
+        [pl.struct("a", "s")],
+    ],
+)
+def test_streaming_group_by_sorted_runs(
+    keys: list[pl.Expr], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "16")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "16")
+
+    # Runs of equal keys, with far more keys than the hot table holds.
+    n = 2_000
+    a = np.repeat(np.arange(n // 4), 4)
+    df = pl.DataFrame({"a": a, "v": np.arange(n)}).with_columns(
+        pl.when(pl.col("a") % 10 != 0).then(pl.col("a")).alias("a"),
+        b=pl.col("a") % 7,
+        s=pl.col("a").cast(pl.String),
+    )
+    q = (
+        df.lazy()
+        .group_by(keys)
+        .agg(pl.col("v").sum(), pl.col("v").min().alias("min"), pl.len())
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("n_groups", [3, 100])
+def test_streaming_group_by_null_on_empty_after_valid_morsels(
+    n_groups: int, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "50")
+
+    # Morsels without nulls, then a group that only has nulls.
+    n = 1_000
+    df = pl.DataFrame(
+        {
+            "g": [i % n_groups for i in range(n)] + [n_groups] * 10,
+            "v": [*range(n), *([None] * 10)],
+        }
+    )
+    v = pl.col("v")
+    q = (
+        df.lazy()
+        .group_by("g")
+        .agg(
+            s=pl.when(v.count() > 0).then(v.sum()),
+            mn=v.min(),
+            mx=v.max(),
+        )
+    )
+    out = q.collect(engine="streaming")
+    assert out.filter(pl.col("g") == n_groups).select("s", "mn", "mx").row(0) == (
+        None,
+        None,
+        None,
+    )
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)

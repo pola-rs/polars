@@ -17,6 +17,7 @@ pub fn calc_n_readers_pre_init(
     num_pipelines: usize,
     num_sources: usize,
     pre_slice: Option<&Slice>,
+    preferred_remote_pre_init: Option<usize>,
 ) -> usize {
     if let Ok(v) = std::env::var("POLARS_NUM_READERS_PRE_INIT").map(|x| {
         x.parse::<NonZeroUsize>()
@@ -33,8 +34,8 @@ pub fn calc_n_readers_pre_init(
     };
 
     // Set this generously high, there are users who scan 10,000's of small files from the cloud.
-    num_pipelines
-        .saturating_add(3)
+    preferred_remote_pre_init
+        .unwrap_or(num_pipelines.saturating_add(3))
         .min(max_files_with_slice)
         .min(num_sources)
         .clamp(1, 128)
@@ -69,9 +70,13 @@ pub async fn is_compressed_source(
         .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref(), io_metrics)
         .await?;
 
-    let Ok(first_4_bytes) = byte_source.get_range(0..4).await else {
+    // Note: `get_range()` requires the range to be in-bounds, so clamp against the file size -
+    // sources smaller than the magic are simply not compressed.
+    let n_magic_bytes = byte_source.get_size().await?.min(4);
+
+    let Ok(magic_bytes) = byte_source.get_range(0..n_magic_bytes).await else {
         return Ok(false);
     };
 
-    Ok(SupportedCompression::check(&first_4_bytes).is_some())
+    Ok(SupportedCompression::check(&magic_bytes).is_some())
 }

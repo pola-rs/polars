@@ -1,20 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
-
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Default, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-pub enum ClosedInterval {
-    #[default]
-    Both,
-    Left,
-    Right,
-    None,
-}
+use polars_defs::expr::ClosedInterval;
 
 pub fn new_linear_space_f32(
     start: f32,

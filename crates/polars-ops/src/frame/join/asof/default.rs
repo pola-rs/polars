@@ -1,6 +1,6 @@
-use arrow::array::Array;
-use arrow::bitmap::Bitmap;
 use num_traits::Zero;
+use polars_arrow::array::Array;
+use polars_arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::total_ord::TotalOrd;
@@ -178,7 +178,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::array::PrimitiveArray;
+    use polars_arrow::array::PrimitiveArray;
 
     use super::*;
 

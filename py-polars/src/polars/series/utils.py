@@ -42,7 +42,7 @@ def expr_dispatch(cls: type[T]) -> type[T]:
         if (
             # private
             not name.startswith("_")
-            # Avoid error when building docs
+            # avoid error when building docs
             # https://github.com/pola-rs/polars/pull/13238#discussion_r1438787093
             # TODO: is there a better way to do this?
             and name != "plot"
@@ -51,20 +51,22 @@ def expr_dispatch(cls: type[T]) -> type[T]:
             if callable(attr):
                 removed_params = getattr(attr, "__removed_parameters__", None)
                 attr = cast("Callable[..., Series]", _undecorated(attr))
+
                 # note: `co_varnames` starts with the function args, but needs to be
                 # constrained by `co_argcount` as it also includes function-level consts
                 args = attr.__code__.co_varnames[: attr.__code__.co_argcount]
+
                 # if an expression method with compatible method exists, further check
                 # that the series implementation has an empty function body
                 if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
                     dispatcher = call_expr(attr)
                     if removed_params is not None:
-                        # The @removed_params() decorator was applied to the original
+                        # the @removed_params() decorator was applied to the original
                         # function, so we also apply it to the dispatcher function.
                         dispatcher = removed_parameters(*removed_params)(dispatcher)
                     setattr(cls, name, dispatcher)
 
-    # Forward any __getattr__ calls to the Expr namespace's too.
+    # forward any `__getattr__` calls to the Expr namespace's too.
     if (namespace, "__getattr__", ("self", "name")) in expr_lookup:
         cls.__getattr__ = _forward_getattr(cls, namespace)  # type: ignore[attr-defined]
 
@@ -166,6 +168,12 @@ def _is_empty_method(func: SeriesMethod) -> bool:
     fc = func.__code__
     return (fc.co_code in _EMPTY_BYTECODE) and (
         (len(fc.co_consts) == 2 and fc.co_consts[1] is None)
+        or (
+            # note: py315 loads the implicit None without storing it in `co_consts`
+            sys.version_info >= (3, 15)
+            and isinstance(func.__doc__, str)
+            and fc.co_consts == (func.__doc__,)
+        )
         # account for optimized-out docstrings (eg: running 'python -OO')
         or (sys.flags.optimize == 2 and fc.co_consts == (None,))
     )

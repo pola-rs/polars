@@ -35,4 +35,10 @@ impl PyExpr {
         let e = self.inner.clone().struct_().with_fields(fields);
         e.into()
     }
+
+    fn struct_eval(&self, fields: Vec<PyExpr>) -> Self {
+        let fields = fields.to_exprs();
+        let e = self.inner.clone().struct_().eval(fields);
+        e.into()
+    }
 }

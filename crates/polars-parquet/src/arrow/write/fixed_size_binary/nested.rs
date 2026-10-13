@@ -1,4 +1,4 @@
-use arrow::array::{Array, FixedSizeBinaryArray};
+use polars_arrow::array::FixedSizeBinaryArray;
 use polars_error::PolarsResult;
 
 use super::encode_plain;
@@ -24,11 +24,12 @@ pub fn array_to_page(
 
     encode_plain(array, encode_options, &mut buffer);
 
+    let num_values = nested::num_values(nested);
     utils::build_plain_page(
         buffer,
-        nested::num_values(nested),
+        num_values,
         nested[0].len(),
-        array.null_count(),
+        nested::num_nulls(num_values, array),
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics.map(|x| x.serialize()),

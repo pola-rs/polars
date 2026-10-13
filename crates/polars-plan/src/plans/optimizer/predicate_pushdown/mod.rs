@@ -3,8 +3,9 @@ mod group_by;
 mod hive;
 mod join;
 mod keys;
-mod utils;
+pub(super) mod utils;
 
+pub(crate) use dynamic::new_dynamic_pred;
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
 use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
@@ -15,10 +16,9 @@ pub(crate) use utils::combine_predicates;
 use utils::*;
 
 use super::*;
-use crate::plans::optimizer::predicate_pushdown::dynamic::new_dynamic_pred;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::utils::{check_input_node, has_aexpr};
+use crate::utils::check_input_node;
 
 pub struct PredicatePushDown {
     // How many cache nodes a predicate may be pushed down to.
@@ -34,10 +34,17 @@ pub struct PredicatePushDown {
     pub(super) hive_rewrite_active: bool,
     // Rewrite hive partitioned join.
     pub(super) partition_hive: bool,
+    // Functions supplied by the caller, e.g. the hive partition key frame join.
+    pub(super) hooks: ExecutionHooks,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, streaming: bool, partition_hive: bool) -> Self {
+    pub fn new(
+        maintain_errors: bool,
+        streaming: bool,
+        partition_hive: bool,
+        hooks: ExecutionHooks,
+    ) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
@@ -46,6 +53,7 @@ impl PredicatePushDown {
             maintain_errors,
             hive_rewrite_active: false,
             partition_hive,
+            hooks,
         }
     }
 }
@@ -353,6 +361,7 @@ impl PredicatePushDown {
                 scan_type,
                 unified_scan_args,
                 output_schema,
+                maintain_order,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -397,6 +406,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     }
                 } else {
                     let lp = Scan {
@@ -408,6 +418,7 @@ impl PredicatePushDown {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        maintain_order,
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
@@ -647,6 +658,11 @@ impl PredicatePushDown {
             lp @ SinkMultiple { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
+            // Without a length preserving expression the height does not follow the input: a
+            // select of only scalars gives one row, also on an empty input.
+            lp @ Select { .. } if !lp.exprs().any(|e| e.is_length_preserving(expr_arena)) => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
             // Pushed down passed these nodes
             lp @ HStack { .. } | lp @ Select { .. } | lp @ SimpleProjection { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
@@ -654,6 +670,10 @@ impl PredicatePushDown {
             // NOT Pushed down passed these nodes
             // predicates influence slice sizes / indices
             lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            // Windows are created after predicate pushdown.
+            lp @ Window { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             // Caches will run predicate push-down in the `cache_states` run.

@@ -216,7 +216,9 @@ pub fn python_scan_predicate(
                         )?;
                         let mut combined: Option<Bound<'_, PyAny>> = None;
                         for node in MintermIter::new(e.node(), expr_arena) {
-                            if let Some(pa) = aexpr_to_pyarrow(py, &pc, node, expr_arena) {
+                            if let Some(pa) =
+                                aexpr_to_pyarrow(py, &pc, node, expr_arena, &options.schema)
+                            {
                                 convertible_nodes.push(node);
                                 // Combine with and operator:
                                 // Need to catch error to satisfy rust, but I'm not sure how this would fail without
@@ -321,6 +323,17 @@ pub fn python_scan_predicate(
     };
 
     Ok((predicate, predicate_serialized))
+}
+
+/// CSE adds its columns with a non-broadcasting `HStack`. If these columns can be
+/// shorter than the DataFrame, the DataFrame cannot be split by chunks.
+fn has_short_cse_input(input: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> bool {
+    match lp_arena.get(input) {
+        IR::HStack { exprs, options, .. } if !options.should_broadcast => {
+            !exprs.iter().all(|e| e.is_length_preserving(expr_arena))
+        },
+        _ => false,
+    }
 }
 
 #[recursive]
@@ -471,6 +484,7 @@ fn create_physical_plan_impl(
             predicate,
             predicate_file_skip_applied,
             unified_scan_args,
+            maintain_order: _,
         } => {
             let mut expr_conversion_state = ExpressionConversionState::new(true);
 
@@ -491,6 +505,7 @@ fn create_physical_plan_impl(
                         None, // hive_schema
                         &mut expr_conversion_state,
                         create_skip_batch_predicate,
+                        false,
                         false,
                     )
                 })
@@ -529,13 +544,16 @@ fn create_physical_plan_impl(
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            let short_cse_input = has_short_cse_input(input, lp_arena, expr_arena);
             let input = recurse!(input, state)?;
             let mut state =
                 ExpressionConversionState::new(RAYON.current_num_threads() > expr.len());
             let phys_expr =
                 create_physical_expressions_from_irs(&expr, expr_arena, &input_schema, &mut state)?;
 
-            let allow_vertical_parallelism = options.should_broadcast && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
+            let allow_vertical_parallelism = options.should_broadcast
+                && !short_cse_input
+                && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
                 // If all columns are literal we would get a 1 row per thread.
                 && !phys_expr.iter().all(|p| {
                     p.is_literal()
@@ -708,6 +726,8 @@ fn create_physical_plan_impl(
             schema,
             ..
         } => {
+            options.ensure_executable()?;
+
             let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
             let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
@@ -791,9 +811,11 @@ fn create_physical_plan_impl(
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            let short_cse_input = has_short_cse_input(input, lp_arena, expr_arena);
             let input = recurse!(input, state)?;
 
             let allow_vertical_parallelism = options.should_broadcast
+                && !short_cse_input
                 && exprs
                     .iter()
                     .all(|e| is_elementwise_rec(e.node(), expr_arena));
@@ -814,6 +836,33 @@ fn create_physical_plan_impl(
                 output_schema,
                 options,
                 allow_vertical_parallelism,
+            }))
+        },
+        Window {
+            input,
+            exprs,
+            schema: output_schema,
+            ..
+        } => {
+            let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            let input = recurse!(input, state)?;
+
+            let mut state =
+                ExpressionConversionState::new(RAYON.current_num_threads() > exprs.len());
+
+            let phys_exprs = create_physical_expressions_from_irs(
+                &exprs,
+                expr_arena,
+                &input_schema,
+                &mut state,
+            )?;
+            Ok(Box::new(executors::StackExec {
+                input,
+                has_windows: state.has_windows,
+                exprs: phys_exprs,
+                output_schema,
+                options: ProjectionOptions::default(),
+                allow_vertical_parallelism: false,
             }))
         },
         MapFunction {

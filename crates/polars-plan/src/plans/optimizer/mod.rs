@@ -11,7 +11,7 @@ mod cluster_with_columns;
 mod collapse_and_project;
 mod collect_members;
 #[cfg(feature = "cse")]
-mod cse;
+pub mod cse;
 #[cfg(feature = "merge_sorted")]
 mod flatten_merge_sorted;
 mod flatten_union;
@@ -19,10 +19,15 @@ mod flatten_union;
 mod fused;
 mod join_build_side;
 mod join_order;
+mod join_predicate_fusion;
+mod join_pushthrough;
+mod join_runtime_filter;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
+mod extract_window;
+pub use expand_datasets::attach_dataset_scan_statistics;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
@@ -51,7 +56,9 @@ use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{
     AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
 };
-pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
+pub use stack_opt::{
+    OptimizationRule, OptimizeExprContext, StackOptimizer, passes_on_filter_predicate,
+};
 
 #[cfg(feature = "merge_sorted")]
 use self::flatten_merge_sorted::FlattenMergeSortedRule;
@@ -83,6 +90,20 @@ pub(crate) fn pushdown_maintain_errors() -> bool {
     std::env::var("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS").as_deref() == Ok("1")
 }
 
+/// Joins two hive partition key frames on the given key columns.
+pub type HiveJoinFn = fn(&DataFrame, &DataFrame, &str, &str, JoinArgs) -> PolarsResult<DataFrame>;
+
+/// Applies the scan predicate of a scan IR node to that node.
+pub type ApplyScanPredicateFn = fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>;
+
+/// Functions the optimizer needs from the execution layer, injected by the caller so that
+/// polars-plan does not depend on the crates implementing them.
+#[derive(Clone, Copy)]
+pub struct ExecutionHooks {
+    pub apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
+    pub hive_join: HiveJoinFn,
+}
+
 #[recursive::recursive]
 pub fn optimize(
     mut root: Node,
@@ -90,11 +111,7 @@ pub fn optimize(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    apply_scan_predicate_to_scan_ir: fn(
-        Node,
-        &mut Arena<IR>,
-        &mut Arena<AExpr>,
-    ) -> PolarsResult<()>,
+    hooks: ExecutionHooks,
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
@@ -144,7 +161,7 @@ pub fn optimize(
     if comm_subplan_elim {
         feature_gated!("cse", {
             let members = get_or_init_members!();
-            if ((members.has_sink_multiple || members.has_joins_or_unions)
+            if ((members.has_sink_multiple || members.has_joins || members.has_unions)
                 && members.has_duplicate_scans())
                 || members.has_cse_equivalent_resolvers()
             {
@@ -157,6 +174,7 @@ pub fn optimize(
                     ir_arena,
                     expr_arena,
                     polars_config::config().allow_nested_cspe(),
+                    !opt_flags.streaming(),
                 );
             }
         });
@@ -180,6 +198,7 @@ pub fn optimize(
             pushdown_maintain_errors,
             opt_flags.streaming(),
             opt_flags.partition_hive(),
+            hooks,
         );
         let ir = ir_arena.take(root);
         let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
@@ -198,6 +217,7 @@ pub fn optimize(
             opt_flags.streaming(),
             opt_flags.partition_hive(),
             opt_flags.row_estimate(),
+            hooks,
         )?;
     }
 
@@ -212,10 +232,30 @@ pub fn optimize(
         )?;
     }
 
+    // Gives the dataset scans the statistics that the join passes need.
+    #[cfg(feature = "python")]
+    if opt_flags.join_order() && get_or_init_members!().has_joins {
+        expand_datasets::expand_datasets_early(
+            root,
+            ir_arena,
+            expr_arena,
+            expand_datasets::EarlyExpansion::ForJoinOrder,
+        )?;
+    }
+
     // Needs the filters that predicate pushdown places on the scans, and must come
     // before projection pushdown so projections follow the final join order.
-    if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
+    if opt_flags.join_order() && get_or_init_members!().has_preserving_join {
+        root = join_pushthrough::push_through_outer_joins(root, ir_arena, expr_arena);
+    }
+    if opt_flags.join_order() && get_or_init_members!().has_joins {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
+    }
+
+    // After join ordering, and before projection pushdown drops what only the fused predicate
+    // reads.
+    if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins {
+        join_predicate_fusion::fuse_predicates(root, ir_arena, expr_arena)?;
     }
 
     if opt_flags.projection_pushdown() {
@@ -263,8 +303,11 @@ pub fn optimize(
     }
 
     // Needs the final join order and the pushed-down projections.
-    if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins_or_unions {
+    if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins {
         join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
+        if opt_flags.streaming() {
+            join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena);
+        }
     }
 
     if opt_flags.cluster_with_columns() && get_or_init_members!().with_columns_count > 1 {
@@ -283,6 +326,10 @@ pub fn optimize(
             let rewritten = ir_node.rewrite(&mut optimizer, arena)?;
             Ok(rewritten.node())
         })?;
+    }
+
+    if opt_flags.streaming() && !opt_flags.gpu() {
+        extract_window::extract_windows(root, ir_arena, expr_arena);
     }
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
@@ -312,15 +359,15 @@ pub fn optimize(
         }
     }
 
-    expand_datasets::expand_datasets(root, ir_arena, expr_arena, apply_scan_predicate_to_scan_ir)?;
-
-    call_dsl_resolvers::call_dsl_resolvers(
+    expand_datasets::expand_datasets(
         root,
         ir_arena,
         expr_arena,
-        opt_flags,
-        apply_scan_predicate_to_scan_ir,
+        opt_flags.predicate_pushdown() && !pushdown_maintain_errors,
+        hooks.apply_scan_predicate_to_scan_ir,
     )?;
+
+    call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
 
     prune_parquet_metadata(root, ir_arena, expr_arena);
 

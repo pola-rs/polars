@@ -4,10 +4,12 @@ use super::PageReader;
 use crate::parquet::CowBuffer;
 use crate::parquet::compression::{self, Compression, DecompressionContext};
 use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{
     CompressedDataPage, CompressedPage, DataPage, DataPageHeader, DictPage, Page,
 };
 
+#[inline]
 fn decompress_v1(
     compressed: &[u8],
     compression: Compression,
@@ -178,6 +180,10 @@ impl BasicDecompressor {
         self.reader.total_num_values()
     }
 
+    pub fn descriptor(&self) -> &Descriptor {
+        self.reader.descriptor()
+    }
+
     /// Returns its internal buffer, consuming itself.
     pub fn into_inner(self) -> Vec<u8> {
         self.buffer
@@ -221,6 +227,7 @@ pub struct DataPageItem {
 }
 
 impl DataPageItem {
+    #[inline]
     pub fn num_values(&self) -> usize {
         self.page.num_values()
     }

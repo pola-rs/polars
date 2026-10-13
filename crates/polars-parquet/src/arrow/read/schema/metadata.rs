@@ -1,11 +1,11 @@
-use arrow::datatypes::{
+use base64::Engine as _;
+use base64::engine::general_purpose;
+use polars_arrow::datatypes::{
     ArrowDataType, ArrowSchema, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW,
     DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, Field, IntegerType, MAINTAIN_PL_TYPE,
     Metadata, PL_KEY,
 };
-use arrow::io::ipc::read::deserialize_schema;
-use base64::Engine as _;
-use base64::engine::general_purpose;
+use polars_arrow::io::ipc::read::deserialize_schema;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 

@@ -1,5 +1,5 @@
-use arrow::array::PrimitiveArray;
-use arrow::types::NativeType;
+use polars_arrow::array::PrimitiveArray;
+use polars_arrow::types::NativeType;
 use polars_compute::bitwise::BitwiseKernel;
 
 use super::{BooleanType, ChunkBitwiseReduce, ChunkedArray, PolarsNumericType};

@@ -1,4 +1,4 @@
-use arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::Bitmap;
 
 #[derive(Debug, Clone)]
 pub enum SkipFilesMask {

@@ -24,20 +24,14 @@ from polars.lazyframe.engine_config import (
 )
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable
     from types import TracebackType
-    from typing import TypeAlias
+    from typing import Self, TypeAlias, Unpack
 
     from polars._typing import Alignment, EngineType, FloatFmt
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
-
-    if sys.version_info >= (3, 11):
-        from typing import Self, Unpack
-    else:
-        from typing_extensions import Self, Unpack
 
 
 __all__ = ["Config"]
@@ -1515,8 +1509,8 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
         Examples
         --------
         >>> pl.Config.warn_unstable(True)  # doctest: +SKIP
-        >>> pl.col("a").qcut(5)  # doctest: +SKIP
-        UnstableWarning: `qcut` is considered unstable. It may be changed at any point without it being considered a breaking change.
+        >>> pl.col("a").bin_quantiles(5, labels=False)  # doctest: +SKIP
+        UnstableWarning: `bin_quantiles` is considered unstable. It may be changed at any point without it being considered a breaking change.
         """  # noqa: W505
         if active is None:
             os.environ.pop("POLARS_WARN_UNSTABLE", None)

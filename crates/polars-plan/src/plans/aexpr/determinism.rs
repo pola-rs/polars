@@ -157,14 +157,14 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::ArgUnique => false,
         F::ArgMin | F::ArgMax => false,
         F::ArgSort { .. } => false,
-        F::MinBy | F::MaxBy => false,
+        F::MinBy { .. } | F::MaxBy { .. } => false,
         F::Product => false,
         // Only the `Random` tie-breaker is inherently non-deterministic.
         // The other `RankMethod` variants (Average, Min, Max, Dense,
         // Ordinal) are deterministic.
         #[cfg(all(feature = "rank", feature = "random"))]
         F::Rank { options, .. } => {
-            matches!(options.method, polars_ops::series::RankMethod::Random)
+            matches!(options.method, polars_defs::expr::RankMethod::Random)
         },
         #[cfg(all(feature = "rank", not(feature = "random")))]
         F::Rank { .. } => false,
@@ -191,6 +191,10 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::UniqueCounts => false,
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => false,
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantileSketch { .. } => true,
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantileEstimate { .. } => false,
         F::Coalesce => false,
         #[cfg(feature = "diff")]
         F::Diff(_) => false,
@@ -203,10 +207,13 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "log")]
         F::Entropy { .. } => false,
         #[cfg(feature = "log")]
-        F::Log | F::Log1p | F::Exp => false,
+        F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => false,
         F::Unique(_) => false,
         #[cfg(feature = "round_series")]
         F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => false,
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { .. } => false,
+        F::TruncArith(_) => false,
         #[cfg(feature = "fused")]
         F::Fused(_) => false,
         F::ConcatExpr { .. } => false,
@@ -215,7 +222,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "peaks")]
         F::PeakMin | F::PeakMax => false,
         #[cfg(feature = "cutqcut")]
-        F::Cut { .. } | F::QCut { .. } => false,
+        F::Cut { .. } | F::QCut { .. } | F::Bin(_) => false,
         #[cfg(feature = "rle")]
         F::RLE | F::RLEID => false,
         F::ToPhysical => false,
@@ -240,11 +247,13 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Random { .. } => true,
 
         #[cfg(feature = "ffi_plugin")]
-        F::FfiPlugin { .. } => true,
+        F::FfiPlugin {
+            is_deterministic, ..
+        } => !is_deterministic,
         F::FoldHorizontal { .. } | F::ReduceHorizontal { .. } => true,
         #[cfg(feature = "dtype-struct")]
         F::CumFoldHorizontal { .. } | F::CumReduceHorizontal { .. } => true,
-        F::DynamicPred { .. } => true,
+        F::DynamicPred { .. } | F::DynamicSkipBatch { .. } => true,
     }
 }
 

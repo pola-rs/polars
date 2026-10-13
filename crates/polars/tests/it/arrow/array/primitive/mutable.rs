@@ -1,6 +1,6 @@
-use arrow::array::*;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 #[test]

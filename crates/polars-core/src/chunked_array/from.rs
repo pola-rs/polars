@@ -201,7 +201,7 @@ where
     /// The lifetime will be bound to the lifetime of the slice.
     /// This will not be checked by the borrowchecker.
     pub unsafe fn mmap_slice(name: PlSmallStr, values: &[T::Native]) -> Self {
-        Self::with_chunk(name, arrow::ffi::mmap::slice(values))
+        Self::with_chunk(name, polars_arrow::ffi::mmap::slice(values))
     }
 }
 

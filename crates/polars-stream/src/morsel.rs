@@ -163,6 +163,7 @@ impl Morsel {
         self.sf.get_mut_blocking()
     }
 
+    #[inline]
     pub fn seq(&self) -> MorselSeq {
         self.seq
     }

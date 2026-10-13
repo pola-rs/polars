@@ -10,9 +10,9 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "2.0.0rc1"
+version = "2.0.0"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
@@ -24,16 +24,16 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 2.0.0rc1"]
+dependencies = ["polars-runtime-32 == 2.0.0"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -44,11 +44,11 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 2.0.0rc1"]
-rtcompat = ["polars-runtime-compat == 2.0.0rc1"]
+rt64 = ["polars-runtime-64 == 2.0.0"]
+rtcompat = ["polars-runtime-compat == 2.0.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-polars_cloud = ["polars_cloud >= 0.9.0"]
+polars_cloud = ["polars_cloud >= 0.13.0"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -298,6 +298,7 @@ markers = [
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
   "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_lazy_schema: Test whose lazy queries may have a `collect_schema()` that disagrees with the schema of the collected DataFrame.",
   "may_fail_strict: Test that may fail strict mode.",
 ]
 filterwarnings = [
