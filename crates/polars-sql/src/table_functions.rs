@@ -2,18 +2,23 @@ use std::str::FromStr;
 
 #[cfg(feature = "csv")]
 use polars_core::prelude::PlSmallStr;
-#[cfg(any(feature = "parquet", feature = "ipc", feature = "json"))]
-use polars_core::prelude::polars_ensure;
-use polars_core::prelude::{PolarsError, PolarsResult, polars_bail};
+use polars_core::prelude::{
+    DataFrame, ExplodeOptions, PolarsError, PolarsResult, polars_bail, polars_ensure,
+};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
-use polars_lazy::prelude::LazyFrame;
+use polars_lazy::prelude::{IntoLazy, LazyFrame};
+use polars_plan::utils::expr_to_leaf_column_names_iter;
 use polars_utils::pl_path::PlRefPath;
 use sqlparser::ast::{
     Expr as SQLExpr, FunctionArg as SQLFunctionArg, FunctionArgExpr as SQLFunctionArgExpr,
     Value as SQLValue, ValueWithSpan as SQLValueWithSpan,
 };
 
+use crate::SQLContext;
+use crate::context::SubqueryShape;
+use crate::functions::series_expr;
+use crate::sql_expr::parse_sql_expr;
 #[cfg(feature = "csv")]
 use crate::table_function_args::{DtypeOverrides, StringValues, TableFunctionOptions};
 
@@ -45,6 +50,17 @@ pub(crate) enum PolarsTableFunctions {
     /// ```
     #[cfg(feature = "json")]
     ReadJson,
+    /// SQL 'generate_series' function (stop included).
+    /// ```sql
+    /// SELECT * FROM generate_series(1, 10, 2)
+    /// SELECT * FROM generate_series(DATE '2026-01-01', DATE '2026-01-31', INTERVAL '1 day')
+    /// ```
+    GenerateSeries,
+    /// SQL 'range' function (stop not included).
+    /// ```sql
+    /// SELECT * FROM range(0, 10, 2)
+    /// ```
+    Range,
 }
 
 impl FromStr for PolarsTableFunctions {
@@ -61,25 +77,73 @@ impl FromStr for PolarsTableFunctions {
             "read_ipc" => PolarsTableFunctions::ReadIpc,
             #[cfg(feature = "json")]
             "read_json" => PolarsTableFunctions::ReadJson,
+            "generate_series" => PolarsTableFunctions::GenerateSeries,
+            "range" => PolarsTableFunctions::Range,
             _ => polars_bail!(SQLInterface: "'{}' is not a supported table function", s),
         })
     }
 }
 
 impl PolarsTableFunctions {
-    #[allow(unused_variables, unreachable_patterns)]
-    pub(crate) fn execute(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
-        match self {
+    #[allow(unreachable_code)]
+    pub(crate) fn execute(
+        &self,
+        args: &[SQLFunctionArg],
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        let (path, lf): (PlRefPath, LazyFrame) = match self {
             #[cfg(feature = "csv")]
-            PolarsTableFunctions::ReadCsv => self.read_csv(args),
+            PolarsTableFunctions::ReadCsv => self.read_csv(args)?,
             #[cfg(feature = "parquet")]
-            PolarsTableFunctions::ReadParquet => self.read_parquet(args),
+            PolarsTableFunctions::ReadParquet => self.read_parquet(args)?,
             #[cfg(feature = "ipc")]
-            PolarsTableFunctions::ReadIpc => self.read_ipc(args),
+            PolarsTableFunctions::ReadIpc => self.read_ipc(args)?,
             #[cfg(feature = "json")]
-            PolarsTableFunctions::ReadJson => self.read_ndjson(args),
-            _ => unreachable!(),
-        }
+            PolarsTableFunctions::ReadJson => self.read_ndjson(args)?,
+            PolarsTableFunctions::GenerateSeries => return self.series(args, ctx, true),
+            PolarsTableFunctions::Range => return self.series(args, ctx, false),
+        };
+        Ok((path.to_string(), lf))
+    }
+
+    fn series(
+        &self,
+        args: &[SQLFunctionArg],
+        ctx: &mut SQLContext,
+        include_end: bool,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        let fname = if include_end {
+            "generate_series"
+        } else {
+            "range"
+        };
+        let args = args
+            .iter()
+            .map(|arg| match arg {
+                SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(e)) => Ok(e),
+                _ => polars_bail!(SQLSyntax: "`{}` expects positional arguments; found {}", fname, arg),
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let mut expr = series_expr(fname, &args, include_end, |e| {
+            let expr = parse_sql_expr(e, ctx, None)?;
+            polars_ensure!(
+                expr_to_leaf_column_names_iter(&expr).next().is_none(),
+                SQLInterface: "`{}` in FROM takes only constant arguments; use UNNEST({}(...)) in the SELECT list for a series per row", fname, fname
+            );
+            Ok(expr)
+        })?;
+        let (lf, _) = ctx.process_subqueries(
+            DataFrame::empty_with_height(1).lazy(),
+            vec![&mut expr],
+            SubqueryShape::Scalar,
+        )?;
+        let lf = lf.select([expr
+            .explode(ExplodeOptions {
+                empty_as_null: false,
+                keep_nulls: false,
+            })
+            .alias(fname)]);
+        Ok((fname.to_string(), lf))
     }
 
     #[cfg(feature = "csv")]
@@ -295,6 +359,8 @@ impl PolarsTableFunctions {
             "read_ipc",
             #[cfg(feature = "json")]
             "read_json",
+            "generate_series",
+            "range",
         ]
     }
 }
