@@ -26,8 +26,6 @@ impl ProjectionExec {
             && df.first_col_n_chunks() > 1
             && df.height() > RAYON.current_num_threads() * 2
             && self.options.run_parallel
-            // CSE can add columns that are shorter than the DataFrame height.
-            && df.columns().iter().all(|c| c.len() == df.height())
         {
             let chunks = df.split_chunks().collect::<Vec<_>>();
             let iter = chunks.into_par_iter().map(|mut df| {
