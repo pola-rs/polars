@@ -110,15 +110,17 @@ impl PartialEq for FunctionIR {
             F::Unnest {
                 columns: l_columns,
                 separator: l_separator,
+                max_depth: l_max_depth,
             } => {
                 let F::Unnest {
                     columns: r_columns,
                     separator: r_separator,
+                    max_depth: r_max_depth,
                 } = other
                 else {
                     return false;
                 };
-                l_columns == r_columns && l_separator == r_separator
+                l_columns == r_columns && l_separator == r_separator && l_max_depth == r_max_depth
             },
             F::Rechunk => true,
             F::Explode {

@@ -45,6 +45,7 @@ pub enum FunctionIR {
     Unnest {
         columns: Arc<[PlSmallStr]>,
         separator: Option<PlSmallStr>,
+        max_depth: Option<usize>,
     },
     Rechunk,
     Explode {
@@ -131,9 +132,14 @@ impl Hash for FunctionIR {
                 scan_type.hash(state);
                 alias.hash(state);
             },
-            FunctionIR::Unnest { columns, separator } => {
+            FunctionIR::Unnest {
+                columns,
+                separator,
+                max_depth,
+            } => {
                 columns.hash(state);
                 separator.hash(state);
+                max_depth.hash(state);
             },
             FunctionIR::Rechunk => {},
             FunctionIR::Explode {
@@ -290,12 +296,21 @@ impl Display for FunctionIR {
                 write!(f, "hint.{hint}")
             },
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            Unnest { columns, separator } => {
+            Unnest {
+                columns,
+                separator,
+                max_depth,
+            } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")?;
                 if let Some(separator) = separator {
                     write!(f, ", separator: {separator}")?;
+                }
+                match max_depth {
+                    None => write!(f, ", max_depth: unlimited")?,
+                    Some(d) if *d != 1 => write!(f, ", max_depth: {d}")?,
+                    _ => {},
                 }
                 Ok(())
             },

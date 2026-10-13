@@ -39,10 +39,14 @@ pub fn evaluate_function_ir(function: &FunctionIR, mut df: DataFrame) -> PolarsR
             df.rechunk_mut_par();
             Ok(df)
         },
-        Unnest { columns, separator } => {
+        Unnest {
+            columns,
+            separator,
+            max_depth,
+        } => {
             feature_gated!(
                 "dtype-struct",
-                df.unnest(columns.iter().cloned(), separator.as_deref())
+                df.unnest(columns.iter().cloned(), separator.as_deref(), *max_depth)
             )
         },
         Explode {
