@@ -45,15 +45,13 @@ impl IOWriter {
         let mut buffered_file = file.as_buffered_writable();
 
         let mut parquet_writer = BatchedWriter::new(
-            std::sync::Mutex::new(
-                FileWriter::new_with_parquet_schema(
-                    &mut buffered_file,
-                    Arc::unwrap_or_clone(arrow_schema),
-                    Arc::unwrap_or_clone(schema_descriptor),
-                    write_options,
-                )
-                .with_encryption_properties(encryption_properties)?,
-            ),
+            std::sync::Mutex::new(FileWriter::try_new_with_parquet_schema(
+                &mut buffered_file,
+                Arc::unwrap_or_clone(arrow_schema),
+                Arc::unwrap_or_clone(schema_descriptor),
+                write_options,
+                encryption_properties,
+            )?),
             encodings,
             write_options,
             false,

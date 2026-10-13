@@ -138,10 +138,12 @@ where
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
         let options = self.materialize_options();
-        let writer = Mutex::new(
-            FileWriter::try_new(self.writer, schema, options)?
-                .with_encryption_properties(self.encryption_properties)?,
-        );
+        let writer = Mutex::new(FileWriter::try_new(
+            self.writer,
+            schema,
+            options,
+            self.encryption_properties,
+        )?);
 
         Ok(BatchedWriter {
             writer,

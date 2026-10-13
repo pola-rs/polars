@@ -52,10 +52,13 @@ fn write_file(encryption_properties: Arc<FileEncryptionProperties>) -> Vec<u8> {
     )
     .unwrap();
 
-    let mut writer = FileWriter::try_new(Cursor::new(vec![]), schema.clone(), options)
-        .unwrap()
-        .with_encryption_properties(Some(encryption_properties))
-        .unwrap();
+    let mut writer = FileWriter::try_new(
+        Cursor::new(vec![]),
+        schema.clone(),
+        options,
+        Some(encryption_properties),
+    )
+    .unwrap();
     for row_group in row_groups {
         writer.write(100, row_group.unwrap()).unwrap();
     }

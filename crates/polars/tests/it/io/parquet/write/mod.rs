@@ -87,7 +87,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     let columns = std::iter::once(Ok(pages));
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::new(writer, schema, options, None);
+    let mut writer = FileWriter::try_new(writer, schema, options, None, None)?;
 
     writer.write(u64::MAX, DynIter::new(columns))?;
     writer.end(None)?;
@@ -202,7 +202,7 @@ fn basic() -> ParquetResult<()> {
     let columns = std::iter::once(Ok(pages));
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::new(writer, schema, options, None);
+    let mut writer = FileWriter::try_new(writer, schema, options, None, None)?;
 
     writer.write(u64::MAX, DynIter::new(columns))?;
     writer.end(None)?;

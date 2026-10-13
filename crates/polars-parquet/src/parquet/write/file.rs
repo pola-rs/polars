@@ -248,13 +248,20 @@ impl<W: Write> FileWriter<W> {
 
 impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
-    pub fn new(
+    ///
+    /// # Errors
+    /// Returns an error if the encryption properties are set and not valid for the file schema.
+    pub fn try_new(
         writer: W,
         schema: SchemaDescriptor,
         options: WriteOptions,
         created_by: Option<String>,
-    ) -> Self {
-        Self {
+        encryption_properties: Option<Arc<FileEncryptionProperties>>,
+    ) -> ParquetResult<Self> {
+        let encryptor = encryption_properties
+            .map(|properties| FileEncryptor::try_new_for_schema(properties, &schema))
+            .transpose()?;
+        Ok(Self {
             writer,
             schema,
             options,
@@ -264,33 +271,13 @@ impl<W: Write> FileWriter<W> {
             page_specs: vec![],
             state: State::Initialised,
             metadata: None,
-            encryptor: None,
-        }
-    }
-
-    /// Encrypt the file with Parquet modular encryption.
-    ///
-    /// # Errors
-    /// Returns an error if data has already been written to the file, or if the encryption
-    /// properties are not valid for the file schema.
-    pub fn with_encryption_properties(
-        mut self,
-        encryption_properties: Option<Arc<FileEncryptionProperties>>,
-    ) -> ParquetResult<Self> {
-        if self.offset != 0 {
-            return Err(ParquetError::InvalidParameter(
-                "Encryption properties must be set before writing".to_string(),
-            ));
-        }
-        self.encryptor = encryption_properties
-            .map(|properties| FileEncryptor::try_new_for_schema(properties, &self.schema))
-            .transpose()?;
-        Ok(self)
+            encryptor,
+        })
     }
 
     /// Writes the header of the file.
     ///
-    /// This is automatically called by [`Self::write`] if not called following [`Self::new`].
+    /// This is automatically called by [`Self::write`] if not called following [`Self::try_new`].
     ///
     /// # Errors
     /// Returns an error if data has been written to the file.
