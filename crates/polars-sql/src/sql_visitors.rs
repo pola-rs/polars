@@ -13,6 +13,8 @@ use sqlparser::ast::{
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
+use crate::context::match_qualifier;
+
 // ---------------------------------------------------------------------------
 // FindTableIdentifier
 // ---------------------------------------------------------------------------
@@ -20,13 +22,15 @@ use sqlparser::keywords::ALL_KEYWORDS;
 /// Visitor that checks if an expression tree contains a reference to a specific table.
 pub(crate) struct FindTableIdentifier<'a> {
     table_name: &'a str,
+    relations: &'a [String],
     found: bool,
 }
 
 impl<'a> FindTableIdentifier<'a> {
-    fn new(table_name: &'a str) -> Self {
+    fn new(table_name: &'a str, relations: &'a [String]) -> Self {
         Self {
             table_name,
+            relations,
             found: false,
         }
     }
@@ -37,7 +41,15 @@ impl<'a> SQLVisitor for FindTableIdentifier<'a> {
 
     fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
         if let SQLExpr::CompoundIdentifier(idents) = expr {
-            if idents.len() >= 2 && idents[0].value.as_str() == self.table_name {
+            // the longest leading run naming a relation decides (`a.b.k` names `a.b`, not `a`)
+            let relations = self
+                .relations
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once(self.table_name));
+            if match_qualifier(idents, relations)
+                .is_some_and(|(matches, _)| matches.contains(&self.table_name))
+            {
                 self.found = true; // return immediately on first match
                 return ControlFlow::Break(());
             }
@@ -46,9 +58,10 @@ impl<'a> SQLVisitor for FindTableIdentifier<'a> {
     }
 }
 
-/// Check if a SQL expression contains a reference to a specific table.
-pub(crate) fn expr_refers_to_table(expr: &SQLExpr, table_name: &str) -> bool {
-    let mut table_finder = FindTableIdentifier::new(table_name);
+/// Check if a SQL expression contains a reference to a specific table, among `relations`
+/// in scope.
+pub(crate) fn expr_refers_to_table(expr: &SQLExpr, table_name: &str, relations: &[String]) -> bool {
+    let mut table_finder = FindTableIdentifier::new(table_name, relations);
     let _ = expr.visit(&mut table_finder);
     table_finder.found
 }
@@ -225,10 +238,17 @@ pub(crate) fn check_ambiguous_column(
     if !tables.is_empty() {
         tables.push(base_table_name);
         tables.sort();
+        if tables.windows(2).any(|w| w[0] == w[1]) {
+            polars_bail!(
+                SQLInterface: "ambiguous reference to column {} (a relation appears more than once in FROM; give each an alias)",
+                maybe_quote(col, true)
+            );
+        }
         let col_hint = maybe_quote(col, false);
-        let hints = tables
-            .iter()
-            .map(|t| format!("{}.{}", maybe_quote(t, false), col_hint));
+        let hints = tables.iter().map(|t| {
+            let parts: Vec<String> = t.split('.').map(|p| maybe_quote(p, false)).collect();
+            format!("{}.{}", parts.join("."), col_hint)
+        });
         polars_bail!(
             SQLInterface: "ambiguous reference to column {} (use one of: {})",
             maybe_quote(col, true), hints.collect::<Vec<_>>().join(", ")
