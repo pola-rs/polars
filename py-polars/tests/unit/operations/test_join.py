@@ -1791,7 +1791,6 @@ def test_join_preserve_order_full() -> None:
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
-@pytest.mark.may_fail_lazy_schema  # TODO: upcast
 def test_join_numeric_key_upcast_15338(
     dtypes: tuple[str, str, str], swap: bool
 ) -> None:
@@ -4964,3 +4963,17 @@ def test_join_key_keeps_outer_join_when_nulls_match() -> None:
     assert "LEFT JOIN:" in q.explain()
     expect = q.collect(optimizations=pl.QueryOptFlags.none())
     assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_coalesce_full_join_upcast_key_schema_29903() -> None:
+    left = pl.LazyFrame({"k": pl.Series([2, 1], dtype=pl.Int32), "s": ["a", "b"]})
+    right = pl.LazyFrame({"k": pl.Series([1], dtype=pl.Int64), "x": ["c"]})
+
+    q = left.join(right, on="k", how="full", coalesce=True)
+    assert q.collect_schema() == {"k": pl.Int64, "s": pl.String, "x": pl.String}
+
+    expected = pl.DataFrame(
+        {"k": [1, 2], "s": ["b", "a"], "x": ["c", None]},
+        schema={"k": pl.Int64, "s": pl.String, "x": pl.String},
+    )
+    assert_frame_equal(q.unique().collect(), expected, check_row_order=False)
