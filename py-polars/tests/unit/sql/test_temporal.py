@@ -782,6 +782,65 @@ def test_interval_leading_field() -> None:
         df.sql("SELECT dt + INTERVAL '1 2' MONTH FROM self")
 
 
+@pytest.mark.parametrize(
+    "part",
+    [
+        "microsecond",
+        "millisecond",
+        "second",
+        "minute",
+        "hour",
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "MINUTES",
+    ],
+)
+def test_date_trunc(part: str) -> None:
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(1994, 3, 6, 13, 45, 30, 123456),
+                datetime(2000, 12, 31, 23, 59, 59, 999999),
+                None,
+            ]
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"SELECT DATE_TRUNC('{part}', dtm) AS t FROM self",
+        compare_with="duckdb",
+    )
+
+
+def test_date_trunc_date_and_null() -> None:
+    df = pl.DataFrame({"d": [date(2024, 5, 17), None]})
+    out = df.sql(
+        """
+        SELECT
+          DATE_TRUNC('month', d) AS month,
+          DATE_TRUNC('hour', d) + INTERVAL '1 hour' AS hour,
+          DATE_TRUNC(NULL, d) AS null_part
+        FROM self
+        """
+    )
+    assert out.to_dict(as_series=False) == {
+        "month": [datetime(2024, 5, 1), None],
+        "hour": [datetime(2024, 5, 17, 1), None],
+        "null_part": [None, None],
+    }
+
+
+def test_date_trunc_errors() -> None:
+    df = pl.DataFrame({"dtm": [datetime(2000, 1, 1)], "part": ["day"]})
+    with pytest.raises(SQLSyntaxError, match="DATE_TRUNC does not support 'century'"):
+        df.sql("SELECT DATE_TRUNC('century', dtm) FROM self")
+    with pytest.raises(SQLSyntaxError, match="invalid 'part' for DATE_TRUNC"):
+        df.sql("SELECT DATE_TRUNC(part, dtm) FROM self")
+
+
 def test_date_part_functions() -> None:
     df = pl.DataFrame(
         {
