@@ -351,7 +351,10 @@ impl SQLExprVisitor<'_> {
                         } => {
                             cast_dtypes.push(map_sql_dtype_to_polars(data_type)?);
                             match extract_literal_with_op(inner, Some(op)) {
-                                Some((v, op)) => self.visit_any_value(v, op),
+                                Some((v, op)) => self.visit_any_value(v, op).and_then(|val| {
+                                    ensure_not_string_to_nested(data_type, Some(&val.dtype()))?;
+                                    Ok(val)
+                                }),
                                 None => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
                             }
                         },
@@ -377,7 +380,10 @@ impl SQLExprVisitor<'_> {
                 } => {
                     cast_dtypes.push(map_sql_dtype_to_polars(data_type)?);
                     match extract_literal_with_op(expr, None) {
-                        Some((v, op)) => self.visit_any_value(v, op),
+                        Some((v, op)) => self.visit_any_value(v, op).and_then(|val| {
+                            ensure_not_string_to_nested(data_type, Some(&val.dtype()))?;
+                            Ok(val)
+                        }),
                         None => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
                     }
                 },
@@ -1420,6 +1426,7 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
+        ensure_not_string_to_nested(dtype, self.cast_or_expr_dtype(&expr).as_ref())?;
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
 
         // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
@@ -2329,4 +2336,21 @@ pub(crate) fn resolve_expr_dtype(expr: &Expr, schema: Option<&Schema>) -> Option
     expr.to_field(schema.unwrap_or(&empty))
         .ok()
         .map(|fld| fld.dtype)
+}
+
+/// `CAST(<string> AS STRUCT/MAP)` is reserved for decoding JSON. Without this check a 1-field
+/// struct target would wrap the string (`'1'` -> `{1}`), and a wider target gives an unrelated
+/// Polars error. A source whose type cannot be resolved (no schema) still uses Polars' cast.
+fn ensure_not_string_to_nested(dtype: &SQLDataType, source: Option<&DataType>) -> PolarsResult<()> {
+    let target = match dtype {
+        SQLDataType::Struct(..) => "STRUCT",
+        SQLDataType::Map(..) => "MAP",
+        _ => return Ok(()),
+    };
+    if let Some(source) = source
+        && (source.is_string() || source.is_categorical() || source.is_enum())
+    {
+        polars_bail!(SQLInterface: "CAST from a string to {} is not supported", target)
+    }
+    Ok(())
 }

@@ -184,6 +184,153 @@ fn test_cast_exprs() {
     assert!(df_sql.equals(&df_pl));
 }
 
+fn query_schema(context: &mut SQLContext, sql: &str) -> PolarsResult<SchemaRef> {
+    context.execute(sql)?.collect_schema()
+}
+
+#[test]
+fn test_cast_struct_exprs() {
+    // struct-to-struct casts match fields by name, as in Polars
+    let (df, _) = create_struct_df();
+    let dtype = DataType::Struct(vec![
+        Field::new("val".into(), DataType::Float32),
+        Field::new("num".into(), DataType::Int64),
+        Field::new("str".into(), DataType::String),
+    ]);
+    assert_sql_to_polars(
+        &df,
+        "SELECT CAST(json_msg AS STRUCT<val REAL, num BIGINT, str VARCHAR>) AS s FROM df",
+        |lf| lf.select([col("json_msg").strict_cast(dtype).alias("s")]),
+    );
+}
+
+#[test]
+fn test_struct_type_names() {
+    let mut context = SQLContext::new();
+    let schema = query_schema(
+        &mut context,
+        r#"SELECT CAST(NULL AS STRUCT<a INT[], b STRUCT<"My Field" VARCHAR>>) AS s"#,
+    )
+    .unwrap();
+    let expected = DataType::Struct(vec![
+        Field::new("a".into(), DataType::List(Box::new(DataType::Int32))),
+        Field::new(
+            "b".into(),
+            DataType::Struct(vec![Field::new("My Field".into(), DataType::String)]),
+        ),
+    ]);
+    assert_eq!(schema.get("s"), Some(&expected));
+
+    context
+        .execute("CREATE TABLE tbl (s STRUCT<x INT, y VARCHAR>)")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let schema = query_schema(&mut context, "SELECT * FROM tbl").unwrap();
+    let expected = DataType::Struct(vec![
+        Field::new("x".into(), DataType::Int32),
+        Field::new("y".into(), DataType::String),
+    ]);
+    assert_eq!(schema.get("s"), Some(&expected));
+}
+
+#[test]
+fn test_struct_type_name_errors() {
+    let (_, df) = create_struct_df();
+    let mut context = SQLContext::new();
+    context.register("df", df.lazy());
+    for (sql, err) in [
+        (
+            "SELECT CAST(NULL AS STRUCT<INT>) AS s",
+            "STRUCT fields must be named",
+        ),
+        (
+            "SELECT CAST(NULL AS STRUCT<a INT, a VARCHAR>) AS s",
+            "STRUCT field 'a' is given more than once",
+        ),
+        (
+            "SELECT CAST(NULL AS STRUCT<a NOT_A_TYPE>) AS s",
+            "is not currently supported",
+        ),
+        // kept free for decoding JSON
+        (
+            "SELECT CAST('1' AS STRUCT<x INT>) AS s",
+            "CAST from a string to STRUCT is not supported",
+        ),
+        (
+            "SELECT TRY_CAST(str AS STRUCT<x INT>) AS s FROM df",
+            "CAST from a string to STRUCT is not supported",
+        ),
+        (
+            "SELECT ARRAY[CAST('1' AS STRUCT<x INT>)] AS s",
+            "CAST from a string to STRUCT is not supported",
+        ),
+    ] {
+        let msg = query_schema(&mut context, sql).unwrap_err().to_string();
+        assert!(msg.contains(err), "{sql}: {msg}");
+    }
+
+    // without a schema, an explicit string cast still identifies the source
+    let msg = sql_expr("CAST(CAST(str AS VARCHAR) AS STRUCT<x INT>)")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        msg.contains("CAST from a string to STRUCT is not supported"),
+        "{msg}"
+    );
+}
+
+#[test]
+#[cfg(feature = "dtype-map")]
+fn test_map_type_names() {
+    let mut context = SQLContext::new();
+    let schema = query_schema(
+        &mut context,
+        "SELECT CAST(NULL AS MAP(VARCHAR, INT)) AS m, CAST(NULL AS MAP(VARCHAR, STRUCT<x INT>)) AS n",
+    )
+    .unwrap();
+    let map = |value| DataType::Map(Box::new(DataType::String), Box::new(value));
+    assert_eq!(schema.get("m"), Some(&map(DataType::Int32)));
+    assert_eq!(
+        schema.get("n"),
+        Some(&map(DataType::Struct(vec![Field::new(
+            "x".into(),
+            DataType::Int32
+        )])))
+    );
+
+    context
+        .execute("CREATE TABLE tbl (m MAP(VARCHAR, BIGINT))")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let schema = query_schema(&mut context, "SELECT * FROM tbl").unwrap();
+    assert_eq!(schema.get("m"), Some(&map(DataType::Int64)));
+
+    let msg = query_schema(&mut context, "SELECT CAST('{}' AS MAP(VARCHAR, INT)) AS m")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        msg.contains("CAST from a string to MAP is not supported"),
+        "{msg}"
+    );
+}
+
+#[test]
+#[cfg(not(feature = "dtype-map"))]
+fn test_map_type_needs_feature() {
+    let msg = query_schema(
+        &mut SQLContext::new(),
+        "SELECT CAST(NULL AS MAP(VARCHAR, INT)) AS m",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        msg.contains("MAP requires the `dtype-map` feature"),
+        "{msg}"
+    );
+}
+
 #[test]
 fn test_literal_exprs() {
     let df = create_sample_df();

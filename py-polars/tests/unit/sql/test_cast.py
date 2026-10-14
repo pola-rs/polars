@@ -11,6 +11,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     SQLInterfaceError,
+    SQLSyntaxError,
 )
 from polars.testing import assert_frame_equal
 
@@ -349,3 +350,101 @@ def test_cast_json() -> None:
                     }
                 ),
             )
+
+
+def test_cast_struct() -> None:
+    # struct-to-struct casts match fields by name, as in Polars
+    df = pl.DataFrame({"s": [{"x": 1, "y": "a"}, {"x": 2, "y": None}]})
+    dtype = pl.Struct({"y": pl.String, "x": pl.Int64, "z": pl.Float64})
+
+    res = df.sql(
+        "SELECT CAST(s AS STRUCT<y VARCHAR, x BIGINT, z DOUBLE>) AS s FROM self"
+    )
+    assert_frame_equal(res, df.select(pl.col("s").cast(dtype)))
+
+
+@pytest.mark.parametrize(
+    ("sql_type", "dtype"),
+    [
+        ("STRUCT<a INT, b VARCHAR>", pl.Struct({"a": pl.Int32, "b": pl.String})),
+        (
+            'STRUCT<a INT[], "My Field" STRUCT<c DATE>>',
+            pl.Struct({"a": pl.List(pl.Int32), "My Field": pl.Struct({"c": pl.Date})}),
+        ),
+        ("MAP(VARCHAR, INT)", pl.Map(pl.String, pl.Int32)),
+        (
+            "MAP(VARCHAR, STRUCT<x DOUBLE>)",
+            pl.Map(pl.String, pl.Struct({"x": pl.Float64})),
+        ),
+    ],
+)
+def test_struct_and_map_type_names(sql_type: str, dtype: pl.DataType) -> None:
+    res = pl.sql(f"SELECT CAST(NULL AS {sql_type}) AS c", eager=True)
+    assert res.schema == {"c": dtype}
+
+    with pl.SQLContext() as ctx:
+        ctx.execute(f"CREATE TABLE tbl (c {sql_type})")
+        assert ctx.execute("SELECT * FROM tbl", eager=True).schema == {"c": dtype}
+
+
+@pytest.mark.parametrize(
+    ("sql", "exc", "error"),
+    [
+        (
+            "SELECT CAST(NULL AS STRUCT<INT>) AS c",
+            SQLInterfaceError,
+            "STRUCT fields must be named",
+        ),
+        (
+            "SELECT CAST(NULL AS STRUCT<a INT, a VARCHAR>) AS c",
+            SQLSyntaxError,
+            "STRUCT field 'a' is given more than once",
+        ),
+        # a string cast is kept free for decoding JSON
+        (
+            "SELECT CAST('1' AS STRUCT<x INT>) AS c",
+            SQLInterfaceError,
+            "CAST from a string to STRUCT is not supported",
+        ),
+        (
+            "SELECT TRY_CAST('{}' AS MAP(VARCHAR, INT)) AS c",
+            SQLInterfaceError,
+            "CAST from a string to MAP is not supported",
+        ),
+    ],
+)
+def test_struct_and_map_type_name_errors(
+    sql: str, exc: type[Exception], error: str
+) -> None:
+    with pytest.raises(exc, match=error):
+        pl.sql(sql, eager=True)
+
+
+@pytest.mark.parametrize(
+    "cast_op",
+    [
+        "CAST(s AS STRUCT<x INT>)",
+        "CAST(c AS STRUCT<x INT>)",
+        "CAST(e AS MAP(VARCHAR, INT))",
+        "ARRAY[CAST('1' AS STRUCT<x INT>)]",
+    ],
+)
+def test_cast_string_like_to_nested_errors(cast_op: str) -> None:
+    # string, categorical and enum sources are all kept free for decoding JSON
+    df = pl.DataFrame(
+        {
+            "s": ["1"],
+            "c": pl.Series(["1"], dtype=pl.Categorical),
+            "e": pl.Series(["1"], dtype=pl.Enum(["1"])),
+        }
+    )
+    with pytest.raises(SQLInterfaceError, match="CAST from a string to"):
+        df.sql(f"SELECT {cast_op} AS r FROM self")
+
+
+def test_sql_expr_cast_string_to_struct_errors() -> None:
+    # without a schema, an explicit string cast still identifies the source
+    with pytest.raises(
+        SQLInterfaceError, match="CAST from a string to STRUCT is not supported"
+    ):
+        pl.sql_expr("CAST(CAST(s AS VARCHAR) AS STRUCT<x INT>)")

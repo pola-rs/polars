@@ -522,6 +522,7 @@ dtype-map = [
   "polars-lazy?/dtype-map",
   "polars-ops/dtype-map",
   "polars-plan?/dtype-map",
+  "polars-sql?/dtype-map",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 
