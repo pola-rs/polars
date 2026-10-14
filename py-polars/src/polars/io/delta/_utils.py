@@ -150,6 +150,26 @@ def _extract_table_statistics_from_delta_add_actions(
     def null_col(dt: PolarsDataType) -> Series:
         return pl.Series([None], dtype=dt).new_from_index(0, height)
 
+    def _align_struct(s: Series, target: PolarsDataType) -> Series:
+        # Delta collects stats only for the first N leaf columns
+        # (`delta.dataSkippingNumIndexedCols`, default 32). When a struct column
+        # straddles that limit, its stats struct covers only a subset of the column's
+        # fields, so a strict cast to the full struct dtype fails. Rebuild the target
+        # struct by name, filling any field absent from the stats with null
+        # ("unknown" -> the skip-batch predicate will not prune on it).
+        if not isinstance(target, pl.Struct) or not isinstance(s.dtype, pl.Struct):
+            return s.cast(target)
+        src_fields = set(s.struct.fields)
+        df = s.struct.unnest()
+        exprs = []
+        for fld in target.fields:
+            name, fld_dtype = fld.name, fld.dtype
+            if name in src_fields:
+                exprs.append(pl.col(name).cast(fld_dtype).alias(name))
+            else:
+                exprs.append(pl.lit(None, dtype=fld_dtype).alias(name))
+        return df.select(pl.struct(exprs)).to_series()
+
     def column_statistics(col_name: str) -> dict[str, Series]:
         dtype = schema[col_name]
         # The skip-batch predicate expects `<col>_nc` in the index type (a per-field
@@ -161,7 +181,9 @@ def _extract_table_statistics_from_delta_add_actions(
 
         stats: dict[str, Series] = {
             f"{col_name}_nc": (
-                col_nc.cast(nc_dtype) if col_nc is not None else null_col(nc_dtype)
+                _align_struct(col_nc, nc_dtype)
+                if col_nc is not None
+                else null_col(nc_dtype)
             )
         }
 
@@ -171,10 +193,10 @@ def _extract_table_statistics_from_delta_add_actions(
             # resolvable, letting the skip-batch predicate prune on an individual struct
             # field via `col("<c>_min").struct.field(..)`.
             stats[f"{col_name}_min"] = (
-                col_min.cast(dtype) if col_min is not None else null_col(dtype)
+                _align_struct(col_min, dtype) if col_min is not None else null_col(dtype)
             )
             stats[f"{col_name}_max"] = (
-                col_max.cast(dtype) if col_max is not None else null_col(dtype)
+                _align_struct(col_max, dtype) if col_max is not None else null_col(dtype)
             )
         else:
             stats[f"{col_name}_min"] = (

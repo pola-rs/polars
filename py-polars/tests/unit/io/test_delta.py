@@ -1796,3 +1796,56 @@ def test_scan_delta_runtime_join_filter_with_partition_predicate(
     assert_frame_equal(
         out, pl.DataFrame({"x": [150, 160], "e": [0, 1]}), check_row_order=False
     )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_struct_filter_with_partial_stats(tmp_path: Path) -> None:
+    # Regression test for #29919: when a struct column straddles Delta's stats
+    # column limit (`delta.dataSkippingNumIndexedCols`, default 32), the stats
+    # struct only covers a subset of the struct's fields. `scan_delta` must not
+    # crash on the strict struct cast and must return correct rows (fields
+    # without stats are treated as unknown -> no incorrect file skipping).
+    df = pl.DataFrame(
+        {
+            **{f"c{i}": [0, 1] for i in range(31)},
+            "flags": [
+                {"a": True, "b": False, "c": False, "d": False, "e": True},
+                {"a": False, "b": False, "c": False, "d": False, "e": False},
+            ],
+        }
+    )
+    write_deltalake(tmp_path, df)
+
+    # Filter on the struct field that *does* have stats ("a").
+    out_a = pl.scan_delta(tmp_path).filter(~pl.col("flags").struct.field("a")).collect()
+    assert out_a.get_column("flags").to_list() == [
+        {"a": False, "b": False, "c": False, "d": False, "e": False}
+    ]
+
+    # Filter on a struct field with *no* stats ("e"): must not crash and must
+    # return the correct row (no pruning on unknown fields).
+    out_e = pl.scan_delta(tmp_path).filter(~pl.col("flags").struct.field("e")).collect()
+    assert out_e.get_column("flags").to_list() == [
+        {"a": False, "b": False, "c": False, "d": False, "e": False}
+    ]
+
+    # When the struct is entirely beyond the stats limit, no struct field gets
+    # stats -> the null_col path must still work.
+    df2 = pl.DataFrame(
+        {
+            **{f"c{i}": [0, 1] for i in range(32)},
+            "flags": [
+                {"a": True, "b": False, "c": False, "d": False, "e": True},
+                {"a": False, "b": False, "c": False, "d": False, "e": False},
+            ],
+        }
+    )
+    write_deltalake(tmp_path / "no_stats", df2)
+    out2 = (
+        pl.scan_delta(tmp_path / "no_stats")
+        .filter(~pl.col("flags").struct.field("a"))
+        .collect()
+    )
+    assert out2.get_column("flags").to_list() == [
+        {"a": False, "b": False, "c": False, "d": False, "e": False}
+    ]
