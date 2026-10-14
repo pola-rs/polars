@@ -46,7 +46,7 @@ use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::is_correlated_subquery;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
-    timeunit_from_precision,
+    strip_utc_offset,
 };
 use crate::{SQLContext, unique_column_name};
 
@@ -148,9 +148,33 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
             DataType::Time => return Ok(ca.as_time(None, false)?.into_series()),
             DataType::Datetime(tu, tz) => {
                 let ambiguous = StringChunked::from_slice(PlSmallStr::EMPTY, &["latest"]);
-                return Ok(ca
-                    .as_datetime(None, *tu, false, false, tz.as_ref(), &ambiguous)?
-                    .into_series());
+                // A naive timestamp ignores the UTC offset of the value.
+                let ca = match tz {
+                    None => &ca.apply_values(|s| Cow::Borrowed(strip_utc_offset(s))),
+                    Some(_) => ca,
+                };
+                let parse = |ca: &StringChunked| {
+                    ca.as_datetime(None, *tu, false, false, tz.as_ref(), &ambiguous)
+                };
+                let bulk = parse(ca);
+                if let Ok(out) = &bulk
+                    && out.null_count() == ca.null_count()
+                {
+                    return Ok(out.clone().into_series());
+                }
+                // The format is inferred once per series, so values in different
+                // formats (e.g. with and without an offset) are parsed one by one.
+                let mut out = Series::new_empty(PlSmallStr::EMPTY, dtype);
+                for i in 0..ca.len() {
+                    let value = parse(&ca.slice(i as i64, 1))
+                        .map(|v| v.into_series())
+                        .unwrap_or_else(|_| Series::full_null(PlSmallStr::EMPTY, 1, dtype));
+                    out.append(&value)?;
+                }
+                if out.null_count() == out.len() {
+                    bulk?;
+                }
+                return Ok(out);
             },
             _ => {},
         }
@@ -397,6 +421,10 @@ impl SQLExprVisitor<'_> {
                 format,
                 array: _,
             } => self.visit_cast(expr, data_type, format, kind),
+            SQLExpr::AtTimeZone {
+                timestamp,
+                time_zone,
+            } => self.visit_at_time_zone(timestamp, time_zone),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundFieldAccess { root, access_chain } => {
                 // simple subscript access (eg: "array_col[1]")
@@ -691,13 +719,7 @@ impl SQLExprVisitor<'_> {
         }) else {
             return right.clone();
         };
-        // Without a schema, only a cast gives the type.
-        let left_dtype = match left {
-            Expr::Cast { dtype, .. } => dtype.as_literal().cloned(),
-            _ => None,
-        }
-        .or_else(|| self.expr_dtype(left));
-        let parsed = match left_dtype {
+        let parsed = match self.cast_or_expr_dtype(left) {
             Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
             Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
             Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
@@ -749,6 +771,15 @@ impl SQLExprVisitor<'_> {
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
     fn expr_dtype(&self, expr: &Expr) -> Option<DataType> {
         resolve_expr_dtype(expr, self.active_schema)
+    }
+
+    /// Like [`Self::expr_dtype`], but without a schema a cast still gives its type.
+    fn cast_or_expr_dtype(&self, expr: &Expr) -> Option<DataType> {
+        match expr {
+            Expr::Cast { dtype, .. } => dtype.as_literal().cloned(),
+            _ => None,
+        }
+        .or_else(|| self.expr_dtype(expr))
     }
 
     /// `date + n` / `date - n` shift the date by a whole number of days.
@@ -1513,11 +1544,11 @@ impl SQLExprVisitor<'_> {
                 polars_ensure!(is_iso_date(value), SQLSyntax: "invalid DATE literal '{}'", value);
                 Ok(DataType::Date)
             },
-            SQLDataType::Time(None, TimezoneInfo::None) => {
+            SQLDataType::Time(None, TimezoneInfo::None | TimezoneInfo::WithoutTimeZone) => {
                 polars_ensure!(is_iso_time(value), SQLSyntax: "invalid TIME literal '{}'", value);
                 Ok(DataType::Time)
             },
-            SQLDataType::Timestamp(prec, TimezoneInfo::None) | SQLDataType::Datetime(prec) => {
+            SQLDataType::Timestamp(_, _) | SQLDataType::Datetime(_) => {
                 let fn_name = match data_type {
                     SQLDataType::Timestamp(_, _) => "TIMESTAMP",
                     _ => "DATETIME",
@@ -1526,12 +1557,53 @@ impl SQLExprVisitor<'_> {
                     is_iso_datetime(value) || is_iso_date(value),
                     SQLSyntax: "invalid {} literal '{}'", fn_name, value,
                 );
-                Ok(DataType::Datetime(timeunit_from_precision(prec)?, None))
+                map_sql_dtype_to_polars(data_type)
             },
             _ => {
                 polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", data_type)
             },
         }
+    }
+
+    /// Visit a SQL `AT TIME ZONE` expression.
+    ///
+    /// A naive timestamp is read as a local time in the given zone (the result is in
+    /// UTC); a time-zone-aware timestamp becomes the naive local time in that zone.
+    fn visit_at_time_zone(
+        &mut self,
+        timestamp: &SQLExpr,
+        time_zone: &SQLExpr,
+    ) -> PolarsResult<Expr> {
+        let zone_expr = self.visit_expr(time_zone)?;
+        let Some(zone) = (match &zone_expr {
+            Expr::Literal(lv) => lv.extract_str(),
+            _ => None,
+        }) else {
+            polars_bail!(SQLInterface: "AT TIME ZONE expects a string literal time zone; found {}", time_zone)
+        };
+        let time_zone = TimeZone::opt_try_new(Some(zone))?.ok_or_else(
+            || polars_err!(SQLInterface: "AT TIME ZONE expects a time zone; found '{}'", zone),
+        )?;
+        let expr = self.visit_expr(timestamp)?;
+        let ambiguous = || lit("latest");
+        Ok(match self.cast_or_expr_dtype(&expr) {
+            Some(DataType::Datetime(_, None)) => expr
+                .dt()
+                .replace_time_zone(Some(time_zone), ambiguous(), NonExistent::Raise)
+                .dt()
+                .convert_time_zone(TimeZone::UTC),
+            Some(DataType::Datetime(_, Some(_))) => expr
+                .dt()
+                .convert_time_zone(time_zone)
+                .dt()
+                .replace_time_zone(None, ambiguous(), NonExistent::Raise),
+            Some(dtype) => {
+                polars_bail!(SQLInterface: "AT TIME ZONE expects a timestamp; found {}", dtype)
+            },
+            None => {
+                polars_bail!(SQLInterface: "AT TIME ZONE could not resolve the type of {}", timestamp)
+            },
+        })
     }
 
     /// Visit a SQL `BETWEEN` expression.

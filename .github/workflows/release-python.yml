@@ -18,9 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.10'
+  PYTHON_VERSION: '3.11'
   POLARS_BUILD_COMMIT: ${{ inputs.sha || github.sha }}
-  PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
@@ -268,16 +267,9 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        if: matrix.os != 'windows-11-arm'
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Set up Python (ARM64 Windows)
-        if: matrix.os == 'windows-11-arm'
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
