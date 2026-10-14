@@ -996,6 +996,7 @@ class PyLazyFrame:
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption_properties: PyFileEncryptionProperties | None = None,
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,
@@ -2161,6 +2162,16 @@ class PyFileDecryptionProperties:
         column_keys: pylist[tuple[str, bytes]],
         aad_prefix: bytes | None,
         verify_footer_signature: bool,
+    ) -> None: ...
+
+class PyFileEncryptionProperties:
+    def __init__(
+        self,
+        footer_key: bytes,
+        column_keys: pylist[tuple[str, bytes]],
+        plaintext_footer: bool,
+        aad_prefix: bytes | None,
+        store_aad_prefix: bool,
     ) -> None: ...
 
 class PyOptFlags:

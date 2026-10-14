@@ -4,11 +4,12 @@ use std::io::Write;
 use futures::AsyncWrite;
 use polars_parquet_format::{ColumnChunk, RowGroup};
 
-use super::column_chunk::write_column_chunk;
 #[cfg(feature = "async")]
 use super::column_chunk::write_column_chunk_async;
+use super::column_chunk::{ColumnChunkEncryption, write_column_chunk};
 use super::page::{PageWriteSpec, is_data_page};
 use super::{DynIter, DynStreamingIterator};
+use crate::parquet::encryption::encrypt::FileEncryptor;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetadata, ColumnDescriptor};
 use crate::parquet::page::CompressedPage;
@@ -66,7 +67,7 @@ fn compute_num_rows(columns: &[(ColumnChunk, Vec<PageWriteSpec>)]) -> ParquetRes
         .unwrap_or(Ok(0))
 }
 
-pub fn write_row_group<
+pub(crate) fn write_row_group<
     'a,
     W,
     E, // external error any of the iterators may emit
@@ -77,6 +78,7 @@ pub fn write_row_group<
     descriptors: &[ColumnDescriptor],
     columns: DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>,
     ordinal: usize,
+    file_encryptor: Option<&FileEncryptor>,
 ) -> ParquetResult<(RowGroup, Vec<Vec<PageWriteSpec>>, u64)>
 where
     W: Write,
@@ -87,9 +89,15 @@ where
 
     let initial = offset;
     let columns = column_iter
-        .map(|(descriptor, page_iter)| {
+        .enumerate()
+        .map(|(column_ordinal, (descriptor, page_iter))| {
+            let encryption = file_encryptor.map(|file_encryptor| ColumnChunkEncryption {
+                file_encryptor,
+                row_group_idx: ordinal,
+                column_ordinal,
+            });
             let (column, page_specs, size) =
-                write_column_chunk(writer, offset, descriptor, page_iter?)?;
+                write_column_chunk(writer, offset, descriptor, page_iter?, encryption)?;
             offset += size;
             Ok((column, page_specs))
         })

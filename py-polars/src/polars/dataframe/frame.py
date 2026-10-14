@@ -197,6 +197,7 @@ if TYPE_CHECKING:
     from polars._utils.various import NoDefault
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
 
@@ -4147,6 +4148,7 @@ class DataFrame:
         ) = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4250,6 +4252,13 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+        encryption
+            Properties for writing Parquet files encrypted with Parquet modular
+            encryption. See :class:`ParquetEncryptionProperties`.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -4301,6 +4310,9 @@ class DataFrame:
                 raise ValueError(msg)
             if mkdir:
                 msg = "write_parquet with `use_pyarrow=True` cannot be combined with `mkdir`"
+                raise ValueError(msg)
+            if encryption is not None:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `encryption`"
                 raise ValueError(msg)
 
             tbl = self.to_arrow()
@@ -4371,6 +4383,7 @@ class DataFrame:
             credential_provider=credential_provider,
             metadata=metadata,
             arrow_schema=arrow_schema,
+            encryption=encryption,
             engine=engine,
             mkdir=mkdir,
             optimizations=QueryOptFlags._eager(),

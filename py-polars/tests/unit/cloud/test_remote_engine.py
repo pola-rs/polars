@@ -302,6 +302,14 @@ def test_sink_forwards_options(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -
     [
         ("sink_parquet", {"mkdir": True}),
         ("sink_parquet", {"sync_on_close": "data"}),
+        (
+            "sink_parquet",
+            {
+                "encryption": pl.ParquetEncryptionProperties(
+                    footer_key=b"0123456789012345"
+                )
+            },
+        ),
         ("sink_csv", {"compression": "gzip"}),
         ("sink_csv", {"check_extension": False}),
         ("sink_csv", {"maintain_order": False}),

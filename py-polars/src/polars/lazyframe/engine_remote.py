@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from polars.dataframe import DataFrame
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy, SinkedPathsCallback
     from polars.lazyframe.engine import _CollectBatches
     from polars.lazyframe.frame import LazyFrame
@@ -250,6 +251,7 @@ class RemoteEngine(Engine):
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
+        encryption: ParquetEncryptionProperties | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
@@ -258,6 +260,7 @@ class RemoteEngine(Engine):
         self._reject_if_set(
             mkdir=mkdir,
             sync_on_close=sync_on_close,
+            encryption=encryption,
             sinked_paths_callback=sinked_paths_callback,
         )
         self._target(lf).sink_parquet(

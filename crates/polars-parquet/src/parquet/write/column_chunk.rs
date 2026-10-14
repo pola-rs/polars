@@ -16,42 +16,68 @@ use super::statistics::reduce;
 use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encryption::encrypt::{FileEncryptor, get_column_crypto_metadata};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
 
-pub fn write_column_chunk<W, E>(
+/// The context needed to encrypt a column chunk.
+pub(crate) struct ColumnChunkEncryption<'a> {
+    pub file_encryptor: &'a FileEncryptor,
+    pub row_group_idx: usize,
+    pub column_ordinal: usize,
+}
+
+pub(crate) fn write_column_chunk<W, E>(
     writer: &mut W,
     mut offset: u64,
     descriptor: &ColumnDescriptor,
     mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
+    encryption: Option<ColumnChunkEncryption>,
 ) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: Write,
     ParquetError: From<E>,
     E: std::error::Error,
 {
+    let mut page_encryptor = encryption
+        .as_ref()
+        .map(|e| {
+            e.file_encryptor
+                .page_encryptor(descriptor, e.row_group_idx, e.column_ordinal)
+        })
+        .transpose()?
+        .flatten();
+
     // write every page
 
     let initial = offset;
 
     let mut specs = vec![];
     while let Some(compressed_page) = compressed_pages.next()? {
-        let spec = write_page(writer, offset, compressed_page)?;
+        let spec = write_page(writer, offset, compressed_page, page_encryptor.as_mut())?;
         offset += spec.bytes_written;
         specs.push(spec);
     }
     let mut bytes_written = offset - initial;
 
-    let column_chunk = build_column_chunk(&specs, descriptor)?;
+    let mut column_chunk = build_column_chunk(&specs, descriptor)?;
 
-    // write metadata
-    let mut protocol = TCompactOutputProtocol::new(writer);
-    bytes_written += column_chunk
-        .meta_data
-        .as_ref()
-        .unwrap()
-        .write_to_out_protocol(&mut protocol)? as u64;
+    if let Some(encryption) = &encryption {
+        column_chunk.crypto_metadata =
+            get_column_crypto_metadata(encryption.file_encryptor.properties(), descriptor);
+    }
+
+    // write metadata, unless the column is encrypted, in which case the metadata is only
+    // written to the footer.
+    if page_encryptor.is_none() {
+        let mut protocol = TCompactOutputProtocol::new(writer);
+        bytes_written += column_chunk
+            .meta_data
+            .as_ref()
+            .unwrap()
+            .write_to_out_protocol(&mut protocol)? as u64;
+    }
 
     Ok((column_chunk, specs, bytes_written))
 }
