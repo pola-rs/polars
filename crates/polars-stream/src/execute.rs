@@ -13,6 +13,7 @@ use polars_utils::vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
+use crate::execution_order::choose_accumulating_node;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
 use crate::metrics::GraphMetrics;
 use crate::nodes::NodeMemoryUsage;
@@ -129,19 +130,7 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
     if only_accumulating_sinks_left {
         to_run.extend(accumulating);
     } else {
-        // TODO: choose which accumulating node(s) to run more intelligently.
-        let best = accumulating.into_iter().max_by_key(|node_key| {
-            // Prefer to run nodes whose outputs are ready to be consumed. Also
-            // prefer to run nodes which have outputs over in-memory sinks.
-            let num_outputs = graph.nodes[*node_key].outputs.len();
-            let num_outputs_ready_to_recv = graph.nodes[*node_key]
-                .outputs
-                .iter()
-                .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
-                .count();
-            (num_outputs_ready_to_recv, num_outputs)
-        });
-        to_run.extend(best);
+        to_run.push(choose_accumulating_node(graph, &accumulating));
     }
 
     expand_ready_subgraph(graph, to_run)

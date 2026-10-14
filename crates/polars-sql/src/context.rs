@@ -3016,7 +3016,7 @@ impl SQLContext {
     /// frame together with the set of placeholder column names the subqueries were bound to.
     ///
     /// `shape` selects how the placeholder is referenced; see [`SubqueryShape`].
-    fn process_subqueries(
+    pub(crate) fn process_subqueries(
         &mut self,
         lf: LazyFrame,
         exprs: Vec<&mut Expr>,
@@ -3301,12 +3301,14 @@ impl SQLContext {
     ) -> PolarsResult<(String, LazyFrame)> {
         let tbl_fn = name.0.first().unwrap().as_ident().unwrap().value.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
-        let (tbl_name, lf) = read_fn.execute(args)?;
-        #[allow(clippy::useless_asref)]
-        let tbl_name = alias
-            .as_ref()
-            .map(|a| a.name.value.clone())
-            .unwrap_or_else(|| tbl_name.to_string());
+        let (tbl_name, mut lf) = read_fn.execute(args, self)?;
+        let tbl_name = match alias {
+            Some(alias) => {
+                lf = self.rename_columns_from_table_alias(lf, alias)?;
+                alias.name.value.clone()
+            },
+            None => tbl_name,
+        };
 
         self.table_map
             .write()
@@ -4385,7 +4387,7 @@ fn reduce_correlated_cols_in_group_context(expr: Expr) -> Expr {
 
 /// How a resolved subquery placeholder column should be referenced.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum SubqueryShape {
+pub(crate) enum SubqueryShape {
     /// `col(<placeholder>).first()` -- a scalar, for filter and aggregation contexts.
     Scalar,
     /// `col(<placeholder>)` -- the same value at the frame's height, for contexts that

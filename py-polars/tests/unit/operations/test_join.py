@@ -1791,7 +1791,6 @@ def test_join_preserve_order_full() -> None:
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
-@pytest.mark.may_fail_lazy_schema  # TODO: upcast
 def test_join_numeric_key_upcast_15338(
     dtypes: tuple[str, str, str], swap: bool
 ) -> None:
@@ -4553,7 +4552,6 @@ def test_join_lazyframe_with_itself_after_sort_25395() -> None:
     assert_frame_equal(result, pl.DataFrame({"a": [1]}))
 
 
-@pytest.mark.may_fail_lazy_schema  # TODO: pushdown
 def test_join_right_with_cast_predicate_pushdown() -> None:
     lhs = pl.LazyFrame({"x": [0, 1], "z": [4, 5]})
     rhs = pl.LazyFrame({"y": [2, 3]}).cast(pl.Int32)
@@ -4569,7 +4567,7 @@ def test_join_right_with_cast_predicate_pushdown() -> None:
             "z": [],
             "y": [],
         },
-        schema={"z": pl.Int64, "y": pl.Int64},
+        schema={"z": pl.Int64, "y": pl.Int32},
     )
     assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
 
@@ -4964,3 +4962,74 @@ def test_join_key_keeps_outer_join_when_nulls_match() -> None:
     assert "LEFT JOIN:" in q.explain()
     expect = q.collect(optimizations=pl.QueryOptFlags.none())
     assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_coalesce_full_join_upcast_key_schema_29903() -> None:
+    left = pl.LazyFrame({"k": pl.Series([2, 1], dtype=pl.Int32), "s": ["a", "b"]})
+    right = pl.LazyFrame({"k": pl.Series([1], dtype=pl.Int64), "x": ["c"]})
+
+    q = left.join(right, on="k", how="full", coalesce=True)
+    assert q.collect_schema() == {"k": pl.Int64, "s": pl.String, "x": pl.String}
+
+    expected = pl.DataFrame(
+        {"k": [1, 2], "s": ["b", "a"], "x": ["c", None]},
+        schema={"k": pl.Int64, "s": pl.String, "x": pl.String},
+    )
+    assert_frame_equal(q.unique().collect(), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("swap", [False, True])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_right_join_to_inner_keeps_right_key_dtype(
+    swap: bool, engine: EngineType
+) -> None:
+    ltype, rtype = (pl.Int64, pl.Int32) if swap else (pl.Int32, pl.Int64)
+    left = pl.LazyFrame({"k": pl.Series([1, 2], dtype=ltype), "l": ["a", None]})
+    right = pl.LazyFrame({"k": pl.Series([1, 2, 3], dtype=rtype)})
+
+    q = left.join(right, on="k", how="right", coalesce=True).filter(
+        pl.col("l").is_not_null()
+    )
+
+    assert "INNER JOIN" in q.explain()
+    expected = pl.DataFrame({"l": ["a"], "k": pl.Series([1], dtype=rtype)})
+    assert_frame_equal(q.collect(engine=engine), expected)
+    assert_frame_equal(
+        q.collect(engine=engine, optimizations=pl.QueryOptFlags.none()), expected
+    )
+
+
+@pytest.mark.parametrize("how", ["inner", "right"])
+@pytest.mark.parametrize("swap", [False, True])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_key_predicate_keeps_key_dtype(
+    how: JoinStrategy, swap: bool, engine: EngineType
+) -> None:
+    # `+ 1` wraps for Int8 but not for Int64.
+    ltype, rtype = (pl.Int64, pl.Int8) if swap else (pl.Int8, pl.Int64)
+    left = pl.LazyFrame(
+        {"x": pl.Series([127], dtype=ltype), "z": [1]},
+    )
+    right = pl.LazyFrame({"y": pl.Series([127], dtype=rtype), "w": [1]})
+
+    key = "x" if how == "inner" else "y"
+    q = left.join(right, left_on="x", right_on="y", how=how).filter(
+        pl.col("z").is_not_null(), pl.col("w").is_not_null(), (pl.col(key) + 1) < 0
+    )
+
+    expected = q.collect(engine=engine, optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(engine=engine), expected)
+    assert expected.height == int(q.collect_schema()[key] == pl.Int8)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_asof_by_key_predicate_other_time_unit(engine: EngineType) -> None:
+    left = pl.LazyFrame({"t": [1], "x": pl.Series([1000], dtype=pl.Datetime("ms"))})
+    right = pl.LazyFrame(
+        {"t": [1], "y": pl.Series([1000], dtype=pl.Datetime("us")), "v": [42]}
+    )
+    q = left.join_asof(
+        right, on="t", by_left="x", by_right="y", check_sortedness=False
+    ).filter(pl.col("x").cast(pl.Int64) == 1000)
+
+    assert q.collect(engine=engine)["v"].to_list() == [42]

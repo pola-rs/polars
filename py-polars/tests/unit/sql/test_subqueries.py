@@ -930,6 +930,18 @@ def test_quantified_subquery_compared_after_cast(predicate: str) -> None:
     )
 
 
+def test_scalar_subquery_on_multi_chunk_frame() -> None:
+    t1 = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    t1 = pl.concat([t1[:1], t1[1:]], rechunk=False)
+    t2 = pl.DataFrame({"k": [1, 1]})
+    out = pl.SQLContext(t1=t1, t2=t2).execute(
+        "SELECT a, (SELECT b FROM t1 WHERE a = 1) = ALL (SELECT k FROM t2) AS r "
+        "FROM t1 ORDER BY a",
+        eager=True,
+    )
+    assert out.to_dict(as_series=False) == {"a": [1, 2, 3], "r": [True, True, True]}
+
+
 @pytest.mark.parametrize(
     "predicate",
     [
