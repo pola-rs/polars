@@ -491,18 +491,18 @@ def test_temporary_ir_node_inherits_attribution() -> None:
     """`collect_all` wraps bare inputs in memory sinks that lowering invents.
 
     Those sink IR nodes are never in the IR payload, so their physical sink is
-    attributed to the `SinkMultiple` node whose lowering created them.
+    attributed to the input it terminates, not to the `SinkMultiple` node whose
+    lowering created it.
     """
     observer = _observe_streaming(
         lambda: pl.collect_all([_sample_lf()], engine="streaming")
     )
     ir, phys = _planned_payloads(observer)
 
-    (sink_multiple_id,) = [
-        n["id"] for n in ir if n["properties"]["type"] == "SinkMultiple"
-    ]
+    (sink_multiple,) = [n for n in ir if n["properties"]["type"] == "SinkMultiple"]
+    (input_id,) = sink_multiple["input_ids"]
     (memory_sink,) = [n for n in phys if n["properties"]["type"] == "InMemorySink"]
-    assert memory_sink["ir_node_id"] == sink_multiple_id
+    assert memory_sink["ir_node_id"] == input_id
 
 
 def test_multiplexer_inherits_input_attribution() -> None:

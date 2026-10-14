@@ -495,13 +495,18 @@ fn lower_ir_inner(
             disable_morsel_split.get_or_insert(true);
             let mut sinks = Vec::with_capacity(inputs.len());
             for input in inputs.clone() {
-                let phys_node_stream = match ir_arena.get(input) {
-                    IR::Sink { .. } => lower_ir!(input)?,
-                    _ => lower_ir!(ir_arena.add(IR::Sink {
+                let sink = match ir_arena.get(input) {
+                    IR::Sink { .. } => input,
+                    _ => ir_arena.add(IR::Sink {
                         input,
-                        payload: SinkTypeIR::Memory
-                    }))?,
+                        payload: SinkTypeIR::Memory,
+                    }),
                 };
+                let phys_node_stream = lower_ir!(sink)?;
+                if sink != input {
+                    // Attribute the newly added sink to the relevant input.
+                    phys_to_ir.insert(phys_node_stream.node, input);
+                }
                 sinks.push(phys_node_stream.node);
             }
             PhysNodeKind::SinkMultiple { sinks }
