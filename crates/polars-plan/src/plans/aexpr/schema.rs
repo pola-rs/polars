@@ -205,15 +205,29 @@ impl AExpr {
                         }
                         Ok(field)
                     },
-                    Median(expr) => {
+                    Median(expr) | Mean(expr) | Std(expr, _) | Var(expr, _) => {
+                        let (op, allow_temporal) = match agg {
+                            Median(_) => ("median", true),
+                            Mean(_) => ("mean", true),
+                            Std(..) => ("std", false),
+                            Var(..) => ("var", false),
+                            _ => unreachable!(),
+                        };
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
-                    },
-                    Mean(expr) => {
-                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
+                        let dt = field[0].dtype();
+                        let supported = match dt {
+                            Null | Unknown(_) | Boolean => true,
+                            #[cfg(feature = "dtype-decimal")]
+                            Decimal(_, _) => true,
+                            dt if dt.is_primitive_numeric() => true,
+                            dt if dt.is_temporal() => allow_temporal,
+                            _ => false,
+                        };
+                        polars_ensure!(
+                            supported,
+                            InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
+                        );
+                        FieldsMapper::new(&field).moment_dtype()
                     },
                     Implode {
                         input,
@@ -226,16 +240,6 @@ impl AExpr {
                         );
                         field.set_dtype(DataType::List(field.dtype().clone().into()));
                         Ok(field)
-                    },
-                    Std(expr, _) => {
-                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
-                    },
-                    Var(expr, _) => {
-                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
                     },
                     NUnique(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
