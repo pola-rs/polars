@@ -468,14 +468,13 @@ impl ListChunked {
 }
 
 impl ListChunked {
-    /// Slice every list with the same `offset` and `length`, see [`Series::slice`].
+    /// Slice every list with the same `offset` and `length`.
     pub fn lst_slice(&self, offset: i64, length: usize) -> Self {
         self.lst_slice_var(&[offset], 0, &[length], 0)
     }
 
     /// Slice list `i` with offset `offsets[i * offset_stride]` and length
-    /// `lengths[i * lengths_stride]`, see [`Series::slice`]. A stride of zero
-    /// applies the same offset or length to every list.
+    /// `lengths[i * lengths_stride]`.
     pub fn lst_slice_var(
         &self,
         offsets: &[i64],
