@@ -229,8 +229,9 @@ def test_ewm_std_var_long_null_run_28620(adjust: bool, gap: int) -> None:
         "bias": False,
         "ignore_nulls": False,
     }
-    assert s.ewm_var(**kwargs)[-1] == pytest.approx(2.0)
-    assert s.ewm_std(**kwargs)[-1] == pytest.approx(2.0**0.5)
+    expected_var = pl.Series([None] * (gap + 1) + [2.0], dtype=pl.Float64)
+    assert_series_equal(s.ewm_var(**kwargs), expected_var)
+    assert_series_equal(s.ewm_std(**kwargs), expected_var.sqrt())
 
 
 def test_ewm_param_validation() -> None:
