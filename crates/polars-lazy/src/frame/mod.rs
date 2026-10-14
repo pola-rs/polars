@@ -310,11 +310,12 @@ impl LazyFrame {
     /// See [`SortMultipleOptions`] for more options.
     pub fn sort(self, by: impl IntoVec<PlSmallStr>, sort_options: SortMultipleOptions) -> Self {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .sort(by.into_vec().into_iter().map(col).collect(), sort_options)
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Add a sort operation to the logical plan.
@@ -346,8 +347,9 @@ impl LazyFrame {
             self
         } else {
             let opt_state = self.get_opt_state();
+            let cached_arena = self.cached_arena.clone();
             let lp = self.get_plan_builder().sort(by_exprs, sort_options).build();
-            Self::from_logical_plan(lp, opt_state)
+            Self::from_inner(lp, opt_state, cached_arena)
         }
     }
 
@@ -440,8 +442,9 @@ impl LazyFrame {
     /// error while materializing the [`LazyFrame`].
     pub fn drop(self, columns: Selector) -> Self {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().drop(columns).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -465,15 +468,17 @@ impl LazyFrame {
     /// Fill None values in the DataFrame with an expression.
     pub fn fill_null<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().fill_null(fill_value.into()).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Fill NaN values in the DataFrame with an expression.
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().fill_nan(fill_value.into()).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Caches the result into a new LazyFrame.
@@ -481,8 +486,9 @@ impl LazyFrame {
     /// This should be used to prevent computations running multiple times.
     pub fn cache(self) -> Self {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().cache().build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Cast named frame columns, resulting in a new LazyFrame with updated dtypes
@@ -920,8 +926,9 @@ impl LazyFrame {
     /// ```
     pub fn filter(self, predicate: Expr) -> Self {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().filter(predicate).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Remove frame rows that match a predicate expression.
@@ -998,8 +1005,9 @@ impl LazyFrame {
 
     fn select_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().project(exprs, options).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Performs a "group-by" on a `LazyFrame`, producing a [`LazyGroupBy`], which can subsequently be aggregated.
@@ -1035,6 +1043,7 @@ impl LazyFrame {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
                 opt_state,
+                cached_arena: self.cached_arena,
                 keys,
                 predicates: vec![],
                 maintain_order: false,
@@ -1048,6 +1057,7 @@ impl LazyFrame {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
                 opt_state,
+                cached_arena: self.cached_arena,
                 keys,
                 predicates: vec![],
                 maintain_order: false,
@@ -1085,6 +1095,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
+            cached_arena: self.cached_arena,
             predicates: vec![],
             keys: group_by.as_ref().to_vec(),
             maintain_order: true,
@@ -1131,6 +1142,7 @@ impl LazyFrame {
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
+            cached_arena: self.cached_arena,
             predicates: vec![],
             keys: group_by.as_ref().to_vec(),
             maintain_order: true,
@@ -1153,6 +1165,7 @@ impl LazyFrame {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
                 opt_state,
+                cached_arena: self.cached_arena,
                 keys,
                 predicates: vec![],
                 maintain_order: true,
@@ -1166,6 +1179,7 @@ impl LazyFrame {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
                 opt_state,
+                cached_arena: self.cached_arena,
                 keys,
                 predicates: vec![],
                 maintain_order: true,
@@ -1411,11 +1425,12 @@ impl LazyFrame {
     /// idxs must only have a single column of indices.
     pub fn gather(self, idxs: LazyFrame, null_on_oob: bool) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .gather(idxs.logical_plan, null_on_oob)
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Add or replace a column, given as an expression, to a DataFrame.
@@ -1437,6 +1452,7 @@ impl LazyFrame {
     /// ```
     pub fn with_column(self, expr: Expr) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .with_columns(
@@ -1449,7 +1465,7 @@ impl LazyFrame {
                 },
             )
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Add or replace multiple columns, given as expressions, to a DataFrame.
@@ -1501,11 +1517,12 @@ impl LazyFrame {
         extra_columns: ExtraColumnsPolicy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .match_to_schema(schema, per_column, extra_columns)
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     pub fn pipe_with_schema(
@@ -1513,11 +1530,12 @@ impl LazyFrame {
         callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
     ) -> Self {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .pipe_with_schema(vec![], callback)
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     pub fn pipe_with_schemas(
@@ -1526,6 +1544,7 @@ impl LazyFrame {
         callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
     ) -> Self {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .pipe_with_schema(
@@ -1533,13 +1552,14 @@ impl LazyFrame {
                 callback,
             )
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     fn with_columns_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().with_columns(exprs, options).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Aggregate all the columns as their maximum values.
@@ -1636,11 +1656,12 @@ impl LazyFrame {
         allow_empty: bool,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .explode(columns, options, allow_empty)
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Aggregate all the columns as the sum of their null value count.
@@ -1667,13 +1688,14 @@ impl LazyFrame {
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let options = DistinctOptionsDSL {
             subset,
             maintain_order: true,
             keep_strategy,
         };
         let lp = self.get_plan_builder().distinct(options).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Drop non-unique rows without maintaining the order of kept rows.
@@ -1694,13 +1716,14 @@ impl LazyFrame {
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let options = DistinctOptionsDSL {
             subset,
             maintain_order: false,
             keep_strategy,
         };
         let lp = self.get_plan_builder().distinct(options).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Drop rows containing one or more NaN values.
@@ -1709,8 +1732,9 @@ impl LazyFrame {
     /// floating point columns are considered.
     pub fn drop_nans(self, subset: Option<Selector>) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().drop_nans(subset).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Drop rows containing one or more None values.
@@ -1719,8 +1743,9 @@ impl LazyFrame {
     /// columns are considered.
     pub fn drop_nulls(self, subset: Option<Selector>) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().drop_nulls(subset).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Slice the DataFrame using an offset (starting row) and a length.
@@ -1734,8 +1759,9 @@ impl LazyFrame {
     /// case, the number of rows in the returned DataFrame will be less than `len`.
     pub fn slice(self, offset: i64, len: IdxSize) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().slice(offset, len).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Remove all the rows of the LazyFrame.
@@ -1779,6 +1805,7 @@ impl LazyFrame {
         column_naming: PivotColumnNaming,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .pivot(
@@ -1792,7 +1819,7 @@ impl LazyFrame {
                 column_naming,
             )
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Unpivot the DataFrame from wide to long format.
@@ -1801,8 +1828,9 @@ impl LazyFrame {
     #[cfg(feature = "pivot")]
     pub fn unpivot(self, args: UnpivotArgsDSL) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().unpivot(args).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Limit the DataFrame to the first `n` rows.
@@ -1834,6 +1862,7 @@ impl LazyFrame {
         F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .map(
@@ -1843,7 +1872,7 @@ impl LazyFrame {
                 PlSmallStr::from_static(name.unwrap_or("ANONYMOUS UDF")),
             )
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     #[cfg(feature = "python")]
@@ -1855,17 +1884,19 @@ impl LazyFrame {
         validate_output: bool,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self
             .get_plan_builder()
             .map_python(function, optimizations, schema, validate_output)
             .build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     pub(crate) fn map_private(self, function: DslFunction) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let cached_arena = self.cached_arena.clone();
         let lp = self.get_plan_builder().map_private(function).build();
-        Self::from_logical_plan(lp, opt_state)
+        Self::from_inner(lp, opt_state, cached_arena)
     }
 
     /// Add a new column at index 0 that counts the rows.
@@ -1959,7 +1990,7 @@ impl LazyFrame {
             key,
             maintain_order,
         };
-        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
+        Ok(LazyFrame::from_inner(lp, self.opt_state, self.cached_arena))
     }
 
     pub fn hint(self, hint: HintIR) -> PolarsResult<LazyFrame> {
@@ -1967,7 +1998,7 @@ impl LazyFrame {
             input: Arc::new(self.logical_plan),
             function: DslFunction::Hint(hint),
         };
-        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
+        Ok(LazyFrame::from_inner(lp, self.opt_state, self.cached_arena))
     }
 }
 
@@ -1976,6 +2007,7 @@ impl LazyFrame {
 pub struct LazyGroupBy {
     pub logical_plan: DslPlan,
     opt_state: OptFlags,
+    cached_arena: Arc<Mutex<Option<CachedArena>>>,
     keys: Vec<Expr>,
     predicates: Vec<Expr>,
     maintain_order: bool,
@@ -1990,7 +2022,7 @@ impl From<LazyGroupBy> for LazyFrame {
         Self {
             logical_plan: lgb.logical_plan,
             opt_state: lgb.opt_state,
-            cached_arena: Default::default(),
+            cached_arena: lgb.cached_arena,
         }
     }
 }
@@ -2060,7 +2092,7 @@ impl LazyGroupBy {
         let lp = DslBuilder::from(self.logical_plan)
             .group_by(self.keys, self.predicates, aggs, None, self.maintain_order)
             .build();
-        LazyFrame::from_logical_plan(lp, self.opt_state)
+        LazyFrame::from_inner(lp, self.opt_state, self.cached_arena)
     }
 
     /// Return first n rows of each group
@@ -2127,7 +2159,7 @@ impl LazyGroupBy {
             maintain_order: self.maintain_order,
             options: Arc::new(options),
         };
-        LazyFrame::from_logical_plan(lp, self.opt_state)
+        LazyFrame::from_inner(lp, self.opt_state, self.cached_arena)
     }
 }
 
@@ -2263,6 +2295,7 @@ impl JoinBuilder {
     /// Finish builder
     pub fn finish(self) -> PolarsResult<LazyFrame> {
         let opt_state = self.lf.opt_state;
+        let cached_arena = self.lf.cached_arena.clone();
         let other = self.other.expect("'with' not set in join builder");
 
         let args = JoinArgs {
@@ -2291,12 +2324,13 @@ impl JoinBuilder {
                 .into(),
             )?
             .build();
-        Ok(LazyFrame::from_logical_plan(lp, opt_state))
+        Ok(LazyFrame::from_inner(lp, opt_state, cached_arena))
     }
 
     // Finish with join predicates
     pub fn join_where(self, predicates: Vec<Expr>) -> LazyFrame {
         let opt_state = self.lf.opt_state;
+        let cached_arena = self.lf.cached_arena.clone();
         let other = self.other.expect("with not set");
 
         // Decompose `And` conjunctions into their component expressions
@@ -2380,7 +2414,7 @@ impl JoinBuilder {
             options: Arc::from(options),
         };
 
-        LazyFrame::from_logical_plan(lp, opt_state)
+        LazyFrame::from_inner(lp, opt_state, cached_arena)
     }
 }
 

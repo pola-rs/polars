@@ -1,7 +1,7 @@
 use super::plan::*;
 
 impl DslPlan {
-    fn inputs<'a>(&'a self, scratch: &mut Vec<&'a DslPlan>) {
+    pub(crate) fn inputs<'a>(&'a self, scratch: &mut Vec<&'a DslPlan>) {
         use DslPlan::*;
         match self {
             Select { input, .. }

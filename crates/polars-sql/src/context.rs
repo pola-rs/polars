@@ -362,7 +362,7 @@ impl SQLContext {
         }
 
         desugar_quantified_subqueries(&mut stmt);
-        let res = self.execute_statement(&stmt).inspect_err(|_| {
+        let mut res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
         })?;
 
@@ -574,7 +574,7 @@ impl SQLContext {
         let mut ctx = self.isolated();
 
         // Execute query with clean state (eg: nested/subquery)
-        let lf = query(&mut ctx)?;
+        let mut lf = query(&mut ctx)?;
 
         // Save state
         lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);

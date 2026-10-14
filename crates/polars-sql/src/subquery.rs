@@ -319,7 +319,7 @@ impl SQLContext {
             .iter()
             .map(|name| prefixed_inner(&prefix, name))
             .collect();
-        let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        let mut inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(self.lp_arena, self.expr_arena);
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
@@ -423,7 +423,7 @@ impl SQLContext {
         left_on.insert(0, left_key);
         right_on.insert(0, right_key);
 
-        let inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
+        let mut inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
         inner_lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
         build_semi_anti_join(
             lf,
@@ -457,7 +457,7 @@ impl SQLContext {
             right_on,
             local_filters,
         } = conjuncts;
-        let inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
+        let mut inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
         inner_lf.set_cached_arena(self.lp_arena, self.expr_arena);
         build_semi_anti_join(
             lf,
@@ -982,7 +982,7 @@ impl SQLContext {
             .iter()
             .map(|name| prefixed_inner(&prefix, name))
             .collect();
-        let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        let mut inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
         let value = value.map_expr(|e| match e {
@@ -1086,7 +1086,7 @@ impl SQLContext {
         if corr_preds.is_empty() {
             // Uncorrelated: the inner relation doesn't depend on the outer row, so
             // its existence is a single constant boolean broadcast onto every row.
-            let inner_flag = inner_filtered.select([len().gt(lit(0)).alias(flag_name.clone())]);
+            let mut inner_flag = inner_filtered.select([len().gt(lit(0)).alias(flag_name.clone())]);
             inner_flag.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
             let joined = concat_lf_horizontal(
                 [lf, inner_flag],
@@ -1109,7 +1109,7 @@ impl SQLContext {
             .iter()
             .map(|name| prefixed_inner(&prefix, name))
             .collect();
-        let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        let mut inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();

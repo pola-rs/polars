@@ -76,7 +76,9 @@ pub fn to_alp(
         seen_caches: Default::default(),
     };
 
-    match to_alp_impl(lp, &mut ctxt) {
+    // Fetch the metadata of all scans in the plan concurrently before converting.
+    let result = prefetch_metadata(&lp, &ctxt).and_then(|()| to_alp_impl(lp, &mut ctxt));
+    match result {
         Ok(out) => Ok(out),
         Err(err) => {
             if opt_flags.contains(OptFlags::EAGER) {
@@ -92,11 +94,9 @@ pub fn to_alp(
             } else {
                 "THIS_NODE"
             };
-            let plan = IRPlan::new(
-                ir_until_then,
-                std::mem::take(lp_arena),
-                std::mem::take(expr_arena),
-            );
+            // Clone instead of taking the arenas, they can be cached and shared between
+            // `LazyFrame`s.
+            let plan = IRPlan::new(ir_until_then, lp_arena.clone(), expr_arena.clone());
             let location = format!("{}", plan.display());
             Err(err.wrap_msg(|msg| {
                 format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
@@ -114,8 +114,54 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
     Ok(lp_node)
 }
 
+/// Whether the node of a `DslPlan::IR` can be used instead of converting its DSL. Note that
+/// conversion additionally only reuses a single node per arena.
+fn ir_node_is_reusable(
+    node: Option<Node>,
+    version: u32,
+    opt_flags: Option<OptFlags>,
+    ctxt: &DslConversionContext,
+) -> bool {
+    node.is_some()
+        && version == ctxt.lp_arena.version()
+        && opt_flags.is_some_and(|flags| flags.cover_ir_conversion(*ctxt.opt_flags))
+}
+
+/// Fetch the metadata of all scans and resolvers in `lp` concurrently.
+///
+/// This skips the DSL of reusable `DslPlan::IR` nodes, so that the cost is proportional to the
+/// part of the plan that actually needs to be converted.
+fn prefetch_metadata(lp: &DslPlan, ctxt: &DslConversionContext) -> PolarsResult<()> {
+    let mut stack = vec![lp];
+    let mut nodes = vec![];
+    while let Some(dsl) = stack.pop() {
+        match dsl {
+            DslPlan::IR {
+                node,
+                version,
+                opt_flags,
+                ..
+            } if ir_node_is_reusable(*node, *version, *opt_flags, ctxt) => continue,
+            DslPlan::Scan { cached_ir, .. } if cached_ir.lock().unwrap().is_none() => {
+                nodes.push(dsl)
+            },
+            DslPlan::Resolver {
+                resolver_schema, ..
+            } if resolver_schema.lock().unwrap().is_none() => nodes.push(dsl),
+            _ => {},
+        }
+        dsl.inputs(&mut stack);
+    }
+
+    if nodes.is_empty() {
+        return Ok(());
+    }
+    let fut = fetch_metadata(nodes, ctxt.cache_file_info.clone(), ctxt.verbose);
+    ASYNC.block_in_place_on(fut)
+}
+
 async fn fetch_metadata(
-    lp: &DslPlan,
+    nodes: Vec<&DslPlan>,
     cache_file_info: SourcesToFileInfo,
     verbose: bool,
 ) -> PolarsResult<()> {
@@ -125,7 +171,7 @@ async fn fetch_metadata(
         (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
     ));
 
-    let mut futures = lp
+    let mut futures = nodes
         .into_iter()
         .filter_map(|dsl| match dsl {
             DslPlan::Scan {
@@ -187,12 +233,10 @@ async fn fetch_metadata(
 pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
 
-    // First do a pass to collect all scans and fetch all metadata concurrently.
-    {
-        let verbose = ctxt.verbose;
-        let cache_file_info = ctxt.cache_file_info.clone();
-        let fut = fetch_metadata(&lp, cache_file_info, verbose);
-        ASYNC.block_in_place_on(fut)?;
+    // The metadata of the whole plan is fetched up front by `prefetch_metadata`. This catches
+    // nodes that were not part of that plan, e.g. ones created by a `pipe_with_schema` callback.
+    if matches!(&lp, DslPlan::Scan { .. } | DslPlan::Resolver { .. }) {
+        prefetch_metadata(&lp, ctxt)?;
     }
 
     let v = match lp {
@@ -427,8 +471,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         columns: Default::default(),
                     })
                 } else {
-                    ctxt.lp_arena.replace(input, utils::empty_df());
-                    input
+                    // Don't replace `input` in place, it can be a reused node of a cached arena.
+                    ctxt.lp_arena.add(utils::empty_df())
                 });
             }
 
@@ -925,6 +969,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             // Adjust the input and start conversion again
             let input_adjusted = callback.call((inputs, input_schemas))?;
+            prefetch_metadata(&input_adjusted, ctxt)?;
             return to_alp_impl(input_adjusted, ctxt);
         },
         #[cfg(feature = "pivot")]
@@ -1615,18 +1660,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             version,
             opt_flags,
         } => {
-            let ir_built_with_required_flags =
-                opt_flags.is_some_and(|flags| flags.cover_ir_conversion(*ctxt.opt_flags));
-            return match node {
-                Some(node)
-                    if ir_built_with_required_flags  // can reuse
-                        && version == ctxt.lp_arena.version()
-                        && ctxt.conversion_optimizer.used_arenas.insert(version) =>
-                {
-                    Ok(node)
-                },
-                _ => to_alp_impl(owned(dsl), ctxt),
-            };
+            if ir_node_is_reusable(node, version, opt_flags, ctxt) {
+                if ctxt.conversion_optimizer.used_arenas.insert(version) {
+                    return Ok(node.unwrap());
+                }
+                // `prefetch_metadata` skipped this DSL as it expected the node to be reused.
+                prefetch_metadata(&dsl, ctxt)?;
+            }
+            return to_alp_impl(owned(dsl), ctxt);
         },
         DslPlan::Resolver {
             resolver,
