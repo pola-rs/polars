@@ -2608,3 +2608,24 @@ def test_struct_eval_empty_non_elementwise_input(input_expr: pl.Expr) -> None:
     # The field-less struct keeps the height and the outer validity of the input.
     assert out.height == lf.select(input_expr).collect().height
     assert out["s"].null_count() == 1
+
+
+def test_struct_when_then_after_parquet_roundtrip_29815() -> None:
+    buf = io.BytesIO()
+    pl.DataFrame(
+        {
+            "order": [
+                {"status": "shipped", "tracking": ["TRK123"]},
+                {"status": "pending", "tracking": []},
+            ]
+        }
+    ).write_parquet(buf)
+    buf.seek(0)
+    df = pl.read_parquet(buf)
+
+    out = df.select(
+        pl.when(pl.col("order").struct.field("status") == "shipped")
+        .then(pl.col("order").struct.field("tracking").list.get(0))
+        .otherwise(pl.lit("not shipped"))
+    )
+    assert out.to_series().to_list() == ["TRK123", "not shipped"]
