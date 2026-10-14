@@ -12,6 +12,8 @@ mod resolver;
 mod sql_expr;
 mod sql_visitors;
 mod subquery;
+#[cfg(feature = "csv")]
+mod table_function_args;
 mod table_functions;
 mod types;
 mod window_frames;

@@ -17,6 +17,10 @@ Table Operations
      - Returns the Polars execution plan for a given SQL query.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables registered in the given context.
+   * - :ref:`GENERATE_SERIES <generate_series_table_func>`
+     - Create a table with one column of values from start to stop, stop included.
+   * - :ref:`RANGE <range_table_func>`
+     - Create a table with one column of values from start to stop, stop not included.
    * - :ref:`UNNEST <unnest_table_func>`
      - Unnest one or more arrays as columns in a new table object.
    * - :ref:`TRUNCATE <truncate>`
@@ -97,6 +101,34 @@ Returns a list of all tables registered in the given context.
 .. code-block:: sql
 
     SHOW TABLES
+
+.. _generate_series_table_func:
+
+GENERATE_SERIES
+---------------
+Create a table with one column of values from start to stop, stop included. Takes the
+same arguments as the :ref:`GENERATE_SERIES <generate_series>` function; the arguments
+must be constants. The column is named ``generate_series`` unless renamed by an alias.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT * FROM
+      GENERATE_SERIES(DATE '2026-01-01', DATE '2026-12-31', INTERVAL '1 day') AS cal (d)
+
+.. _range_table_func:
+
+RANGE
+-----
+Like :ref:`GENERATE_SERIES <generate_series_table_func>`, but stop is not included. The
+column is named ``range`` unless renamed by an alias.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT * FROM RANGE(0, 10, 2)
 
 .. _unnest_table_func:
 
