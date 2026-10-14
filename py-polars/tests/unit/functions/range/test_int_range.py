@@ -273,6 +273,12 @@ def test_int_ranges_non_int_dtype() -> None:
         pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
 
 
+def test_int_ranges_zero_step() -> None:
+    df = pl.DataFrame({"step": [1, 0]})
+    with pytest.raises(InvalidOperationError, match="step must not be zero"):
+        df.select(pl.int_ranges(0, 3, "step"))
+
+
 # https://github.com/pola-rs/polars/issues/22640
 def test_int_ranges_non_numeric_input_should_error() -> None:
     # Test with non-numeric strings

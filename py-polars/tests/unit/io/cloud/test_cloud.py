@@ -409,7 +409,10 @@ def test_scan_http_same_host() -> None:
 
 
 @pytest.mark.slow
-def test_scan_http_same_host_error() -> None:
+def test_scan_http_same_host_error(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"a": [1]})
     files = {"/a.parquet?token=A": _parquet_bytes(df)}
 
@@ -418,14 +421,20 @@ def test_scan_http_same_host_error() -> None:
         assert_frame_equal(q.collect(), df)
         n = len(requests)
 
+        capfd.readouterr()
         q = pl.scan_parquet(f"{endpoint}/missing.parquet")
         with pytest.raises(FileNotFoundError, match=r"missing\.parquet") as exc:
             q.collect()
+        capture = capfd.readouterr().err
 
+    # Both URLs share the host's store: the error scan reuses a pooled connection.
+    assert {port for port, _ in requests[n:]} & {port for port, _ in requests[:n]}
     # The error names the failing URL, not the one the host's store was built for.
     assert "a.parquet" not in str(exc.value)
-    # An error does not drop the host's connection pool.
-    assert {port for port, _ in requests[n:]} <= {port for port, _ in requests[:n]}
+    # The error is retried on that store, not after rebuilding it and dropping its pool.
+    # Ports can't show this: the retry may open a new connection before the pooled one
+    # is returned.
+    assert re.search(r"got error: .*missing\.parquet.*, will retry$", capture, re.M)
 
 
 @pytest.mark.slow
@@ -444,10 +453,11 @@ def test_http_store_cache_size(cache_size: int, plmonkeypatch: PlMonkeyPatch) ->
         for endpoint in [b, a]:
             assert_frame_equal(pl.scan_parquet(f"{endpoint}/a.parquet").collect(), df)
 
-    # Host `a` keeps its store and connections only if the cache also fits `b`.
+    # Host `a` keeps its store and connections only if the cache also fits `b`. A kept
+    # store may also open new connections, so check for any reuse.
     first = {port for port, _ in a_requests[:n]}
     last = {port for port, _ in a_requests[n:]}
-    assert (last <= first) == (cache_size >= 2)
+    assert bool(last & first) == (cache_size >= 2)
 
 
 @pytest.mark.slow

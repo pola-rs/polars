@@ -914,3 +914,76 @@ def test_when_then_scalar_condition_masks_unselected_branch(engine: EngineType) 
         pl.when(pl.lit(False)).then(pl.col("x").cast(pl.Int64)).otherwise(0)
     )
     assert q.collect(engine=engine).to_series().to_list() == [0, 0]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_masks_multichunk_struct_29799(engine: EngineType) -> None:
+    df = pl.DataFrame(
+        {
+            "v": [1.0, 0.0, None, 2.0, 0.0],
+            "s": [{"a": 1}, {"a": 2}, None, {"a": 4}, {"a": 5}],
+        }
+    )
+    df = pl.concat([df[:1], df[1:]], rechunk=False)
+    assert df["s"].n_chunks() == 2
+
+    q = df.lazy().select(
+        then=pl.when(pl.col.v > 0).then(pl.col.s.struct.field("a") + 1),
+        otherwise=pl.when(pl.col.v > 0).then(0).otherwise(pl.col.s.struct.field("a")),
+        struct=pl.when(pl.col.v > 0).then(pl.col.s),
+    )
+    expected = pl.DataFrame(
+        {
+            "then": [2, None, None, 5, None],
+            "otherwise": [0, 2, None, 0, 5],
+            "struct": [{"a": 1}, None, None, {"a": 4}, None],
+        }
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+    # The strict cast only succeeds if masking nulled the field in every chunk.
+    df = pl.concat(
+        [
+            pl.DataFrame({"m": [True], "s": [{"a": "1"}]}),
+            pl.DataFrame({"m": [False], "s": [{"a": "bad"}]}),
+        ],
+        rechunk=False,
+    )
+    out = (
+        df.lazy()
+        .select(pl.when("m").then(pl.col.s.struct.field("a").cast(pl.Int64)))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [1, None]
+
+    # Three uneven chunks, masked out only inside the middle one. Uses vstack, not
+    # concat: concat can leave a stale null-propagation flag (#29815).
+    df = (
+        pl.DataFrame({"m": [True, True], "s": [{"a": "0"}, {"a": "1"}]})
+        .vstack(
+            pl.DataFrame(
+                {"m": [True, False, True], "s": [{"a": "2"}, {"a": "bad"}, {"a": "4"}]}
+            )
+        )
+        .vstack(pl.DataFrame({"m": [True], "s": [{"a": "5"}]}))
+    )
+    assert [len(c) for c in df["s"].get_chunks()] == [2, 3, 1]
+    out = (
+        df.lazy()
+        .select(pl.when("m").then(pl.col.s.struct.field("a").cast(pl.Int64)))
+        .collect(engine=engine)
+    )
+    assert out.to_series().to_list() == [0, 1, 2, None, 4, 5]
+
+    # Original reproducer.
+    df = pl.DataFrame({"v": [1.0] + [0.0] * 16}).with_columns(
+        pl.struct(pl.col("v").alias("ma")).alias("symbol"),
+    )
+    df = pl.concat([df[:1], df[1:]], rechunk=False)
+    s = pl.col("symbol").struct.field("ma")
+    out = (
+        df.lazy()
+        .select(pl.when(s > 0).then(1).when(s > 0).then(1).forward_fill().alias("x"))
+        .collect(engine=engine)
+    )
+    assert out["x"].to_list() == [1] * 17

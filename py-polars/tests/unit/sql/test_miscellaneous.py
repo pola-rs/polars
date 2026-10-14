@@ -497,7 +497,7 @@ def test_read_csv(tmp_path: Path) -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match="`read_csv` expects a single file path; found 3 arguments",
+        match=r"`read_csv` options must be named with '=>' \(found: 'b'\)",
     ):
         pl.sql("SELECT * FROM read_csv('a','b','c')").collect()
 
