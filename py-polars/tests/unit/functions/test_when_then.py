@@ -914,3 +914,22 @@ def test_when_then_scalar_condition_masks_unselected_branch(engine: EngineType) 
         pl.when(pl.lit(False)).then(pl.col("x").cast(pl.Int64)).otherwise(0)
     )
     assert q.collect(engine=engine).to_series().to_list() == [0, 0]
+
+
+def test_when_then_string_literal_categorical_join_29816() -> None:
+    lf = pl.LazyFrame(
+        {"k": [0, 1], "c": ["a", "b"]}, schema_overrides={"c": pl.Categorical}
+    )
+    q = lf.with_columns(
+        pl.when(pl.col("c") == "a").then(pl.lit("z")).otherwise(pl.col("c")).alias("c")
+    ).join(pl.LazyFrame({"k": [0, 1]}), on="k")
+    assert q.collect_schema()["c"] == pl.Categorical
+    expected = pl.DataFrame(
+        {"k": [0, 1], "c": ["z", "b"]}, schema_overrides={"c": pl.Categorical}
+    )
+    for engine in ["in-memory", "streaming"]:
+        assert_frame_equal(
+            q.collect(engine=engine),  # type: ignore[arg-type]
+            expected,
+            check_row_order=False,
+        )
