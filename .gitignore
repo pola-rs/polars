@@ -55,6 +55,7 @@ target/
 !/docs/assets/data/iris.csv
 !/docs/assets/data/monopoly_props_groups.csv
 !/docs/assets/data/monopoly_props_prices.csv
+!/docs/assets/data/orders.ndjson
 !/docs/assets/data/pokemon.csv
 !/docs/assets/data/reddit.csv
 

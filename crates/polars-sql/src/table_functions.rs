@@ -19,8 +19,10 @@ use crate::SQLContext;
 use crate::context::SubqueryShape;
 use crate::functions::series_expr;
 use crate::sql_expr::parse_sql_expr;
+#[cfg(any(feature = "csv", feature = "json"))]
+use crate::table_function_args::TableFunctionOptions;
 #[cfg(feature = "csv")]
-use crate::table_function_args::{DtypeOverrides, StringValues, TableFunctionOptions};
+use crate::table_function_args::{DtypeOverrides, StringValues};
 
 /// Table functions that are supported by Polars
 #[allow(clippy::enum_variant_names)]
@@ -44,12 +46,20 @@ pub(crate) enum PolarsTableFunctions {
     /// ```
     #[cfg(feature = "ipc")]
     ReadIpc,
-    /// SQL 'read_json' function (*only ndjson is currently supported*).
+    /// SQL 'read_json' function: reads newline-delimited JSON from a path only; for named options,
+    /// use `read_ndjson`.
     /// ```sql
-    /// SELECT * FROM read_json('path/to/file.json')
+    /// SELECT * FROM read_json('path/to/file.ndjson')
     /// ```
     #[cfg(feature = "json")]
     ReadJson,
+    /// SQL 'read_ndjson' function, with optional named options as in Python's `scan_ndjson`.
+    /// ```sql
+    /// SELECT * FROM read_ndjson('path/to/file.ndjson')
+    /// SELECT * FROM read_ndjson('path/to/file.ndjson', infer_schema_length => NULL)
+    /// ```
+    #[cfg(feature = "json")]
+    ReadNdjson,
     /// SQL 'generate_series' function (stop included).
     /// ```sql
     /// SELECT * FROM generate_series(1, 10, 2)
@@ -77,6 +87,8 @@ impl FromStr for PolarsTableFunctions {
             "read_ipc" => PolarsTableFunctions::ReadIpc,
             #[cfg(feature = "json")]
             "read_json" => PolarsTableFunctions::ReadJson,
+            #[cfg(feature = "json")]
+            "read_ndjson" => PolarsTableFunctions::ReadNdjson,
             "generate_series" => PolarsTableFunctions::GenerateSeries,
             "range" => PolarsTableFunctions::Range,
             _ => polars_bail!(SQLInterface: "'{}' is not a supported table function", s),
@@ -99,7 +111,9 @@ impl PolarsTableFunctions {
             #[cfg(feature = "ipc")]
             PolarsTableFunctions::ReadIpc => self.read_ipc(args)?,
             #[cfg(feature = "json")]
-            PolarsTableFunctions::ReadJson => self.read_ndjson(args)?,
+            PolarsTableFunctions::ReadJson => self.read_json(args)?,
+            #[cfg(feature = "json")]
+            PolarsTableFunctions::ReadNdjson => self.read_ndjson(args)?,
             PolarsTableFunctions::GenerateSeries => return self.series(args, ctx, true),
             PolarsTableFunctions::Range => return self.series(args, ctx, false),
         };
@@ -267,14 +281,48 @@ impl PolarsTableFunctions {
         Ok((path, lf))
     }
     #[cfg(feature = "json")]
+    fn read_json(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
+        use polars_lazy::frame::LazyFileListReader;
+        use polars_lazy::prelude::LazyJsonLineReader;
+
+        polars_ensure!(
+            args.len() == 1,
+            SQLSyntax: "`read_json` expects a single file path; found {} arguments (for options, use `read_ndjson`)", args.len()
+        );
+        let path = self.get_file_path_from_arg(&args[0])?;
+        let lf = LazyJsonLineReader::new(path.clone()).finish()?;
+        Ok((path, lf))
+    }
+
+    #[cfg(feature = "json")]
     fn read_ndjson(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
-        polars_ensure!(args.len() == 1, SQLSyntax: "`read_ndjson` expects a single file path; found {:?} arguments", args.len());
+        use std::sync::Arc;
 
         use polars_lazy::frame::LazyFileListReader;
         use polars_lazy::prelude::LazyJsonLineReader;
 
-        let path = self.get_file_path_from_arg(&args[0])?;
-        let lf = LazyJsonLineReader::new(path.clone()).finish()?;
+        let (path_arg, options) = TableFunctionOptions::parse(
+            "read_ndjson",
+            args,
+            READ_NDJSON_OPTIONS,
+            READ_NDJSON_EXCLUDED_OPTIONS,
+        )?;
+        let path = self.get_file_path_from_arg(path_arg)?;
+
+        let mut reader = LazyJsonLineReader::new(path.clone())
+            .with_schema(options.schema("schema")?.map(Arc::new))
+            .with_schema_overwrite(options.schema("schema_overrides")?.map(Arc::new));
+        if let Some(n) = options.nullable_positive_usize("infer_schema_length")? {
+            reader = reader.with_infer_schema_length(n);
+        }
+        if let Some(ignore_errors) = options.bool("ignore_errors")? {
+            reader = reader.with_ignore_errors(ignore_errors);
+        }
+        if let Some(column) = options.string("include_file_paths")? {
+            reader = reader.with_include_file_paths(Some(column.into()));
+        }
+
+        let lf = reader.finish()?;
         Ok((path, lf))
     }
 
@@ -347,6 +395,34 @@ const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ("row_index_offset", ""),
 ];
 
+/// Named options of `read_ndjson`: the stable options of Python's `scan_ndjson` that SQL can express.
+#[cfg(feature = "json")]
+const READ_NDJSON_OPTIONS: &[&str] = &[
+    "schema",
+    "schema_overrides",
+    "infer_schema_length",
+    "ignore_errors",
+    "include_file_paths",
+];
+
+/// Options of Python's `scan_ndjson` that `read_ndjson` does not accept, with what to do instead.
+#[cfg(feature = "json")]
+const READ_NDJSON_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
+    (
+        "credential_provider",
+        "cloud credentials are read from the environment",
+    ),
+    (
+        "storage_options",
+        "cloud credentials are read from the environment",
+    ),
+    ("n_rows", "use LIMIT, which is pushed down into the scan"),
+    ("batch_size", ""),
+    ("low_memory", ""),
+    ("row_index_name", ""),
+    ("row_index_offset", ""),
+];
+
 impl PolarsTableFunctions {
     // list sql names of all table functions
     pub(crate) fn keywords() -> &'static [&'static str] {
@@ -359,6 +435,8 @@ impl PolarsTableFunctions {
             "read_ipc",
             #[cfg(feature = "json")]
             "read_json",
+            #[cfg(feature = "json")]
+            "read_ndjson",
             "generate_series",
             "range",
         ]

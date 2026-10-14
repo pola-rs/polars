@@ -110,3 +110,19 @@ Values are SQL literals:
 - Escape sequences need an `E''` string, as in `separator => E'\t'` for tab-separated files.
 
 Unlike `scan_csv`, `read_csv` tries to parse dates by default (`try_parse_dates => true`).
+
+`read_ndjson` reads newline-delimited JSON (one object per line) and accepts the options of
+`scan_ndjson` in the same way: `schema`, `schema_overrides`, `infer_schema_length`, `ignore_errors`
+and `include_file_paths`.
+
+{{code_block('user-guide/sql/select','tablefunctionndjson',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionndjson"
+```
+
+- The schema is inferred from the first 100 rows, so a key that first appears later is dropped. Use
+  `infer_schema_length => NULL` to infer it from the whole file.
+- A nested object read as `'VARCHAR'` keeps its JSON text.
+- `read_json` reads the same files, but takes only the path. For a JSON array or a pretty-printed
+  JSON document, use `pl.read_json` instead.

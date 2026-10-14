@@ -45,7 +45,14 @@ csv = ["polars-lazy/csv", "polars-io/csv", "polars-io/temporal"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
 dtype-decimal = ["polars-lazy/dtype-decimal"]
 ipc = ["polars-lazy/ipc"]
-json = ["polars-lazy/json", "polars-plan/json", "polars-lazy/extract_jsonpath", "polars-plan/extract_jsonpath"]
+# `read_ndjson` schemas can name temporal types, which the NDJSON reader needs enabled.
+json = [
+  "polars-lazy/json",
+  "polars-plan/json",
+  "polars-lazy/extract_jsonpath",
+  "polars-plan/extract_jsonpath",
+  "polars-io/temporal",
+]
 list_eval = ["polars-lazy/list_eval"]
 parquet = ["polars-lazy/parquet"]
 rank = ["polars-lazy/rank"]
