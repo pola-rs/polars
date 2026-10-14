@@ -607,6 +607,13 @@ def test_list_gather() -> None:
     ]
 
 
+def test_list_gather_column_name_29809() -> None:
+    df = pl.DataFrame({"values": [[10, 20, 30]], "indices": [[0, 2]]})
+    assert df.select(pl.col("values").list.gather("indices")).to_series().to_list() == [
+        [10, 30]
+    ]
+
+
 @pytest.mark.parametrize("maintain_order", [False, True])
 def test_list_function_group_awareness(maintain_order: bool) -> None:
     df = pl.DataFrame(
