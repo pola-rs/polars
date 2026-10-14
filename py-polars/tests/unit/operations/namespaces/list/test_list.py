@@ -1464,6 +1464,26 @@ def test_list_slice_broadcast_27480(offset: Any, length: Any) -> None:
     assert_frame_equal(result, expected)
 
 
+def test_list_slice_null_scalar_offset_29925() -> None:
+    df = pl.DataFrame({"a": [[1, 2]], "b": [1]})
+
+    assert_frame_equal(
+        df.select(
+            pl.when(True).then(None).otherwise(pl.col("a").list.slice(pl.col("b"), 1))
+        ),
+        pl.DataFrame({"literal": [None]}, schema={"literal": pl.List(pl.Int64)}),
+    )
+
+    df = pl.DataFrame({"a": [[1, 2], [3]], "b": [1, 2]})
+    assert df.select(
+        slice=pl.col("a").list.slice(pl.lit(None, pl.Int64), 1),
+        slice_lengths=pl.col("a").list.slice(pl.lit(None, pl.Int64), pl.col("b")),
+    ).to_dict(as_series=False) == {
+        "slice": [None, None],
+        "slice_lengths": [None, None],
+    }
+
+
 def test_list_to_struct_raises_on_str_input() -> None:
     with pytest.raises(TypeError):
         pl.col("x").list.to_struct("A")

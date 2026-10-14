@@ -165,6 +165,14 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
         return Ok(out.into_column());
     }
 
+    if offset_s.len() == 1 && offset_s.has_nulls() {
+        return Ok(Column::full_null(
+            s.name().clone(),
+            list_ca.len(),
+            s.dtype(),
+        ));
+    }
+
     let mut out: ListChunked = match (offset_s.len(), length_s.len()) {
         (1, 1) => {
             let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
