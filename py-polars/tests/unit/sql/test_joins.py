@@ -1102,8 +1102,8 @@ def test_unnamed_nested_join_relation() -> None:
             """
             SELECT *
             FROM left
-            JOIN (right JOIN right ON right.a = right.a)
-            ON left.a = right.a
+            JOIN (right AS r1 JOIN right AS r2 ON r1.a = r2.a)
+            ON left.a = r1.a
             """
         ).collect()
 
@@ -1641,6 +1641,83 @@ def test_ambiguous_column_detection_in_joins() -> None:
             """,
             eager=True,
         )
+
+
+def test_join_relations_sharing_last_name_part() -> None:
+    # `tpch.lineitem` and `tpch_sf100.lineitem` are both called `lineitem`; the join
+    # itself is fine, only a qualifier naming both is ambiguous
+    frames = {
+        "tpch.lineitem": pl.LazyFrame({"k": [1, 2], "v": ["a", "b"]}),
+        "tpch_sf100.lineitem": pl.LazyFrame({"k": [1, 2], "v": ["c", "d"]}),
+    }
+    from_clause = "FROM tpch.lineitem JOIN tpch_sf100.lineitem USING (k)"
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(f"SELECT * {from_clause} ORDER BY k", eager=True)
+        assert res.rows() == [(1, "a", 1, "c"), (2, "b", 2, "d")]
+
+        res = ctx.execute(
+            f"""
+            SELECT tpch.lineitem.v AS v1, tpch_sf100.lineitem.v AS v2
+            {from_clause} ORDER BY k
+            """,
+            eager=True,
+        )
+        assert res.rows() == [("a", "c"), ("b", "d")]
+
+        with pytest.raises(
+            SQLInterfaceError,
+            match=r'ambiguous reference to table "lineitem" \(use: tpch\.lineitem or tpch_sf100\.lineitem\)',
+        ):
+            ctx.execute(f"SELECT lineitem.v {from_clause}", eager=True)
+
+        with pytest.raises(
+            SQLInterfaceError,
+            match=r"use one of: tpch\.lineitem\.v, tpch_sf100\.lineitem\.v\)",
+        ):
+            ctx.execute(f"SELECT v {from_clause}", eager=True)
+
+
+def test_join_relation_named_by_prefix_of_another() -> None:
+    # `a.b.k` names relation `a.b`, not `a`, so the WHERE equality is a join key
+    frames = {"a": pl.LazyFrame({"k": [1, 2]}), "a.b": pl.LazyFrame({"k": [2, 3]})}
+    with pl.SQLContext(frames) as ctx:
+        lf = ctx.execute("SELECT a.k, a.b.k AS k2 FROM a, a.b WHERE a.k = a.b.k")
+        assert "CROSS JOIN" not in lf.explain(optimized=False)
+        assert lf.collect().rows() == [(2, 2)]
+
+
+def test_join_relations_differing_in_case() -> None:
+    # an exact-case qualifier wins over one matching only ignoring case
+    frames = {
+        "a": pl.LazyFrame({"k": [1, 2], "x": [10, 20]}),
+        "b": pl.LazyFrame({"k": [1, 2], "y": [30, 40]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(
+            'SELECT "X".x, "x".y FROM a AS "X" JOIN b AS "x" USING (k) ORDER BY k',
+            eager=True,
+        )
+        assert res.rows() == [(10, 30), (20, 40)]
+
+        with pytest.raises(
+            SQLInterfaceError,
+            match=r'ambiguous reference to table "xy" \(use: Xy or XY\)',
+        ):
+            ctx.execute(
+                'SELECT xy.x FROM a AS "Xy" JOIN b AS "XY" USING (k)', eager=True
+            )
+
+
+def test_self_join_without_aliases() -> None:
+    # `SELECT *` works, but a qualifier naming both sides is ambiguous
+    cte = "WITH t AS (SELECT a FROM (VALUES (1), (2)) tbl(a)) "
+    ctx = pl.SQLContext()
+    res = ctx.execute(f"{cte} SELECT * FROM t CROSS JOIN t", eager=True)
+    assert sorted(res.rows()) == [(1, 1), (1, 2), (2, 1), (2, 2)]
+
+    for select in ("t.a", "a"):
+        with pytest.raises(SQLInterfaceError, match=r"ambiguous reference.*alias"):
+            ctx.execute(f"{cte} SELECT {select} FROM t CROSS JOIN t", eager=True)
 
 
 @pytest.mark.parametrize(
@@ -2455,6 +2532,19 @@ def test_asof_join_without_keys(asof_frames: dict[str, pl.DataFrame]) -> None:
         SELECT t.id, q.px
         FROM trades t ASOF JOIN quotes q MATCH_CONDITION (t.ts >= q.ts)
         ORDER BY t.id
+    """
+    result = pl.SQLContext(asof_frames, eager=True).execute(query)
+    expected = pl.DataFrame({"id": [1, 2, 3, 4, 5], "px": [50, 50, 20, 90, 50]})
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_nested_qualifier_case(asof_frames: dict[str, pl.DataFrame]) -> None:
+    # inside an aliased nested join, qualifiers match relation names ignoring case
+    query = """
+        SELECT id, px FROM (
+          trades ASOF JOIN quotes MATCH_CONDITION (QUOTES.ts <= TRADES.ts)
+        ) AS n
+        ORDER BY id
     """
     result = pl.SQLContext(asof_frames, eager=True).execute(query)
     expected = pl.DataFrame({"id": [1, 2, 3, 4, 5], "px": [50, 50, 20, 90, 50]})

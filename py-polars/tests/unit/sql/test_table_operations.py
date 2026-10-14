@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import io
 import re
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -209,3 +210,207 @@ def test_cte_shadows_derived_table_from_earlier_query() -> None:
 
         res = ctx.execute("WITH agg AS (SELECT x FROM tbl) SELECT a.x FROM agg a")
         assert res.to_series().to_list() == [1, 2, 3]
+
+
+def _execute(ctx: pl.SQLContext[Any], query: str, *, eager_path: bool) -> pl.DataFrame:
+    # `CREATE TABLE ... AS` resolves the query eagerly; a plain query is deferred
+    if eager_path:
+        ctx.execute(f"CREATE TABLE res AS {query}")
+        query = "SELECT * FROM res"
+    return ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT k FROM tpch.lineitem",
+        'SELECT k FROM "tpch.lineitem"',
+        "SELECT k FROM TPCH.LineItem",
+        "SELECT lineitem.k FROM tpch.lineitem",
+        "SELECT tpch.lineitem.k FROM tpch.lineitem",
+        "SELECT li.k FROM tpch.lineitem AS li",
+        "SELECT lineitem.* FROM tpch.lineitem",
+        "SELECT tpch.lineitem.* FROM tpch.lineitem",
+        "SELECT k FROM (SELECT k FROM tpch.lineitem) sub",
+        "WITH c AS (SELECT k FROM tpch.lineitem) SELECT k FROM c",
+        "SELECT k FROM tpch.lineitem WHERE k < 0 UNION ALL TABLE tpch.lineitem",
+    ],
+)
+def test_qualified_table_name(query: str, eager_path: bool) -> None:
+    # a dotted relation name resolves as a whole, and its trailing parts qualify columns
+    lf = pl.LazyFrame({"k": [1, 2]})
+    with pl.SQLContext({"tpch.lineitem": lf}) as ctx:
+        res = _execute(ctx, query, eager_path=eager_path)
+        assert res.to_series().to_list() == [1, 2]
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT k FROM onelake.tpch.lineitem",
+        "SELECT lineitem.k FROM onelake.tpch.lineitem",
+        "SELECT tpch.lineitem.k FROM onelake.tpch.lineitem",
+        "SELECT onelake.tpch.lineitem.k FROM onelake.tpch.lineitem",
+        "SELECT onelake.tpch.lineitem.* FROM onelake.tpch.lineitem",
+    ],
+)
+def test_three_part_table_name(query: str, eager_path: bool) -> None:
+    lf = pl.LazyFrame({"k": [1, 2]})
+    with pl.SQLContext({"onelake.tpch.lineitem": lf}) as ctx:
+        res = _execute(ctx, query, eager_path=eager_path)
+        assert res.to_series().to_list() == [1, 2]
+
+
+def test_qualified_table_name_serialized_plan() -> None:
+    lf = pl.LazyFrame({"k": [1, 2]})
+    with pl.SQLContext({"tpch.lineitem": lf}) as ctx:
+        res = ctx.execute("SELECT lineitem.k FROM tpch.lineitem WHERE k > 1")
+    res = pl.LazyFrame.deserialize(io.BytesIO(res.serialize()))
+    assert res.collect().to_series().to_list() == [2]
+
+
+def test_relation_takes_precedence_over_struct_path() -> None:
+    # `a.b.k` reads relation `a.b` when it is in FROM, else field `k` of struct `a.b`
+    frames = {
+        "a": pl.LazyFrame({"b": [{"k": 99}]}),
+        "a.b": pl.LazyFrame({"k": [1]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.execute("SELECT a.b.k FROM a, a.b", eager=True).item() == 1
+        assert ctx.execute("SELECT a.b.k FROM a", eager=True).item() == 99
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+def test_qualified_table_name_not_resolved_by_first_part(eager_path: bool) -> None:
+    frames = {
+        "tpch": pl.LazyFrame({"v": ["tpch"]}),
+        "tpch.lineitem": pl.LazyFrame({"v": ["tpch.lineitem"]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        res = _execute(ctx, "SELECT v FROM tpch.lineitem", eager_path=eager_path)
+        assert res.item() == "tpch.lineitem"
+
+
+def test_qualified_table_name_hidden_by_alias() -> None:
+    lf = pl.LazyFrame({"k": [1, 2]})
+    with (
+        pl.SQLContext({"tpch.lineitem": lf}) as ctx,
+        pytest.raises(
+            SQLInterfaceError, match=r'table "lineitem" is hidden by alias "li"'
+        ),
+    ):
+        ctx.execute("SELECT lineitem.k FROM tpch.lineitem AS li", eager=True)
+
+
+def test_qualified_table_name_ddl() -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute("CREATE TABLE tpch.x AS SELECT 1 AS a")
+        assert ctx.tables() == ["tpch.x"]
+        assert ctx.execute("SELECT a FROM tpch.x", eager=True).item() == 1
+
+        ctx.execute("TRUNCATE TABLE tpch.x")
+        assert ctx.execute("SELECT a FROM tpch.x", eager=True).height == 0
+
+        ctx.execute("DROP TABLE tpch.x")
+        assert ctx.tables() == []
+
+
+@pytest.mark.parametrize(
+    ("name", "ddl"),
+    [
+        ("My Table", 'DROP TABLE "My Table"'),
+        ("My Table", 'TRUNCATE TABLE "My Table"'),
+        ("frame", "DROP TABLE FRAME"),
+    ],
+)
+def test_ddl_table_name_quoting_and_case(name: str, ddl: str) -> None:
+    # quotes are not part of the name, and lookups ignore case as in FROM
+    with pl.SQLContext({name: pl.LazyFrame({"x": [1]})}) as ctx:
+        ctx.execute(ddl)
+        if ddl.startswith("DROP"):
+            assert ctx.tables() == []
+        else:
+            assert ctx.execute(f'SELECT * FROM "{name}"', eager=True).height == 0
+
+
+def test_relation_name_case_insensitive_ambiguity() -> None:
+    # a name matching several tables only when ignoring case is an error
+    frames = {
+        "Foo": pl.LazyFrame({"x": ["Foo"]}),
+        "FOO": pl.LazyFrame({"x": ["FOO"]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.execute("SELECT x FROM Foo", eager=True).item() == "Foo"
+        assert ctx.execute("SELECT x FROM FOO", eager=True).item() == "FOO"
+        # without a FROM, only the eager path sees the registered tables
+        for query, eager_path in (("SELECT x FROM foo", False), ("SELECT foo.x", True)):
+            with pytest.raises(SQLInterfaceError, match=r"foo.*matches more than one"):
+                _execute(ctx, query, eager_path=eager_path)
+
+
+def test_create_table_matching_existing_name_ignoring_case() -> None:
+    # CREATE TABLE finds an existing table as FROM does, ignoring case
+    with pl.SQLContext({"frame": pl.LazyFrame({"x": [1]})}) as ctx:
+        ctx.execute("CREATE TABLE FRAME AS SELECT 2 AS x")
+        assert ctx.tables() == ["frame"]
+        assert ctx.execute("SELECT x FROM Frame", eager=True).item() == 2
+
+        ctx.execute("CREATE TABLE other LIKE FRAME")
+        assert ctx.execute("SELECT * FROM other", eager=True).columns == ["x"]
+
+
+@pytest.mark.parametrize(
+    ("ddl", "error"),
+    [
+        ("TRUNCATE TABLE missing", "table 'missing' does not exist"),
+        ("TRUNCATE TABLE IF EXISTS missing", None),
+    ],
+)
+def test_truncate_missing_table(ddl: str, error: str | None) -> None:
+    with pl.SQLContext({"frame": pl.LazyFrame({"x": [1]})}) as ctx:
+        if error is None:
+            ctx.execute(ddl)
+        else:
+            with pytest.raises(SQLInterfaceError, match=error):
+                ctx.execute(ddl)
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+
+def test_qualifier_resolves_in_innermost_query_first() -> None:
+    # the inner alias `tpch` (struct column `orders`) wins over the outer `tpch.orders`
+    frames = {
+        "tpch.orders": pl.LazyFrame({"o_orderkey": [1]}),
+        "lineitem": pl.LazyFrame({"orders": [{"o_orderkey": 5}]}),
+    }
+    query = """
+        SELECT o_orderkey FROM tpch.orders
+        WHERE EXISTS (
+          SELECT 1 FROM lineitem AS tpch WHERE tpch.orders.o_orderkey > {n}
+        )
+    """
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.execute(query.format(n=2), eager=True).height == 1
+        assert ctx.execute(query.format(n=9), eager=True).height == 0
+
+
+def test_correlated_qualifier_naming_two_inner_relations() -> None:
+    # an inner qualifier naming two relations is ambiguous
+    frames = {
+        "o": pl.LazyFrame({"k": [1, 2]}),
+        "tpch.lineitem": pl.LazyFrame({"k": [1]}),
+        "tpch_sf100.lineitem": pl.LazyFrame({"k": [2]}),
+    }
+    query = """
+        SELECT * FROM o WHERE EXISTS (
+          SELECT 1 FROM tpch.lineitem, tpch_sf100.lineitem WHERE lineitem.k = o.k
+        )
+    """
+    with (
+        pl.SQLContext(frames) as ctx,
+        pytest.raises(
+            SQLInterfaceError, match=r'ambiguous reference to table "lineitem"'
+        ),
+    ):
+        ctx.execute(query, eager=True)
