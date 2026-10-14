@@ -116,3 +116,19 @@ Some options are unstable: those marked as such in the
 [`scan_csv`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_csv.html) API
 reference are unstable in `read_csv` too, and may be changed at any point without it being
 considered a breaking change.
+
+`read_ndjson` reads newline-delimited JSON (one object per line) and accepts the options of
+`scan_ndjson` in the same way: `schema`, `schema_overrides`, `infer_schema_length`, `ignore_errors`
+and `include_file_paths`.
+
+{{code_block('user-guide/sql/select','tablefunctionndjson',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionndjson"
+```
+
+- The schema is inferred from the first 100 rows, so a key that first appears later is dropped. Use
+  `infer_schema_length => NULL` to infer it from the whole file.
+- A nested object read as `'VARCHAR'` keeps its JSON text.
+- `read_json` reads the same files, but takes only the path. For a JSON array or a pretty-printed
+  JSON document, use `pl.read_json` instead.
