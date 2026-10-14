@@ -168,6 +168,15 @@ def test_lazy_sinks(tmp_path: Path, scan: Any, sink: Any, engine: EngineType) ->
     assert_frame_equal(scan(tmp_path / "b").collect(), df)
 
 
+@pytest.mark.write_disk
+def test_lazy_sink_can_feed_len(tmp_path: Path) -> None:
+    out_path = tmp_path / "out.parquet"
+    sink = pl.LazyFrame({"a": [1, 2, 3]}).sink_parquet(out_path, lazy=True)
+
+    assert sink.select(pl.len()).collect().item() == 0
+    assert_frame_equal(pl.read_parquet(out_path), pl.DataFrame({"a": [1, 2, 3]}))
+
+
 @pytest.mark.parametrize(
     "sink",
     [

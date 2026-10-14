@@ -564,7 +564,11 @@ impl SimplifyIRNodeOrder<'_> {
             },
 
             IR::Sink { input: _, payload } => {
-                let ([in_edge], []) = unpack_edges!(1);
+                // A lazy sink can feed a downstream operation (for example,
+                // `sink_parquet(..., lazy=True).select(pl.len())`). Its input
+                // remains singular, but it may have output edges.
+                assert_eq!(in_edges.len(), 1);
+                let in_edge = get_edge_mut!(in_edges[0]);
 
                 let mut keys_pin_order = false;
                 if let SinkTypeIR::Partitioned(options) = payload {
