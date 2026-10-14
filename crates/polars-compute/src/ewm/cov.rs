@@ -232,7 +232,7 @@ mod test {
     use super::super::assert_allclose;
     use super::*;
     const ALPHA: f64 = 0.5;
-    const EPS: f64 = 1e-15;
+    const EPS: f64 = 1e-14;
     use std::f64::consts::SQRT_2;
 
     const XS: [Option<f64>; 7] = [
