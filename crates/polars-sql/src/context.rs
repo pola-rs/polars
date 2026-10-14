@@ -271,6 +271,9 @@ pub(crate) struct GroupScope {
     /// The plan of each scalar subquery resolved in the block, by placeholder, for a block
     /// that reads it again after aggregating.
     subquery_plans: PlHashMap<PlSmallStr, LazyFrame>,
+    /// The types of the SELECT aliases that the clause being parsed can read. They are only
+    /// used to infer types, so that a selector does not match them.
+    alias_types: Schema,
 }
 
 impl Default for SQLContext {
@@ -1737,9 +1740,15 @@ impl SQLContext {
     }
 
     /// `schema` with the placeholder columns that the parsed expressions of the block can
-    /// read: the partition of whole-frame windows and the `GROUPING()` values.
-    fn with_placeholder_columns(&self, schema: &Schema) -> Schema {
+    /// read: the partition of whole-frame windows, the `GROUPING()` values and the SELECT
+    /// aliases of the clause being parsed.
+    pub(crate) fn with_placeholder_columns(&self, schema: &Schema) -> Schema {
         let mut schema = schema.clone();
+        for (name, dtype) in self.group_scope.alias_types.iter() {
+            if !schema.contains(name) {
+                schema.with_column(name.clone(), dtype.clone());
+            }
+        }
         if let Some(partition) = &self.group_scope.whole_frame_partition {
             schema.with_column(partition.clone(), DataType::Int32);
         }
@@ -2312,9 +2321,23 @@ impl SQLContext {
             }
             lf
         } else {
+            // HAVING can read SELECT aliases.
             let having = lowered_having
                 .as_deref()
-                .map(|expr| self.marking_aggregates(|ctx| parse_sql_expr(expr, ctx, Some(&schema))))
+                .map(|expr| {
+                    let alias_types = OutputNames::new(
+                        &projections,
+                        &schema,
+                        &self.with_placeholder_columns(&schema),
+                    )
+                    .extend_schema(&Schema::default());
+                    let outer_alias_types =
+                        std::mem::replace(&mut self.group_scope.alias_types, alias_types);
+                    let having =
+                        self.marking_aggregates(|ctx| parse_sql_expr(expr, ctx, Some(&schema)));
+                    self.group_scope.alias_types = outer_alias_types;
+                    having
+                })
                 .transpose()?;
             let grouping = self.bind_grouping_sets(
                 &group_by_keys,
@@ -3393,9 +3416,20 @@ impl SQLContext {
                     None,
                 )?;
 
+                // The lowered expression reads the columns that lowering added.
+                let lowered_schema = match &lowered {
+                    Cow::Owned(_) => self.get_frame_schema(&mut lf)?,
+                    Cow::Borrowed(_) => schema.clone(),
+                };
                 // translate order expression, allowing ordinal values
                 by.push(self.marking_aggregates(|ctx| {
-                    ctx.expr_or_ordinal(&lowered, columns, selected, Some(&schema), "ORDER BY")
+                    ctx.expr_or_ordinal(
+                        &lowered,
+                        columns,
+                        selected,
+                        Some(&lowered_schema),
+                        "ORDER BY",
+                    )
                 })?)
             }
         }

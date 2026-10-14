@@ -1507,41 +1507,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             }),
             DatePartOf(field) => self.try_visit_unary(|e| parse_extract_date_part(e, &field)),
-            DateTrunc => {
-                let active_schema = self.active_schema;
-                self.try_visit_binary(|part, e: Expr| {
-                let every = match &part {
-                    Expr::Literal(p) if p.is_null() => return Ok(lit(LiteralValue::untyped_null())),
-                    Expr::Literal(p) if p.extract_str().is_some() => {
-                        let p = p.extract_str().unwrap();
-                        match p.to_ascii_lowercase().as_str() {
-                            "microsecond" | "microseconds" => "1us",
-                            "millisecond" | "milliseconds" => "1ms",
-                            "second" | "seconds" => "1s",
-                            "minute" | "minutes" => "1m",
-                            "hour" | "hours" => "1h",
-                            "day" | "days" => "1d",
-                            "week" | "weeks" => "1w",
-                            "month" | "months" => "1mo",
-                            "quarter" | "quarters" => "1q",
-                            "year" | "years" => "1y",
-                            _ => polars_bail!(SQLSyntax: "DATE_TRUNC does not support '{}' part", p),
-                        }
-                    },
-                    _ => polars_bail!(SQLSyntax: "invalid 'part' for DATE_TRUNC ({})", part),
-                };
-                // A date is truncated as a timestamp, which is also what is returned.
-                let is_date = active_schema
-                    .and_then(|schema| e.to_field(schema).ok())
-                    .is_some_and(|field| field.dtype == DataType::Date);
-                let e = if is_date {
-                    e.cast(DataType::Datetime(TimeUnit::Microseconds, None))
-                } else {
-                    e
-                };
-                Ok(e.dt().truncate(lit(every)))
-            })
-            },
+            DateTrunc => self.visit_date_trunc(),
             Strftime => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -2290,6 +2256,48 @@ impl SQLFunctionVisitor<'_> {
             }
         }
         Ok(())
+    }
+
+    fn visit_date_trunc(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        let [FunctionArgExpr::Expr(part), FunctionArgExpr::Expr(e)] = args.as_slice() else {
+            return self.not_supported_error();
+        };
+        let part = self.parse_sql_arg(part)?;
+        let e = self.parse_sql_arg(e)?;
+        let every = match &part {
+            Expr::Literal(p) if p.is_null() => {
+                return self.apply_window_spec(lit(LiteralValue::untyped_null()));
+            },
+            Expr::Literal(p) if p.extract_str().is_some() => {
+                let p = p.extract_str().unwrap();
+                match p.to_ascii_lowercase().as_str() {
+                    "microsecond" | "microseconds" => "1us",
+                    "millisecond" | "milliseconds" => "1ms",
+                    "second" | "seconds" => "1s",
+                    "minute" | "minutes" => "1m",
+                    "hour" | "hours" => "1h",
+                    "day" | "days" => "1d",
+                    "week" | "weeks" => "1w",
+                    "month" | "months" => "1mo",
+                    "quarter" | "quarters" => "1q",
+                    "year" | "years" => "1y",
+                    _ => polars_bail!(SQLSyntax: "DATE_TRUNC does not support '{}' part", p),
+                }
+            },
+            _ => polars_bail!(SQLSyntax: "invalid 'part' for DATE_TRUNC ({})", part),
+        };
+        // A date is truncated as a timestamp, which is also what is returned.
+        let dtype = self.active_schema.and_then(|schema| {
+            let schema = self.ctx.with_placeholder_columns(schema);
+            e.to_field(&schema).ok().map(|field| field.dtype)
+        });
+        let e = match dtype {
+            Some(DataType::Date) => e.cast(DataType::Datetime(TimeUnit::Microseconds, None)),
+            Some(_) => e,
+            None => polars_bail!(SQLInterface: "DATE_TRUNC cannot determine the type of {}", e),
+        };
+        self.apply_window_spec(e.dt().truncate(lit(every)))
     }
 
     /// Parse a value argument of the function currently being visited, as opposed to a

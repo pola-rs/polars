@@ -833,12 +833,60 @@ def test_date_trunc_date_and_null() -> None:
     }
 
 
+def test_date_trunc_input_type_in_clauses() -> None:
+    t = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "d": [date(2024, 5, 17), date(2024, 6, 2), date(2024, 4, 1)],
+        }
+    )
+    r = pl.DataFrame({"g": [1, 2], "d": [date(2024, 7, 9), date(2024, 3, 3)]})
+    ctx = pl.SQLContext(t=t, r=r)
+
+    out = ctx.execute(
+        """
+        SELECT g, MAX(d) AS m FROM t GROUP BY g
+        HAVING DATE_TRUNC('hour', m) + INTERVAL '1 hour' > TIMESTAMP '2024-05-01'
+        """,
+        eager=True,
+    )
+    assert out.rows() == [(1, date(2024, 6, 2))]
+
+    # A selector in HAVING does not match the SELECT aliases.
+    out = ctx.execute(
+        """
+        SELECT g, MAX(d) AS md FROM t GROUP BY g
+        HAVING MIN(COLUMNS('d')) > DATE '2024-05-01'
+        """,
+        eager=True,
+    )
+    assert out.rows() == [(1, date(2024, 6, 2))]
+
+    out = ctx.execute(
+        "SELECT DATE_TRUNC('month', MAX(d) OVER ()) AS m FROM t", eager=True
+    )
+    assert out.to_series().to_list() == [datetime(2024, 6, 1)] * 3
+
+    out = ctx.execute(
+        """
+        SELECT g FROM t
+        ORDER BY DATE_TRUNC('month', (SELECT MAX(r.d) FROM r WHERE r.g = t.g)), d
+        """,
+        eager=True,
+    )
+    assert out.to_series().to_list() == [2, 1, 1]
+
+
 def test_date_trunc_errors() -> None:
     df = pl.DataFrame({"dtm": [datetime(2000, 1, 1)], "part": ["day"]})
     with pytest.raises(SQLSyntaxError, match="DATE_TRUNC does not support 'century'"):
         df.sql("SELECT DATE_TRUNC('century', dtm) FROM self")
     with pytest.raises(SQLSyntaxError, match="invalid 'part' for DATE_TRUNC"):
         df.sql("SELECT DATE_TRUNC(part, dtm) FROM self")
+    with pytest.raises(SQLInterfaceError, match="DATE_TRUNC cannot determine the type"):
+        pl.sql_expr("DATE_TRUNC('day', dtm)")
+    with pytest.raises(SQLInterfaceError, match="DATE_TRUNC cannot determine the type"):
+        df.sql("SELECT DATE_TRUNC('hour', (SELECT DATE '2024-05-17')) FROM self")
 
 
 def test_date_part_functions() -> None:
