@@ -189,10 +189,7 @@ async fn static_skip_mask(
             statistics.min = projection.apply_transform(statistics.min)?;
             statistics.max = projection.apply_transform(statistics.max)?;
 
-            // null_count isn't transformed above, so it may still be shaped like the file's
-            // original struct. Only mark it unknown if that shape actually differs from the
-            // output's - a cast/rename-only struct (no inserted/dropped fields) keeps its exact
-            // counts.
+            // null_count isn't transformed above, so mark it unknown unless its shape already matches the output's.
             if let ArrowFieldProjection::Mapped { output_dtype, .. } = projection {
                 if output_dtype.is_struct() {
                     let target_dtype = null_count_dtype(output_dtype);
