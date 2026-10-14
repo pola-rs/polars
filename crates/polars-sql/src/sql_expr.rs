@@ -770,7 +770,7 @@ impl SQLExprVisitor<'_> {
 
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
     fn expr_dtype(&self, expr: &Expr) -> Option<DataType> {
-        resolve_expr_dtype(expr, self.active_schema)
+        self.ctx.expr_dtype(expr, self.active_schema)
     }
 
     /// Like [`Self::expr_dtype`], but without a schema a cast still gives its type.
@@ -1244,13 +1244,9 @@ impl SQLExprVisitor<'_> {
         polars_ensure!(schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
         let values_dtype = schema.get_at_index(0).unwrap().1;
         let left = self.visit_expr(left)?;
-        let empty_schema = Schema::default();
+        let typed_left = self.ctx.with_typed_subqueries(&left)?;
         let left_dtype = self
-            .ctx
-            .with_typed_subqueries(&left)?
-            .to_field(self.active_schema.unwrap_or(&empty_schema))
-            .ok()
-            .map(|field| field.dtype)
+            .expr_dtype(&typed_left)
             .filter(|dtype| dtype.is_known());
 
         // The comparison casts keep the order of the values, except as handled here.
@@ -1355,21 +1351,17 @@ impl SQLExprVisitor<'_> {
         elems: Series,
         dtype_expr_match: Option<&Expr>,
     ) -> PolarsResult<Series> {
-        if let (Some(Expr::Column(name)), Some(schema)) =
-            (dtype_expr_match, self.active_schema.as_ref())
-        {
-            if elems.dtype() == &DataType::String {
-                if let Some(dtype) = schema.get(name) {
-                    if matches!(
-                        dtype,
-                        DataType::Date | DataType::Time | DataType::Datetime(_, _)
-                    ) {
-                        return cast_literal_series(&elems, dtype);
-                    }
-                }
+        let target = dtype_expr_match.and_then(|expr| self.expr_dtype(expr));
+        if let (Some(Expr::Column(_)), Some(dtype)) = (dtype_expr_match, &target) {
+            if elems.dtype() == &DataType::String
+                && matches!(
+                    dtype,
+                    DataType::Date | DataType::Time | DataType::Datetime(_, _)
+                )
+            {
+                return cast_literal_series(&elems, dtype);
             }
         }
-        let target = dtype_expr_match.and_then(|expr| self.expr_dtype(expr));
         if elems.dtype().is_integer() && target == Some(DataType::String) {
             return elems.cast(&DataType::String);
         }
@@ -1439,9 +1431,8 @@ impl SQLExprVisitor<'_> {
     }
 
     fn convert_int_literal_for_string(&self, lhs: Expr, rhs: Expr) -> (Expr, Expr) {
-        let empty = Schema::default();
-        let schema = self.active_schema.unwrap_or(&empty);
-        convert_int_literal_for_string((lhs, schema), (rhs, schema))
+        let is_string = |e: &Expr| self.expr_dtype(e) == Some(DataType::String);
+        convert_int_literal_for_string(lhs, rhs, is_string, is_string)
     }
 
     /// Visit a SQL literal.
@@ -1950,24 +1941,26 @@ pub(crate) fn parse_sql_expr(
 }
 
 /// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.
-fn is_string_expr(expr: &Expr, schema: &Schema) -> bool {
+pub(crate) fn is_string_expr(expr: &Expr, schema: &Schema) -> bool {
     matches!(expr.to_field(schema), Ok(fld) if fld.dtype == DataType::String)
 }
 
 /// `str_expr = 13` compares against the string '13'; each operand's dtype is
 /// resolved against its own schema.
 pub(crate) fn convert_int_literal_for_string(
-    (lhs, lhs_schema): (Expr, &Schema),
-    (rhs, rhs_schema): (Expr, &Schema),
+    lhs: Expr,
+    rhs: Expr,
+    lhs_is_string: impl Fn(&Expr) -> bool,
+    rhs_is_string: impl Fn(&Expr) -> bool,
 ) -> (Expr, Expr) {
     match (&lhs, &rhs) {
         (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), other)
-            if is_string_expr(other, rhs_schema) =>
+            if rhs_is_string(other) =>
         {
             (lit(n.to_string()), rhs)
         },
         (other, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))))
-            if is_string_expr(other, lhs_schema) =>
+            if lhs_is_string(other) =>
         {
             (lhs, lit(n.to_string()))
         },

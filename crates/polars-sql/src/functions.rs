@@ -2288,10 +2288,7 @@ impl SQLFunctionVisitor<'_> {
             _ => polars_bail!(SQLSyntax: "invalid 'part' for DATE_TRUNC ({})", part),
         };
         // A date is truncated as a timestamp, which is also what is returned.
-        let dtype = self.active_schema.and_then(|schema| {
-            let schema = self.ctx.with_placeholder_columns(schema);
-            e.to_field(&schema).ok().map(|field| field.dtype)
-        });
+        let dtype = self.ctx.expr_dtype(&e, self.active_schema);
         let e = match dtype {
             Some(DataType::Date) => e.cast(DataType::Datetime(TimeUnit::Microseconds, None)),
             Some(_) => e,

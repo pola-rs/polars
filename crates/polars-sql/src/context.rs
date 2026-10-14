@@ -41,8 +41,9 @@ use crate::grouping_sets::{
     expand_grouping_sets, new_placeholder,
 };
 use crate::sql_expr::{
-    convert_int_literal_for_string, order_by_sort_options, parse_sql_array, parse_sql_expr,
-    resolve_compound_identifier, series_from_literals, to_sql_interface_err,
+    convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
+    parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
+    to_sql_interface_err,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
@@ -1756,6 +1757,15 @@ impl SQLContext {
             schema.with_column(call.placeholder.clone(), DataType::Int64);
         }
         schema
+    }
+
+    /// The type of `expr` over `schema`, or else over `schema` with the placeholder columns
+    /// of the block; `None` if it cannot be resolved.
+    pub(crate) fn expr_dtype(&self, expr: &Expr, schema: Option<&Schema>) -> Option<DataType> {
+        resolve_expr_dtype(expr, schema).or_else(|| {
+            let schema = self.with_placeholder_columns(schema?);
+            resolve_expr_dtype(expr, Some(&schema))
+        })
     }
 
     /// The partition column of the current block's whole-frame windows.
@@ -4578,8 +4588,12 @@ fn determine_left_right_join_on(
     let (left_schema, right_schema) = (operand_schema(left_refs), operand_schema(right_refs));
     let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(left_schema))?);
     let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(right_schema))?);
-    let (left_on, right_on) =
-        convert_int_literal_for_string((left_on, left_schema), (right_on, right_schema));
+    let (left_on, right_on) = convert_int_literal_for_string(
+        left_on,
+        right_on,
+        |e| is_string_expr(e, left_schema),
+        |e| is_string_expr(e, right_schema),
+    );
 
     // a constant operand is a literal, or any other expression referencing no column (such as
     // `UPPER('it')`); it can be evaluated against either input, so it has no table affinity

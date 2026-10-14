@@ -1493,3 +1493,52 @@ def test_group_by_empty_grouping_constant(grouped: pl.DataFrame) -> None:
             {"literal": [2], "n": [5]}, schema={"literal": pl.Int32, "n": pl.Int64}
         ),
     )
+
+
+def test_having_reads_alias_types() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 2],
+            "d": [date(2024, 5, 17), date(2024, 6, 2), date(2024, 4, 1)],
+            "s": ["2024-05-17", "2024-06-02", "2024-04-01"],
+        }
+    )
+    for having in [
+        "m + 1 > DATE '2024-05-01'",
+        "m > '2024-05-01'",
+        "DATE_TRUNC('month', m + 1) > DATE '2024-05-01'",
+    ]:
+        out = df.sql(f"SELECT g, MAX(d) AS m FROM self GROUP BY g HAVING {having}")
+        assert out.rows() == [(1, date(2024, 6, 2))]
+
+    out = df.sql(
+        """
+        SELECT g, MAX(s) AS m FROM self GROUP BY g
+        HAVING CAST(m AS DATE) > DATE '2024-05-01'
+        """
+    )
+    assert out.rows() == [(1, "2024-06-02")]
+
+
+def test_having_alias_types_in_comparisons() -> None:
+    t = pl.DataFrame(
+        {"g": [1, 1, 2], "e": ["c", "b", "a"], "s": ["1", "x", "2"]},
+        schema_overrides={"e": pl.Enum(["c", "b", "a"])},
+    )
+    r = pl.DataFrame({"s": ["a", "c"]})
+    ctx = pl.SQLContext(t=t, r=r)
+
+    # Enum order, not string order.
+    out = ctx.execute(
+        """
+        SELECT g, MAX(e) AS m FROM t GROUP BY g
+        HAVING m > ANY(SELECT s FROM r) ORDER BY g
+        """,
+        eager=True,
+    )
+    assert out.rows() == [(1, "b"), (2, "a")]
+
+    out = ctx.execute(
+        "SELECT g, MIN(s) AS m FROM t GROUP BY g HAVING m = 1", eager=True
+    )
+    assert out.rows() == [(1, "1")]
