@@ -7,6 +7,7 @@ use polars_buffer::Buffer;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -433,6 +434,29 @@ impl NullValues {
                 NullValuesCompiled::Columns(null_values)
             },
         })
+    }
+
+    /// Re-key named null values given by `old_names` to the `new_names` at the same position;
+    /// a name in both refers to the new one. Returns `None` if that changed no key.
+    pub fn rekeyed(&self, old_names: &[PlSmallStr], new_names: &[PlSmallStr]) -> Option<Self> {
+        let NullValues::Named(names) = self else {
+            return None;
+        };
+        // The new names are inserted last, so they win.
+        let index: PlHashMap<&PlSmallStr, usize> = (old_names.iter().zip(0..))
+            .chain(new_names.iter().zip(0..))
+            .collect();
+        let rekeyed: Vec<_> = names
+            .iter()
+            .map(|(name, value)| {
+                let name = index
+                    .get(name)
+                    .and_then(|&i| new_names.get(i))
+                    .unwrap_or(name);
+                (name.clone(), value.clone())
+            })
+            .collect();
+        (rekeyed != *names).then_some(NullValues::Named(rekeyed))
     }
 }
 

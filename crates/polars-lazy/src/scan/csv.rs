@@ -350,7 +350,7 @@ impl LazyCsvReader {
 
         // Named null values may refer to either the file's or the new column names.
         // Inference matched the file's names, so if any were given by their new name,
-        // infer again, keyed by the names in the file (keeping dtypes that `f` changed).
+        // infer again, keyed by the names in the file, and apply `f` to that schema instead.
         if let Some(NullValues::Named(named)) = &self.read_options.parse_options.null_values {
             let by_file_name: Vec<_> = named
                 .iter()
@@ -367,16 +367,7 @@ impl LazyCsvReader {
                 let mut read_options = self.read_options.clone();
                 Arc::make_mut(&mut read_options.parse_options).null_values =
                     Some(NullValues::Named(by_file_name));
-                let reinferred = infer_schema(&read_options, first_source)?;
-                for ((dtype, inferred), reinferred) in schema
-                    .iter_values_mut()
-                    .zip(file_schema.iter_values())
-                    .zip(reinferred.iter_values())
-                {
-                    if dtype == inferred {
-                        *dtype = reinferred.clone();
-                    }
-                }
+                schema = f(infer_schema(&read_options, first_source)?)?;
             }
         }
 
@@ -415,7 +406,26 @@ impl LazyCsvReader {
 
 impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
-    fn finish(self) -> PolarsResult<LazyFrame> {
+    fn finish(mut self) -> PolarsResult<LazyFrame> {
+        if !self.read_options.has_header
+            // Without a header, a given schema names the file's columns; the new names rename
+            // those by position, as well as the named null values that refer to them.
+            && let Some(new_names) = &self.read_options.column_names_overwrite
+            && let Some(schema) = &mut self.read_options.schema
+        {
+            let old_names: Vec<_> = schema.iter_names_cloned().collect();
+            if let Some(null_values) = (self.read_options.parse_options.null_values.as_ref())
+                .and_then(|null_values| null_values.rekeyed(&old_names, new_names))
+            {
+                Arc::make_mut(&mut self.read_options.parse_options).null_values = Some(null_values);
+            }
+            *schema = Arc::new(Schema::from_iter_check_duplicates(
+                schema.iter().enumerate().map(|(i, (name, dtype))| {
+                    (new_names.get(i).unwrap_or(name).clone(), dtype.clone())
+                }),
+            )?);
+        }
+
         let rechunk = self.rechunk();
         let row_index = self.row_index().cloned();
         let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });

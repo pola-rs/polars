@@ -779,19 +779,21 @@ fn test_named_null_duplicates() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "lazy")]
 fn test_with_schema_modify_named_nulls_by_new_name() -> PolarsResult<()> {
-    // Null values given by new names need a second inference, which must keep the dtype
-    // the modifier set for "A" while re-inferring "B".
-    let csv = polars_buffer::Buffer::from(b"a,b\n1,NA\nNA,2\n".to_vec());
+    // Null values given by new names need a second inference, which must keep the dtypes
+    // the modifier set for "A" and "C" (even if unchanged) while re-inferring "B".
+    let csv = polars_buffer::Buffer::from(b"a,b,c\n1,NA,001\nNA,2,NA\n".to_vec());
     let df = LazyCsvReader::new_with_sources(ScanSources::Buffers(Arc::from([csv])))
         .with_null_values(Some(NullValues::Named(vec![
             ("A".into(), "NA".into()),
             ("B".into(), "NA".into()),
+            ("C".into(), "NA".into()),
         ])))
         .with_schema_modify(|schema| {
             Ok(schema
                 .iter()
                 .map(|(name, dtype)| match name.as_str() {
                     "a" => Field::new("A".into(), DataType::Float64),
+                    "c" => Field::new("C".into(), DataType::String),
                     _ => Field::new(name.to_uppercase().into(), dtype.clone()),
                 })
                 .collect())
@@ -803,6 +805,7 @@ fn test_with_schema_modify_named_nulls_by_new_name() -> PolarsResult<()> {
     let expect = df![
         "A" => [Some(1.0_f64), None],
         "B" => [None, Some(2_i64)],
+        "C" => [Some("001"), None],
     ]?;
     assert_eq!(df.schema(), expect.schema());
     assert!(df.equals_missing(&expect));

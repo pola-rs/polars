@@ -195,15 +195,28 @@ def test_scan_csv_schema_new_columns_dtypes(
         ).collect()
 
 
-@pytest.mark.parametrize("null_names", [["a", "b"], ["A", "B"]])
-def test_scan_csv_with_column_names_named_nulls(null_names: list[str]) -> None:
+@pytest.mark.parametrize(
+    ("has_header", "null_names"),
+    [
+        (True, ["a", "b"]),
+        (True, ["A", "B"]),
+        (False, ["column_0", "column_1"]),
+        (False, ["COLUMN_0", "COLUMN_1"]),
+    ],
+)
+def test_scan_csv_with_column_names_named_nulls(
+    has_header: bool, null_names: list[str]
+) -> None:
     # named null values can refer to either the original or the new column names
+    data = b"a,b\n1,NA\nNA,2\n" if has_header else b"1,NA\nNA,2\n"
     lf = pl.scan_csv(
-        b"a,b\n1,NA\nNA,2\n",
+        data,
+        has_header=has_header,
         with_column_names=lambda cols: [col.upper() for col in cols],
         null_values=dict.fromkeys(null_names, "NA"),
     )
-    expected = pl.DataFrame({"A": [1, None], "B": [None, 2]})
+    names = ["A", "B"] if has_header else ["COLUMN_0", "COLUMN_1"]
+    expected = pl.DataFrame(dict(zip(names, [[1, None], [None, 2]], strict=True)))
     assert lf.collect_schema() == expected.schema
     assert_frame_equal(lf.collect(), expected)
 

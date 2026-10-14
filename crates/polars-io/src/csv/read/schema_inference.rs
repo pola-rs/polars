@@ -46,27 +46,13 @@ pub(super) fn infer_file_schema_impl(
     // A named null value may refer to a column by either its file or its new name
     // (the new one wins); the reader only sees the new names, so keys are re-keyed to those
     let rekeyed_null_values = match (&parse_options.null_values, column_names_overwrite) {
-        (Some(NullValues::Named(names)), Some(new_names)) => {
-            let file_names = if header_line.is_some() {
+        (Some(null_values @ NullValues::Named(_)), Some(new_names)) => {
+            let file_names: Vec<_> = if header_line.is_some() {
                 headers.clone()
             } else {
                 (0..new_names.len()).map(column_name).collect()
             };
-            // The new names are inserted last, so they win.
-            let index: PlHashMap<&PlSmallStr, usize> = (file_names.iter().zip(0..))
-                .chain(new_names.iter().zip(0..))
-                .collect();
-            let rekeyed: Vec<_> = names
-                .iter()
-                .map(|(name, value)| {
-                    let name = index
-                        .get(name)
-                        .and_then(|&i| new_names.get(i))
-                        .unwrap_or(name);
-                    (name.clone(), value.clone())
-                })
-                .collect();
-            (rekeyed != *names).then_some(NullValues::Named(rekeyed))
+            null_values.rekeyed(&file_names, new_names)
         },
         _ => None,
     };

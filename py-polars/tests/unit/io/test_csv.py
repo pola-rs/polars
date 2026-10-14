@@ -252,6 +252,30 @@ def test_csv_named_nulls_without_header() -> None:
     assert df.rows() == [(1, None, "3"), (None, 2, "NA")]
 
 
+@pytest.mark.parametrize(
+    ("schema_name", "null_name"),
+    [
+        ("column_0", "column_0"),
+        ("foo", "foo"),
+        ("foo", "column_0"),
+        ("foo", "x"),
+    ],
+)
+def test_csv_schema_new_columns_without_header(
+    schema_name: str, null_name: str
+) -> None:
+    lf = pl.scan_csv(
+        b"NA\n1\n",
+        has_header=False,
+        schema={schema_name: pl.Int64},
+        new_columns=["x"],
+        null_values={null_name: "NA"},
+    )
+    expected = pl.DataFrame({"x": [None, 1]})
+    assert lf.collect_schema() == expected.schema
+    assert_frame_equal(lf.collect(), expected)
+
+
 def test_csv_missing_is_empty_string(chunk_override: None) -> None:
     # validate 'empty_string_is_null=False' for missing fields that are...
     # >> ...leading
