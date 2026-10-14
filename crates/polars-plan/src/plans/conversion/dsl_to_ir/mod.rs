@@ -76,11 +76,7 @@ pub fn to_alp(
         seen_caches: Default::default(),
     };
 
-    let result = to_alp_impl(lp, &mut ctxt).and_then(|root| {
-        ensure_sinks_have_no_consumers(root, ctxt.lp_arena)?;
-        Ok(root)
-    });
-    match result {
+    match to_alp_impl_allow_sink(lp, &mut ctxt) {
         Ok(out) => Ok(out),
         Err(err) => {
             if opt_flags.contains(OptFlags::EAGER) {
@@ -107,31 +103,6 @@ pub fn to_alp(
             }))
         },
     }
-}
-
-fn ensure_sinks_have_no_consumers(root: Node, lp_arena: &Arena<IR>) -> PolarsResult<()> {
-    let mut stack = unitvec![root];
-    let mut visited = PlHashSet::new();
-    while let Some(node) = stack.pop() {
-        if !visited.insert(node) {
-            continue;
-        }
-        let ir = lp_arena.get(node);
-        let is_sink_multiple = matches!(ir, IR::SinkMultiple { .. });
-        for input in ir.inputs() {
-            let is_valid_input = match lp_arena.get(input) {
-                IR::Sink { .. } => is_sink_multiple,
-                IR::SinkMultiple { .. } => false,
-                _ => true,
-            };
-            polars_ensure!(
-                is_valid_input,
-                InvalidOperation: "a sink cannot be used as the input of another operation"
-            );
-            stack.push(input);
-        }
-    }
-    Ok(())
 }
 
 fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {
@@ -209,11 +180,24 @@ async fn fetch_metadata(
     Ok::<(), PolarsError>(())
 }
 
+/// Converts the input of another node, which cannot be a sink.
+pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
+    let node = to_alp_impl_allow_sink(lp, ctxt)?;
+    polars_ensure!(
+        !matches!(
+            ctxt.lp_arena.get(node),
+            IR::Sink { .. } | IR::SinkMultiple { .. }
+        ),
+        InvalidOperation: "a sink cannot be used as the input of another operation"
+    );
+    Ok(node)
+}
+
 /// converts LogicalPlan to IR
 /// it adds expressions & lps to the respective arenas as it traverses the plan
 /// finally it returns the top node of the logical plan
 #[recursive]
-pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
+fn to_alp_impl_allow_sink(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult<Node> {
     let owned = Arc::unwrap_or_clone;
 
     // First do a pass to collect all scans and fetch all metadata concurrently.
@@ -644,7 +628,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         strict: true,
                     })
                     .build();
-                return to_alp_impl(lp, ctxt);
+                return to_alp_impl_allow_sink(lp, ctxt);
             }
 
             // NOTE: As we went into this branch, we know that no predicates are provided.
@@ -931,7 +915,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt.lp_arena,
                 ctxt.expr_arena,
             )?;
-            return to_alp_impl(resolved, ctxt);
+            return to_alp_impl_allow_sink(resolved, ctxt);
         },
         DslPlan::PipeWithSchema { input, callback } => {
             // Derive the schema from the input
@@ -939,7 +923,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let mut input_schemas = Vec::with_capacity(input.len());
 
             for plan in input.as_ref() {
-                let ir = to_alp_impl(plan.clone(), ctxt)?;
+                let ir = to_alp_impl_allow_sink(plan.clone(), ctxt)?;
                 let schema = ctxt.lp_arena.get(ir).schema(ctxt.lp_arena).into_owned();
 
                 let dsl = DslPlan::IR {
@@ -954,7 +938,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             // Adjust the input and start conversion again
             let input_adjusted = callback.call((inputs, input_schemas))?;
-            return to_alp_impl(input_adjusted, ctxt);
+            return to_alp_impl_allow_sink(input_adjusted, ctxt);
         },
         #[cfg(feature = "pivot")]
         DslPlan::Pivot {
@@ -1089,7 +1073,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options: Default::default(),
                 apply: None,
             };
-            return to_alp_impl(lp, ctxt).context(failed_here!(pivot));
+            return to_alp_impl_allow_sink(lp, ctxt).context(failed_here!(pivot));
         },
         DslPlan::Distinct { input, options } => {
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(unique))?;
@@ -1455,7 +1439,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     unified_sink_args.sinked_paths_callback =
                         Some(SinkedPathsCallback::IcebergCommit(Box::new(state)));
 
-                    return to_alp_impl(*plan, &mut ctxt);
+                    return to_alp_impl_allow_sink(*plan, &mut ctxt);
                 })
             }
 
@@ -1598,7 +1582,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::SinkMultiple { inputs } => {
             let inputs = inputs
                 .into_iter()
-                .map(|lp| to_alp_impl(lp, ctxt))
+                .map(|lp| {
+                    let node = to_alp_impl_allow_sink(lp, ctxt)?;
+                    polars_ensure!(
+                        !matches!(ctxt.lp_arena.get(node), IR::SinkMultiple { .. }),
+                        InvalidOperation: "a sink cannot be used as the input of another operation"
+                    );
+                    Ok(node)
+                })
                 .collect::<PolarsResult<Vec<_>>>()
                 .context(failed_here!(vertical concat))?;
             IR::SinkMultiple { inputs }
@@ -1654,7 +1645,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 {
                     Ok(node)
                 },
-                _ => to_alp_impl(owned(dsl), ctxt),
+                _ => to_alp_impl_allow_sink(owned(dsl), ctxt),
             };
         },
         DslPlan::Resolver {
