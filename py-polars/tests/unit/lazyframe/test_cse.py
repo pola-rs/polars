@@ -2348,10 +2348,10 @@ def test_cse_group_by_scalar_28653() -> None:
 
     q = lf.group_by("g", maintain_order=True).agg(a=lit, b=lit)
     expected = pl.DataFrame({"g": [1, 2], "a": [1.5, 1.5], "b": [1.5, 1.5]})
-    out = q.collect(engine="in-memory")
+    out = q.collect()
     assert_frame_equal(out, expected)
     assert out.schema == q.collect_schema()
 
     q = lf.group_by("g", maintain_order=True).agg(c=pl.col("j") + lit, d=lit)
     expected = pl.DataFrame({"g": [1, 2], "c": [[2.5, 3.5], [4.5]], "d": [1.5, 1.5]})
-    assert_frame_equal(q.collect(engine="in-memory"), expected)
+    assert_frame_equal(q.collect(), expected)
