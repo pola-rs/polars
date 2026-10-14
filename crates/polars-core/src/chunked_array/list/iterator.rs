@@ -2,9 +2,14 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
+use polars_arrow::array::builder::{ShareStrategy, make_builder};
+use polars_arrow::array::{Array, ListArray};
+use polars_arrow::offset::Offsets;
+
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
+use crate::utils::slice_offsets;
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
@@ -459,6 +464,89 @@ impl ListChunked {
             ca.set_fast_explode();
         }
         Ok(ca)
+    }
+}
+
+impl ListChunked {
+    /// Slice every list with the same `offset` and `length`, see [`Series::slice`].
+    pub fn lst_slice(&self, offset: i64, length: usize) -> Self {
+        self.lst_slice_var(&[offset], 0, &[length], 0)
+    }
+
+    /// Slice list `i` with offset `offsets[i * offset_stride]` and length
+    /// `lengths[i * lengths_stride]`, see [`Series::slice`]. A stride of zero
+    /// applies the same offset or length to every list.
+    pub fn lst_slice_var(
+        &self,
+        offsets: &[i64],
+        offset_stride: usize,
+        lengths: &[usize],
+        lengths_stride: usize,
+    ) -> Self {
+        let mut fast_explode = self.null_count() == 0;
+        let mut row = 0;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let in_offsets = arr.offsets().as_slice();
+                let mut out_offsets = Vec::with_capacity(arr.len() + 1);
+                out_offsets.push(0i64);
+                // Ranges in `values` to copy, with adjacent ranges merged.
+                let mut ranges: Vec<(usize, usize)> = Vec::new();
+                let mut unchanged = true;
+                for i in 0..arr.len() {
+                    let list_start = in_offsets[i] as usize;
+                    let list_len = (in_offsets[i + 1] - in_offsets[i]) as usize;
+                    let (start, len) = if arr.is_null(i) {
+                        (list_start, 0)
+                    } else {
+                        let (start, len) = slice_offsets(
+                            offsets[row * offset_stride],
+                            lengths[row * lengths_stride],
+                            list_len,
+                        );
+                        fast_explode &= len > 0;
+                        (list_start + start, len)
+                    };
+                    row += 1;
+
+                    unchanged &= start == list_start && len == list_len;
+                    out_offsets.push(out_offsets.last().unwrap() + len as i64);
+                    match ranges.last_mut() {
+                        Some((s, l)) if *s + *l == start => *l += len,
+                        _ if len > 0 => ranges.push((start, len)),
+                        _ => {},
+                    }
+                }
+
+                if unchanged {
+                    return arr.clone().boxed();
+                }
+
+                let values = arr.values().as_ref();
+                let mut builder = make_builder(values.dtype());
+                builder.reserve(*out_offsets.last().unwrap() as usize);
+                for (start, len) in ranges {
+                    builder.subslice_extend(values, start, len, ShareStrategy::Always);
+                }
+                // SAFETY: the offsets are monotonically increasing by construction.
+                let out_offsets = unsafe { Offsets::new_unchecked(out_offsets) };
+                ListArray::new(
+                    arr.dtype().clone(),
+                    out_offsets.into(),
+                    builder.freeze_reset(),
+                    arr.validity().cloned(),
+                )
+                .boxed()
+            })
+            .collect();
+
+        // SAFETY: the chunks have the same dtype as `self`.
+        let mut out = unsafe { self.copy_with_chunks(chunks) };
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        out
     }
 }
 
