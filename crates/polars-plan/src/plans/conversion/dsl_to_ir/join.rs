@@ -402,8 +402,25 @@ pub fn resolve_join(
     }
 
     // These are Arc<Schema>, into_owned is free.
-    let schema_left = schema_left.into_owned();
-    let schema_right = schema_right.into_owned();
+    let mut schema_left = schema_left.into_owned();
+    let mut schema_right = schema_right.into_owned();
+
+    // The coalesced key columns are replaced by their upcast versions.
+    for (schema, exprs) in [
+        (&mut schema_left, &as_with_columns_l),
+        (&mut schema_right, &as_with_columns_r),
+    ] {
+        if exprs.is_empty() {
+            continue;
+        }
+        let schema = Arc::make_mut(schema);
+        for e in exprs {
+            let AExpr::Cast { dtype, .. } = ctxt.expr_arena.get(e.node()) else {
+                unreachable!()
+            };
+            schema.with_column(e.output_name().clone(), dtype.clone());
+        }
+    }
 
     options.options = {
         let on = left_on.into_iter().zip(right_on).collect();
