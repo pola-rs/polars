@@ -258,13 +258,23 @@ impl AExpr {
                 // left: col(foo):              list<T>         nesting: 1
                 // right; col(foo).first():     T               nesting: 0
                 // col(foo) + col(foo).first() will have nesting 1 as we still maintain the groups list.
-                let mut truthy = ctx.arena.get(*truthy).to_field_impl(ctx)?;
-                let falsy = ctx.arena.get(*falsy).to_field_impl(ctx)?;
+                let truthy_ae = ctx.arena.get(*truthy);
+                let falsy_ae = ctx.arena.get(*falsy);
+                let mut truthy = truthy_ae.to_field_impl(ctx)?;
+                let falsy = falsy_ae.to_field_impl(ctx)?;
 
                 let st = if let DataType::Null = *truthy.dtype() {
                     falsy.dtype().clone()
                 } else {
-                    try_get_supertype(truthy.dtype(), falsy.dtype())?
+                    let st = try_get_supertype(truthy.dtype(), falsy.dtype())?;
+                    // Must match the output dtype chosen by type coercion.
+                    crate::plans::conversion::type_coercion::modify_supertype(
+                        st,
+                        truthy_ae,
+                        falsy_ae,
+                        truthy.dtype(),
+                        falsy.dtype(),
+                    )
                 };
 
                 truthy.set_dtype(st);
