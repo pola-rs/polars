@@ -404,7 +404,7 @@ class DataFrame:
             if height is not None and self.width == 0:
                 self._df = PyDataFrame.empty_with_height(height)
 
-        elif isinstance(data, dict):
+        elif isinstance(data, Mapping):
             self._df = dict_to_pydf(
                 data=data,
                 schema=schema,
