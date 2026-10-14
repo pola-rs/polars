@@ -416,9 +416,10 @@ def test_scan_http_same_host_error(
     df = pl.DataFrame({"a": [1]})
     files = {"/a.parquet?token=A": _parquet_bytes(df)}
 
-    with _http_file_server(files) as (endpoint, _):
+    with _http_file_server(files) as (endpoint, requests):
         q = pl.scan_parquet(f"{endpoint}/a.parquet?token=A")
         assert_frame_equal(q.collect(), df)
+        n = len(requests)
 
         capfd.readouterr()
         q = pl.scan_parquet(f"{endpoint}/missing.parquet")
@@ -426,13 +427,14 @@ def test_scan_http_same_host_error(
             q.collect()
         capture = capfd.readouterr().err
 
+    # Both URLs share the host's store: the error scan reuses a pooled connection.
+    assert {port for port, _ in requests[n:]} & {port for port, _ in requests[:n]}
     # The error names the failing URL, not the one the host's store was built for.
     assert "a.parquet" not in str(exc.value)
-    # An error retries on the host's store instead of rebuilding it and dropping its
-    # connection pool. Ports can't show this: the retry may open a new connection
-    # before the pooled one is returned.
-    assert "will retry" in capture
-    assert "rebuild store" not in capture
+    # The error is retried on that store, not after rebuilding it and dropping its pool.
+    # Ports can't show this: the retry may open a new connection before the pooled one
+    # is returned.
+    assert re.search(r"got error: .*missing\.parquet.*, will retry$", capture, re.M)
 
 
 @pytest.mark.slow
