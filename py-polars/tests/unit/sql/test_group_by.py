@@ -850,6 +850,35 @@ def test_group_by_computed_key_repeated_27735(query: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT ip, ip - 1, ip - 2, COUNT(*) AS c FROM self GROUP BY ip, ip - 1, ip - 2 ORDER BY c DESC, ip",
+        "SELECT ip - 1, ip, COUNT(*) AS c FROM self GROUP BY ip - 1, ip ORDER BY ip",
+        "SELECT ip, ip - 1, COUNT(*) AS c FROM self GROUP BY 1, 2 ORDER BY ip - 1",
+        "SELECT ip, ip - 1 AS m, COUNT(*) AS c FROM self GROUP BY ip, ip - 1 HAVING ip - 1 > 0 ORDER BY ip",
+        "SELECT ip, COUNT(*) AS c FROM self GROUP BY ip, ip ORDER BY ip",
+        "SELECT COUNT(*) AS c FROM self GROUP BY ip, ip - 1 ORDER BY c",
+        "SELECT ip, ip - 1, COUNT(*) AS c FROM self GROUP BY ALL ORDER BY ip",
+        "SELECT (ip * 2) + 1 AS y, COUNT(*) AS c FROM self GROUP BY ip * 2 ORDER BY y",
+        "SELECT ip % 3 AS x, (ip % 2) + 10 AS y FROM self GROUP BY ip % 3, ip % 2 ORDER BY x, y",
+        "SELECT ip % 3 AS x, ip % 2 AS y FROM self GROUP BY ip % 3, ip % 2 ORDER BY ip % 2, x",
+        "SELECT ip % 3 AS x, (ip % 2) * COUNT(*) AS y FROM self GROUP BY ip % 3, ip % 2 ORDER BY x, y",
+        "SELECT ip * 2 AS x, COUNT(*) AS c FROM self GROUP BY ip * 2 HAVING ip * 2 + 1 > 4 ORDER BY x",
+        "SELECT ip * 2 AS x, SUM(COUNT(*)) OVER (PARTITION BY (ip * 2) % 4) AS w FROM self GROUP BY ip * 2 ORDER BY x",
+        "SELECT ip * 2 AS x, COUNT(*) AS c FROM self GROUP BY ROLLUP (ip * 2) ORDER BY ip * 2 NULLS FIRST",
+    ],
+)
+def test_group_by_computed_keys(query: str) -> None:
+    df = pl.DataFrame({"ip": [0, 1, 2, 2, 3, 3, 3, 4]})
+    assert_sql_matches(
+        frames=df,
+        query=query,
+        compare_with="duckdb",
+        check_column_names=False,
+    )
+
+
 def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
 
