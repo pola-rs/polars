@@ -127,7 +127,6 @@ if TYPE_CHECKING:
         Callable,
         Collection,
         Iterator,
-        Mapping,
     )
     from datetime import timedelta
     from io import IOBase
