@@ -401,26 +401,28 @@ pub fn resolve_join(
         }
     }
 
-    // These are Arc<Schema>, into_owned is free.
-    let mut schema_left = schema_left.into_owned();
-    let mut schema_right = schema_right.into_owned();
-
     // The coalesced key columns are replaced by their upcast versions.
-    for (schema, exprs) in [
-        (&mut schema_left, &as_with_columns_l),
-        (&mut schema_right, &as_with_columns_r),
-    ] {
-        if exprs.is_empty() {
-            continue;
-        }
-        let schema = Arc::make_mut(schema);
-        for e in exprs {
-            let AExpr::Cast { dtype, .. } = ctxt.expr_arena.get(e.node()) else {
-                unreachable!()
-            };
-            schema.with_column(e.output_name().clone(), dtype.clone());
-        }
+    if !as_with_columns_l.is_empty() {
+        input_left = IRBuilder::new(input_left, ctxt.expr_arena, ctxt.lp_arena)
+            .with_columns(as_with_columns_l, ProjectionOptions::default())
+            .node();
     }
+    if !as_with_columns_r.is_empty() {
+        input_right = IRBuilder::new(input_right, ctxt.expr_arena, ctxt.lp_arena)
+            .with_columns(as_with_columns_r, ProjectionOptions::default())
+            .node();
+    }
+    // These are Arc<Schema>, into_owned is free.
+    let schema_left = ctxt
+        .lp_arena
+        .get(input_left)
+        .schema(ctxt.lp_arena)
+        .into_owned();
+    let schema_right = ctxt
+        .lp_arena
+        .get(input_right)
+        .schema(ctxt.lp_arena)
+        .into_owned();
 
     options.options = {
         let on = left_on.into_iter().zip(right_on).collect();
@@ -436,30 +438,6 @@ pub fn resolve_join(
 
     let join_schema = det_join_schema(&schema_left, &schema_right, &options)
         .context(failed_here!(join schema resolving))?;
-
-    if key_cols_coalesced {
-        input_left = if as_with_columns_l.is_empty() {
-            input_left
-        } else {
-            ctxt.lp_arena.add(IR::HStack {
-                input: input_left,
-                exprs: as_with_columns_l,
-                schema: schema_left,
-                options: ProjectionOptions::default(),
-            })
-        };
-
-        input_right = if as_with_columns_r.is_empty() {
-            input_right
-        } else {
-            ctxt.lp_arena.add(IR::HStack {
-                input: input_right,
-                exprs: as_with_columns_r,
-                schema: schema_right,
-                options: ProjectionOptions::default(),
-            })
-        };
-    }
 
     let ir = IR::Join {
         input_left,
