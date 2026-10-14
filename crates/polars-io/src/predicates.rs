@@ -334,7 +334,7 @@ pub trait SkipBatchPredicate: Send + Sync {
         live_columns: &PlIndexSet<PlSmallStr>,
         mut statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
     ) -> PolarsResult<bool> {
-        let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
+        let mut columns = Vec::with_capacity(1 + live_columns.len() * 4);
 
         columns.push(Column::new_scalar(
             PlSmallStr::from_static("len"),
@@ -363,6 +363,7 @@ pub trait SkipBatchPredicate: Send + Sync {
                 Column::new_scalar(format_pl_smallstr!("{col}_min"), min, 1),
                 Column::new_scalar(format_pl_smallstr!("{col}_max"), max, 1),
                 Column::new_scalar(format_pl_smallstr!("{col}_nc"), nc, 1),
+                Column::new_scalar(format_pl_smallstr!("{col}_nan"), Scalar::null(IDX_DTYPE), 1),
             ]);
         }
 
@@ -611,7 +612,7 @@ impl ScanIOPredicate {
         }
 
         if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
-            let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);
+            let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 4);
             for (c, v) in constant_columns.iter() {
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_min"), v.clone()));
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_max"), v.clone()));
@@ -622,6 +623,8 @@ impl ScanIOPredicate {
                 };
                 sbp_constant_columns
                     .push((format_pl_smallstr!("{c}_nc"), Scalar::new(IDX_DTYPE, nc)));
+                sbp_constant_columns
+                    .push((format_pl_smallstr!("{c}_nan"), Scalar::null(IDX_DTYPE)));
             }
             self.skip_batch_predicate = Some(Arc::new(PhysicalExprWithConstCols {
                 constants: sbp_constant_columns,

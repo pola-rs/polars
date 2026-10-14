@@ -255,6 +255,7 @@ def test_skip_batch_predicate_parametric(s: pl.Series) -> None:
             maxs = [s.max()]
 
         null_counts = [_null_count_value(s)]
+        nan_counts = [s.is_nan().sum() if dtype.is_float() else None]
         lengths = [s.len()]
 
         df = pl.DataFrame(
@@ -262,6 +263,7 @@ def test_skip_batch_predicate_parametric(s: pl.Series) -> None:
                 pl.Series(f"{name}_min", mins, dtype),
                 pl.Series(f"{name}_max", maxs, dtype),
                 pl.Series(f"{name}_nc", null_counts, _null_count_dtype(dtype)),
+                pl.Series(f"{name}_nan", nan_counts, _null_count_dtype(dtype)),
                 pl.Series("len", lengths, get_index_type()),
             ]
         )
@@ -294,14 +296,14 @@ def test_float_skip_batch_predicate() -> None:
     assert sbp(pl.col("x") == NaN) is None  # No skip. Stats exclude NaN.
     assert sbp(pl.col("x") != 5.0) is None  # No skip. Hidden NaN != x is true.
     assert sbp(pl.col("x") != NaN) is None  # No skip. Stats exclude NaN.
-    assert sbp(pl.col("x") > 5.0) is None  # No skip. Hidden NaN satisfies >.
+    assert sbp(pl.col("x") > 5.0) is not None  # Can skip if nan_count is 0.
     assert sbp(pl.col("x") > NaN) is not None  # Can skip. Nothing > NaN under TotalOrd.
-    assert sbp(pl.col("x") >= 5.0) is None  # No skip. Hidden NaN satisfies >=.
-    assert sbp(pl.col("x") >= NaN) is None  # No skip. Stats exclude NaN.
+    assert sbp(pl.col("x") >= 5.0) is not None  # Can skip if nan_count is 0.
+    assert sbp(pl.col("x") >= NaN) is not None  # Can skip if nan_count is 0.
     assert (
         sbp(pl.lit(5.0) > pl.col("x")) is not None
     )  # Can skip. 5.0 > col is col < 5.0.
-    assert sbp(pl.lit(5.0) < pl.col("x")) is None  # No skip. 5.0 < col is col > 5.0.
+    assert sbp(pl.lit(5.0) < pl.col("x")) is not None  # Can skip if nan_count is 0.
     assert (
         sbp(pl.col("x").is_between(2.0, 4.0)) is not None
     )  # Can skip. Non-NaN bounds.

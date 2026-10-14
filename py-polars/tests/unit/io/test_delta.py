@@ -1041,6 +1041,24 @@ def test_scan_delta_filter_delta_log_statistics_23780(
     assert "skipping 2 / 3 files" in capfd.readouterr().err
 
 
+@pytest.mark.parametrize("expr", [pl.col.float > 2.0, pl.col.float >= 2.0])
+@pytest.mark.write_disk
+def test_scan_delta_filter_float_gt_without_nan_count_27860(
+    tmp_path: Path, expr: pl.Expr
+) -> None:
+    # The Delta log has no NaN counts, so `>` and `>=` skip no file on a float max.
+    df = _df_many_types()
+    root = tmp_path / "delta"
+    df.write_delta(root, delta_write_options={"partition_by": "p"})
+
+    assert_frame_equal(
+        pl.scan_delta(root).filter(expr).collect(),
+        df.filter(expr),
+        check_column_order=False,
+        check_row_order=False,
+    )
+
+
 @pytest.mark.write_disk
 def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
     import datetime
