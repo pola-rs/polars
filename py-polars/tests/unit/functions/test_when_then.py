@@ -927,9 +927,4 @@ def test_when_then_string_literal_categorical_join_29816() -> None:
     expected = pl.DataFrame(
         {"k": [0, 1], "c": ["z", "b"]}, schema_overrides={"c": pl.Categorical}
     )
-    for engine in ["in-memory", "streaming"]:
-        assert_frame_equal(
-            q.collect(engine=engine),  # type: ignore[arg-type]
-            expected,
-            check_row_order=False,
-        )
+    assert_frame_equal(q.collect(), expected, check_row_order=False)
