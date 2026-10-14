@@ -2,14 +2,15 @@ name: Release polars-iceberg
 
 # Releases the `polars-iceberg` I/O plugin (https://github.com/pola-rs/polars-iceberg) to PyPI.
 #
-# The version is the `project.version` in pyproject.toml of polars-iceberg at the given tag, which is
-# cloned to `crates/polars-iceberg` (a workspace member) of this Polars checkout. The plugin is an
-# abi3 wheel, so one wheel per target covers every supported Python version.
+# The version is the `package.version` in Cargo.toml of polars-iceberg (its pyproject.toml takes it
+# from there) at the given tag, which must be `py-<version>`. The tag is cloned to
+# `crates/polars-iceberg` (a workspace member) of this Polars checkout. The plugin is an abi3 wheel,
+# so one wheel per target covers every supported Python version.
 
 on:
   workflow_dispatch:
     inputs:
-      # Tag of polars-iceberg to release. Its pyproject.toml gives the version.
+      # Tag `py-<version>` of polars-iceberg to release. Its Cargo.toml gives the version.
       tag:
         description: polars-iceberg tag
         type: string
@@ -68,9 +69,15 @@ jobs:
 
       - name: Read polars-iceberg version
         id: version
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-iceberg/pyproject.toml", "rb"))["project"]["version"])')
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("crates/polars-iceberg/Cargo.toml", "rb"))["package"]["version"])')
           echo "polars-iceberg version: $VERSION"
+          if [[ "$TAG" != "py-$VERSION" ]]; then
+            echo "::error::tag $TAG does not match polars-iceberg version $VERSION (expected py-$VERSION)"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   create-sdist:
@@ -206,7 +213,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Check sdist and wheel versions match pyproject.toml
+      - name: Check sdist and wheel versions match Cargo.toml
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
