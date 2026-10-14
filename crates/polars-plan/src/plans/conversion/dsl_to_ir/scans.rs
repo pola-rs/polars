@@ -284,6 +284,30 @@ fn prepare_schemas(
     })
 }
 
+/// Whether a (decompressed) slice from progressive schema inference holds the rest of the file:
+/// everything was fetched, and when compressed, the decompressor gave less than was asked for.
+#[cfg(any(feature = "json", feature = "csv"))]
+fn slice_reaches_eof(
+    offset: usize,
+    file_size: usize,
+    compression: Option<SupportedCompression>,
+    bytes_read: usize,
+    read_size: usize,
+) -> bool {
+    offset >= file_size && (compression.is_none() || bytes_read < read_size)
+}
+
+/// Before EOF a slice from progressive schema inference may end inside a row. Keep only the
+/// complete rows, so that we neither count nor infer from an incomplete row.
+#[cfg(any(feature = "json", feature = "csv"))]
+fn complete_rows(slice: Buffer<u8>, eol_char: u8, at_eof: bool) -> Buffer<u8> {
+    if at_eof {
+        return slice;
+    }
+    let complete_len = memchr::memrchr(eol_char, &slice).map_or(0, |i| i + 1);
+    slice.sliced(..complete_len)
+}
+
 #[cfg(feature = "parquet")]
 pub(super) async fn parquet_file_info(
     sources: &ScanSources,
@@ -1016,7 +1040,7 @@ pub async fn csv_file_info(
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let source = sources.at(i);
 
-        let (mem_slice_raw, file_size, decompressed_slice_size_hint) = if run_async
+        let (mem_slice, file_size, decompressed_slice_size_hint, compression) = if run_async
             && let Some(infer_schema_length) = infer_schema_length
         {
             // Only download what we need for schema inference.
@@ -1060,7 +1084,7 @@ pub async fn csv_file_info(
             let mut reached_eof = false;
 
             // Collect enough rows to satisfy infer_schema_length.
-            let (mem_slice_raw, decompressed_slice_size_hint) = loop {
+            let decompressed_slice = loop {
                 let range = offset..std::cmp::min(file_size, offset + fetch_size);
 
                 if range.is_empty() {
@@ -1102,19 +1126,43 @@ pub async fn csv_file_info(
                         Err(e) => Err(e)?,
                     };
 
-                let row_count = polars_io::csv::read::count_rows_from_slice_par(
-                    slice.clone(),
-                    csv_options.parse_options.quote_char,
-                    csv_options.parse_options.comment_prefix.as_ref(),
-                    csv_options.parse_options.eol_char,
-                    csv_options.has_header,
-                    csv_options.skip_lines,
-                    csv_options.skip_rows,
-                    csv_options.skip_rows_after_header,
-                    csv_options.raise_if_empty,
-                )?;
+                let at_eof =
+                    slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
+                let slice = complete_rows(slice, csv_options.parse_options.eol_char, at_eof);
 
-                if row_count < infer_schema_length && !reached_eof {
+                let enough_rows = if infer_schema_length == 0 && csv_options.has_header {
+                    // Only the header is needed. It is incomplete if none is found.
+                    let mut options = csv_options.clone();
+                    options.raise_if_empty = false;
+                    let (header_schema, _) = read_until_start_and_infer_schema(
+                        &options,
+                        None,
+                        extra_columns_policy == ExtraColumnsPolicy::Ignore,
+                        missing_columns_policy == MissingColumnsPolicy::Insert,
+                        Some(slice.len()),
+                        None,
+                        &mut ByteSourceReader::from_memory(slice.clone())?,
+                    )?;
+                    !header_schema.is_empty()
+                } else {
+                    // Before EOF too few lines (e.g. to skip) only means we need more data, so
+                    // don't let the row counter raise on that.
+                    let row_count = polars_io::csv::read::count_rows_from_slice_par(
+                        slice.clone(),
+                        csv_options.parse_options.quote_char,
+                        csv_options.parse_options.comment_prefix.as_ref(),
+                        csv_options.parse_options.eol_char,
+                        csv_options.has_header,
+                        csv_options.skip_lines,
+                        csv_options.skip_rows,
+                        csv_options.skip_rows_after_header,
+                        csv_options.raise_if_empty && at_eof,
+                    )?;
+                    // Without a header, the first row determines the columns.
+                    row_count >= infer_schema_length.max(1)
+                };
+
+                if !enough_rows && !at_eof {
                     if compression.is_some() && bytes_read == read_size {
                         // Decompressor had more to give — read_size too small
                         try_read_size *= 2;
@@ -1126,9 +1174,18 @@ pub async fn csv_file_info(
                     continue;
                 }
 
-                break (Buffer::from_owner(truncated_bytes), Some(bytes_read));
+                break slice;
             };
-            (mem_slice_raw, file_size, decompressed_slice_size_hint)
+
+            // Infer from the already decompressed complete rows: decompressing the truncated
+            // compressed bytes again can run into their end while looking for a line ending.
+            let decompressed_slice_size_hint = Some(decompressed_slice.len());
+            (
+                decompressed_slice,
+                file_size,
+                decompressed_slice_size_hint,
+                compression,
+            )
         } else {
             let mem_slice_raw =
                 source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), i)?;
@@ -1138,11 +1195,15 @@ pub async fn csv_file_info(
                 None => file_size,
                 Some(_) => file_size * ASSUMED_COMPRESSION_RATIO,
             });
-            (mem_slice_raw, file_size, decompressed_slice_size_hint)
+            (
+                mem_slice_raw,
+                file_size,
+                decompressed_slice_size_hint,
+                compression,
+            )
         };
 
-        let mut reader = ByteSourceReader::from_memory(mem_slice_raw)?;
-        let compression = reader.compression();
+        let mut reader = ByteSourceReader::from_memory(mem_slice)?;
 
         let mut first_row_len = 0;
         let (schema, _) = read_until_start_and_infer_schema(
@@ -1368,7 +1429,10 @@ pub async fn ndjson_file_info(
                     Err(e) => Err(e)?,
                 };
 
-            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !reached_eof {
+            let at_eof = slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
+            let slice = complete_rows(slice, b'\n', at_eof);
+
+            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !at_eof {
                 if compression.is_some() && bytes_read == read_size {
                     // Decompressor had more to give — read_size too small
                     try_read_size *= 2;
