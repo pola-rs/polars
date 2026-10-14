@@ -1,104 +1,67 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
-
-def test_unique_id_basic() -> None:
-    """Test default mode: same values get same ID."""
-    df = pl.DataFrame({"x": ["A", "B", "A", "C", "C", "B"]})
-    result = df.select(pl.col("x").unique_id())
-    ids = result["x"].to_list()
-
-    assert result["x"].dtype == pl.UInt32
-    # Same values should have same IDs
-    assert ids[0] == ids[2]  # A == A
-    assert ids[1] == ids[5]  # B == B
-    assert ids[3] == ids[4]  # C == C
-    # Different values should have different IDs
-    assert len(set(ids)) == 3
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
-def test_unique_id_dense() -> None:
-    """IDs are always in range 0..n_unique-1."""
-    df = pl.DataFrame({"x": ["A", "B", "A", "C", "C", "B"]})
-    result = df.select(pl.col("x").unique_id())
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_unique_id(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"x": ["A", "B", "A", "C", "C", "B"]})
+    ids = lf.select(pl.col("x").unique_id()).collect(engine=engine)["x"]
 
-    # IDs should be in range 0..2
-    assert set(result["x"].to_list()) == {0, 1, 2}
-
-
-def test_unique_id_dense_maintain_order() -> None:
-    """Test maintain_order=True: IDs in first-occurrence order."""
-    df = pl.DataFrame({"x": ["A", "B", "A", "C", "C", "B"]})
-    result = df.select(pl.col("x").unique_id(maintain_order=True))
-
-    # A=0, B=1, C=2 (first-occurrence order)
-    assert result["x"].to_list() == [0, 1, 0, 2, 2, 1]
+    assert ids.dtype == pl.UInt32
+    # Dense 0..n_unique-1, equal values share an ID, distinct values differ.
+    assert set(ids.to_list()) == {0, 1, 2}
+    assert ids[0] == ids[2]  # A
+    assert ids[1] == ids[5]  # B
+    assert ids[3] == ids[4]  # C
 
 
-def test_unique_id_with_nulls() -> None:
-    df = pl.DataFrame({"x": ["A", None, "A", None, "B"]})
-    result = df.with_columns(uid=pl.col("x").unique_id())
-
-    # 3 unique values: "A", None, "B"
-    assert result["uid"].n_unique() == 3
-    # Nulls should get the same ID
-    null_ids = result.filter(pl.col("x").is_null())["uid"]
-    assert null_ids.n_unique() == 1
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_unique_id_maintain_order(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"x": ["A", "B", "A", "C", "C", "B"]})
+    ids = lf.select(pl.col("x").unique_id(maintain_order=True)).collect(engine=engine)
+    assert ids["x"].to_list() == [0, 1, 0, 2, 2, 1]
 
 
-def test_unique_id_empty() -> None:
-    df = pl.DataFrame({"x": pl.Series([], dtype=pl.Int64)})
-    result = df.select(pl.col("x").unique_id())
-    expected = pl.DataFrame({"x": pl.Series([], dtype=pl.UInt32)})
-    assert_frame_equal(result, expected)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_unique_id_nulls(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"x": ["A", None, "A", None, "B"]})
+    ids = lf.select(pl.col("x").unique_id()).collect(engine=engine)["x"]
+
+    assert ids.n_unique() == 3  # "A", null, "B"
+    assert ids[1] == ids[3]  # nulls share an ID
 
 
-def test_unique_id_single_value() -> None:
-    df = pl.DataFrame({"x": ["A", "A", "A"]})
-    result = df.select(pl.col("x").unique_id())
-    ids = result["x"].to_list()
-
-    # All same values should have same ID
-    assert ids[0] == ids[1] == ids[2]
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_unique_id_empty(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"x": pl.Series([], dtype=pl.Int64)})
+    result = lf.select(pl.col("x").unique_id()).collect(engine=engine)
+    assert_frame_equal(result, pl.DataFrame({"x": pl.Series([], dtype=pl.UInt32)}))
 
 
-def test_unique_id_group_by() -> None:
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_unique_id_many_distinct_are_unique(
+    engine: EngineType, maintain_order: bool
+) -> None:
+    n = 100_000
+    lf = pl.LazyFrame({"x": range(n)})
+    ids = lf.select(pl.col("x").unique_id(maintain_order=maintain_order)).collect(
+        engine=engine
+    )["x"]
+    assert ids.n_unique() == n
+
+
+def test_unique_id_over() -> None:
     df = pl.DataFrame({"group": ["a", "a", "b", "b"], "x": [1, 2, 1, 2]})
     result = df.group_by("group", maintain_order=True).agg(pl.col("x").unique_id())
-
-    # Each group has 2 different values
     for ids in result["x"].to_list():
         assert len(set(ids)) == 2
-
-
-def test_unique_id_streaming() -> None:
-    """Test streaming: same values get same ID."""
-    lf = pl.LazyFrame({"x": ["A", "B", "A", "C", "C", "B"]})
-    result = lf.select(pl.col("x").unique_id()).collect(engine="streaming")
-
-    # Same values should have same IDs
-    ids = result["x"].to_list()
-    assert ids[0] == ids[2]  # A == A
-    assert ids[1] == ids[5]  # B == B
-    assert ids[3] == ids[4]  # C == C
-
-
-def test_unique_id_many_distinct_are_unique() -> None:
-    """Distinct values must get distinct IDs (hashing collides / truncates)."""
-    n = 200_000
-    df = pl.DataFrame({"x": range(n)})
-    for maintain_order in (False, True):
-        expr = pl.col("x").unique_id(maintain_order=maintain_order)
-        assert df.select(expr)["x"].n_unique() == n
-        streamed = df.lazy().select(expr).collect(engine="streaming")
-        assert streamed["x"].n_unique() == n
-
-
-def test_unique_id_streaming_dense() -> None:
-    """Test streaming with maintain_order=True."""
-    lf = pl.LazyFrame({"x": ["A", "B", "A", "C", "C", "B"]})
-    result = lf.select(pl.col("x").unique_id(maintain_order=True)).collect(
-        engine="streaming"
-    )
-
-    assert result["x"].to_list() == [0, 1, 0, 2, 2, 1]
