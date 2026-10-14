@@ -261,8 +261,8 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyRe
         },
         Decimal(_, _) => {
             let ca = s.decimal().unwrap();
-            let values = decimal_to_pyobject_iter(py, ca)
-                .unwrap()
+            let values = decimal_to_pyobject_iter(py, ca)?
+                .into_iter()
                 .map(|v| v.into_py_any(py).unwrap());
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
