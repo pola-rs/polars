@@ -76,7 +76,11 @@ pub fn to_alp(
         seen_caches: Default::default(),
     };
 
-    match to_alp_impl(lp, &mut ctxt) {
+    let result = to_alp_impl(lp, &mut ctxt).and_then(|root| {
+        ensure_sinks_have_no_consumers(root, ctxt.lp_arena)?;
+        Ok(root)
+    });
+    match result {
         Ok(out) => Ok(out),
         Err(err) => {
             if opt_flags.contains(OptFlags::EAGER) {
@@ -103,6 +107,31 @@ pub fn to_alp(
             }))
         },
     }
+}
+
+fn ensure_sinks_have_no_consumers(root: Node, lp_arena: &Arena<IR>) -> PolarsResult<()> {
+    let mut stack = unitvec![root];
+    let mut visited = PlHashSet::new();
+    while let Some(node) = stack.pop() {
+        if !visited.insert(node) {
+            continue;
+        }
+        let ir = lp_arena.get(node);
+        let is_sink_multiple = matches!(ir, IR::SinkMultiple { .. });
+        for input in ir.inputs() {
+            let is_valid_input = match lp_arena.get(input) {
+                IR::Sink { .. } => is_sink_multiple,
+                IR::SinkMultiple { .. } => false,
+                _ => true,
+            };
+            polars_ensure!(
+                is_valid_input,
+                InvalidOperation: "a sink cannot be used as the input of another operation"
+            );
+            stack.push(input);
+        }
+    }
+    Ok(())
 }
 
 fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> PolarsResult<Node> {

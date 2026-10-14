@@ -260,6 +260,14 @@ pub(super) fn call_dsl_resolvers(
                     to_alp(dsl, expr_arena, ir_arena, &mut opt_flags)?
                 };
 
+                polars_ensure!(
+                    !matches!(
+                        ir_arena.get(ir_node),
+                        IR::Sink { .. } | IR::SinkMultiple { .. }
+                    ),
+                    InvalidOperation: "LazyFrame resolver cannot return a sink"
+                );
+
                 let ir_node_schema = ir_arena.get(ir_node).schema(ir_arena).into_owned();
 
                 // The resolver is only handed a `limit` (= offset + len), never the
