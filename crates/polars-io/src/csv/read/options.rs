@@ -7,6 +7,7 @@ use polars_buffer::Buffer;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -197,6 +198,28 @@ impl CsvReadOptions {
     ) -> Self {
         self.column_names_overwrite = Some(column_names_overwrite);
         self
+    }
+
+    /// Without a header, a given schema names the file's columns; the new names rename
+    /// those by position, as well as the named null values that refer to them.
+    pub fn apply_column_names_overwrite_to_schema(&mut self) -> PolarsResult<()> {
+        if !self.has_header
+            && let Some(new_names) = &self.column_names_overwrite
+            && let Some(schema) = &mut self.schema
+        {
+            let old_names: Vec<_> = schema.iter_names_cloned().collect();
+            if let Some(null_values) = (self.parse_options.null_values.as_ref())
+                .and_then(|null_values| null_values.rekeyed(&old_names, new_names))
+            {
+                Arc::make_mut(&mut self.parse_options).null_values = Some(null_values);
+            }
+            *schema = Arc::new(Schema::from_iter_check_duplicates(
+                schema.iter().enumerate().map(|(i, (name, dtype))| {
+                    (new_names.get(i).unwrap_or(name).clone(), dtype.clone())
+                }),
+            )?);
+        }
+        Ok(())
     }
 
     /// Overwrite the dtypes in the schema in the order of the slice that's given.
@@ -433,6 +456,29 @@ impl NullValues {
                 NullValuesCompiled::Columns(null_values)
             },
         })
+    }
+
+    /// Re-key named null values given by `old_names` to the `new_names` at the same position;
+    /// a name in both refers to the new one. Returns `None` if that changed no key.
+    pub fn rekeyed(&self, old_names: &[PlSmallStr], new_names: &[PlSmallStr]) -> Option<Self> {
+        let NullValues::Named(names) = self else {
+            return None;
+        };
+        // The new names are inserted last, so they win.
+        let index: PlHashMap<&PlSmallStr, usize> = (old_names.iter().zip(0..))
+            .chain(new_names.iter().zip(0..))
+            .collect();
+        let rekeyed: Vec<_> = names
+            .iter()
+            .map(|(name, value)| {
+                let name = index
+                    .get(name)
+                    .and_then(|&i| new_names.get(i))
+                    .unwrap_or(name);
+                (name.clone(), value.clone())
+            })
+            .collect();
+        (rekeyed != *names).then_some(NullValues::Named(rekeyed))
     }
 }
 

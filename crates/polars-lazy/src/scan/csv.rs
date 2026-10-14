@@ -350,7 +350,7 @@ impl LazyCsvReader {
 
         // Named null values may refer to either the file's or the new column names.
         // Inference matched the file's names, so if any were given by their new name,
-        // infer again, keyed by the names in the file (keeping dtypes that `f` changed).
+        // infer again, keyed by the names in the file, and apply `f` to that schema instead.
         if let Some(NullValues::Named(named)) = &self.read_options.parse_options.null_values {
             let by_file_name: Vec<_> = named
                 .iter()
@@ -367,16 +367,7 @@ impl LazyCsvReader {
                 let mut read_options = self.read_options.clone();
                 Arc::make_mut(&mut read_options.parse_options).null_values =
                     Some(NullValues::Named(by_file_name));
-                let reinferred = infer_schema(&read_options, first_source)?;
-                for ((dtype, inferred), reinferred) in schema
-                    .iter_values_mut()
-                    .zip(file_schema.iter_values())
-                    .zip(reinferred.iter_values())
-                {
-                    if dtype == inferred {
-                        *dtype = reinferred.clone();
-                    }
-                }
+                schema = f(infer_schema(&read_options, first_source)?)?;
             }
         }
 
@@ -415,7 +406,9 @@ impl LazyCsvReader {
 
 impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
-    fn finish(self) -> PolarsResult<LazyFrame> {
+    fn finish(mut self) -> PolarsResult<LazyFrame> {
+        self.read_options.apply_column_names_overwrite_to_schema()?;
+
         let rechunk = self.rechunk();
         let row_index = self.row_index().cloned();
         let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });

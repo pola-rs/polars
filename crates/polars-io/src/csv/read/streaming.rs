@@ -19,6 +19,8 @@ pub type InspectContentFn<'a> = Box<dyn FnMut(&[u8]) + 'a>;
 ///
 /// Returns the inferred schema and leftover bytes not yet consumed, which may be empty. The
 /// leftover bytes + `reader.read_next_slice` is guaranteed to start at first real content row.
+/// Also returns the named null values re-keyed to the `column_names_overwrite` names, if that
+/// changed any key; the reader must use those instead.
 ///
 /// `inspect_first_content_row_fn` allows looking at the first content row, this is where parsing
 /// will start. Beware even if the function is provided it's *not* guaranteed that the returned
@@ -35,7 +37,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
     insert_missing_columns: bool,
     mut inspect_first_content_row_fn: Option<InspectContentFn<'_>>,
     reader: &mut CompressedReader,
-) -> PolarsResult<(Schema, Buffer<u8>)> {
+) -> PolarsResult<(Schema, Buffer<u8>, Option<NullValues>)> {
     // It's better to be above than below here.
     const ESTIMATED_BYTES_PER_ROW: usize = 200;
 
@@ -184,7 +186,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
 
     let infer_all_as_str = infer_schema_length == Some(0);
 
-    let (inferred_schema, _) = infer_schema(
+    let (inferred_schema, rekeyed_null_values) = infer_schema(
         &header_line,
         &content_lines,
         infer_all_as_str,
@@ -194,7 +196,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
         insert_missing_columns,
     )?;
 
-    Ok((inferred_schema, leftover))
+    Ok((inferred_schema, leftover, rekeyed_null_values))
 }
 
 /// Reads bytes from `reader` until the CSV starting point is reached depending on the options.
