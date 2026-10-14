@@ -1,3 +1,4 @@
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_utils::aliases::ScratchIndexSet;
 use polars_utils::idx_vec::UnitVec;
@@ -583,6 +584,17 @@ pub(crate) fn map_column_references(
     expr_arena: &mut Arena<AExpr>,
     rename_map: &PlIndexMap<PlSmallStr, PlSmallStr>,
 ) {
+    map_column_references_with_casts(expr, expr_arena, rename_map, &Default::default())
+}
+
+/// Same as [`map_column_references`], but a renamed column whose original name is in `casts` is
+/// cast to that dtype, so the expression keeps the dtype it was typed against.
+pub(crate) fn map_column_references_with_casts(
+    expr: &mut ExprIR,
+    expr_arena: &mut Arena<AExpr>,
+    rename_map: &PlIndexMap<PlSmallStr, PlSmallStr>,
+    casts: &PlIndexMap<PlSmallStr, DataType>,
+) {
     if rename_map.is_empty() {
         return;
     }
@@ -591,6 +603,7 @@ pub(crate) fn map_column_references(
         .rewrite(
             &mut MapColumnReferences {
                 rename_map,
+                casts,
                 column_nodes: PlIndexMap::with_capacity(rename_map.len()),
             },
             expr_arena,
@@ -602,6 +615,8 @@ pub(crate) fn map_column_references(
 
     struct MapColumnReferences<'a> {
         rename_map: &'a PlIndexMap<PlSmallStr, PlSmallStr>,
+        casts: &'a PlIndexMap<PlSmallStr, DataType>,
+        // Keyed by the original column name.
         column_nodes: PlIndexMap<&'a str, Node>,
     }
 
@@ -634,19 +649,24 @@ pub(crate) fn map_column_references(
                 unreachable!();
             };
 
-            let new_colname = self.rename_map.get(colname).unwrap();
+            // Safety: Checked in pre_visit()
+            let (colname, new_colname) = self.rename_map.get_key_value(colname).unwrap();
 
-            if !self.column_nodes.contains_key(new_colname.as_str()) {
-                self.column_nodes.insert(
-                    new_colname.as_str(),
-                    arena.add(AExpr::Column(new_colname.clone())),
-                );
+            if let Some(node) = self.column_nodes.get(colname.as_str()) {
+                return Ok(AexprNode::new(*node));
             }
 
-            // Safety: Checked in pre_visit()
-            Ok(AexprNode::new(
-                *self.column_nodes.get(new_colname.as_str()).unwrap(),
-            ))
+            let mut new_node = arena.add(AExpr::Column(new_colname.clone()));
+            if let Some(dtype) = self.casts.get(colname) {
+                new_node = arena.add(AExpr::Cast {
+                    expr: new_node,
+                    dtype: dtype.clone(),
+                    options: CastOptions::Overflowing,
+                });
+            }
+            self.column_nodes.insert(colname.as_str(), new_node);
+
+            Ok(AexprNode::new(new_node))
         }
     }
 }
