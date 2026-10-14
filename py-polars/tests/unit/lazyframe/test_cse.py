@@ -2340,3 +2340,18 @@ def test_cse_scalar_multichunk_projection_29902(method: str) -> None:
     if method == "with_columns":
         expected = pl.concat([df.rechunk(), expected], how="horizontal")
     assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+def test_cse_group_by_scalar_28653() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "j": [1, 2, 3]})
+    lit = pl.lit(-1.5).abs()
+
+    q = lf.group_by("g", maintain_order=True).agg(a=lit, b=lit)
+    expected = pl.DataFrame({"g": [1, 2], "a": [1.5, 1.5], "b": [1.5, 1.5]})
+    out = q.collect(engine="in-memory")
+    assert_frame_equal(out, expected)
+    assert out.schema == q.collect_schema()
+
+    q = lf.group_by("g", maintain_order=True).agg(c=pl.col("j") + lit, d=lit)
+    expected = pl.DataFrame({"g": [1, 2], "c": [[2.5, 3.5], [4.5]], "d": [1.5, 1.5]})
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
