@@ -3463,3 +3463,42 @@ def test_group_by_arg_min_max_by_scalar_column_29504() -> None:
         schema_overrides={"min_by": pl.Float64},
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "dtype"),
+    [
+        (op, dtype)
+        for op in ["mean", "median", "std", "var"]
+        for dtype in [
+            pl.String,
+            pl.Binary,
+            pl.Categorical,
+            pl.List(pl.Int64),
+            pl.Array(pl.Int64, 2),
+            pl.Struct({"x": pl.Int64}),
+        ]
+    ]
+    + [
+        (op, dtype)
+        for op in ["std", "var"]
+        for dtype in [pl.Date, pl.Datetime("us"), pl.Duration("us"), pl.Time]
+    ],
+)
+def test_moment_agg_unsupported_dtype_raises_27309(
+    op: str, dtype: PolarsDataType
+) -> None:
+    lf = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [None, None, None]},
+        schema={"a": pl.Int64, "b": dtype},
+    )
+    expr = getattr(pl.col("b"), op)()
+    for q in [lf.group_by("a").agg(expr), lf.select(expr)]:
+        with pytest.raises(
+            InvalidOperationError, match=f"`{op}` operation not supported"
+        ):
+            q.collect_schema()
+        with pytest.raises(
+            InvalidOperationError, match=f"`{op}` operation not supported"
+        ):
+            q.collect()
