@@ -4,6 +4,8 @@
 //! generates that node. The methods live in the modules below, grouped by kind like the
 //! translator's.
 
+mod conditionals;
+mod functions;
 mod literals;
 mod operators;
 
@@ -38,6 +40,21 @@ impl<'a> Emitter<'a> {
             JitProgram::Binary {
                 op, left, right, ..
             } => self.arithmetic(builder, *op, left, right),
+            JitProgram::Compare { op, left, right } => {
+                self.compare_integers(builder, *op, left, right)
+            },
+            JitProgram::Boolean { op, left, right } => self.logical(builder, *op, left, right),
+
+            // Functions, in `functions`.
+            JitProgram::Not(input) => self.not(builder, input),
+
+            // Ternary, `when(...).then(...).otherwise(...)`, in `conditionals`.
+            JitProgram::Ternary {
+                predicate,
+                truthy,
+                falsy,
+                ..
+            } => self.ternary(builder, predicate, truthy, falsy),
         }
     }
 

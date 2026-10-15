@@ -1,15 +1,18 @@
 //! The `Translator` turns a fold body into typed JIT nodes.
 //!
 //! `expression` is the single place that matches Polars expressions: every arm calls the
-//! method that translates that expression. The methods live in the modules below, grouped by
-//! kind.
+//! method that translates that expression or function. The methods live in the modules below,
+//! grouped by kind, and `typing` holds the rules for typed subexpressions.
 
+mod conditionals;
+mod functions;
 mod literals;
 mod operators;
+mod typing;
 
 use polars_core::prelude::{DataType, Schema};
 use polars_error::{PolarsResult, polars_bail};
-use polars_plan::dsl::{Expr, Operator};
+use polars_plan::dsl::{BooleanFunction, Expr, FunctionExpr, Operator};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::helpers::unsupported;
@@ -40,6 +43,27 @@ impl<'a> Translator<'a> {
                 op: op @ (Operator::Plus | Operator::Minus | Operator::Multiply),
                 right,
             } => self.arithmetic(expression, left, *op, right, location),
+            Expr::BinaryExpr { left, op, right } if op.is_comparison() => {
+                self.comparison(left, *op, right, location)
+            },
+            Expr::BinaryExpr {
+                left,
+                op: op @ (Operator::And | Operator::LogicalAnd | Operator::Or | Operator::LogicalOr),
+                right,
+            } => self.logical(left, *op, right, location),
+
+            // Functions, in `functions`.
+            Expr::Function {
+                input,
+                function: FunctionExpr::Boolean(BooleanFunction::Not),
+            } => self.not(expression, input, location),
+
+            // Ternary, `when(...).then(...).otherwise(...)`, in `conditionals`.
+            Expr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => self.ternary(expression, predicate, truthy, falsy, location),
             _ => Err(unsupported(expression, location)),
         }
     }
