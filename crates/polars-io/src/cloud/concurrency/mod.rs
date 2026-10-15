@@ -26,7 +26,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
-pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
+pub use admission::{
+    AdmissionOrder, InFlightBudget, InFlightPermit, InFlightStats, next_issue_seq, with_issue_seq,
+};
 use crossbeam_queue::ArrayQueue;
 use knee::{KneeConfig, KneeController, KneeTick};
 pub use model::Model;
@@ -69,6 +71,8 @@ pub struct ControllerConfig {
     budget_resize_threshold: f64,
     // Which model sets the byte budget (`POLARS_INFLIGHT_BYTE_BUDGET_MODEL`).
     bdp_model: BdpModel,
+    // Order of parked byte budget acquires (`POLARS_INFLIGHT_ADMISSION_ORDER`).
+    admission_order: AdmissionOrder,
     knee_gain: f64,
     knee_round_ticks: u32,
     // Ceiling for the knee's in-flight byte budget (per controller, i.e. per object store).
@@ -118,6 +122,11 @@ impl Default for ControllerConfig {
                 Err(_) | Ok("knee") => BdpModel::Knee,
                 Ok("ttfb") => BdpModel::Ttfb,
                 Ok(v) => panic!("invalid value for POLARS_INFLIGHT_BYTE_BUDGET_MODEL: {v}"),
+            },
+            admission_order: match std::env::var("POLARS_INFLIGHT_ADMISSION_ORDER").as_deref() {
+                Err(_) | Ok("issue") => AdmissionOrder::Issue,
+                Ok("arrival") => AdmissionOrder::Arrival,
+                Ok(v) => panic!("invalid value for POLARS_INFLIGHT_ADMISSION_ORDER: {v}"),
             },
             knee_gain: 1.0,
             knee_round_ticks: 2,
@@ -295,6 +304,7 @@ impl ConcurrencyController {
             config.floor_byte_budget,
             config.request_budget,
             config.floor_request_budget,
+            config.admission_order,
         ));
 
         let control_task = Self::spawn_control_loop(
