@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+  RUSTFLAGS: -C debuginfo=0 # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
 
 jobs:
@@ -35,6 +35,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
+      - name: Clone polars-iceberg
+        uses: ./.github/actions/clone-polars-iceberg
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -59,6 +62,7 @@ jobs:
           -p polars-core
           -p polars-defs
           -p polars-io
+          -p polars-io-ext-ffi
           -p polars-lazy
           -p polars-ops
           -p polars-parquet
@@ -77,6 +81,7 @@ jobs:
           -p polars-core
           -p polars-defs
           -p polars-io
+          -p polars-io-ext-ffi
           -p polars-lazy
           -p polars-ops
           -p polars-parquet

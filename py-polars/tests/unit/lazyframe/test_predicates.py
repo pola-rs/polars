@@ -2041,6 +2041,34 @@ def test_filter_constraint_decimal_mixed_scale_29901() -> None:
     assert_frame_equal(q.collect(), lf.collect())
 
 
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        (pl.col("x") < Decimal("-0.0001"))
+        & (pl.col("x") <= pl.lit(Decimal("-1"), pl.Decimal(18, 4))),
+        (pl.col("x") < pl.lit(Decimal("0"), pl.Decimal(10, 4)))
+        & (pl.col("x") <= pl.lit(Decimal("-1"), pl.Decimal(18, 4))),
+        (pl.col("x") < pl.lit(Decimal("0"), pl.Decimal(10, 4)))
+        & pl.col("x").is_between(
+            pl.lit(Decimal("-3"), pl.Decimal(18, 4)),
+            pl.lit(Decimal("-1"), pl.Decimal(18, 4)),
+        ),
+    ],
+)
+def test_filter_constraint_literals_of_other_decimal_precision(
+    predicate: pl.Expr,
+) -> None:
+    # Bounds that don't order against each other are kept, not dropped.
+    lf = pl.LazyFrame(
+        {"x": [Decimal("-0.5"), Decimal("-2")]}, schema={"x": pl.Decimal(18, 4)}
+    )
+    assert_frame_equal(
+        lf.filter(predicate).collect(),
+        lf.filter(predicate).collect(optimizations=pl.QueryOptFlags.none()),
+    )
+    assert lf.filter(predicate).collect().height == 1
+
+
 def test_filter_constraint_column_with_its_own_order() -> None:
     # An enum compares by its declared categories, so a bound on it does not order
     # the way the string literals do: under z < a < m, `== "z"` and `>= "m"` cannot
