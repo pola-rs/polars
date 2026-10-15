@@ -202,14 +202,25 @@ CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
-ColumnMapping: TypeAlias = tuple[
-    Literal["iceberg-column-mapping"],
-    # This is "pa.Schema". Not typed as that causes pyright strict type checking
-    # failures for users who don't have pyarrow-stubs installed.
-    Any,
-]
+ColumnMapping: TypeAlias = (
+    tuple[
+        Literal["iceberg-column-mapping"],
+        # This is "pa.Schema". Not typed as that causes pyright strict type checking
+        # failures for users who don't have pyarrow-stubs installed.
+        Any,
+    ]
+    | tuple[
+        Literal["iceberg-column-mapping"],
+        Any,
+        # Names of the table's name mapping, by field ID.
+        dict[int, list[str]] | None,
+    ]
+)
 DefaultFieldValues: TypeAlias = tuple[
-    Literal["iceberg"], tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
+    Literal["iceberg"],
+    # (identity-partition values, initial defaults[, identity-partition presence])
+    tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
+    | tuple[dict[int, Union["Series", str]], dict[int, "Series"], dict[int, "Series"]],
 ]
 DeletionFiles: TypeAlias = (
     tuple[Literal["iceberg"], tuple[dict[int, list[str]], dict[int, str]]]

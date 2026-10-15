@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 
-use polars_arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
+use polars_arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
@@ -188,6 +188,18 @@ async fn static_skip_mask(
             // that it may set the column name.
             statistics.min = projection.apply_transform(statistics.min)?;
             statistics.max = projection.apply_transform(statistics.max)?;
+            // The null counts of struct fields have the file's field layout. The transform may
+            // reorder, rename or insert fields (e.g. by field ID), and casts the leaves, so it
+            // does not apply to them: use unknown null counts.
+            if let ArrowFieldProjection::Mapped { output_dtype, .. } = projection
+                && matches!(projection.arrow_field().dtype(), ArrowDataType::Struct(_))
+            {
+                statistics.null_count = Column::full_null(
+                    PlSmallStr::EMPTY,
+                    statistics.null_count.len(),
+                    &null_count_dtype(output_dtype),
+                );
+            }
 
             let statistics = statistics.with_base_column_name(c);
 
@@ -364,29 +376,21 @@ fn runtime_range_skip_mask(
     mask.filter(|m| m.set_bits() > 0).map(MutableBitmap::freeze)
 }
 
-/// Assembled `min` / `max` / `null_count` statistics arrays for a (possibly nested) struct field.
-struct StructStatisticsArrays {
-    min: Box<dyn Array>,
-    max: Box<dyn Array>,
-    null_count: Box<dyn Array>,
-}
-
-/// Recursively assemble per-field `min` / `max` / `null_count` statistics arrays for a
+/// Recursively assemble per-field `min` / `max` / `null_count` statistics columns for a
 /// (possibly nested) struct field, consuming one parquet leaf column per scalar leaf. Returns
 /// `None` (signalling the caller to fall back to null statistics) for an empty struct, an
 /// unsupported leaf type (e.g. a nested list), or if the leaves run out before the fields do.
-fn build_struct_statistics_arrays(
+fn build_struct_statistics_columns(
     field: &ArrowField,
     metadata: &FileMetadata,
     row_groups: &[RowGroupMetadata],
     leaf_idxs: &[usize],
     cursor: &mut usize,
-) -> PolarsResult<Option<StructStatisticsArrays>> {
+) -> PolarsResult<Option<StatisticsColumns>> {
     let height = row_groups.len();
     match field.dtype() {
         ArrowDataType::Struct(children) => {
-            // An empty struct has no leaf statistics to reason about, and `StructArray::new`
-            // panics on a struct dtype with no children, so bail to null statistics.
+            // An empty struct has no leaf statistics to reason about.
             if children.is_empty() {
                 return Ok(None);
             }
@@ -399,33 +403,31 @@ fn build_struct_statistics_arrays(
             // from the same parquet schema, so their leaf orders match; the caller's `cursor`
             // length check catches a leaf-count mismatch.
             for child in children {
-                let Some(child) =
-                    build_struct_statistics_arrays(child, metadata, row_groups, leaf_idxs, cursor)?
+                let Some(child_statistics) = build_struct_statistics_columns(
+                    child, metadata, row_groups, leaf_idxs, cursor,
+                )?
                 else {
                     return Ok(None);
                 };
-                mins.push(child.min);
-                maxs.push(child.max);
-                ncs.push(child.null_count);
+                mins.push(child_statistics.min.with_name(child.name.clone()));
+                maxs.push(child_statistics.max.with_name(child.name.clone()));
+                ncs.push(child_statistics.null_count.with_name(child.name.clone()));
             }
 
-            let min = StructArray::new(field.dtype().clone(), height, mins, None).to_boxed();
-            let max = StructArray::new(field.dtype().clone(), height, maxs, None).to_boxed();
-
             // The null-count struct mirrors the field's shape with each leaf replaced by the
-            // index type; read that shape straight off the assembled per-field arrays.
-            let nc_fields: Vec<ArrowField> = children
-                .iter()
-                .zip(ncs.iter())
-                .map(|(child, nc)| ArrowField::new(child.name.clone(), nc.dtype().clone(), true))
-                .collect();
-            let null_count =
-                StructArray::new(ArrowDataType::Struct(nc_fields), height, ncs, None).to_boxed();
+            // index type.
+            let to_struct = |fields: &[Column]| {
+                PolarsResult::Ok(
+                    StructChunked::from_columns(PlSmallStr::EMPTY, height, fields)?
+                        .into_series()
+                        .into_column(),
+                )
+            };
 
-            Ok(Some(StructStatisticsArrays {
-                min,
-                max,
-                null_count,
+            Ok(Some(StatisticsColumns {
+                min: to_struct(&mins)?,
+                max: to_struct(&maxs)?,
+                null_count: to_struct(&ncs)?,
             }))
         },
         _ => {
@@ -443,11 +445,10 @@ fn build_struct_statistics_arrays(
                 metadata.column_order(idx),
                 &metadata.footer_buf,
             )? {
-                Some(statistics) => Ok(Some(StructStatisticsArrays {
-                    min: statistics.min_value,
-                    max: statistics.max_value,
-                    null_count: statistics.null_count.to_boxed(),
-                })),
+                // Converted to the logical type here, the statistics arrays are physical.
+                Some(statistics) => Ok(Some(StatisticsColumns::from_arrow_statistics(
+                    statistics, field,
+                )?)),
                 // Unsupported leaf type (e.g. a list nested inside the struct).
                 None => Ok(None),
             }
@@ -462,11 +463,8 @@ fn load_struct_column_statistics(
     leaf_idxs: &[usize],
 ) -> PolarsResult<Option<StatisticsColumns>> {
     let mut cursor = 0;
-    let Some(StructStatisticsArrays {
-        min,
-        max,
-        null_count,
-    }) = build_struct_statistics_arrays(arrow_field, metadata, row_groups, leaf_idxs, &mut cursor)?
+    let Some(statistics) =
+        build_struct_statistics_columns(arrow_field, metadata, row_groups, leaf_idxs, &mut cursor)?
     else {
         return Ok(None);
     };
@@ -477,31 +475,7 @@ fn load_struct_column_statistics(
         return Ok(None);
     }
 
-    let min = unsafe {
-        Series::_try_from_arrow_unchecked_with_md(
-            PlSmallStr::EMPTY,
-            vec![min],
-            arrow_field.dtype(),
-            arrow_field.metadata.as_deref(),
-        )
-    }?
-    .into_column();
-    let max = unsafe {
-        Series::_try_from_arrow_unchecked_with_md(
-            PlSmallStr::EMPTY,
-            vec![max],
-            arrow_field.dtype(),
-            arrow_field.metadata.as_deref(),
-        )
-    }?
-    .into_column();
-    let null_count = Series::from_arrow(PlSmallStr::EMPTY, null_count)?.into_column();
-
-    Ok(Some(StatisticsColumns {
-        min,
-        max,
-        null_count,
-    }))
+    Ok(Some(statistics))
 }
 
 fn load_parquet_column_statistics(
