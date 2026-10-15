@@ -9,15 +9,32 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sources::multi_scan::components::column_selector::ColumnSelector;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ColumnTransform {
     /// Cast the column to a dtype.
     Cast {
         dtype: DataType,
         options: CastOptions,
+        /// Whether this specific cast can never turn a non-null value null, beyond what the
+        /// input's own null_count already counts - set by whoever builds this transform, who
+        /// knows the source dtype this is cast *from* (not stored here) and why this exact
+        /// `options` was chosen. `Strict` (errors instead of nulling) and `Overflowing` (wraps
+        /// instead of nulling) are always `true`; a `NonStrict` cast (overflow -> null) is
+        /// `true` only for the specific cases this module is known to use it for safely (see
+        /// `ColumnSelectorBuilder`'s own call sites) - never inferred from `dtype` alone, since
+        /// a target dtype by itself can't tell a safe `NonStrict` use from an unsafe one.
+        /// Read by `ColumnSelector::null_count_transform`.
+        preserves_null_count: bool,
     },
     /// Set the name of the column.
     Rename { name: PlSmallStr },
+    /// Replace the column with an all-null column of `dtype`, keeping the input's name and
+    /// length. Used by `ColumnSelector::null_count_transform` to mark one field of a struct
+    /// unknown while keeping its name resolvable through `StructFieldsMapping` (whose
+    /// assembled struct takes each field's name from its own `Column`, not from any outside
+    /// schema) - `Constant` can't do this itself, since its name is fixed statically rather
+    /// than resolved positionally like `Position`'s is.
+    ForceUnknown { dtype: DataType },
     /// Construct a struct column by applying column selectors onto the field arrays.
     StructFieldsMapping {
         field_selectors: Box<[ColumnSelector]>,
@@ -40,12 +57,16 @@ impl ColumnTransform {
         use ColumnTransform as TF;
 
         let out = match self {
-            TF::Cast { dtype, options } => {
+            TF::Cast { dtype, options, .. } => {
                 // note: strict casts are only sound for non-nested dtypes here;
                 // recursion currently does not propagate NULLs across nesting levels
                 debug_assert!(!matches!(options, CastOptions::Strict) || !dtype.is_nested());
 
                 input.cast_with_options(dtype, *options)?
+            },
+
+            TF::ForceUnknown { dtype } => {
+                Column::full_null(input.name().clone(), input.len(), dtype)
             },
 
             TF::Rename { name } => input.with_name(name.clone()),
