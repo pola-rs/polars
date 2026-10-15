@@ -636,3 +636,23 @@ def test_get() -> None:
     df = pl.DataFrame({"a": [b"\x01\x02"]})
     with pytest.raises(pl.exceptions.ComputeError, match="out of bounds"):
         df.select(pl.col("a").bin.get(5))
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").bin.get(0),
+        pl.col("a").bin.size(),
+        pl.col("a").bin.contains(b"a"),
+        pl.col("a").bin.encode("hex"),
+        pl.col("a").bin.slice(0, 1),
+    ],
+)
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.String, pl.List(pl.Binary)])
+def test_bin_namespace_non_binary_input_raises_at_schema(
+    expr: pl.Expr, dtype: pl.DataType
+) -> None:
+    q = pl.LazyFrame(schema={"a": dtype}).select(expr)
+    msg = "expected Binary data type for binary operation"
+    with pytest.raises(InvalidOperationError, match=msg):
+        q.collect_schema()

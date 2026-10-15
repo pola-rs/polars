@@ -23,21 +23,34 @@ pub enum IRBinaryFunction {
     Get(bool),
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is Binary.
+    pub fn ensure_is_binary(self) -> PolarsResult<Self> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            matches!(dt, DataType::Binary | DataType::Unknown(UnknownKind::Any)),
+            InvalidOperation:
+            "expected Binary data type for binary operation, got: {dt:?}"
+        );
+        Ok(self)
+    }
+}
+
 impl IRBinaryFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRBinaryFunction::*;
         match self {
-            Contains => mapper.with_dtype(DataType::Boolean),
-            EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
+            Contains => mapper.ensure_is_binary()?.with_dtype(DataType::Boolean),
+            EndsWith | StartsWith => mapper.ensure_is_binary()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "binary_encoding")]
-            HexDecode(_) | Base64Decode(_) => mapper.with_same_dtype(),
+            HexDecode(_) | Base64Decode(_) => mapper.ensure_is_binary()?.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
-            HexEncode | Base64Encode => mapper.with_dtype(DataType::String),
-            Size => mapper.with_dtype(DataType::UInt32),
+            HexEncode | Base64Encode => mapper.ensure_is_binary()?.with_dtype(DataType::String),
+            Size => mapper.ensure_is_binary()?.with_dtype(DataType::UInt32),
             #[cfg(feature = "binary_encoding")]
-            Reinterpret(dtype, _) => mapper.with_dtype(dtype.clone()),
-            Slice | Head | Tail => mapper.with_same_dtype(),
-            Get(_) => mapper.with_dtype(DataType::UInt8),
+            Reinterpret(dtype, _) => mapper.ensure_is_binary()?.with_dtype(dtype.clone()),
+            Slice | Head | Tail => mapper.ensure_is_binary()?.with_same_dtype(),
+            Get(_) => mapper.ensure_is_binary()?.with_dtype(DataType::UInt8),
         }
     }
 
