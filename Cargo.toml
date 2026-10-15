@@ -43,6 +43,11 @@ chrono = { version = "0.4.42", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
 color-backtrace = { version = "0.7.2", default-features = false, features = ["use-btparse-crate"] }
 compact_str = { version = "0.9.0", features = ["serde"] }
+cranelift-codegen = "=0.135.1"
+cranelift-frontend = "=0.135.1"
+cranelift-jit = "=0.135.1"
+cranelift-module = "=0.135.1"
+cranelift-native = "=0.135.1"
 crossbeam-channel = "0.5.15"
 crossbeam-deque = "0.8.5"
 crossbeam-queue = "0.3"
@@ -131,6 +136,7 @@ polars-expr = { version = "0.55.1", path = "crates/polars-expr", default-feature
 polars-ffi = { version = "0.55.1", path = "crates/polars-ffi", default-features = false }
 polars-io = { version = "0.55.1", path = "crates/polars-io", default-features = false }
 polars-json = { version = "0.55.1", path = "crates/polars-json", default-features = false }
+polars-jit = { version = "0.55.1", path = "crates/polars-jit", default-features = false }
 polars-lazy = { version = "0.55.1", path = "crates/polars-lazy", default-features = false }
 polars-mem-engine = { version = "0.55.1", path = "crates/polars-mem-engine", default-features = false }
 polars-observer = { version = "0.55.1", path = "crates/polars-observer", default-features = false }

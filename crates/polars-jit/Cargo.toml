@@ -1,0 +1,26 @@
+[package]
+name = "polars-jit"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "JIT compiled expression kernels for Polars"
+
+[dependencies]
+cranelift-codegen = { workspace = true }
+cranelift-frontend = { workspace = true }
+cranelift-jit = { workspace = true }
+cranelift-module = { workspace = true }
+cranelift-native = { workspace = true }
+polars-core = { workspace = true }
+polars-error = { workspace = true }
+polars-plan = { workspace = true }
+polars-utils = { workspace = true }
+
+[dev-dependencies]
+polars = { workspace = true, features = ["lazy", "streaming"] }
+
+[lints]
+workspace = true
