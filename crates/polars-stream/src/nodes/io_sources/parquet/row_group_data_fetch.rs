@@ -9,6 +9,7 @@ use polars_core::runtime::ASYNC;
 use polars_core::series::IsSorted;
 use polars_core::utils::polars_arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
+use polars_io::cloud::concurrency::{next_issue_seq, with_issue_seq};
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
@@ -191,7 +192,7 @@ impl RowGroupDataFetcher {
         let memory_prefetch_func = self.memory_prefetch_func;
         let read_stats = self.read_stats.clone();
 
-        let handle = ASYNC.spawn(async move {
+        let handle = ASYNC.spawn(with_issue_seq(next_issue_seq(), async move {
             let row_group_metadata = &metadata.row_groups[idx];
             let fetched_bytes = match current_byte_source.as_ref() {
                 DynByteSource::Buffer(mem_slice) => {
@@ -281,7 +282,7 @@ impl RowGroupDataFetcher {
                 row_group_metadata: row_group_metadata.clone(),
                 sorting_map,
             })
-        });
+        }));
 
         let handle = tokio_handle_ext::AbortOnDropHandle(handle);
         Some(Ok(handle))

@@ -27,7 +27,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
-pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
+pub use admission::{
+    AdmissionOrder, InFlightBudget, InFlightPermit, InFlightStats, next_issue_seq, with_issue_seq,
+};
 use crossbeam_queue::ArrayQueue;
 use knee::{BOUND_FRACTION, KneeConfig, KneeController, KneeTick, LimiterTick};
 pub use model::Model;
@@ -70,6 +72,8 @@ pub struct ControllerConfig {
     budget_resize_threshold: f64,
     // Which model sets the byte budget (`POLARS_INFLIGHT_BYTE_BUDGET_MODEL`).
     bdp_model: BdpModel,
+    // Order of parked byte budget acquires (`POLARS_INFLIGHT_ADMISSION_ORDER`).
+    admission_order: AdmissionOrder,
 }
 
 /// Which model sets the in-flight byte budget. `Knee` (default) is the knee-based controller;
@@ -130,6 +134,11 @@ impl Default for ControllerConfig {
             control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
             bdp_model,
+            admission_order: match std::env::var("POLARS_INFLIGHT_ADMISSION_ORDER").as_deref() {
+                Err(_) | Ok("issue") => AdmissionOrder::Issue,
+                Ok("arrival") => AdmissionOrder::Arrival,
+                Ok(v) => panic!("invalid value for POLARS_INFLIGHT_ADMISSION_ORDER: {v}"),
+            },
         }
     }
 }
@@ -305,6 +314,7 @@ impl ConcurrencyController {
             config.floor_byte_budget,
             config.request_budget,
             config.floor_request_budget,
+            config.admission_order,
         ));
 
         let control_task = Self::spawn_control_loop(
@@ -373,13 +383,14 @@ impl ConcurrencyController {
             eprintln!(
                 "[InFlightConcurrency]: spawn control loop: control_interval: {}ms, \
                 bdp_model: {:?}, initial_byte_budget: {}, floor_byte_budget: {}, \
-                request_budget: {}, floor_request_budget: {}",
+                request_budget: {}, floor_request_budget: {}, admission_order: {:?}",
                 config.control_interval.as_millis(),
                 config.bdp_model,
                 config.init_byte_budget,
                 config.floor_byte_budget,
                 config.request_budget,
                 config.floor_request_budget,
+                config.admission_order,
             );
         }
         ASYNC.spawn(async move {
