@@ -47,7 +47,8 @@ pub(crate) enum PolarsTableFunctions {
     #[cfg(feature = "ipc")]
     ReadIpc,
     /// SQL 'read_json' function: reads newline-delimited JSON from a path only; for named options,
-    /// use `read_ndjson`.
+    /// use `read_ndjson`. It stays path-only so that it can later read JSON documents, as Python's
+    /// `read_json` does, without a change of meaning for its options.
     /// ```sql
     /// SELECT * FROM read_json('path/to/file.ndjson')
     /// ```
@@ -287,7 +288,9 @@ impl PolarsTableFunctions {
 
         polars_ensure!(
             args.len() == 1,
-            SQLSyntax: "`read_json` expects a single file path; found {} arguments (for options, use `read_ndjson`)", args.len()
+            SQLSyntax: "`read_json` expects a single file path; found {} arguments{}",
+            args.len(),
+            if args.len() > 1 { " (for options, use `read_ndjson`)" } else { "" }
         );
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyJsonLineReader::new(path.clone()).finish()?;

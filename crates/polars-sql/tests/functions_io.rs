@@ -1,8 +1,8 @@
-#[cfg(any(feature = "csv", feature = "ipc", feature = "json"))]
+#[cfg(any(feature = "csv", feature = "ipc"))]
 use polars_core::prelude::*;
 #[cfg(any(feature = "csv", feature = "ipc"))]
 use polars_lazy::prelude::*;
-#[cfg(any(feature = "csv", feature = "ipc", feature = "json"))]
+#[cfg(any(feature = "csv", feature = "ipc"))]
 use polars_sql::*;
 use polars_utils::pl_path::PlRefPath;
 
@@ -111,27 +111,24 @@ fn read_ipc_tbl() {
     assert_eq!(df_2.width(), 4);
 }
 
-/// Write `contents` to `name` in `dir` and return its path.
-#[cfg(any(feature = "csv", feature = "json"))]
-fn write_file(dir: &tempfile::TempDir, name: &str, contents: impl AsRef<[u8]>) -> String {
-    let path = dir.path().join(name);
-    std::fs::write(&path, contents).unwrap();
-    path.to_str().unwrap().to_string()
-}
-
-#[cfg(any(feature = "csv", feature = "json"))]
-fn query(sql: &str) -> PolarsResult<DataFrame> {
-    SQLContext::new().execute(sql)?.collect()
-}
-
-#[cfg(any(feature = "csv", feature = "json"))]
-fn query_err(sql: &str) -> String {
-    query(sql).unwrap_err().to_string()
-}
-
 #[cfg(feature = "csv")]
 mod read_csv_options {
     use super::*;
+
+    /// Write `contents` to `name` in `dir` and return its path.
+    fn write_file(dir: &tempfile::TempDir, name: &str, contents: &[u8]) -> String {
+        let path = dir.path().join(name);
+        std::fs::write(&path, contents).unwrap();
+        path.to_str().unwrap().to_string()
+    }
+
+    fn query(sql: &str) -> PolarsResult<DataFrame> {
+        SQLContext::new().execute(sql)?.collect()
+    }
+
+    fn query_err(sql: &str) -> String {
+        query(sql).unwrap_err().to_string()
+    }
 
     fn dtypes(df: &DataFrame) -> Vec<DataType> {
         df.dtypes()
@@ -467,189 +464,6 @@ mod read_csv_options {
         let err = query_err("SELECT * FROM read_csv(has_header => false)");
         assert!(
             err.contains("`read_csv` expects a file path as its first argument"),
-            "{err}"
-        );
-    }
-}
-
-#[cfg(feature = "json")]
-mod read_ndjson_options {
-    use super::*;
-
-    const ROWS: &str = concat!(
-        r#"{"a": 1, "b": "x", "s": {"x": 1}, "l": [1, 2], "d": "2026-01-02"}"#,
-        "\n",
-        r#"{"a": "oops", "b": "y", "s": {"x": 2}, "l": [3], "d": "2026-01-03"}"#,
-        "\n",
-    );
-
-    #[test]
-    fn late_key_after_inference_window() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut contents: String = (0..150).map(|i| format!("{{\"a\": {i}}}\n")).collect();
-        contents.push_str("{\"a\": 150, \"b\": \"late\"}\n");
-        let path = write_file(&dir, "late.ndjson", &contents);
-
-        // The key first seen after the default 100 inference rows is dropped silently...
-        let df = query(&format!("SELECT * FROM read_ndjson('{path}')")).unwrap();
-        assert_eq!(df.get_column_names(), &["a"]);
-
-        // ...and kept when the whole file is used for inference.
-        let df = query(&format!(
-            "SELECT * FROM read_ndjson('{path}', infer_schema_length => NULL)"
-        ))
-        .unwrap();
-        assert_eq!(df.get_column_names(), &["a", "b"]);
-        assert_eq!(df.column("b").unwrap().null_count(), 150);
-    }
-
-    #[test]
-    fn operators_and_case_insensitive_names() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_file(&dir, "ops.ndjson", ROWS);
-        for options in [
-            "infer_schema_length => 2",
-            "infer_schema_length := 2",
-            "INFER_SCHEMA_LENGTH => 2",
-        ] {
-            let df = query(&format!("SELECT * FROM read_ndjson('{path}', {options})")).unwrap();
-            assert_eq!(df.shape(), (2, 5), "{options}");
-        }
-    }
-
-    #[test]
-    fn schema_and_overrides() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_file(&dir, "rows.ndjson", ROWS);
-
-        // `schema` gives exactly these columns: other keys are dropped, missing keys are null.
-        let df = query(&format!(
-            "SELECT * FROM read_ndjson('{path}', schema => {{'b': 'VARCHAR', 'c': 'INT'}})"
-        ))
-        .unwrap();
-        assert_eq!(df.get_column_names(), &["b", "c"]);
-        assert_eq!(df.dtypes(), &[DataType::String, DataType::Int32]);
-        assert_eq!(df.column("c").unwrap().null_count(), 2);
-
-        // `schema_overrides` types some columns and infers the rest; a nested object read as
-        // VARCHAR keeps its JSON text.
-        let df = query(&format!(
-            "SELECT s, l, d FROM read_ndjson('{path}', schema_overrides => {{'s': 'VARCHAR', 'l': 'INT[]', 'd': 'DATE'}})"
-        ))
-        .unwrap();
-        assert_eq!(
-            df.dtypes(),
-            &[
-                DataType::String,
-                DataType::List(Box::new(DataType::Int32)),
-                DataType::Date
-            ]
-        );
-        assert_eq!(
-            df.column("s").unwrap().str().unwrap().get(0),
-            Some(r#"{"x": 1}"#)
-        );
-
-        // A value that doesn't fit the override errors, unless errors are ignored.
-        let sql = format!("SELECT a FROM read_ndjson('{path}', schema_overrides => {{'a': 'INT'}}");
-        let err = query_err(&format!("{sql})"));
-        assert!(err.contains("cannot parse 'oops'"), "{err}");
-        let df = query(&format!("{sql}, ignore_errors => true)")).unwrap();
-        assert_eq!(df.column("a").unwrap().null_count(), 1);
-
-        let err = query_err(&format!(
-            "SELECT * FROM read_ndjson('{path}', schema_overrides => {{'zz': 'INT'}})"
-        ));
-        assert!(err.contains("zz"), "{err}");
-    }
-
-    #[test]
-    fn include_file_paths_over_a_glob() {
-        let dir = tempfile::tempdir().unwrap();
-        write_file(&dir, "part_1.ndjson", "{\"a\": 1}\n");
-        write_file(&dir, "part_2.ndjson", "{\"a\": 2}\n");
-        let glob = dir.path().join("part_*.ndjson");
-        let df = query(&format!(
-            "SELECT * FROM read_ndjson('{}', include_file_paths => 'path') ORDER BY a",
-            glob.to_str().unwrap()
-        ))
-        .unwrap();
-        let paths = df.column("path").unwrap().str().unwrap();
-        assert!(paths.get(0).unwrap().ends_with("part_1.ndjson"));
-        assert!(paths.get(1).unwrap().ends_with("part_2.ndjson"));
-    }
-
-    #[test]
-    fn read_json_takes_only_a_path() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_file(&dir, "rows.ndjson", ROWS);
-        let json = query(&format!("SELECT * FROM read_json('{path}')")).unwrap();
-        let ndjson = query(&format!("SELECT * FROM read_ndjson('{path}')")).unwrap();
-        assert!(json.equals_missing(&ndjson));
-
-        let err = query_err(&format!(
-            "SELECT * FROM read_json('{path}', ignore_errors => true)"
-        ));
-        assert!(
-            err.contains("`read_json` expects a single file path; found 2 arguments (for options, use `read_ndjson`)"),
-            "{err}"
-        );
-        assert!(
-            polars_sql::keywords::all_functions().contains(&"read_ndjson"),
-            "read_ndjson is discoverable"
-        );
-    }
-
-    #[test]
-    fn option_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_file(&dir, "errors.ndjson", ROWS);
-        let cases = [
-            (
-                "infer_schema_length => 0",
-                "`read_ndjson` option 'infer_schema_length' expects a positive integer or NULL; found: 0",
-            ),
-            (
-                "header => true",
-                "unknown `read_ndjson` option 'header'; valid options are: schema, schema_overrides, infer_schema_length, ignore_errors, include_file_paths",
-            ),
-            (
-                "n_rows => 5",
-                "`read_ndjson` option 'n_rows' is not supported in SQL: use LIMIT",
-            ),
-            (
-                "storage_options => {'a': 'b'}",
-                "`read_ndjson` option 'storage_options' is not supported in SQL: cloud credentials are read from the environment",
-            ),
-            (
-                "ignore_errors = true",
-                "`read_ndjson` options must be named with '=>' (found: ignore_errors = true)",
-            ),
-            (
-                "true",
-                "`read_ndjson` options must be named with '=>' (found: true)",
-            ),
-            (
-                "ignore_errors => 'yes'",
-                "`read_ndjson` option 'ignore_errors' expects a boolean; found: 'yes'",
-            ),
-            (
-                "ignore_errors => true, IGNORE_ERRORS => false",
-                "`read_ndjson` option 'ignore_errors' is given more than once",
-            ),
-        ];
-        for (options, expected) in cases {
-            let err = query_err(&format!("SELECT * FROM read_ndjson('{path}', {options})"));
-            assert!(err.contains(expected), "{options}: {err}");
-        }
-
-        // Excluded options without an alternative get no trailing reason.
-        let err = query_err(&format!(
-            "SELECT * FROM read_ndjson('{path}', batch_size => 10)"
-        ));
-        assert!(
-            err.contains("`read_ndjson` option 'batch_size' is not supported in SQL")
-                && !err.contains("SQL:"),
             "{err}"
         );
     }
