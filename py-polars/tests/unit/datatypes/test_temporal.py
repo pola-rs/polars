@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
@@ -2404,7 +2404,7 @@ def test_series_is_temporal(dtype: pl.DataType) -> None:
     "time_zone",
     [
         None,
-        timezone.utc,
+        UTC,
         "America/Caracas",
         "America/New_York",
         "Asia/Kathmandu",

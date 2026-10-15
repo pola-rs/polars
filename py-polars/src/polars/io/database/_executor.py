@@ -24,24 +24,17 @@ from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterator
     from types import TracebackType
+    from typing import Self
 
     import pyarrow as pa
-
-    from polars.io.database._arrow_registry import ArrowDriverProperties
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
     from sqlalchemy.sql.elements import TextClause
     from sqlalchemy.sql.expression import Selectable
 
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
+    from polars.io.database._arrow_registry import ArrowDriverProperties
 
 _INVALID_QUERY_TYPES: Final[set[str]] = {
     "ALTER",

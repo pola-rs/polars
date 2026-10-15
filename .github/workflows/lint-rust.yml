@@ -42,6 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Clone polars-iceberg
+        uses: ./.github/actions/clone-polars-iceberg
+
       - name: Set up Rust
         run: rustup component add clippy
 
@@ -80,6 +83,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Clone polars-iceberg
+        uses: ./.github/actions/clone-polars-iceberg
 
       - name: Set up Rust
         run: rustup component add rustfmt

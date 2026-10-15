@@ -88,13 +88,14 @@ def _sink_parquet_plan(
         msg = "`arrow_schema` parameter is considered unstable"
         issue_unstable_warning(msg)
 
+    default_statistics = {
+        "min": True,
+        "max": True,
+        "distinct_count": False,
+        "null_count": True,
+    }
     if isinstance(statistics, bool) and statistics:
-        statistics = {
-            "min": True,
-            "max": True,
-            "distinct_count": False,
-            "null_count": True,
-        }
+        statistics = default_statistics
     elif isinstance(statistics, bool) and not statistics:
         statistics = {}
     elif statistics == "full":
@@ -104,6 +105,9 @@ def _sink_parquet_plan(
             "distinct_count": True,
             "null_count": True,
         }
+    elif isinstance(statistics, dict):
+        # Keys missing from the dict keep their default.
+        statistics = {**default_statistics, **statistics}
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, path, storage_options, "sink_parquet"

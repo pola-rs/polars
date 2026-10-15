@@ -20,7 +20,7 @@ use crate::reduce::has_nulls::HasNullsReduce;
 use crate::reduce::implode::new_unordered_implode_reduction;
 use crate::reduce::is_empty::IsEmptyReduce;
 use crate::reduce::mean::new_mean_reduction;
-use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
+use crate::reduce::min_max::{new_max_reduction, new_min_reduction, null_if_has_nulls};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 #[cfg(feature = "moment")]
 use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
@@ -49,12 +49,20 @@ pub fn into_reduction(
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {
                 propagate_nans,
+                propagate_nulls,
                 input,
-            } => (new_min_reduction(get_dt(*input)?, *propagate_nans)?, *input),
+            } => {
+                let min = new_min_reduction(get_dt(*input)?, *propagate_nans)?;
+                (null_if_has_nulls(min, *propagate_nulls), *input)
+            },
             IRAggExpr::Max {
                 propagate_nans,
+                propagate_nulls,
                 input,
-            } => (new_max_reduction(get_dt(*input)?, *propagate_nans)?, *input),
+            } => {
+                let max = new_max_reduction(get_dt(*input)?, *propagate_nans)?;
+                (null_if_has_nulls(max, *propagate_nulls), *input)
+            },
             IRAggExpr::Var(input, ddof) => (
                 new_var_std_reduction(get_dt(*input)?, false, *ddof)?,
                 *input,
@@ -189,9 +197,10 @@ pub fn into_reduction(
 
         AExpr::Function {
             input: inner_exprs,
-            function: IRFunctionExpr::MinBy,
+            function: IRFunctionExpr::MinBy { order },
             options: _,
         } => {
+            let order = *order;
             assert!(inner_exprs.len() == 2);
             let input = inner_exprs[0].node();
             let mut by = inner_exprs[1].node();
@@ -211,15 +220,20 @@ pub fn into_reduction(
                 .node();
                 by_dtype = DataType::BinaryOffset;
             }
-            let gr = new_min_by_reduction(input_dtype, by_dtype)?;
+            if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {
+                // All keys are null, so they tie.
+                return Ok((new_first_reduction(input_dtype), vec![input]));
+            }
+            let gr = new_min_by_reduction(input_dtype, by_dtype, order)?;
             return Ok((gr, vec![input, by]));
         },
 
         AExpr::Function {
             input: inner_exprs,
-            function: IRFunctionExpr::MaxBy,
+            function: IRFunctionExpr::MaxBy { order },
             options: _,
         } => {
+            let order = *order;
             assert!(inner_exprs.len() == 2);
             let input = inner_exprs[0].node();
             let mut by = inner_exprs[1].node();
@@ -239,7 +253,11 @@ pub fn into_reduction(
                 .node();
                 by_dtype = DataType::BinaryOffset;
             }
-            let gr = new_max_by_reduction(input_dtype, by_dtype)?;
+            if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {
+                // All keys are null, so they tie.
+                return Ok((new_first_reduction(input_dtype), vec![input]));
+            }
+            let gr = new_max_by_reduction(input_dtype, by_dtype, order)?;
             return Ok((gr, vec![input, by]));
         },
 

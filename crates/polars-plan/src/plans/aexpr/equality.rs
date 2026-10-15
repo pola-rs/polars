@@ -126,8 +126,8 @@ impl IRAggExpr {
         // match to be exhaustive.
         #[rustfmt::skip]
         let is_equal = match self {
-            A::Min { input: _, propagate_nans: l_propagate_nans } => matches!(other, A::Min { input: _, propagate_nans: r_propagate_nans } if l_propagate_nans == r_propagate_nans),
-            A::Max { input: _, propagate_nans: l_propagate_nans } => matches!(other, A::Max { input: _, propagate_nans: r_propagate_nans } if l_propagate_nans == r_propagate_nans),
+            A::Min { input: _, propagate_nans: l_propagate_nans, propagate_nulls: l_propagate_nulls } => matches!(other, A::Min { input: _, propagate_nans: r_propagate_nans, propagate_nulls: r_propagate_nulls } if l_propagate_nans == r_propagate_nans && l_propagate_nulls == r_propagate_nulls),
+            A::Max { input: _, propagate_nans: l_propagate_nans, propagate_nulls: l_propagate_nulls } => matches!(other, A::Max { input: _, propagate_nans: r_propagate_nans, propagate_nulls: r_propagate_nulls } if l_propagate_nans == r_propagate_nans && l_propagate_nulls == r_propagate_nulls),
             A::Count { input: _, include_nulls: l_include_nulls } => matches!(other, A::Count { input: _, include_nulls: r_include_nulls } if l_include_nulls == r_include_nulls),
             A::Item { input: _, allow_empty: l_allow_empty } => matches!(other, A::Item { input: _, allow_empty: r_allow_empty } if l_allow_empty == r_allow_empty),
             A::Sum { input: _, null_on_empty: l_null_on_empty } => matches!(other, A::Sum { input: _, null_on_empty: r_null_on_empty } if l_null_on_empty == r_null_on_empty),

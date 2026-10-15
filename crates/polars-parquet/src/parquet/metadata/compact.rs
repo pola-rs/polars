@@ -17,7 +17,9 @@
 //!    on [`super::FileMetadata::footer_buf`].
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{
+    ColumnCryptoMetaData, EncryptionAlgorithm, KeyValue, SchemaElement, SortingColumn,
+};
 
 use super::column_order::ColumnOrderTag;
 use crate::parquet::compression::Compression;
@@ -85,21 +87,28 @@ pub(crate) struct CompactColumnMetaData {
 
 /// Compact replacement for `polars_parquet_format::ColumnChunk`.
 ///
-/// Drops `file_path`, `file_offset`, encryption fields. None have read-path
-/// consumers in this build (the write path constructs format-crate types).
+/// Drops `file_path` and `file_offset`. Neither has read-path consumers in
+/// this build (the write path constructs format-crate types).
 ///
-/// `meta_data` is non-`Option` because polars has no encryption support: a
-/// chunk without unencrypted metadata is unrepresentable here. The decoder
-/// rejects such chunks at footer-decode time with `"ColumnChunk.meta_data
-/// missing"`, so by the time a `CompactColumnChunk` exists the field is
-/// guaranteed present.
+/// `meta_data` is only `None` for encrypted columns whose metadata is stored
+/// encrypted in `crypto.encrypted_column_metadata`.
 #[derive(Debug, Clone)]
 pub(crate) struct CompactColumnChunk {
-    pub meta_data: CompactColumnMetaData,
+    pub meta_data: Option<CompactColumnMetaData>,
     pub offset_index_offset: Option<i64>,
     pub offset_index_length: Option<i32>,
     pub column_index_offset: Option<i64>,
     pub column_index_length: Option<i32>,
+    /// Set for encrypted columns. Boxed as it's rarely present.
+    pub crypto: Option<Box<CompactColumnCrypto>>,
+}
+
+/// Encryption details of an encrypted column chunk.
+#[derive(Debug, Clone)]
+pub(crate) struct CompactColumnCrypto {
+    pub crypto_metadata: ColumnCryptoMetaData,
+    /// The encrypted column metadata as a range into the footer.
+    pub encrypted_column_metadata: Option<ByteRange>,
 }
 
 /// Compact replacement for `polars_parquet_format::RowGroup`.
@@ -130,6 +139,10 @@ pub(crate) struct CompactFileMetaData {
     pub key_value_metadata: Option<Vec<KeyValue>>,
     pub created_by: Option<String>,
     pub column_orders: Option<Vec<ColumnOrderTag>>,
+    /// Only set for encrypted files with a plaintext footer.
+    pub encryption_algorithm: Option<EncryptionAlgorithm>,
+    /// Only set for encrypted files with a plaintext footer.
+    pub footer_signing_key_metadata: Option<Vec<u8>>,
     /// The footer buffer the [`CompactStatistics`] `ByteRange`s point into.
     /// `from_compact` stores it on [`super::FileMetadata::footer_buf`] so
     /// stats payloads remain resolvable for the lifetime of the metadata.

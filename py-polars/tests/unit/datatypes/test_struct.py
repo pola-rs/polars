@@ -475,6 +475,96 @@ def test_struct_order() -> None:
     ) == [{"a": 1, "b": 10}, {"a": 2, "b": None}]
 
 
+def test_struct_values_matched_to_fields() -> None:
+    # struct values are matched to the target fields positionally if they have
+    # the same field names, else by name (with any missing fields set to null)
+    values = [
+        {"a": 1, "b": "x"},  # the target fields
+        {"b": "y", "a": 2},  # reordered
+        {"b": "w", "a": 9},  # also reordered
+        {"a": 3},  # missing field
+        {"b": "v", "a": 8},  # reordered
+        {"a": 4, "c": True, "b": "z"},  # extra field
+        {"a": None, "b": "u"},  # null value
+        {},  # no fields
+        None,
+    ]
+    expected = [
+        {"a": 1, "b": "x"},
+        {"a": 2, "b": "y"},
+        {"a": 9, "b": "w"},
+        {"a": 3, "b": None},
+        {"a": 8, "b": "v"},
+        {"a": 4, "b": "z"},
+        {"a": None, "b": "u"},
+        {"a": None, "b": None},
+        None,
+    ]
+    dtype = pl.Struct({"a": pl.Int64, "b": pl.String})
+
+    # target fields inferred from the first value
+    s = pl.Series(values)
+    assert s.dtype == dtype
+    assert s.to_list() == expected
+
+    # target fields given explicitly
+    df = pl.from_dicts([{"s": v} for v in values], schema={"s": dtype})
+    assert df["s"].to_list() == expected
+
+    # nested struct values
+    s = pl.Series([None if v is None else {"s": v} for v in values])
+    assert s.to_list() == [None if v is None else {"s": v} for v in expected]
+
+    # target fields from the supertype, which has the extra field
+    s = pl.Series(values, strict=False)
+    assert_frame_equal(
+        s.struct.unnest(),
+        pl.DataFrame(
+            {
+                "a": [1, 2, 9, 3, 8, 4, None, None, None],
+                "b": ["x", "y", "w", None, "v", "z", "u", None, None],
+                "c": [None, None, None, None, None, True, None, None, None],
+            }
+        ),
+        check_column_order=False,
+    )
+
+
+def test_struct_invalid_values_are_null() -> None:
+    # if not strict, values that are not structs (or lists of their fields)
+    # should actually be null, rather than structs of nulls
+    s = pl.Series([{"a": 1}, 5, None], strict=False)
+    assert s.to_list() == [{"a": 1}, None, None]
+
+    values = [{"a": 1}, 5, "x", [7], [7, 8], None]
+    df = pl.from_dicts(
+        [{"s": v} for v in values],
+        schema={"s": pl.Struct({"a": pl.Int64})},
+        strict=False,
+    )
+    assert df["s"].to_list() == [{"a": 1}, None, None, {"a": 7}, None, None]
+
+    # also for structs without fields
+    df = pl.from_dicts(
+        [{"s": v} for v in [{}, 5, None]],
+        schema={"s": pl.Struct({})},
+        strict=False,
+    )
+    assert df["s"].to_list() == [{}, None, None]
+
+    with pytest.raises(TypeError, match="unexpected value"):
+        pl.Series([{"a": 1}, 5])
+
+
+def test_empty_struct_strict_validation() -> None:
+    s = pl.Series([{}, None], strict=True)
+    assert s.dtype == pl.Struct({})
+    assert s.to_list() == [{}, None]
+
+    with pytest.raises(TypeError, match="unexpected value"):
+        pl.Series([{}, 5], strict=True)
+
+
 def test_struct_arr_eval() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
@@ -2608,3 +2698,24 @@ def test_struct_eval_empty_non_elementwise_input(input_expr: pl.Expr) -> None:
     # The field-less struct keeps the height and the outer validity of the input.
     assert out.height == lf.select(input_expr).collect().height
     assert out["s"].null_count() == 1
+
+
+def test_struct_when_then_after_parquet_roundtrip_29815() -> None:
+    buf = io.BytesIO()
+    pl.DataFrame(
+        {
+            "order": [
+                {"status": "shipped", "tracking": ["TRK123"]},
+                {"status": "pending", "tracking": []},
+            ]
+        }
+    ).write_parquet(buf)
+    buf.seek(0)
+    df = pl.read_parquet(buf)
+
+    out = df.select(
+        pl.when(pl.col("order").struct.field("status") == "shipped")
+        .then(pl.col("order").struct.field("tracking").list.get(0))
+        .otherwise(pl.lit("not shipped"))
+    )
+    assert out.to_series().to_list() == ["TRK123", "not shipped"]

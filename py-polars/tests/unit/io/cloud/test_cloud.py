@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import gzip
 import io
+import itertools
 import os
+import random
 import re
 import subprocess
 import sys
@@ -17,9 +20,11 @@ import polars as pl
 from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import _is_aws_cloud
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
+    from pathlib import Path
 
     from tests.conftest import PlMonkeyPatch
     from tests.unit.io.cloud.conftest import CountingS3
@@ -269,16 +274,23 @@ def _parquet_bytes(df: pl.DataFrame) -> bytes:
 
 @contextlib.contextmanager
 def _http_file_server(
-    files: dict[str, bytes], delay: float = 0.0
+    files: dict[str, bytes],
+    delay: float = 0.0,
+    *,
+    ranges: bool = True,
+    truncate_first: int = 0,
 ) -> Iterator[tuple[str, list[tuple[int, str]]]]:
     """Serve `files` by raw request target, with ranges, after an optional delay.
 
-    Other targets get a 404. Logs (client port, target) per request.
+    Other targets get a 404. Logs (client port, target) per request. With
+    `ranges=False`, the `Range` header is ignored. The first `truncate_first` GET
+    bodies are cut off after one byte and the connection is closed.
     """
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     requests: list[tuple[int, str]] = []
+    n_truncated = 0
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -294,7 +306,7 @@ def _http_file_server(
                 return
 
             start, end = 0, len(data)
-            if (range_ := self.headers.get("Range")) is not None:
+            if ranges and (range_ := self.headers.get("Range")) is not None:
                 first, last = range_.removeprefix("bytes=").split("-")
                 if first:
                     start = int(first)
@@ -309,7 +321,12 @@ def _http_file_server(
                 self.send_response(200)
             self.send_header("Content-Length", str(end - start))
             self.end_headers()
-            if body:
+            nonlocal n_truncated
+            if body and n_truncated < truncate_first:
+                n_truncated += 1
+                self.wfile.write(data[start : start + 1])
+                self.close_connection = True
+            elif body:
                 self.wfile.write(data[start:end])
 
         def do_GET(self) -> None:
@@ -332,6 +349,40 @@ def _http_file_server(
         finally:
             server.shutdown()
             thread.join()
+
+
+@pytest.mark.slow
+def test_scan_ndjson_http_empty_file_range_ignored() -> None:
+    # The server answers the ranged GET of an empty file with a 200.
+    with _http_file_server({"/empty.ndjson": b""}, ranges=False) as (endpoint, _):
+        out = pl.scan_ndjson(
+            f"{endpoint}/empty.ndjson", schema={"a": pl.Int64}
+        ).collect()
+
+    assert_frame_equal(out, pl.DataFrame(schema={"a": pl.Int64}))
+
+
+@pytest.mark.slow
+def test_scan_ndjson_http_prefix_metrics_retried_body(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The body of the initial range request fails once and succeeds on the retry.
+    # The request is accounted once.
+    data = b'{"a":1}\n' * 1000
+    plmonkeypatch.setenv("POLARS_LOG_METRICS", "1")
+
+    with _http_file_server({"/a.ndjson": data}, truncate_first=1) as (
+        endpoint,
+        requests,
+    ):
+        capfd.readouterr()
+        out = pl.scan_ndjson(f"{endpoint}/a.ndjson", schema={"a": pl.Int64}).collect()
+        capture = capfd.readouterr().err
+
+    assert_frame_equal(out, pl.DataFrame({"a": [1] * 1000}))
+    assert [target for _, target in requests] == ["/a.ndjson", "/a.ndjson"]
+    [line] = (x for x in capture.splitlines() if x.startswith("multi-scan"))
+    assert f"total_bytes_requested={len(data)}," in line
 
 
 @pytest.mark.slow
@@ -358,7 +409,10 @@ def test_scan_http_same_host() -> None:
 
 
 @pytest.mark.slow
-def test_scan_http_same_host_error() -> None:
+def test_scan_http_same_host_error(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"a": [1]})
     files = {"/a.parquet?token=A": _parquet_bytes(df)}
 
@@ -367,14 +421,20 @@ def test_scan_http_same_host_error() -> None:
         assert_frame_equal(q.collect(), df)
         n = len(requests)
 
+        capfd.readouterr()
         q = pl.scan_parquet(f"{endpoint}/missing.parquet")
         with pytest.raises(FileNotFoundError, match=r"missing\.parquet") as exc:
             q.collect()
+        capture = capfd.readouterr().err
 
+    # Both URLs share the host's store: the error scan reuses a pooled connection.
+    assert {port for port, _ in requests[n:]} & {port for port, _ in requests[:n]}
     # The error names the failing URL, not the one the host's store was built for.
     assert "a.parquet" not in str(exc.value)
-    # An error does not drop the host's connection pool.
-    assert {port for port, _ in requests[n:]} <= {port for port, _ in requests[:n]}
+    # The error is retried on that store, not after rebuilding it and dropping its pool.
+    # Ports can't show this: the retry may open a new connection before the pooled one
+    # is returned.
+    assert re.search(r"got error: .*missing\.parquet.*, will retry$", capture, re.M)
 
 
 @pytest.mark.slow
@@ -393,10 +453,11 @@ def test_http_store_cache_size(cache_size: int, plmonkeypatch: PlMonkeyPatch) ->
         for endpoint in [b, a]:
             assert_frame_equal(pl.scan_parquet(f"{endpoint}/a.parquet").collect(), df)
 
-    # Host `a` keeps its store and connections only if the cache also fits `b`.
+    # Host `a` keeps its store and connections only if the cache also fits `b`. A kept
+    # store may also open new connections, so check for any reuse.
     first = {port for port, _ in a_requests[:n]}
     last = {port for port, _ in a_requests[n:]}
-    assert (last <= first) == (cache_size >= 2)
+    assert bool(last & first) == (cache_size >= 2)
 
 
 @pytest.mark.slow
@@ -512,3 +573,276 @@ def test_scan_ndjson_mixed_buckets_29758(s3: CountingS3) -> None:
         paths, infer_schema_length=None, storage_options=s3.storage_options
     )
     assert_frame_equal(lf.collect(), expected)
+
+
+def _assert_fetched_once(
+    requests: list[tuple[str, str, str]], key: str, size: int
+) -> list[tuple[int, int]]:
+    """Assert the GET ranges of `key` cover `0..size` once, in contiguous pieces."""
+    ranges = []
+    for method, k, range_ in requests:
+        if k == f"bucket/{key}":
+            assert method == "GET", (key, method, range_)
+            first, last = range_.removeprefix("bytes=").split("-")
+            ranges.append((int(first), min(int(last) + 1, size)))
+    assert ranges, f"no GET ranges recorded for {key}"
+    ranges.sort()
+    assert ranges[0][0] == 0, (key, ranges)
+    for (_, end), (start, _) in itertools.pairwise(ranges):
+        assert start == end, (key, ranges)
+    assert ranges[-1][1] == size, (key, ranges)
+    return ranges
+
+
+def _line_rows(format: str, values: Iterable[int]) -> bytes:
+    """Rows of a single Int64 column `a`, as NDJSON or CSV with a header."""
+    if format == "ndjson":
+        return "".join(f'{{"a":{v}}}\n' for v in values).encode()
+    return ("a\n" + "".join(f"{v}\n" for v in values)).encode()
+
+
+def _scan_lines_format(
+    format: str, paths: list[str], s3: CountingS3, **kwargs: Any
+) -> pl.LazyFrame:
+    scan = pl.scan_ndjson if format == "ndjson" else pl.scan_csv
+    return scan(
+        paths, schema={"a": pl.Int64}, storage_options=s3.storage_options, **kwargs
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("format", ["ndjson", "csv"])
+def test_scan_line_format_small_files_single_request(
+    s3: CountingS3, format: str
+) -> None:
+    small = [f"small_{i}_{uuid4()}.{format}" for i in range(5)]
+    for i, key in enumerate(small):
+        s3.client.put_object(Bucket="bucket", Key=key, Body=_line_rows(format, [i]))
+
+    empty = f"empty_{uuid4()}.{format}"
+    s3.client.put_object(Bucket="bucket", Key=empty, Body=b"")
+
+    compressed = f"compressed_{uuid4()}.{format}.gz"
+    s3.client.put_object(
+        Bucket="bucket", Key=compressed, Body=gzip.compress(_line_rows(format, [5]))
+    )
+
+    # Larger than the initial fetch, reading continues after the fetched prefix.
+    large = f"large_{uuid4()}.{format}"
+    n_large = 150_000
+    s3.client.put_object(
+        Bucket="bucket", Key=large, Body=_line_rows(format, range(n_large))
+    )
+
+    paths = [f"s3://bucket/{k}" for k in [*small, empty, compressed, large]]
+    # An empty CSV raises by default.
+    kwargs = {"raise_if_empty": False} if format == "csv" else {}
+    lf = _scan_lines_format(format, paths, s3, **kwargs)
+
+    mark = len(s3.log)
+    out = lf.collect()
+
+    expected = pl.DataFrame({"a": [*range(5), 5, *range(n_large)]})
+    assert_frame_equal(out, expected)
+
+    # Small files are read with a single range request, without a HEAD.
+    prefix_len = 256 * 1024
+    requests = s3.since(mark)
+    for key in small:
+        assert [(m, r) for m, k, r in requests if k == f"bucket/{key}"] == [
+            ("GET", f"bytes=0-{prefix_len - 1}")
+        ]
+
+    assert [(m, r) for m, k, r in requests if k == f"bucket/{compressed}"] == [
+        ("GET", f"bytes=0-{prefix_len - 1}")
+    ]
+
+    # An empty object rejects any range, the size then comes from a HEAD. The
+    # rejected request is retried once, as any failed request.
+    assert [(m, r) for m, k, r in requests if k == f"bucket/{empty}"] == [
+        ("GET", f"bytes=0-{prefix_len - 1}"),
+        ("GET", f"bytes=0-{prefix_len - 1}"),
+        ("HEAD", ""),
+    ]
+
+    # The large file continues after its prefix, every byte is fetched once.
+    large_size = s3.client.head_object(Bucket="bucket", Key=large)["ContentLength"]
+    ranges = _assert_fetched_once(requests, large, large_size)
+    assert ranges[0] == (0, prefix_len)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("format", ["ndjson", "csv"])
+def test_scan_line_format_prefix_continuation(
+    s3: CountingS3, plmonkeypatch: PlMonkeyPatch, format: str
+) -> None:
+    # Many small chunks with few prefetch permits, after the prefix.
+    plmonkeypatch.setenv(f"POLARS_{format.upper()}_CHUNK_SIZE", str(64 * 1024))
+    plmonkeypatch.setenv(f"POLARS_{format.upper()}_CHUNK_PREFETCH_LIMIT", "2")
+
+    rng = random.Random(0)
+    values = [rng.getrandbits(62) for _ in range(120_000)]
+    body = _line_rows(format, values)
+    # Random values compress poorly, so the gzip file is larger than the prefix.
+    compressed_body = gzip.compress(body)
+    assert len(compressed_body) > 256 * 1024
+
+    plain = f"plain_{uuid4()}.{format}"
+    compressed = f"compressed_{uuid4()}.{format}.gz"
+    small = f"small_{uuid4()}.{format}"
+    s3.client.put_object(Bucket="bucket", Key=plain, Body=body)
+    s3.client.put_object(Bucket="bucket", Key=compressed, Body=compressed_body)
+    s3.client.put_object(Bucket="bucket", Key=small, Body=_line_rows(format, [-1]))
+
+    lf = _scan_lines_format(
+        format, [f"s3://bucket/{k}" for k in [plain, small, compressed]], s3
+    )
+    expected = pl.DataFrame({"a": [*values, -1, *values]})
+
+    mark = len(s3.log)
+    assert_frame_equal(lf.collect(), expected)
+    requests = s3.since(mark)
+    assert len(_assert_fetched_once(requests, plain, len(body))) > 3
+    assert len(_assert_fetched_once(requests, compressed, len(compressed_body))) > 3
+
+    expected = expected.with_row_index()
+    lf = lf.with_row_index()
+    assert_frame_equal(lf.head(130_000).collect(), expected.head(130_000))
+    assert_frame_equal(lf.tail(130_000).collect(), expected.tail(130_000))
+    assert_frame_equal(
+        lf.slice(119_000, 2_000).collect(), expected.slice(119_000, 2_000)
+    )
+
+
+@pytest.mark.parametrize("format", ["ndjson", "csv"])
+def test_scan_line_format_empty_local_object_store_file(
+    tmp_path: Path, format: str
+) -> None:
+    # A `file://` path is read through the object store, which rejects the prefix
+    # range of an empty file in a nested error.
+    path = tmp_path / f"empty.{format}"
+    path.write_bytes(b"")
+    kwargs: dict[str, Any] = {"raise_if_empty": False} if format == "csv" else {}
+    scan = pl.scan_ndjson if format == "ndjson" else pl.scan_csv
+    out = scan(format_file_uri(path), schema={"a": pl.Int64}, **kwargs).collect()
+    assert_frame_equal(out, pl.DataFrame(schema={"a": pl.Int64}))
+
+
+@pytest.mark.slow
+def test_scan_csv_quoted_newlines_across_prefix(
+    s3: CountingS3, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # A quoted field with newlines spans the end of the initial fetch and several
+    # chunks after it. Wide rows put it within the rows used for schema inference,
+    # and the first float in `c` follows it.
+    plmonkeypatch.setenv("POLARS_CSV_CHUNK_SIZE", str(64 * 1024))
+    plmonkeypatch.setenv("POLARS_CSV_CHUNK_PREFETCH_LIMIT", "2")
+
+    prefix_len = 256 * 1024
+    quoted_start = prefix_len - 500
+    rows: list[tuple[int, str, float]] = []
+    quoted_row = None
+    body = io.StringIO()
+    body.write("a,b,c\n")
+    while body.tell() < 2 * 1024 * 1024:
+        i = len(rows)
+        if body.tell() < quoted_start:
+            # Padding, the last row ends exactly at `quoted_start`.
+            gap = quoted_start - body.tell() - len(f"{i},,{i}\n")
+            value = "p" * (gap if gap < 2 * 2_700 else 2_700)
+            body.write(f"{i},{value},{i}\n")
+            rows.append((i, value, i))
+        elif quoted_row is None:
+            assert body.tell() == quoted_start
+            quoted_row = i
+            value = "".join(f"line {j}, quoted\n" for j in range(15_000))
+            body.write(f'{i},"{value}",{i}\n')
+            rows.append((i, value, i))
+            assert body.tell() > prefix_len + 3 * 64 * 1024
+        elif i == quoted_row + 1:
+            body.write(f"{i},v{i},{i}.5\n")
+            rows.append((i, f"v{i}", i + 0.5))
+        else:
+            body.write(f"{i},v{i},{i}\n")
+            rows.append((i, f"v{i}", i))
+
+    # Within the default `infer_schema_length` of 100 rows.
+    assert quoted_row is not None
+    assert quoted_row + 1 < 100
+
+    key = f"quoted_{uuid4()}.csv"
+    s3.client.put_object(Bucket="bucket", Key=key, Body=body.getvalue().encode())
+
+    lf = pl.scan_csv(f"s3://bucket/{key}", storage_options=s3.storage_options)
+    expected = pl.DataFrame(
+        rows, schema={"a": pl.Int64, "b": pl.String, "c": pl.Float64}, orient="row"
+    )
+    assert_frame_equal(lf.collect(), expected)
+    assert_frame_equal(
+        lf.with_row_index().slice(len(rows) - 1_000, 1_000).collect(),
+        expected.with_row_index().slice(len(rows) - 1_000, 1_000),
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("n_rows", "compress"),
+    [
+        (10_000, False),  # Smaller than the prefix, read from memory.
+        (150_000, False),  # Prefix, then streamed.
+        # Resolved by the multi-scan from a row count into a positive slice.
+        (150_000, True),
+    ],
+)
+def test_scan_ndjson_single_file_negative_slice(
+    s3: CountingS3, n_rows: int, compress: bool
+) -> None:
+    # An uncompressed single source receives the negative slice in the reader, which
+    # reads it in reverse.
+    body = "".join(f'{{"a":{i}}}\n' for i in range(n_rows)).encode()
+    assert (len(body) > 256 * 1024) == (n_rows > 10_000)
+    key = f"neg_{uuid4()}.ndjson" + (".gz" if compress else "")
+    s3.client.put_object(
+        Bucket="bucket", Key=key, Body=gzip.compress(body) if compress else body
+    )
+
+    lf = pl.scan_ndjson(
+        f"s3://bucket/{key}", schema={"a": pl.Int64}, storage_options=s3.storage_options
+    ).with_row_index(offset=7)
+    expected = pl.DataFrame({"a": range(n_rows)}).with_row_index(offset=7)
+
+    assert_frame_equal(lf.tail(1_000).collect(), expected.tail(1_000))
+    assert_frame_equal(lf.slice(-5_000, 2_000).collect(), expected.slice(-5_000, 2_000))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("format", ["ndjson", "csv"])
+def test_scan_line_format_in_memory_file_between_streamed_files(
+    s3: CountingS3, format: str
+) -> None:
+    # A file read from memory sits between two streamed files. The third file must
+    # not start prefetching before the first spawned all its prefetches, which
+    # deadlocked on the shared prefetch permits. A subprocess turns a hang into a
+    # timeout.
+    body = _line_rows(format, range(1_000_000))
+    keys = [f"{i}_{uuid4()}.{format}" for i in range(3)]
+    for key, data in zip(keys, [body, _line_rows(format, []), body], strict=True):
+        s3.client.put_object(Bucket="bucket", Key=key, Body=data)
+
+    paths = [f"s3://bucket/{k}" for k in keys]
+    code = f"""\
+import polars as pl
+
+lf = pl.scan_{format}(
+    {paths!r}, schema={{"a": pl.Int64}}, storage_options={s3.storage_options!r}
+)
+assert lf.collect().height == 2_000_000
+"""
+    env = {
+        **os.environ,
+        "POLARS_MAX_THREADS": "2",
+        "POLARS_MAX_CONCURRENT_SCANS": "3",
+        f"POLARS_{format.upper()}_CHUNK_SIZE": str(1024 * 1024),
+        f"POLARS_{format.upper()}_CHUNK_PREFETCH_LIMIT": "1",
+    }
+    subprocess.run([sys.executable, "-c", code], env=env, check=True, timeout=60)

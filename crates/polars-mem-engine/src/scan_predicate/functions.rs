@@ -695,6 +695,7 @@ where
         DefaultFieldValues::Iceberg(v) => {
             let IcebergDefaultFieldValues {
                 identity_transformed_partition_fields,
+                identity_partition_present,
                 initial_defaults,
             } = v.as_ref();
 
@@ -729,10 +730,25 @@ where
                 );
             }
 
+            // Sources past the end of a mask become null (not present).
+            let new_identity_partition_present = identity_partition_present
+                .iter()
+                .map(|(k, present)| {
+                    let indices = gather_indices.entry(present.len()).or_insert_with(|| {
+                        selected_path_indices
+                            .clone()
+                            .map(|i| (i < present.len()).then(|| IdxSize::try_from(i).unwrap()))
+                            .collect::<IdxCa>()
+                    });
+                    (*k, unsafe { present.take_unchecked(indices) })
+                })
+                .collect();
+
             DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
                 identity_transformed_partition_fields: PlIndexMapHashable(
                     new_identity_transformed_partition_fields,
                 ),
+                identity_partition_present: PlIndexMapHashable(new_identity_partition_present),
                 initial_defaults: initial_defaults.clone(),
             }))
         },
