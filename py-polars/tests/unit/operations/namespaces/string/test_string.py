@@ -1366,6 +1366,20 @@ def test_replace_literal_no_captures() -> None:
     )
 
 
+def test_replace_plain_pattern_expands_references() -> None:
+    # A pattern without punctuation takes a faster path, which must give the same
+    # result as the same pattern written as a regex.
+    s = pl.Series(["abcb", None])
+    for val in ["[$0]", "[${0}]", "[$$]", "[$1]", "[x]"]:
+        assert_series_equal(s.str.replace("b", val), s.str.replace("(?:b)", val))
+        assert_series_equal(
+            s.str.replace_all("b", val), s.str.replace_all("(?:b)", val)
+        )
+    assert s.str.replace("b", "[$0]").to_list() == ["a[b]cb", None]
+    assert s.str.replace("b", "[$0]", n=2).to_list() == ["a[b]c[b]", None]
+    assert s.str.replace("b", "[$0]", literal=True).to_list() == ["a[$0]cb", None]
+
+
 def test_replace_expressions() -> None:
     df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
     out = df.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])

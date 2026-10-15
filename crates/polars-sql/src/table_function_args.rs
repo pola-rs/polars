@@ -1,8 +1,9 @@
 //! Arguments of SQL table functions: a positional path followed by named options, as in
 //! `read_csv('data.csv', has_header => false, separator => ';')`.
 
-#[cfg(feature = "json")]
 use std::num::NonZeroUsize;
+#[cfg(feature = "csv")]
+use std::str::FromStr;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -145,12 +146,56 @@ impl<'a> TableFunctionOptions<'a> {
     }
 
     #[cfg(feature = "csv")]
+    pub(crate) fn positive_usize(&self, name: &str) -> PolarsResult<Option<NonZeroUsize>> {
+        self.get(name)
+            .map(|expr| self.expect_number(name, expr, "a positive integer"))
+            .transpose()
+    }
+
+    #[cfg(feature = "csv")]
     fn expect_usize(&self, name: &str, expr: &SQLExpr) -> PolarsResult<usize> {
+        self.expect_number(name, expr, "a non-negative integer")
+    }
+
+    #[cfg(feature = "csv")]
+    fn expect_number<T: FromStr>(
+        &self,
+        name: &str,
+        expr: &SQLExpr,
+        expected: &str,
+    ) -> PolarsResult<T> {
         match literal(expr) {
-            Some(SQLValue::Number(n, _)) => n.parse::<usize>().ok(),
+            Some(SQLValue::Number(n, _)) => n.parse::<T>().ok(),
             _ => None,
         }
-        .ok_or_else(|| self.type_error(name, "a non-negative integer", expr))
+        .ok_or_else(|| self.type_error(name, expected, expr))
+    }
+
+    /// One of the string `values`, matched case-insensitively, as the value paired with it.
+    #[cfg(feature = "csv")]
+    pub(crate) fn one_of<T: Copy>(
+        &self,
+        name: &str,
+        values: &[(&str, T)],
+    ) -> PolarsResult<Option<T>> {
+        self.get(name)
+            .map(|expr| {
+                string_literal(expr)
+                    .and_then(|s| {
+                        values
+                            .iter()
+                            .find(|(value, _)| value.eq_ignore_ascii_case(&s))
+                    })
+                    .map(|(_, out)| *out)
+                    .ok_or_else(|| {
+                        let expected: Vec<String> = values
+                            .iter()
+                            .map(|(value, _)| format!("'{value}'"))
+                            .collect();
+                        self.type_error(name, &expected.join(" or "), expr)
+                    })
+            })
+            .transpose()
     }
 
     pub(crate) fn string(&self, name: &str) -> PolarsResult<Option<String>> {
