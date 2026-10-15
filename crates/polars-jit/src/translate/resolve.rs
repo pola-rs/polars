@@ -7,6 +7,7 @@ use polars_plan::dsl::Expr;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::jit_program::ScalarType;
+use crate::translate::helpers::with_arithmetic_types;
 
 /// The column name that stands for the carried state while the body is typed and translated.
 pub(super) const STATE_NAME: &str = "__POLARS_JIT_STATE";
@@ -114,7 +115,7 @@ fn body_dtype(
     state: &DataType,
     row_types: &[DataType],
 ) -> PolarsResult<DataType> {
-    Ok(expression
+    Ok(with_arithmetic_types(expression)
         .to_field(&body_schema(row_names, state, row_types))?
         .dtype)
 }

@@ -64,7 +64,14 @@ impl<'a> Translator<'a> {
             // Operators, in `operators`.
             Expr::BinaryExpr {
                 left,
-                op: op @ (Operator::Plus | Operator::Minus | Operator::Multiply),
+                op:
+                    op @ (Operator::Plus
+                    | Operator::Minus
+                    | Operator::Multiply
+                    | Operator::TrueDivide
+                    | Operator::RustDivide
+                    | Operator::FloorDivide
+                    | Operator::Modulus),
                 right,
             } => self.arithmetic(expression, left, *op, right, location),
             Expr::BinaryExpr { left, op, right } if op.is_comparison() => {

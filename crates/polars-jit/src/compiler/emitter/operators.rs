@@ -11,7 +11,7 @@ use crate::compiler::values::{JitData, JitValue};
 use crate::jit_program::{BinaryOp, BooleanOp, CompareOp, JitProgram, ScalarType};
 
 impl Emitter<'_> {
-    /// `+`, `-`, and `*` on numbers; null when either operand is null.
+    /// Numeric arithmetic; null when either operand is null or an integer divisor is zero.
     pub(super) fn arithmetic(
         &mut self,
         builder: &mut FunctionBuilder<'_>,
@@ -23,22 +23,41 @@ impl Emitter<'_> {
         let left = self.emit(builder, left)?;
         let right = self.emit(builder, right)?;
         let (l, r) = (left.data.scalar(), right.data.scalar());
+        let mut valid = builder.ins().band(left.valid, right.valid);
         let data = if dtype.is_float() {
             match op {
                 BinaryOp::Add => builder.ins().fadd(l, r),
                 BinaryOp::Subtract => builder.ins().fsub(l, r),
                 BinaryOp::Multiply => builder.ins().fmul(l, r),
+                BinaryOp::TrueDivide => builder.ins().fdiv(l, r),
+                BinaryOp::FloorDivide | BinaryOp::Modulus => {
+                    let quotient = builder.ins().fdiv(l, r);
+                    let floor = builder.ins().floor(quotient);
+                    if op == BinaryOp::FloorDivide {
+                        floor
+                    } else {
+                        // Match Polars' floating modulo, including infinities and signed zero.
+                        let product = builder.ins().fmul(r, floor);
+                        builder.ins().fsub(l, product)
+                    }
+                },
             }
         } else {
             match op {
                 BinaryOp::Add => builder.ins().iadd(l, r),
                 BinaryOp::Subtract => builder.ins().isub(l, r),
                 BinaryOp::Multiply => builder.ins().imul(l, r),
+                BinaryOp::FloorDivide | BinaryOp::Modulus => {
+                    let nonzero = builder.ins().icmp_imm_s(IntCC::NotEqual, r, 0);
+                    valid = builder.ins().band(valid, nonzero);
+                    integer_division(builder, op, dtype, l, r, nonzero)
+                },
+                BinaryOp::TrueDivide => unreachable!("true division has a floating result"),
             }
         };
         Ok(JitValue {
             data: JitData::Scalar(data),
-            valid: builder.ins().band(left.valid, right.valid),
+            valid,
         })
     }
 
@@ -203,6 +222,55 @@ impl Emitter<'_> {
                 },
             },
         })
+    }
+}
+
+/// Replace trapping divisors before emitting a machine division, including for null operands.
+/// Dividing MIN by 1 yields the required wrapping result for MIN / -1, with remainder zero.
+fn integer_division(
+    builder: &mut FunctionBuilder<'_>,
+    op: BinaryOp,
+    dtype: ScalarType,
+    left: Value,
+    right: Value,
+    nonzero: Value,
+) -> Value {
+    let ty = builder.func.dfg.value_type(left);
+    let one = builder.ins().iconst(ty, 1);
+    let mut safe = nonzero;
+    if dtype.is_signed() {
+        let minimum = if dtype == ScalarType::Int32 {
+            i64::from(i32::MIN)
+        } else {
+            i64::MIN
+        };
+        let is_minimum = builder.ins().icmp_imm_s(IntCC::Equal, left, minimum);
+        let is_minus_one = builder.ins().icmp_imm_s(IntCC::Equal, right, -1);
+        let overflow = builder.ins().band(is_minimum, is_minus_one);
+        let no_overflow = builder.ins().bxor_imm_u(overflow, 1);
+        safe = builder.ins().band(safe, no_overflow);
+    }
+    let divisor = builder.ins().select(safe, right, one);
+    if !dtype.is_signed() {
+        return if op == BinaryOp::Modulus {
+            builder.ins().urem(left, divisor)
+        } else {
+            builder.ins().udiv(left, divisor)
+        };
+    }
+    let remainder = builder.ins().srem(left, divisor);
+    let has_remainder = builder.ins().icmp_imm_s(IntCC::NotEqual, remainder, 0);
+    let signs = builder.ins().bxor(left, right);
+    let opposite_signs = builder.ins().icmp_imm_s(IntCC::SignedLessThan, signs, 0);
+    let correct = builder.ins().band(has_remainder, opposite_signs);
+    if op == BinaryOp::Modulus {
+        let zero = builder.ins().iconst(ty, 0);
+        let correction = builder.ins().select(correct, right, zero);
+        builder.ins().iadd(remainder, correction)
+    } else {
+        let quotient = builder.ins().sdiv(left, divisor);
+        let correction = builder.ins().uextend(ty, correct);
+        builder.ins().isub(quotient, correction)
     }
 }
 

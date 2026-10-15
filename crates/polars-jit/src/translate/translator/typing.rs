@@ -4,8 +4,9 @@ use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::Expr;
 
 use super::Translator;
+use super::casts::cast_stays_non_null;
 use crate::jit_program::{CastOverflow, JitProgram, ScalarType};
-use crate::translate::helpers::common_type;
+use crate::translate::helpers::{common_type, with_arithmetic_types};
 
 impl Translator<'_> {
     /// Translate two expressions whose types depend on each other: the one translated second
@@ -38,7 +39,9 @@ impl Translator<'_> {
         left: ScalarType,
         right: ScalarType,
     ) -> PolarsResult<ScalarType> {
-        let dtype = expression.to_field(&self.schema)?.dtype;
+        let dtype = with_arithmetic_types(expression)
+            .to_field(&self.schema)?
+            .dtype;
         if dtype.is_null() {
             common_type(left, right)
         } else {
@@ -47,17 +50,22 @@ impl Translator<'_> {
     }
 
     /// Convert `input` to `dtype` for an operation that combines it with another value. Such
-    /// conversions never fail; explicit casts are translated in `casts`.
+    /// conversions follow Polars' non-strict coercion; explicit casts are translated in `casts`.
     pub(super) fn cast(&self, input: JitProgram, dtype: ScalarType) -> PolarsResult<JitProgram> {
         if input.dtype() == dtype {
             Ok(input)
         } else {
             polars_ensure!(input.dtype().is_numeric() && dtype.is_numeric(), InvalidOperation:
                 "foldv cannot cast {} to {}", input.dtype().dtype(), dtype.dtype());
+            let overflow = if cast_stays_non_null(input.dtype(), dtype) {
+                CastOverflow::Unchecked
+            } else {
+                CastOverflow::Null
+            };
             Ok(JitProgram::Cast {
                 input: Box::new(input),
                 dtype,
-                overflow: CastOverflow::Unchecked,
+                overflow,
             })
         }
     }

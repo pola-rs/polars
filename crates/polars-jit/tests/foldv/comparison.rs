@@ -851,3 +851,197 @@ fn foldv_string_lengths_match_polars() {
         assert_matches_polars(name, &texts(), &body, i64_state(Some(0)));
     }
 }
+
+const DIVISION: [OperatorCase; 4] = [
+    ("true_divide", |l, r| l.true_div(r)),
+    ("floor_divide", |l, r| l.floor_div(r)),
+    ("modulus", |l, r| l % r),
+    ("rust_divide", |l, r| l / r),
+];
+
+fn division_values(dtype: &DataType) -> Series {
+    let values = match dtype {
+        DataType::Int32 => Series::new(
+            "".into(),
+            [
+                None,
+                Some(i64::from(i32::MIN)),
+                Some(-7),
+                Some(-3),
+                Some(-1),
+                Some(0),
+                Some(1),
+                Some(3),
+                Some(7),
+                Some(i64::from(i32::MAX)),
+            ],
+        ),
+        DataType::Int64 => Series::new(
+            "".into(),
+            [
+                None,
+                Some(i64::MIN),
+                Some(-7),
+                Some(-3),
+                Some(-1),
+                Some(0),
+                Some(1),
+                Some(3),
+                Some(7),
+                Some(i64::MAX),
+            ],
+        ),
+        DataType::UInt32 => Series::new(
+            "".into(),
+            [
+                None,
+                Some(0_u64),
+                Some(1),
+                Some(3),
+                Some(7),
+                Some(1 << 31),
+                Some(u64::from(u32::MAX)),
+            ],
+        ),
+        DataType::UInt64 => Series::new(
+            "".into(),
+            [
+                None,
+                Some(0_u64),
+                Some(1),
+                Some(3),
+                Some(7),
+                Some(1 << 63),
+                Some(u64::MAX),
+            ],
+        ),
+        DataType::Float32 | DataType::Float64 => Series::new(
+            "".into(),
+            [
+                None,
+                Some(NAN),
+                Some(-INF),
+                Some(INF),
+                Some(-7.5),
+                Some(-3.0),
+                Some(-0.0),
+                Some(0.0),
+                Some(3.0),
+                Some(7.5),
+                Some(1e-30),
+            ],
+        ),
+        _ => unreachable!(),
+    };
+    values.cast(dtype).unwrap()
+}
+
+#[test]
+fn foldv_division_matches_polars() -> PolarsResult<()> {
+    let dtypes = [
+        DataType::Int32,
+        DataType::Int64,
+        DataType::UInt32,
+        DataType::UInt64,
+        DataType::Float32,
+        DataType::Float64,
+    ];
+    for left_dtype in &dtypes {
+        for right_dtype in &dtypes {
+            let left = division_values(left_dtype);
+            let right = division_values(right_dtype);
+            // Cartesian product includes every sign combination, zero, MIN / -1, and nulls.
+            let left_indices = (0..left.len() as IdxSize)
+                .flat_map(|i| std::iter::repeat_n(i, right.len()))
+                .collect::<Vec<_>>();
+            let right_indices = (0..left.len())
+                .flat_map(|_| 0..right.len() as IdxSize)
+                .collect::<Vec<_>>();
+            let mut a = left.take(&IdxCa::from_vec("".into(), left_indices))?;
+            let mut b = right.take(&IdxCa::from_vec("".into(), right_indices))?;
+            a.rename("a".into());
+            b.rename("b".into());
+            let df = DataFrame::new(a.len(), vec![a.into_column(), b.into_column()])?;
+            for (name, operation) in DIVISION {
+                let body = |_: Expr| operation(col("a"), col("b"));
+                let dtype = df
+                    .clone()
+                    .lazy()
+                    .select([body(Expr::Element)])
+                    .collect_schema()?
+                    .get("a")
+                    .unwrap()
+                    .clone();
+                assert_matches_polars(
+                    &format!("{name}: {left_dtype} / {right_dtype}"),
+                    &df,
+                    &body,
+                    lit(1_i64).cast(dtype),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn foldv_division_carries_and_recovers_state() -> PolarsResult<()> {
+    for dtype in [
+        DataType::Int32,
+        DataType::Int64,
+        DataType::UInt32,
+        DataType::UInt64,
+        DataType::Float32,
+        DataType::Float64,
+    ] {
+        let df = df!("b" => [Some(3_i64), Some(0), None, Some(2), Some(1)])?
+            .lazy()
+            .select([col("b").cast(dtype.clone())])
+            .collect()?;
+        for (name, operation) in DIVISION {
+            let state_dtype = if name == "true_divide" && !dtype.is_float() {
+                DataType::Float64
+            } else {
+                dtype.clone()
+            };
+            for null_initial in [false, true] {
+                let initial =
+                    if null_initial { lit(NULL) } else { lit(24_i64) }.cast(state_dtype.clone());
+                assert_matches_polars(
+                    name,
+                    &df,
+                    &|state| operation(state.fill_null(lit(12_i64)), col("b")),
+                    initial,
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn foldv_division_with_negative_literals_matches_polars() -> PolarsResult<()> {
+    let df = df!("a" => [None, Some(0_u64), Some(1), Some(7), Some(1 << 63), Some(u64::MAX)])?;
+    for (name, operation) in DIVISION {
+        for literal_first in [false, true] {
+            let body = |_: Expr| {
+                let negative = untyped_int(-3);
+                if literal_first {
+                    operation(negative, col("a"))
+                } else {
+                    operation(col("a"), negative)
+                }
+            };
+            let dtype = df
+                .clone()
+                .lazy()
+                .select([body(Expr::Element).alias("f")])
+                .collect()?
+                .column("f")?
+                .dtype()
+                .clone();
+            assert_matches_polars(name, &df, &body, lit(0_i64).cast(dtype));
+        }
+    }
+    Ok(())
+}

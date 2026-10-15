@@ -725,3 +725,98 @@ def test_foldv_untyped_null_initial_state_becomes_a_string_like_polars() -> None
     assert TEXTS.lazy().select(expression).collect_schema().dtypes() == [pl.String]
     expected = _reference(TEXTS, body, pl.lit(None, dtype=pl.String))
     assert TEXTS.select(expression).to_series().to_list() == expected
+
+
+DIVISION = {
+    "true_divide": lambda left, right: left / right,
+    "floor_divide": lambda left, right: left // right,
+    "modulus": lambda left, right: left % right,
+}
+NUMERIC_DTYPES = [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64, pl.Float32, pl.Float64]
+
+
+def _division_values(dtype: pl.DataType) -> list[int | float | None]:
+    if dtype.is_float():
+        return [None, NAN, -INF, INF, -7.5, -3.0, -0.0, 0.0, 3.0, 7.5, 1e-30]
+    bits = 32 if dtype in (pl.Int32, pl.UInt32) else 64
+    if dtype.is_unsigned_integer():
+        return [None, 0, 1, 3, 7, 2 ** (bits - 1), 2**bits - 1]
+    return [None, -(2 ** (bits - 1)), -7, -3, -1, 0, 1, 3, 7, 2 ** (bits - 1) - 1]
+
+
+@pytest.mark.parametrize("op", DIVISION)
+@pytest.mark.parametrize("left_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("right_dtype", NUMERIC_DTYPES)
+def test_foldv_division_matches_polars(
+    op: str, left_dtype: pl.DataType, right_dtype: pl.DataType
+) -> None:
+    # Every operand pair, including nulls and zero divisors, must be safe to evaluate.
+    pairs = [
+        (left, right)
+        for left in _division_values(left_dtype)
+        for right in _division_values(right_dtype)
+    ]
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([left for left, _ in pairs], dtype=left_dtype),
+            "b": pl.Series([right for _, right in pairs], dtype=right_dtype),
+        }
+    )
+    function = DIVISION[op]
+    body = lambda state: function(pl.col("a"), pl.col("b"))  # noqa: E731
+    expected = df.select(body(None)).to_series()
+    initial_state = pl.lit(1, dtype=expected.dtype)
+    expression = pl.foldv(body, initial_state=initial_state).alias("f")
+    assert df.lazy().select(expression).collect_schema()["f"] == expected.dtype
+    if expected.dtype == pl.Int128:
+        # Mixed UInt64/signed integers require an optional width from phase 18.
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="dtype i128"):
+            df.select(expression)
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="dtype i128"):
+            df.lazy().select(expression).collect()
+        return
+    _assert_matches_polars(df, body, initial_state)
+
+
+@pytest.mark.parametrize("op", DIVISION)
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("null_initial", [False, True])
+def test_foldv_division_carries_and_recovers_state(
+    op: str, dtype: pl.DataType, null_initial: bool
+) -> None:
+    df = pl.DataFrame({"b": pl.Series([3, 0, None, 2, 1], dtype=dtype)})
+    state_dtype = pl.Float64 if op == "true_divide" and not dtype.is_float() else dtype
+    _assert_matches_polars(
+        df,
+        lambda state: DIVISION[op](state.fill_null(12), pl.col("b")),
+        pl.lit(
+            None if null_initial else 24,
+            dtype=state_dtype,
+        ),
+    )
+
+
+@pytest.mark.parametrize("op", DIVISION)
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("literal_first", [False, True])
+def test_foldv_division_literals_match_polars(
+    op: str, dtype: pl.DataType, literal_first: bool
+) -> None:
+    df = pl.DataFrame({"a": pl.Series(_division_values(dtype), dtype=dtype)})
+    for divisor in [3, -3, 0, 3.0, -0.0, None]:
+
+        def body(state: pl.Expr, divisor: int | float | None = divisor) -> pl.Expr:
+            left, right = pl.col("a"), pl.lit(divisor)
+            return (
+                DIVISION[op](right, left)
+                if literal_first
+                else DIVISION[op](left, right)
+            )
+
+        # Polars can report UInt64 in its schema for `-3 // u64`, but executes as Int64.
+        result_dtype = df.select(body(pl.col(STATE))).to_series().dtype
+        _assert_matches_polars(
+            df,
+            body,
+            pl.lit(0, dtype=result_dtype),
+        )

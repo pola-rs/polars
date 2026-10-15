@@ -1,14 +1,15 @@
 //! Translation of binary operators: arithmetic, comparisons, and Boolean `and`/`or`.
 
+use polars_core::prelude::DataType;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::{Expr, Operator};
 
 use super::Translator;
 use crate::jit_program::{BinaryOp, BooleanOp, CompareOp, JitProgram, ScalarType};
-use crate::translate::helpers::{at, common_type};
+use crate::translate::helpers::{at, common_type, with_arithmetic_types};
 
 impl Translator<'_> {
-    /// `+`, `-`, and `*`; `+` also concatenates strings.
+    /// Numeric arithmetic; `+` also concatenates strings.
     pub(super) fn arithmetic(
         &self,
         expression: &Expr,
@@ -17,17 +18,37 @@ impl Translator<'_> {
         right: &Expr,
         location: &str,
     ) -> PolarsResult<JitProgram> {
-        let operands = self.operands(left, right, location)?;
+        let mut operands = self.operands(left, right, location)?;
         let dtype = self.result_type(expression, operands.0.dtype(), operands.1.dtype())?;
         // Like Polars, `+` concatenates strings.
         let concatenates = dtype == ScalarType::String && matches!(op, Operator::Plus);
         polars_ensure!(dtype.is_numeric() || concatenates, InvalidOperation:
             "operator {op} requires numeric operands at {location}");
+        if op == Operator::TrueDivide {
+            // Polars coerces integer operands before converting them to floats. In particular,
+            // a negative untyped literal makes a UInt64 operand Int64, nulling values above MAX.
+            // Addition uses the same numeric coercion without true division's floating output.
+            let common = with_arithmetic_types(&(left.clone() + right.clone()))
+                .to_field(&self.schema)?
+                .dtype;
+            if matches!(
+                common,
+                DataType::Int32 | DataType::Int64 | DataType::UInt32 | DataType::UInt64
+            ) {
+                let (left, right) = self.cast_pair(operands, ScalarType::from_dtype(&common)?)?;
+                operands = (*left, *right);
+            }
+        }
         let (left, right) = self.cast_pair(operands, dtype)?;
         let op = match op {
             Operator::Plus => BinaryOp::Add,
             Operator::Minus => BinaryOp::Subtract,
             Operator::Multiply => BinaryOp::Multiply,
+            Operator::TrueDivide => BinaryOp::TrueDivide,
+            // Polars' Rust `/` floors integers and true-divides floats.
+            Operator::RustDivide if dtype.is_float() => BinaryOp::TrueDivide,
+            Operator::RustDivide | Operator::FloorDivide => BinaryOp::FloorDivide,
+            Operator::Modulus => BinaryOp::Modulus,
             _ => unreachable!("`expression` only sends arithmetic operators here"),
         };
         Ok(JitProgram::Binary {

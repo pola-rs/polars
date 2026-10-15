@@ -52,7 +52,7 @@ impl Translator<'_> {
 }
 
 /// Whether every value of `source` has a value in `target`, so the cast can never overflow.
-fn cast_stays_non_null(source: ScalarType, target: ScalarType) -> bool {
+pub(super) fn cast_stays_non_null(source: ScalarType, target: ScalarType) -> bool {
     if source == target || target.is_float() || target == ScalarType::Boolean {
         return true;
     }

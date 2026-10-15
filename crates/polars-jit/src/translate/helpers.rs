@@ -3,7 +3,7 @@
 use polars_core::prelude::AnyValue;
 use polars_core::utils::try_get_supertype;
 use polars_error::{PolarsError, PolarsResult, polars_err};
-use polars_plan::dsl::Expr;
+use polars_plan::dsl::{Expr, Operator};
 use polars_plan::prelude::LiteralValue;
 
 use crate::jit_program::{JitProgram, ScalarType};
@@ -35,6 +35,37 @@ pub(super) fn is_null_literal(expression: &Expr) -> bool {
 /// The supertype Polars gives two types, such as Float64 for Int32 and Float64.
 pub(super) fn common_type(left: ScalarType, right: ScalarType) -> PolarsResult<ScalarType> {
     ScalarType::from_dtype(&try_get_supertype(&left.dtype(), &right.dtype())?)
+}
+
+/// Integer division and modulo use the same numeric coercion as addition. Polars' schema
+/// inference for these operators can incorrectly adopt an unsigned column's type when a
+/// negative untyped literal is on the left; its execution instead coerces both to Int64.
+/// True division also needs column-first inference for untyped literals and nulls. These
+/// changes apply only while asking for dtypes, leaving the actual operations unchanged.
+pub(super) fn with_arithmetic_types(expression: &Expr) -> Expr {
+    expression.clone().map_expr(|expr| match expr {
+        Expr::BinaryExpr {
+            left,
+            op: Operator::TrueDivide,
+            right,
+        } if matches!(&*left, Expr::Literal(_)) && !matches!(&*right, Expr::Literal(_)) => {
+            Expr::BinaryExpr {
+                left: right,
+                op: Operator::TrueDivide,
+                right: left,
+            }
+        },
+        Expr::BinaryExpr {
+            left,
+            op: Operator::FloorDivide | Operator::Modulus | Operator::RustDivide,
+            right,
+        } => Expr::BinaryExpr {
+            left,
+            op: Operator::Plus,
+            right,
+        },
+        expr => expr,
+    })
 }
 
 /// `program`, negated when `negate` is set; for function pairs such as `is_null`/`is_not_null`.

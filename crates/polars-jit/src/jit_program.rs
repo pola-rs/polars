@@ -78,6 +78,9 @@ pub(crate) enum BinaryOp {
     Add,
     Subtract,
     Multiply,
+    TrueDivide,
+    FloorDivide,
+    Modulus,
 }
 
 #[derive(Clone, Debug, PartialEq)]
