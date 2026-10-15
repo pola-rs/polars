@@ -58,7 +58,7 @@ Open the [Polars Cloud dashboard](https://cloud.pola.rs/portal) and select the q
 metrics of each node. Select a node to see its metrics, such as the number of rows in and out and
 the time spent:
 
-![A query profile. Left: the optimized logical plan. Middle: the physical plan with the number of rows between nodes. Right: the metrics of the selected node.](https://pola.rs/_astro/profiler.BbQEqRZP_Z2lnGOb.webp)
+![A query profile. Left: the optimized logical plan. Middle: the physical plan with the number of rows between nodes. Right: the metrics of the selected node.](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/query-profiler.webp)
 
 ### Profiling a single query
 
