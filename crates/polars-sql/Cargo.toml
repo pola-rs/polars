@@ -55,7 +55,8 @@ json = [
   "polars-io/temporal",
 ]
 list_eval = ["polars-lazy/list_eval"]
-parquet = ["polars-lazy/parquet"]
+# `read_parquet` infers hive values with date parsing, which needs the temporal dtypes.
+parquet = ["polars-lazy/parquet", "polars-io/temporal"]
 rank = ["polars-lazy/rank"]
 rolling_window = ["polars-lazy/rolling_window"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
