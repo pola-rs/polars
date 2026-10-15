@@ -1,7 +1,7 @@
 //! Translation of explicit casts, with Polars' strict, non-strict, and wrapping overflow rules.
 
 use polars_core::chunked_array::cast::CastOptions;
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_plan::dsl::{DataTypeExpr, Expr};
 
 use super::Translator;
@@ -25,6 +25,14 @@ impl Translator<'_> {
         // type so the cast below can apply its overflow rule to the value.
         let expected = is_null_literal(input).then_some(target);
         let input = self.expression(input, expected, &at(location, "input"))?;
+        polars_ensure!(input.dtype() == target
+            || (input.dtype() != ScalarType::String && target != ScalarType::String),
+            InvalidOperation: "foldv does not support casts from {} to {} at {location}",
+            input.dtype().dtype(), target.dtype());
+        // A cast to the input's own type changes nothing.
+        if input.dtype() == target {
+            return Ok(input);
+        }
         // Only casts that can receive an out-of-range value need a runtime check.
         let overflow = if cast_stays_non_null(input.dtype(), target) {
             CastOverflow::Unchecked

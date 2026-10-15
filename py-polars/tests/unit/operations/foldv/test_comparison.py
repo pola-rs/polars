@@ -635,3 +635,93 @@ def test_foldv_typed_null_literals_match_polars(
 ) -> None:
     # A typed null keeps its own dtype instead of taking the other operand's.
     _assert_matches_polars(WIDENING, body, _i64(initial_state))
+
+
+TEXTS = pl.DataFrame(
+    {
+        "s": ["a", "", None, "héllo", "b", "日本", "a", "z"],
+        "t": ["a", "b", "x", None, "é", "日本", "", "y"],
+    }
+)
+
+
+@pytest.mark.parametrize("op", COMPARISONS)
+@pytest.mark.parametrize(
+    "rhs",
+    [pl.lit("b"), pl.lit(""), pl.col("t"), pl.lit(None, dtype=pl.String), pl.lit(None)],
+    ids=["literal", "empty-literal", "column", "typed-null", "untyped-null"],
+)
+def test_foldv_string_comparisons_match_polars(op: str, rhs: pl.Expr) -> None:
+    # Comparisons drive a branch and are also stored as a nullable Boolean state.
+    predicate = COMPARISONS[op](pl.col("s"), rhs)
+    _assert_matches_polars(
+        TEXTS,
+        lambda state: pl.when(predicate).then(state + 1).otherwise(state),
+        _i64(0),
+    )
+    _assert_matches_polars(TEXTS, lambda state: predicate, pl.lit(True))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        lambda state: state + pl.col("s"),
+        lambda state: state + (pl.col("s") + pl.col("t")),
+        lambda state: state + "·" + pl.col("t"),
+        lambda state: state + pl.concat_str([pl.col("s"), pl.col("t")], separator=", "),
+        lambda state: pl.when(pl.col("s") > state).then(pl.col("s")).otherwise(state),
+        lambda state: (
+            pl.when(state.is_null()).then(pl.col("t")).otherwise(state + pl.col("s"))
+        ),
+        lambda state: state.fill_null("∅") + pl.col("s").fill_null("_"),
+        lambda state: (
+            pl.when(pl.col("s") == "b").then(None).otherwise(state + pl.col("t"))
+        ),
+    ],
+    ids=[
+        "concatenate-column",
+        "concatenate-two-columns",
+        "concatenate-literal",
+        "concat-str",
+        "replace-with-input",
+        "restart-on-null",
+        "fill-null",
+        "null-branch",
+    ],
+)
+@pytest.mark.parametrize(
+    "initial_state",
+    [pl.lit(""), pl.lit("start→"), pl.lit(None, dtype=pl.String)],
+    ids=["empty", "text", "null"],
+)
+def test_foldv_string_states_match_polars(body: Any, initial_state: pl.Expr) -> None:
+    _assert_matches_polars(TEXTS, body, initial_state)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        lambda state: state + pl.col("s").str.len_bytes(),
+        lambda state: state + pl.col("s").str.len_chars(),
+        lambda state: state + (pl.col("s") + pl.col("t")).str.len_chars(),
+        lambda state: (
+            pl.when(pl.col("s").str.len_bytes() > pl.col("t").str.len_bytes())
+            .then(state + 1)
+            .otherwise(state)
+        ),
+    ],
+    ids=["len-bytes", "len-chars", "len-chars-of-concatenation", "len-bytes-branch"],
+)
+def test_foldv_string_lengths_match_polars(body: Any) -> None:
+    _assert_matches_polars(TEXTS, body, _i64(0))
+
+
+def test_foldv_untyped_null_initial_state_becomes_a_string_like_polars() -> None:
+    # Like `pl.lit(None) + pl.col("s")`, an untyped null state takes the String type.
+    def body(state: pl.Expr) -> pl.Expr:
+        return pl.when(state.is_null()).then(pl.col("s")).otherwise(state + pl.col("s"))
+
+    expression = pl.foldv(body, initial_state=None)
+    assert TEXTS.lazy().select(expression).collect_schema().dtypes() == [pl.String]
+    expected = _reference(TEXTS, body, pl.lit(None, dtype=pl.String))
+    assert TEXTS.select(expression).to_series().to_list() == expected

@@ -4,12 +4,12 @@ use polars_arrow::array::{
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_core::frame::column::Column;
-use polars_core::prelude::{DataType, Field};
+use polars_core::prelude::{DataType, Field, IntoColumn, StringChunked};
 use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_plan::dsl::Expr;
 use polars_plan::prelude::apply_multiple;
 
-use crate::compiler::{CastFailure, CompiledProgram};
+use crate::compiler::{CastFailure, CompiledProgram, StringContext};
 use crate::jit_program::ScalarType;
 
 pub(crate) fn into_expr(
@@ -55,17 +55,28 @@ pub(crate) fn execute(
 ) -> PolarsResult<Column> {
     polars_ensure!(initial_state.len() == 1 && !row_inputs.is_empty(), InvalidOperation:
         "foldv received invalid inputs");
-    // An untyped null initial state becomes a null of the type translation inferred for it.
-    let initial_state = initial_state.cast(&state_type.dtype())?;
-    let (initial_state, initial_valid) = initial_state_bytes(&initial_state, state_type)?;
     let inputs = row_inputs.iter().map(Column::rechunk).collect::<Vec<_>>();
     let row_count = inputs[0].len();
     polars_ensure!(inputs.iter().all(|input| input.len() == row_count), ShapeMismatch:
         "foldv row inputs must have equal lengths");
+    // Owns every string the call creates, including a string state and its output.
+    let mut strings = StringContext::new(row_count);
+    // An untyped null initial state becomes a null of the type translation inferred for it.
+    let initial_state = initial_state.cast(&state_type.dtype())?;
+    let (initial_state, initial_valid) =
+        initial_state_bytes(&initial_state, state_type, &mut strings)?;
     let all_valid = vec![u8::MAX; row_count.saturating_add(7) / 8];
+    // Generated code reads strings as `(pointer, length)` pairs into the inputs' own buffers.
+    let decoded_strings = inputs
+        .iter()
+        .map(decode_strings)
+        .collect::<PolarsResult<Vec<_>>>()?;
     let views = inputs
         .iter()
-        .map(|input| RuntimeInput::from_column(input, all_valid.as_ptr()))
+        .zip(&decoded_strings)
+        .map(|(input, decoded)| {
+            RuntimeInput::from_column(input, decoded.as_deref(), all_valid.as_ptr())
+        })
         .collect::<PolarsResult<Vec<_>>>()?;
     let pointers = views.iter().map(|input| input.values).collect::<Vec<_>>();
     let value_bit_offsets = views
@@ -77,13 +88,19 @@ pub(crate) fn execute(
         .iter()
         .map(|input| input.validity_bit_offset)
         .collect::<Vec<_>>();
-    let mut output = vec![0_u8; row_count * state_type.byte_width()];
+    // A string state's output is collected by `strings` instead of this buffer.
+    let output_width = if state_type == ScalarType::String {
+        0
+    } else {
+        state_type.byte_width()
+    };
+    let mut output = vec![0_u8; row_count * output_width];
     let mut output_validity = vec![0_u8; row_count];
     let mut cast_failure = CastFailure::default();
     // SAFETY: Value pointers refer to row_count values of the dtype used during compilation;
-    // bitmap pointers and offsets cover row_count bits. `inputs` and `all_valid` own those
-    // buffers until after the call, and the state and output buffers have the sizes required
-    // by the compiled state dtype.
+    // bitmap pointers and offsets cover row_count bits. `inputs`, `decoded_strings`, and
+    // `all_valid` own those buffers until after the call, the state and output buffers have the
+    // sizes required by the compiled state dtype, and `strings` holds the initial string state.
     let processed_rows = unsafe {
         (compiled.function)(
             pointers.as_ptr(),
@@ -96,10 +113,15 @@ pub(crate) fn execute(
             output.as_mut_ptr(),
             output_validity.as_mut_ptr(),
             &mut cast_failure,
+            &mut strings,
         )
     };
     if processed_rows < row_count {
         return Err(strict_cast_error(&compiled, &cast_failure, processed_rows));
+    }
+    if state_type == ScalarType::String {
+        let name = row_inputs[0].name().clone();
+        return Ok(StringChunked::with_chunk(name, strings.into_output()).into_column());
     }
     output_column(
         row_inputs[0].name().clone(),
@@ -117,7 +139,11 @@ struct RuntimeInput {
 }
 
 impl RuntimeInput {
-    fn from_column(column: &Column, all_valid: *const u8) -> PolarsResult<Self> {
+    fn from_column(
+        column: &Column,
+        decoded_strings: Option<&[[usize; 2]]>,
+        all_valid: *const u8,
+    ) -> PolarsResult<Self> {
         let array = &**column.as_materialized_series().chunks().first().unwrap();
         let (values, value_bit_offset) = match ScalarType::from_dtype(column.dtype())? {
             ScalarType::Boolean => {
@@ -135,6 +161,13 @@ impl RuntimeInput {
             ScalarType::UInt64 => primitive_parts::<UInt64Array>(array),
             ScalarType::Float32 => primitive_parts::<Float32Array>(array),
             ScalarType::Float64 => primitive_parts::<Float64Array>(array),
+            ScalarType::String => (
+                decoded_strings
+                    .expect("string inputs are decoded")
+                    .as_ptr()
+                    .cast(),
+                0,
+            ),
         };
         let (validity, validity_bit_offset) =
             array.validity().map(bitmap_parts).unwrap_or((all_valid, 0));
@@ -185,6 +218,21 @@ fn primitive_values_pointer<A: PrimitiveValuesPointer>(array: &A) -> (*const u8,
     (array.values_pointer(), 0)
 }
 
+/// For a string column, each row's `(pointer, length)` into the column's buffers; a null row is
+/// `(0, 0)`, which generated code treats as an empty string.
+fn decode_strings(column: &Column) -> PolarsResult<Option<Vec<[usize; 2]>>> {
+    if column.dtype() != &DataType::String {
+        return Ok(None);
+    }
+    Ok(Some(
+        column
+            .str()?
+            .iter()
+            .map(|value| value.map_or([0, 0], |value| [value.as_ptr() as usize, value.len()]))
+            .collect(),
+    ))
+}
+
 fn bitmap_parts(bitmap: &Bitmap) -> (*const u8, usize) {
     let (bytes, offset, _) = bitmap.as_slice();
     (bytes.as_ptr(), offset)
@@ -206,6 +254,7 @@ fn strict_cast_error(
         ScalarType::UInt64 => bits.to_string(),
         ScalarType::Float32 => f32::from_bits(bits as u32).to_string(),
         ScalarType::Float64 => f64::from_bits(bits).to_string(),
+        ScalarType::String => unreachable!("translation rejects casts from strings"),
     };
     polars_err!(InvalidOperation:
         "conversion from `{}` to `{}` failed in foldv at row {row}: [{value}]; \
@@ -213,8 +262,14 @@ fn strict_cast_error(
         source.dtype(), target.dtype())
 }
 
-fn initial_state_bytes(column: &Column, dtype: ScalarType) -> PolarsResult<([u8; 8], u8)> {
-    let mut bytes = [0_u8; 8];
+/// The initial state's words, laid out as generated code loads them, and its validity. A string
+/// is copied into `strings` and passed as a `(pointer, length)` pair; a null state is all zeros.
+fn initial_state_bytes(
+    column: &Column,
+    dtype: ScalarType,
+    strings: &mut StringContext,
+) -> PolarsResult<([u8; 16], u8)> {
+    let mut bytes = [0_u8; 16];
     if column.get(0)?.is_null() {
         return Ok((bytes, 0));
     }
@@ -223,18 +278,28 @@ fn initial_state_bytes(column: &Column, dtype: ScalarType) -> PolarsResult<([u8;
         ScalarType::Int32 => {
             bytes[..4].copy_from_slice(&required(column.i32()?.get(0))?.to_ne_bytes())
         },
-        ScalarType::Int64 => bytes.copy_from_slice(&required(column.i64()?.get(0))?.to_ne_bytes()),
+        ScalarType::Int64 => {
+            bytes[..8].copy_from_slice(&required(column.i64()?.get(0))?.to_ne_bytes())
+        },
         ScalarType::UInt32 => {
             bytes[..4].copy_from_slice(&required(column.u32()?.get(0))?.to_ne_bytes())
         },
-        ScalarType::UInt64 => bytes.copy_from_slice(&required(column.u64()?.get(0))?.to_ne_bytes()),
+        ScalarType::UInt64 => {
+            bytes[..8].copy_from_slice(&required(column.u64()?.get(0))?.to_ne_bytes())
+        },
         ScalarType::Float32 => {
             let value = required(column.f32()?.get(0))?;
             bytes[..4].copy_from_slice(&value.to_bits().to_ne_bytes());
         },
         ScalarType::Float64 => {
             let value = required(column.f64()?.get(0))?;
-            bytes.copy_from_slice(&value.to_bits().to_ne_bytes());
+            bytes[..8].copy_from_slice(&value.to_bits().to_ne_bytes());
+        },
+        ScalarType::String => {
+            let value = required(column.str()?.get(0))?;
+            let pointer = strings.set_initial_state(value);
+            bytes[..8].copy_from_slice(&(pointer as usize).to_ne_bytes());
+            bytes[8..].copy_from_slice(&value.len().to_ne_bytes());
         },
     }
     Ok((bytes, 1))
@@ -321,5 +386,6 @@ fn output_column(
                 })
                 .collect::<Vec<_>>(),
         ),
+        ScalarType::String => unreachable!("a string state's output is collected separately"),
     })
 }

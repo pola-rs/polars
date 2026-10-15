@@ -6037,6 +6037,7 @@ class Expr(metaclass=_Meta):
             function ignores the value.
         initial_state
             Scalar expression containing the state before the first row is processed.
+            A Python string is a string value, not a column name.
 
         Returns
         -------

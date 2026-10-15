@@ -1,4 +1,4 @@
-//! Binary operators: arithmetic, comparisons, and Boolean `and`/`or`.
+//! Binary operators: arithmetic, string concatenation, comparisons, and Boolean `and`/`or`.
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{InstBuilder, Value, types};
@@ -6,11 +6,12 @@ use cranelift_frontend::FunctionBuilder;
 use polars_error::PolarsResult;
 
 use super::Emitter;
-use crate::compiler::values::JitValue;
+use crate::compiler::runtime_functions::RuntimeFunction;
+use crate::compiler::values::{JitData, JitValue};
 use crate::jit_program::{BinaryOp, BooleanOp, CompareOp, JitProgram, ScalarType};
 
 impl Emitter<'_> {
-    /// `+`, `-`, and `*`; null when either operand is null.
+    /// `+`, `-`, and `*` on numbers; null when either operand is null.
     pub(super) fn arithmetic(
         &mut self,
         builder: &mut FunctionBuilder<'_>,
@@ -21,7 +22,7 @@ impl Emitter<'_> {
     ) -> PolarsResult<JitValue> {
         let left = self.emit(builder, left)?;
         let right = self.emit(builder, right)?;
-        let (l, r) = (left.data, right.data);
+        let (l, r) = (left.data.scalar(), right.data.scalar());
         let data = if dtype.is_float() {
             match op {
                 BinaryOp::Add => builder.ins().fadd(l, r),
@@ -36,9 +37,70 @@ impl Emitter<'_> {
             }
         };
         Ok(JitValue {
-            data,
+            data: JitData::Scalar(data),
             valid: builder.ins().band(left.valid, right.valid),
         })
+    }
+
+    /// `+` on strings, which concatenates them in the row's scratch storage.
+    pub(super) fn concat(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        left: &JitProgram,
+        right: &JitProgram,
+    ) -> PolarsResult<JitValue> {
+        let left = self.emit(builder, left)?;
+        let right = self.emit(builder, right)?;
+        let (left_ptr, left_len) = left.data.string();
+        let (right_ptr, right_len) = right.data.string();
+        let strings = self.strings;
+        let ptr = self
+            .call(
+                builder,
+                RuntimeFunction::Concat,
+                &[strings, left_ptr, left_len, right_ptr, right_len],
+            )
+            .expect("concat returns a pointer");
+        self.allocates_strings = true;
+        Ok(JitValue {
+            data: JitData::Str {
+                ptr,
+                len: builder.ins().iadd(left_len, right_len),
+            },
+            valid: builder.ins().band(left.valid, right.valid),
+        })
+    }
+
+    /// Compare strings by their UTF-8 bytes through a runtime function.
+    pub(super) fn compare_strings(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        op: CompareOp,
+        left: &JitProgram,
+        right: &JitProgram,
+    ) -> PolarsResult<JitValue> {
+        let left = self.emit(builder, left)?;
+        let right = self.emit(builder, right)?;
+        let (left_ptr, left_len) = left.data.string();
+        let (right_ptr, right_len) = right.data.string();
+        // The runtime function returns -1, 0, or 1.
+        let order = self
+            .call(
+                builder,
+                RuntimeFunction::Compare,
+                &[left_ptr, left_len, right_ptr, right_len],
+            )
+            .expect("compare returns an ordering");
+        let condition = match op {
+            CompareOp::Equal | CompareOp::EqualMissing => IntCC::Equal,
+            CompareOp::NotEqual | CompareOp::NotEqualMissing => IntCC::NotEqual,
+            CompareOp::LessThan => IntCC::SignedLessThan,
+            CompareOp::LessThanOrEqual => IntCC::SignedLessThanOrEqual,
+            CompareOp::GreaterThan => IntCC::SignedGreaterThan,
+            CompareOp::GreaterThanOrEqual => IntCC::SignedGreaterThanOrEqual,
+        };
+        let data = builder.ins().icmp_imm_s(condition, order, 0);
+        Ok(comparison_result(builder, op, data, left, right))
     }
 
     /// Compare floats in Polars' total order, where NaN equals NaN and sorts above every other
@@ -52,7 +114,7 @@ impl Emitter<'_> {
     ) -> PolarsResult<JitValue> {
         let left = self.emit(builder, left)?;
         let right = self.emit(builder, right)?;
-        let (l, r) = (left.data, right.data);
+        let (l, r) = (left.data.scalar(), right.data.scalar());
         let equal = builder.ins().fcmp(FloatCC::Equal, l, r);
         let left_nan = builder.ins().fcmp(FloatCC::Unordered, l, l);
         let right_nan = builder.ins().fcmp(FloatCC::Unordered, r, r);
@@ -101,7 +163,9 @@ impl Emitter<'_> {
             (CompareOp::GreaterThanOrEqual, true) => IntCC::SignedGreaterThanOrEqual,
             (CompareOp::GreaterThanOrEqual, false) => IntCC::UnsignedGreaterThanOrEqual,
         };
-        let data = builder.ins().icmp(condition, left.data, right.data);
+        let data = builder
+            .ins()
+            .icmp(condition, left.data.scalar(), right.data.scalar());
         Ok(comparison_result(builder, op, data, left, right))
     }
 
@@ -116,23 +180,23 @@ impl Emitter<'_> {
     ) -> PolarsResult<JitValue> {
         let left = self.emit(builder, left)?;
         let right = self.emit(builder, right)?;
-        let left_true = builder.ins().band(left.data, left.valid);
-        let right_true = builder.ins().band(right.data, right.valid);
-        let left_false_data = builder.ins().bxor_imm_u(left.data, 1);
-        let right_false_data = builder.ins().bxor_imm_u(right.data, 1);
+        let left_true = builder.ins().band(left.data.scalar(), left.valid);
+        let right_true = builder.ins().band(right.data.scalar(), right.valid);
+        let left_false_data = builder.ins().bxor_imm_u(left.data.scalar(), 1);
+        let right_false_data = builder.ins().bxor_imm_u(right.data.scalar(), 1);
         let left_false = builder.ins().band(left_false_data, left.valid);
         let right_false = builder.ins().band(right_false_data, right.valid);
         let both_valid = builder.ins().band(left.valid, right.valid);
         Ok(match op {
             BooleanOp::And => JitValue {
-                data: builder.ins().band(left_true, right_true),
+                data: JitData::Scalar(builder.ins().band(left_true, right_true)),
                 valid: {
                     let either_false = builder.ins().bor(left_false, right_false);
                     builder.ins().bor(either_false, both_valid)
                 },
             },
             BooleanOp::Or => JitValue {
-                data: builder.ins().bor(left_true, right_true),
+                data: JitData::Scalar(builder.ins().bor(left_true, right_true)),
                 valid: {
                     let either_true = builder.ins().bor(left_true, right_true);
                     builder.ins().bor(either_true, both_valid)
@@ -155,7 +219,7 @@ fn comparison_result(
     let both_valid = builder.ins().band(left.valid, right.valid);
     if !matches!(op, CompareOp::EqualMissing | CompareOp::NotEqualMissing) {
         return JitValue {
-            data,
+            data: JitData::Scalar(data),
             valid: both_valid,
         };
     }
@@ -170,11 +234,11 @@ fn comparison_result(
     let both_null = builder.ins().band(left_null, right_null);
     let equal_missing = builder.ins().bor(compared, both_null);
     JitValue {
-        data: if matches!(op, CompareOp::NotEqualMissing) {
+        data: JitData::Scalar(if matches!(op, CompareOp::NotEqualMissing) {
             builder.ins().bxor_imm_u(equal_missing, 1)
         } else {
             equal_missing
-        },
+        }),
         valid: builder.ins().iconst(types::I8, 1),
     }
 }

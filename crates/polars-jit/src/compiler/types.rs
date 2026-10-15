@@ -1,5 +1,6 @@
 use cranelift_jit::JITModule;
 
+use super::runtime_functions::StringContext;
 use crate::jit_program::{InputId, ScalarType};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,16 +24,17 @@ pub(crate) enum CompilationShape {
 ///
 /// The caller owns every buffer and must keep it alive for the duration of the call.
 pub(super) type ListFunction = unsafe extern "C" fn(
-    *const *const u8, // Typed value buffer for each row input.
+    *const *const u8, // Typed value buffer for each row input; `(pointer, length)` pairs for strings.
     *const usize,     // Bit offset for each bit-packed Boolean value buffer.
     *const *const u8, // Arrow validity bitmap for each row input.
     *const usize,     // Bit offset for each validity bitmap.
     usize,            // Number of rows shared by all input buffers.
-    *const u8,        // Initial state value.
+    *const u8,        // Initial state value; a `(pointer, length)` pair for a string.
     u8,               // Initial state validity: `0` for null, `1` for valid.
-    *mut u8,          // Output state value for each row.
+    *mut u8,          // Output state value for each row; unused for a string state.
     *mut u8,          // Byte-per-row output validity buffer.
     *mut CastFailure, // Written when a strict cast fails.
+    *mut StringContext, // Owns strings created by the call, and a string state's output.
 ) -> usize; // The failing row when a strict cast fails, otherwise the number of rows.
 
 /// The strict cast that stopped a fold, written by native code before it returns the failing row.
@@ -49,6 +51,8 @@ pub struct CompiledProgram {
     pub(crate) function: ListFunction,
     /// Source and target type of each strict cast, indexed by `CastFailure::cast`.
     pub(crate) strict_casts: Box<[(ScalarType, ScalarType)]>,
+    /// Bytes of string literals, which generated code reads through embedded pointers.
+    pub(super) _string_literals: Box<[Box<[u8]>]>,
     pub(super) _module: OwnedModule,
 }
 

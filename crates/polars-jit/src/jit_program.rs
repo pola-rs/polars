@@ -1,5 +1,6 @@
 use polars_core::prelude::DataType;
 use polars_error::{PolarsResult, polars_bail};
+use polars_utils::pl_str::PlSmallStr;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct InputId(pub(crate) u32);
@@ -13,6 +14,8 @@ pub(crate) enum ScalarType {
     UInt64,
     Float32,
     Float64,
+    /// UTF-8 text, held as a pointer and a byte length.
+    String,
 }
 
 impl ScalarType {
@@ -25,6 +28,7 @@ impl ScalarType {
             DataType::UInt64 => Self::UInt64,
             DataType::Float32 => Self::Float32,
             DataType::Float64 => Self::Float64,
+            DataType::String => Self::String,
             _ => polars_bail!(InvalidOperation: "foldv does not support dtype {dtype}"),
         })
     }
@@ -38,6 +42,7 @@ impl ScalarType {
             Self::UInt64 => DataType::UInt64,
             Self::Float32 => DataType::Float32,
             Self::Float64 => DataType::Float64,
+            Self::String => DataType::String,
         }
     }
 
@@ -46,6 +51,8 @@ impl ScalarType {
             Self::Boolean => 8,
             Self::Int32 | Self::UInt32 | Self::Float32 => 32,
             Self::Int64 | Self::UInt64 | Self::Float64 => 64,
+            // A pointer and a byte length on the 64-bit hosts the JIT supports.
+            Self::String => 128,
         }
     }
 
@@ -62,7 +69,7 @@ impl ScalarType {
     }
 
     pub(crate) fn is_numeric(self) -> bool {
-        !matches!(self, Self::Boolean)
+        !matches!(self, Self::Boolean | Self::String)
     }
 }
 
@@ -80,6 +87,7 @@ pub(crate) enum JitLiteral {
     Unsigned(u128),
     Float32(u32),
     Float64(u64),
+    String(PlSmallStr),
 }
 
 /// A classification of a floating-point value. Integers are never NaN or infinite.
@@ -177,6 +185,11 @@ pub enum JitProgram {
         falsy: Box<Self>,
         dtype: ScalarType,
     },
+    /// The length of a string as UInt32: in bytes, or in Unicode scalar values (`chars`).
+    StringLength {
+        input: Box<Self>,
+        chars: bool,
+    },
 }
 
 impl JitProgram {
@@ -189,6 +202,7 @@ impl JitProgram {
             | Self::Binary { dtype, .. }
             | Self::Ternary { dtype, .. }
             | Self::FillNull { dtype, .. } => *dtype,
+            Self::StringLength { .. } => ScalarType::UInt32,
             Self::Compare { .. }
             | Self::Boolean { .. }
             | Self::Not(_)

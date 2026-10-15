@@ -1,4 +1,4 @@
-//! Translation of Polars function expressions such as `is_null()` or `fill_null()`.
+//! Translation of Polars function expressions such as `is_null()` or `str.len_chars()`.
 //!
 //! Polars represents almost every method call as one `Expr::Function` node whose
 //! `FunctionExpr` names the function; `Translator::expression` matches the function and calls
@@ -6,10 +6,11 @@
 
 use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::{BooleanFunction, Expr};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::Translator;
-use crate::jit_program::{FloatCheck, JitProgram, ScalarType};
-use crate::translate::helpers::{at, inputs, is_null_literal, negated_if};
+use crate::jit_program::{BinaryOp, FloatCheck, JitLiteral, JitProgram, ScalarType};
+use crate::translate::helpers::{at, inputs, is_null_literal, negated_if, unsupported};
 
 impl Translator<'_> {
     /// `not`.
@@ -87,5 +88,66 @@ impl Translator<'_> {
         let dtype = self.result_type(expression, operands.0.dtype(), operands.1.dtype())?;
         let (value, fill) = self.cast_pair(operands, dtype)?;
         Ok(JitProgram::FillNull { value, fill, dtype })
+    }
+
+    /// `str.len_bytes()`, or `str.len_chars()` when `chars` is set.
+    pub(super) fn string_length(
+        &self,
+        expression: &Expr,
+        input: &[Expr],
+        chars: bool,
+        location: &str,
+    ) -> PolarsResult<JitProgram> {
+        let [value] = inputs(input, expression, location)?;
+        let value = self.string(value, &at(location, "input"))?;
+        Ok(JitProgram::StringLength {
+            input: Box::new(value),
+            chars,
+        })
+    }
+
+    /// `concat_str`, which joins its inputs with `delimiter`.
+    pub(super) fn concat_str(
+        &self,
+        expression: &Expr,
+        input: &[Expr],
+        delimiter: &PlSmallStr,
+        ignore_nulls: bool,
+        location: &str,
+    ) -> PolarsResult<JitProgram> {
+        if input.is_empty() {
+            return Err(unsupported(expression, location));
+        }
+        // Without `ignore_nulls`, any null input makes the result null, like `+`.
+        polars_ensure!(!ignore_nulls, InvalidOperation:
+            "foldv does not support concat_str with ignore_nulls=True at {location}");
+        let mut parts = input
+            .iter()
+            .enumerate()
+            .map(|(index, part)| self.string(part, &at(location, &format!("input[{index}]"))));
+        let mut joined = parts.next().expect("concat_str has at least one input")?;
+        for part in parts {
+            if !delimiter.is_empty() {
+                joined = concatenate(
+                    joined,
+                    JitProgram::Literal {
+                        value: JitLiteral::String(delimiter.clone()),
+                        dtype: ScalarType::String,
+                    },
+                );
+            }
+            joined = concatenate(joined, part?);
+        }
+        Ok(joined)
+    }
+}
+
+/// `left + right` on strings, which is null when either side is null.
+fn concatenate(left: JitProgram, right: JitProgram) -> JitProgram {
+    JitProgram::Binary {
+        op: BinaryOp::Add,
+        left: Box::new(left),
+        right: Box::new(right),
+        dtype: ScalarType::String,
     }
 }

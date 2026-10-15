@@ -4,11 +4,11 @@ use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::{Expr, Operator};
 
 use super::Translator;
-use crate::jit_program::{BinaryOp, BooleanOp, CompareOp, JitProgram};
+use crate::jit_program::{BinaryOp, BooleanOp, CompareOp, JitProgram, ScalarType};
 use crate::translate::helpers::{at, common_type};
 
 impl Translator<'_> {
-    /// `+`, `-`, and `*`.
+    /// `+`, `-`, and `*`; `+` also concatenates strings.
     pub(super) fn arithmetic(
         &self,
         expression: &Expr,
@@ -19,7 +19,9 @@ impl Translator<'_> {
     ) -> PolarsResult<JitProgram> {
         let operands = self.operands(left, right, location)?;
         let dtype = self.result_type(expression, operands.0.dtype(), operands.1.dtype())?;
-        polars_ensure!(dtype.is_numeric(), InvalidOperation:
+        // Like Polars, `+` concatenates strings.
+        let concatenates = dtype == ScalarType::String && matches!(op, Operator::Plus);
+        polars_ensure!(dtype.is_numeric() || concatenates, InvalidOperation:
             "operator {op} requires numeric operands at {location}");
         let (left, right) = self.cast_pair(operands, dtype)?;
         let op = match op {

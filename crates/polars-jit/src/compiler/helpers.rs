@@ -6,7 +6,7 @@ use polars_error::{PolarsError, polars_err};
 
 use crate::jit_program::ScalarType;
 
-/// The machine type of a value of `dtype`.
+/// The machine type of a one-word value of `dtype`.
 pub(super) fn cranelift_type(dtype: ScalarType) -> Type {
     match dtype {
         ScalarType::Boolean => types::I8,
@@ -14,6 +14,7 @@ pub(super) fn cranelift_type(dtype: ScalarType) -> Type {
         ScalarType::Int64 | ScalarType::UInt64 => types::I64,
         ScalarType::Float32 => types::F32,
         ScalarType::Float64 => types::F64,
+        ScalarType::String => unreachable!("strings take two words; see `value_types`"),
     }
 }
 

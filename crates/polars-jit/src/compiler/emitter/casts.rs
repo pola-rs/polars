@@ -7,7 +7,7 @@ use polars_error::{PolarsResult, polars_err};
 
 use super::Emitter;
 use crate::compiler::helpers::{cranelift_type, float_constant};
-use crate::compiler::values::JitValue;
+use crate::compiler::values::{JitData, JitValue};
 use crate::jit_program::{CastOverflow, JitProgram, ScalarType};
 
 impl Emitter<'_> {
@@ -23,12 +23,12 @@ impl Emitter<'_> {
         let valid = match overflow {
             CastOverflow::Unchecked => value.valid,
             CastOverflow::Null => {
-                let fits = fits_target(builder, value.data, source, dtype)?;
+                let fits = fits_target(builder, value.data.scalar(), source, dtype)?;
                 builder.ins().band(value.valid, fits)
             },
             CastOverflow::Raise => {
                 // A valid value that does not fit stops the fold; a null input stays null.
-                let fits = fits_target(builder, value.data, source, dtype)?;
+                let fits = fits_target(builder, value.data.scalar(), source, dtype)?;
                 let does_not_fit = builder.ins().bxor_imm_u(fits, 1);
                 let failed = builder.ins().band(value.valid, does_not_fit);
                 let report = builder.create_block();
@@ -39,7 +39,7 @@ impl Emitter<'_> {
                 builder.switch_to_block(report);
                 let cast_id = self.strict_casts.len() as i64;
                 let cast_id = builder.ins().iconst(types::I64, cast_id);
-                let bits = raw_bits_u64(builder, value.data, source);
+                let bits = raw_bits_u64(builder, value.data.scalar(), source);
                 let flags = MemFlagsData::new();
                 builder.ins().store(flags, cast_id, self.cast_failure, 0);
                 builder.ins().store(flags, bits, self.cast_failure, 8);
@@ -51,7 +51,7 @@ impl Emitter<'_> {
             },
         };
         Ok(JitValue {
-            data: convert(builder, value.data, source, dtype)?,
+            data: JitData::Scalar(convert(builder, value.data.scalar(), source, dtype)?),
             valid,
         })
     }

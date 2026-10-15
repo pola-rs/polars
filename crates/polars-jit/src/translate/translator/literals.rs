@@ -59,6 +59,9 @@ impl Translator<'_> {
                 };
                 (dtype, literal)
             },
+            LiteralValue::Dyn(DynLiteralValue::Str(value)) => {
+                (ScalarType::String, JitLiteral::String(value.clone()))
+            },
             LiteralValue::Scalar(value) => {
                 if matches!(value.as_any_value(), AnyValue::Null) {
                     // A typed null such as `pl.lit(None, dtype=pl.Int64)` keeps its dtype; only an
@@ -82,6 +85,8 @@ impl Translator<'_> {
                     AnyValue::UInt64(v) => JitLiteral::Unsigned(v as u128),
                     AnyValue::Float32(v) => JitLiteral::Float32(v.to_bits()),
                     AnyValue::Float64(v) => JitLiteral::Float64(v.to_bits()),
+                    AnyValue::String(v) => JitLiteral::String(v.into()),
+                    AnyValue::StringOwned(v) => JitLiteral::String(v),
                     value => polars_bail!(InvalidOperation:
                         "literal {} is unsupported at {location}", value.dtype()),
                 };

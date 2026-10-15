@@ -1558,6 +1558,7 @@ def foldv(
         while constructing the expression.
     initial_state
         Scalar expression containing the state before the first row is processed.
+        A Python string is a string value, not a column name.
 
     Returns
     -------
@@ -1609,9 +1610,11 @@ def _require_jit() -> None:
 
 
 def _parse_foldv_state(initial_state: IntoExpr) -> PyExpr:
-    # A Python int is an Int64 state rather than a dynamically typed literal.
+    # The initial state is a value, so a Python string is a string state rather than a
+    # column name, and a Python int is an Int64 state rather than a dynamic literal.
     return parse_into_expression(
         initial_state,
+        str_as_lit=True,
         dtype=(
             Int64
             if isinstance(initial_state, int) and not isinstance(initial_state, bool)

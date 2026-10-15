@@ -753,3 +753,101 @@ fn foldv_typed_null_literals_match_polars() {
         assert_matches_polars(name, &df, body.as_ref(), lit(0).cast(DataType::Int64));
     }
 }
+
+fn texts() -> DataFrame {
+    df!(
+        "s" => [Some("a"), Some(""), None, Some("héllo"), Some("b"), Some("日本"), Some("a"), Some("z")],
+        "t" => [Some("a"), Some("b"), Some("x"), None, Some("é"), Some("日本"), Some(""), Some("y")],
+    )
+    .unwrap()
+}
+
+#[test]
+fn foldv_string_comparisons_match_polars() {
+    for (op_name, op) in COMPARISONS {
+        for (rhs_name, rhs) in [
+            ("literal", lit("b")),
+            ("empty literal", lit("")),
+            ("column", col("t")),
+            ("typed null", lit(NULL).cast(DataType::String)),
+        ] {
+            let case = format!("{op_name} {rhs_name}");
+            let predicate = op(col("s"), rhs);
+            // Comparisons drive a branch and are also stored as a nullable Boolean state.
+            let branch = |state: Expr| {
+                when(predicate.clone())
+                    .then(state.clone() + lit(1_i64))
+                    .otherwise(state)
+            };
+            assert_matches_polars(&case, &texts(), &branch, i64_state(Some(0)));
+            let stored = |_state: Expr| predicate.clone();
+            assert_matches_polars(&case, &texts(), &stored, lit(true));
+        }
+    }
+}
+
+#[test]
+fn foldv_string_states_match_polars() {
+    let bodies: [BodyCase; 9] = [
+        ("concatenate column", |state| state + col("s")),
+        ("concatenate two columns", |state| {
+            state + (col("s") + col("t"))
+        }),
+        ("concatenate literal", |state| state + lit("·") + col("t")),
+        ("concat_str", |state| {
+            state + concat_str([col("s"), col("t")], ", ", false)
+        }),
+        ("replace with input", |state| {
+            when(col("s").gt(state.clone()))
+                .then(col("s"))
+                .otherwise(state)
+        }),
+        ("restart on null", |state| {
+            when(state.clone().is_null())
+                .then(col("t"))
+                .otherwise(state + col("s"))
+        }),
+        ("fill_null", |state| {
+            state.fill_null(lit("∅")) + col("s").fill_null(lit("_"))
+        }),
+        ("typed null branch", |state| {
+            when(col("s").eq(lit("b")))
+                .then(lit(NULL).cast(DataType::String))
+                .otherwise(state + col("t"))
+        }),
+        ("untyped null branch", |state| {
+            when(col("s").eq(lit("b")))
+                .then(lit(NULL))
+                .otherwise(state + col("t"))
+        }),
+    ];
+    for (name, body) in bodies {
+        for (initial_name, initial_state) in [
+            ("empty", lit("")),
+            ("text", lit("start→")),
+            ("null", lit(NULL).cast(DataType::String)),
+        ] {
+            let case = format!("{name} from {initial_name}");
+            assert_matches_polars(&case, &texts(), &body, initial_state);
+        }
+    }
+}
+
+#[test]
+fn foldv_string_lengths_match_polars() {
+    let bodies: [BodyCase; 4] = [
+        ("len_bytes", |state| state + col("s").str().len_bytes()),
+        ("len_chars", |state| state + col("s").str().len_chars()),
+        ("len_chars of concatenation", |state| {
+            state + (col("s") + col("t")).str().len_chars()
+        }),
+        ("len_bytes in a branch", |state| {
+            when(col("s").str().len_bytes().gt(col("t").str().len_bytes()))
+                .then(state.clone() + lit(1_i64))
+                .otherwise(state)
+        }),
+    ];
+    for (name, body) in bodies {
+        assert_matches_polars(name, &texts(), &body, i64_state(Some(0)));
+    }
+}

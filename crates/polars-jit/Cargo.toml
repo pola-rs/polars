@@ -17,11 +17,11 @@ cranelift-native = { workspace = true }
 polars-core = { workspace = true }
 polars-arrow = { workspace = true }
 polars-error = { workspace = true }
-polars-plan = { workspace = true }
+polars-plan = { workspace = true, features = ["concat_str", "strings"] }
 polars-utils = { workspace = true }
 
 [dev-dependencies]
-polars = { workspace = true, features = ["lazy", "streaming"] }
+polars = { workspace = true, features = ["concat_str", "lazy", "streaming", "strings"] }
 
 [lints]
 workspace = true

@@ -6,10 +6,12 @@
 mod emitter;
 mod helpers;
 mod list_program;
+mod runtime_functions;
 mod types;
 mod values;
 
 use polars_error::PolarsResult;
+pub(crate) use runtime_functions::StringContext;
 pub use types::CompiledProgram;
 pub(crate) use types::{CastFailure, CompilationShape, InputBinding, ListBindings};
 

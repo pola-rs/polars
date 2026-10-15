@@ -81,4 +81,12 @@ impl Translator<'_> {
             "predicate at {location} must produce Boolean");
         Ok(program)
     }
+
+    /// Translate an expression that must produce a string.
+    pub(super) fn string(&self, expression: &Expr, location: &str) -> PolarsResult<JitProgram> {
+        let program = self.expression(expression, Some(ScalarType::String), location)?;
+        polars_ensure!(program.dtype() == ScalarType::String, InvalidOperation:
+            "foldv string operation at {location} requires str, got {}", program.dtype().dtype());
+        Ok(program)
+    }
 }

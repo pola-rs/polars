@@ -10,4 +10,5 @@ mod nulls_and_nans;
 mod runtime;
 mod scalar_types;
 mod strict_casts;
+mod strings;
 mod validation;

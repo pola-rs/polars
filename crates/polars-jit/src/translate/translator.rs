@@ -13,7 +13,7 @@ mod typing;
 
 use polars_core::prelude::Schema;
 use polars_error::{PolarsResult, polars_err};
-use polars_plan::dsl::{BooleanFunction, Expr, FunctionExpr, Operator};
+use polars_plan::dsl::{BooleanFunction, Expr, FunctionExpr, Operator, StringFunction};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::helpers::unsupported;
@@ -94,6 +94,16 @@ impl<'a> Translator<'a> {
                     | BooleanFunction::IsInfinite),
                 ) => self.float_check(expression, function, input, location),
                 FunctionExpr::FillNull => self.fill_null(expression, input, expected, location),
+                FunctionExpr::StringExpr(StringFunction::LenBytes) => {
+                    self.string_length(expression, input, false, location)
+                },
+                FunctionExpr::StringExpr(StringFunction::LenChars) => {
+                    self.string_length(expression, input, true, location)
+                },
+                FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                    delimiter,
+                    ignore_nulls,
+                }) => self.concat_str(expression, input, delimiter, *ignore_nulls, location),
                 _ => Err(unsupported(expression, location)),
             },
 
