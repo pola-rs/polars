@@ -18,14 +18,9 @@ pub(super) fn compile(
     program: &JitProgram,
     bindings: &ListBindings,
 ) -> PolarsResult<CompiledProgram> {
-    polars_ensure!(bindings.row_inputs.len() == 1, InvalidOperation:
-        "list compilation currently requires one row input");
-    let state_type = program.input_dtype(bindings.state_input).ok_or_else(
-        || polars_err!(InvalidOperation: "foldv program does not reference its state"),
-    )?;
-    let row_type = program.input_dtype(bindings.row_inputs[0]).ok_or_else(
-        || polars_err!(InvalidOperation: "foldv program does not reference its row input"),
-    )?;
+    polars_ensure!(!bindings.rows.is_empty(), InvalidOperation:
+        "list compilation requires at least one row input");
+    let state_type = bindings.state.dtype;
     polars_ensure!(program.dtype() == state_type, InvalidOperation:
         "foldv program output type must match its state type");
 
@@ -73,21 +68,27 @@ pub(super) fn compile(
         builder.ins().brif(has_row, apply, &[], done, &[]);
 
         builder.switch_to_block(apply);
-        let byte_offset = builder
-            .ins()
-            .imul_imm_u(index, row_type.byte_width() as i64);
-        let values_pointer = builder
-            .ins()
-            .load(pointer_type, MemFlagsData::new(), params[0], 0);
-        let address = builder.ins().iadd(values_pointer, byte_offset);
-        let row_value =
-            builder
+        let mut values = Vec::with_capacity(bindings.rows.len() + 1);
+        values.push((bindings.state.input, state));
+        for (position, binding) in bindings.rows.iter().enumerate() {
+            let pointer_offset = i32::try_from(position * pointer_type.bytes() as usize)
+                .map_err(|_| polars_err!(InvalidOperation: "too many JIT row inputs"))?;
+            let values_pointer =
+                builder
+                    .ins()
+                    .load(pointer_type, MemFlagsData::new(), params[0], pointer_offset);
+            let byte_offset = builder
                 .ins()
-                .load(cranelift_type(row_type), MemFlagsData::new(), address, 0);
-        let values = [
-            (bindings.state_input, state),
-            (bindings.row_inputs[0], row_value),
-        ];
+                .imul_imm_u(index, binding.dtype.byte_width() as i64);
+            let address = builder.ins().iadd(values_pointer, byte_offset);
+            let row_value = builder.ins().load(
+                cranelift_type(binding.dtype),
+                MemFlagsData::new(),
+                address,
+                0,
+            );
+            values.push((binding.input, row_value));
+        }
         let next_state = Emitter::new(&values).emit(&mut builder, program)?;
         let output_offset = builder
             .ins()

@@ -16,7 +16,7 @@ pub(super) struct ResolvedTypes {
     /// The body, with the state placeholder replaced by the `STATE_NAME` column.
     pub(super) expression: Expr,
     pub(super) state_type: ScalarType,
-    pub(super) row_type: ScalarType,
+    pub(super) row_types: Box<[ScalarType]>,
 }
 
 pub(super) fn validate_inputs(
@@ -26,9 +26,12 @@ pub(super) fn validate_inputs(
 ) -> PolarsResult<()> {
     polars_ensure!(initial_state.len() == 1, InvalidOperation:
         "foldv initial state must contain exactly one value");
-    polars_ensure!(row_names.len() == 1 && row_inputs.len() == 1,
-        InvalidOperation: "foldv currently requires exactly one row input");
-    polars_ensure!(initial_state.null_count() == 0 && row_inputs[0].null_count() == 0,
+    polars_ensure!(!row_inputs.is_empty(), InvalidOperation:
+        "foldv function must reference at least one row input");
+    polars_ensure!(row_names.len() == row_inputs.len(), InvalidOperation:
+        "foldv received inconsistent row-input metadata");
+    polars_ensure!(initial_state.null_count() == 0
+        && row_inputs.iter().all(|input| input.null_count() == 0),
         InvalidOperation: "foldv currently requires non-null values");
     Ok(())
 }
@@ -40,21 +43,26 @@ pub(super) fn resolve_types(
     row_inputs: &[Column],
 ) -> PolarsResult<ResolvedTypes> {
     let state_type = ScalarType::from_dtype(initial_state.dtype())?;
-    let row_type = ScalarType::from_dtype(row_inputs[0].dtype())?;
+    let row_types = row_inputs
+        .iter()
+        .map(|input| ScalarType::from_dtype(input.dtype()))
+        .collect::<PolarsResult<Box<[_]>>>()?;
     let expression = function.clone().map_expr(|expr| match expr {
         Expr::Element => Expr::Column(STATE_NAME.into()),
         expr => expr,
     });
-    let mut schema = Schema::with_capacity(2);
+    let mut schema = Schema::with_capacity(row_names.len() + 1);
     schema.with_column(STATE_NAME.into(), state_type.dtype());
-    schema.with_column(row_names[0].clone(), row_type.dtype());
+    for (name, dtype) in row_names.iter().zip(&row_types) {
+        schema.with_column(name.clone(), dtype.dtype());
+    }
     let output = expression.to_field(&schema)?.dtype;
     polars_ensure!(output == state_type.dtype(), InvalidOperation:
-        "foldv function resolves to {output}, but the state type is {} and row type is {}: {expression:?}",
-        state_type.dtype(), row_type.dtype());
+        "foldv function resolves to {output}, but the state type is {}: {expression:?}",
+        state_type.dtype());
     Ok(ResolvedTypes {
         expression,
         state_type,
-        row_type,
+        row_types,
     })
 }

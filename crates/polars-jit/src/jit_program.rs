@@ -151,26 +151,4 @@ impl JitProgram {
             Self::Compare { .. } | Self::Boolean { .. } | Self::Not(_) => ScalarType::Boolean,
         }
     }
-
-    pub(crate) fn input_dtype(&self, searched: InputId) -> Option<ScalarType> {
-        match self {
-            Self::Input { input, dtype } => (*input == searched).then_some(*dtype),
-            Self::Literal { .. } => None,
-            Self::Cast { input, .. } | Self::Not(input) => input.input_dtype(searched),
-            Self::Binary { left, right, .. }
-            | Self::Compare { left, right, .. }
-            | Self::Boolean { left, right, .. } => left
-                .input_dtype(searched)
-                .or_else(|| right.input_dtype(searched)),
-            Self::Ternary {
-                predicate,
-                truthy,
-                falsy,
-                ..
-            } => predicate
-                .input_dtype(searched)
-                .or_else(|| truthy.input_dtype(searched))
-                .or_else(|| falsy.input_dtype(searched)),
-        }
-    }
 }

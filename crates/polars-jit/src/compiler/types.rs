@@ -1,11 +1,17 @@
 use cranelift_jit::JITModule;
 
-use crate::jit_program::InputId;
+use crate::jit_program::{InputId, ScalarType};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct InputBinding {
+    pub(crate) input: InputId,
+    pub(crate) dtype: ScalarType,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ListBindings {
-    pub(crate) state_input: InputId,
-    pub(crate) row_inputs: Box<[InputId]>,
+    pub(crate) state: InputBinding,
+    pub(crate) rows: Box<[InputBinding]>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -32,20 +32,23 @@ pub(crate) fn execute(
     initial_state: &Column,
     row_inputs: &[Column],
 ) -> PolarsResult<Column> {
-    polars_ensure!(initial_state.len() == 1 && row_inputs.len() == 1, InvalidOperation:
+    polars_ensure!(initial_state.len() == 1 && !row_inputs.is_empty(), InvalidOperation:
         "foldv received invalid inputs");
     let state_type = ScalarType::from_dtype(initial_state.dtype())?;
     let initial_state = initial_state_bytes(initial_state, state_type)?;
-    let input = RuntimeInput::from_column(&row_inputs[0])?;
-    let mut output = vec![0_u8; input.len() * state_type.byte_width()];
-    let pointers = [input.as_ptr()?];
-    call(
-        &compiled,
-        &pointers,
-        input.len(),
-        &initial_state,
-        &mut output,
-    );
+    let inputs = row_inputs
+        .iter()
+        .map(RuntimeInput::from_column)
+        .collect::<PolarsResult<Vec<_>>>()?;
+    let row_count = inputs[0].len();
+    polars_ensure!(inputs.iter().all(|input| input.len() == row_count), ShapeMismatch:
+        "foldv row inputs must have equal lengths");
+    let pointers = inputs
+        .iter()
+        .map(RuntimeInput::as_ptr)
+        .collect::<PolarsResult<Vec<_>>>()?;
+    let mut output = vec![0_u8; row_count * state_type.byte_width()];
+    call(&compiled, &pointers, row_count, &initial_state, &mut output);
     output_column(row_inputs[0].name().clone(), state_type, &output)
 }
 

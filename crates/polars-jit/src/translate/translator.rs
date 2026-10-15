@@ -11,7 +11,7 @@ mod literals;
 mod operators;
 mod typing;
 
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::{PolarsResult, polars_err};
 use polars_plan::dsl::{BooleanFunction, Expr, FunctionExpr, Operator};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -20,17 +20,17 @@ use super::resolve::{ResolvedTypes, STATE_NAME};
 use crate::jit_program::{InputId, JitProgram, ScalarType};
 
 pub(super) struct Translator<'a> {
-    row_name: &'a PlSmallStr,
+    row_names: &'a [PlSmallStr],
     state_type: ScalarType,
-    row_type: ScalarType,
+    row_types: &'a [ScalarType],
 }
 
 impl<'a> Translator<'a> {
-    pub(super) fn new(row_name: &'a PlSmallStr, resolved: &ResolvedTypes) -> Self {
+    pub(super) fn new(row_names: &'a [PlSmallStr], resolved: &'a ResolvedTypes) -> Self {
         Self {
-            row_name,
+            row_names,
             state_type: resolved.state_type,
-            row_type: resolved.row_type,
+            row_types: &resolved.row_types,
         }
     }
 
@@ -79,21 +79,22 @@ impl<'a> Translator<'a> {
         }
     }
 
-    /// The carried state or the row input.
+    /// The carried state or a row input.
     fn column(&self, name: &PlSmallStr) -> PolarsResult<JitProgram> {
+        if name.as_str() == STATE_NAME {
+            return Ok(JitProgram::Input {
+                input: InputId(0),
+                dtype: self.state_type,
+            });
+        }
+        let index = self
+            .row_names
+            .iter()
+            .position(|candidate| candidate == name)
+            .ok_or_else(|| polars_err!(ColumnNotFound: "JIT input `{name}`"))?;
         Ok(JitProgram::Input {
-            input: if name.as_str() == STATE_NAME {
-                InputId(0)
-            } else if name == self.row_name {
-                InputId(1)
-            } else {
-                polars_bail!(ColumnNotFound: "JIT input `{name}`")
-            },
-            dtype: if name.as_str() == STATE_NAME {
-                self.state_type
-            } else {
-                self.row_type
-            },
+            input: InputId(index as u32 + 1),
+            dtype: self.row_types[index],
         })
     }
 }

@@ -15,7 +15,7 @@ use polars_utils::pl_str::PlSmallStr;
 use translator::Translator;
 pub(crate) use types::TranslationResult;
 
-use crate::compiler::ListBindings;
+use crate::compiler::{InputBinding, ListBindings};
 use crate::jit_program::InputId;
 
 pub(crate) fn translate(
@@ -32,12 +32,26 @@ pub(crate) fn translate(
 
     // Program construction: translate the expression into typed JIT nodes.
     let program =
-        Translator::new(&row_names[0], &resolved).expression(&resolved.expression, None, "root")?;
+        Translator::new(row_names, &resolved).expression(&resolved.expression, None, "root")?;
+
+    // The state is input 0; row inputs follow in order.
+    let rows = resolved
+        .row_types
+        .iter()
+        .enumerate()
+        .map(|(index, dtype)| InputBinding {
+            input: InputId(index as u32 + 1),
+            dtype: *dtype,
+        })
+        .collect();
     Ok(TranslationResult {
         program,
         bindings: ListBindings {
-            state_input: InputId(0),
-            row_inputs: vec![InputId(1)].into_boxed_slice(),
+            state: InputBinding {
+                input: InputId(0),
+                dtype: resolved.state_type,
+            },
+            rows,
         },
     })
 }

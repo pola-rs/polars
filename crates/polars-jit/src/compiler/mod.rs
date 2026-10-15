@@ -10,7 +10,7 @@ mod types;
 
 use polars_error::PolarsResult;
 pub use types::CompiledProgram;
-pub(crate) use types::{CompilationShape, ListBindings};
+pub(crate) use types::{CompilationShape, InputBinding, ListBindings};
 
 use crate::jit_program::JitProgram;
 
