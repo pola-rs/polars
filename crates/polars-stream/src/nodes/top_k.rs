@@ -104,7 +104,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
     ) -> Self {
         Self {
             k,
-            heap: BinaryHeap::new(),
+            heap: BinaryHeap::with_capacity(k + 1),
             df_subsets: SlotMap::with_key(),
             row_idxs: SlotMap::with_key(),
             marked_for_pruning: SecondaryMap::new(),
