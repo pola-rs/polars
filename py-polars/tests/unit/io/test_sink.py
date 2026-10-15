@@ -188,6 +188,62 @@ def test_double_lazy_error(sink: Any) -> None:
         sink(sink(df.lazy(), "a", lazy=True), "b")
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lazy_sink_as_input_error_29910(engine: EngineType) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    sink = df.lazy().sink_parquet("a.parquet", lazy=True)
+
+    for q in [
+        sink.select(pl.len()),
+        sink.cache().select(pl.len()),
+        pl.concat([sink, sink]),
+        sink.join(df.lazy(), how="cross"),
+        sink.join(df.lazy(), left_on=pl.lit(1), right_on="a", how="left"),
+        sink.join_where(df.lazy(), pl.col("a") > 0),
+        sink.unique(subset=pl.lit(1)),
+    ]:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match="a sink cannot be used as the input of another operation",
+        ):
+            q.collect(engine=engine)
+
+    sink.collect_schema()
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        sink.select(pl.len()).collect(engine=engine)
+
+    for q in [
+        df.lazy()
+        .pipe_with_schema(lambda q, _: q.sink_parquet("a.parquet", lazy=True))
+        .select(pl.len()),
+        pl.collect_all(
+            [df.lazy().sink_parquet("a.parquet", lazy=True)], lazy=True
+        ).select(pl.len()),
+    ]:
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            q.collect(engine=engine)
+
+    group = pl.collect_all([df.lazy().sink_parquet("a.parquet", lazy=True)], lazy=True)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.collect_all([group], engine=engine)
+
+    out = (
+        pl.SQLContext(t=sink)
+        .execute("WITH t AS (SELECT 1 AS a) SELECT * FROM t")
+        .collect(engine=engine)
+    )
+    assert_frame_equal(out, pl.DataFrame({"a": [1]}), check_dtypes=False)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.write_disk
+def test_lazy_sink_pipe_with_schema_29910(tmp_path: Path, engine: EngineType) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    sink = df.lazy().sink_parquet(tmp_path / "a.parquet", lazy=True)
+    sink.pipe_with_schema(lambda q, _: q).collect(engine=engine)
+    assert_frame_equal(pl.read_parquet(tmp_path / "a.parquet"), df)
+
+
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
 def test_sink_to_memory(sink: Any, scan: Any) -> None:
     df = pl.DataFrame(
