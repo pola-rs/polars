@@ -19,8 +19,9 @@ pub struct UniqueIdNode {
     key_schema: Arc<Schema>,
     out_name: PlSmallStr,
     grouper: Box<dyn Grouper>,
+    /// Cached `0..n` identity subset, the only way to feed whole morsels to
+    /// [`Grouper::insert_keys_subset`]. Grows to the largest morsel seen.
     subset: Vec<IdxSize>,
-    group_idxs: Vec<IdxSize>,
     random_state: PlRandomState,
 }
 
@@ -33,7 +34,6 @@ impl UniqueIdNode {
             out_name,
             grouper,
             subset: Vec::new(),
-            group_idxs: Vec::new(),
             random_state,
         }
     }
@@ -55,7 +55,6 @@ impl ComputeNode for UniqueIdNode {
         if recv[0] == PortState::Done || send[0] == PortState::Done {
             self.grouper = self.grouper.new_empty();
             self.subset = Vec::new();
-            self.group_idxs = Vec::new();
         }
         Ok(())
     }
@@ -85,19 +84,21 @@ impl ComputeNode for UniqueIdNode {
                         let key_df = df.select(slf.key_schema.iter_names()).unwrap();
                         let hash_keys =
                             HashKeys::from_df(&key_df, slf.random_state.clone(), true, false);
+                        // `insert_keys_subset` reserves exactly `df.height()`, so this
+                        // is a single allocation that is then moved into the output.
+                        let mut group_idxs = Vec::new();
                         unsafe {
                             slf.subset
                                 .extend(slf.subset.len() as IdxSize..df.height() as IdxSize);
                             slf.grouper.insert_keys_subset(
                                 &hash_keys,
                                 &slf.subset[..df.height()],
-                                Some(&mut slf.group_idxs),
+                                Some(&mut group_idxs),
                             );
                         }
 
                         // The group index is a dense, collision-free unique ID.
-                        let ids = std::mem::take(&mut slf.group_idxs);
-                        let col = IdxCa::new_vec(slf.out_name.clone(), ids).into_column();
+                        let col = IdxCa::new_vec(slf.out_name.clone(), group_idxs).into_column();
                         unsafe { DataFrame::new_unchecked(col.len(), vec![col]) }
                     })
                     .await;
