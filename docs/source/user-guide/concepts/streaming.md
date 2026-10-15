@@ -30,8 +30,8 @@ how memory intensive the operation can be.
 --8<-- "python/user-guide/concepts/streaming.py:createplan"
 ```
 
-## Monitoring a streaming query
+## Profiling a query
 
-The streaming engine can report per-node runtime metrics to Polars Cloud, letting you inspect where
-a query spends its time from the dashboard, so that you can uncover bottlenecks and improve its
-performance. See [Query monitoring](../misc/monitoring.md).
+The physical plan above shows how Polars will run a query. Query profiling shows how each node of
+the physical plan performs while the query runs on your machine: the time spent, rows processed and
+I/O. See [Query profiling](../query-profiling.md).

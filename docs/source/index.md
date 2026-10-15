@@ -21,23 +21,22 @@ in Rust, and available for Python, R and NodeJS.
 
 ## Key features
 
-- **Fast**: Written from scratch in Rust, designed close to the machine and without external
-  dependencies.
-- **I/O**: First class support for all common data storage layers: local, cloud storage & databases.
-- **Intuitive API**: Write your queries the way they were intended. Polars, internally, will
-  determine the most efficient way to execute using its query optimizer.
-- **Out of Core**: The streaming API allows you to process your results without requiring all your
-  data to be in memory at the same time.
-- **Parallel**: Utilises the power of your machine by dividing the workload among the available CPU
-  cores without any additional configuration.
+- **Fast**: Leading performance on analytical workloads. Polars runs queries on all available CPU
+  cores with vectorized (SIMD) execution, without any configuration.
+- **Optimizations out of the box**: Use the lazy API so Polars can optimize your queries before
+  running it, for example by reading only the rows and columns it needs.
+- **Larger-than-RAM**: The streaming engine processes data in batches, so you can query datasets
+  that don't fit in memory.
 - **Query profiling**: Profile lazy queries as they run on your machine, and see the time spent,
   rows processed and I/O for each operation.
-- **Vectorized Query Engine**
-- **GPU Support**: Run queries on NVIDIA GPUs for maximum performance for in-memory or streaming
+- **Expressive API**: Compose complex queries from expressions that Polars runs in parallel.
+- **Extensible**: Add your own functions with expression plugins written in Rust, and your own data
+  sources with I/O plugins.
+- **Multi-language**: Use Polars from Python, Rust, Node.js and R, or query your data with SQL.
+- **GPU support**: Run queries on NVIDIA GPUs for maximum performance for in-memory or streaming
   workloads.
-- **Apache Arrow support**: Polars can consume and produce Arrow data often with zero-copy
-  operations. Note that Polars is not built on a Pyarrow/Arrow implementation. Instead, Polars has
-  its own compute and buffer implementations.
+- **Interoperable**: Polars supports the Apache Arrow columnar format, so it can share data with
+  other Arrow-based tools without copying.
 
 <!-- dprint-ignore-start -->
 
@@ -63,36 +62,20 @@ performance-critical parts in a query engine.
 
 {{code_block('home/example','example',['scan_csv','filter','group_by','collect'])}}
 
-A more extensive introduction can be found in the [next chapter](user-guide/getting-started.md).
-
-## Query profiling example
-
-Query profiling shows how each operation of a lazy query performs while it runs on your machine. The
-query below computes the total value of each order:
+To see how each operation of this query performs on your machine, install the `polars-cloud` package
+and enable query profiling before you collect it:
 
 ```python
-import polars as pl
-import polars_cloud as pc
-
-pc.authenticate()
-
 pl.Config.enable_monitoring()
 
-print(
-    pl.LazyFrame(
-        {
-            "quantity": [1, 2, 3, 4, 3],
-            "price": [34.2, 43.2, 123.1, 23.3, 42],
-            "order_id": [1, 1, 2, 2, 2],
-        }
-    )
-    .group_by("order_id")
-    .agg((pl.col("quantity") * pl.col("price")).sum())
-    .collect()
-)
+df = q.collect()
 ```
 
-To set up query profiling, see [Query monitoring](user-guide/misc/monitoring.md).
+While the query runs, you can follow the time spent, rows processed and I/O of each operation in
+Polars Cloud. To set it up, see [Query profiling](user-guide/query-profiling.md).
+
+A more extensive introduction to Polars and how to get started can be found in the
+[next chapter](user-guide/getting-started.md).
 
 ## Community
 
