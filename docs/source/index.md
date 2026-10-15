@@ -30,12 +30,14 @@ in Rust, and available for Python, R and NodeJS.
   data to be in memory at the same time.
 - **Parallel**: Utilises the power of your machine by dividing the workload among the available CPU
   cores without any additional configuration.
+- **Query profiling**: Profile lazy queries as they run on your machine, and see the time spent,
+  rows processed and I/O for each operation.
 - **Vectorized Query Engine**
-- **GPU Support**: Optionally run queries on NVIDIA GPUs for maximum performance for in-memory or
-  streaming workloads.
-- **[Apache Arrow support](https://arrow.apache.org/)**: Polars can consume and produce Arrow data
-  often with zero-copy operations. Note that Polars is not built on a Pyarrow/Arrow implementation.
-  Instead, Polars has its own compute and buffer implementations.
+- **GPU Support**: Run queries on NVIDIA GPUs for maximum performance for in-memory or streaming
+  workloads.
+- **Apache Arrow support**: Polars can consume and produce Arrow data often with zero-copy
+  operations. Note that Polars is not built on a Pyarrow/Arrow implementation. Instead, Polars has
+  its own compute and buffer implementations.
 
 <!-- dprint-ignore-start -->
 
@@ -62,6 +64,35 @@ performance-critical parts in a query engine.
 {{code_block('home/example','example',['scan_csv','filter','group_by','collect'])}}
 
 A more extensive introduction can be found in the [next chapter](user-guide/getting-started.md).
+
+## Query profiling example
+
+Query profiling shows how each operation of a lazy query performs while it runs on your machine. The
+query below computes the total value of each order:
+
+```python
+import polars as pl
+import polars_cloud as pc
+
+pc.authenticate()
+
+pl.Config.enable_monitoring()
+
+print(
+    pl.LazyFrame(
+        {
+            "quantity": [1, 2, 3, 4, 3],
+            "price": [34.2, 43.2, 123.1, 23.3, 42],
+            "order_id": [1, 1, 2, 2, 2],
+        }
+    )
+    .group_by("order_id")
+    .agg((pl.col("quantity") * pl.col("price")).sum())
+    .collect()
+)
+```
+
+To set up query profiling, see [Query monitoring](user-guide/misc/monitoring.md).
 
 ## Community
 
