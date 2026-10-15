@@ -4,6 +4,13 @@ pub(crate) struct InputId(pub(crate) u32);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BinaryOp {
     Add,
+    Subtract,
+    Multiply,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum JitLiteral {
+    Signed(i128),
 }
 
 use polars_core::prelude::DataType;
@@ -13,6 +20,10 @@ use polars_core::prelude::DataType;
 pub enum JitProgram {
     Input {
         input: InputId,
+        dtype: DataType,
+    },
+    Literal {
+        value: JitLiteral,
         dtype: DataType,
     },
     Binary {
@@ -26,7 +37,9 @@ pub enum JitProgram {
 impl JitProgram {
     pub fn dtype(&self) -> &DataType {
         match self {
-            Self::Input { dtype, .. } | Self::Binary { dtype, .. } => dtype,
+            Self::Input { dtype, .. }
+            | Self::Literal { dtype, .. }
+            | Self::Binary { dtype, .. } => dtype,
         }
     }
 }

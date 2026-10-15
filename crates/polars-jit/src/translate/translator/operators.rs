@@ -1,32 +1,33 @@
 //! Translation of binary operators.
 
-use polars_core::prelude::DataType;
 use polars_error::PolarsResult;
-use polars_plan::dsl::Expr;
+use polars_plan::dsl::{Expr, Operator};
 
 use super::Translator;
-use crate::jit_program::{BinaryOp, InputId, JitProgram};
-use crate::translate::helpers::unsupported;
+use crate::jit_program::{BinaryOp, JitProgram};
+use crate::translate::helpers::at;
 
 impl Translator<'_> {
-    /// `+`. Only `element + column` is supported so far: the state plus the row input.
-    pub(super) fn arithmetic(&self, left: &Expr, right: &Expr) -> PolarsResult<JitProgram> {
-        let adds_row_to_state = matches!(left, Expr::Element)
-            && matches!(right, Expr::Column(name) if name == &self.row_names[0]);
-        if !adds_row_to_state {
-            return Err(unsupported());
-        }
+    /// `+`, `-`, and `*`, with the result type Polars gives the expression.
+    pub(super) fn arithmetic(
+        &self,
+        expression: &Expr,
+        left: &Expr,
+        op: Operator,
+        right: &Expr,
+        location: &str,
+    ) -> PolarsResult<JitProgram> {
+        let op = match op {
+            Operator::Plus => BinaryOp::Add,
+            Operator::Minus => BinaryOp::Subtract,
+            Operator::Multiply => BinaryOp::Multiply,
+            _ => unreachable!("`expression` only sends arithmetic operators here"),
+        };
         Ok(JitProgram::Binary {
-            op: BinaryOp::Add,
-            left: Box::new(JitProgram::Input {
-                input: InputId(0),
-                dtype: DataType::Int64,
-            }),
-            right: Box::new(JitProgram::Input {
-                input: InputId(1),
-                dtype: DataType::Int64,
-            }),
-            dtype: DataType::Int64,
+            op,
+            left: Box::new(self.expression(left, &at(location, "left"))?),
+            right: Box::new(self.expression(right, &at(location, "right"))?),
+            dtype: expression.to_field(self.schema)?.dtype,
         })
     }
 }

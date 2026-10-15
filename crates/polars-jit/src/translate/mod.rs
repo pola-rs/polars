@@ -28,10 +28,11 @@ pub(crate) fn translate(
     resolve::validate_inputs(row_names, initial_state, row_inputs)?;
 
     // Type resolution: establish the concrete types used by the program.
-    resolve::resolve_types(initial_state, row_inputs)?;
+    let resolved = resolve::resolve_types(function, row_names, initial_state, row_inputs)?;
 
     // Program construction: translate the expression into typed JIT nodes.
-    let program = Translator::new(row_names).expression(function)?;
+    let program = Translator::new(&resolved.schema, &row_names[0])
+        .expression(&resolved.expression, "root")?;
     Ok(TranslationResult {
         program,
         bindings: ListBindings {

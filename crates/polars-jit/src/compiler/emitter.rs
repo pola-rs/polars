@@ -4,6 +4,7 @@
 //! generates that node. The methods live in the modules below, grouped by kind like the
 //! translator's.
 
+mod literals;
 mod operators;
 
 use cranelift_codegen::ir::Value;
@@ -31,6 +32,7 @@ impl<'a> Emitter<'a> {
     ) -> PolarsResult<Value> {
         match program {
             JitProgram::Input { input, .. } => self.input(*input),
+            JitProgram::Literal { value, .. } => self.literal(builder, value),
 
             // Operators, in `operators`.
             JitProgram::Binary {

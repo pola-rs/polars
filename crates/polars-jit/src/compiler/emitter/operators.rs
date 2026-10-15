@@ -8,7 +8,7 @@ use super::Emitter;
 use crate::jit_program::{BinaryOp, JitProgram};
 
 impl Emitter<'_> {
-    /// `+` on Int64 values.
+    /// `+`, `-`, and `*` on Int64 values.
     pub(super) fn arithmetic(
         &mut self,
         builder: &mut FunctionBuilder<'_>,
@@ -20,6 +20,8 @@ impl Emitter<'_> {
         let right = self.emit(builder, right)?;
         Ok(match op {
             BinaryOp::Add => builder.ins().iadd(left, right),
+            BinaryOp::Subtract => builder.ins().isub(left, right),
+            BinaryOp::Multiply => builder.ins().imul(left, right),
         })
     }
 }
