@@ -224,9 +224,8 @@ impl BasicDecompressor {
     }
 
     pub fn reuse_page_buffer(&mut self, page: DataPage) {
-        let buffer = match page.buffer {
-            CowBuffer::Borrowed(_) => return,
-            CowBuffer::Owned(vec) => vec,
+        let Some(buffer) = page.into_owned_buffer() else {
+            return;
         };
 
         if self.buffer.capacity() > buffer.capacity() {

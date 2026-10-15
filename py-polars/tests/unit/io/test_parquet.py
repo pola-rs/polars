@@ -6192,3 +6192,72 @@ def test_write_list_null_count(data_page_size: int | None) -> None:
     statistics_pa = pq.read_metadata(f_pa).row_group(0).column(0).statistics
 
     assert statistics.null_count == statistics_pa.null_count == 4
+
+
+@pytest.mark.parametrize("compression", ["snappy", "zstd", "none"])
+@pytest.mark.parametrize("data_page_version", ["1.0", "2.0"])
+def test_plain_strings_small_pages(compression: str, data_page_version: str) -> None:
+    values = [
+        "a" * 12,
+        "b" * 13,
+        "é" * 64,
+        None,
+        "",
+        "東" * 43,
+        "x" * 128,
+        "😀" * 64,
+        "ab",
+        "c" * 300,
+    ]
+    df = pl.DataFrame({"s": values * 30}).with_row_index()
+    df = df.with_columns(l=pl.concat_list("s", "s"))
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        compression=compression,
+        use_dictionary=False,
+        data_page_size=512,
+        data_page_version=data_page_version,
+    )
+
+    f.seek(0)
+    out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+    for expr in [
+        pl.col("index") % 10 == 3,
+        pl.col("index") % 10 != 3,
+        pl.col("s").str.contains("é"),
+        pl.col("s") != "ab",
+    ]:
+        f.seek(0)
+        assert_frame_equal(pl.scan_parquet(f).filter(expr).collect(), df.filter(expr))
+
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).slice(25, 100).collect(), df.slice(25, 100))
+
+    ipc = io.BytesIO()
+    out.write_ipc(ipc)
+    ipc.seek(0)
+    assert_frame_equal(pl.read_ipc(ipc), df)
+    assert_frame_equal(pl.from_arrow(out.to_arrow()), df)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [b"\x80abc", b"abc\xe6\x9d", b"ab\xbfcd" + b"y" * 20, b"y" * 200 + b"\xff"],
+)
+@pytest.mark.parametrize("neighbor", [b"x" * 5, "é".encode() * 100])
+@pytest.mark.parametrize("invalid_first", [True, False])
+def test_plain_strings_invalid_utf8(
+    invalid: bytes, neighbor: bytes, invalid_first: bool
+) -> None:
+    values = [invalid, neighbor] if invalid_first else [neighbor, invalid]
+    tbl = pa.table({"s": pa.array(values, pa.binary()).view(pa.string())})
+    f = io.BytesIO()
+    pq.write_table(tbl, f, use_dictionary=False, compression="snappy")
+    f.seek(0)
+    with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
+        pl.read_parquet(f)
