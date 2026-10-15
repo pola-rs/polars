@@ -51,13 +51,13 @@ fn foldv_supports_nested_state_and_value_dependent_conditions() -> PolarsResult<
 }
 
 #[test]
-fn foldv_supports_or_not_equal_and_not_in_predicates() -> PolarsResult<()> {
-    // The predicate combines the remaining Boolean and comparison operations.
+fn foldv_supports_or_in_predicates() -> PolarsResult<()> {
+    // Either matching comparison selects the state-updating branch.
     let value = col("l");
     let predicate = value
         .clone()
         .eq(lit(2_i64))
-        .or(value.clone().neq(lit(3_i64)).not());
+        .or(value.clone().eq(lit(4_i64)));
     let function = when(predicate)
         .then(Expr::Element + value)
         .otherwise(Expr::Element);
@@ -69,7 +69,47 @@ fn foldv_supports_or_not_equal_and_not_in_predicates() -> PolarsResult<()> {
 
     assert_eq!(
         result.column("result")?.i64()?.to_vec(),
-        [Some(0), Some(2), Some(5), Some(5)]
+        [Some(0), Some(2), Some(2), Some(6)]
+    );
+    Ok(())
+}
+
+#[test]
+fn foldv_supports_not_equal_in_predicates() -> PolarsResult<()> {
+    // Rows unequal to the excluded value update the state.
+    let value = col("l");
+    let function = when(value.clone().neq(lit(2_i64)))
+        .then(Expr::Element + value)
+        .otherwise(Expr::Element);
+
+    let result = df!("l" => [1_i64, 2, 3])?
+        .lazy()
+        .select([foldv(lit(0_i64).cast(DataType::Int64), function)?.alias("result")])
+        .collect()?;
+
+    assert_eq!(
+        result.column("result")?.i64()?.to_vec(),
+        [Some(1), Some(1), Some(4)]
+    );
+    Ok(())
+}
+
+#[test]
+fn foldv_supports_not_in_predicates() -> PolarsResult<()> {
+    // Negating the comparison reverses which rows update the state.
+    let value = col("l");
+    let function = when(value.clone().eq(lit(2_i64)).not())
+        .then(Expr::Element + value)
+        .otherwise(Expr::Element);
+
+    let result = df!("l" => [1_i64, 2, 3])?
+        .lazy()
+        .select([foldv(lit(0_i64).cast(DataType::Int64), function)?.alias("result")])
+        .collect()?;
+
+    assert_eq!(
+        result.column("result")?.i64()?.to_vec(),
+        [Some(1), Some(1), Some(4)]
     );
     Ok(())
 }

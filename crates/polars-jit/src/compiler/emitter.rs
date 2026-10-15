@@ -4,6 +4,7 @@
 //! generates that node. The methods live in the modules below, grouped by kind like the
 //! translator's.
 
+mod casts;
 mod conditionals;
 mod functions;
 mod literals;
@@ -34,12 +35,19 @@ impl<'a> Emitter<'a> {
     ) -> PolarsResult<Value> {
         match program {
             JitProgram::Input { input, .. } => self.input(*input),
-            JitProgram::Literal { value, .. } => self.literal(builder, value),
+            JitProgram::Literal { value, dtype } => self.literal(builder, value, *dtype),
+            JitProgram::Cast { input, dtype } => self.cast(builder, input, *dtype),
 
             // Operators, in `operators`.
             JitProgram::Binary {
-                op, left, right, ..
-            } => self.arithmetic(builder, *op, left, right),
+                op,
+                left,
+                right,
+                dtype,
+            } => self.arithmetic(builder, *op, left, right, *dtype),
+            JitProgram::Compare { op, left, right } if left.dtype().is_float() => {
+                self.compare_floats(builder, *op, left, right)
+            },
             JitProgram::Compare { op, left, right } => {
                 self.compare_integers(builder, *op, left, right)
             },
@@ -53,8 +61,8 @@ impl<'a> Emitter<'a> {
                 predicate,
                 truthy,
                 falsy,
-                ..
-            } => self.ternary(builder, predicate, truthy, falsy),
+                dtype,
+            } => self.ternary(builder, predicate, truthy, falsy, *dtype),
         }
     }
 

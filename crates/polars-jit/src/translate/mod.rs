@@ -1,7 +1,7 @@
 //! Translation of a Polars fold body into a typed `JitProgram`.
 //!
-//! `resolve` establishes the state and row-input types, and the `Translator` then turns the
-//! body into JIT nodes.
+//! `resolve` establishes the state and row-input types using Polars' own type rules, and the
+//! `Translator` then turns the body into JIT nodes.
 
 mod helpers;
 mod resolve;
@@ -31,8 +31,8 @@ pub(crate) fn translate(
     let resolved = resolve::resolve_types(function, row_names, initial_state, row_inputs)?;
 
     // Program construction: translate the expression into typed JIT nodes.
-    let program = Translator::new(&resolved.schema, &row_names[0])
-        .expression(&resolved.expression, "root")?;
+    let program =
+        Translator::new(&row_names[0], &resolved).expression(&resolved.expression, None, "root")?;
     Ok(TranslationResult {
         program,
         bindings: ListBindings {

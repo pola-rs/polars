@@ -13,7 +13,7 @@ pub(crate) enum CompilationShape {
     Lists(ListBindings),
 }
 
-pub(super) type ListFunction = unsafe extern "C" fn(*const *const i64, usize, *const i64, *mut i64);
+pub(super) type ListFunction = unsafe extern "C" fn(*const *const u8, usize, *const u8, *mut u8);
 
 pub struct CompiledProgram {
     pub(crate) function: ListFunction,

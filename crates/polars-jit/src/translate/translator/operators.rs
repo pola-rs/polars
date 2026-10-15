@@ -1,22 +1,26 @@
-//! Translation of binary operators.
+//! Translation of binary operators: arithmetic, comparisons, and Boolean `and`/`or`.
 
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::{Expr, Operator};
 
 use super::Translator;
 use crate::jit_program::{BinaryOp, BooleanOp, CompareOp, JitProgram};
-use crate::translate::helpers::at;
+use crate::translate::helpers::{at, common_type};
 
 impl Translator<'_> {
-    /// `+`, `-`, and `*`, with the result type Polars gives the expression.
+    /// `+`, `-`, and `*`, which convert both operands to their common type.
     pub(super) fn arithmetic(
         &self,
-        expression: &Expr,
         left: &Expr,
         op: Operator,
         right: &Expr,
         location: &str,
     ) -> PolarsResult<JitProgram> {
+        let operands = self.operands(left, right, location)?;
+        let dtype = common_type(operands.0.dtype(), operands.1.dtype())?;
+        let (left, right) = self.cast_pair(operands, dtype)?;
+        polars_ensure!(dtype.is_numeric(), InvalidOperation:
+            "operator {op} requires numeric operands at {location}");
         let op = match op {
             Operator::Plus => BinaryOp::Add,
             Operator::Minus => BinaryOp::Subtract,
@@ -25,13 +29,13 @@ impl Translator<'_> {
         };
         Ok(JitProgram::Binary {
             op,
-            left: Box::new(self.expression(left, &at(location, "left"))?),
-            right: Box::new(self.expression(right, &at(location, "right"))?),
-            dtype: expression.to_field(self.schema)?.dtype,
+            left,
+            right,
+            dtype,
         })
     }
 
-    /// Comparisons of Int64 values.
+    /// Comparisons, which convert both operands to their common type.
     pub(super) fn comparison(
         &self,
         left: &Expr,
@@ -39,6 +43,9 @@ impl Translator<'_> {
         right: &Expr,
         location: &str,
     ) -> PolarsResult<JitProgram> {
+        let operands = self.operands(left, right, location)?;
+        let dtype = common_type(operands.0.dtype(), operands.1.dtype())?;
+        let (left, right) = self.cast_pair(operands, dtype)?;
         let op = match op {
             Operator::Eq => CompareOp::Equal,
             Operator::NotEq => CompareOp::NotEqual,
@@ -48,11 +55,7 @@ impl Translator<'_> {
             Operator::GtEq => CompareOp::GreaterThanOrEqual,
             _ => unreachable!("`expression` only sends comparison operators here"),
         };
-        Ok(JitProgram::Compare {
-            op,
-            left: Box::new(self.expression(left, &at(location, "left"))?),
-            right: Box::new(self.expression(right, &at(location, "right"))?),
-        })
+        Ok(JitProgram::Compare { op, left, right })
     }
 
     /// Boolean `and`/`or`.
@@ -73,5 +76,22 @@ impl Translator<'_> {
             left: Box::new(self.boolean(left, &at(location, "left"))?),
             right: Box::new(self.boolean(right, &at(location, "right"))?),
         })
+    }
+
+    /// Translate the operands of a binary operator. An untyped literal takes its type from the
+    /// other operand, so a literal on the left is translated after the right.
+    fn operands(
+        &self,
+        left: &Expr,
+        right: &Expr,
+        location: &str,
+    ) -> PolarsResult<(JitProgram, JitProgram)> {
+        let literal_first = matches!(left, Expr::Literal(_)) && !matches!(right, Expr::Literal(_));
+        self.translate_pair(
+            (left, &at(location, "left")),
+            (right, &at(location, "right")),
+            None,
+            literal_first,
+        )
     }
 }

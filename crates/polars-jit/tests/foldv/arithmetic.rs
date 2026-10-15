@@ -36,9 +36,9 @@ fn foldv_passes_each_updated_state_to_the_next_row() -> PolarsResult<()> {
 }
 
 #[test]
-fn foldv_translates_aliases_subtraction_and_multiplication() -> PolarsResult<()> {
+fn foldv_ignores_aliases_when_translating_the_calculation() -> PolarsResult<()> {
     // Aliases do not change the scalar calculation represented by the program.
-    let function = (Expr::Element.alias("state") - col("l").alias("value")) * lit(2_i64);
+    let function = Expr::Element.alias("state") + col("l").alias("value");
 
     let result = df!("l" => [1_i64, 2])?
         .lazy()
@@ -47,7 +47,38 @@ fn foldv_translates_aliases_subtraction_and_multiplication() -> PolarsResult<()>
 
     assert_eq!(
         result.column("result")?.i64()?.to_vec(),
-        [Some(18), Some(32)]
+        [Some(11), Some(13)]
+    );
+    Ok(())
+}
+
+#[test]
+fn foldv_subtracts_each_row_from_the_carried_state() -> PolarsResult<()> {
+    // Subtraction preserves operand order during every state update.
+    let result = df!("l" => [1_i64, 2])?
+        .lazy()
+        .select([
+            foldv(lit(10_i64).cast(DataType::Int64), Expr::Element - col("l"))?.alias("result"),
+        ])
+        .collect()?;
+
+    assert_eq!(result.column("result")?.i64()?.to_vec(), [Some(9), Some(7)]);
+    Ok(())
+}
+
+#[test]
+fn foldv_multiplies_the_carried_state_by_each_row() -> PolarsResult<()> {
+    // Multiplication feeds its product into the following iteration.
+    let result = df!("l" => [2_i64, 3])?
+        .lazy()
+        .select([
+            foldv(lit(4_i64).cast(DataType::Int64), Expr::Element * col("l"))?.alias("result"),
+        ])
+        .collect()?;
+
+    assert_eq!(
+        result.column("result")?.i64()?.to_vec(),
+        [Some(8), Some(24)]
     );
     Ok(())
 }

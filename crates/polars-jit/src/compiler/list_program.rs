@@ -1,16 +1,15 @@
 //! The generated function: one loop over the rows that evaluates the fold body for each row.
 
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlagsData, types};
+use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlagsData};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module};
-use polars_core::prelude::DataType;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::{PolarsResult, polars_ensure, polars_err};
 
 use super::emitter::Emitter;
-use super::helpers::compile_error;
+use super::helpers::{compile_error, cranelift_type};
 use super::types::{ListFunction, OwnedModule};
 use super::{CompiledProgram, ListBindings};
 use crate::jit_program::JitProgram;
@@ -19,15 +18,20 @@ pub(super) fn compile(
     program: &JitProgram,
     bindings: &ListBindings,
 ) -> PolarsResult<CompiledProgram> {
-    polars_ensure!(program.dtype() == &DataType::Int64, InvalidOperation:
-        "list compilation currently requires an Int64 program");
     polars_ensure!(bindings.row_inputs.len() == 1, InvalidOperation:
         "list compilation currently requires one row input");
+    let state_type = program.input_dtype(bindings.state_input).ok_or_else(
+        || polars_err!(InvalidOperation: "foldv program does not reference its state"),
+    )?;
+    let row_type = program.input_dtype(bindings.row_inputs[0]).ok_or_else(
+        || polars_err!(InvalidOperation: "foldv program does not reference its row input"),
+    )?;
+    polars_ensure!(program.dtype() == state_type, InvalidOperation:
+        "foldv program output type must match its state type");
+
     let mut owner = host_module()?;
     let module = owner.module_mut();
     let pointer_type = module.target_config().pointer_type();
-    polars_ensure!(pointer_type == types::I64, InvalidOperation:
-        "Int64 list compilation requires a 64-bit host");
 
     let mut context = module.make_context();
     context.func.signature = module.make_signature();
@@ -45,15 +49,17 @@ pub(super) fn compile(
         let done = builder.create_block();
         builder.append_block_params_for_function_params(entry);
         builder.append_block_param(loop_header, pointer_type);
-        builder.append_block_param(loop_header, types::I64);
-        builder.append_block_param(done, types::I64);
+        builder.append_block_param(loop_header, cranelift_type(state_type));
 
         builder.switch_to_block(entry);
         let params = builder.block_params(entry).to_vec();
         let zero = builder.ins().iconst(pointer_type, 0);
-        let initial = builder
-            .ins()
-            .load(types::I64, MemFlagsData::new(), params[2], 0);
+        let initial = builder.ins().load(
+            cranelift_type(state_type),
+            MemFlagsData::new(),
+            params[2],
+            0,
+        );
         builder
             .ins()
             .jump(loop_header, &[zero.into(), initial.into()]);
@@ -64,25 +70,29 @@ pub(super) fn compile(
         let has_row = builder
             .ins()
             .icmp(IntCC::UnsignedLessThan, index, params[1]);
-        builder
-            .ins()
-            .brif(has_row, apply, &[], done, &[state.into()]);
+        builder.ins().brif(has_row, apply, &[], done, &[]);
 
         builder.switch_to_block(apply);
-        let byte_offset = builder.ins().imul_imm_u(index, 8);
+        let byte_offset = builder
+            .ins()
+            .imul_imm_u(index, row_type.byte_width() as i64);
         let values_pointer = builder
             .ins()
             .load(pointer_type, MemFlagsData::new(), params[0], 0);
         let address = builder.ins().iadd(values_pointer, byte_offset);
-        let row_value = builder
-            .ins()
-            .load(types::I64, MemFlagsData::new(), address, 0);
+        let row_value =
+            builder
+                .ins()
+                .load(cranelift_type(row_type), MemFlagsData::new(), address, 0);
         let values = [
             (bindings.state_input, state),
             (bindings.row_inputs[0], row_value),
         ];
         let next_state = Emitter::new(&values).emit(&mut builder, program)?;
-        let output_address = builder.ins().iadd(params[3], byte_offset);
+        let output_offset = builder
+            .ins()
+            .imul_imm_u(index, state_type.byte_width() as i64);
+        let output_address = builder.ins().iadd(params[3], output_offset);
         builder
             .ins()
             .store(MemFlagsData::new(), next_state, output_address, 0);

@@ -1,11 +1,12 @@
 //! `when(...).then(...).otherwise(...)`.
 
-use cranelift_codegen::ir::{InstBuilder, Value, types};
+use cranelift_codegen::ir::{InstBuilder, Value};
 use cranelift_frontend::FunctionBuilder;
 use polars_error::PolarsResult;
 
 use super::Emitter;
-use crate::jit_program::JitProgram;
+use crate::compiler::helpers::cranelift_type;
+use crate::jit_program::{JitProgram, ScalarType};
 
 impl Emitter<'_> {
     /// Evaluate only the selected branch and merge its value.
@@ -15,11 +16,12 @@ impl Emitter<'_> {
         predicate: &JitProgram,
         truthy: &JitProgram,
         falsy: &JitProgram,
+        dtype: ScalarType,
     ) -> PolarsResult<Value> {
         let truthy_block = builder.create_block();
         let falsy_block = builder.create_block();
         let merge = builder.create_block();
-        builder.append_block_param(merge, types::I64);
+        builder.append_block_param(merge, cranelift_type(dtype));
         let predicate = self.emit(builder, predicate)?;
         builder
             .ins()

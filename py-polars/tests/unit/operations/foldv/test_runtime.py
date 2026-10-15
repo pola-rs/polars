@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -43,9 +45,5 @@ def test_foldv_returns_an_empty_result_for_empty_input() -> None:
 
 def test_foldv_requires_the_function_to_return_an_expression() -> None:
     # Invalid callback results fail while constructing the expression.
-    try:
+    with pytest.raises(TypeError, match="must return a Polars expression"):
         pl.foldv(lambda state: 1, s=0)  # type: ignore[return-value]
-    except TypeError as error:
-        assert "must return a Polars expression" in str(error)
-    else:
-        raise AssertionError("foldv accepted a non-expression callback result")

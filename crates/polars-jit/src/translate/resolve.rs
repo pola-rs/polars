@@ -1,19 +1,22 @@
-//! Input validation and type resolution.
+//! Input validation and type resolution with Polars' type rules.
 
 use polars_core::frame::column::Column;
-use polars_core::prelude::{DataType, Schema};
+use polars_core::prelude::Schema;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::Expr;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::jit_program::ScalarType;
+
 /// The column name that stands for the carried state while the body is typed and translated.
 pub(super) const STATE_NAME: &str = "__POLARS_JIT_STATE";
 
-/// The body and the schema it is typed against.
+/// The concrete types a body is translated with.
 pub(super) struct ResolvedTypes {
     /// The body, with the state placeholder replaced by the `STATE_NAME` column.
     pub(super) expression: Expr,
-    pub(super) schema: Schema,
+    pub(super) state_type: ScalarType,
+    pub(super) row_type: ScalarType,
 }
 
 pub(super) fn validate_inputs(
@@ -36,18 +39,22 @@ pub(super) fn resolve_types(
     initial_state: &Column,
     row_inputs: &[Column],
 ) -> PolarsResult<ResolvedTypes> {
-    polars_ensure!(initial_state.dtype() == &DataType::Int64, InvalidOperation:
-        "foldv currently requires an Int64 initial state, got {}", initial_state.dtype());
-    polars_ensure!(row_inputs[0].dtype() == &DataType::Int64, InvalidOperation:
-        "foldv currently requires an Int64 row input");
+    let state_type = ScalarType::from_dtype(initial_state.dtype())?;
+    let row_type = ScalarType::from_dtype(row_inputs[0].dtype())?;
     let expression = function.clone().map_expr(|expr| match expr {
         Expr::Element => Expr::Column(STATE_NAME.into()),
         expr => expr,
     });
     let mut schema = Schema::with_capacity(2);
-    schema.with_column(STATE_NAME.into(), DataType::Int64);
-    schema.with_column(row_names[0].clone(), DataType::Int64);
-    polars_ensure!(expression.to_field(&schema)?.dtype == DataType::Int64,
-        InvalidOperation: "foldv function must produce Int64");
-    Ok(ResolvedTypes { expression, schema })
+    schema.with_column(STATE_NAME.into(), state_type.dtype());
+    schema.with_column(row_names[0].clone(), row_type.dtype());
+    let output = expression.to_field(&schema)?.dtype;
+    polars_ensure!(output == state_type.dtype(), InvalidOperation:
+        "foldv function resolves to {output}, but the state type is {} and row type is {}: {expression:?}",
+        state_type.dtype(), row_type.dtype());
+    Ok(ResolvedTypes {
+        expression,
+        state_type,
+        row_type,
+    })
 }
