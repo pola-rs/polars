@@ -5,6 +5,7 @@ mod casts;
 mod comparison;
 mod control_flow;
 mod explicit_input;
+mod integration;
 mod multiple_inputs;
 mod nulls_and_nans;
 mod runtime;

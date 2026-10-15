@@ -276,6 +276,8 @@ pub(super) fn compile(
     let function = unsafe { std::mem::transmute::<*const u8, ListFunction>(address) };
     Ok(CompiledProgram {
         function,
+        state_type,
+        input_types: bindings.rows.iter().map(|binding| binding.dtype).collect(),
         strict_casts: emitted.strict_casts,
         _string_literals: emitted.string_literals,
         _module: owner,

@@ -4,10 +4,10 @@ use polars_arrow::array::{
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_core::frame::column::Column;
-use polars_core::prelude::{DataType, Field, IntoColumn, StringChunked};
+use polars_core::prelude::{DataType, Field, IntoColumn, Schema, StringChunked};
 use polars_error::{PolarsResult, polars_ensure, polars_err};
-use polars_plan::dsl::Expr;
-use polars_plan::prelude::apply_multiple;
+use polars_plan::dsl::{BaseColumnUdf, Expr, new_column_udf};
+use polars_plan::prelude::FunctionOptions;
 
 use crate::compiler::{CastFailure, CompiledProgram, StringContext};
 use crate::jit_program::ScalarType;
@@ -18,47 +18,64 @@ pub(crate) fn into_expr(
     state_dtype: impl Fn(&DataType, &[DataType]) -> PolarsResult<DataType> + Send + Sync + 'static,
     input_first: bool,
 ) -> Expr {
-    apply_multiple(
-        execute,
-        inputs.into_vec(),
-        move |_schema, fields| {
-            // The output is named after the first input, as Polars names it, and has the state's
-            // dtype, which an untyped null initial state takes from the function body.
-            let name = fields
-                .first()
-                .ok_or_else(|| polars_err!(InvalidOperation: "foldv did not receive its inputs"))?
-                .name()
-                .clone();
-            let mut fields = fields.to_vec();
-            if input_first {
-                fields.swap(0, 1);
-            }
-            let (initial_state, row_inputs) = fields.split_first().ok_or_else(
-                || polars_err!(InvalidOperation: "foldv did not receive its initial state"),
-            )?;
-            let initial_dtype = initial_state.dtype.clone().materialize_unknown(false)?;
-            let row_dtypes = row_inputs
-                .iter()
-                .map(|field| field.dtype.clone())
-                .collect::<Vec<_>>();
-            Ok(Field::new(name, state_dtype(&initial_dtype, &row_dtypes)?))
-        },
-        true,
-    )
+    let function = BaseColumnUdf::new(execute, move |_schema: &Schema, fields: &[Field]| {
+        // The output is named after the first input, as Polars names it, and has the state's
+        // dtype, which an untyped null initial state takes from the function body.
+        let name = fields
+            .first()
+            .ok_or_else(|| polars_err!(InvalidOperation: "foldv did not receive its inputs"))?
+            .name()
+            .clone();
+        let mut fields = fields.to_vec();
+        if input_first {
+            fields.swap(0, 1);
+        }
+        let (initial_state, inputs) = fields.split_first().ok_or_else(
+            || polars_err!(InvalidOperation: "foldv did not receive its initial state"),
+        )?;
+        let initial_dtype = initial_state.dtype.clone().materialize_unknown(false)?;
+        let input_dtypes = inputs
+            .iter()
+            .map(|field| field.dtype.clone())
+            .collect::<Vec<_>>();
+        Ok(Field::new(
+            name,
+            state_dtype(&initial_dtype, &input_dtypes)?,
+        ))
+    });
+    // Like `cum_sum`, foldv returns one value per row and folds each group from its own initial
+    // state, so `group_by().agg` and `over` apply it per group.
+    Expr::AnonymousFunction {
+        input: inputs.into_vec(),
+        function: new_column_udf(function),
+        options: FunctionOptions::length_preserving(),
+        fmt_str: Box::new("foldv".into()),
+    }
 }
 
 pub(crate) fn execute(
     compiled: CompiledProgram,
-    state_type: ScalarType,
     initial_state: &Column,
-    row_inputs: &[Column],
+    inputs: &[Column],
 ) -> PolarsResult<Column> {
-    polars_ensure!(initial_state.len() == 1 && !row_inputs.is_empty(), InvalidOperation:
+    polars_ensure!(initial_state.len() == 1 && !inputs.is_empty(), InvalidOperation:
         "foldv received invalid inputs");
-    let inputs = row_inputs.iter().map(Column::rechunk).collect::<Vec<_>>();
+    // Native code reads each buffer as the type it was compiled for, so check them first.
+    let state_type = compiled.state_type;
+    polars_ensure!(inputs.len() == compiled.input_types.len(), InvalidOperation:
+        "foldv program was compiled for {} inputs, but received {}",
+        compiled.input_types.len(), inputs.len());
+    let input_types = inputs
+        .iter()
+        .map(|input| ScalarType::from_dtype(input.dtype()))
+        .collect::<PolarsResult<Vec<_>>>()?;
+    polars_ensure!(*input_types == *compiled.input_types, InvalidOperation:
+        "foldv program was compiled for inputs {:?}, but received {input_types:?}",
+        compiled.input_types);
+    let inputs = inputs.iter().map(Column::rechunk).collect::<Vec<_>>();
     let row_count = inputs[0].len();
     polars_ensure!(inputs.iter().all(|input| input.len() == row_count), ShapeMismatch:
-        "foldv row inputs must have equal lengths");
+        "foldv inputs must have equal lengths");
     // Owns every string the call creates, including a string state and its output.
     let mut strings = StringContext::new(row_count);
     // An untyped null initial state becomes a null of the type translation inferred for it.
@@ -120,11 +137,11 @@ pub(crate) fn execute(
         return Err(strict_cast_error(&compiled, &cast_failure, processed_rows));
     }
     if state_type == ScalarType::String {
-        let name = row_inputs[0].name().clone();
+        let name = inputs[0].name().clone();
         return Ok(StringChunked::with_chunk(name, strings.into_output()).into_column());
     }
     output_column(
-        row_inputs[0].name().clone(),
+        inputs[0].name().clone(),
         state_type,
         &output,
         &output_validity,
@@ -388,4 +405,61 @@ fn output_column(
         ),
         ScalarType::String => unreachable!("a string state's output is collected separately"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::{Column, DataType};
+    use polars_plan::dsl::Expr;
+    use polars_plan::prelude::col;
+
+    use crate::{compiler, translate};
+
+    #[test]
+    fn execute_rejects_a_different_number_of_inputs_than_compiled() {
+        for count in [1, 3] {
+            let function = Expr::Element + col("a") + col("b");
+            let names = ["a".into(), "b".into()];
+            let state = Column::new("s".into(), [0_i64]);
+            let compiled_for = [
+                Column::new("a".into(), [1_i64, 2]),
+                Column::new("b".into(), [3_i64, 4]),
+            ];
+            let translated =
+                translate::translate(&function, &names, &state, &compiled_for).unwrap();
+            let compiled = compiler::compile(
+                &translated.program,
+                compiler::CompilationShape::Lists(translated.bindings),
+            )
+            .unwrap();
+            let other = vec![compiled_for[0].clone(); count];
+            let error = super::execute(compiled, &state, &other).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("compiled for 2 inputs, but received {count}")),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn execute_rejects_inputs_of_another_type_than_compiled() {
+        // A program compiled for an Int64 input must not read an Int32 buffer.
+        let function = Expr::Element + col("l");
+        let names = ["l".into()];
+        let state = Column::new("s".into(), [0_i64]);
+        let compiled_for = [Column::new("l".into(), [1_i64, 2])];
+        let translated = translate::translate(&function, &names, &state, &compiled_for).unwrap();
+        let compiled = compiler::compile(
+            &translated.program,
+            compiler::CompilationShape::Lists(translated.bindings),
+        )
+        .unwrap();
+
+        let other = [Column::new("l".into(), [1_i32, 2])];
+        assert_eq!(other[0].dtype(), &DataType::Int32);
+        let error = super::execute(compiled, &state, &other).unwrap_err();
+        assert!(error.to_string().contains("compiled for inputs"), "{error}");
+    }
 }

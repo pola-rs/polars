@@ -12,7 +12,7 @@ use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
-#[cfg(feature = "jit")]
+#[cfg(all(feature = "jit", not(target_family = "wasm")))]
 use crate::expr::expr_to_py_plexpr;
 use crate::lazyframe::PyOptFlags;
 use crate::utils::EnterPolarsExt;
@@ -472,7 +472,7 @@ pub fn fold(
 }
 
 #[pyfunction]
-#[cfg(feature = "jit")]
+#[cfg(all(feature = "jit", not(target_family = "wasm")))]
 pub fn foldv(py: Python<'_>, initial_state: PyExpr, function: Py<PyAny>) -> PyResult<PyExpr> {
     let state = expr_to_py_plexpr(py, Expr::Element);
     let body = function.call1(py, (state,))?;
@@ -486,7 +486,7 @@ pub fn foldv(py: Python<'_>, initial_state: PyExpr, function: Py<PyAny>) -> PyRe
 }
 
 #[pyfunction]
-#[cfg(feature = "jit")]
+#[cfg(all(feature = "jit", not(target_family = "wasm")))]
 pub fn foldv_over(
     py: Python<'_>,
     input: PyExpr,

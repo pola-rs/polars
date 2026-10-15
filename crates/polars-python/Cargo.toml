@@ -21,7 +21,6 @@ polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
 polars-io = { workspace = true }
-polars-jit = { workspace = true, optional = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true, features = ["python"] }
 polars-observer = { workspace = true, optional = true }
@@ -133,6 +132,11 @@ features = [
   "zip_with",
   "cov",
 ]
+
+# Cranelift cannot generate code for wasm, so builds such as Pyodide leave out foldv even when
+# `jit` is enabled.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+polars-jit = { workspace = true, optional = true }
 
 [build-dependencies]
 version_check = { workspace = true }

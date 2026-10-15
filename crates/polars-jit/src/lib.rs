@@ -80,14 +80,13 @@ fn fold(input: Option<Expr>, initial_state: Expr, function: Expr) -> PolarsResul
                 translate::translate(&function, &row_names, initial_state, row_inputs)?;
 
             // Compilation: typed JIT program + loop bindings -> native list operation.
-            let state_type = translated.bindings.state.dtype;
             let compiled = compiler::compile(
                 &translated.program,
                 compiler::CompilationShape::Lists(translated.bindings),
             )?;
 
             // Execution: run the native operation over the supplied columns.
-            runtime::execute(compiled, state_type, initial_state, row_inputs)
+            runtime::execute(compiled, initial_state, row_inputs)
         },
         state_dtype,
         input_first,

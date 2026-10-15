@@ -49,6 +49,10 @@ pub(crate) struct CastFailure {
 
 pub struct CompiledProgram {
     pub(crate) function: ListFunction,
+    /// The state type the program was compiled for.
+    pub(crate) state_type: ScalarType,
+    /// The type of each row input the program was compiled for, in buffer order.
+    pub(crate) input_types: Box<[ScalarType]>,
     /// Source and target type of each strict cast, indexed by `CastFailure::cast`.
     pub(crate) strict_casts: Box<[(ScalarType, ScalarType)]>,
     /// Bytes of string literals, which generated code reads through embedded pointers.
