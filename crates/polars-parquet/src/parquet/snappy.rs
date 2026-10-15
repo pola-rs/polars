@@ -395,4 +395,51 @@ mod tests {
         }
         assert!(decompress(&compressed, &mut out.spare_capacity_mut()[..data.len() - 1]).is_err());
     }
+
+    /// Compares the result with `snap` on random data and on randomly changed compressed data.
+    #[test]
+    fn test_same_as_snap() {
+        let mut x: u64 = 7;
+        let mut next = move || {
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (x >> 33) as usize
+        };
+
+        for _ in 0..2000 {
+            let len = next() % 2000;
+            let alphabet = 1 + next() % 255;
+            let data: Vec<u8> = (0..len).map(|_| (next() % alphabet) as u8).collect();
+            let mut input = snap::raw::Encoder::new().compress_vec(&data).unwrap();
+
+            for _ in 0..next() % 4 {
+                if input.is_empty() {
+                    break;
+                }
+                let i = next() % input.len();
+                match next() % 3 {
+                    0 => input[i] = next() as u8,
+                    1 => input.truncate(i),
+                    _ => input.insert(i, next() as u8),
+                }
+            }
+
+            let expected = match snap::raw::decompress_len(&input) {
+                Ok(len) if len <= 1 << 16 => snap::raw::Decoder::new().decompress_vec(&input).ok(),
+                _ => None,
+            };
+
+            let mut out = Vec::<u8>::with_capacity(expected.as_ref().map_or(1 << 16, Vec::len));
+            let result = decompress(&input, out.spare_capacity_mut());
+            match expected {
+                Some(expected) => {
+                    assert_eq!(result.unwrap(), expected.len());
+                    unsafe { out.set_len(expected.len()) };
+                    assert_eq!(out, expected);
+                },
+                None => assert!(result.is_err()),
+            }
+        }
+    }
 }
