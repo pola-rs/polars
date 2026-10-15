@@ -27,6 +27,7 @@ pub fn decode(
     }
 
     let mut mask_iter = mask.iter();
+    let page_buffer = page_buffer.filter(|_| mask.unset_bits() <= mask.len() / 4);
     decode_plain_generic(
         values,
         page_buffer,
