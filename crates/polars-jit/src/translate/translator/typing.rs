@@ -41,7 +41,8 @@ impl Translator<'_> {
     ) -> PolarsResult<ScalarType> {
         let dtype = with_arithmetic_types(expression)
             .to_field(&self.schema)?
-            .dtype;
+            .dtype
+            .materialize_unknown(false)?;
         if dtype.is_null() {
             common_type(left, right)
         } else {

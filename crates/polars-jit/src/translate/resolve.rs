@@ -115,9 +115,10 @@ fn body_dtype(
     state: &DataType,
     row_types: &[DataType],
 ) -> PolarsResult<DataType> {
-    Ok(with_arithmetic_types(expression)
+    with_arithmetic_types(expression)
         .to_field(&body_schema(row_names, state, row_types))?
-        .dtype)
+        .dtype
+        .materialize_unknown(false)
 }
 
 /// The fold's state dtype. Like `pl.lit(None) + pl.col("a")`, an untyped null initial state

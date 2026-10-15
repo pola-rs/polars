@@ -8,17 +8,20 @@ mod casts;
 mod conditionals;
 mod functions;
 mod literals;
+mod numbers;
 mod operators;
 mod typing;
 
 use polars_core::prelude::Schema;
 use polars_error::{PolarsResult, polars_err};
-use polars_plan::dsl::{BooleanFunction, Expr, FunctionExpr, Operator, StringFunction};
+use polars_plan::dsl::{
+    BooleanFunction, Expr, FunctionExpr, Operator, PowFunction, StringFunction,
+};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::helpers::unsupported;
 use super::resolve::{ResolvedTypes, STATE_NAME, body_schema};
-use crate::jit_program::{InputId, JitProgram, ScalarType};
+use crate::jit_program::{InputId, JitProgram, NumericUnary, ScalarType};
 
 pub(super) struct Translator<'a> {
     row_names: &'a [PlSmallStr],
@@ -85,6 +88,48 @@ impl<'a> Translator<'a> {
 
             // Functions, in `functions`.
             Expr::Function { input, function } => match function {
+                FunctionExpr::Negate => {
+                    self.numeric_unary(expression, input, NumericUnary::Negate, expected, location)
+                },
+                FunctionExpr::Abs => {
+                    self.numeric_unary(expression, input, NumericUnary::Abs, expected, location)
+                },
+                FunctionExpr::Sign => {
+                    self.numeric_unary(expression, input, NumericUnary::Sign, expected, location)
+                },
+                FunctionExpr::Floor => {
+                    self.numeric_unary(expression, input, NumericUnary::Floor, expected, location)
+                },
+                FunctionExpr::Ceil => {
+                    self.numeric_unary(expression, input, NumericUnary::Ceil, expected, location)
+                },
+                FunctionExpr::Round { decimals, mode } => self.numeric_unary(
+                    expression,
+                    input,
+                    NumericUnary::Round {
+                        decimals: *decimals,
+                        mode: *mode,
+                    },
+                    expected,
+                    location,
+                ),
+                FunctionExpr::Pow(PowFunction::Sqrt) => {
+                    self.numeric_unary(expression, input, NumericUnary::Sqrt, expected, location)
+                },
+                FunctionExpr::Pow(PowFunction::Generic) => {
+                    self.pow(expression, input, expected, location)
+                },
+                FunctionExpr::Clip { has_min, has_max } => {
+                    self.clip(expression, input, (*has_min, *has_max), expected, location)
+                },
+                FunctionExpr::MinHorizontal | FunctionExpr::MaxHorizontal => self
+                    .min_max_horizontal(
+                        expression,
+                        input,
+                        matches!(function, FunctionExpr::MaxHorizontal),
+                        expected,
+                        location,
+                    ),
                 FunctionExpr::Boolean(BooleanFunction::Not) => {
                     self.not(expression, input, location)
                 },

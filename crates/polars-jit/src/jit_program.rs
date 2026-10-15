@@ -1,4 +1,5 @@
 use polars_core::prelude::DataType;
+use polars_defs::expr::RoundMode;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -133,9 +134,42 @@ pub(crate) enum BooleanOp {
     Or,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum NumericUnary {
+    Negate,
+    Abs,
+    Sign,
+    Floor,
+    Ceil,
+    Round { decimals: u32, mode: RoundMode },
+    Sqrt,
+}
+
 /// A scalar calculation independent of how its inputs are supplied.
 #[derive(Clone, Debug, PartialEq)]
 pub enum JitProgram {
+    NumericUnary {
+        op: NumericUnary,
+        input: Box<Self>,
+        dtype: ScalarType,
+    },
+    Pow {
+        base: Box<Self>,
+        exponent: Box<Self>,
+        dtype: ScalarType,
+    },
+    Clip {
+        input: Box<Self>,
+        min: Option<Box<Self>>,
+        max: Option<Box<Self>>,
+        dtype: ScalarType,
+    },
+    MinMax {
+        left: Box<Self>,
+        right: Box<Self>,
+        max: bool,
+        dtype: ScalarType,
+    },
     Input {
         input: InputId,
         dtype: ScalarType,
@@ -199,6 +233,10 @@ impl JitProgram {
     pub(crate) fn dtype(&self) -> ScalarType {
         match self {
             Self::Input { dtype, .. }
+            | Self::NumericUnary { dtype, .. }
+            | Self::Pow { dtype, .. }
+            | Self::Clip { dtype, .. }
+            | Self::MinMax { dtype, .. }
             | Self::Literal { dtype, .. }
             | Self::Null { dtype }
             | Self::Cast { dtype, .. }

@@ -8,6 +8,7 @@ mod casts;
 mod conditionals;
 mod functions;
 mod literals;
+mod numbers;
 mod operators;
 
 use cranelift_codegen::ir::{Block, FuncRef, InstBuilder, Value};
@@ -86,6 +87,26 @@ impl<'a> Emitter<'a> {
         program: &JitProgram,
     ) -> PolarsResult<JitValue> {
         match program {
+            JitProgram::NumericUnary { op, input, dtype } => {
+                self.numeric_unary(builder, *op, input, *dtype)
+            },
+            JitProgram::Pow {
+                base,
+                exponent,
+                dtype,
+            } => self.pow(builder, base, exponent, *dtype),
+            JitProgram::Clip {
+                input,
+                min,
+                max,
+                dtype,
+            } => self.clip(builder, input, min.as_deref(), max.as_deref(), *dtype),
+            JitProgram::MinMax {
+                left,
+                right,
+                max,
+                dtype,
+            } => self.min_max(builder, left, right, *max, *dtype),
             JitProgram::Input { input, .. } => self.input(*input),
             JitProgram::Literal { value, dtype } => self.literal(builder, value, *dtype),
             JitProgram::Null { dtype } => Ok(self.null(builder, *dtype)),

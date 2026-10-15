@@ -3,12 +3,12 @@ use polars_jit::foldv;
 
 #[test]
 fn foldv_reports_the_location_of_an_unsupported_expression() -> PolarsResult<()> {
-    // Negation is outside the supported scalar expression subset.
+    // Reversing rows is outside the supported scalar expression subset.
     let error = df!("l" => [1_i64, 2])?
         .lazy()
         .select([foldv(
             lit(10_i64).cast(DataType::Int64),
-            Expr::Element + (-col("l")),
+            Expr::Element + col("l").reverse(),
         )?
         .alias("result")])
         .collect()

@@ -18,15 +18,25 @@ pub(super) enum RuntimeFunction {
     LenChars,
     EndStringRow,
     EndRow,
+    PowInteger,
+    PowF32,
+    PowF64,
+    RoundF32,
+    RoundF64,
 }
 
 impl RuntimeFunction {
-    pub(super) const ALL: [Self; 5] = [
+    pub(super) const ALL: [Self; 10] = [
         Self::Concat,
         Self::Compare,
         Self::LenChars,
         Self::EndStringRow,
         Self::EndRow,
+        Self::PowInteger,
+        Self::PowF32,
+        Self::PowF64,
+        Self::RoundF32,
+        Self::RoundF64,
     ];
 
     /// Make every runtime function's address known to the JIT under its name.
@@ -59,6 +69,11 @@ impl RuntimeFunction {
             Self::LenChars => "polars_jit_string_len_chars",
             Self::EndStringRow => "polars_jit_end_string_row",
             Self::EndRow => "polars_jit_end_row",
+            Self::PowInteger => "polars_jit_pow_integer",
+            Self::PowF32 => "polars_jit_pow_f32",
+            Self::PowF64 => "polars_jit_pow_f64",
+            Self::RoundF32 => "polars_jit_round_f32",
+            Self::RoundF64 => "polars_jit_round_f64",
         }
     }
 
@@ -69,6 +84,11 @@ impl RuntimeFunction {
             Self::LenChars => len_chars as *const u8,
             Self::EndStringRow => end_string_row as *const u8,
             Self::EndRow => end_row as *const u8,
+            Self::PowInteger => pow_integer as *const u8,
+            Self::PowF32 => pow_f32 as *const u8,
+            Self::PowF64 => pow_f64 as *const u8,
+            Self::RoundF32 => round_f32 as *const u8,
+            Self::RoundF64 => round_f64 as *const u8,
         }
     }
 
@@ -81,11 +101,103 @@ impl RuntimeFunction {
             Self::LenChars => (vec![word; 2], vec![AbiParam::new(types::I32)]),
             Self::EndStringRow => (vec![word, word, word, AbiParam::new(types::I8)], vec![word]),
             Self::EndRow => (vec![word], vec![]),
+            Self::PowInteger => (vec![word, AbiParam::new(types::I32)], vec![word]),
+            Self::PowF32 => (
+                vec![AbiParam::new(types::F32); 2],
+                vec![AbiParam::new(types::F32)],
+            ),
+            Self::PowF64 => (
+                vec![AbiParam::new(types::F64); 2],
+                vec![AbiParam::new(types::F64)],
+            ),
+            Self::RoundF32 | Self::RoundF64 => {
+                let float = AbiParam::new(if matches!(self, Self::RoundF32) {
+                    types::F32
+                } else {
+                    types::F64
+                });
+                (
+                    vec![float, AbiParam::new(types::I32), AbiParam::new(types::I32)],
+                    vec![float],
+                )
+            },
         };
         signature.params = params;
         signature.returns = returns;
         signature
     }
+}
+
+extern "C" fn pow_integer(base: u64, exponent: u32) -> u64 {
+    base.wrapping_pow(exponent)
+}
+
+macro_rules! float_power {
+    ($name:ident, $ty:ty) => {
+        extern "C" fn $name(base: $ty, exponent: $ty) -> $ty {
+            // A fold evaluates one row at a time, so match Polars' scalar-exponent kernel.
+            if exponent == 1.0 {
+                base
+            } else if exponent == 0.5 {
+                base.sqrt()
+            } else if exponent.fract() == 0.0 && exponent > 1.0 && exponent < 10.0 {
+                let mut result = base;
+                for _ in 1..exponent as u8 {
+                    result *= base;
+                }
+                result
+            } else {
+                base.powf(exponent)
+            }
+        }
+    };
+}
+float_power!(pow_f32, f32);
+float_power!(pow_f64, f64);
+
+fn round_value(value: f64, mode: u32) -> f64 {
+    match mode {
+        0 => value.round_ties_even(),
+        1 => value.round(),
+        _ => value.trunc(),
+    }
+}
+
+/// Polars rounds Float32 at Float64 precision when decimals is nonzero.
+extern "C" fn round_f32(value: f32, decimals: u32, mode: u32) -> f32 {
+    if decimals == 0 {
+        return match mode {
+            0 => value.round_ties_even(),
+            1 => value.round(),
+            _ => value.trunc(),
+        };
+    }
+    if decimals >= 47 {
+        return value;
+    }
+    let multiplier = 10.0_f64.powi(decimals as i32);
+    let result = (round_value(f64::from(value) * multiplier, mode) / multiplier) as f32;
+    if result.is_finite() { result } else { value }
+}
+
+extern "C" fn round_f64(value: f64, decimals: u32, mode: u32) -> f64 {
+    if decimals == 0 {
+        return round_value(value, mode);
+    }
+    if decimals >= 326 {
+        return value;
+    }
+    let result = if decimals >= 300 {
+        // Split the multiplier before 10^decimals overflows, as in Polars' rounding kernel.
+        let mul2 = libm::scalbn(1.0, decimals as i32);
+        let invmul2 = 1.0 / mul2;
+        let mul5 = 5.0_f64.powi(decimals as i32);
+        round_value(value * mul2 * mul5, mode) / mul5 * invmul2
+    } else {
+        let multiplier = 10.0_f64.powi(decimals as i32);
+        round_value(value * multiplier, mode) / multiplier
+    };
+    if result.is_finite() { result } else { value }
 }
 
 /// Owns string state, per-row scratch storage, and output while generated code executes.

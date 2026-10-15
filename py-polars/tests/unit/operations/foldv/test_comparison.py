@@ -820,3 +820,288 @@ def test_foldv_division_literals_match_polars(
             body,
             pl.lit(0, dtype=result_dtype),
         )
+
+
+NUMERIC_UNARY = {
+    "negate": lambda value: -value,
+    "abs": lambda value: value.abs(),
+    "sign": lambda value: value.sign(),
+    "floor": lambda value: value.floor(),
+    "ceil": lambda value: value.ceil(),
+    "round": lambda value: value.round(),
+    "sqrt": lambda value: value.sqrt(),
+}
+
+
+def _assert_numeric_body(df: pl.DataFrame, body: Any) -> None:
+    # Use the executed dtype; native Polars' schema for literals can remain unknown.
+    expected = df.head(1).select(body(pl.col("a"))).to_series()
+    expression = pl.foldv(
+        lambda state: body(pl.col("a")), initial_state=pl.lit(0, dtype=expected.dtype)
+    ).alias("f")
+    assert df.lazy().select(expression).collect_schema()["f"] == expected.dtype
+    _assert_matches_polars(
+        df, lambda state: body(pl.col("a")), pl.lit(0, dtype=expected.dtype)
+    )
+
+
+@pytest.mark.parametrize("op", NUMERIC_UNARY)
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_foldv_numeric_unary_matches_polars(op: str, dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"a": pl.Series(_division_values(dtype), dtype=dtype)})
+    function = NUMERIC_UNARY[op]
+    if op == "negate" and dtype.is_unsigned_integer():
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            df.select(function(pl.col("a")))
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="negation"):
+            df.select(
+                pl.foldv(
+                    lambda state: function(pl.col("a")),
+                    initial_state=pl.lit(0, dtype=dtype),
+                )
+            )
+        return
+    _assert_numeric_body(df, function)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+@pytest.mark.parametrize(
+    "decimals", [0, 1, 2, 8, 46, 47, 299, 300, 308, 325, 326, 2**32 - 1]
+)
+@pytest.mark.parametrize("mode", ["half_to_even", "half_away_from_zero"])
+def test_foldv_round_matches_polars(
+    dtype: pl.DataType, decimals: int, mode: Any
+) -> None:
+    values = [
+        None,
+        NAN,
+        INF,
+        -INF,
+        -3.5,
+        -2.5,
+        -1.5,
+        -0.5,
+        -0.0,
+        0.0,
+        0.5,
+        1.5,
+        2.5,
+        3.5,
+        1.005,
+        2.675,
+        1e30,
+        1e-30,
+    ]
+    if dtype == pl.Float64:
+        values += [1e308, 1e-308, 5e-324, -5e-324]
+    df = pl.DataFrame({"a": pl.Series(values, dtype=dtype)})
+    _assert_numeric_body(df, lambda value: value.round(decimals, mode=mode))
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("exponent", [0, 1, 2, 3, 9, 10, 11, 0.5, -1.0, NAN, INF, None])
+def test_foldv_pow_literal_matches_polars(dtype: pl.DataType, exponent: Any) -> None:
+    # Large integer powers deliberately overflow their fixed-width results.
+    df = pl.DataFrame({"a": pl.Series(_division_values(dtype), dtype=dtype)})
+    if dtype.is_integer() and exponent == 11:
+        # Native generic integer pow panics on overflow in debug builds.
+        df = pl.DataFrame({"a": pl.Series([None, 0, 1, 2], dtype=dtype)})
+    if exponent is None:
+        exponent = pl.lit(None, dtype=pl.Int64)
+    _assert_numeric_body(df, lambda value: value.pow(exponent))
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("exponent_dtype", NUMERIC_DTYPES)
+def test_foldv_pow_column_matches_polars(
+    dtype: pl.DataType, exponent_dtype: pl.DataType
+) -> None:
+    exponents = [None, 0, 1, 2, 3, 9, 10]
+    if exponent_dtype.is_float():
+        exponents += [0.5, -1.0, NAN, INF]
+    bases = _division_values(dtype)
+    pairs = [(base, exp) for base in bases for exp in exponents]
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([base for base, _ in pairs], dtype=dtype),
+            "e": pl.Series([exp for _, exp in pairs], dtype=exponent_dtype),
+        }
+    )
+    _assert_numeric_body(df, lambda value: value.pow(pl.col("e")))
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize(
+    "bounds", [(1, 3), (3, 1), (None, 3), (1, None), (None, None), (-1, 3.5)]
+)
+def test_foldv_clip_matches_polars(dtype: pl.DataType, bounds: tuple[Any, Any]) -> None:
+    df = pl.DataFrame({"a": pl.Series(_division_values(dtype), dtype=dtype)})
+    if dtype.is_unsigned_integer() and bounds[0] == -1:
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            df.select(pl.col("a").clip(*bounds))
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
+            df.select(
+                pl.foldv(
+                    lambda state: pl.col("a").clip(*bounds),
+                    initial_state=pl.lit(0, dtype=dtype),
+                )
+            )
+        return
+    _assert_numeric_body(df, lambda value: value.clip(*bounds))
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_foldv_clip_null_and_nan_bounds_match_polars(dtype: pl.DataType) -> None:
+    values = [None, NAN, INF, -INF, -3.0, -0.0, 0.0, 3.0]
+    pairs = [(value, lo, hi) for value in values for lo in values for hi in values]
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([v for v, _, _ in pairs], dtype=dtype),
+            "lo": pl.Series([lo for _, lo, _ in pairs], dtype=dtype),
+            "hi": pl.Series([hi for _, _, hi in pairs], dtype=dtype),
+        }
+    )
+    _assert_numeric_body(df, lambda value: value.clip(pl.col("lo"), pl.col("hi")))
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("right_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("maximum", [False, True])
+def test_foldv_horizontal_min_max_matches_polars(
+    dtype: pl.DataType, right_dtype: pl.DataType, maximum: bool
+) -> None:
+    pairs = [
+        (left, right)
+        for left in _division_values(dtype)
+        for right in _division_values(right_dtype)
+    ]
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([left for left, _ in pairs], dtype=dtype),
+            "b": pl.Series([right for _, right in pairs], dtype=right_dtype),
+        }
+    )
+    function = pl.max_horizontal if maximum else pl.min_horizontal
+    # Signed/UInt64 pairs can require optional Int128 in full Python builds.
+    result_dtype = df.select(function("a", "b")).to_series().dtype
+    if result_dtype == pl.Int128:
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="i128"):
+            df.select(
+                pl.foldv(
+                    lambda state: function("a", "b"),
+                    initial_state=pl.lit(0, dtype=result_dtype),
+                )
+            )
+        return
+    _assert_numeric_body(df, lambda value: function(value, pl.col("b")))
+
+
+@pytest.mark.parametrize("function", [pl.min_horizontal, pl.max_horizontal])
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_foldv_running_min_max_recovers_from_null(
+    function: Any, dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"a": pl.Series(_division_values(dtype), dtype=dtype)})
+    _assert_matches_polars(
+        df, lambda state: function(state, pl.col("a")), pl.lit(None, dtype=dtype)
+    )
+
+
+def test_foldv_numeric_strict_casts_match_polars() -> None:
+    for body in [
+        lambda state: pl.col("a").pow(pl.col("e")),
+        lambda state: pl.col("a").clip(pl.col("e"), 5),
+    ]:
+        df = pl.DataFrame(
+            {"a": pl.Series([None, 2, 3], dtype=pl.Int32), "e": [2**32, -1, 2]}
+        )
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            _reference(df, body, _i64(0))
+        with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
+            df.select(pl.foldv(body, initial_state=pl.lit(0, dtype=pl.Int32)))
+
+
+@pytest.mark.parametrize("op", NUMERIC_UNARY)
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.Float32, pl.Float64])
+@pytest.mark.parametrize("null_initial", [False, True])
+def test_foldv_numeric_unary_carries_state(
+    op: str, dtype: pl.DataType, null_initial: bool
+) -> None:
+    if op == "sqrt" and dtype.is_integer():
+        dtype = pl.Float64
+    df = pl.DataFrame({"a": pl.Series([1, None, 3, 2, 5], dtype=dtype)})
+    _assert_matches_polars(
+        df,
+        lambda state: NUMERIC_UNARY[op](state.fill_null(0) + pl.col("a").fill_null(0)),
+        pl.lit(None if null_initial else 1, dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_foldv_clip_and_pow_carry_state(dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"a": pl.Series([1, None, 3, 2, 5], dtype=dtype)})
+    _assert_matches_polars(
+        df,
+        lambda state: (
+            (state.fill_null(0) + pl.col("a").fill_null(0)).pow(3).clip(0, 20)
+        ),
+        pl.lit(None, dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_foldv_horizontal_multiple_inputs(dtype: pl.DataType) -> None:
+    df = pl.DataFrame({"a": pl.Series(_division_values(dtype), dtype=dtype)})
+    for function in [pl.min_horizontal, pl.max_horizontal]:
+        _assert_numeric_body(
+            df,
+            lambda value, function=function: function(
+                value, pl.lit(2, dtype=dtype), None
+            ),
+        )
+        _assert_numeric_body(df, lambda value, function=function: function(value))
+
+
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64])
+def test_foldv_pow_generic_wraps_integer_overflow(dtype: pl.DataType) -> None:
+    # Native generic pow panics on overflow in debug builds and wraps in release.
+    bits = 32 if dtype in (pl.Int32, pl.UInt32) else 64
+    maximum = 2 ** (bits - int(dtype.is_signed_integer())) - 1
+    df = pl.DataFrame({"a": pl.Series([maximum, None, 2], dtype=dtype)})
+    result = df.select(
+        pl.col("a").foldv(
+            lambda state, value: value.pow(11), initial_state=pl.lit(0, dtype=dtype)
+        )
+    )
+    expected = [pow(maximum, 11, 2**bits), None, 2**11]
+    if dtype.is_signed_integer():
+        expected = [
+            v - 2**bits if v is not None and v >= 2 ** (bits - 1) else v
+            for v in expected
+        ]
+    assert result.to_series().to_list() == expected
+
+
+def test_foldv_numeric_errors_are_clear() -> None:
+    df = pl.DataFrame({"a": [1, 2], "e": [-1, 2]})
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
+        df.select(pl.foldv(lambda state: pl.col("a").pow(pl.col("e")), initial_state=0))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=r"root\.min"):
+        df.select(
+            pl.foldv(lambda state: pl.col("a").clip(pl.lit("1"), 3), initial_state=0)
+        )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="exponent"):
+        df.select(pl.foldv(lambda state: pl.col("a").pow(None), initial_state=0))
+
+
+def test_foldv_numeric_error_in_unselected_branch_is_not_evaluated() -> None:
+    df = pl.DataFrame({"a": [1, 2], "e": [-1, -1]})
+    expression = pl.foldv(
+        lambda state: (
+            pl.when(pl.col("a") > 0)
+            .then(state + pl.col("a"))
+            .otherwise(pl.col("a").pow(pl.col("e")))
+        ),
+        initial_state=0,
+    )
+    assert df.select(expression).to_series().to_list() == [1, 3]

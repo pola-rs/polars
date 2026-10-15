@@ -7,6 +7,7 @@
 //! unless it is documented as intentional.
 
 use polars::chunked_array::cast::CastOptions;
+use polars::lazy::dsl::{max_horizontal, min_horizontal};
 use polars::prelude::*;
 use polars_jit::foldv;
 use polars_plan::plans::DynLiteralValue;
@@ -1041,6 +1042,142 @@ fn foldv_division_with_negative_literals_matches_polars() -> PolarsResult<()> {
                 .dtype()
                 .clone();
             assert_matches_polars(name, &df, &body, lit(0_i64).cast(dtype));
+        }
+    }
+    Ok(())
+}
+
+const NUMERIC_UNARY: [OperatorCase; 7] = [
+    ("negate", |v, _| -v),
+    ("abs", |v, _| v.abs()),
+    ("sign", |v, _| v.sign()),
+    ("floor", |v, _| v.floor()),
+    ("ceil", |v, _| v.ceil()),
+    ("round", |v, _| {
+        v.round(0, polars_defs::expr::RoundMode::HalfToEven)
+    }),
+    ("sqrt", |v, _| v.sqrt()),
+];
+
+#[test]
+fn foldv_numeric_unary_matches_polars() -> PolarsResult<()> {
+    for dtype in [
+        DataType::Int32,
+        DataType::Int64,
+        DataType::UInt32,
+        DataType::UInt64,
+        DataType::Float32,
+        DataType::Float64,
+    ] {
+        let mut values = division_values(&dtype);
+        values.rename("a".into());
+        let df = DataFrame::new(values.len(), vec![values.into_column()])?;
+        for (name, function) in NUMERIC_UNARY {
+            let body = |_: Expr| function(col("a"), lit(0));
+            let result = df
+                .clone()
+                .lazy()
+                .select([body(Expr::Element).alias("f")])
+                .collect();
+            let result_dtype = result
+                .as_ref()
+                .map(|df| df.column("f").unwrap().dtype().clone())
+                .unwrap_or(dtype.clone());
+            assert_matches_polars(name, &df, &body, lit(0).cast(result_dtype));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn foldv_round_matches_polars() -> PolarsResult<()> {
+    use polars_defs::expr::RoundMode;
+    let df = df!("a" => [None, Some(NAN), Some(INF), Some(-INF), Some(-3.5), Some(-2.5), Some(-0.5), Some(-0.0), Some(0.0), Some(0.5), Some(2.5), Some(3.5), Some(2.675), Some(1e308), Some(1e-308), Some(5e-324)])?;
+    for dtype in [DataType::Float32, DataType::Float64] {
+        let df = df
+            .clone()
+            .lazy()
+            .select([col("a").cast(dtype.clone())])
+            .collect()?;
+        for mode in [
+            RoundMode::HalfToEven,
+            RoundMode::HalfAwayFromZero,
+            RoundMode::ToZero,
+        ] {
+            for decimals in [0, 1, 2, 46, 47, 299, 300, 308, 325, 326, u32::MAX] {
+                assert_matches_polars(
+                    &format!("{dtype}: round({decimals}, {mode:?})"),
+                    &df,
+                    &|_: Expr| col("a").round(decimals, mode),
+                    lit(0).cast(dtype.clone()),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn foldv_numeric_bounds_and_powers_match_polars() -> PolarsResult<()> {
+    for dtype in [
+        DataType::Int32,
+        DataType::Int64,
+        DataType::UInt32,
+        DataType::UInt64,
+        DataType::Float32,
+        DataType::Float64,
+    ] {
+        let mut a = division_values(&dtype);
+        a.rename("a".into());
+        let mut b = a.reverse();
+        b.rename("b".into());
+        let df = DataFrame::new(a.len(), vec![a.into_column(), b.into_column()])?;
+        let bodies: Vec<CapturingBodyCase> = vec![
+            ("clip", Box::new(|_| col("a").clip(lit(1), lit(3)))),
+            ("clip reversed", Box::new(|_| col("a").clip(lit(3), lit(1)))),
+            (
+                "clip columns",
+                Box::new(|_| col("a").clip(col("b"), col("b"))),
+            ),
+            (
+                "clip null",
+                Box::new(|_| col("a").clip(lit(NULL), lit(NULL))),
+            ),
+            (
+                "min",
+                Box::new(|_| min_horizontal([col("a"), col("b"), lit(NULL)]).unwrap()),
+            ),
+            (
+                "max",
+                Box::new(|_| max_horizontal([col("a"), col("b"), lit(NULL)]).unwrap()),
+            ),
+            (
+                "running min",
+                Box::new(|state| min_horizontal([state, col("a")]).unwrap()),
+            ),
+            (
+                "running max",
+                Box::new(|state| max_horizontal([state, col("a")]).unwrap()),
+            ),
+            ("pow zero", Box::new(|_| col("a").pow(lit(0)))),
+            ("pow one", Box::new(|_| col("a").pow(lit(1)))),
+            ("pow three", Box::new(|_| col("a").pow(lit(3)))),
+            ("pow null", Box::new(|_| col("a").pow(lit(NULL)))),
+        ];
+        for (name, body) in bodies {
+            assert_matches_polars(name, &df, &body, lit(NULL).cast(dtype.clone()));
+        }
+        for exponent in [lit(0.5_f32), lit(3.0_f64), lit(-1.0_f64), lit(NAN)] {
+            let body = |_: Expr| col("a").pow(exponent.clone());
+            let result_dtype = df
+                .clone()
+                .lazy()
+                .select([body(Expr::Element)])
+                .collect()?
+                .column("a")?
+                .dtype()
+                .clone();
+            assert_matches_polars("float powers", &df, &body, lit(0).cast(result_dtype));
         }
     }
     Ok(())
