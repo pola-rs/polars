@@ -1248,6 +1248,41 @@ def test_replace() -> None:
     assert pl.Series(["(.)(?)"]).str.replace(".", "$1", literal=True)[0] == "($1)(?)"
 
 
+def test_replace_pattern_matching_to_end() -> None:
+    s = pl.Series(
+        ["http://a.com/x", "say http://b.org/y z", "http://c.net/p\nq", "abc", None]
+    )
+    assert s.str.replace(r"https?://([^/]+)/.*$", "$1").to_list() == [
+        "a.com",
+        "say b.org",
+        "http://c.net/p\nq",
+        "abc",
+        None,
+    ]
+    assert s.str.replace(r"^https?://(?P<host>[^/]+)/.*?$", "[${host}]").to_list() == [
+        "[a.com]",
+        "say http://b.org/y z",
+        "http://c.net/p\nq",
+        "abc",
+        None,
+    ]
+    assert s.str.replace(r"(?s)https?://([^/]+)/.*$", "<$0|$1>").to_list() == [
+        "<http://a.com/x|a.com>",
+        "say <http://b.org/y z|b.org>",
+        "<http://c.net/p\nq|c.net>",
+        "abc",
+        None,
+    ]
+    assert pl.Series(["bTAIL"]).str.replace(r"^(a){0}(b).*$", "$2")[0] == "b"
+    assert s.str.replace(r"^(a)|b.*$", "<$1>").to_list() == [
+        "http://a.com/x",
+        "say http://<>",
+        "http://c.net/p\nq",
+        "<a>bc",
+        None,
+    ]
+
+
 def test_replace_all() -> None:
     df = pl.DataFrame(
         data=[(1, "* * text"), (2, "(with) special\n * chars **etc...?$")],
