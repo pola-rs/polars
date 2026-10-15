@@ -219,6 +219,12 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             r"option 'infer_schema_files' expects a positive integer; found: 0",
         ),
         (
+            "columns => ['a']",
+            SQLInterfaceError,
+            r"option 'columns' is not supported in SQL: select the columns in the SELECT "
+            r"list; to set their types, use schema",
+        ),
+        (
             "has_header = false",
             SQLSyntaxError,
             r"options must be named with '=>' \(found: has_header = false\)",

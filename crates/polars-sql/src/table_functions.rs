@@ -354,7 +354,8 @@ const READ_CSV_OPTIONS: &[&str] = &[
     "include_file_paths",
 ];
 
-/// Options of Python's `scan_csv` that `read_csv` does not accept, with what to do instead.
+/// Options of Python's `scan_csv` and `read_csv` that `read_csv` does not accept, with what to do
+/// instead.
 #[cfg(feature = "csv")]
 const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     (
@@ -367,6 +368,10 @@ const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ),
     ("with_column_names", "use new_columns"),
     ("n_rows", "use LIMIT, which is pushed down into the scan"),
+    (
+        "columns",
+        "select the columns in the SELECT list; to set their types, use schema",
+    ),
     ("low_memory", ""),
     ("eol_char", ""),
     ("raise_if_empty", ""),
