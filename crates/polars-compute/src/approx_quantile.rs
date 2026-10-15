@@ -1360,8 +1360,8 @@ mod tests {
                     let mut a = Sketch::new(&method, 0.5);
                     let mut b = a.clone();
                     for v in 0..1_000 {
-                        a.update_owned(v);
-                        b.update_owned(v);
+                        a.update(&v);
+                        b.update(&v);
                     }
                     a.finalize().items == b.finalize().items
                 })
