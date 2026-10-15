@@ -128,7 +128,7 @@ impl IRListFunction {
                 let DataType::List(inner_dtype) = dtype else {
                     polars_bail!(
                         InvalidOperation:
-                        "attempted list to_struct on non-list dtype: {dtype}",
+                        "attempted list join on non-list dtype: {dtype}",
                     );
                 };
                 let inner_dtype = inner_dtype.as_ref();
