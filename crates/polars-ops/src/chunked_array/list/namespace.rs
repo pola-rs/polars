@@ -428,19 +428,16 @@ pub trait ListNameSpaceImpl: AsList {
                         })
                         .transpose()
                     })
-                    .collect::<PolarsResult<ListChunked>>()
-                    .map(|mut ca| {
-                        ca.rename(list_ca.name().clone());
-                        ca.into_series()
-                    })
+                    .try_collect_list_with_dtype(list_ca.name().clone(), list_ca.dtype().clone())
+                    .map(|ca| ca.into_series())
             }
         };
 
         match (list_ca.len(), idx_ca.len()) {
             (1, _) => {
-                let mut out = if list_ca.has_nulls() {
+                let out = if list_ca.has_nulls() {
                     ListChunked::full_null_with_dtype(
-                        PlSmallStr::EMPTY,
+                        list_ca.name().clone(),
                         idx.len(),
                         list_ca.inner_dtype(),
                     )
@@ -456,9 +453,11 @@ pub trait ListNameSpaceImpl: AsList {
                                 .map(|idx| take_series(&s, idx, null_on_oob))
                                 .transpose()
                         })
-                        .collect::<PolarsResult<ListChunked>>()?
+                        .try_collect_list_with_dtype(
+                            list_ca.name().clone(),
+                            list_ca.dtype().clone(),
+                        )?
                 };
-                out.rename(list_ca.name().clone());
                 Ok(out.into_series())
             },
             (_, 1) => {
@@ -475,7 +474,7 @@ pub trait ListNameSpaceImpl: AsList {
                             if min >= 0 {
                                 index_typed_index(&idx_ca)
                             } else {
-                                let mut out = {
+                                let out = {
                                     list_ca
                                         .amortized_iter()
                                         .map(|opt_s| {
@@ -489,9 +488,11 @@ pub trait ListNameSpaceImpl: AsList {
                                                 })
                                                 .transpose()
                                         })
-                                        .collect::<PolarsResult<ListChunked>>()?
+                                        .try_collect_list_with_dtype(
+                                            list_ca.name().clone(),
+                                            list_ca.dtype().clone(),
+                                        )?
                                 };
-                                out.rename(list_ca.name().clone());
                                 Ok(out.into_series())
                             }
                         } else {
@@ -502,7 +503,7 @@ pub trait ListNameSpaceImpl: AsList {
                 }
             },
             (a, b) if a == b => {
-                let mut out = {
+                let out = {
                     list_ca
                         .amortized_iter()
                         .zip(idx_ca.series_iter())
@@ -517,9 +518,11 @@ pub trait ListNameSpaceImpl: AsList {
                             }
                             .transpose()
                         })
-                        .collect::<PolarsResult<ListChunked>>()?
+                        .try_collect_list_with_dtype(
+                            list_ca.name().clone(),
+                            list_ca.dtype().clone(),
+                        )?
                 };
-                out.rename(list_ca.name().clone());
                 Ok(out.into_series())
             },
             (a, b) => polars_bail!(length_mismatch = "list.gather", a, b),

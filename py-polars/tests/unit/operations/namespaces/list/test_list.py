@@ -672,6 +672,33 @@ def test_list_gather_logical_type() -> None:
     }
 
 
+def test_list_gather_keeps_dtype_without_valid_rows_29986() -> None:
+    df = pl.DataFrame(
+        {"t": [[1], None]},
+        schema={"t": pl.List(pl.Int64)},
+    ).with_columns(i=pl.col("t").list.eval(pl.element().arg_sort()))
+
+    for subset in [df.clear(), df.tail(1)]:
+        out = subset.select(pl.col("t").list.gather(pl.col("i")))
+        assert out.schema == pl.Schema({"t": pl.List(pl.Int64)})
+
+    # Streaming may pass empty morsels through `list.gather`.
+    q = (
+        pl.LazyFrame({"d": [1, 1, 2], "t": [3, 1, 2]})
+        .group_by("d")
+        .agg(pl.col("t").implode(maintain_order=False))
+        .with_columns(i=pl.col("t").list.eval(pl.element().arg_sort()))
+        .with_columns(pl.col("t").list.gather(pl.col("i")))
+        # `i` depends on the unspecified order within each imploded list.
+        .drop("i")
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
 def test_list_unique() -> None:
     s = pl.Series([[1, 1, 2, 2, 3], [3, 3, 3, 2, 1, 2]])
     result = s.list.unique(maintain_order=True)
