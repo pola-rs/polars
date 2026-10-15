@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::sync::Arc;
+
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
 use polars_arrow::array::ValueSize;
@@ -5,6 +8,7 @@ use polars_arrow::legacy::kernels::string::*;
 use polars_core::prelude::arity::*;
 #[cfg(feature = "string_normalize")]
 use polars_defs::expr::UnicodeForm;
+use polars_utils::cache::LruCache;
 use polars_utils::regex_cache::{compile_regex, with_regex_cache};
 use regex::{Regex, Replacer};
 use regex_syntax::hir::{Class, Hir, HirKind, Look};
@@ -79,7 +83,21 @@ struct MatchesToEnd {
     dot_matches_newline: bool,
 }
 
+thread_local! {
+    static LOCAL_MATCHES_TO_END_CACHE: RefCell<LruCache<String, Option<Arc<MatchesToEnd>>>> =
+        RefCell::new(LruCache::with_capacity(32));
+}
+
 impl MatchesToEnd {
+    /// Like `parse`, but cached per thread, including patterns that cannot use the fast path.
+    fn cached(pat: &str, reg: &Regex) -> Option<Arc<Self>> {
+        LOCAL_MATCHES_TO_END_CACHE.with_borrow_mut(|cache| {
+            cache
+                .get_or_insert_with(pat, |pat| Self::parse(pat, reg).map(Arc::new))
+                .clone()
+        })
+    }
+
     fn parse(pat: &str, reg: &Regex) -> Option<Self> {
         let hir = regex_syntax::parse(pat).ok()?;
         let HirKind::Concat(items) = hir.kind() else {
@@ -213,7 +231,7 @@ fn regex_replacen<'a>(
     if limit == 1
         && val.contains('$')
         && !MatchesToEnd::reads_whole_match(val)
-        && let Some(matches_to_end) = MatchesToEnd::parse(pat, &reg)
+        && let Some(matches_to_end) = MatchesToEnd::cached(pat, &reg)
     {
         return Ok(matches_to_end.replace(ca, &reg, val));
     }
