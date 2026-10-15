@@ -497,6 +497,7 @@ fn simplify_input_streams(
             if let PhysNodeKind::Zip {
                 inputs,
                 zip_behavior: ZipBehavior::Broadcast,
+                ..
             } = &ctx.phys_sm[input_stream.node].kind
             {
                 flattened_input_streams.extend(inputs);
@@ -556,7 +557,7 @@ fn lower_reduce_node(
     agg_aexpr.inputs_rev(&mut agg_input);
     agg_input.reverse();
 
-    let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;
+    let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, false, ctx)?;
     let trans_agg_node = ctx.expr_arena.add(agg_aexpr.replace_inputs(&trans_exprs));
 
     let out_name = unique_column_name();
@@ -598,6 +599,7 @@ fn compares_in_needle_dtype(
 fn lower_exprs_with_ctx(
     input: PhysStream,
     exprs: &[Node],
+    is_top_level: bool,
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<(PhysStream, Vec<Node>)> {
     // We have to catch this case separately, in case all the input independent expressions are elementwise.
@@ -646,7 +648,7 @@ fn lower_exprs_with_ctx(
             } => {
                 // While explode is streamable, it is not elementwise, so we
                 // have to transform it to a select node.
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], false, ctx)?;
                 let exploded_name = unique_column_name();
                 let trans_inner = ctx.expr_arena.add(AExpr::Explode {
                     expr: trans_exprs[0],
@@ -756,7 +758,7 @@ fn lower_exprs_with_ctx(
                 let out_name = unique_column_name();
                 for inner_expr in inner_exprs {
                     let (trans_input, trans_expr) =
-                        lower_exprs_with_ctx(input, &[inner_expr.node()], ctx)?;
+                        lower_exprs_with_ctx(input, &[inner_expr.node()], false, ctx)?;
                     let select_expr =
                         ExprIR::new(trans_expr[0], OutputName::Alias(out_name.clone()));
                     concat_streams.push(build_select_stream_with_ctx(
@@ -819,7 +821,7 @@ fn lower_exprs_with_ctx(
                 } else {
                     // Lower to no-aggregate group-by with unique name.
                     let (trans_input, trans_inner_exprs) =
-                        lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
+                        lower_exprs_with_ctx(input, &[inner_exprs[0].node()], false, ctx)?;
                     let group_by_key_expr =
                         ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
                     let group_by_output_schema = schema_for_select(
@@ -1131,7 +1133,7 @@ fn lower_exprs_with_ctx(
                 let left_on_name = unique_column_name();
                 let right_on_name = unique_column_name();
                 let (trans_input_left, trans_expr_left) =
-                    lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
+                    lower_exprs_with_ctx(input, &[inner_exprs[0].node()], false, ctx)?;
                 // expr.implode().explode() ~= expr (and avoids rechunking)
                 let AExpr::Agg(IRAggExpr::Implode {
                     input: right_expr_exploded_node,
@@ -1141,7 +1143,7 @@ fn lower_exprs_with_ctx(
                     unreachable!()
                 };
                 let (trans_input_right, trans_expr_right) =
-                    lower_exprs_with_ctx(input, &[right_expr_exploded_node], ctx)?;
+                    lower_exprs_with_ctx(input, &[right_expr_exploded_node], false, ctx)?;
 
                 // We have to ensure the left input has the right name for the semi-anti-join to
                 // generate the correct output name.
@@ -1365,7 +1367,7 @@ fn lower_exprs_with_ctx(
                     output = output.slice(offset_abs, null_literal, ctx.expr_arena);
                 }
 
-                let (stream, nodes) = lower_exprs_with_ctx(input, &[output.node()], ctx)?;
+                let (stream, nodes) = lower_exprs_with_ctx(input, &[output.node()], false, ctx)?;
                 input_streams.insert(stream);
                 transformed_exprs.extend(nodes);
             },
@@ -1645,7 +1647,8 @@ fn lower_exprs_with_ctx(
                 && !is_fake_elementwise_function(node, ctx.expr_arena) =>
             {
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
+                let (trans_input, trans_exprs) =
+                    lower_exprs_with_ctx(input, &inner_nodes, false, ctx)?;
 
                 // The function may be sensitive to names (e.g. pl.struct), so we restore them.
                 let new_input = trans_exprs
@@ -1677,7 +1680,8 @@ fn lower_exprs_with_ctx(
                 // While these functions are streamable, they are not elementwise, so we
                 // have to transform them to a select node.
                 let inner_nodes = inner_exprs.iter().map(|x| x.node()).collect_vec();
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
+                let (trans_input, trans_exprs) =
+                    lower_exprs_with_ctx(input, &inner_nodes, false, ctx)?;
                 let out_name = unique_column_name();
                 let trans_inner = ctx.expr_arena.add(AExpr::Function {
                     input: trans_exprs
@@ -1702,7 +1706,8 @@ fn lower_exprs_with_ctx(
             },
 
             AExpr::BinaryExpr { left, op, right } => {
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[left, right], ctx)?;
+                let (trans_input, trans_exprs) =
+                    lower_exprs_with_ctx(input, &[left, right], false, ctx)?;
                 let bin_expr = AExpr::BinaryExpr {
                     left: trans_exprs[0],
                     op,
@@ -1721,7 +1726,8 @@ fn lower_exprs_with_ctx(
                 | EvalVariant::ListAgg
                 | EvalVariant::Array { as_list: _ }
                 | EvalVariant::ArrayAgg => {
-                    let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                    let (trans_input, trans_expr) =
+                        lower_exprs_with_ctx(input, &[inner], false, ctx)?;
                     let eval_expr = AExpr::Eval {
                         expr: trans_expr[0],
                         evaluation,
@@ -1745,7 +1751,7 @@ fn lower_exprs_with_ctx(
                 // `struct.eval()` without any expressions produces a field-less struct with the
                 // height and the outer validity of the input. None of the unnesting below applies,
                 // and `as_struct` rejects an empty field list, so lower it as a cast instead.
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], false, ctx)?;
                 let cast = ctx.expr_arena.add(AExpr::Cast {
                     expr: trans_exprs[0],
                     dtype: DataType::Struct(Vec::new()),
@@ -1944,7 +1950,7 @@ fn lower_exprs_with_ctx(
                 falsy,
             } => {
                 let (trans_input, trans_exprs) =
-                    lower_exprs_with_ctx(input, &[predicate, truthy, falsy], ctx)?;
+                    lower_exprs_with_ctx(input, &[predicate, truthy, falsy], false, ctx)?;
                 let tern_expr = AExpr::Ternary {
                     predicate: trans_exprs[0],
                     truthy: trans_exprs[1],
@@ -1959,7 +1965,7 @@ fn lower_exprs_with_ctx(
                 dtype,
                 options,
             } => {
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], false, ctx)?;
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Cast {
                     expr: trans_exprs[0],
@@ -2111,7 +2117,8 @@ fn lower_exprs_with_ctx(
                 returns_scalar,
                 null_on_oob,
             } if matches!(ctx.expr_arena.get(input_expr), AExpr::Literal(_)) => {
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[idx_expr], ctx)?;
+                let (trans_input, trans_exprs) =
+                    lower_exprs_with_ctx(input, &[idx_expr], false, ctx)?;
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Gather {
                     expr: input_expr,
@@ -2204,7 +2211,7 @@ fn lower_exprs_with_ctx(
                     // Lower to no-aggregate group-by with unique name feeding into len aggregate.
                     let tmp_name = unique_column_name();
                     let (trans_input, trans_inner_exprs) =
-                        lower_exprs_with_ctx(input, &[inner], ctx)?;
+                        lower_exprs_with_ctx(input, &[inner], false, ctx)?;
                     let group_by_key_expr =
                         ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
                     let group_by_output_schema = schema_for_select(
@@ -2336,7 +2343,7 @@ fn lower_exprs_with_ctx(
                 //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
                 //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
                 let inner = inner_exprs[0].node();
-                let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], false, ctx)?;
                 let x = AExprBuilder::new_from_node(trans_inner[0]);
                 let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
                 let log_x = AExprBuilder::function(
@@ -2350,7 +2357,7 @@ fn lower_exprs_with_ctx(
                 if !normalize {
                     let entropy = sum_x_log_x.negate(ctx.expr_arena);
                     let (trans_stream, trans_expr) =
-                        lower_exprs_with_ctx(trans_input, &[entropy.node()], ctx)?;
+                        lower_exprs_with_ctx(trans_input, &[entropy.node()], false, ctx)?;
                     input_streams.insert(trans_stream);
                     transformed_exprs.push(trans_expr[0]);
                 } else {
@@ -2830,6 +2837,16 @@ fn lower_exprs_with_ctx(
     }
 
     let zip_inputs = input_streams.into_iter().collect_vec();
+    let can_broadcast = if is_top_level {
+        Some(
+            zip_inputs
+                .iter()
+                .map(|stream| *stream != input)
+                .collect_vec(),
+        )
+    } else {
+        None
+    };
     let output_schema = zip_inputs
         .iter()
         .flat_map(|stream| stream.output_schema(ctx.phys_sm).iter_fields())
@@ -2837,6 +2854,7 @@ fn lower_exprs_with_ctx(
     let zip_kind = PhysNodeKind::Zip {
         inputs: zip_inputs,
         zip_behavior: ZipBehavior::Broadcast,
+        can_broadcast,
     };
     let zip_node = ctx
         .phys_sm
@@ -2950,7 +2968,8 @@ fn build_select_stream_with_ctx(
 
     // Actual lowering is needed.
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
-    let (transformed_input, transformed_exprs) = lower_exprs_with_ctx(input, &node_exprs, ctx)?;
+    let (transformed_input, transformed_exprs) =
+        lower_exprs_with_ctx(input, &node_exprs, true, ctx)?;
     let trans_expr_irs = exprs
         .iter()
         .zip(transformed_exprs)
@@ -2991,7 +3010,7 @@ pub fn lower_exprs(
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
-        lower_exprs_with_ctx(input, &node_exprs, &mut ctx)?;
+        lower_exprs_with_ctx(input, &node_exprs, true, &mut ctx)?;
     let trans_expr_irs = exprs
         .iter()
         .zip(transformed_exprs)
