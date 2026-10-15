@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _read_csv_sql(path: Path, options: str) -> pl.DataFrame:
-    args = f"'{path.as_posix()}'" + (f", {options}" if options else "")
+def _read_csv_sql(path: Path, options: str, path_prefix: str = "") -> pl.DataFrame:
+    args = f"{path_prefix}'{path.as_posix()}'" + (f", {options}" if options else "")
     with pl.SQLContext() as ctx:
         return ctx.execute(f"SELECT * FROM read_csv({args})", eager=True)
 
@@ -64,7 +64,8 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
             "skip_rows => 2, skip_rows_after_header => 1",
             {"skip_rows": 2, "skip_rows_after_header": 1},
         ),
-        ('title "open\na,b\n1,2\n', "skip_lines := 1", {"skip_lines": 1}),
+        # option names are case-insensitive
+        ('title "open\na,b\n1,2\n', "SKIP_LINES := 1", {"skip_lines": 1}),
         # names and types
         ("a,b\n1,2\n", "new_columns => ['x', 'y']", {"new_columns": ["x", "y"]}),
         (
@@ -142,6 +143,12 @@ def test_read_csv_options_match_scan_csv(
             "extra_columns => 'ignore', infer_schema_files => 1",
             {"extra_columns": "ignore", "infer_schema_files": 1},
         ),
+        # the path of each file
+        (
+            ["a\n1\n", "a\n2\n"],
+            "include_file_paths => 'file'",
+            {"include_file_paths": "file"},
+        ),
         # a wider type in the eleventh file, past the default of ten
         (
             ["a\n1.5\n" if i == 10 else "a\n1\n" for i in range(12)],
@@ -169,6 +176,17 @@ def test_read_csv_options_lossy_encoding(tmp_path: Path) -> None:
     expected = pl.scan_csv(path.as_posix(), encoding="utf8-lossy").collect()
     assert_frame_equal(_read_csv_sql(path, "encoding => 'utf8-lossy'"), expected)
     assert expected["a"][0] == "�"
+
+
+def test_read_csv_path_as_escaped_string(tmp_path: Path) -> None:
+    path = tmp_path / "data.tsv"
+    path.write_text("a\tb\n1\t2\n")
+
+    # forward slashes keep the path free of escape sequences
+    expected = pl.scan_csv(path.as_posix(), separator="\t").collect()
+    assert_frame_equal(
+        _read_csv_sql(path, "separator => E'\\t'", path_prefix="E"), expected
+    )
 
 
 def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
@@ -223,6 +241,12 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             SQLSyntaxError,
             r"option 'infer_schema_files' expects a positive integer; found: 0",
         ),
+        # an excluded option without an alternative gets no trailing reason
+        (
+            "glob => false",
+            SQLInterfaceError,
+            r"option 'glob' is not supported in SQL$",
+        ),
         (
             "columns => ['a']",
             SQLInterfaceError,
@@ -235,7 +259,12 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             r"options must be named with '=>' \(found: has_header = false\)",
         ),
         (
-            "has_header => false, has_header => true",
+            "false",
+            SQLSyntaxError,
+            r"options must be named with '=>' \(found: false\)",
+        ),
+        (
+            "has_header => false, HAS_HEADER => true",
             SQLSyntaxError,
             r"option 'has_header' is given more than once",
         ),
@@ -250,6 +279,16 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             r"option 'has_header' expects a boolean; found: 'no'",
         ),
         (
+            "skip_rows => -1",
+            SQLSyntaxError,
+            r"option 'skip_rows' expects a non-negative integer; found: -1",
+        ),
+        (
+            "encoding => 'latin1'",
+            SQLSyntaxError,
+            r"option 'encoding' expects 'utf8' or 'utf8-lossy'; found: 'latin1'",
+        ),
+        (
             "separator => '\\t'",
             SQLSyntaxError,
             r"expects a single-byte character; .* E'' string",
@@ -258,6 +297,11 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             "schema => {'x': 'INT('}",
             SQLSyntaxError,
             r"option 'schema' has an invalid type name: 'INT\('",
+        ),
+        (
+            "schema => ['INT']",
+            SQLSyntaxError,
+            r"option 'schema' expects a dictionary such as \{'a': 'INT'\}; found: \['INT'\]",
         ),
     ],
 )
@@ -268,6 +312,21 @@ def test_read_csv_option_errors(
     path.write_text("a,b\n1,2\n")
     with pytest.raises(error, match=match):
         _read_csv_sql(path, options)
+
+
+@pytest.mark.parametrize("args", ["", "has_header => false"])
+def test_read_csv_expects_a_path_first(args: str) -> None:
+    with pytest.raises(
+        SQLSyntaxError, match=r"`read_csv` expects a file path as its first argument"
+    ):
+        pl.sql(f"SELECT * FROM read_csv({args})").collect()
+
+
+def test_read_csv_override_that_does_not_fit(tmp_path: Path) -> None:
+    path = tmp_path / "data.csv"
+    path.write_text("a\n1\nx\n")
+    with pytest.raises(ComputeError, match=r"could not parse"):
+        _read_csv_sql(path, "schema_overrides => {'a': 'INT'}")
 
 
 def _read_ndjson_sql(
