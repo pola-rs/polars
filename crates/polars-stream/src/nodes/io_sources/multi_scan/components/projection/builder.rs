@@ -28,6 +28,10 @@ pub enum ProjectionBuilder {
         projected_schema: SchemaRef,
         /// `(physical_id, iceberg_column)`
         projected_iceberg_schema: IcebergSchemaRef,
+        /// Whether the table has a name mapping, for data files without field IDs. This cannot
+        /// be derived from the mapped names in `projected_iceberg_schema`: the mapping may name
+        /// none of the projected columns (e.g. only fields dropped from the schema).
+        table_has_name_mapping: bool,
         /// Used for filling missing fields.
         default_values: Option<Arc<IcebergDefaultFieldValues>>,
     },
@@ -51,7 +55,10 @@ impl ProjectionBuilder {
     ) -> Self {
         match column_mapping {
             None => ProjectionBuilder::Plain(projected_schema),
-            Some(ColumnMapping::Iceberg(iceberg_schema)) => {
+            Some(ColumnMapping::Iceberg {
+                schema: iceberg_schema,
+                has_name_mapping,
+            }) => {
                 // Note: `projected_schema` is derived from `iceberg_schema` during IR resolution.
                 // Many of the assertions below are based on this invariant.
                 assert!(projected_schema.len() <= iceberg_schema.len());
@@ -86,6 +93,7 @@ impl ProjectionBuilder {
                 Self::Iceberg {
                     projected_schema,
                     projected_iceberg_schema,
+                    table_has_name_mapping: *has_name_mapping,
                     default_values,
                 }
             },
@@ -173,6 +181,7 @@ impl ProjectionBuilder {
             Self::Iceberg {
                 projected_schema,
                 projected_iceberg_schema,
+                table_has_name_mapping: _,
                 default_values,
             } => (|| {
                 let file_iceberg_schema = file_iceberg_schema.ok_or_else(|| {

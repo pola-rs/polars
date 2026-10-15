@@ -88,6 +88,34 @@ class _KmsWithRequiredArgument:
         pass
 
 
+@pytest.mark.parametrize("require_plugin", [False, True])
+def test_encrypted_scan_planner(
+    io_files_path: Path, monkeypatch: pytest.MonkeyPatch, require_plugin: bool
+) -> None:
+    from unittest.mock import Mock
+
+    import polars.io.iceberg._dataset as dataset
+
+    fixture_path = io_files_path / "iceberg-encrypted"
+    monkeypatch.chdir(fixture_path)
+    monkeypatch.setattr(dataset, "use_plugin_planner", lambda: True)
+    monkeypatch.setattr(dataset, "plugin_planner_required", lambda: require_plugin)
+    plugin_scan = Mock(side_effect=AssertionError("encrypted scan used the plugin"))
+    monkeypatch.setattr(dataset, "plugin_scan", plugin_scan)
+    q = pl.scan_iceberg(
+        str(fixture_path / "vectors.metadata.json"),
+        storage_options={"py-kms-impl": f"{__name__}._IdentityKms"},
+    )
+
+    if require_plugin:
+        with pytest.raises(NotImplementedError, match="require the PyIceberg planner"):
+            q.collect()
+    else:
+        assert_frame_equal(q.collect(), pl.DataFrame({"x": [0, 2]}))
+
+    plugin_scan.assert_not_called()
+
+
 @pytest.fixture
 def iceberg_kms_endpoint() -> Iterator[
     tuple[str, list[tuple[str | None, dict[str, Any]]], dict[str, str]]

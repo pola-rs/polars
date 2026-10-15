@@ -34,7 +34,11 @@ impl PartitionSinkStarter {
         file_permit: FileSinkPermit,
     ) -> PolarsResult<FileSinkTaskData> {
         let file_provider = Arc::clone(&self.file_provider);
-        let path_info_entry = self.sinked_path_info_list.as_ref().map(|x| x.new_entry());
+        let path_info_entry = self.sinked_path_info_list.as_ref().map(|x| {
+            let entry = x.new_entry();
+            entry.set_partition_keys(Arc::clone(&file_provider_args.partition_keys));
+            entry
+        });
         let file_open_task = tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn({
             let path_info_entry = path_info_entry.clone();
             async move {

@@ -244,6 +244,10 @@ pub(super) fn process_join(
     let mut output_key_to_right_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
         PlIndexMap::with_capacity(get_rhs_column_keys_iter().len());
 
+    // A predicate moved to the other key column is cast back to the dtype it was typed against.
+    let mut output_key_to_left_input_casts: PlIndexMap<PlSmallStr, DataType> = Default::default();
+    let mut output_key_to_right_input_casts: PlIndexMap<PlSmallStr, DataType> = Default::default();
+
     if options.is_pure_equi() {
         for (lhs_input_key, rhs_input_key) in
             get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
@@ -251,6 +255,9 @@ pub(super) fn process_join(
             let (Some(lhs_input_key), Some(rhs_input_key)) = (lhs_input_key, rhs_input_key) else {
                 continue;
             };
+            let lhs_dtype = schema_left.get(lhs_input_key).unwrap();
+            let rhs_dtype = schema_right.get(rhs_input_key).unwrap();
+            let dtypes_differ = lhs_dtype != rhs_dtype;
 
             // lhs_input_key: Column name within the left table.
             use JoinType::*;
@@ -259,8 +266,10 @@ pub(super) fn process_join(
             if match &options.args.how {
                 Left | Inner | Full => true,
 
+                // Asof matches `by` keys on their physical values, so a cast to the other
+                // logical dtype can change the value.
                 #[cfg(feature = "asof_join")]
-                AsOf(_) => true,
+                AsOf(_) => !dtypes_differ,
                 #[cfg(feature = "semi_anti_join")]
                 Semi | Anti => true,
 
@@ -275,6 +284,10 @@ pub(super) fn process_join(
                 // Note: `lhs_input_key` maintains its name in the output column for all cases except
                 // for a coalescing right-join.
                 output_key_to_right_input_map.insert(lhs_input_key.clone(), rhs_input_key.clone());
+                if dtypes_differ {
+                    output_key_to_right_input_casts
+                        .insert(lhs_input_key.clone(), lhs_dtype.clone());
+                }
             }
 
             // Map output name of an RHS join key output to a key column of the left table.
@@ -295,7 +308,11 @@ pub(super) fn process_join(
 
                 assert!(schema.contains(&rhs_output_key));
 
-                output_key_to_left_input_map.insert(rhs_output_key.clone(), lhs_input_key.clone());
+                if dtypes_differ {
+                    output_key_to_left_input_casts
+                        .insert(rhs_output_key.clone(), rhs_dtype.clone());
+                }
+                output_key_to_left_input_map.insert(rhs_output_key, lhs_input_key.clone());
             }
         }
     }
@@ -408,7 +425,12 @@ pub(super) fn process_join(
                     opt: &mut PredicatePushDown| {
         if placement.push_left {
             let mut predicate = predicate.clone();
-            map_column_references(&mut predicate, expr_arena, &output_key_to_left_input_map);
+            map_column_references_with_casts(
+                &mut predicate,
+                expr_arena,
+                &output_key_to_left_input_map,
+                &output_key_to_left_input_casts,
+            );
             insert_predicate_dedup(
                 &mut pushdown_left,
                 &predicate,
@@ -419,7 +441,12 @@ pub(super) fn process_join(
 
         if placement.push_right {
             let mut predicate = predicate;
-            map_column_references(&mut predicate, expr_arena, &output_key_to_right_input_map);
+            map_column_references_with_casts(
+                &mut predicate,
+                expr_arena,
+                &output_key_to_right_input_map,
+                &output_key_to_right_input_casts,
+            );
             remove_suffix(
                 &mut predicate,
                 expr_arena,

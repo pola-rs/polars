@@ -831,7 +831,11 @@ fn lower_ir_inner(
                 && predicate.is_none()
             {
                 // Fast-count for scan_iceberg will hit here.
-                let row_counter = RowCounter::new(physical_rows, deleted_rows);
+                //
+                // The deleted row count sums the record counts of the delete files, which
+                // can exceed the physical rows when several delete files delete the same
+                // rows (`fast_deletion_count` documents that the count can be off then).
+                let row_counter = RowCounter::new(physical_rows, deleted_rows.min(physical_rows));
                 row_counter.num_rows_idxsize()?;
                 let num_rows = row_counter.num_rows()?;
 
@@ -975,7 +979,7 @@ fn lower_ir_inner(
                             .python_scan()
                             .expect("should be python scan");
 
-                        python_dataset_scan_to_reader_builder(expanded_scan)?
+                        python_dataset_scan_to_reader_builder(expanded_scan)
                     },
 
                     #[cfg(feature = "scan_lines")]
