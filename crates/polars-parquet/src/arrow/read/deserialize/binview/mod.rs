@@ -452,10 +452,11 @@ pub fn decode_plain_generic(
             let mut all_inlined_are_ascii = true;
 
             // @NOTE: This is only valid because we initialize our inline View's to be zeroes on
-            // non-included bytes.
+            // non-included bytes. The mask also covers the length, which is below 128 for inline
+            // views.
             for view in &target.views()[start_target_length..] {
                 all_inlined_are_ascii &= (view.length > View::MAX_INLINE_SIZE)
-                    | (view.as_u128() & 0x0000_0000_8080_8080_8080_8080_8080_8080 == 0);
+                    | (view.as_u128() & 0x8080_8080_8080_8080_8080_8080_8080_8080 == 0);
             }
 
             // This is the very slow path.
