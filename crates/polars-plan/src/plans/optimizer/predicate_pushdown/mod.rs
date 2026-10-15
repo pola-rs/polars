@@ -617,7 +617,7 @@ impl PredicatePushDown {
                 }
 
                 if let Some((offset, len, None)) = slice
-                    && by_column.len() == 1
+                    && !by_column.is_empty()
                 {
                     let n = by_column[0].node();
                     if let AExpr::Column(_) = expr_arena.get(n) {

@@ -2,16 +2,17 @@ use std::any::Any;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use polars_async::executor::TaskMetricAggregator;
-use polars_core::prelude::row_encode::_get_rows_encoded;
+use polars_core::prelude::row_encode::{_get_rows_encoded, get_row_encoding_context};
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_io::predicates::RuntimeRange;
-use polars_plan::plans::{DynamicPred, PredicateExpr, TrivialPredicateExpr};
+use polars_plan::plans::{DynamicPred, PredicateExpr};
+use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 use polars_utils::sort::ReorderWithNulls;
@@ -31,6 +32,10 @@ new_key_type! {
 
 /// Minimum number of rows a gather must remove from a subset to be worthwhile.
 const MIN_GATHER_REMOVED_ROWS: usize = 16;
+
+/// Up to this `k` the pipelines share their best `k` keys, so the published optimum is the
+/// k-th key over all pipelines instead of the best k-th key of one pipeline.
+const MAX_SHARED_K: usize = 4096;
 
 /// Represents a subset of a dataframe.
 struct DfSubset {
@@ -78,10 +83,26 @@ struct BottomKWithPayload<P> {
     to_prune: Vec<DfsKey>,
     gather_idxs: Vec<IdxSize>,
     shared_optimum: Arc<RwLock<Option<P>>>,
+    /// The best `k` keys of all pipelines, when `k` is at most `MAX_SHARED_K`.
+    shared_keys: Option<Arc<Mutex<BinaryHeap<P>>>>,
+    /// The keys `add_df` put in `heap`, for `shared_keys`.
+    added_keys: Vec<P>,
 }
 
 impl<P: Ord + Clone> BottomKWithPayload<P> {
-    pub fn new(k: usize, shared_optimum: Arc<RwLock<Option<P>>>) -> Self {
+    pub fn new(k: usize) -> Self {
+        Self::with_shared(
+            k,
+            Arc::default(),
+            (k <= MAX_SHARED_K).then(|| Arc::new(Mutex::new(BinaryHeap::with_capacity(k + 1)))),
+        )
+    }
+
+    fn with_shared(
+        k: usize,
+        shared_optimum: Arc<RwLock<Option<P>>>,
+        shared_keys: Option<Arc<Mutex<BinaryHeap<P>>>>,
+    ) -> Self {
         Self {
             k,
             heap: BinaryHeap::with_capacity(k + 1),
@@ -91,7 +112,18 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             to_prune: Vec::new(),
             gather_idxs: Vec::new(),
             shared_optimum,
+            shared_keys,
+            added_keys: Vec::new(),
         }
+    }
+
+    /// An empty one that shares the optimum with `self`.
+    pub fn new_sharing(&self) -> Self {
+        Self::with_shared(
+            self.k,
+            self.shared_optimum.clone(),
+            self.shared_keys.clone(),
+        )
     }
 
     pub fn add_df<Q>(
@@ -108,6 +140,9 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             subset_len: 0,
         });
 
+        // Only keys below the current optimum can change it.
+        let shared_optimum = self.shared_optimum.read().clone();
+        let collect_below = self.shared_keys.is_some().then_some(&shared_optimum);
         let mut new_optimum = false;
         for (row_idx, key) in keys.into_iter().enumerate() {
             new_optimum |= self.add_one(
@@ -116,21 +151,44 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
                 key,
                 &is_less,
                 &to_owned,
+                collect_below,
             );
         }
         self.mark_if_sparse(dfs_key);
         self.prune();
 
-        if new_optimum && self.heap.len() == self.k {
-            let new_shared_opt = if let Some(v) = self.shared_optimum.read().clone() {
-                is_less_owned(self.peek_optimum().unwrap(), &v)
-            } else {
-                true
-            };
+        let optimum = match &self.shared_keys {
+            Some(shared_keys) => {
+                if self.added_keys.is_empty() {
+                    return;
+                }
+                let mut shared_keys = shared_keys.lock();
+                for key in self.added_keys.drain(..) {
+                    if shared_keys.len() < self.k {
+                        shared_keys.push(key);
+                    } else if is_less_owned(&key, shared_keys.peek().unwrap()) {
+                        *shared_keys.peek_mut().unwrap() = key;
+                    }
+                }
+                if shared_keys.len() < self.k {
+                    return;
+                }
+                shared_keys.peek().unwrap().clone()
+            },
+            None => {
+                if !new_optimum || self.heap.len() < self.k {
+                    return;
+                }
+                self.peek_optimum().unwrap().clone()
+            },
+        };
 
-            if new_shared_opt {
-                *self.shared_optimum.write() = self.peek_optimum().cloned();
-            }
+        let mut shared_optimum = self.shared_optimum.write();
+        if shared_optimum
+            .as_ref()
+            .is_none_or(|v| is_less_owned(&optimum, v))
+        {
+            *shared_optimum = Some(optimum);
         }
     }
 
@@ -141,6 +199,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         key: Q,
         is_less: impl Fn(&Q, &P) -> bool,
         to_owned: impl Fn(Q) -> P,
+        collect_below: Option<&Option<P>>,
     ) -> bool {
         // We use a max-heap for our bottom k. This means the top element in our heap (peek())
         // is the first to be replaced.
@@ -151,8 +210,11 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             df_subset.subset_len += 1;
             df_subset.rows.push(row_idx_key);
             let opt = self.heap.peek().map(|p| p.1);
-            self.heap
-                .push(Priority(to_owned(key), (dfs_key, row_idx_key)));
+            let key = to_owned(key);
+            if collect_below.is_some_and(|bound| bound.as_ref().is_none_or(|b| key < *b)) {
+                self.added_keys.push(key.clone());
+            }
+            self.heap.push(Priority(key, (dfs_key, row_idx_key)));
             new_optimum = opt != self.heap.peek().map(|p| p.1);
         }
 
@@ -214,6 +276,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
                 prio.0.clone(),
                 |l, r| l < r,
                 |x| x,
+                None,
             );
         }
         for &dfs_key in new_df_keys.values() {
@@ -263,7 +326,7 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool>
 {
     fn new(k: usize, dtype: DataType) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k, Arc::default()),
+            inner: BottomKWithPayload::new(k),
             dtype,
         }
     }
@@ -274,7 +337,7 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
 {
     fn new_empty(&self) -> Box<dyn DfByKeyReducer> {
         Box::new(Self {
-            inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
+            inner: self.inner.new_sharing(),
             dtype: self.dtype.clone(),
         })
     }
@@ -400,7 +463,7 @@ struct BinaryBottomK<const REVERSE: bool, const NULLS_LAST: bool> {
 impl<const REVERSE: bool, const NULLS_LAST: bool> BinaryBottomK<REVERSE, NULLS_LAST> {
     fn new(k: usize, dtype: DataType) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k, Arc::default()),
+            inner: BottomKWithPayload::new(k),
             dtype,
         }
     }
@@ -411,7 +474,7 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
 {
     fn new_empty(&self) -> Box<dyn DfByKeyReducer> {
         Box::new(Self {
-            inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
+            inner: self.inner.new_sharing(),
             dtype: self.dtype.clone(),
         })
     }
@@ -522,14 +585,16 @@ struct RowEncodedBottomK {
     inner: BottomKWithPayload<Vec<u8>>,
     reverse: Vec<bool>,
     nulls_last: Vec<bool>,
+    first_key_dtype: DataType,
 }
 
 impl RowEncodedBottomK {
-    fn new(k: usize, reverse: Vec<bool>, nulls_last: Vec<bool>) -> Self {
+    fn new(k: usize, reverse: Vec<bool>, nulls_last: Vec<bool>, first_key_dtype: DataType) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k, Arc::default()),
+            inner: BottomKWithPayload::new(k),
             reverse,
             nulls_last,
+            first_key_dtype,
         }
     }
 }
@@ -537,15 +602,20 @@ impl RowEncodedBottomK {
 impl DfByKeyReducer for RowEncodedBottomK {
     fn new_empty(&self) -> Box<dyn DfByKeyReducer> {
         Box::new(Self {
-            inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
+            inner: self.inner.new_sharing(),
             reverse: self.reverse.clone(),
             nulls_last: self.nulls_last.clone(),
+            first_key_dtype: self.first_key_dtype.clone(),
         })
     }
 
     fn new_pred(&self) -> Arc<dyn PredicateExpr> {
-        // Not implemented for row-encoded keys.
-        Arc::new(TrivialPredicateExpr)
+        Arc::new(FirstKeyBottomKPredicate {
+            shared_optimum: self.inner.shared_optimum.clone(),
+            descending: self.reverse[0],
+            nulls_last: self.nulls_last[0],
+            dtype: self.first_key_dtype.clone(),
+        })
     }
 
     fn add(&mut self, df: DataFrame, keys: DataFrame) {
@@ -568,6 +638,72 @@ impl DfByKeyReducer for RowEncodedBottomK {
 
     fn finalize(mut self: Box<Self>) -> Option<DataFrame> {
         self.inner.finalize()
+    }
+}
+
+/// Keeps the values of the first key that can still be in a row-encoded bottom-k: those
+/// up to and including the first key of the threshold row.
+struct FirstKeyBottomKPredicate {
+    shared_optimum: Arc<RwLock<Option<Vec<u8>>>>,
+    descending: bool,
+    nulls_last: bool,
+    dtype: DataType,
+}
+
+impl PredicateExpr for FirstKeyBottomKPredicate {
+    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>> {
+        let Some(threshold) = self.shared_optimum.read().clone() else {
+            return Ok(None);
+        };
+        // The encoding of a value is never a prefix of another one, so a value equal to the
+        // first key of the threshold is a prefix of it and compares below it.
+        let encoded = _get_rows_encoded(&columns[0..1], &[self.descending], &[self.nulls_last])?;
+        let pred: BooleanChunked = encoded
+            .iter()
+            .map(|row| row < threshold.as_slice())
+            .collect_ca(PlSmallStr::EMPTY);
+        Ok(Some(Column::from(pred.into_series())))
+    }
+
+    fn runtime_range(&self) -> RuntimeRange {
+        // Floats order NaN apart from statistics, enums and categoricals by their categories.
+        if !(self.dtype.is_integer()
+            || self.dtype.is_temporal()
+            || self.dtype.is_decimal()
+            || matches!(self.dtype, DataType::String | DataType::Binary))
+        {
+            return RuntimeRange::Disabled;
+        }
+        let Some(threshold) = self.shared_optimum.read().clone() else {
+            return RuntimeRange::Pending;
+        };
+        let arrow_dtype = self.dtype.to_physical().to_arrow(CompatLevel::newest());
+        let opt = RowEncodingOptions::new_sorted(self.descending, self.nulls_last);
+        let ctxt = get_row_encoding_context(&self.dtype);
+        let [first_key] = unsafe {
+            polars_row::decode::decode_rows(
+                &mut [threshold.as_slice()],
+                &[opt],
+                &[ctxt],
+                &[arrow_dtype],
+            )
+        }
+        .try_into()
+        .unwrap();
+        let Ok(value) = Series::try_from((PlSmallStr::EMPTY, first_key))
+            .and_then(|s| unsafe { s.from_physical_unchecked(&self.dtype) })
+            .and_then(|s| s.get(0).map(|v| v.into_static()))
+        else {
+            return RuntimeRange::Disabled;
+        };
+        if value.is_null() {
+            return RuntimeRange::Pending;
+        }
+        threshold_range(
+            Scalar::new(self.dtype.clone(), value),
+            self.descending,
+            self.nulls_last,
+        )
     }
 }
 
@@ -606,7 +742,13 @@ fn new_top_k_reducer(
     }
 
     let reverse = reverse.iter().map(|r| !r).collect();
-    Box::new(RowEncodedBottomK::new(k, reverse, nulls_last.to_vec()))
+    let first_key_dtype = key_schema.get_at_index(0).unwrap().1.clone();
+    Box::new(RowEncodedBottomK::new(
+        k,
+        reverse,
+        nulls_last.to_vec(),
+        first_key_dtype,
+    ))
 }
 
 enum TopKState {
