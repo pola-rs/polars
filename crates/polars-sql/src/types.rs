@@ -101,6 +101,7 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
                     Ok(Field::new(name.value.as_str().into(), dtype))
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
+            polars_ensure!(!fields.is_empty(), SQLSyntax: "STRUCT type requires at least one field");
             DataType::Struct(fields)
         },
         #[cfg(feature = "dtype-map")]

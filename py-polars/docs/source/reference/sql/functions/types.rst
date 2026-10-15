@@ -50,7 +50,7 @@ Note that the more compact PostgreSQL `<expr>::type` syntax is also supported.
 
 Nested types are written as `STRUCT<name TYPE, ...>` and `MAP(KEY, VALUE)`. A struct is cast
 field by field, matching fields by name: a target field that is not in the input is null.
-Casting a string to `STRUCT` or `MAP` is not supported.
+Only a `STRUCT` value or `NULL` can be cast to `STRUCT`, and only a `MAP` value or `NULL` to `MAP`.
 
 **Example:**
 

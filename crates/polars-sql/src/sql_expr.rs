@@ -351,10 +351,7 @@ impl SQLExprVisitor<'_> {
                         } => {
                             cast_dtypes.push(map_sql_dtype_to_polars(data_type)?);
                             match extract_literal_with_op(inner, Some(op)) {
-                                Some((v, op)) => self.visit_any_value(v, op).and_then(|val| {
-                                    ensure_not_string_to_nested(data_type, Some(&val.dtype()))?;
-                                    Ok(val)
-                                }),
+                                Some((v, op)) => self.visit_any_value(v, op),
                                 None => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
                             }
                         },
@@ -380,10 +377,7 @@ impl SQLExprVisitor<'_> {
                 } => {
                     cast_dtypes.push(map_sql_dtype_to_polars(data_type)?);
                     match extract_literal_with_op(expr, None) {
-                        Some((v, op)) => self.visit_any_value(v, op).and_then(|val| {
-                            ensure_not_string_to_nested(data_type, Some(&val.dtype()))?;
-                            Ok(val)
-                        }),
+                        Some((v, op)) => self.visit_any_value(v, op),
                         None => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
                     }
                 },
@@ -394,6 +388,8 @@ impl SQLExprVisitor<'_> {
         }
         let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
         if let Some(dtype) = resolve_common_dtype(&cast_dtypes, Some("array literal "))? {
+            // Checked on the assembled series, whose elements share one type.
+            ensure_nested_cast_source(&dtype, s.dtype())?;
             s = cast_literal_series(&s, &dtype)?;
         }
         Ok(s)
@@ -1426,7 +1422,20 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
-        ensure_not_string_to_nested(dtype, self.cast_or_expr_dtype(&expr).as_ref())?;
+        if contains_struct_or_map(&polars_type) {
+            // A scalar subquery only gets a type from its plan, and a window has the type of its
+            // function (`OVER ()` partitions by a column that isn't in the schema).
+            let typed = self
+                .ctx
+                .with_typed_subqueries(&expr)?
+                .map_expr(|e| match e {
+                    Expr::Over { function, .. } => Arc::unwrap_or_clone(function),
+                    e => e,
+                });
+            if let Some(source) = self.cast_or_expr_dtype(&typed) {
+                ensure_nested_cast_source(&polars_type, &source)?;
+            }
+        }
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
 
         // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
@@ -2338,19 +2347,60 @@ pub(crate) fn resolve_expr_dtype(expr: &Expr, schema: Option<&Schema>) -> Option
         .map(|fld| fld.dtype)
 }
 
-/// `CAST(<string> AS STRUCT/MAP)` is reserved for decoding JSON. Without this check a 1-field
-/// struct target would wrap the string (`'1'` -> `{1}`), and a wider target gives an unrelated
-/// Polars error. A source whose type cannot be resolved (no schema) still uses Polars' cast.
-fn ensure_not_string_to_nested(dtype: &SQLDataType, source: Option<&DataType>) -> PolarsResult<()> {
-    let target = match dtype {
-        SQLDataType::Struct(..) => "STRUCT",
-        SQLDataType::Map(..) => "MAP",
-        _ => return Ok(()),
-    };
-    if let Some(source) = source
-        && (source.is_string() || source.is_categorical() || source.is_enum())
-    {
-        polars_bail!(SQLInterface: "CAST from a string to {} is not supported", target)
+/// The SQL name of a `STRUCT` or `MAP` cast target.
+fn nested_target_name(dtype: &DataType) -> Option<&'static str> {
+    match dtype {
+        DataType::Struct(_) => Some("STRUCT"),
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(..) => Some("MAP"),
+        _ => None,
     }
-    Ok(())
+}
+
+/// Whether a cast target has a `STRUCT` or `MAP` in it, possibly inside lists.
+fn contains_struct_or_map(dtype: &DataType) -> bool {
+    match dtype {
+        DataType::List(inner) | DataType::Array(inner, _) => contains_struct_or_map(inner),
+        _ => nested_target_name(dtype).is_some(),
+    }
+}
+
+/// Only a `STRUCT` (`MAP`) value or `NULL` casts to `STRUCT` (`MAP`), at any depth, as in
+/// PostgreSQL. Polars' cast would wrap a value into a 1-field struct (`1` -> `{1}`), and strings
+/// stay free for parsing later. A source of unknown type (no schema) still uses Polars' cast.
+fn ensure_nested_cast_source(target: &DataType, source: &DataType) -> PolarsResult<()> {
+    match (target, source) {
+        (_, DataType::Null | DataType::Unknown(UnknownKind::Any)) => Ok(()),
+        (
+            DataType::List(target) | DataType::Array(target, _),
+            DataType::List(source) | DataType::Array(source, _),
+        ) => ensure_nested_cast_source(target, source),
+        (DataType::Struct(target_fields), DataType::Struct(source_fields)) => {
+            for field in target_fields {
+                if let Some(source_field) = source_fields.iter().find(|f| f.name == field.name) {
+                    ensure_nested_cast_source(&field.dtype, &source_field.dtype)?;
+                }
+            }
+            Ok(())
+        },
+        #[cfg(feature = "dtype-map")]
+        (DataType::Map(key, value), DataType::Map(source_key, source_value)) => {
+            ensure_nested_cast_source(key, source_key)?;
+            ensure_nested_cast_source(value, source_value)
+        },
+        _ => {
+            let Some(name) = nested_target_name(target) else {
+                return Ok(());
+            };
+            // A literal's dynamic type (`dyn int`) is shown as the type it becomes.
+            let source = match source {
+                DataType::Unknown(kind) => kind.materialize().unwrap_or_else(|| source.clone()),
+                _ => source.clone(),
+            };
+            polars_bail!(
+                SQLInterface: "CAST from {} to {} is not supported; only {} values or NULL can be cast to {}",
+                source, name, name, name
+            )
+        },
+    }
 }

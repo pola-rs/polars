@@ -45,7 +45,7 @@ csv = ["polars-lazy/csv", "polars-io/csv", "polars-io/temporal"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
 dtype-decimal = ["polars-lazy/dtype-decimal"]
 # Opt-in: `dtype-map` also makes Arrow `MAP` columns import as `Map` instead of `List(Struct)`, program-wide.
-dtype-map = ["polars-lazy/dtype-map"]
+dtype-map = ["polars-lazy/dtype-map", "polars-io/dtype-map", "polars-ops/dtype-map"]
 ipc = ["polars-lazy/ipc"]
 json = ["polars-lazy/json", "polars-plan/json", "polars-lazy/extract_jsonpath", "polars-plan/extract_jsonpath"]
 list_eval = ["polars-lazy/list_eval"]
