@@ -5,7 +5,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ComputeError,
+    SchemaFieldNotFoundError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -294,9 +299,10 @@ _NDJSON_KEY_LATE = (
             "infer_schema_length => NULL",
             {"infer_schema_length": None},
         ),
+        # option names are case-insensitive, and `:=` works like `=>`
         (
             _NDJSON_KEY_LATE,
-            "infer_schema_length => 200",
+            "INFER_SCHEMA_LENGTH := 200",
             {"infer_schema_length": 200},
         ),
         (
@@ -336,6 +342,16 @@ def test_read_ndjson_options_match_scan_ndjson(
     # the same path spelling as in the query keeps `include_file_paths` identical
     expected = pl.scan_ndjson(path.as_posix(), **kwargs).collect()
     assert_frame_equal(_read_ndjson_sql(path, options), expected)
+
+
+def test_read_ndjson_include_file_paths_over_a_glob(tmp_path: Path) -> None:
+    (tmp_path / "part_1.ndjson").write_text('{"a": 1}\n')
+    (tmp_path / "part_2.ndjson").write_text('{"a": 2}\n')
+    glob = tmp_path / "part_*.ndjson"
+
+    expected = pl.scan_ndjson(glob.as_posix(), include_file_paths="path").collect()
+    assert_frame_equal(_read_ndjson_sql(glob, "include_file_paths => 'path'"), expected)
+    assert expected["path"].n_unique() == 2
 
 
 def test_read_json_takes_only_a_path(tmp_path: Path) -> None:
@@ -388,6 +404,12 @@ def test_read_ndjson_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             SQLInterfaceError,
             r"not supported in SQL: cloud credentials are read from the environment",
         ),
+        # an excluded option without an alternative gets no trailing reason
+        (
+            "batch_size => 10",
+            SQLInterfaceError,
+            r"option 'batch_size' is not supported in SQL$",
+        ),
         (
             "ignore_errors = true",
             SQLSyntaxError,
@@ -399,9 +421,26 @@ def test_read_ndjson_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             r"option 'ignore_errors' expects a boolean; found: 'no'",
         ),
         (
+            "ignore_errors => true, IGNORE_ERRORS => false",
+            SQLSyntaxError,
+            r"option 'ignore_errors' is given more than once",
+        ),
+        (
             "schema => {'x': 'INT('}",
             SQLSyntaxError,
             r"option 'schema' has an invalid type name: 'INT\('",
+        ),
+        # an override for a key the file doesn't have names it
+        (
+            "schema_overrides => {'zz': 'INT'}",
+            SchemaFieldNotFoundError,
+            r"zz",
+        ),
+        # a value that doesn't fit an override fails, unless `ignore_errors` is set
+        (
+            "schema_overrides => {'a': 'INT'}",
+            ComputeError,
+            r"cannot parse 'oops' \(string\) as Int32",
         ),
     ],
 )
