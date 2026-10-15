@@ -1653,3 +1653,40 @@ def test_offset_by_boundary_value_succeeds_series_29017() -> None:
     assert result.dt.year().item() == 262142
     assert result.dt.month().item() == 1
     assert result.dt.day().item() == 1
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").dt.day(),
+        pl.col("a").dt.year(),
+        pl.col("a").dt.total_days(),
+        pl.col("a").dt.to_string("%Y"),
+        pl.col("a").dt.truncate("1d"),
+    ],
+)
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.String, pl.List(pl.Date)])
+def test_dt_namespace_non_temporal_input_raises_at_schema(
+    expr: pl.Expr, dtype: pl.DataType
+) -> None:
+    q = pl.LazyFrame(schema={"a": dtype}).select(expr)
+    msg = "expected Date\\(time\\)/Duration/Time data type for temporal operation"
+    with pytest.raises(InvalidOperationError, match=msg):
+        q.collect_schema()
+
+
+@pytest.mark.parametrize(
+    ("expr", "schema"),
+    [
+        (pl.col("a").dt.add_business_days(1), {"a": pl.Int64}),
+        (pl.col("a").dt.is_business_day(), {"a": pl.String}),
+        (pl.business_day_count("a", "b"), {"a": pl.Datetime, "b": pl.Date}),
+        (pl.business_day_count("a", "b"), {"a": pl.Date, "b": pl.Int64}),
+    ],
+)
+def test_business_functions_invalid_input_raises_at_schema(
+    expr: pl.Expr, schema: dict[str, pl.DataType]
+) -> None:
+    q = pl.LazyFrame(schema=schema).select(expr)
+    with pytest.raises(InvalidOperationError, match="expected date"):
+        q.collect_schema()
