@@ -146,6 +146,9 @@ class _UnsupportedWithLt:
         operator.add,
         operator.mul,
         operator.and_,
+        # `==` and `!=` must not silently fall back to Python's identity comparison.
+        operator.eq,
+        operator.ne,
     ],
 )
 def test_binop_unsupported_type_raises(

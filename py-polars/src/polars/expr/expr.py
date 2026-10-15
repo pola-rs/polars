@@ -44,6 +44,7 @@ from polars._utils.various import (
     NO_DEFAULT,
     extend_bool,
     normalize_filepath,
+    qualified_type_name,
     sphinx_accessor,
     warn_null_comparison,
 )
@@ -405,7 +406,7 @@ class Expr(metaclass=_Meta):
             other, str_as_lit=True, unsupported_as_none=True
         )
         if other_pyexpr is None:
-            return NotImplemented
+            return _reflected_equality(self, other, "__eq__")
         return wrap_expr(self._pyexpr.eq(other_pyexpr))
 
     def __floordiv__(self, other: IntoExpr) -> Expr:
@@ -489,7 +490,7 @@ class Expr(metaclass=_Meta):
             other, str_as_lit=True, unsupported_as_none=True
         )
         if other_pyexpr is None:
-            return NotImplemented
+            return _reflected_equality(self, other, "__ne__")
         return wrap_expr(self._pyexpr.neq(other_pyexpr))
 
     def __neg__(self) -> Expr:
@@ -13052,6 +13053,29 @@ class Expr(metaclass=_Meta):
                 version="2.0",
             )
             return getattr_fallback(self, super(), name)
+
+
+def _reflected_equality(expr: Expr, other: Any, op: Literal["__eq__", "__ne__"]) -> Any:
+    """
+    Let `other` handle `==`/`!=` with an expression if Polars does not support it.
+
+    Returning `NotImplemented` from a binary operator
+    makes Python try the reflected operator of `other`.
+    But `__eq__` and `__ne__` are different from the other operators
+    in that if neither object implements the operator
+    then they fallback to identity comparison (returning a `bool`).
+    This means that `expr == object()` would return `False` instead of raising.
+    Whether we want to return `False` instead of raising is up to discussion,
+    but for backwards compatibility, when we did not return `NotImplemented`,
+    we keep raising.
+    """
+    result = getattr(type(other), op)(other, expr)
+    if result is NotImplemented:
+        symbol = {"__eq__": "==", "__ne__": "!="}[op]
+        other_type = qualified_type_name(other)
+        msg = f"{symbol!r} not supported between instances of 'Expr' and {other_type!r}"
+        raise TypeError(msg)
+    return result
 
 
 def _prepare_alpha(
