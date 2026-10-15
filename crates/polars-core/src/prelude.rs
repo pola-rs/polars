@@ -16,7 +16,6 @@ pub use polars_utils::pl_str::PlSmallStr;
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 pub(crate) use crate::chunked_array::ChunkLenIter;
-pub use crate::chunked_array::ChunkedArray;
 #[cfg(feature = "dtype-struct")]
 pub use crate::chunked_array::StructChunked;
 pub use crate::chunked_array::arithmetic::ArithmeticChunked;
@@ -39,6 +38,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
+pub use crate::chunked_array::{ChunkedArray, ListCollectIterExt};
 pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::abort::try_raise_polars_abort;
 pub use crate::error::{

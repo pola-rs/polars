@@ -54,6 +54,7 @@ pub mod temporal;
 mod to_vec;
 mod trusted_len;
 pub(crate) use arg_min_max::*;
+pub use from_iterator::ListCollectIterExt;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
 

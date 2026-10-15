@@ -1,4 +1,4 @@
-//! Implementations of upstream traits for [`ChunkedArray<T>`]
+//! Implementations of upstream traits for [`ChunkedArray<T>`] and related collect helpers.
 use std::borrow::{Borrow, Cow};
 
 #[cfg(feature = "object")]
@@ -229,6 +229,45 @@ impl FromIterator<Option<Series>> for ListChunked {
         }
     }
 }
+
+/// Collect `Series` into a [`ListChunked`] with a known dtype.
+///
+/// Unlike `FromIterator<Option<Series>> for ListChunked`,
+/// which infers the inner dtype from the first non-null element,
+/// this keeps `dtype` for empty and all-null iterators.
+pub trait ListCollectIterExt: Iterator + Sized {
+    #[inline]
+    fn collect_list_with_dtype(self, name: PlSmallStr, dtype: DataType) -> PolarsResult<ListChunked>
+    where
+        Self: Iterator<Item = Option<Series>>,
+    {
+        self.map(PolarsResult::Ok)
+            .try_collect_list_with_dtype(name, dtype)
+    }
+
+    fn try_collect_list_with_dtype(
+        self,
+        name: PlSmallStr,
+        dtype: DataType,
+    ) -> PolarsResult<ListChunked>
+    where
+        Self: Iterator<Item = PolarsResult<Option<Series>>>,
+    {
+        let DataType::List(inner_dtype) = &dtype else {
+            panic!("expected list dtype, got {dtype}")
+        };
+        let list_capacity = self.size_hint().0;
+        // We don't know the needed capacity.
+        // Estimating 5 elements per series is a guess.
+        let mut builder = get_list_builder(inner_dtype, list_capacity * 5, list_capacity, name);
+        for opt_s in self {
+            builder.append_opt_series(opt_s?.as_ref())?;
+        }
+        Ok(builder.finish())
+    }
+}
+
+impl<I: Iterator> ListCollectIterExt for I {}
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
