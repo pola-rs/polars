@@ -146,6 +146,19 @@ pub enum IRStringFunction {
     EscapeRegex,
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is a String.
+    pub fn ensure_is_string(self) -> PolarsResult<Self> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            dt.is_string() || matches!(dt, DataType::Unknown(UnknownKind::Any)),
+            InvalidOperation:
+            "expected String data type for string operation, got: {dt:?}"
+        );
+        Ok(self)
+    }
+}
+
 impl IRStringFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRStringFunction::*;
@@ -154,88 +167,105 @@ impl IRStringFunction {
             #[cfg(feature = "concat_str")]
             ConcatVertical { .. } | ConcatHorizontal { .. } => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
-            Contains { .. } => mapper.with_dtype(DataType::Boolean),
-            CountMatches(_) => mapper.with_dtype(DataType::UInt32),
-            EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-            Extract(_) => mapper.with_same_dtype(),
-            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
+            Contains { .. } => mapper.ensure_is_string()?.with_dtype(DataType::Boolean),
+            CountMatches(_) => mapper.ensure_is_string()?.with_dtype(DataType::UInt32),
+            EndsWith | StartsWith => mapper.ensure_is_string()?.with_dtype(DataType::Boolean),
+            Extract(_) => mapper.ensure_is_string()?.with_same_dtype(),
+            ExtractAll => mapper
+                .ensure_is_string()?
+                .with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "extract_groups")]
-            ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
+            ExtractGroups { dtype, .. } => mapper.ensure_is_string()?.with_dtype(dtype.clone()),
             #[cfg(feature = "string_to_integer")]
-            ToInteger { dtype, .. } => mapper.with_dtype(dtype.clone().unwrap_or(DataType::Int64)),
+            ToInteger { dtype, .. } => mapper
+                .ensure_is_string()?
+                .with_dtype(dtype.clone().unwrap_or(DataType::Int64)),
             #[cfg(feature = "regex")]
-            Find { .. } => mapper.with_dtype(DataType::UInt32),
+            Find { .. } => mapper.ensure_is_string()?.with_dtype(DataType::UInt32),
             #[cfg(feature = "extract_jsonpath")]
-            JsonDecode(dtype) => mapper.with_dtype(dtype.clone()),
+            JsonDecode(dtype) => mapper.ensure_is_string()?.with_dtype(dtype.clone()),
             #[cfg(feature = "extract_jsonpath")]
-            JsonPathMatch => mapper.with_dtype(DataType::String),
-            LenBytes => mapper.with_dtype(DataType::UInt32),
-            LenChars => mapper.with_dtype(DataType::UInt32),
+            JsonPathMatch => mapper.ensure_is_string()?.with_dtype(DataType::String),
+            LenBytes => mapper.ensure_is_string()?.with_dtype(DataType::UInt32),
+            LenChars => mapper.ensure_is_string()?.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
-            Replace { .. } => mapper.with_same_dtype(),
+            Replace { .. } => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "string_normalize")]
-            Normalize { .. } => mapper.with_same_dtype(),
+            Normalize { .. } => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "string_reverse")]
-            Reverse => mapper.with_same_dtype(),
+            Reverse => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "temporal")]
-            Strptime(dtype, options) => match dtype {
-                #[cfg(feature = "dtype-datetime")]
-                DataType::Datetime(time_unit, time_zone) => {
-                    let mut time_zone = time_zone.clone();
-                    #[cfg(all(feature = "regex", feature = "timezones"))]
-                    if options
-                        .format
-                        .as_ref()
-                        .is_some_and(|format| TZ_AWARE_RE.is_match(format.as_str()))
-                        && time_zone.is_none()
-                    {
-                        time_zone = Some(time_zone.unwrap_or(TimeZone::UTC));
-                    }
-                    mapper.with_dtype(DataType::Datetime(*time_unit, time_zone))
-                },
-                _ => mapper.with_dtype(dtype.clone()),
+            Strptime(dtype, options) => {
+                let mapper = mapper.ensure_is_string()?;
+                match dtype {
+                    #[cfg(feature = "dtype-datetime")]
+                    DataType::Datetime(time_unit, time_zone) => {
+                        let mut time_zone = time_zone.clone();
+                        #[cfg(all(feature = "regex", feature = "timezones"))]
+                        if options
+                            .format
+                            .as_ref()
+                            .is_some_and(|format| TZ_AWARE_RE.is_match(format.as_str()))
+                            && time_zone.is_none()
+                        {
+                            time_zone = Some(time_zone.unwrap_or(TimeZone::UTC));
+                        }
+                        mapper.with_dtype(DataType::Datetime(*time_unit, time_zone))
+                    },
+                    _ => mapper.with_dtype(dtype.clone()),
+                }
             },
-            Split(_) => mapper.with_dtype(DataType::List(DataType::String.into())),
+            Split(_) => mapper
+                .ensure_is_string()?
+                .with_dtype(DataType::List(DataType::String.into())),
             #[cfg(feature = "regex")]
-            SplitRegex { .. } => mapper.with_dtype(DataType::List(DataType::String.into())),
+            SplitRegex { .. } => mapper
+                .ensure_is_string()?
+                .with_dtype(DataType::List(DataType::String.into())),
             #[cfg(feature = "nightly")]
-            Titlecase => mapper.with_same_dtype(),
+            Titlecase => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
-            ToDecimal { scale } => mapper.with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
+            ToDecimal { scale } => mapper
+                .ensure_is_string()?
+                .with_dtype(DataType::Decimal(DEC128_MAX_PREC, *scale)),
             #[cfg(feature = "string_encoding")]
-            HexEncode => mapper.with_same_dtype(),
+            HexEncode => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
-            HexDecode(_) => mapper.with_dtype(DataType::Binary),
+            HexDecode(_) => mapper.ensure_is_string()?.with_dtype(DataType::Binary),
             #[cfg(feature = "string_encoding")]
-            Base64Encode => mapper.with_same_dtype(),
+            Base64Encode => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
-            Base64Decode(_) => mapper.with_dtype(DataType::Binary),
+            Base64Decode(_) => mapper.ensure_is_string()?.with_dtype(DataType::Binary),
             Uppercase | Lowercase | StripChars | StripCharsStart | StripCharsEnd | StripPrefix
-            | StripSuffix | Slice | Head | Tail => mapper.with_same_dtype(),
+            | StripSuffix | Slice | Head | Tail => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "string_pad")]
-            PadStart { .. } | PadEnd { .. } | ZFill => mapper.with_same_dtype(),
+            PadStart { .. } | PadEnd { .. } | ZFill => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
-            SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
+            SplitExact { n, .. } => mapper.ensure_is_string()?.with_dtype(DataType::Struct(
                 (0..n + 1)
                     .map(|i| Field::new(format_pl_smallstr!("field_{i}"), DataType::String))
                     .collect(),
             )),
             #[cfg(feature = "dtype-struct")]
-            SplitN(n) => mapper.with_dtype(DataType::Struct(
+            SplitN(n) => mapper.ensure_is_string()?.with_dtype(DataType::Struct(
                 (0..*n)
                     .map(|i| Field::new(format_pl_smallstr!("field_{i}"), DataType::String))
                     .collect(),
             )),
             #[cfg(feature = "find_many")]
-            ContainsAny { .. } => mapper.with_dtype(DataType::Boolean),
+            ContainsAny { .. } => mapper.ensure_is_string()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "find_many")]
-            ReplaceMany { .. } => mapper.with_same_dtype(),
+            ReplaceMany { .. } => mapper.ensure_is_string()?.with_same_dtype(),
             #[cfg(feature = "find_many")]
-            ExtractMany { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
+            ExtractMany { .. } => mapper
+                .ensure_is_string()?
+                .with_dtype(DataType::List(Box::new(DataType::String))),
             #[cfg(feature = "find_many")]
-            FindMany { .. } => mapper.with_dtype(DataType::List(Box::new(DataType::UInt32))),
+            FindMany { .. } => mapper
+                .ensure_is_string()?
+                .with_dtype(DataType::List(Box::new(DataType::UInt32))),
             #[cfg(feature = "regex")]
-            EscapeRegex => mapper.with_same_dtype(),
+            EscapeRegex => mapper.ensure_is_string()?.with_same_dtype(),
         }
     }
 
