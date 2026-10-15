@@ -132,3 +132,16 @@ and `include_file_paths`.
 - A nested object read as `'VARCHAR'` keeps its JSON text.
 - `read_json` reads the same files, but takes only the path. For a JSON array or a pretty-printed
   JSON document, use `pl.read_json` instead.
+
+`read_parquet` accepts the options of `scan_parquet` in the same way: `schema`, `missing_columns`,
+`extra_columns`, `hive_partitioning`, `hive_schema`, `try_parse_hive_dates` and
+`include_file_paths`.
+
+- Unlike `scan_parquet`, `read_parquet` reads hive partitions by default
+  (`hive_partitioning => true`), for a glob or a single file too: a path such as
+  `data/k=1/part.parquet` adds a column `k`. Use `hive_partitioning => false` to leave them out.
+- When reading several files, the first one defines the columns, unless `schema` is given. Use
+  `missing_columns => 'insert'` and `extra_columns => 'ignore'` for files that differ from it.
+- As for `read_csv`, options marked unstable in the
+  [`scan_parquet`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
+  API reference are unstable in `read_parquet` too.
