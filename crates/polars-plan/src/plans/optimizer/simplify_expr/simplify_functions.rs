@@ -346,6 +346,32 @@ pub(super) fn optimize_functions(
                 _ => None,
             }
         },
+        #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+        IRFunctionExpr::TemporalExpr(IRTemporalFunction::ReplaceTimeZone(
+            ref time_zone,
+            non_existent,
+        )) => {
+            let (Some(sc), AExpr::Literal(ambiguous)) = (
+                scalar_literal(input[0].node(), expr_arena),
+                expr_arena.get(input[1].node()),
+            ) else {
+                return Ok(None);
+            };
+            let (DataType::Datetime(_, _), Some(ambiguous)) = (sc.dtype(), ambiguous.extract_str())
+            else {
+                return Ok(None);
+            };
+
+            let s = sc.clone().into_series(PlSmallStr::EMPTY);
+            let ambiguous = StringChunked::from_slice(PlSmallStr::EMPTY, &[ambiguous]);
+            let out = polars_core::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                s.datetime()?,
+                time_zone.as_ref(),
+                &ambiguous,
+                non_existent,
+            )?;
+            Some(single_value_literal(&out.into_series())?)
+        },
         IRFunctionExpr::GatherEvery { n: 1, offset: 0 } => {
             Some(expr_arena.get(input[0].node()).clone())
         },
@@ -395,4 +421,24 @@ fn get_string_concat_input(
         } if sep.is_empty() && *func_ignore_nulls == ignore_nulls => Some(input),
         _ => None,
     }
+}
+
+/// Returns the value of `node` if it is a scalar literal of a known dtype.
+#[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+fn scalar_literal(node: Node, expr_arena: &Arena<AExpr>) -> Option<&Scalar> {
+    match expr_arena.get(node) {
+        AExpr::Literal(LiteralValue::Scalar(sc)) => Some(sc),
+        _ => None,
+    }
+}
+
+/// Turns the single value of `s` into a scalar literal.
+#[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+fn single_value_literal(s: &Series) -> PolarsResult<AExpr> {
+    debug_assert_eq!(s.len(), 1);
+    let value = s.get(0)?.into_static();
+    Ok(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+        s.dtype().clone(),
+        value,
+    ))))
 }

@@ -1595,6 +1595,53 @@ def test_replace_time_zone_ambiguous_null() -> None:
     assert result[3] is None
 
 
+@pytest.mark.parametrize(
+    ("value", "time_zone", "ambiguous", "expected"),
+    [
+        (
+            datetime(2020, 1, 1, 12),
+            "Europe/Amsterdam",
+            "raise",
+            datetime(2020, 1, 1, 12, tzinfo=ZoneInfo("Europe/Amsterdam")),
+        ),
+        (
+            datetime(2020, 1, 1, 12, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            None,
+            "raise",
+            datetime(2020, 1, 1, 12),
+        ),
+        (
+            datetime(2020, 10, 25, 1),
+            "Europe/London",
+            "latest",
+            datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London")),
+        ),
+        (datetime(2020, 10, 25, 1), "Europe/London", "null", None),
+    ],
+)
+def test_replace_time_zone_literal_constant_folding(
+    value: datetime,
+    time_zone: str | None,
+    ambiguous: Ambiguous,
+    expected: datetime | None,
+) -> None:
+    expr = pl.lit(value).dt.replace_time_zone(time_zone, ambiguous=ambiguous)
+    lf = pl.LazyFrame({"a": [expected]}).filter(pl.col("a") == expr)
+    assert "replace_time_zone" not in lf.explain()
+
+    result = pl.select(expr).item()
+    assert result == expected
+    if expected is not None:
+        assert result.tzinfo == expected.tzinfo
+        assert result.fold == expected.fold
+
+
+def test_replace_time_zone_literal_constant_folding_raises() -> None:
+    expr = pl.lit(datetime(2020, 10, 25, 1)).dt.replace_time_zone("Europe/London")
+    with pytest.raises(ComputeError, match="ambiguous"):
+        pl.select(expr)
+
+
 def test_ambiguous_expressions() -> None:
     # strptime
     df = pl.DataFrame(
