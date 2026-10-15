@@ -10,6 +10,7 @@ use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_io::predicates::RuntimeRange;
 use polars_plan::plans::{DynamicPred, PredicateExpr, TrivialPredicateExpr};
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
@@ -254,14 +255,16 @@ struct PrimitiveBottomK<T: PolarsNumericType, const REVERSE: bool, const NULLS_L
     inner: BottomKWithPayload<
         ReorderWithNulls<TotalOrdWrap<T::Physical<'static>>, REVERSE, NULLS_LAST>,
     >,
+    dtype: DataType,
 }
 
 impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool>
     PrimitiveBottomK<T, REVERSE, NULLS_LAST>
 {
-    fn new(k: usize) -> Self {
+    fn new(k: usize, dtype: DataType) -> Self {
         Self {
             inner: BottomKWithPayload::new(k, Arc::default()),
+            dtype,
         }
     }
 }
@@ -272,12 +275,14 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
     fn new_empty(&self) -> Box<dyn DfByKeyReducer> {
         Box::new(Self {
             inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
+            dtype: self.dtype.clone(),
         })
     }
 
     fn new_pred(&self) -> Arc<dyn PredicateExpr> {
         Arc::new(PrimitiveBottomKPredicate::<T, REVERSE, NULLS_LAST> {
             shared_optimum: self.inner.shared_optimum.clone(),
+            dtype: self.dtype.clone(),
         })
     }
 
@@ -312,6 +317,7 @@ struct PrimitiveBottomKPredicate<T: PolarsNumericType, const REVERSE: bool, cons
     shared_optimum: Arc<
         RwLock<Option<ReorderWithNulls<TotalOrdWrap<T::Physical<'static>>, REVERSE, NULLS_LAST>>>,
     >,
+    dtype: DataType,
 }
 
 impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
@@ -352,16 +358,50 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> Predicat
             Ok(Some(Column::from(pred.into_series())))
         }
     }
+
+    fn runtime_range(&self) -> RuntimeRange {
+        // Floats order NaN apart from statistics, enums by their categories.
+        if !(self.dtype.is_integer() || self.dtype.is_temporal() || self.dtype.is_decimal()) {
+            return RuntimeRange::Disabled;
+        }
+        let Some(ReorderWithNulls(Some(TotalOrdWrap(threshold)))) = *self.shared_optimum.read()
+        else {
+            return RuntimeRange::Pending;
+        };
+        let physical = ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[threshold]);
+        let Ok(value) = (unsafe { physical.into_series().from_physical_unchecked(&self.dtype) })
+            .and_then(|s| s.get(0).map(|v| v.into_static()))
+        else {
+            return RuntimeRange::Disabled;
+        };
+        threshold_range(Scalar::new(self.dtype.clone(), value), REVERSE, NULLS_LAST)
+    }
+}
+
+/// The values a bottom-k with this threshold can still take, as a range.
+fn threshold_range(threshold: Scalar, descending: bool, nulls_last: bool) -> RuntimeRange {
+    let (lo, hi) = if descending {
+        (Some(threshold), None)
+    } else {
+        (None, Some(threshold))
+    };
+    RuntimeRange::Range {
+        lo,
+        hi,
+        nulls_match: !nulls_last,
+    }
 }
 
 struct BinaryBottomK<const REVERSE: bool, const NULLS_LAST: bool> {
     inner: BottomKWithPayload<ReorderWithNulls<Vec<u8>, REVERSE, NULLS_LAST>>,
+    dtype: DataType,
 }
 
 impl<const REVERSE: bool, const NULLS_LAST: bool> BinaryBottomK<REVERSE, NULLS_LAST> {
-    fn new(k: usize) -> Self {
+    fn new(k: usize, dtype: DataType) -> Self {
         Self {
             inner: BottomKWithPayload::new(k, Arc::default()),
+            dtype,
         }
     }
 }
@@ -372,12 +412,14 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
     fn new_empty(&self) -> Box<dyn DfByKeyReducer> {
         Box::new(Self {
             inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
+            dtype: self.dtype.clone(),
         })
     }
 
     fn new_pred(&self) -> Arc<dyn PredicateExpr> {
         Arc::new(BinaryBottomKPredicate {
             shared_optimum: self.inner.shared_optimum.clone(),
+            dtype: self.dtype.clone(),
         })
     }
 
@@ -411,6 +453,7 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
 
 struct BinaryBottomKPredicate<const REVERSE: bool, const NULLS_LAST: bool> {
     shared_optimum: Arc<RwLock<Option<ReorderWithNulls<Vec<u8>, REVERSE, NULLS_LAST>>>>,
+    dtype: DataType,
 }
 
 impl<const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
@@ -458,6 +501,20 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
                 .collect_ca(PlSmallStr::EMPTY);
             Ok(Some(Column::from(pred.into_series())))
         }
+    }
+
+    fn runtime_range(&self) -> RuntimeRange {
+        let Some(ReorderWithNulls(Some(threshold))) = self.shared_optimum.read().clone() else {
+            return RuntimeRange::Pending;
+        };
+        let value = match self.dtype {
+            DataType::String => match String::from_utf8(threshold) {
+                Ok(s) => AnyValue::StringOwned(s.into()),
+                Err(_) => return RuntimeRange::Disabled,
+            },
+            _ => AnyValue::BinaryOwned(threshold),
+        };
+        threshold_range(Scalar::new(self.dtype.clone(), value), REVERSE, NULLS_LAST)
     }
 }
 
@@ -526,20 +583,20 @@ fn new_top_k_reducer(
             dt if dt.is_primitive_numeric() | dt.is_temporal() | dt.is_decimal() | dt.is_enum() => {
                 return with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
                     match (reverse[0], nulls_last[0]) {
-                        (false, false) => Box::new(PrimitiveBottomK::<$T, true, false>::new(k)),
-                        (false, true) => Box::new(PrimitiveBottomK::<$T, true, true>::new(k)),
-                        (true, false) => Box::new(PrimitiveBottomK::<$T, false, false>::new(k)),
-                        (true, true) => Box::new(PrimitiveBottomK::<$T, false, true>::new(k)),
+                        (false, false) => Box::new(PrimitiveBottomK::<$T, true, false>::new(k, dt.clone())),
+                        (false, true) => Box::new(PrimitiveBottomK::<$T, true, true>::new(k, dt.clone())),
+                        (true, false) => Box::new(PrimitiveBottomK::<$T, false, false>::new(k, dt.clone())),
+                        (true, true) => Box::new(PrimitiveBottomK::<$T, false, true>::new(k, dt.clone())),
                     }
                 });
             },
 
             DataType::String | DataType::Binary => {
                 return match (reverse[0], nulls_last[0]) {
-                    (false, false) => Box::new(BinaryBottomK::<true, false>::new(k)),
-                    (false, true) => Box::new(BinaryBottomK::<true, true>::new(k)),
-                    (true, false) => Box::new(BinaryBottomK::<false, false>::new(k)),
-                    (true, true) => Box::new(BinaryBottomK::<false, true>::new(k)),
+                    (false, false) => Box::new(BinaryBottomK::<true, false>::new(k, dt.clone())),
+                    (false, true) => Box::new(BinaryBottomK::<true, true>::new(k, dt.clone())),
+                    (true, false) => Box::new(BinaryBottomK::<false, false>::new(k, dt.clone())),
+                    (true, true) => Box::new(BinaryBottomK::<false, true>::new(k, dt.clone())),
                 };
             },
 
