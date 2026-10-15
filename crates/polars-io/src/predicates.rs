@@ -503,8 +503,8 @@ impl StagedScanIOPredicate {
     }
 }
 
-/// What a producer has published for a column, read once per file: a reader
-/// skips the batches whose statistics fall outside the range.
+/// What a producer has published for a column: a reader skips the batches whose
+/// statistics fall outside the range. It can change while a file is read.
 #[derive(Clone, Debug)]
 pub enum RuntimeRange {
     /// Not published yet. Every batch is kept; a later file may see a range.

@@ -172,10 +172,10 @@ impl RowGroupDataFetcher {
         Some(n_bytes)
     }
 
+    /// Fetches the row group `peek_next_bytes` sized.
     pub(super) async fn next(
         &mut self,
     ) -> Option<PolarsResult<tokio_handle_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
-        self.skip_front();
         let RowGroupToRead {
             idx,
             row_offset: current_row_offset,

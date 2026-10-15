@@ -248,11 +248,7 @@ impl ParquetReadImpl {
                 let permit = pipeline_budget.acquire(fetch_length).await;
 
                 // Budget reserved, spawn request
-                let Some(prefetch) = row_group_data_fetcher.next().await else {
-                    // Mask skipped all remaining row groups between peek and next — release permits
-                    drop(permit);
-                    break;
-                };
+                let prefetch = row_group_data_fetcher.next().await.unwrap();
 
                 if prefetch_send.send((prefetch?, permit)).await.is_err() {
                     break;

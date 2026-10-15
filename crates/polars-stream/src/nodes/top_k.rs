@@ -33,9 +33,9 @@ new_key_type! {
 /// Minimum number of rows a gather must remove from a subset to be worthwhile.
 const MIN_GATHER_REMOVED_ROWS: usize = 16;
 
-/// Up to this `k` the pipelines share their best `k` keys, so the published optimum is the
-/// k-th key over all pipelines instead of the best k-th key of one pipeline.
-const MAX_SHARED_K: usize = 4096;
+/// Up to this `k` several pipelines share their best `k` keys, so the published optimum is
+/// the k-th key over all pipelines instead of the best k-th key of one pipeline.
+const MAX_SHARED_K: usize = 128;
 
 /// Represents a subset of a dataframe.
 struct DfSubset {
@@ -83,18 +83,17 @@ struct BottomKWithPayload<P> {
     to_prune: Vec<DfsKey>,
     gather_idxs: Vec<IdxSize>,
     shared_optimum: Arc<RwLock<Option<P>>>,
-    /// The best `k` keys of all pipelines, when `k` is at most `MAX_SHARED_K`.
+    /// The best `k` keys of all pipelines, when they share them.
     shared_keys: Option<Arc<Mutex<BinaryHeap<P>>>>,
-    /// The keys `add_df` put in `heap`, for `shared_keys`.
-    added_keys: Vec<P>,
 }
 
 impl<P: Ord + Clone> BottomKWithPayload<P> {
-    pub fn new(k: usize) -> Self {
+    pub fn new(k: usize, num_pipelines: usize) -> Self {
+        let share_keys = num_pipelines > 1 && k <= MAX_SHARED_K;
         Self::with_shared(
             k,
             Arc::default(),
-            (k <= MAX_SHARED_K).then(|| Arc::new(Mutex::new(BinaryHeap::with_capacity(k + 1)))),
+            share_keys.then(|| Arc::new(Mutex::new(BinaryHeap::with_capacity(k + 1)))),
         )
     }
 
@@ -113,7 +112,6 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             gather_idxs: Vec::new(),
             shared_optimum,
             shared_keys,
-            added_keys: Vec::new(),
         }
     }
 
@@ -140,9 +138,6 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             subset_len: 0,
         });
 
-        // Only keys below the current optimum can change it.
-        let shared_optimum = self.shared_optimum.read().clone();
-        let collect_below = self.shared_keys.is_some().then_some(&shared_optimum);
         let mut new_optimum = false;
         for (row_idx, key) in keys.into_iter().enumerate() {
             new_optimum |= self.add_one(
@@ -151,7 +146,6 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
                 key,
                 &is_less,
                 &to_owned,
-                collect_below,
             );
         }
         self.mark_if_sparse(dfs_key);
@@ -159,11 +153,25 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
 
         let optimum = match &self.shared_keys {
             Some(shared_keys) => {
-                if self.added_keys.is_empty() {
+                // The keys of `df` still in the heap, below the current optimum: only
+                // those can lower it.
+                if self.df_subsets.get(dfs_key).is_none() {
+                    return;
+                }
+                let shared_optimum = self.shared_optimum.read().clone();
+                let new_keys: Vec<P> = self
+                    .heap
+                    .iter()
+                    .filter(|p| {
+                        p.1.0 == dfs_key && shared_optimum.as_ref().is_none_or(|v| p.0 < *v)
+                    })
+                    .map(|p| p.0.clone())
+                    .collect();
+                if new_keys.is_empty() {
                     return;
                 }
                 let mut shared_keys = shared_keys.lock();
-                for key in self.added_keys.drain(..) {
+                for key in new_keys {
                     if shared_keys.len() < self.k {
                         shared_keys.push(key);
                     } else if is_less_owned(&key, shared_keys.peek().unwrap()) {
@@ -199,7 +207,6 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         key: Q,
         is_less: impl Fn(&Q, &P) -> bool,
         to_owned: impl Fn(Q) -> P,
-        collect_below: Option<&Option<P>>,
     ) -> bool {
         // We use a max-heap for our bottom k. This means the top element in our heap (peek())
         // is the first to be replaced.
@@ -210,11 +217,8 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             df_subset.subset_len += 1;
             df_subset.rows.push(row_idx_key);
             let opt = self.heap.peek().map(|p| p.1);
-            let key = to_owned(key);
-            if collect_below.is_some_and(|bound| bound.as_ref().is_none_or(|b| key < *b)) {
-                self.added_keys.push(key.clone());
-            }
-            self.heap.push(Priority(key, (dfs_key, row_idx_key)));
+            self.heap
+                .push(Priority(to_owned(key), (dfs_key, row_idx_key)));
             new_optimum = opt != self.heap.peek().map(|p| p.1);
         }
 
@@ -276,7 +280,6 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
                 prio.0.clone(),
                 |l, r| l < r,
                 |x| x,
-                None,
             );
         }
         for &dfs_key in new_df_keys.values() {
@@ -324,9 +327,9 @@ struct PrimitiveBottomK<T: PolarsNumericType, const REVERSE: bool, const NULLS_L
 impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool>
     PrimitiveBottomK<T, REVERSE, NULLS_LAST>
 {
-    fn new(k: usize, dtype: DataType) -> Self {
+    fn new(k: usize, num_pipelines: usize, dtype: DataType) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k),
+            inner: BottomKWithPayload::new(k, num_pipelines),
             dtype,
         }
     }
@@ -461,9 +464,9 @@ struct BinaryBottomK<const REVERSE: bool, const NULLS_LAST: bool> {
 }
 
 impl<const REVERSE: bool, const NULLS_LAST: bool> BinaryBottomK<REVERSE, NULLS_LAST> {
-    fn new(k: usize, dtype: DataType) -> Self {
+    fn new(k: usize, num_pipelines: usize, dtype: DataType) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k),
+            inner: BottomKWithPayload::new(k, num_pipelines),
             dtype,
         }
     }
@@ -589,9 +592,15 @@ struct RowEncodedBottomK {
 }
 
 impl RowEncodedBottomK {
-    fn new(k: usize, reverse: Vec<bool>, nulls_last: Vec<bool>, first_key_dtype: DataType) -> Self {
+    fn new(
+        k: usize,
+        num_pipelines: usize,
+        reverse: Vec<bool>,
+        nulls_last: Vec<bool>,
+        first_key_dtype: DataType,
+    ) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k),
+            inner: BottomKWithPayload::new(k, num_pipelines),
             reverse,
             nulls_last,
             first_key_dtype,
@@ -709,6 +718,7 @@ impl PredicateExpr for FirstKeyBottomKPredicate {
 
 fn new_top_k_reducer(
     k: usize,
+    num_pipelines: usize,
     reverse: &[bool],
     nulls_last: &[bool],
     key_schema: &Schema,
@@ -719,20 +729,36 @@ fn new_top_k_reducer(
             dt if dt.is_primitive_numeric() | dt.is_temporal() | dt.is_decimal() | dt.is_enum() => {
                 return with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
                     match (reverse[0], nulls_last[0]) {
-                        (false, false) => Box::new(PrimitiveBottomK::<$T, true, false>::new(k, dt.clone())),
-                        (false, true) => Box::new(PrimitiveBottomK::<$T, true, true>::new(k, dt.clone())),
-                        (true, false) => Box::new(PrimitiveBottomK::<$T, false, false>::new(k, dt.clone())),
-                        (true, true) => Box::new(PrimitiveBottomK::<$T, false, true>::new(k, dt.clone())),
+                        (false, false) => Box::new(PrimitiveBottomK::<$T, true, false>::new(k, num_pipelines, dt.clone())),
+                        (false, true) => Box::new(PrimitiveBottomK::<$T, true, true>::new(k, num_pipelines, dt.clone())),
+                        (true, false) => Box::new(PrimitiveBottomK::<$T, false, false>::new(k, num_pipelines, dt.clone())),
+                        (true, true) => Box::new(PrimitiveBottomK::<$T, false, true>::new(k, num_pipelines, dt.clone())),
                     }
                 });
             },
 
             DataType::String | DataType::Binary => {
                 return match (reverse[0], nulls_last[0]) {
-                    (false, false) => Box::new(BinaryBottomK::<true, false>::new(k, dt.clone())),
-                    (false, true) => Box::new(BinaryBottomK::<true, true>::new(k, dt.clone())),
-                    (true, false) => Box::new(BinaryBottomK::<false, false>::new(k, dt.clone())),
-                    (true, true) => Box::new(BinaryBottomK::<false, true>::new(k, dt.clone())),
+                    (false, false) => Box::new(BinaryBottomK::<true, false>::new(
+                        k,
+                        num_pipelines,
+                        dt.clone(),
+                    )),
+                    (false, true) => Box::new(BinaryBottomK::<true, true>::new(
+                        k,
+                        num_pipelines,
+                        dt.clone(),
+                    )),
+                    (true, false) => Box::new(BinaryBottomK::<false, false>::new(
+                        k,
+                        num_pipelines,
+                        dt.clone(),
+                    )),
+                    (true, true) => Box::new(BinaryBottomK::<false, true>::new(
+                        k,
+                        num_pipelines,
+                        dt.clone(),
+                    )),
                 };
             },
 
@@ -745,6 +771,7 @@ fn new_top_k_reducer(
     let first_key_dtype = key_schema.get_at_index(0).unwrap().1.clone();
     Box::new(RowEncodedBottomK::new(
         k,
+        num_pipelines,
         reverse,
         nulls_last.to_vec(),
         first_key_dtype,
@@ -827,8 +854,13 @@ impl ComputeNode for TopKNode {
                 )?;
 
                 if k > 0 {
-                    let reducer =
-                        new_top_k_reducer(k, &self.reverse, &self.nulls_last, &self.key_schema);
+                    let reducer = new_top_k_reducer(
+                        k,
+                        state.num_pipelines,
+                        &self.reverse,
+                        &self.nulls_last,
+                        &self.key_schema,
+                    );
                     if let Some(dyn_pred) = &self.dyn_pred {
                         dyn_pred.set(reducer.new_pred());
                     }
