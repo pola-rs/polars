@@ -10,7 +10,7 @@ def test_foldv_applies_conditional_updates() -> None:
             lambda state: (
                 pl.when(pl.col("l") > 0).then(state + pl.col("l")).otherwise(state)
             ),
-            s=10,
+            initial_state=10,
         )
     )
 
@@ -30,7 +30,7 @@ def test_foldv_supports_nested_state_dependent_conditions() -> None:
                 )
                 .otherwise(state)
             ),
-            s=0,
+            initial_state=0,
         )
     )
 

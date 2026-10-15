@@ -10,7 +10,7 @@ def test_foldv_rejects_narrowing_integer_casts() -> None:
     df = pl.DataFrame({"l": pl.Series([1], dtype=pl.Int64)})
     expression = pl.foldv(
         lambda state: state + pl.col("l").cast(pl.Int32),
-        s=pl.lit(0, dtype=pl.Int32),
+        initial_state=pl.lit(0, dtype=pl.Int32),
     )
 
     with pytest.raises(pl.exceptions.InvalidOperationError, match="may produce null"):

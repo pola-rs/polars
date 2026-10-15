@@ -243,6 +243,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::fold)).unwrap();
     #[cfg(feature = "jit")]
     m.add_wrapped(wrap_pyfunction!(functions::foldv)).unwrap();
+    #[cfg(feature = "jit")]
+    m.add_wrapped(wrap_pyfunction!(functions::foldv_over)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::map_expr))
         .unwrap();

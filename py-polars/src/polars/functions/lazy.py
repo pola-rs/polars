@@ -1541,7 +1541,7 @@ def fold(
 def foldv(
     function: Callable[[Expr], Expr],
     *,
-    s: IntoExpr,
+    initial_state: IntoExpr,
 ) -> Expr:
     """
     Carry state across rows using a JIT-compiled expression.
@@ -1556,8 +1556,8 @@ def foldv(
         Function receiving the state expression and returning the next state. Reference
         row inputs with expressions such as ``pl.col("l")``. The function is called once
         while constructing the expression.
-    s
-        Scalar Int64 initial-state expression.
+    initial_state
+        Scalar expression containing the state before the first row is processed.
 
     Returns
     -------
@@ -1568,7 +1568,12 @@ def foldv(
     Examples
     --------
     >>> df = pl.DataFrame({"l": [1, 2, 3]})
-    >>> df.select(pl.foldv(lambda state: state * 10 + pl.col("l"), s=0))
+    >>> df.select(
+    ...     pl.foldv(
+    ...         lambda state: state * 10 + pl.col("l"),
+    ...         initial_state=0,
+    ...     )
+    ... )
     shape: (3, 1)
     ┌─────┐
     │ l   │
@@ -1580,13 +1585,39 @@ def foldv(
     │ 123 │
     └─────┘
     """
+    _require_jit()
+    return wrap_expr(plr.foldv(_parse_foldv_state(initial_state), function))
+
+
+def _foldv_over(
+    expr: Expr,
+    function: Callable[[Expr, Expr], Expr],
+    *,
+    initial_state: IntoExpr,
+) -> Expr:
+    """Fold over the rows of `expr`; the implementation of `Expr.foldv`."""
+    _require_jit()
+    return wrap_expr(
+        plr.foldv_over(expr._pyexpr, _parse_foldv_state(initial_state), function)
+    )
+
+
+def _require_jit() -> None:
     if not hasattr(plr, "foldv"):
         msg = "foldv requires a Polars build with JIT support"
         raise RuntimeError(msg)
-    state_expr = parse_into_expression(
-        s, dtype=Int64 if isinstance(s, int) and not isinstance(s, bool) else None
+
+
+def _parse_foldv_state(initial_state: IntoExpr) -> PyExpr:
+    # A Python int is an Int64 state rather than a dynamically typed literal.
+    return parse_into_expression(
+        initial_state,
+        dtype=(
+            Int64
+            if isinstance(initial_state, int) and not isinstance(initial_state, bool)
+            else None
+        ),
     )
-    return wrap_expr(plr.foldv(state_expr, function))
 
 
 def reduce(

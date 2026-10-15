@@ -8,7 +8,7 @@ def test_foldv_carries_an_int32_state() -> None:
     result = pl.DataFrame({"l": pl.Series([1, 2, 3], dtype=pl.Int32)}).select(
         pl.foldv(
             lambda state: state + pl.col("l"),
-            s=pl.lit(0, dtype=pl.Int32),
+            initial_state=pl.lit(0, dtype=pl.Int32),
         )
     )
 
@@ -21,7 +21,7 @@ def test_foldv_carries_a_uint32_state() -> None:
     result = pl.DataFrame({"l": pl.Series([1, 2, 3], dtype=pl.UInt32)}).select(
         pl.foldv(
             lambda state: state + pl.col("l"),
-            s=pl.lit(0, dtype=pl.UInt32),
+            initial_state=pl.lit(0, dtype=pl.UInt32),
         )
     )
 
@@ -34,7 +34,7 @@ def test_foldv_carries_a_uint64_state() -> None:
     result = pl.DataFrame({"l": pl.Series([1, 2, 3], dtype=pl.UInt64)}).select(
         pl.foldv(
             lambda state: state + pl.col("l"),
-            s=pl.lit(0, dtype=pl.UInt64),
+            initial_state=pl.lit(0, dtype=pl.UInt64),
         )
     )
 
@@ -47,7 +47,7 @@ def test_foldv_carries_a_float32_state() -> None:
     result = pl.DataFrame({"l": pl.Series([1.0, 2.5, 3.0], dtype=pl.Float32)}).select(
         pl.foldv(
             lambda state: state + pl.col("l"),
-            s=pl.lit(0.5, dtype=pl.Float32),
+            initial_state=pl.lit(0.5, dtype=pl.Float32),
         )
     )
 
@@ -58,7 +58,7 @@ def test_foldv_carries_a_float32_state() -> None:
 def test_foldv_carries_a_float64_state() -> None:
     # The Python API preserves Float64 calculations across every iteration.
     result = pl.DataFrame({"l": pl.Series([1.0, 2.5, 3.0], dtype=pl.Float64)}).select(
-        pl.foldv(lambda state: state + pl.col("l"), s=0.5)
+        pl.foldv(lambda state: state + pl.col("l"), initial_state=0.5)
     )
 
     assert result.to_series().dtype == pl.Float64
@@ -68,7 +68,7 @@ def test_foldv_carries_a_float64_state() -> None:
 def test_foldv_carries_a_boolean_state() -> None:
     # Boolean state updates use the same public expression API as numeric updates.
     result = pl.DataFrame({"l": [True, True, False]}).select(
-        pl.foldv(lambda state: state & pl.col("l"), s=True)
+        pl.foldv(lambda state: state & pl.col("l"), initial_state=True)
     )
 
     assert result.to_series().dtype == pl.Boolean
@@ -78,7 +78,7 @@ def test_foldv_carries_a_boolean_state() -> None:
 def test_foldv_coerces_int32_rows_into_a_float64_state() -> None:
     # Mixed input and state types follow Polars' expression coercion rules.
     result = pl.DataFrame({"l": pl.Series([1, 2, 3], dtype=pl.Int32)}).select(
-        pl.foldv(lambda state: state + pl.col("l"), s=0.5)
+        pl.foldv(lambda state: state + pl.col("l"), initial_state=0.5)
     )
 
     assert result.to_series().dtype == pl.Float64
@@ -90,7 +90,7 @@ def test_foldv_widens_int32_rows_to_int64() -> None:
     result = pl.DataFrame({"l": pl.Series([1, 2, 3], dtype=pl.Int32)}).select(
         pl.foldv(
             lambda state: state + pl.col("l").cast(pl.Int64),
-            s=pl.lit(0, dtype=pl.Int64),
+            initial_state=pl.lit(0, dtype=pl.Int64),
         )
     )
 

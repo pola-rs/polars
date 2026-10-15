@@ -6011,6 +6011,64 @@ class Expr(metaclass=_Meta):
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
 
+    @unstable()
+    def foldv(
+        self,
+        function: Callable[[Expr, Expr], Expr],
+        *,
+        initial_state: IntoExpr,
+    ) -> Expr:
+        """
+        Carry state across this expression's rows using the JIT.
+
+        .. warning::
+            This functionality is considered **unstable**. It may change at any point
+            without being considered a breaking change.
+
+        Parameters
+        ----------
+        function
+            Function receiving the current state and this expression's value at the
+            current row. It must return the next state expression. The function is
+            called once while constructing the expression.
+
+            Polars evaluates this expression before the fold, so it may be any
+            expression, and the fold runs once per row of its result even when the
+            function ignores the value.
+        initial_state
+            Scalar expression containing the state before the first row is processed.
+
+        Returns
+        -------
+        Expr
+            An expression containing the updated state after every input row, named
+            after this expression. An empty input returns an empty expression with the
+            state dtype.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"l": [1, 2, 3]})
+        >>> df.select(
+        ...     pl.col("l").foldv(
+        ...         lambda state, value: state * 10 + value,
+        ...         initial_state=0,
+        ...     )
+        ... )
+        shape: (3, 1)
+        ┌─────┐
+        │ l   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 12  │
+        │ 123 │
+        └─────┘
+        """
+        from polars.functions.lazy import _foldv_over
+
+        return _foldv_over(self, function, initial_state=initial_state)
+
     def implode(self, *, maintain_order: bool = True) -> Expr:
         """
         Aggregate values into a list.

@@ -12,14 +12,22 @@ use crate::jit_program::ScalarType;
 pub(crate) fn into_expr(
     inputs: Box<[Expr]>,
     execute: impl Fn(&mut [Column]) -> PolarsResult<Column> + Send + Sync + 'static,
+    input_first: bool,
 ) -> Expr {
     apply_multiple(
         execute,
         inputs.into_vec(),
-        |_schema, fields| {
-            let initial_state = &fields[0];
+        move |_schema, fields| {
+            // The output is named after the first input, as Polars names it, and has the state's
+            // dtype. A method-style fold passes its input before the state.
+            let name = fields
+                .first()
+                .ok_or_else(|| polars_err!(InvalidOperation: "foldv did not receive its inputs"))?
+                .name()
+                .clone();
+            let initial_state = &fields[usize::from(input_first)];
             Ok(Field::new(
-                initial_state.name().clone(),
+                name,
                 initial_state.dtype.clone().materialize_unknown(false)?,
             ))
         },

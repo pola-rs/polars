@@ -473,11 +473,7 @@ pub fn fold(
 
 #[pyfunction]
 #[cfg(feature = "jit")]
-pub fn foldv(
-    py: Python<'_>,
-    initial_state: PyExpr,
-    function: Py<PyAny>,
-) -> PyResult<PyExpr> {
+pub fn foldv(py: Python<'_>, initial_state: PyExpr, function: Py<PyAny>) -> PyResult<PyExpr> {
     let state = expr_to_py_plexpr(py, Expr::Element);
     let body = function.call1(py, (state,))?;
     let body = body
@@ -487,6 +483,28 @@ pub fn foldv(
     Ok(polars_jit::foldv(initial_state.inner, body.inner)
         .map_err(PyPolarsErr::from)?
         .into())
+}
+
+#[pyfunction]
+#[cfg(feature = "jit")]
+pub fn foldv_over(
+    py: Python<'_>,
+    input: PyExpr,
+    initial_state: PyExpr,
+    function: Py<PyAny>,
+) -> PyResult<PyExpr> {
+    let state = expr_to_py_plexpr(py, Expr::Element);
+    let value = expr_to_py_plexpr(py, polars_jit::foldv_value());
+    let body = function.call1(py, (state, value))?;
+    let body = body
+        .getattr(py, "_pyexpr")
+        .map_err(|_| PyTypeError::new_err("foldv function must return a Polars expression"))?
+        .extract::<PyExpr>(py)?;
+    Ok(
+        polars_jit::foldv_over(input.inner, initial_state.inner, body.inner)
+            .map_err(PyPolarsErr::from)?
+            .into(),
+    )
 }
 
 #[pyfunction]
