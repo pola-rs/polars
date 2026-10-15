@@ -80,16 +80,33 @@ pub enum IRTemporalFunction {
     },
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is temporal.
+    pub fn ensure_is_temporal(self) -> PolarsResult<Self> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            dt.is_temporal() || matches!(dt, DataType::Unknown(UnknownKind::Any)),
+            InvalidOperation:
+            "expected Date(time)/Duration/Time data type for temporal operation, got: {dt:?}"
+        );
+        Ok(self)
+    }
+}
+
 impl IRTemporalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRTemporalFunction::*;
         match self {
-            Millennium | Century | Year | IsoYear => mapper.with_dtype(DataType::Int32),
-            OrdinalDay => mapper.with_dtype(DataType::Int16),
-            Month | DaysInMonth | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
-                mapper.with_dtype(DataType::Int8)
+            Millennium | Century | Year | IsoYear => {
+                mapper.ensure_is_temporal()?.with_dtype(DataType::Int32)
             },
-            Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
+            OrdinalDay => mapper.ensure_is_temporal()?.with_dtype(DataType::Int16),
+            Month | DaysInMonth | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
+                mapper.ensure_is_temporal()?.with_dtype(DataType::Int8)
+            },
+            Millisecond | Microsecond | Nanosecond => {
+                mapper.ensure_is_temporal()?.with_dtype(DataType::Int32)
+            },
             #[cfg(feature = "dtype-duration")]
             TotalDays { fractional }
             | TotalHours { fractional }
@@ -98,44 +115,51 @@ impl IRTemporalFunction {
             | TotalMilliseconds { fractional }
             | TotalMicroseconds { fractional }
             | TotalNanoseconds { fractional } => {
+                let mapper = mapper.ensure_is_temporal()?;
                 if *fractional {
                     mapper.with_dtype(DataType::Float64)
                 } else {
                     mapper.with_dtype(DataType::Int64)
                 }
             },
-            ToString(_) => mapper.with_dtype(DataType::String),
-            CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
+            ToString(_) => mapper.ensure_is_temporal()?.with_dtype(DataType::String),
+            CastTimeUnit(tu) => mapper.ensure_is_temporal()?.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),
                 DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
                 dtype => polars_bail!(ComputeError: "expected duration or datetime, got {dtype}"),
             }),
             #[cfg(feature = "timezones")]
-            ConvertTimeZone(tz) => mapper.try_map_dtype(|dt| match dt {
+            ConvertTimeZone(tz) => mapper.ensure_is_temporal()?.try_map_dtype(|dt| match dt {
                 DataType::Datetime(tu, _) => Ok(DataType::Datetime(*tu, Some(tz.clone()))),
                 dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
             }),
-            TimeStamp(_) => mapper.with_dtype(DataType::Int64),
-            IsLeapYear => mapper.with_dtype(DataType::Boolean),
-            Time => mapper.with_dtype(DataType::Time),
+            TimeStamp(_) => mapper.ensure_is_temporal()?.with_dtype(DataType::Int64),
+            IsLeapYear => mapper.ensure_is_temporal()?.with_dtype(DataType::Boolean),
+            Time => mapper.ensure_is_temporal()?.with_dtype(DataType::Time),
             #[cfg(feature = "dtype-duration")]
             Duration(tu) => mapper.with_dtype(DataType::Duration(*tu)),
-            Date => mapper.with_dtype(DataType::Date),
-            Truncate => mapper.with_same_dtype(),
+            Date => mapper.ensure_is_temporal()?.with_dtype(DataType::Date),
+            Truncate => mapper.ensure_is_temporal()?.with_same_dtype(),
             #[cfg(feature = "offset_by")]
-            OffsetBy => mapper.with_same_dtype(),
+            OffsetBy => mapper.ensure_is_temporal()?.with_same_dtype(),
             #[cfg(feature = "month_start")]
-            MonthStart => mapper.with_same_dtype(),
+            MonthStart => mapper.ensure_is_temporal()?.with_same_dtype(),
             #[cfg(feature = "month_end")]
-            MonthEnd => mapper.with_same_dtype(),
+            MonthEnd => mapper.ensure_is_temporal()?.with_same_dtype(),
             #[cfg(feature = "timezones")]
-            BaseUtcOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
+            BaseUtcOffset => mapper
+                .ensure_is_temporal()?
+                .with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
             #[cfg(feature = "timezones")]
-            DSTOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
-            Round => mapper.with_same_dtype(),
-            Replace => mapper.with_same_dtype(),
+            DSTOffset => mapper
+                .ensure_is_temporal()?
+                .with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
+            Round => mapper.ensure_is_temporal()?.with_same_dtype(),
+            Replace => mapper.ensure_is_temporal()?.with_same_dtype(),
             #[cfg(feature = "timezones")]
-            ReplaceTimeZone(tz, _non_existent) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
+            ReplaceTimeZone(tz, _non_existent) => mapper
+                .ensure_is_temporal()?
+                .map_datetime_dtype_timezone(tz.as_ref()),
             DatetimeFunction {
                 time_unit,
                 time_zone,
@@ -143,7 +167,7 @@ impl IRTemporalFunction {
                 PlSmallStr::from_static("datetime"),
                 DataType::Datetime(*time_unit, time_zone.clone()),
             )),
-            Combine(tu) => mapper.try_map_dtype(|dt| match dt {
+            Combine(tu) => mapper.ensure_is_temporal()?.try_map_dtype(|dt| match dt {
                 DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
                 DataType::Date => Ok(DataType::Datetime(*tu, None)),
                 dtype => {

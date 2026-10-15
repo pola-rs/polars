@@ -15,12 +15,35 @@ pub enum IRBusinessFunction {
     IsBusinessDay { week_mask: [bool; 7] },
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the first `n` dtypes are Date, or Date/Datetime if `allow_datetime`.
+    fn ensure_is_business_date(self, n: usize, allow_datetime: bool) -> PolarsResult<Self> {
+        for field in &self.args()[..n] {
+            let dt = field.dtype();
+            polars_ensure!(
+                matches!(dt, DataType::Date | DataType::Unknown(UnknownKind::Any))
+                    || (allow_datetime && matches!(dt, DataType::Datetime(_, _))),
+                InvalidOperation:
+                "expected {}, got {dt}",
+                if allow_datetime { "date or datetime" } else { "date" }
+            );
+        }
+        Ok(self)
+    }
+}
+
 impl IRBusinessFunction {
     pub fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         match self {
-            Self::BusinessDayCount { .. } => mapper.with_dtype(DataType::Int32),
-            Self::AddBusinessDay { .. } => mapper.with_same_dtype(),
-            Self::IsBusinessDay { .. } => mapper.with_dtype(DataType::Boolean),
+            Self::BusinessDayCount { .. } => mapper
+                .ensure_is_business_date(2, false)?
+                .with_dtype(DataType::Int32),
+            Self::AddBusinessDay { .. } => {
+                mapper.ensure_is_business_date(1, true)?.with_same_dtype()
+            },
+            Self::IsBusinessDay { .. } => mapper
+                .ensure_is_business_date(1, true)?
+                .with_dtype(DataType::Boolean),
         }
     }
     pub fn function_options(&self) -> FunctionOptions {
