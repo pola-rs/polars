@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import re
+import struct
 from datetime import date, datetime, time
 from typing import Any
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -248,6 +250,33 @@ def test_str_len_chars() -> None:
     result = s.str.len_chars()
     expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
     assert_series_equal(result, expected)
+
+
+def test_str_len_chars_inline_and_long_strings() -> None:
+    values = ["", "a", "é", "東", "😀"]
+    for n in [11, 12, 13, 127, 128, 129, 300]:
+        for c in ["é", "東", "😀"]:
+            values.append("a" * (n - len(c.encode())) + c)
+            values.append(c + "a" * (n - len(c.encode())))
+            values.append(c * (n // len(c.encode())))
+    s = pl.Series([*values, None])
+    expected = pl.Series([*(len(v) for v in values), None], dtype=pl.UInt32)
+    assert_series_equal(s.str.len_chars(), expected)
+    assert_series_equal(s[3:].str.len_chars(), expected[3:])
+
+
+def test_str_len_chars_null_view_with_padding() -> None:
+    # A null view of length 0 whose padding bytes look like UTF-8 continuation bytes.
+    null_view = struct.pack("<I", 0) + b"\x80" * 12
+    value_view = struct.pack("<I", 2) + "é".encode() + bytes(10)
+    arr = pa.Array.from_buffers(
+        pa.string_view(),
+        2,
+        [pa.py_buffer(b"\x02"), pa.py_buffer(null_view + value_view)],
+        null_count=1,
+    )
+    s = pl.Series(arr)
+    assert_series_equal(s.str.len_chars(), pl.Series([None, 1], dtype=pl.UInt32))
 
 
 def test_str_contains() -> None:
