@@ -40,7 +40,12 @@ const ENCODINGS: [Encoding; 7] = [
     native("linestring", "geoarrow.linestring", "LineString", 1),
     native("polygon", "geoarrow.polygon", "Polygon", 2),
     native("multipoint", "geoarrow.multipoint", "MultiPoint", 1),
-    native("multilinestring", "geoarrow.multilinestring", "MultiLineString", 2),
+    native(
+        "multilinestring",
+        "geoarrow.multilinestring",
+        "MultiLineString",
+        2,
+    ),
     native("multipolygon", "geoarrow.multipolygon", "MultiPolygon", 3),
 ];
 
