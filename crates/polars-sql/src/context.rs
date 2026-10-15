@@ -37,7 +37,7 @@ use crate::group_context::{
     is_marked_aggregate, strip_aggregate_marks,
 };
 use crate::grouping_sets::{
-    GroupingCall, GroupingSets, canonicalize_keys, contains_grouping_placeholder,
+    GroupingCall, GroupingSets, bind_stored_keys, canonicalize_keys, contains_grouping_placeholder,
     expand_grouping_sets, new_placeholder,
 };
 use crate::sql_expr::{
@@ -2184,6 +2184,17 @@ impl SQLContext {
                 SQLSyntax: "GROUPING() is not allowed in the GROUP BY clause"
             );
         }
+        if grouping_sets.is_none() {
+            let mut seen: Vec<Expr> = Vec::with_capacity(group_by_keys.len());
+            group_by_keys.retain(|key| {
+                let stripped = strip_outer_alias(key);
+                let is_new = !seen.contains(&stripped);
+                if is_new {
+                    seen.push(stripped);
+                }
+                is_new
+            });
+        }
 
         let has_group_by = !group_by_keys.is_empty() || grouping_sets.is_some();
         if !has_group_by {
@@ -3423,6 +3434,7 @@ impl SQLContext {
         order_by: &Option<OrderBy>,
         projections: &[Expr],
         schema: &Schema,
+        stored_keys: &[(Expr, PlSmallStr)],
     ) -> PolarsResult<ResolvedOrderBy> {
         let mut clause = order_by.clone();
         let mut extra: Vec<(PlSmallStr, Expr)> = Vec::new();
@@ -3435,15 +3447,17 @@ impl SQLContext {
             let output_names = OutputNames::new(projections, schema, schema);
             let output_schema = output_names.extend_schema(schema);
             for ob in exprs {
-                // Anything without an aggregate already resolves against the
-                // aggregated frame.
+                // Anything without an aggregate or a computed key already resolves
+                // against the aggregated frame.
                 let Ok(parsed) = self
                     .marking_aggregates(|ctx| parse_sql_expr(&ob.expr, ctx, Some(&output_schema)))
                 else {
                     continue;
                 };
                 if !has_expr(&parsed, |e| {
-                    is_marked_aggregate(e) || matches!(e, Expr::Agg(_) | Expr::Len)
+                    is_marked_aggregate(e)
+                        || matches!(e, Expr::Agg(_) | Expr::Len)
+                        || stored_keys.iter().any(|(key, _)| key == e)
                 }) {
                     continue;
                 }
@@ -3557,11 +3571,41 @@ impl SQLContext {
         grouping: Option<&GroupingSets>,
         subquery_names: &PlHashSet<PlSmallStr>,
     ) -> PolarsResult<(LazyFrame, Vec<PlSmallStr>, Option<OrderBy>)> {
+        // Ordinary grouping stores each computed key in a hidden column. The other
+        // expressions read that column, as the key's output name can be taken by
+        // an input column or by another key.
+        let mut stored_keys: Vec<(Expr, PlSmallStr)> = Vec::new();
+        let column_keys: Vec<Expr>;
+        let group_by_keys = if grouping.is_none() {
+            let mut prepared = Vec::new();
+            column_keys = group_by_keys
+                .iter()
+                .map(|key| {
+                    let stripped = strip_outer_alias(key);
+                    if matches!(stripped, Expr::Column(_)) || is_constant(&stripped) {
+                        return key.clone();
+                    }
+                    let name = unique_column_name();
+                    prepared.push(stripped.clone().alias(name.clone()));
+                    stored_keys.push((stripped, name.clone()));
+                    col(name)
+                })
+                .collect();
+            if !prepared.is_empty() {
+                lf = lf.with_columns(prepared);
+            }
+            &column_keys[..]
+        } else {
+            group_by_keys
+        };
         let mut schema_before = self.get_frame_schema(&mut lf)?;
         let key_schema =
             expressions_to_schema(group_by_keys, &schema_before, |duplicate_name: &str| {
                 format!("group_by keys contained duplicate output name '{duplicate_name}'")
             })?;
+        if let Some(grouping) = grouping {
+            stored_keys = grouping.stored_keys(&key_schema);
+        }
         let mut group_by_keys_schema = key_schema.clone();
         // Columns the parsed expressions may name before the aggregation resolves them:
         // the whole-frame window partition, and `GROUPING()` values, which are
@@ -3590,10 +3634,26 @@ impl SQLContext {
                 .collect(),
             &schema_before,
         )?;
-        // Hidden output columns: the ORDER BY aggregates, and the QUALIFY predicate that the
-        // block filters on after the aggregation.
+        // Hidden output columns: the ORDER BY items with aggregates or computed keys, and
+        // the QUALIFY predicate that the block filters on after the aggregation.
         let (order_by, mut extra_projections) =
-            self.resolve_order_by_aggregates(order_by, &projections, &schema_before)?;
+            self.resolve_order_by_aggregates(order_by, &projections, &schema_before, &stored_keys)?;
+        let projections = if grouping.is_none() && !stored_keys.is_empty() {
+            projections
+                .into_iter()
+                .map(|p| {
+                    let stripped = strip_outer_alias(&p);
+                    let bound = bind_stored_keys(stripped.clone(), &stored_keys);
+                    Ok(if bound == stripped {
+                        p
+                    } else {
+                        bound.alias(p.to_field(&schema_before)?.name)
+                    })
+                })
+                .collect::<PolarsResult<Vec<_>>>()?
+        } else {
+            projections
+        };
 
         let projections: Vec<Expr> = projections
             .into_iter()
@@ -3609,6 +3669,11 @@ impl SQLContext {
                     .map_or(e, |resolved| strip_outer_alias(&resolved)),
                 _ => e,
             });
+            let having_expr = match grouping {
+                // Grouping sets bind the keys once HAVING runs on the combined rows.
+                Some(_) => having_expr,
+                None => bind_stored_keys(having_expr, &stored_keys),
+            };
             reduce_correlated_cols_in_group_context(having_expr)
         });
 
@@ -3668,6 +3733,10 @@ impl SQLContext {
             key_exprs: group_key_data
                 .iter()
                 .filter_map(|(key, name)| Some((key.clone(), name.clone()?)))
+                .chain(match grouping {
+                    Some(_) => vec![],
+                    None => stored_keys.clone(),
+                })
                 .collect(),
             whole_frame_partition: whole_frame_partition.as_ref(),
             subquery_names: &subquery_names,
@@ -3679,10 +3748,7 @@ impl SQLContext {
             splitter.check_columns_per_group(having)?;
         }
         // Post-aggregation expressions read computed keys from their stored columns.
-        let bind_keys = |e: Expr| match grouping {
-            Some(grouping) => grouping.bind_stored_keys(e, &key_schema),
-            None => e,
-        };
+        let bind_keys = |e: Expr| bind_stored_keys(e, &stored_keys);
 
         let projection_group_key: Vec<Option<PlSmallStr>> = projections
             .iter()
@@ -3761,6 +3827,8 @@ impl SQLContext {
             if splitter.needs_post_aggregation(&bound) {
                 let rest = splitter.hoist(bound)?;
                 post_agg_projection.push(rest.alias(name.clone()));
+            } else if !splitter.requires_group_processing(&bound) {
+                post_agg_projection.push(bound.alias(name.clone()));
             } else {
                 splitter.aggregates.push(e.clone());
             }
@@ -3837,7 +3905,7 @@ impl SQLContext {
                 // HAVING runs on the combined rows, where it can also see `GROUPING()`.
                 let having = having
                     .map(|having| {
-                        let having = grouping.bind_stored_keys(having, &key_schema);
+                        let having = bind_stored_keys(having, &stored_keys);
                         splitter.hoist(having)
                     })
                     .transpose()?;
