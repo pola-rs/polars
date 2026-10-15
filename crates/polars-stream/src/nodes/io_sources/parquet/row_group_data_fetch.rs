@@ -248,11 +248,7 @@ impl RowGroupDataFetcher {
                         } else {
                             read_stats.prefetched.fetch_add(1, Ordering::Relaxed);
 
-                            let n_ranges = ranges.len();
-
-                            let bytes_map = source.get_ranges(&mut ranges).await?;
-
-                            assert_eq!(bytes_map.len(), n_ranges);
+                            let bytes_map = get_non_empty_ranges(source, &mut ranges).await?;
 
                             FetchedBytes::BytesMap(bytes_map)
                         }
@@ -265,11 +261,9 @@ impl RowGroupDataFetcher {
                             )
                             .collect::<ParquetResult<Vec<_>>>()?;
 
-                            let n_ranges = ranges.len();
-
-                            let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
-
-                            assert_eq!(bytes_map.len(), n_ranges);
+                            let bytes_map =
+                                get_non_empty_ranges(current_byte_source.as_ref(), &mut ranges)
+                                    .await?;
 
                             FetchedBytes::BytesMap(bytes_map)
                         } else {
@@ -283,11 +277,9 @@ impl RowGroupDataFetcher {
                                 .map(|x| x.start as usize..x.end as usize)
                                 .collect::<Vec<_>>();
 
-                            let n_ranges = ranges.len();
-
-                            let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
-
-                            assert_eq!(bytes_map.len(), n_ranges);
+                            let bytes_map =
+                                get_non_empty_ranges(current_byte_source.as_ref(), &mut ranges)
+                                    .await?;
 
                             FetchedBytes::BytesMap(bytes_map)
                         }
@@ -349,13 +341,11 @@ impl FetchedBytes {
         read_stats.reread.fetch_add(1, Ordering::Relaxed);
         let source = source.clone();
         let mut ranges = std::mem::take(ranges);
-        let n_ranges = ranges.len();
         let bytes_map = tokio_handle_ext::AbortOnDropHandle(
-            ASYNC.spawn(async move { source.get_ranges(&mut ranges).await }),
+            ASYNC.spawn(async move { get_non_empty_ranges(source.as_ref(), &mut ranges).await }),
         )
         .await
         .expect("fetch task panicked")?;
-        assert_eq!(bytes_map.len(), n_ranges);
 
         *self = Self::BytesMap(bytes_map);
         Ok(())
@@ -370,6 +360,8 @@ impl FetchedBytes {
                     .clone()
                     .sliced(range.start - offset..range.end - offset)
             },
+            // Empty ranges are never fetched, see `get_non_empty_ranges`.
+            Self::BytesMap(_) if range.is_empty() => Buffer::new(),
             Self::BytesMap(v) => {
                 let v = v.get(&range.start).unwrap();
                 debug_assert_eq!(v.len(), range.len());
@@ -381,6 +373,25 @@ impl FetchedBytes {
             },
         })
     }
+}
+
+/// `source.get_ranges()` over the non-empty `ranges`, as a map from start offset to bytes.
+///
+/// The map is keyed by start offset, so empty ranges can't be told apart: the zero-size column
+/// chunks of an empty row group may all start at offset 0 and would collapse into one entry.
+/// They hold no bytes, so they are not fetched, and [`FetchedBytes::get_range`] answers them
+/// without a lookup.
+async fn get_non_empty_ranges<S: ByteSource + ?Sized>(
+    source: &S,
+    ranges: &mut Vec<Range<usize>>,
+) -> PolarsResult<PlHashMap<usize, Buffer<u8>>> {
+    ranges.retain(|r| !r.is_empty());
+    let n_ranges = ranges.len();
+
+    let bytes_map = source.get_ranges(ranges).await?;
+
+    assert_eq!(bytes_map.len(), n_ranges);
+    Ok(bytes_map)
 }
 
 fn get_row_group_byte_ranges_for_projection<'a>(
