@@ -12,6 +12,8 @@ use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
+#[cfg(feature = "jit")]
+use crate::expr::expr_to_py_plexpr;
 use crate::lazyframe::PyOptFlags;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyExpr, PyLazyFrame, PySeries, map};
@@ -467,6 +469,24 @@ pub fn fold(
         return_dtype.map(|w| w.inner),
     )
     .into()
+}
+
+#[pyfunction]
+#[cfg(feature = "jit")]
+pub fn foldv(
+    py: Python<'_>,
+    initial_state: PyExpr,
+    function: Py<PyAny>,
+) -> PyResult<PyExpr> {
+    let state = expr_to_py_plexpr(py, Expr::Element);
+    let body = function.call1(py, (state,))?;
+    let body = body
+        .getattr(py, "_pyexpr")
+        .map_err(|_| PyTypeError::new_err("foldv function must return a Polars expression"))?
+        .extract::<PyExpr>(py)?;
+    Ok(polars_jit::foldv(initial_state.inner, body.inner)
+        .map_err(PyPolarsErr::from)?
+        .into())
 }
 
 #[pyfunction]

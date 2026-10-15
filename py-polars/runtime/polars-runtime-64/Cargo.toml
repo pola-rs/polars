@@ -35,6 +35,7 @@ catalog = ["polars-python/catalog"]
 
 # Features passed through to the polars-python crate
 backtrace_filter = ["polars-python/backtrace_filter"]
+jit = ["polars-python/jit"]
 avro = ["polars-python/avro"]
 ipc_streaming = ["polars-python/ipc_streaming"]
 is_in = ["polars-python/is_in"]

@@ -1538,6 +1538,57 @@ def fold(
     )
 
 
+def foldv(
+    function: Callable[[Expr], Expr],
+    *,
+    s: IntoExpr,
+) -> Expr:
+    """
+    Carry state across rows using a JIT-compiled expression.
+
+    .. warning::
+        This functionality is considered **unstable**. It may change at any point
+        without being considered a breaking change.
+
+    Parameters
+    ----------
+    function
+        Function receiving the state expression and returning the next state. Reference
+        row inputs with expressions such as ``pl.col("l")``. The function is called once
+        while constructing the expression.
+    s
+        Scalar Int64 initial-state expression.
+
+    Returns
+    -------
+    Expr
+        An expression containing the updated state after every input row. An empty
+        input returns an empty expression with the state dtype.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"l": [1, 2, 3]})
+    >>> df.select(pl.foldv(lambda state: state * 10 + pl.col("l"), s=0))
+    shape: (3, 1)
+    ┌─────┐
+    │ l   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 12  │
+    │ 123 │
+    └─────┘
+    """
+    if not hasattr(plr, "foldv"):
+        msg = "foldv requires a Polars build with JIT support"
+        raise RuntimeError(msg)
+    state_expr = parse_into_expression(
+        s, dtype=Int64 if isinstance(s, int) and not isinstance(s, bool) else None
+    )
+    return wrap_expr(plr.foldv(state_expr, function))
+
+
 def reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,

@@ -21,6 +21,7 @@ polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
 polars-io = { workspace = true }
+polars-jit = { workspace = true, optional = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true, features = ["python"] }
 polars-observer = { workspace = true, optional = true }
@@ -195,6 +196,7 @@ cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-lazy/ffi_plugin"]
+jit = ["dep:polars-jit"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
@@ -313,6 +315,7 @@ full_functionality = [
   "sql",
   "binary_encoding",
   "ffi_plugin",
+  "jit",
   "polars_cloud_client",
   "streaming",
 ]
