@@ -1814,3 +1814,16 @@ def test_scan_delta_runtime_join_filter_with_partition_predicate(
     assert_frame_equal(
         out, pl.DataFrame({"x": [150, 160], "e": [0, 1]}), check_row_order=False
     )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_table_root_with_key_value_segment(tmp_path: Path) -> None:
+    root = tmp_path / "version=1"
+    pl.DataFrame({"x": [0, 1], "p": [0, 1]}).write_delta(
+        root, delta_write_options={"partition_by": "p"}
+    )
+
+    assert_frame_equal(
+        pl.scan_delta(root).filter(pl.col("p") == 1).collect(),
+        pl.DataFrame({"x": [1], "p": [1]}),
+    )
