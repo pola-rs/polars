@@ -3042,6 +3042,18 @@ def test_utf8_verification_with_slice_20174() -> None:
     )
 
 
+def test_invalid_utf8_at_end_of_inline_string() -> None:
+    # The invalid bytes are in the last 4 bytes of a string that is inlined in its
+    # view, next to a string of at least 128 bytes.
+    for value in [b"yyyyyabc\xe6\x9d", b"yyyyyyyyyyy\xff"]:
+        f = io.BytesIO()
+        s = pa.array([b"a" * 200, value], pa.binary()).view(pa.string())
+        pq.write_table(pa.table({"s": s}), f, use_dictionary=False)
+        f.seek(0)
+        with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
+            pl.read_parquet(f)
+
+
 @pytest.mark.parametrize("parallel", ["prefiltered", "row_groups"])
 @pytest.mark.parametrize(
     "projection",
