@@ -18,8 +18,9 @@ pytestmark = pytest.mark.slow()
 
 
 def test_scan_parquet_empty_row_group(s3: CountingS3, tmp_path: Path) -> None:
-    # The zero-size column chunks of an empty row group can all start at offset 0. Fetched
-    # by start offset, their byte ranges used to collapse into one and trip an assertion.
+    # The zero-size column chunks of an empty row group can all start at offset 0.
+    # Fetched by start offset, their byte ranges used to collapse into one and trip an
+    # assertion.
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
 
