@@ -564,11 +564,13 @@ def _assert_all_attributed(
     assert all(node["ir_node_id"] in ir_ids for node in phys)
 
 
-def test_cache_ir_node_owns_no_physical_nodes() -> None:
-    """Common-subplan elimination inserts `Cache` IR nodes that lower to nothing.
+def test_cache_multiplexer_attributes_to_cache() -> None:
+    """Common-subplan elimination inserts `Cache` IR nodes.
 
-    The cached subtree's physical nodes belong to the IR nodes inside it, so no
-    physical node carries a `Cache` id, and every id still resolves.
+    A cache lowers to no physical node of its own; the fan-out it stands for is
+    the multiplexer inserted after lowering. That multiplexer belongs to the
+    `Cache` IR node, not to the cached subtree's last node, so the cache's cost
+    does not land on its producer.
     """
     base = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).with_columns(b=pl.col("a") * 2)
     observer = _observe_streaming(
@@ -584,7 +586,9 @@ def test_cache_ir_node_owns_no_physical_nodes() -> None:
     # not the assertion.
     assert cache_ids
     _assert_all_attributed(ir, phys)
-    assert not any(n["ir_node_id"] in cache_ids for n in phys)
+    (multiplexer,) = [n for n in phys if n["properties"]["type"] == "Multiplexer"]
+    assert multiplexer["ir_node_id"] in cache_ids
+    assert [n for n in phys if n["ir_node_id"] in cache_ids] == [multiplexer]
 
 
 def test_range_join_temporaries_attribute_to_join() -> None:
