@@ -12,6 +12,7 @@ use polars_core::frame::column::Column;
 use polars_error::PolarsResult;
 use polars_plan::dsl::Expr;
 use polars_utils::pl_str::PlSmallStr;
+pub(crate) use resolve::state_dtype;
 use translator::Translator;
 pub(crate) use types::TranslationResult;
 
@@ -31,8 +32,11 @@ pub(crate) fn translate(
     let resolved = resolve::resolve_types(function, row_names, initial_state, row_inputs)?;
 
     // Program construction: translate the expression into typed JIT nodes.
-    let program =
-        Translator::new(row_names, &resolved).expression(&resolved.expression, None, "root")?;
+    let program = Translator::new(row_names, &resolved).expression(
+        &resolved.expression,
+        resolved.root_type,
+        "root",
+    )?;
 
     // The state is input 0; row inputs follow in order.
     let rows = resolved

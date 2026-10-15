@@ -4,7 +4,8 @@ use polars_error::{PolarsResult, polars_ensure};
 use polars_plan::dsl::Expr;
 
 use super::Translator;
-use crate::jit_program::{JitProgram, ScalarType};
+use crate::jit_program::{CastOverflow, JitProgram, ScalarType};
+use crate::translate::helpers::common_type;
 
 impl Translator<'_> {
     /// Translate two expressions whose types depend on each other: the one translated second
@@ -28,8 +29,25 @@ impl Translator<'_> {
         })
     }
 
-    /// Convert `input` to `dtype` for an operation that combines it with another value.
-    /// Explicit casts are translated in `casts`.
+    /// The dtype Polars gives `expression`. Polars types untyped literals by context, so
+    /// `u64_column + (-1)` is Int64 even though the supertype of UInt64 and Int64 is Float64.
+    /// An expression Polars types as `Null` falls back to the operands' common type.
+    pub(super) fn result_type(
+        &self,
+        expression: &Expr,
+        left: ScalarType,
+        right: ScalarType,
+    ) -> PolarsResult<ScalarType> {
+        let dtype = expression.to_field(&self.schema)?.dtype;
+        if dtype.is_null() {
+            common_type(left, right)
+        } else {
+            ScalarType::from_dtype(&dtype)
+        }
+    }
+
+    /// Convert `input` to `dtype` for an operation that combines it with another value. Such
+    /// conversions never fail; explicit casts are translated in `casts`.
     pub(super) fn cast(&self, input: JitProgram, dtype: ScalarType) -> PolarsResult<JitProgram> {
         if input.dtype() == dtype {
             Ok(input)
@@ -39,6 +57,7 @@ impl Translator<'_> {
             Ok(JitProgram::Cast {
                 input: Box::new(input),
                 dtype,
+                overflow: CastOverflow::Unchecked,
             })
         }
     }

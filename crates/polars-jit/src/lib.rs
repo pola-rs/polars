@@ -6,6 +6,7 @@ mod planning;
 mod runtime;
 mod translate;
 
+use polars_core::prelude::DataType;
 use polars_error::PolarsResult;
 use polars_plan::dsl::Expr;
 
@@ -42,6 +43,18 @@ fn fold(input: Option<Expr>, initial_state: Expr, function: Expr) -> PolarsResul
         row_inputs,
     } = plan;
 
+    // Output typing: Polars asks for the output dtype before any input is evaluated.
+    let schema_function = function.clone();
+    let schema_row_names = row_names.clone();
+    let state_dtype = move |initial_state: &DataType, row_types: &[DataType]| {
+        translate::state_dtype(
+            &schema_function,
+            &schema_row_names,
+            initial_state,
+            row_types,
+        )
+    };
+
     // Polars names a function expression after its first input. A method-style fold is named
     // after its input, so that input comes first and is swapped behind the state before use.
     let mut inputs = Vec::with_capacity(row_inputs.len() + 1);
@@ -67,14 +80,16 @@ fn fold(input: Option<Expr>, initial_state: Expr, function: Expr) -> PolarsResul
                 translate::translate(&function, &row_names, initial_state, row_inputs)?;
 
             // Compilation: typed JIT program + loop bindings -> native list operation.
+            let state_type = translated.bindings.state.dtype;
             let compiled = compiler::compile(
                 &translated.program,
                 compiler::CompilationShape::Lists(translated.bindings),
             )?;
 
             // Execution: run the native operation over the supplied columns.
-            runtime::execute(compiled, initial_state, row_inputs)
+            runtime::execute(compiled, state_type, initial_state, row_inputs)
         },
+        state_dtype,
         input_first,
     ))
 }

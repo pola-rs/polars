@@ -1,18 +1,19 @@
-//! Translation of explicit casts.
+//! Translation of explicit casts, with Polars' strict, non-strict, and wrapping overflow rules.
 
-use polars_error::{PolarsResult, polars_bail, polars_ensure};
+use polars_core::chunked_array::cast::CastOptions;
+use polars_error::{PolarsResult, polars_bail};
 use polars_plan::dsl::{DataTypeExpr, Expr};
 
 use super::Translator;
-use crate::jit_program::{JitProgram, ScalarType};
-use crate::translate::helpers::at;
+use crate::jit_program::{CastOverflow, JitProgram, ScalarType};
+use crate::translate::helpers::{at, is_null_literal};
 
 impl Translator<'_> {
-    /// A cast that cannot produce null; casts that can wait for null support.
     pub(super) fn cast_expression(
         &self,
         input: &Expr,
         dtype: &DataTypeExpr,
+        options: &CastOptions,
         location: &str,
     ) -> PolarsResult<JitProgram> {
         let DataTypeExpr::Literal(dtype) = dtype else {
@@ -20,20 +21,34 @@ impl Translator<'_> {
                 "foldv only supports casts to concrete scalar dtypes at {location}")
         };
         let target = ScalarType::from_dtype(dtype)?;
-        let input = self.expression(input, None, &at(location, "input"))?;
-        polars_ensure!(cast_stays_non_null(input.dtype(), target), InvalidOperation:
-            "foldv cast from {} to {} may produce null and is not supported yet",
-            input.dtype().dtype(), target.dtype());
-        self.cast(input, target)
+        // An untyped null cast to a type is a null of that type. Any other literal keeps its own
+        // type so the cast below can apply its overflow rule to the value.
+        let expected = is_null_literal(input).then_some(target);
+        let input = self.expression(input, expected, &at(location, "input"))?;
+        // Only casts that can receive an out-of-range value need a runtime check.
+        let overflow = if cast_stays_non_null(input.dtype(), target) {
+            CastOverflow::Unchecked
+        } else {
+            match options {
+                CastOptions::Strict => CastOverflow::Raise,
+                CastOptions::NonStrict => CastOverflow::Null,
+                CastOptions::Overflowing => CastOverflow::Unchecked,
+            }
+        };
+        Ok(JitProgram::Cast {
+            input: Box::new(input),
+            dtype: target,
+            overflow,
+        })
     }
 }
 
-/// Whether every value of `source` has a value in `target`, so the cast can never produce null.
+/// Whether every value of `source` has a value in `target`, so the cast can never overflow.
 fn cast_stays_non_null(source: ScalarType, target: ScalarType) -> bool {
-    if source == target || target.is_float() {
+    if source == target || target.is_float() || target == ScalarType::Boolean {
         return true;
     }
-    if source.is_float() || target == ScalarType::Boolean {
+    if source.is_float() {
         return false;
     }
     let source_bits = source.bit_width();

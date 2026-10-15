@@ -8,19 +8,20 @@ use crate::jit_program::{BinaryOp, BooleanOp, CompareOp, JitProgram};
 use crate::translate::helpers::{at, common_type};
 
 impl Translator<'_> {
-    /// `+`, `-`, and `*`, which convert both operands to their common type.
+    /// `+`, `-`, and `*`.
     pub(super) fn arithmetic(
         &self,
+        expression: &Expr,
         left: &Expr,
         op: Operator,
         right: &Expr,
         location: &str,
     ) -> PolarsResult<JitProgram> {
         let operands = self.operands(left, right, location)?;
-        let dtype = common_type(operands.0.dtype(), operands.1.dtype())?;
-        let (left, right) = self.cast_pair(operands, dtype)?;
+        let dtype = self.result_type(expression, operands.0.dtype(), operands.1.dtype())?;
         polars_ensure!(dtype.is_numeric(), InvalidOperation:
             "operator {op} requires numeric operands at {location}");
+        let (left, right) = self.cast_pair(operands, dtype)?;
         let op = match op {
             Operator::Plus => BinaryOp::Add,
             Operator::Minus => BinaryOp::Subtract,
@@ -53,12 +54,14 @@ impl Translator<'_> {
             Operator::LtEq => CompareOp::LessThanOrEqual,
             Operator::Gt => CompareOp::GreaterThan,
             Operator::GtEq => CompareOp::GreaterThanOrEqual,
+            Operator::EqValidity => CompareOp::EqualMissing,
+            Operator::NotEqValidity => CompareOp::NotEqualMissing,
             _ => unreachable!("`expression` only sends comparison operators here"),
         };
         Ok(JitProgram::Compare { op, left, right })
     }
 
-    /// Boolean `and`/`or`.
+    /// Boolean `and`/`or`, with Polars' Kleene logic for nulls.
     pub(super) fn logical(
         &self,
         left: &Expr,

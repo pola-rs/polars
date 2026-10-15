@@ -2,10 +2,12 @@
 
 mod arithmetic;
 mod casts;
+mod comparison;
 mod control_flow;
-mod deferred_values;
 mod explicit_input;
 mod multiple_inputs;
+mod nulls_and_nans;
 mod runtime;
 mod scalar_types;
+mod strict_casts;
 mod validation;

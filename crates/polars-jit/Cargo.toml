@@ -15,6 +15,7 @@ cranelift-jit = { workspace = true }
 cranelift-module = { workspace = true }
 cranelift-native = { workspace = true }
 polars-core = { workspace = true }
+polars-arrow = { workspace = true }
 polars-error = { workspace = true }
 polars-plan = { workspace = true }
 polars-utils = { workspace = true }

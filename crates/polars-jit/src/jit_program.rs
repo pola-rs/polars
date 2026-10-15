@@ -82,6 +82,28 @@ pub(crate) enum JitLiteral {
     Float64(u64),
 }
 
+/// A classification of a floating-point value. Integers are never NaN or infinite.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FloatCheck {
+    /// `is_nan`; `is_not_nan` is its negation.
+    Nan,
+    /// `is_finite`: neither NaN nor infinite.
+    Finite,
+    /// `is_infinite`: positive or negative infinity.
+    Infinite,
+}
+
+/// What a cast does with a value that does not fit its target type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CastOverflow {
+    /// The cast cannot fail, or wraps like `wrap_numerical=True`.
+    Unchecked,
+    /// The result is null, like `strict=False`.
+    Null,
+    /// The fold stops with an error, like `strict=True`.
+    Raise,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CompareOp {
     Equal,
@@ -90,6 +112,8 @@ pub(crate) enum CompareOp {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+    EqualMissing,
+    NotEqualMissing,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,9 +133,13 @@ pub enum JitProgram {
         value: JitLiteral,
         dtype: ScalarType,
     },
+    Null {
+        dtype: ScalarType,
+    },
     Cast {
         input: Box<Self>,
         dtype: ScalarType,
+        overflow: CastOverflow,
     },
     Binary {
         op: BinaryOp,
@@ -130,6 +158,17 @@ pub enum JitProgram {
         right: Box<Self>,
     },
     Not(Box<Self>),
+    IsNull(Box<Self>),
+    FloatCheck {
+        check: FloatCheck,
+        input: Box<Self>,
+    },
+    /// `value`, or `fill` where `value` is null. Both already have type `dtype`.
+    FillNull {
+        value: Box<Self>,
+        fill: Box<Self>,
+        dtype: ScalarType,
+    },
     /// `when(predicate).then(truthy).otherwise(falsy)`, Polars' `Expr::Ternary`. Only the
     /// selected branch is evaluated.
     Ternary {
@@ -145,10 +184,16 @@ impl JitProgram {
         match self {
             Self::Input { dtype, .. }
             | Self::Literal { dtype, .. }
+            | Self::Null { dtype }
             | Self::Cast { dtype, .. }
             | Self::Binary { dtype, .. }
-            | Self::Ternary { dtype, .. } => *dtype,
-            Self::Compare { .. } | Self::Boolean { .. } | Self::Not(_) => ScalarType::Boolean,
+            | Self::Ternary { dtype, .. }
+            | Self::FillNull { dtype, .. } => *dtype,
+            Self::Compare { .. }
+            | Self::Boolean { .. }
+            | Self::Not(_)
+            | Self::IsNull(_)
+            | Self::FloatCheck { .. } => ScalarType::Boolean,
         }
     }
 }

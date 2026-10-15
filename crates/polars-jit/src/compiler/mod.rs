@@ -7,10 +7,11 @@ mod emitter;
 mod helpers;
 mod list_program;
 mod types;
+mod values;
 
 use polars_error::PolarsResult;
 pub use types::CompiledProgram;
-pub(crate) use types::{CompilationShape, InputBinding, ListBindings};
+pub(crate) use types::{CastFailure, CompilationShape, InputBinding, ListBindings};
 
 use crate::jit_program::JitProgram;
 

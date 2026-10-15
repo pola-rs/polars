@@ -1,10 +1,12 @@
 //! Small helpers shared across translation.
 
+use polars_core::prelude::AnyValue;
 use polars_core::utils::try_get_supertype;
 use polars_error::{PolarsError, PolarsResult, polars_err};
 use polars_plan::dsl::Expr;
+use polars_plan::prelude::LiteralValue;
 
-use crate::jit_program::ScalarType;
+use crate::jit_program::{JitProgram, ScalarType};
 
 /// The error for an expression, or a form of one, that the JIT does not translate.
 pub(super) fn unsupported(expression: &Expr, location: &str) -> PolarsError {
@@ -24,9 +26,24 @@ pub(super) fn inputs<'e, const N: usize>(
         .map_err(|_| unsupported(expression, location))
 }
 
+/// Whether `expression` is an untyped null, which takes the type of what it is combined with.
+pub(super) fn is_null_literal(expression: &Expr) -> bool {
+    matches!(expression, Expr::Literal(LiteralValue::Scalar(value))
+        if matches!(value.as_any_value(), AnyValue::Null) && value.dtype().is_null())
+}
+
 /// The supertype Polars gives two types, such as Float64 for Int32 and Float64.
 pub(super) fn common_type(left: ScalarType, right: ScalarType) -> PolarsResult<ScalarType> {
     ScalarType::from_dtype(&try_get_supertype(&left.dtype(), &right.dtype())?)
+}
+
+/// `program`, negated when `negate` is set; for function pairs such as `is_null`/`is_not_null`.
+pub(super) fn negated_if(negate: bool, program: JitProgram) -> JitProgram {
+    if negate {
+        JitProgram::Not(Box::new(program))
+    } else {
+        program
+    }
 }
 
 /// The location of a part of the expression at `location`, used in error messages.

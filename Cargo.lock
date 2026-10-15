@@ -3640,6 +3640,7 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "polars",
+ "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-plan",
