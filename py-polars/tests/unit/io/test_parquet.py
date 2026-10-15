@@ -4529,6 +4529,35 @@ def test_regex_prefiltering_parametric(s: pl.Series) -> None:
         )
 
 
+def test_literal_contains_prefiltering(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_OUTPUT_COLUMN_PREDS", "1")
+    # No nulls and no dictionary, so the decoder matches the pattern on the values.
+    df = pl.DataFrame({"a": ["a.b", "axb", "(x", "x(", "a+"], "b": range(5)})
+    f = io.BytesIO()
+    pq.write_table(df.to_arrow(), f, use_dictionary=False)
+
+    for pat in ["a.b", "(", "a+", ""]:
+        p = pl.col.a.str.contains(pat, literal=True)
+        f.seek(0)
+        capfd.readouterr()
+        assert_frame_equal(
+            pl.scan_parquet(f, parallel="prefiltered").filter(p).collect(),
+            df.filter(p),
+        )
+        assert "RegexMatch" in capfd.readouterr().err
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f, parallel="prefiltered")
+        .sql("SELECT * FROM self WHERE a LIKE '%(%'")
+        .collect(),
+        df.filter(pl.col.a.str.contains("(", literal=True)),
+    )
+    assert "RegexMatch" in capfd.readouterr().err
+
+
 @given(
     s=series(
         name="a",

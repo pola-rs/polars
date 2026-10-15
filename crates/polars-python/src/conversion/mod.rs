@@ -46,7 +46,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
+use pyo3::types::{IntoPyDict, PyDict, PyList, PyMapping, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -665,14 +665,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Schema> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let dict = ob.cast::<PyDict>()?;
+        let items = ob.cast::<PyMapping>()?.items()?;
 
         Ok(Wrap(
-            dict.iter()
-                .map(|(key, val)| {
-                    let key = key.extract::<PyBackedStr>()?;
-                    let val = val.extract::<Wrap<DataType>>()?;
-
+            items
+                .iter()
+                .map(|item| {
+                    let (key, val) = item.extract::<(PyBackedStr, Wrap<DataType>)>()?;
                     Ok(Field::new((&*key).into(), val.0))
                 })
                 .collect::<PyResult<Schema>>()?,
