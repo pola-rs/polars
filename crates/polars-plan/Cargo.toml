@@ -39,7 +39,7 @@ futures = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
-memchr = { workspace = true }
+memchr = { workspace = true, optional = true }
 memmap = { workspace = true }
 murmur3 = { workspace = true }
 num-traits = { workspace = true }
@@ -85,7 +85,7 @@ serde = [
 parquet = ["polars-io/parquet", "polars-parquet"]
 cloud = ["polars-io/cloud"]
 ipc = ["polars-io/ipc"]
-json = ["polars-io/json", "polars-json"]
+json = ["polars-io/json", "polars-json", "dep:memchr"]
 scan_lines = []
 csv = ["polars-io/csv"]
 temporal = [

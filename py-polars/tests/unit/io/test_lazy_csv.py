@@ -725,6 +725,72 @@ def test_scan_csv_progressive_infer_schema_wide_header(
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+@pytest.mark.parametrize("infer_schema_length", [0, 1])
+def test_scan_csv_progressive_infer_schema_multiline_header(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    compression: CsvCompression,
+    infer_schema_length: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The first downloaded prefix ends inside the quoted header, after its line break.
+    df = pl.DataFrame({"foo\n" + "x" * 400_000: ["a", "b"], "bar": ["c", "d"]})
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    q = pl.scan_csv(file_path, infer_schema_length=infer_schema_length)
+    assert q.collect_schema() == df.schema
+    assert_frame_equal(q.collect(), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("with_data", [True, False])
+def test_scan_csv_progressive_infer_schema_header_only_row_estimate(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, with_data: bool
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The header fits in the first downloaded prefix, the first data row does not.
+    names = [f"c{i:03}_" + "n" * 95 for i in range(600)]
+    data = "y" * 10_000 + "," * (len(names) - 1) + "\n" if with_data else ""
+    file_path.write_text(",".join(names) + "\n" + data)
+
+    q = pl.scan_csv(file_path, infer_schema_length=0)
+    # Without a data row there is no row estimate (it used to be u64::MAX).
+    assert "ESTIMATED ROWS" not in q.explain()
+    assert q.collect().shape == (int(with_data), len(names))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["zstd", "gzip"])
+@pytest.mark.parametrize("infer_schema_length", [0, 1, 100])
+def test_scan_csv_progressive_infer_schema_magic_bytes_text(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    compression: CsvCompression,
+    infer_schema_length: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The decompressed text starts with zlib magic bytes ('x^').
+    df = pl.DataFrame({"x^2": [1, 2, 3], "y": [-1.5, 2.5, 3.5]})
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    out = pl.scan_csv(file_path, infer_schema_length=infer_schema_length).collect()
+    assert_frame_equal(out, df if infer_schema_length else df.cast(pl.String))
+
+
+@pytest.mark.write_disk
 @pytest.mark.parametrize(("skip_rows", "skip_lines"), [(2, 0), (0, 2)])
 def test_scan_csv_progressive_infer_schema_long_skipped_rows(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path, skip_rows: int, skip_lines: int

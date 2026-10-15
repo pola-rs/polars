@@ -297,14 +297,26 @@ fn slice_reaches_eof(
     offset >= file_size && (compression.is_none() || bytes_read < read_size)
 }
 
+/// A reader over bytes that are already decompressed. Unlike `ByteSourceReader::from_memory`, it
+/// does not look for compression magic bytes, which the decompressed text may start with.
+#[cfg(feature = "csv")]
+fn decompressed_reader(slice: Buffer<u8>) -> ByteSourceReader<ReaderSource> {
+    ByteSourceReader::UncompressedMemory { slice, offset: 0 }
+}
+
 /// Before EOF a slice from progressive schema inference may end inside a row. Keep only the
-/// complete rows, so that we neither count nor infer from an incomplete row.
+/// complete rows, so that we neither count nor infer from an incomplete row. `complete_len`
+/// returns the length of the complete rows in the given bytes.
 #[cfg(any(feature = "json", feature = "csv"))]
-fn complete_rows(slice: Buffer<u8>, eol_char: u8, at_eof: bool) -> Buffer<u8> {
+fn complete_rows(
+    slice: Buffer<u8>,
+    at_eof: bool,
+    complete_len: impl FnOnce(&[u8]) -> usize,
+) -> Buffer<u8> {
     if at_eof {
         return slice;
     }
-    let complete_len = memchr::memrchr(eol_char, &slice).map_or(0, |i| i + 1);
+    let complete_len = complete_len(&slice);
     slice.sliced(..complete_len)
 }
 
@@ -1040,7 +1052,7 @@ pub async fn csv_file_info(
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let source = sources.at(i);
 
-        let (mem_slice, file_size, decompressed_slice_size_hint, compression) = if run_async
+        let (mut reader, file_size, decompressed_slice_size_hint, compression) = if run_async
             && let Some(infer_schema_length) = infer_schema_length
         {
             // Only download what we need for schema inference.
@@ -1082,6 +1094,13 @@ pub async fn csv_file_info(
             let mut try_read_size = INITIAL_FETCH * ASSUMED_COMPRESSION_RATIO;
             let mut truncated_bytes: Vec<u8> = Vec::with_capacity(INITIAL_FETCH);
             let mut reached_eof = false;
+
+            // With a header and `infer_schema_length == 0` only the complete header is needed.
+            let header_only_options =
+                (infer_schema_length == 0 && csv_options.has_header).then(|| CsvReadOptions {
+                    raise_if_empty: false,
+                    ..csv_options.clone()
+                });
 
             // Collect enough rows to satisfy infer_schema_length.
             let decompressed_slice = loop {
@@ -1128,27 +1147,35 @@ pub async fn csv_file_info(
 
                 let at_eof =
                     slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
-                let slice = complete_rows(slice, csv_options.parse_options.eol_char, at_eof);
+                // Quoted fields, including in the header, may contain line breaks.
+                let parse_options = &csv_options.parse_options;
+                let slice = complete_rows(slice, at_eof, |bytes| {
+                    polars_io::csv::read::complete_rows_len(
+                        bytes,
+                        parse_options.quote_char,
+                        parse_options.comment_prefix.as_ref(),
+                        parse_options.eol_char,
+                        csv_options.skip_lines,
+                    )
+                });
 
-                let enough_rows = if infer_schema_length == 0 && csv_options.has_header {
-                    // Only the header is needed. It is incomplete if none is found.
-                    let mut options = csv_options.clone();
-                    options.raise_if_empty = false;
+                let enough_rows = if let Some(options) = &header_only_options {
+                    // The header is incomplete if none is found.
                     let (header_schema, _) = read_until_start_and_infer_schema(
-                        &options,
+                        options,
                         None,
                         extra_columns_policy == ExtraColumnsPolicy::Ignore,
                         missing_columns_policy == MissingColumnsPolicy::Insert,
                         Some(slice.len()),
                         None,
-                        &mut ByteSourceReader::from_memory(slice.clone())?,
+                        &mut decompressed_reader(slice.clone()),
                     )?;
                     !header_schema.is_empty()
                 } else {
                     // Before EOF too few lines (e.g. to skip) only means we need more data, so
                     // don't let the row counter raise on that.
-                    let row_count = polars_io::csv::read::count_rows_from_slice_par(
-                        slice.clone(),
+                    let row_count = polars_io::csv::read::count_rows_from_reader_par(
+                        decompressed_reader(slice.clone()),
                         csv_options.parse_options.quote_char,
                         csv_options.parse_options.comment_prefix.as_ref(),
                         csv_options.parse_options.eol_char,
@@ -1157,6 +1184,7 @@ pub async fn csv_file_info(
                         csv_options.skip_rows,
                         csv_options.skip_rows_after_header,
                         csv_options.raise_if_empty && at_eof,
+                        Some(slice.len()),
                     )?;
                     // Without a header, the first row determines the columns.
                     row_count >= infer_schema_length.max(1)
@@ -1181,7 +1209,7 @@ pub async fn csv_file_info(
             // compressed bytes again can run into their end while looking for a line ending.
             let decompressed_slice_size_hint = Some(decompressed_slice.len());
             (
-                decompressed_slice,
+                decompressed_reader(decompressed_slice),
                 file_size,
                 decompressed_slice_size_hint,
                 compression,
@@ -1196,14 +1224,12 @@ pub async fn csv_file_info(
                 Some(_) => file_size * ASSUMED_COMPRESSION_RATIO,
             });
             (
-                mem_slice_raw,
+                ByteSourceReader::from_memory(mem_slice_raw)?,
                 file_size,
                 decompressed_slice_size_hint,
                 compression,
             )
         };
-
-        let mut reader = ByteSourceReader::from_memory(mem_slice)?;
 
         let mut first_row_len = 0;
         let (schema, _) = read_until_start_and_infer_schema(
@@ -1225,45 +1251,51 @@ pub async fn csv_file_info(
 
         // TODO. We can do (much) better by collect statistics as part of row count and/or schema
         // inference, including observed average row_length and compression ratio.
-        let estimated_rows =
-            (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize;
+        // Without a data row, e.g. when only the header was needed and fetched, there is no
+        // estimate.
+        let estimated_rows = (first_row_len > 0)
+            .then(|| (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize);
 
         Ok((schema, estimated_rows))
     };
 
-    let merge_func =
-        |a: PolarsResult<(Schema, usize)>, b: PolarsResult<(Schema, usize)>| match (a, b) {
-            (Err(e), _) | (_, Err(e)) => Err(e),
-            (Ok((mut schema_a, row_estimate_a)), Ok((schema_b, row_estimate_b))) => {
-                match (schema_a.is_empty(), schema_b.is_empty()) {
-                    (true, _) => Ok((schema_b, row_estimate_b)),
-                    (_, true) => Ok((schema_a, row_estimate_a)),
-                    _ => match missing_columns_policy {
-                        MissingColumnsPolicy::Raise => {
-                            schema_a.to_supertype(&schema_b)?;
-                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
-                        },
-                        MissingColumnsPolicy::Insert => {
-                            // Union merge: keep all columns from both schemas,
-                            // supertype columns that exist in both.
-                            use polars_core::utils::try_get_supertype;
-                            for (name, dtype) in schema_b.iter() {
-                                match schema_a.get(name) {
-                                    Some(existing_dtype) => {
-                                        let st = try_get_supertype(existing_dtype, dtype)?;
-                                        schema_a.with_column(name.clone(), st);
-                                    },
-                                    None => {
-                                        schema_a.with_column(name.clone(), dtype.clone());
-                                    },
-                                }
-                            }
-                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
-                        },
+    // The total is unknown if any part is.
+    let add_row_estimates =
+        |a: Option<usize>, b: Option<usize>| a.zip(b).map(|(a, b)| a.saturating_add(b));
+
+    let merge_func = |a: PolarsResult<(Schema, Option<usize>)>,
+                      b: PolarsResult<(Schema, Option<usize>)>| match (a, b) {
+        (Err(e), _) | (_, Err(e)) => Err(e),
+        (Ok((mut schema_a, row_estimate_a)), Ok((schema_b, row_estimate_b))) => {
+            match (schema_a.is_empty(), schema_b.is_empty()) {
+                (true, _) => Ok((schema_b, row_estimate_b)),
+                (_, true) => Ok((schema_a, row_estimate_a)),
+                _ => match missing_columns_policy {
+                    MissingColumnsPolicy::Raise => {
+                        schema_a.to_supertype(&schema_b)?;
+                        Ok((schema_a, add_row_estimates(row_estimate_a, row_estimate_b)))
                     },
-                }
-            },
-        };
+                    MissingColumnsPolicy::Insert => {
+                        // Union merge: keep all columns from both schemas,
+                        // supertype columns that exist in both.
+                        use polars_core::utils::try_get_supertype;
+                        for (name, dtype) in schema_b.iter() {
+                            match schema_a.get(name) {
+                                Some(existing_dtype) => {
+                                    let st = try_get_supertype(existing_dtype, dtype)?;
+                                    schema_a.with_column(name.clone(), st);
+                                },
+                                None => {
+                                    schema_a.with_column(name.clone(), dtype.clone());
+                                },
+                            }
+                        }
+                        Ok((schema_a, add_row_estimates(row_estimate_a, row_estimate_b)))
+                    },
+                },
+            }
+        },
+    };
 
     assert!(
         csv_options.schema.is_none(),
@@ -1296,7 +1328,7 @@ pub async fn csv_file_info(
     Ok(FileInfo::new(
         schema,
         Some(Either::Right(reader_schema)),
-        ScanStats::approx_rows(estimated_n_rows as u64),
+        estimated_n_rows.map_or_else(ScanStats::unknown, |n| ScanStats::approx_rows(n as u64)),
     ))
 }
 
@@ -1430,7 +1462,9 @@ pub async fn ndjson_file_info(
                 };
 
             let at_eof = slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
-            let slice = complete_rows(slice, b'\n', at_eof);
+            let slice = complete_rows(slice, at_eof, |bytes| {
+                memchr::memrchr(b'\n', bytes).map_or(0, |i| i + 1)
+            });
 
             if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !at_eof {
                 if compression.is_some() && bytes_read == read_size {
