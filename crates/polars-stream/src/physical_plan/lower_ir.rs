@@ -666,18 +666,24 @@ fn lower_ir_inner(
             let phys_input = lower_ir!(*input)?;
 
             // See if we can insert a top k.
-            let mut limit = u64::MAX;
-            if let Some((0, l, _)) = slice {
-                limit = limit.min(l as u64);
-            }
             #[allow(clippy::unnecessary_cast)]
-            if let Some(l) = sort_options.limit {
-                limit = limit.min(l as u64);
-            };
+            let top_k = match slice {
+                Some((offset, len, _)) if offset >= 0 => {
+                    let k = (offset as u64).saturating_add(len as u64);
+                    Some((sort_options.limit.map_or(k, |l| k.min(l as u64)), false))
+                },
+                // The limit applies before the slice, so it does not commute with keeping the tail.
+                Some((offset, _, _)) if sort_options.limit.is_none() => {
+                    Some((offset.unsigned_abs(), true))
+                },
+                _ => sort_options.limit.map(|l| (l as u64, false)),
+            }
+            // Such a top k keeps every row, e.g. for open-ended slices.
+            .filter(|&(k, _)| k < IdxSize::MAX as u64);
 
             let mut stream = phys_input;
 
-            if sort_options.maintain_order && limit < u64::MAX {
+            if sort_options.maintain_order && top_k.is_some() {
                 stream = add_row_idx_sort_key(
                     stream,
                     &mut by_column,
@@ -712,12 +718,17 @@ fn lower_ir_inner(
                 by_column.clone()
             };
 
-            if limit < u64::MAX {
+            if let Some((k, is_from_end)) = top_k {
+                let mut top_k_options = sort_options.clone();
+                if is_from_end {
+                    top_k_options = top_k_options.with_order_reversed();
+                    top_k_options.nulls_last.iter_mut().for_each(|x| *x = !*x);
+                }
                 stream = build_top_k_stream(
                     stream,
                     trans_by_column.clone(),
-                    &sort_options,
-                    limit,
+                    &top_k_options,
+                    k,
                     slice.as_ref().and_then(|t| t.2.clone()),
                     expr_arena,
                     phys_sm,
