@@ -2565,3 +2565,25 @@ def test_str_concat_removed() -> None:
         AttributeRemovedError, match=re.escape("use `str.join` instead")
     ):
         s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").str.contains("~"),
+        pl.col("a").str.split("~"),
+        pl.col("a").str.len_bytes(),
+        pl.col("a").str.to_uppercase(),
+        pl.col("a").str.to_date(),
+    ],
+)
+@pytest.mark.parametrize("dtype", [pl.List(pl.String), pl.Int64, pl.Categorical])
+def test_str_namespace_non_string_input_raises_at_schema_29992(
+    expr: pl.Expr, dtype: pl.DataType
+) -> None:
+    q = pl.LazyFrame(schema={"a": dtype}).select(expr)
+    msg = "expected String data type for string operation"
+    with pytest.raises(InvalidOperationError, match=msg):
+        q.collect_schema()
+    with pytest.raises(InvalidOperationError, match=msg):
+        q.collect()
