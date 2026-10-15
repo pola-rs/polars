@@ -78,7 +78,7 @@ def test_modulo() -> None:
                 "c4": [3, 0, 1, 2, 3],
                 "d55": [0.0, 0.5, 2.0, None, 3.5],
             },
-            schema_overrides={"idx": pl.UInt32},
+            schema_overrides={"idx": pl.Int64},
         ),
     )
 
@@ -277,7 +277,7 @@ def test_literal_arithmetic_folds_exactly(expr: str) -> None:
         ctx.prec = 80
         expected = eval(decimal_expr)
     lf = pl.sql(f"SELECT {expr} AS x")
-    assert re.match(r'SELECT \[-?[\d.]+\.alias\("x"\)\]', lf.explain())
+    assert lf.explain().startswith('DF ["x"]')
     res = lf.collect()
     assert res.item() == expected
     assert res.schema["x"].scale == -expected.as_tuple().exponent  # type: ignore[attr-defined]

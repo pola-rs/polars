@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Collection
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
@@ -1355,7 +1355,7 @@ def test_is_in_native_pair_with_a_scalar_haystack(
             pl.Series([datetime(2020, 1, 1, 2)]).dt.replace_time_zone(
                 "Europe/Amsterdam"
             ),
-            [datetime(2020, 1, 1, 1, tzinfo=timezone.utc)],
+            [datetime(2020, 1, 1, 1, tzinfo=UTC)],
             id="datetime-other-zone",
         ),
     ],
@@ -1399,6 +1399,15 @@ def test_is_in_categorical_needle_keeps_its_categories() -> None:
         pl.col("c").is_in(pl.lit(pl.Series(["a", "not-a-category"])).implode())
     )
     assert q.collect()["c"].to_list() == [True, False]
+
+
+def test_is_in_categorical_needle_matches_categories_of_later_batches_29743() -> None:
+    # Fresh categories only gain "b" in the last batch, after the haystack is prepared.
+    cats = pl.Categories.random()
+    lf = pl.LazyFrame({"s": ["a"] * 10_000 + ["b"]})
+    q = lf.select(pl.col("s").cast(pl.Categorical(cats)).is_in(["b"]).sum())
+    with pl.Config(streaming_chunk_size=100):
+        assert q.collect(engine="streaming").item() == 1
 
 
 def test_is_in_native_pair_does_not_skip_row_groups_by_category_order() -> None:

@@ -34,6 +34,9 @@ pub trait ByteSource: Send + Sync {
     /// Fetch the last `n` bytes and the total size of the source, in a single request. Returns
     /// fewer than `n` bytes if the source is smaller than `n`.
     async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)>;
+    /// Fetch the first `n` bytes and the total size of the source, in a single request where
+    /// supported. Returns fewer than `n` bytes if the source is smaller than `n`.
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)>;
     /// # Panics
     /// Panics if `range` is not in bounds.
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>>;
@@ -74,6 +77,11 @@ impl ByteSource for BufferByteSource {
     async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
         let len = self.0.as_ref().len();
         Ok((self.0.clone().sliced(len.saturating_sub(n)..len), len))
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let len = self.0.as_ref().len();
+        Ok((self.0.clone().sliced(0..n.min(len)), len))
     }
 
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
@@ -123,6 +131,34 @@ pub struct FileReadContext {
     pub permits: Arc<Semaphore>,
     /// Ignored when direct I/O is active: there is no page cache to advise.
     pub advice: FileAdvice,
+}
+
+impl FileReadContext {
+    pub fn from_config(name: &str) -> Self {
+        let cfg = polars_config::config();
+        let enable_o_direct = cfg.direct_io();
+        let concurrency = cfg.file_read_concurrency().max(1) as usize;
+
+        // TODO: Posix_fadv should follow the access-pattern, which varies
+        // by file type and projection.
+        let fadv = cfg.file_posix_fadv();
+
+        if cfg.verbose() {
+            eprintln!(
+                "[{name}]: file read_context as configured: \
+                    read_concurrency: {concurrency}, \
+                    posix_fadv: {fadv}, \
+                    o_direct: {enable_o_direct}"
+            );
+        }
+
+        Self {
+            enable_o_direct,
+            concurrency,
+            permits: global_read_permits(),
+            advice: fadv,
+        }
+    }
 }
 
 impl std::fmt::Debug for FileReadContext {
@@ -501,10 +537,10 @@ mod cachestat {
             let ret = unsafe {
                 libc::syscall(
                     SYS_CACHESTAT,
-                    file.as_raw_fd(),
+                    file.as_raw_fd() as libc::c_long,
                     &mut range as *mut CachestatRange,
                     &mut cs as *mut Cachestat,
-                    0,
+                    0 as libc::c_long,
                 )
             };
             if ret != 0 {
@@ -536,6 +572,12 @@ impl ByteSource for FileByteSource {
     async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
         let size = self.get_size().await?;
         let bytes = self.get_range(size.saturating_sub(n)..size).await?;
+        Ok((bytes, size))
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let size = self.get_size().await?;
+        let bytes = self.get_range(0..n.min(size)).await?;
         Ok((bytes, size))
     }
 
@@ -638,6 +680,7 @@ impl ByteSource for FileByteSource {
 }
 
 #[cfg(feature = "cloud")]
+#[derive(Clone)]
 pub struct ObjectStoreByteSource {
     store: PolarsObjectStore,
     path: ObjectStorePath,
@@ -689,6 +732,10 @@ impl ByteSource for ObjectStoreByteSource {
         self.store.get_suffix(&self.path, n, self.config).await
     }
 
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        self.store.get_prefix(&self.path, n, self.config).await
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         self.store.get_range(&self.path, range, self.config).await
     }
@@ -718,6 +765,21 @@ impl DynByteSource {
             Self::File(_) => "File",
             #[cfg(feature = "cloud")]
             Self::Cloud(_) => "Cloud",
+        }
+    }
+
+    /// A clone of this object store source with a different fetch configuration. The clone
+    /// shares the underlying store, and this source keeps its configuration. Returns `None` for
+    /// non-object store sources.
+    #[cfg_attr(not(feature = "cloud"), allow(unused_variables))]
+    pub fn with_fetch_config(&self, config: FetchConfig) -> Option<Self> {
+        match self {
+            Self::Buffer(_) | Self::File(_) => None,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => Some(Self::Cloud(ObjectStoreByteSource {
+                config,
+                ..v.clone()
+            })),
         }
     }
 
@@ -772,6 +834,15 @@ impl ByteSource for DynByteSource {
             Self::File(v) => v.get_suffix(n).await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_suffix(n).await,
+        }
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        match self {
+            Self::Buffer(v) => v.get_prefix(n).await,
+            Self::File(v) => v.get_prefix(n).await,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.get_prefix(n).await,
         }
     }
 

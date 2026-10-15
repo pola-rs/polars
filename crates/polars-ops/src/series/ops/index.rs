@@ -43,6 +43,7 @@ where
                         out.push_unchecked(v_u64 as IdxSize);
                         in_bounds.push_unchecked(v_u64 < len_u64);
                     } else {
+                        out.push_unchecked(0);
                         in_bounds.push_unchecked(false);
                     }
                 }
@@ -61,6 +62,7 @@ where
                         out.push_unchecked(shifted as IdxSize);
                         in_bounds.push_unchecked((v_i64 >= -len_i64) & (v_i64 < len_i64));
                     } else {
+                        out.push_unchecked(0);
                         in_bounds.push_unchecked(false);
                     }
                 }

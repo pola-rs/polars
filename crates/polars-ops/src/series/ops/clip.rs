@@ -1,6 +1,7 @@
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::broadcast::broadcast_len;
 
 #[inline]
 fn clamp<T: PartialOrd>(input: T, min: T, max: T) -> T {
@@ -63,7 +64,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
         let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
         let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
-        let out = clip_helper_both_bounds(ca, min, max).into_series();
+        let out = clip_helper_both_bounds(ca, min, max)?.into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
@@ -99,7 +100,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
     with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
         let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
-        let out = clip_helper_single_bound(ca, max, clamp_max).into_series();
+        let out = clip_helper_single_bound(ca, max, clamp_max)?.into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
@@ -135,7 +136,7 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
     with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
         let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
-        let out = clip_helper_single_bound(ca, min, clamp_min).into_series();
+        let out = clip_helper_single_bound(ca, min, clamp_min)?.into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
@@ -152,12 +153,14 @@ fn clip_helper_both_bounds<T>(
     ca: &ChunkedArray<T>,
     min: &ChunkedArray<T>,
     max: &ChunkedArray<T>,
-) -> ChunkedArray<T>
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    match (min.len(), max.len()) {
+    let len = broadcast_len([ca.len(), min.len(), max.len()])?;
+    let ca = &*ca.broadcast_to(len)?;
+    let out = match (min.len(), max.len()) {
         (1, 1) => match (min.get(0), max.get(0)) {
             (Some(min), Some(max)) => clip_unary(ca, |v| clamp(v, min, max)),
             (Some(min), None) => clip_unary(ca, |v| clamp_min(v, min)),
@@ -189,20 +192,23 @@ where
             }),
         },
         _ => clip_ternary(ca, min, max),
-    }
+    };
+    Ok(out)
 }
 
 fn clip_helper_single_bound<T, F>(
     ca: &ChunkedArray<T>,
     bound: &ChunkedArray<T>,
     op: F,
-) -> ChunkedArray<T>
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
     T::Native: PartialOrd,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    match bound.len() {
+    let len = broadcast_len([ca.len(), bound.len()])?;
+    let ca = &*ca.broadcast_to(len)?;
+    let out = match bound.len() {
         1 => match bound.get(0) {
             Some(bound) => clip_unary(ca, |v| op(v, bound)),
             None => ca.clone(),
@@ -212,7 +218,8 @@ where
             (Some(s), None) => Some(s),
             (None, _) => None,
         }),
-    }
+    };
+    Ok(out)
 }
 
 fn clip_unary<T, F>(ca: &ChunkedArray<T>, op: F) -> ChunkedArray<T>

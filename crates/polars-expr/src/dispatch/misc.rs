@@ -22,13 +22,15 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
+use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, MinMaxByOrder, RowEncodingVariant};
 #[cfg(feature = "cutqcut")]
 use polars_plan::plans::{IRBinMethod, IRBinOptions};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
+
+use crate::expressions::arg_min_max_total;
 
 #[cfg(feature = "abs")]
 pub(super) fn abs(s: &Column) -> PolarsResult<Column> {
@@ -308,27 +310,37 @@ pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> Polars
         .into_column())
 }
 
-pub(super) fn min_by(s: &[Column]) -> PolarsResult<Column> {
+pub(super) fn min_by(s: &[Column], order: MinMaxByOrder) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
     let by = &s[1];
     if input.len() != by.len() {
         polars_bail!(ShapeMismatch: "'by' column in `min_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
     }
-    match by.as_materialized_series().arg_min() {
+    let by = by.as_materialized_series();
+    let idx = match order {
+        MinMaxByOrder::SkipNulls => by.arg_min(),
+        MinMaxByOrder::Total { nulls_largest } => arg_min_max_total(by, false, nulls_largest)?,
+    };
+    match idx {
         Some(idx) => Ok(input.new_from_index(idx, 1)),
         None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
     }
 }
 
-pub(super) fn max_by(s: &[Column]) -> PolarsResult<Column> {
+pub(super) fn max_by(s: &[Column], order: MinMaxByOrder) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
     let by = &s[1];
     if input.len() != by.len() {
         polars_bail!(ShapeMismatch: "'by' column in `max_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
     }
-    match by.as_materialized_series().arg_max() {
+    let by = by.as_materialized_series();
+    let idx = match order {
+        MinMaxByOrder::SkipNulls => by.arg_max(),
+        MinMaxByOrder::Total { nulls_largest } => arg_min_max_total(by, true, nulls_largest)?,
+    };
+    match idx {
         Some(idx) => Ok(input.new_from_index(idx, 1)),
         None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
     }

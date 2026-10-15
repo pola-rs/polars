@@ -121,8 +121,12 @@ impl ComputeNode for ColumnarFunctionNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self, Self::Sink { .. })
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self {
+            Self::Sink { .. } => NodeMemoryUsage::Accumulating,
+            Self::Source(src) => src.memory_usage(),
+            Self::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

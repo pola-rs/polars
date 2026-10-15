@@ -18,9 +18,9 @@ use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
-use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 use crate::nodes::joins::utils::SpillFrameSearchBuffer;
+use crate::nodes::{ComputeNode, NodeMemoryUsage};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 #[derive(Clone, Copy, Debug)]
@@ -263,6 +263,21 @@ impl ComputeNode for MergeJoinNode {
         }
 
         Ok(())
+    }
+
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        // Unmatched probe rows are buffered until the end to emit them in order.
+        let buffers_unmatched = self.params.args.maintain_order != MaintainOrderJoin::None
+            && self.params.probe_params().emit_unmatched;
+        match &self.state {
+            MergeJoinState::Running if buffers_unmatched => NodeMemoryUsage::Unbounded,
+            MergeJoinState::FlushInputBuffers if buffers_unmatched => {
+                NodeMemoryUsage::HoldingUntilDone
+            },
+            MergeJoinState::Running | MergeJoinState::FlushInputBuffers => NodeMemoryUsage::Bounded,
+            MergeJoinState::EmitUnmatched(src) => src.memory_usage(),
+            MergeJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

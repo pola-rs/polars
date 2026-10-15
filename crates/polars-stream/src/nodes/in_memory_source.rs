@@ -77,6 +77,14 @@ impl ComputeNode for InMemorySourceNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.source {
+            // Finishing only frees the frame if no one else holds a reference to it.
+            Some(df) if Arc::strong_count(df) == 1 => NodeMemoryUsage::HoldingUntilDone,
+            _ => NodeMemoryUsage::Bounded,
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,

@@ -24,24 +24,17 @@ from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterator
     from types import TracebackType
+    from typing import Self
 
     import pyarrow as pa
-
-    from polars.io.database._arrow_registry import ArrowDriverProperties
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
     from sqlalchemy.sql.elements import TextClause
     from sqlalchemy.sql.expression import Selectable
 
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
+    from polars.io.database._arrow_registry import ArrowDriverProperties
 
 _INVALID_QUERY_TYPES: Final[set[str]] = {
     "ALTER",
@@ -373,13 +366,14 @@ class ConnectionExecutor:
     def _is_alchemy_async(conn: Any) -> bool:
         """Check if the given connection is SQLALchemy async."""
         try:
-            from sqlalchemy.ext.asyncio import (
-                AsyncConnection,
-                AsyncSession,
-                async_sessionmaker,
-            )
+            from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
-            return isinstance(conn, (AsyncConnection, AsyncSession, async_sessionmaker))
+            if isinstance(conn, (AsyncConnection, AsyncSession)):
+                return True
+
+            from sqlalchemy.ext.asyncio import async_sessionmaker
+
+            return isinstance(conn, async_sessionmaker)
         except ImportError:
             return False
 
@@ -405,17 +399,23 @@ class ConnectionExecutor:
     @staticmethod
     def _is_alchemy_session(conn: Any) -> bool:
         """Check if the given connection is a SQLAlchemy Session object."""
-        from sqlalchemy.ext.asyncio import AsyncSession
         from sqlalchemy.orm import Session, sessionmaker
 
-        if isinstance(conn, (AsyncSession, Session, sessionmaker)):
+        if isinstance(conn, (Session, sessionmaker)):
             return True
 
         try:
+            from sqlalchemy.ext.asyncio import AsyncSession
+
+            if isinstance(conn, AsyncSession):
+                return True
+
             from sqlalchemy.ext.asyncio import async_sessionmaker
 
             return isinstance(conn, async_sessionmaker)
         except ImportError:
+            # SQLAlchemy 2.1 imports greenlet while loading the asyncio extra.
+            # A synchronous connection must still be usable without it.
             return False
 
     @staticmethod

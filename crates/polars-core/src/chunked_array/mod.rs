@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use num_traits::Signed;
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::concatenate::concatenate_unchecked;
@@ -1028,6 +1029,22 @@ where
                 .map(|v| *v)
                 .trust_my_length(self.len())
         }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Signed,
+{
+    /// Whether any value is negative. Masked out values are also checked.
+    pub fn has_negative(&self) -> bool {
+        // Check in blocks, so the inner loop can be vectorized and we can still stop early.
+        self.data_views().any(|values| {
+            values
+                .chunks(1024)
+                .any(|block| block.iter().fold(false, |acc, v| acc | v.is_negative()))
+        })
     }
 }
 

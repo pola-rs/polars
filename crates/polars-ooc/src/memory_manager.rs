@@ -66,7 +66,7 @@ impl MemoryManager {
             > config().ooc_memory_budget_bytes()
     }
 
-    fn should_prefetch(&self) -> bool {
+    pub(crate) fn should_prefetch(&self) -> bool {
         if !self.spills_exist.load(Ordering::Acquire) {
             return false;
         }

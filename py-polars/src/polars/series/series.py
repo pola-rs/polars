@@ -127,6 +127,7 @@ if TYPE_CHECKING:
     from builtins import set as set_
     from builtins import str as str_
     from collections.abc import Callable, Collection, Generator, Mapping
+    from typing import Self
 
     import jax
 
@@ -156,11 +157,6 @@ if TYPE_CHECKING:
         TemporalLiteral,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 elif BUILDING_SPHINX_DOCS:

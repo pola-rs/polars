@@ -10,7 +10,7 @@ use polars_async::ASYNC;
 use polars_utils::UnitVec;
 use polars_utils::with_drop::WithDrop;
 
-use crate::memory_manager::PrefetchInProgressTracker;
+use crate::memory_manager::{PrefetchInProgressTracker, memory_manager};
 use crate::spill_context::InsertReason;
 use crate::{SpillContextParam, Spillable, WeakSpillContext};
 
@@ -297,8 +297,10 @@ impl<T: Spillable> SpillTokenInner<T> {
         };
 
         // Now that we have invalidated ourselves from the bookkeeping we can
-        // fire off a prefetch request to our context if possible.
-        if let Some((ctx, _param)) = cur_ctx {
+        // fire off a prefetch request to our context if there is memory headroom.
+        if let Some((ctx, _param)) = cur_ctx
+            && memory_manager().should_prefetch()
+        {
             ctx.0.schedule_prefetch(ctx.1);
         }
 

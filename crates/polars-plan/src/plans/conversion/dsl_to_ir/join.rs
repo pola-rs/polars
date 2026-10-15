@@ -401,9 +401,28 @@ pub fn resolve_join(
         }
     }
 
+    // The coalesced key columns are replaced by their upcast versions.
+    if !as_with_columns_l.is_empty() {
+        input_left = IRBuilder::new(input_left, ctxt.expr_arena, ctxt.lp_arena)
+            .with_columns(as_with_columns_l, ProjectionOptions::default())
+            .node();
+    }
+    if !as_with_columns_r.is_empty() {
+        input_right = IRBuilder::new(input_right, ctxt.expr_arena, ctxt.lp_arena)
+            .with_columns(as_with_columns_r, ProjectionOptions::default())
+            .node();
+    }
     // These are Arc<Schema>, into_owned is free.
-    let schema_left = schema_left.into_owned();
-    let schema_right = schema_right.into_owned();
+    let schema_left = ctxt
+        .lp_arena
+        .get(input_left)
+        .schema(ctxt.lp_arena)
+        .into_owned();
+    let schema_right = ctxt
+        .lp_arena
+        .get(input_right)
+        .schema(ctxt.lp_arena)
+        .into_owned();
 
     options.options = {
         let on = left_on.into_iter().zip(right_on).collect();
@@ -419,30 +438,6 @@ pub fn resolve_join(
 
     let join_schema = det_join_schema(&schema_left, &schema_right, &options)
         .context(failed_here!(join schema resolving))?;
-
-    if key_cols_coalesced {
-        input_left = if as_with_columns_l.is_empty() {
-            input_left
-        } else {
-            ctxt.lp_arena.add(IR::HStack {
-                input: input_left,
-                exprs: as_with_columns_l,
-                schema: schema_left,
-                options: ProjectionOptions::default(),
-            })
-        };
-
-        input_right = if as_with_columns_r.is_empty() {
-            input_right
-        } else {
-            ctxt.lp_arena.add(IR::HStack {
-                input: input_right,
-                exprs: as_with_columns_r,
-                schema: schema_right,
-                options: ProjectionOptions::default(),
-            })
-        };
-    }
 
     let ir = IR::Join {
         input_left,
@@ -706,7 +701,13 @@ fn build_upcast_node_list(
                             left.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         let dtype_right =
                             right.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
-                        if dtype_left != dtype_right {
+                        // A decimal compares exactly with another decimal or an integer, and
+                        // a cast to a common decimal type can overflow.
+                        let is_exact = |dt: &DataType| dt.is_decimal() || dt.is_integer();
+                        let decimal_compare = (dtype_left.is_decimal() || dtype_right.is_decimal())
+                            && is_exact(&dtype_left)
+                            && is_exact(&dtype_right);
+                        if dtype_left != dtype_right && !decimal_compare {
                             // Ensure that we have a lossless cast between the two types.
                             // Decimal has no lossless numeric upcast.
                             let either_decimal =

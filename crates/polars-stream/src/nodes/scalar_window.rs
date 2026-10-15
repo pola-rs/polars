@@ -168,8 +168,12 @@ impl ComputeNode for ScalarWindowNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self.state, ScalarWindowState::Sink { .. })
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            ScalarWindowState::Sink { .. } => NodeMemoryUsage::Accumulating,
+            ScalarWindowState::Replay(_) => NodeMemoryUsage::Draining,
+            ScalarWindowState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

@@ -27,7 +27,7 @@ from polars.testing.parametric import column, dataframes, series
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from polars._typing import PolarsDataType, TimeUnit
+    from polars._typing import EngineType, PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1099,6 +1099,14 @@ def test_group_by_double_on_empty_12194() -> None:
     assert df.group_by("group").agg(squared_deviation_sum).schema == OrderedDict(
         [("group", pl.Int64), ("x", pl.Float64)]
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_group_by_repeat_literal_on_empty(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": []}, schema={"g": pl.Int64})
+    q = lf.group_by("g").agg(pl.repeat(1, pl.len()).min())
+    expected = pl.DataFrame(schema={"g": pl.Int64, "literal": pl.Int32})
+    assert_frame_equal(q.collect(engine=engine), expected)
 
 
 def test_group_by_when_then_no_aggregation_predicate() -> None:
@@ -2939,6 +2947,51 @@ def test_sorted_group_by() -> None:
     )
 
 
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_sorted_group_by_clipped_key(maintain_order: bool) -> None:
+    # Clipping can make different values equal, the next key is then not sorted.
+    lf = pl.LazyFrame({"a": [-3, -2, -1], "b": [1, 2, 1]}).set_sorted("a", "b")
+    q = lf.group_by(pl.col("a").clip(0, 10), "b", maintain_order=maintain_order).len()
+    expected = pl.DataFrame(
+        {"a": [0, 0], "b": [1, 2], "len": [2, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"), expected, check_row_order=maintain_order
+    )
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.col("a").forward_fill().alias("k"),
+        pl.col("c").set_sorted(),
+        pl.len().alias("k"),
+        pl.col("c").sort().alias("k"),
+        pl.col("c").rle_id().alias("k"),
+    ],
+)
+def test_sorted_group_by_key_merges_values(key: pl.Expr) -> None:
+    # The first key makes different values of "a" equal, so "b" is not sorted within it.
+    lf = pl.LazyFrame(
+        {"a": [1, 1, None, None], "b": [1, 2, 1, 2], "c": [0, 0, 0, 0]}
+    ).set_sorted("a", "b", nulls_last=True)
+    q = lf.group_by(key, "b").agg(pl.col("a").sum())
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_sorted_group_by_more_keys_than_sorted_columns() -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "c": [0, 0]}).set_sorted("a")
+    keys = [pl.col("c").set_sorted().alias(name) for name in ["x", "y", "z"]]
+    q = lf.group_by(keys).agg(pl.col("a").sum())
+    expected = pl.DataFrame({"x": [0], "y": [0], "z": [0], "a": [3]})
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
 def test_sorted_group_by_slice() -> None:
     lf = (
         pl.DataFrame({"a": [0, 5, 2, 1, 3] * 50})
@@ -3115,6 +3168,14 @@ def test_group_by_arg_max_arg_min_binary_27171() -> None:
         result,
         pl.DataFrame({"key": ["a", "b"], "val": pl.Series([0, 0], dtype=idx_dtype)}),
     )
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_group_by_arg_max_sorted_float_nan(descending: bool) -> None:
+    df = pl.DataFrame({"g": [1, 1], "k": [1.0, float("nan")]})
+    df = df.sort("k", descending=descending)
+    result = df.group_by("g").agg(pl.col("k").arg_max())
+    assert result["k"].item() == (1 if descending else 0)
 
 
 def test_group_by_arg_max_string_single_element_27171() -> None:
@@ -3356,6 +3417,20 @@ def test_group_by_filtered_agg_missing_group_29322() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_group_by_arg_min_max_single_null_slice_group() -> None:
+    df = pl.DataFrame(
+        {"g": [1, 2, 2], "v": [1, 2, 3], "by": pl.Series([None, 5, 4], dtype=pl.Int64)}
+    ).set_sorted("g")
+    out = df.group_by("g", maintain_order=True).agg(
+        pl.col("by").arg_min().alias("arg_min"),
+        pl.col("by").arg_max().alias("arg_max"),
+        pl.col("v").min_by("by").alias("min_by"),
+        pl.col("v").max_by("by").alias("max_by"),
+    )
+    assert out.row(0) == (1, None, None, None, None)
+    assert out.row(1) == (2, 1, 0, 3, 2)
+
+
 def test_group_by_arg_min_max_by_scalar_column_29504() -> None:
     idx_dtype = pl.get_index_type()
     df = pl.DataFrame({"k": [1], "v": [1.0], "p": [2]})
@@ -3388,3 +3463,42 @@ def test_group_by_arg_min_max_by_scalar_column_29504() -> None:
         schema_overrides={"min_by": pl.Float64},
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "dtype"),
+    [
+        (op, dtype)
+        for op in ["mean", "median", "std", "var"]
+        for dtype in [
+            pl.String,
+            pl.Binary,
+            pl.Categorical,
+            pl.List(pl.Int64),
+            pl.Array(pl.Int64, 2),
+            pl.Struct({"x": pl.Int64}),
+        ]
+    ]
+    + [
+        (op, dtype)
+        for op in ["std", "var"]
+        for dtype in [pl.Date, pl.Datetime("us"), pl.Duration("us"), pl.Time]
+    ],
+)
+def test_moment_agg_unsupported_dtype_raises_27309(
+    op: str, dtype: PolarsDataType
+) -> None:
+    lf = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [None, None, None]},
+        schema={"a": pl.Int64, "b": dtype},
+    )
+    expr = getattr(pl.col("b"), op)()
+    for q in [lf.group_by("a").agg(expr), lf.select(expr)]:
+        with pytest.raises(
+            InvalidOperationError, match=f"`{op}` operation not supported"
+        ):
+            q.collect_schema()
+        with pytest.raises(
+            InvalidOperationError, match=f"`{op}` operation not supported"
+        ):
+            q.collect()

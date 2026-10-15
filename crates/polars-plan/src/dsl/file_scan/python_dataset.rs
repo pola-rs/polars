@@ -28,6 +28,7 @@ pub struct PythonDatasetProviderVTable {
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
         filter_columns: Option<&[PlSmallStr]>,
+        statistics_columns: Option<&[PlSmallStr]>,
         pyarrow_predicate: Option<&str>,
         py_scan_resolve_threadpool: &PyScanResolveThreadPool,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>>,
@@ -66,12 +67,14 @@ impl PythonDatasetProvider {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn to_dataset_scan(
         &self,
         existing_resolved_version_key: Option<&str>,
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
         filter_columns: Option<&[PlSmallStr]>,
+        statistics_columns: Option<&[PlSmallStr]>,
         pyarrow_predicate: Option<&str>,
         py_scan_resolve_threadpool: &PyScanResolveThreadPool,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
@@ -81,6 +84,7 @@ impl PythonDatasetProvider {
             limit,
             projection,
             filter_columns,
+            statistics_columns,
             pyarrow_predicate,
             py_scan_resolve_threadpool,
         )

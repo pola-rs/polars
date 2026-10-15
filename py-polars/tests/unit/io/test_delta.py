@@ -4,7 +4,7 @@ import os
 import pickle
 import re
 import warnings
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -33,6 +33,8 @@ from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from tests.conftest import PlMonkeyPatch
 
 
@@ -104,10 +106,10 @@ def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
         os.utime(str(file_path), (dt_epoch, dt_epoch))
 
     df1 = pl.scan_delta(
-        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=timezone.utc)
+        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=UTC)
     ).collect()
     df2 = pl.scan_delta(
-        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=timezone.utc)
+        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=UTC)
     ).collect()
 
     assert_frame_equal(df1, df_sample)
@@ -201,12 +203,8 @@ def test_read_delta_timestamp_version(tmp_path: Path) -> None:
         file_path = log_dir / file_name
         os.utime(str(file_path), (dt_epoch, dt_epoch))
 
-    df1 = pl.read_delta(
-        str(tmp_path), version=datetime(2010, 1, 1, tzinfo=timezone.utc)
-    )
-    df2 = pl.read_delta(
-        str(tmp_path), version=datetime(2024, 1, 1, tzinfo=timezone.utc)
-    )
+    df1 = pl.read_delta(str(tmp_path), version=datetime(2010, 1, 1, tzinfo=UTC))
+    df2 = pl.read_delta(str(tmp_path), version=datetime(2024, 1, 1, tzinfo=UTC))
 
     assert_frame_equal(df1, df_sample)
     assert_frame_equal(df2, pl.concat([df_sample, df_sample2]), check_row_order=False)
@@ -1427,6 +1425,24 @@ def test_scan_delta_literal_filter_empty_df_27242(tmp_path: Path) -> None:
     assert_frame_equal(df, out)
 
 
+@pytest.mark.write_disk
+def test_scan_delta_use_pyarrow_float_literals(tmp_path: Path) -> None:
+    df = pl.DataFrame({"f": [1.0, 2.5, 1e20]})
+    df.write_delta(tmp_path)
+
+    # Floats are rendered as Python float literals, also when integral (`1.0`, `1e20`).
+    for predicate in [
+        pl.col("f").is_in([1.0, 1e20]),
+        pl.col("f") == 1e20,
+        pl.col("f") == 1.0,
+    ]:
+        assert_frame_equal(
+            pl.scan_delta(tmp_path, use_pyarrow=True).filter(predicate).collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
 def test_scan_delta_predicate_pushdown_struct_column_27857(tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
@@ -1678,3 +1694,123 @@ def test_scan_delta_resolves_heavy_footers_on_object_store(
         }
     finally:
         s3.server.shutdown()
+
+
+def join_structure(lf: pl.LazyFrame) -> list[str]:
+    return [
+        line.strip()
+        for line in lf.explain().splitlines()
+        if "JOIN" in line or "ON:" in line or "SCAN" in line
+    ]
+
+
+def small_build_side(*keys: int, key: str) -> pl.LazyFrame:
+    # Only a filtered build side publishes a runtime filter.
+    lf = pl.LazyFrame({key: list(keys), "e": list(range(len(keys)))})
+    return lf.filter(pl.col("e") >= 0)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_join_order_matches_parquet(tmp_path: Path) -> None:
+    n = 1000
+    frames = {
+        "a": pl.DataFrame({"k": [i % 5 for i in range(n)], "x": range(n)}),
+        "b": pl.DataFrame({"k": [i % 5 for i in range(n)], "y": range(n)}),
+        "d": pl.DataFrame({"k": range(5), "flag": [True] + 4 * [False]}),
+    }
+    for name, df in frames.items():
+        df.write_delta(tmp_path / name)
+    files = {name: DeltaTable(tmp_path / name).file_uris() for name in frames}
+
+    def query(scan: Callable[[str], pl.LazyFrame]) -> pl.LazyFrame:
+        return (
+            scan("a")
+            .join(scan("b"), on="k")
+            .join(scan("d").filter(pl.col("flag")), on="k")
+        )
+
+    delta = query(lambda name: pl.scan_delta(tmp_path / name))
+    parquet = query(lambda name: pl.scan_parquet(files[name]))
+
+    structure = join_structure(delta)
+    assert structure == join_structure(parquet)
+
+    # The filtered dimension is joined before the other fact.
+    plan = "\n".join(structure)
+    assert plan.index(files["d"][0]) < plan.index(files["b"][0])
+
+
+@pytest.mark.parametrize("renamed", [False, True])
+@pytest.mark.write_disk
+def test_scan_delta_runtime_join_filter(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    renamed: bool,
+) -> None:
+    # One file per append.
+    for i in range(3):
+        pl.DataFrame({"x": range(100 * i, 100 * i + 100), "f": range(100)}).write_delta(
+            tmp_path, mode="append"
+        )
+
+    # The table statistics hold `f`. They only hold `x` if the join key has its name.
+    probe = pl.scan_delta(tmp_path).filter(pl.col("f") >= 0)
+    if not renamed:
+        # The statistics of `x` skip a file.
+        probe = probe.filter(pl.col("x") < 200)
+    key = "k" if renamed else "x"
+    q = probe.rename({"x": key}).join(small_build_side(150, 160, key=key), on=key)
+    assert 'col("x").dynamic_predicate()' in q.explain(engine="streaming")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+
+    skipped = 0 if renamed else 1
+    assert f"allows skipping {skipped} / 3 files" in err
+    assert err.count("reading 0 / 1 row groups") == 2 - skipped
+    assert err.count("reading 1 / 1 row groups") == 1
+    assert_frame_equal(
+        out,
+        pl.DataFrame({key: [150, 160], "f": [50, 60], "e": [0, 1]}),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_runtime_join_filter_with_partition_predicate(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    for p in range(3):
+        pl.DataFrame({"x": range(100 * p, 100 * p + 100), "p": p}).write_delta(
+            tmp_path, mode="append", delta_write_options={"partition_by": "p"}
+        )
+
+    q = (
+        pl.scan_delta(tmp_path)
+        .filter(pl.col("p") >= 1)
+        .join(small_build_side(150, 160, key="x"), on="x")
+        .select("x", "e")
+    )
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    # The reader prunes row groups only with its capabilities.
+    plmonkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "0")
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+
+    # The partition predicate skips a file, and the reader still gets the runtime
+    # filter.
+    assert "allows skipping 1 / 3 files" in err
+    assert err.count("reading 0 / 1 row groups") == 1
+    assert err.count("reading 1 / 1 row groups") == 1
+    assert_frame_equal(
+        out, pl.DataFrame({"x": [150, 160], "e": [0, 1]}), check_row_order=False
+    )

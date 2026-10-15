@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars_buffer::Buffer;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
@@ -5,6 +7,7 @@ use super::RowGroupMetadata;
 use super::column_order::{ColumnOrder, ColumnOrderTag};
 use super::compact::{CompactColumnChunk, CompactFileMetaData, CompactRowGroup};
 use super::schema_descriptor::SchemaDescriptor;
+use crate::parquet::encryption::decrypt::{FileDecryptor, decrypt_column_metadata};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::get_sort_order;
 use crate::parquet::schema::types::ParquetType;
@@ -56,6 +59,10 @@ pub struct FileMetadata {
     /// this buffer; pass `&self.footer_buf` to
     /// [`super::ColumnChunkMetadata::statistics`] to materialise them.
     pub footer_buf: Buffer<u8>,
+    /// Decryptor to use for files encrypted with Parquet modular encryption
+    ///
+    /// Not serialized, so is always `None` after deserializing.
+    pub(crate) decryptor: Option<Arc<FileDecryptor>>,
 }
 
 impl FileMetadata {
@@ -91,6 +98,9 @@ impl FileMetadata {
     /// `key_value_metadata` are also dropped (not needed by the read hot
     /// path); `column_orders` is kept for the remaining leaves.
     ///
+    /// Metadata for encrypted files is returned unpruned, as decrypting column
+    /// chunks relies on each column's position in the full file schema.
+    ///
     /// Returns `Err` only when [`RowGroupMetadata::from_compact`] rejects
     /// the rebuilt row group (chunks-vs-leaves desync). Callers can fall
     /// back to unpruned metadata; the unpruned form is always valid.
@@ -103,6 +113,10 @@ impl FileMetadata {
         keep_top_level_names: &[polars_utils::pl_str::PlSmallStr],
         predicate_top_level_names: &[polars_utils::pl_str::PlSmallStr],
     ) -> ParquetResult<Self> {
+        if self.decryptor.is_some() {
+            return Ok(self.clone());
+        }
+
         // Column name → keep-stats flag. Names not in the map are pruned
         // entirely. O(1) lookup per chunk keeps this scalable to
         // wide-column workloads (10k+ columns × many row groups).
@@ -153,8 +167,8 @@ impl FileMetadata {
                     .filter_map(|c| {
                         let keep_stats = *keep.get(c.descriptor().path_in_schema[0].as_str())?;
                         let mut chunk = c.compact_column_chunk().clone();
-                        if !keep_stats {
-                            chunk.meta_data.statistics = None;
+                        if !keep_stats && let Some(meta_data) = &mut chunk.meta_data {
+                            meta_data.statistics = None;
                         }
                         Some(chunk)
                     })
@@ -167,7 +181,7 @@ impl FileMetadata {
                     sorting_columns: rg.sorting_columns().map(|sc| sc.to_vec()),
                 };
 
-                let md = RowGroupMetadata::from_compact(&pruned_schema, compact_rg)?;
+                let md = RowGroupMetadata::from_compact(&pruned_schema, compact_rg, None)?;
                 max_row_group_height = max_row_group_height.max(md.num_rows());
                 Ok(md)
             })
@@ -183,6 +197,7 @@ impl FileMetadata {
             schema_descr: pruned_schema,
             column_orders,
             footer_buf: self.footer_buf.clone(),
+            decryptor: self.decryptor.clone(),
         })
     }
 
@@ -190,29 +205,48 @@ impl FileMetadata {
     /// the hand-written Thrift decoder. Parses the schema, attaches each
     /// row group's chunks to the schema's descriptors, and stores the
     /// footer buffer at the file level for stats resolution.
+    /// If a [`FileDecryptor`] is provided, will also decrypt any encrypted
+    /// column chunks.
     ///
     /// Crate-internal: external callers go through
     /// [`crate::parquet::read::deserialize_metadata`] which combines the
     /// hand-written decoder with this constructor.
-    pub(crate) fn from_compact(compact: CompactFileMetaData) -> ParquetResult<Self> {
+    pub(crate) fn from_compact(
+        compact: CompactFileMetaData,
+        decryptor: Option<Arc<FileDecryptor>>,
+    ) -> ParquetResult<Self> {
         let CompactFileMetaData {
             version,
             schema,
             num_rows,
-            row_groups,
+            mut row_groups,
             key_value_metadata,
             created_by,
             column_orders,
-            footer_buf,
+            // Only needed to create the decryptor.
+            encryption_algorithm: _,
+            footer_signing_key_metadata: _,
+            mut footer_buf,
         } = compact;
 
         let schema_descr = SchemaDescriptor::try_from_thrift(&schema)?;
 
+        if let Some(decryptor) = &decryptor
+            && let Some(buf) =
+                decrypt_column_metadata(&mut row_groups, &footer_buf, &schema_descr, decryptor)?
+        {
+            // Replace footer buffer with one that has had decrypted column metadata appended.
+            // All referenced byte ranges point into this new buffer.
+            footer_buf = buf;
+        }
+
         let mut max_row_group_height = 0;
         let row_groups = row_groups
             .into_iter()
-            .map(|rg| {
-                let md = RowGroupMetadata::from_compact(&schema_descr, rg)?;
+            .enumerate()
+            .map(|(row_group_idx, rg)| {
+                let decryption = decryptor.as_ref().map(|d| (d, row_group_idx));
+                let md = RowGroupMetadata::from_compact(&schema_descr, rg, decryption)?;
                 max_row_group_height = max_row_group_height.max(md.num_rows());
                 Ok(md)
             })
@@ -230,6 +264,7 @@ impl FileMetadata {
             schema_descr,
             column_orders,
             footer_buf,
+            decryptor,
         })
     }
 }
@@ -317,7 +352,7 @@ mod tests {
 
     fn chunk(statistics: Option<CompactStatistics>) -> CompactColumnChunk {
         CompactColumnChunk {
-            meta_data: CompactColumnMetaData {
+            meta_data: Some(CompactColumnMetaData {
                 codec: Compression::Uncompressed,
                 num_values: 3,
                 total_uncompressed_size: 0,
@@ -328,11 +363,12 @@ mod tests {
                 statistics,
                 bloom_filter_offset: None,
                 bloom_filter_length: None,
-            },
+            }),
             offset_index_offset: None,
             offset_index_length: None,
             column_index_offset: None,
             column_index_length: None,
+            crypto: None,
         }
     }
 
@@ -367,7 +403,7 @@ mod tests {
             num_rows: 3,
             sorting_columns: None,
         };
-        let row_groups = vec![RowGroupMetadata::from_compact(&schema_descr, rg).unwrap()];
+        let row_groups = vec![RowGroupMetadata::from_compact(&schema_descr, rg, None).unwrap()];
         FileMetadata {
             version: 2,
             num_rows: 3,
@@ -378,6 +414,7 @@ mod tests {
             column_orders: orders.and_then(|o| parse_column_orders(o, &schema_descr)),
             schema_descr,
             footer_buf,
+            decryptor: None,
         }
     }
 

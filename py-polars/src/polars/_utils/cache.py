@@ -7,15 +7,10 @@ from typing import TYPE_CHECKING, Any, TypeVar, overload
 from polars._utils.various import NO_DEFAULT
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import ItemsView, Iterable, Iterator, KeysView, ValuesView
+    from typing import Self
 
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 D = TypeVar("D")
 K = TypeVar("K")

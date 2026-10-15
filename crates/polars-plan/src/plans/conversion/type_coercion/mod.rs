@@ -548,6 +548,7 @@ impl OptimizationRule for TypeCoercionRule {
                 })
             },
             // shift and fill should only cast left and fill value to super type.
+            // @3.0: Raise a type error instead of upcasting the input.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,
                 ref input,
@@ -615,7 +616,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 polars_ensure!(
                     (0.0..=1.0).contains(&ewm_options.alpha),
-                    ComputeError: "alpha must be in [0; 1]"
+                    ComputeError: "alpha must be in [0; 1], got {}", ewm_options.alpha
                 );
 
                 let input_expr = match &input.as_slice() {

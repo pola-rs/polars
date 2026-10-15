@@ -426,6 +426,13 @@ impl WindowExpr {
 // Utility to create partitions and cache keys
 pub fn window_function_format_order_by(to: &mut String, e: &Expr, k: &SortOptions) {
     write!(to, "_PL_{:?}{}_{}", e, k.descending, k.nulls_last).unwrap();
+    // The expression's format leaves out function options, such as the sort directions of a
+    // row encoding.
+    for e in e.into_iter() {
+        if let Expr::Function { function, .. } = e {
+            write!(to, "_{function:?}").unwrap();
+        }
+    }
 }
 
 impl PhysicalExpr for WindowExpr {
@@ -463,16 +470,17 @@ impl PhysicalExpr for WindowExpr {
 
         if df.height() == 0 {
             let field = self.phys_function.to_field(df.schema())?;
+            let dtype = field.dtype().clone().materialize_unknown(true)?;
             match self.mapping {
                 WindowMapping::Join => {
                     return Ok(Column::full_null(
                         field.name().clone(),
                         0,
-                        &DataType::List(Box::new(field.dtype().clone())),
+                        &DataType::List(Box::new(dtype)),
                     ));
                 },
                 _ => {
-                    return Ok(Column::full_null(field.name().clone(), 0, field.dtype()));
+                    return Ok(Column::full_null(field.name().clone(), 0, &dtype));
                 },
             }
         }

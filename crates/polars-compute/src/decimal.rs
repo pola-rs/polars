@@ -36,8 +36,8 @@ use polars_error::{PolarsResult, polars_ensure};
 pub const DEC128_MAX_PREC: usize = 38;
 
 pub fn dec128_verify_prec_scale(p: usize, s: usize) -> PolarsResult<()> {
-    polars_ensure!((1..=DEC128_MAX_PREC).contains(&p), InvalidOperation: "precision must be between 1 and 38");
-    polars_ensure!(s <= p, InvalidOperation: "scale must be less than or equal to precision");
+    polars_ensure!((1..=DEC128_MAX_PREC).contains(&p), InvalidOperation: "precision must be between 1 and 38, got {}", p);
+    polars_ensure!(s <= p, InvalidOperation: "scale must be less than or equal to precision, got scale {} and precision {}", s, p);
     Ok(())
 }
 

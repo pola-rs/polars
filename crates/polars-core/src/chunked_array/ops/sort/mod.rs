@@ -854,6 +854,8 @@ pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> Po
             maintain_order: sort_options.maintain_order,
             limit: sort_options.limit,
         }))
+    } else if let Some(limit) = sort_options.limit {
+        Ok(arg_bottom_k::_arg_bottom_k(limit as usize, columns, &mut sort_options)?.into_inner())
     } else if sort_options.nulls_last.iter().all(|&x| x)
         || columns.iter().any(|c| c.dtype().is_nested())
         || std::env::var("POLARS_ROW_FMT_SORT").is_ok()

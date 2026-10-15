@@ -193,6 +193,7 @@ fn from_fixed_len_byte_array(
         (None, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
             ArrowDataType::Decimal(precision, scale)
         },
+        (Some(PrimitiveLogicalType::Float16), _) if length == 2 => ArrowDataType::Float16,
         (None, Some(PrimitiveConvertedType::Interval)) => {
             ArrowDataType::Interval(IntervalUnit::MonthDayMillis)
         },

@@ -274,6 +274,8 @@ impl ReaderStarter {
                         panic!();
                     }
 
+                    let slice_end = pre_slice_this_file.as_ref().map(Slice::end_position);
+
                     let get_row_count = async {
                         let num_physical_rows =
                             reader.row_position_after_slice(pre_slice_this_file).await?;
@@ -301,7 +303,24 @@ impl ReaderStarter {
                     if let Some(n_rows_in_file) = n_rows_in_file
                         && cfg!(debug_assertions)
                     {
-                        assert_eq!(n_rows_in_file, get_row_count.await?)
+                        let row_count = get_row_count.await?;
+
+                        // `row_position_after_slice` may stop counting at the end of the slice
+                        // (external readers may also return a full count cached from an earlier
+                        // call), so it is only guaranteed to be the full row count if the slice
+                        // does not end inside this file. Advancing by either count is fine: if
+                        // the slice ends here, no rows of later files are read.
+                        if slice_end.is_none_or(|end| end >= n_rows_in_file.num_physical_rows()) {
+                            assert_eq!(n_rows_in_file, row_count)
+                        } else {
+                            let end = slice_end.unwrap();
+                            let n = row_count.num_physical_rows();
+                            assert!(
+                                (end..=n_rows_in_file.num_physical_rows()).contains(&n),
+                                "row_position_after_slice: {n}, slice end: {end}, \
+                                n_rows_in_file: {n_rows_in_file:?}"
+                            )
+                        }
                     } else {
                         n_rows_in_file = Some(get_row_count.await?)
                     }
@@ -447,16 +466,26 @@ async fn start_reader_impl(
         external_filter_mask,
     } = args_this_file;
 
-    let file_iceberg_schema: Option<IcebergSchema> =
-        if matches!(&file_projection_builder, ProjectionBuilder::Iceberg { .. }) {
-            reader
-                .file_arrow_schema()
-                .await?
-                .map(|x| IcebergSchema::from_arrow_schema(x.as_ref()))
-                .transpose()?
-        } else {
-            None
-        };
+    let file_iceberg_schema: Option<IcebergSchema> = if let ProjectionBuilder::Iceberg {
+        projected_iceberg_schema,
+        table_has_name_mapping,
+        ..
+    } = &file_projection_builder
+    {
+        reader
+            .file_arrow_schema()
+            .await?
+            .map(|x| {
+                IcebergSchema::from_arrow_schema_with_name_mapping(
+                    x.as_ref(),
+                    projected_iceberg_schema,
+                    *table_has_name_mapping,
+                )
+            })
+            .transpose()?
+    } else {
+        None
+    };
 
     let file_projection = file_projection_builder.build_projection(
         None,

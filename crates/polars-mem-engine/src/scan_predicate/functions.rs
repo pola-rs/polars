@@ -394,10 +394,14 @@ pub fn initialize_scan_predicate(
             );
         }
 
-        let statistics = table_statistics.0.as_ref();
+        let statistics = super::table_statistics::fill_missing_statistics(
+            table_statistics.0.as_ref(),
+            &predicate.live_columns,
+            skip_batch_predicate.schema(),
+        )?;
         #[cfg(feature = "dtype-categorical")]
         let statistics = super::table_statistics::normalize_enum_statistics(
-            statistics,
+            &statistics,
             skip_batch_predicate.schema(),
         )?;
         let stats_exclusion_bitmap = skip_batch_predicate.evaluate_with_stat_df(&statistics)?;
@@ -691,6 +695,7 @@ where
         DefaultFieldValues::Iceberg(v) => {
             let IcebergDefaultFieldValues {
                 identity_transformed_partition_fields,
+                identity_partition_present,
                 initial_defaults,
             } = v.as_ref();
 
@@ -725,10 +730,25 @@ where
                 );
             }
 
+            // Sources past the end of a mask become null (not present).
+            let new_identity_partition_present = identity_partition_present
+                .iter()
+                .map(|(k, present)| {
+                    let indices = gather_indices.entry(present.len()).or_insert_with(|| {
+                        selected_path_indices
+                            .clone()
+                            .map(|i| (i < present.len()).then(|| IdxSize::try_from(i).unwrap()))
+                            .collect::<IdxCa>()
+                    });
+                    (*k, unsafe { present.take_unchecked(indices) })
+                })
+                .collect();
+
             DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
                 identity_transformed_partition_fields: PlIndexMapHashable(
                     new_identity_transformed_partition_fields,
                 ),
+                identity_partition_present: PlIndexMapHashable(new_identity_partition_present),
                 initial_defaults: initial_defaults.clone(),
             }))
         },

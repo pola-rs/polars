@@ -40,7 +40,8 @@ use crate::physical_plan::lower_group_by::{
     GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
 };
 use crate::physical_plan::lower_ir::{
-    build_filter_stream_with_ctx, build_row_idx_stream, build_slice_stream,
+    add_row_idx_sort_key, build_filter_stream_with_ctx, build_row_idx_stream, build_slice_stream,
+    build_top_k_stream,
 };
 use crate::unique_column_name;
 
@@ -1978,10 +1979,9 @@ fn lower_exprs_with_ctx(
                 let select_stream =
                     build_select_stream_with_ctx(input, std::slice::from_ref(&inner_expr_ir), ctx)?;
                 let col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
-                let sort_stream = build_sort_stream_with_ctx(
+                let sort_stream = build_limited_sort_stream_with_ctx(
                     select_stream,
                     vec![ExprIR::new(col_expr, OutputName::Alias(sorted_name))],
-                    None,
                     (&options).into(),
                     ctx,
                 )?;
@@ -2014,8 +2014,12 @@ fn lower_exprs_with_ctx(
                         )
                     })
                     .collect();
-                let sort_stream =
-                    build_sort_stream_with_ctx(select_stream, by_column, None, sort_options, ctx)?;
+                let sort_stream = build_limited_sort_stream_with_ctx(
+                    select_stream,
+                    by_column,
+                    sort_options,
+                    ctx,
+                )?;
 
                 let sorted_col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
                 input_streams.insert(sort_stream);
@@ -2287,8 +2291,8 @@ fn lower_exprs_with_ctx(
                         | IRBooleanFunction::IsEmpty { .. }
                         | IRBooleanFunction::HasNulls,
                     )
-                    | IRFunctionExpr::MinBy
-                    | IRFunctionExpr::MaxBy
+                    | IRFunctionExpr::MinBy { .. }
+                    | IRFunctionExpr::MaxBy { .. }
                     | IRFunctionExpr::NullCount,
                 ..
             } => {
@@ -2509,9 +2513,13 @@ fn lower_exprs_with_ctx(
                 let idx_builder = AExprBuilder::col(idx_name.clone(), ctx.expr_arena);
                 let col_builder = AExprBuilder::col(col_name.clone(), ctx.expr_arena);
                 let min_max_by_node = if func == IRFunctionExpr::ArgMin {
-                    idx_builder.min_by(col_builder, ctx.expr_arena).node()
+                    idx_builder
+                        .min_by(col_builder, MinMaxByOrder::SkipNulls, ctx.expr_arena)
+                        .node()
                 } else {
-                    idx_builder.max_by(col_builder, ctx.expr_arena).node()
+                    idx_builder
+                        .max_by(col_builder, MinMaxByOrder::SkipNulls, ctx.expr_arena)
+                        .node()
                 };
 
                 let (trans_stream, trans_node) =
@@ -3258,6 +3266,39 @@ pub(crate) fn build_sort_stream_with_ctx(
         stream = build_select_stream_with_ctx(stream, &output_exprs, ctx)?;
     }
     Ok(stream)
+}
+
+/// As [`build_sort_stream_with_ctx`], but if the sort has a limit, a top-k node first drops the
+/// rows after the limit.
+fn build_limited_sort_stream_with_ctx(
+    mut input: PhysStream,
+    mut by_column: Vec<ExprIR>,
+    mut sort_options: SortMultipleOptions,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<PhysStream> {
+    if let Some(limit) = sort_options.limit {
+        if sort_options.maintain_order {
+            input = add_row_idx_sort_key(
+                input,
+                &mut by_column,
+                &mut sort_options,
+                ctx.expr_arena,
+                ctx.phys_sm,
+            );
+        }
+        #[allow(clippy::unnecessary_cast)]
+        let k = limit as u64;
+        input = build_top_k_stream(
+            input,
+            by_column.clone(),
+            &sort_options,
+            k,
+            None,
+            ctx.expr_arena,
+            ctx.phys_sm,
+        );
+    }
+    build_sort_stream_with_ctx(input, by_column, None, sort_options, ctx)
 }
 
 /// Builds a sort node given an input stream and the columns to sort by.

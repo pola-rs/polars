@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 def _frames() -> dict[str, pl.DataFrame]:
@@ -759,10 +760,14 @@ def _counting_source(
     return register_io_source(source, schema=df.schema, is_pure=True)
 
 
-def test_correlated_aggregate_unknown_outer_size_not_restricted() -> None:
+def test_correlated_aggregate_unknown_outer_size_not_restricted(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
     # A source without a row count could be arbitrarily large, so the aggregate
     # is not restricted to its keys: caching it would read it whole before a
     # LIMIT could stop it.
+    # The join may sample this many rows of the outer before the LIMIT applies.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1000")
     outer = pl.DataFrame({"k": range(2_000_000), "s": range(2_000_000)})
     yielded = 0
 

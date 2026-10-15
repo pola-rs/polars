@@ -1,28 +1,34 @@
 use std::str::FromStr;
 
-#[cfg(any(
-    feature = "csv",
-    feature = "parquet",
-    feature = "ipc",
-    feature = "json"
-))]
-use polars_core::prelude::polars_ensure;
-use polars_core::prelude::{PolarsError, PolarsResult, polars_bail};
+#[cfg(feature = "csv")]
+use polars_core::prelude::PlSmallStr;
+use polars_core::prelude::{
+    DataFrame, ExplodeOptions, PolarsError, PolarsResult, polars_bail, polars_ensure,
+};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
-use polars_lazy::prelude::LazyFrame;
+use polars_lazy::prelude::{IntoLazy, LazyFrame};
+use polars_plan::utils::expr_to_leaf_column_names_iter;
 use polars_utils::pl_path::PlRefPath;
 use sqlparser::ast::{
     Expr as SQLExpr, FunctionArg as SQLFunctionArg, FunctionArgExpr as SQLFunctionArgExpr,
     Value as SQLValue, ValueWithSpan as SQLValueWithSpan,
 };
 
+use crate::SQLContext;
+use crate::context::SubqueryShape;
+use crate::functions::series_expr;
+use crate::sql_expr::parse_sql_expr;
+#[cfg(feature = "csv")]
+use crate::table_function_args::{DtypeOverrides, StringValues, TableFunctionOptions};
+
 /// Table functions that are supported by Polars
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum PolarsTableFunctions {
-    /// SQL 'read_csv' function.
+    /// SQL 'read_csv' function, with optional named options as in Python's `scan_csv`.
     /// ```sql
     /// SELECT * FROM read_csv('path/to/file.csv')
+    /// SELECT * FROM read_csv('path/to/file.csv', has_header => false, separator => ';')
     /// ```
     #[cfg(feature = "csv")]
     ReadCsv,
@@ -44,6 +50,17 @@ pub(crate) enum PolarsTableFunctions {
     /// ```
     #[cfg(feature = "json")]
     ReadJson,
+    /// SQL 'generate_series' function (stop included).
+    /// ```sql
+    /// SELECT * FROM generate_series(1, 10, 2)
+    /// SELECT * FROM generate_series(DATE '2026-01-01', DATE '2026-01-31', INTERVAL '1 day')
+    /// ```
+    GenerateSeries,
+    /// SQL 'range' function (stop not included).
+    /// ```sql
+    /// SELECT * FROM range(0, 10, 2)
+    /// ```
+    Range,
 }
 
 impl FromStr for PolarsTableFunctions {
@@ -60,37 +77,175 @@ impl FromStr for PolarsTableFunctions {
             "read_ipc" => PolarsTableFunctions::ReadIpc,
             #[cfg(feature = "json")]
             "read_json" => PolarsTableFunctions::ReadJson,
+            "generate_series" => PolarsTableFunctions::GenerateSeries,
+            "range" => PolarsTableFunctions::Range,
             _ => polars_bail!(SQLInterface: "'{}' is not a supported table function", s),
         })
     }
 }
 
 impl PolarsTableFunctions {
-    #[allow(unused_variables, unreachable_patterns)]
-    pub(crate) fn execute(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
-        match self {
+    #[allow(unreachable_code)]
+    pub(crate) fn execute(
+        &self,
+        args: &[SQLFunctionArg],
+        ctx: &mut SQLContext,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        let (path, lf): (PlRefPath, LazyFrame) = match self {
             #[cfg(feature = "csv")]
-            PolarsTableFunctions::ReadCsv => self.read_csv(args),
+            PolarsTableFunctions::ReadCsv => self.read_csv(args)?,
             #[cfg(feature = "parquet")]
-            PolarsTableFunctions::ReadParquet => self.read_parquet(args),
+            PolarsTableFunctions::ReadParquet => self.read_parquet(args)?,
             #[cfg(feature = "ipc")]
-            PolarsTableFunctions::ReadIpc => self.read_ipc(args),
+            PolarsTableFunctions::ReadIpc => self.read_ipc(args)?,
             #[cfg(feature = "json")]
-            PolarsTableFunctions::ReadJson => self.read_ndjson(args),
-            _ => unreachable!(),
-        }
+            PolarsTableFunctions::ReadJson => self.read_ndjson(args)?,
+            PolarsTableFunctions::GenerateSeries => return self.series(args, ctx, true),
+            PolarsTableFunctions::Range => return self.series(args, ctx, false),
+        };
+        Ok((path.to_string(), lf))
+    }
+
+    fn series(
+        &self,
+        args: &[SQLFunctionArg],
+        ctx: &mut SQLContext,
+        include_end: bool,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        let fname = if include_end {
+            "generate_series"
+        } else {
+            "range"
+        };
+        let args = args
+            .iter()
+            .map(|arg| match arg {
+                SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(e)) => Ok(e),
+                _ => polars_bail!(SQLSyntax: "`{}` expects positional arguments; found {}", fname, arg),
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let mut expr = series_expr(fname, &args, include_end, |e| {
+            let expr = parse_sql_expr(e, ctx, None)?;
+            polars_ensure!(
+                expr_to_leaf_column_names_iter(&expr).next().is_none(),
+                SQLInterface: "`{}` in FROM takes only constant arguments; use UNNEST({}(...)) in the SELECT list for a series per row", fname, fname
+            );
+            Ok(expr)
+        })?;
+        let (lf, _) = ctx.process_subqueries(
+            DataFrame::empty_with_height(1).lazy(),
+            vec![&mut expr],
+            SubqueryShape::Scalar,
+        )?;
+        let lf = lf.select([expr
+            .explode(ExplodeOptions {
+                empty_as_null: false,
+                keep_nulls: false,
+            })
+            .alias(fname)]);
+        Ok((fname.to_string(), lf))
     }
 
     #[cfg(feature = "csv")]
     fn read_csv(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
-        polars_ensure!(args.len() == 1, SQLSyntax: "`read_csv` expects a single file path; found {:?} arguments", args.len());
+        use std::sync::Arc;
 
+        use polars_io::csv::read::{CsvEncoding, NullValues};
         use polars_lazy::frame::LazyFileListReader;
-        let path = self.get_file_path_from_arg(&args[0])?;
-        let lf = LazyCsvReader::new(path.clone())
-            .with_try_parse_dates(true)
-            .with_missing_is_null(true)
-            .finish()?;
+
+        let (path_arg, options) = TableFunctionOptions::parse(
+            "read_csv",
+            args,
+            READ_CSV_OPTIONS,
+            READ_CSV_EXCLUDED_OPTIONS,
+        )?;
+        let path = self.get_file_path_from_arg(path_arg)?;
+
+        let has_header = options.bool("has_header")?.unwrap_or(true);
+        let schema = options.schema("schema")?;
+        let mut reader = LazyCsvReader::new(path.clone())
+            .with_has_header(has_header)
+            .with_try_parse_dates(options.bool("try_parse_dates")?.unwrap_or(true))
+            // As in Python: an empty file only errors when there is no schema to return.
+            .with_raise_if_empty(schema.is_none() || has_header)
+            .with_schema(schema.map(Arc::new));
+
+        if let Some(separator) = options.byte("separator")? {
+            reader = reader.with_separator(separator);
+        }
+        if let Some(quote_char) = options.nullable_byte("quote_char")? {
+            reader = reader.with_quote_char(quote_char);
+        }
+        if let Some(prefix) = options.nullable_string("comment_prefix")? {
+            reader = reader.with_comment_prefix(prefix.map(PlSmallStr::from));
+        }
+        if let Some(n) = options.usize("skip_rows")? {
+            reader = reader.with_skip_rows(n);
+        }
+        if let Some(n) = options.usize("skip_rows_after_header")? {
+            reader = reader.with_skip_rows_after_header(n);
+        }
+        if let Some(n) = options.usize("skip_lines")? {
+            reader = reader.with_skip_lines(n);
+        }
+        if let Some(encoding) = options.string("encoding")? {
+            reader = reader.with_encoding(match encoding.to_lowercase().as_str() {
+                "utf8" => CsvEncoding::Utf8,
+                "utf8-lossy" => CsvEncoding::LossyUtf8,
+                _ => polars_bail!(
+                    SQLSyntax: "`read_csv` option 'encoding' expects 'utf8' or 'utf8-lossy'; found: '{}'", encoding
+                ),
+            });
+        }
+        if let Some(names) = options.strings("new_columns")? {
+            let names: Vec<PlSmallStr> = names.into_iter().map(PlSmallStr::from).collect();
+            reader = reader.with_column_names_overwrite(names.into());
+        }
+        match options.dtype_overrides("schema_overrides")? {
+            Some(DtypeOverrides::ByName(schema)) => {
+                reader = reader.with_dtype_overwrite(Some(Arc::new(schema)));
+            },
+            Some(DtypeOverrides::ByPosition(dtypes)) => {
+                reader = reader.with_dtype_overwrite_by_position(Some(Arc::new(dtypes)));
+            },
+            None => {},
+        }
+        if let Some(n) = options.nullable_usize("infer_schema_length")? {
+            reader = reader.with_infer_schema_length(n);
+        }
+        // As in Python: `infer_schema => false` reads every column as a string.
+        if options.bool("infer_schema")? == Some(false) {
+            reader = reader.with_infer_schema_length(Some(0));
+        }
+        if let Some(decimal_comma) = options.bool("decimal_comma")? {
+            reader = reader.with_decimal_comma(decimal_comma);
+        }
+        let null_values = options
+            .string_values("null_values")?
+            .map(|values| match values {
+                StringValues::One(value) => NullValues::AllColumnsSingle(value.into()),
+                StringValues::List(values) => {
+                    NullValues::AllColumns(values.into_iter().map(Into::into).collect())
+                },
+                StringValues::Dict(pairs) => NullValues::Named(
+                    pairs
+                        .into_iter()
+                        .map(|(k, v)| (k.into(), v.into()))
+                        .collect(),
+                ),
+            });
+        reader = reader.with_null_values(null_values);
+        if let Some(ignore_errors) = options.bool("ignore_errors")? {
+            reader = reader.with_ignore_errors(ignore_errors);
+        }
+        if let Some(truncate) = options.bool("truncate_ragged_lines")? {
+            reader = reader.with_truncate_ragged_lines(truncate);
+        }
+        if let Some(column) = options.string("include_file_paths")? {
+            reader = reader.with_include_file_paths(Some(column.into()));
+        }
+
+        let lf = reader.finish()?;
         Ok((path, lf))
     }
 
@@ -128,7 +283,7 @@ impl PolarsTableFunctions {
         match arg {
             SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(SQLExpr::Value(
                 SQLValueWithSpan {
-                    value: SQLValue::SingleQuotedString(s),
+                    value: SQLValue::SingleQuotedString(s) | SQLValue::EscapedStringLiteral(s),
                     ..
                 },
             ))) => Ok(PlRefPath::new(s)),
@@ -139,6 +294,58 @@ impl PolarsTableFunctions {
         }
     }
 }
+
+/// Named options of `read_csv`: the stable options of Python's `scan_csv` that SQL can express.
+#[cfg(feature = "csv")]
+const READ_CSV_OPTIONS: &[&str] = &[
+    "has_header",
+    "separator",
+    "quote_char",
+    "comment_prefix",
+    "skip_rows",
+    "skip_rows_after_header",
+    "skip_lines",
+    "encoding",
+    "new_columns",
+    "schema",
+    "schema_overrides",
+    "infer_schema",
+    "infer_schema_length",
+    "try_parse_dates",
+    "decimal_comma",
+    "null_values",
+    "ignore_errors",
+    "truncate_ragged_lines",
+    "include_file_paths",
+];
+
+/// Options of Python's `scan_csv` that `read_csv` does not accept, with what to do instead.
+#[cfg(feature = "csv")]
+const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
+    (
+        "missing_columns",
+        "it is unstable; for rows of different widths, use infer_schema_length => NULL",
+    ),
+    ("extra_columns", "it is unstable"),
+    ("infer_schema_files", "it is unstable"),
+    (
+        "credential_provider",
+        "cloud credentials are read from the environment",
+    ),
+    (
+        "storage_options",
+        "cloud credentials are read from the environment",
+    ),
+    ("with_column_names", "use new_columns"),
+    ("n_rows", "use LIMIT, which is pushed down into the scan"),
+    ("low_memory", ""),
+    ("eol_char", ""),
+    ("raise_if_empty", ""),
+    ("glob", ""),
+    ("empty_string_is_null", ""),
+    ("row_index_name", ""),
+    ("row_index_offset", ""),
+];
 
 impl PolarsTableFunctions {
     // list sql names of all table functions
@@ -152,6 +359,8 @@ impl PolarsTableFunctions {
             "read_ipc",
             #[cfg(feature = "json")]
             "read_json",
+            "generate_series",
+            "range",
         ]
     }
 }

@@ -8,7 +8,7 @@ use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
+use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -19,6 +19,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 use crate::nodes::io_sources::ndjson::NDJsonFileReader;
 use crate::nodes::io_sources::ndjson::builder::ndjson_reader_capabilities;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;
+use crate::nodes::io_sources::shared::file_init::CLOUD_PRE_INIT_LIMIT;
 
 pub struct LineReaderBuilder {
     pub prefetch_limit: RelaxedCell<usize>,
@@ -84,6 +85,10 @@ impl FileReaderBuilder for LineReaderBuilder {
         self.io_metrics.set(io_metrics).ok().unwrap()
     }
 
+    fn preferred_remote_pre_init(&self) -> Option<usize> {
+        Some(CLOUD_PRE_INIT_LIMIT)
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,
@@ -91,7 +96,7 @@ impl FileReaderBuilder for LineReaderBuilder {
         _scan_source_idx: usize,
     ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
-        use crate::nodes::io_sources::ndjson::ChunkPrefetchSync;
+        use crate::nodes::io_sources::shared::file_init::ChunkPrefetchSync;
 
         let scan_source = source;
         let chunk_reader_builder = ChunkReaderBuilder::Lines;
@@ -107,28 +112,9 @@ impl FileReaderBuilder for LineReaderBuilder {
             } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
             } else {
-                let read_context = self.file_read_context.get_or_init(|| {
-                    let cfg = polars_config::config();
-                    let enable_o_direct = cfg.direct_io();
-                    let concurrency = cfg.file_read_concurrency().max(1) as usize;
-                    let fadv = cfg.file_posix_fadv();
-
-                    if verbose {
-                        eprintln!(
-                            "[LineReaderBuilder]: file read_context as configured: \
-                                read_concurrency: {concurrency}, \
-                                posix_fadv: {fadv}, \
-                                o_direct: {enable_o_direct}"
-                        );
-                    }
-
-                    FileReadContext {
-                        enable_o_direct,
-                        concurrency,
-                        permits: byte_source::global_read_permits(),
-                        advice: fadv,
-                    }
-                });
+                let read_context = self
+                    .file_read_context
+                    .get_or_init(|| FileReadContext::from_config("LineReaderBuilder"));
                 DynByteSourceBuilder::FilePread(read_context.clone())
             };
 

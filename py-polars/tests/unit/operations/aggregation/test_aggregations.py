@@ -1594,7 +1594,6 @@ def test_item_too_many(df: pl.DataFrame) -> None:
     df=dataframes(
         min_size=1,
         max_size=1,
-        allow_null=False,
         excluded_dtypes=[
             # TODO: polars/#24936
             pl.Struct,
@@ -1606,6 +1605,28 @@ def test_item_on_groups(df: pl.DataFrame) -> None:
     q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).item())
     assert_frame_equal(q.collect(), df)
     assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+@pytest.mark.parametrize("value", [2.0, "x", True])
+def test_item_on_groups_null_29780(value: Any) -> None:
+    dtype = pl.Series([value]).dtype
+    df = pl.DataFrame({"g": [1, 2], "a": [None, value]})
+
+    q = df.lazy().group_by("g").agg(pl.col("a").item()).sort("g")
+    assert_frame_equal(q.collect(), df)
+
+    q = df.lazy().select(pl.col("a").item().over("g"))
+    assert_frame_equal(q.collect(), df.select("a"))
+
+    for values, allow_empty, expected in [
+        ([None, value], False, "a single value"),
+        ([None, None], True, "no or a single value"),
+    ]:
+        lf = pl.LazyFrame({"g": [1, 1], "a": values}, schema_overrides={"a": dtype})
+        q = lf.group_by("g").agg(pl.col("a").item(allow_empty=allow_empty))
+        match = f"aggregation 'item' expected {expected}, got 2 values"
+        with pytest.raises(ComputeError, match=match):
+            q.collect()
 
 
 def test_item_on_groups_empty() -> None:
@@ -1942,6 +1963,63 @@ def test_min_max_by_all_null_by_group(agg: Callable[..., pl.Expr]) -> None:
         .collect(engine="streaming")
     )
     assert_frame_equal(streaming, expected)
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+@pytest.mark.parametrize(
+    "by",
+    [
+        pl.Series([float("nan")] * 2),
+        pl.Series([0] * 2, dtype=pl.UInt8),
+        pl.Series([-128] * 2, dtype=pl.Int8),
+        pl.Series([127] * 2, dtype=pl.Int8),
+        pl.Series([""] * 2),
+    ],
+)
+def test_min_max_by_extreme_keys_29760(
+    agg: Callable[..., pl.Expr], by: pl.Series
+) -> None:
+    lf = pl.LazyFrame({"v": [1, 1], "by": by})
+    out = lf.select(agg(pl.col("v"), pl.col("by"))).collect()
+    assert_frame_equal(out, pl.DataFrame({"v": [1]}))
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+def test_min_max_by_scalar_inputs_29760(agg: Callable[..., pl.Expr]) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2, 2], "a": list(range(5))})
+    a = pl.col("a")
+
+    def select(e: pl.Expr, lf: pl.LazyFrame = lf) -> Any:
+        return lf.select(e).collect().item()
+
+    def agg_by_group(e: pl.Expr) -> list[Any]:
+        q = lf.group_by("g", maintain_order=True).agg(e)
+        return q.collect()["a"].to_list()
+
+    # A scalar `by` ties every row, so any row of the input may be returned.
+    assert select(agg(a, pl.lit(1))) in range(5)
+    assert select(agg(a, a.max())) in range(5)
+    assert select(agg(a, pl.lit(None, pl.Int64))) is None
+    first, second = agg_by_group(agg(a, a.max()))
+    assert first in range(3)
+    assert second in range(3, 5)
+    assert agg_by_group(agg(a, pl.lit(None, pl.Int64))) == [None, None]
+
+    # A scalar value is the result whenever `by` has a non-null key.
+    assert select(agg(pl.lit(7), a).alias("a")) == 7
+    assert select(agg(a.max(), a)) == 4
+    assert select(agg(pl.lit(7), a), lf.clear()) is None
+    assert agg_by_group(agg(pl.lit(7), a).alias("a")) == [7, 7]
+    assert agg_by_group(agg(a.max(), a)) == [2, 4]
+
+    # A unit-length group of a non-scalar expression is not broadcast.
+    for e in [agg(a, a.head(1)), agg(a.head(1), a)]:
+        with pytest.raises(pl.exceptions.ShapeError):
+            agg_by_group(e)
+
+    # The rolling kernel can't gather a scalar value with the key's positions.
+    q = lf.rolling("a", period="3i").agg(agg(pl.col("g").sum(), a).alias("s"))
+    assert q.collect()["s"].to_list() == [1, 2, 3, 4, 5]
 
 
 @pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])

@@ -402,8 +402,12 @@ fn aexpr_slice_pushdown_top(
     )
     .unwrap();
 
-    if let AExpr::Column(_) | AExpr::Len = ae {
-        *col_hit_count = col_hit_count.map(|x| x + 1);
+    match ae {
+        AExpr::Column(_) | AExpr::Len => *col_hit_count = col_hit_count.map(|x| x + 1),
+        // A window runs its function per group and keeps the frame height, so it needs all
+        // rows of the frame.
+        AExpr::Over { .. } => *col_hit_count = None,
+        _ => {},
     }
 
     let len_cmp_slice = len_cmp_head_slice(ae, expr_arena)

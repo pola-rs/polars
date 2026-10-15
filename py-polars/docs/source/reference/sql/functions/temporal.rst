@@ -10,6 +10,8 @@ Temporal
 
    * - :ref:`DATE_PART <date_part>`
      - Extracts a part of a date (or datetime) such as 'year', 'month', etc.
+   * - :ref:`DATE_TRUNC <date_trunc>`
+     - Truncates a date (or datetime) to the given part, such as 'hour' or 'month'.
    * - :ref:`EXTRACT <extract>`
      - Offers the same functionality as `DATE_PART` with slightly different syntax.
    * - :ref:`STRFTIME <strftime>`
@@ -127,6 +129,34 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     # │ 2026-07-12 10:23:59.999999 ┆ 2026 ┆ 7     ┆ 12  ┆ 59999.999 │
     # │ 2077-02-10 18:10:15.654321 ┆ 2077 ┆ 2     ┆ 10  ┆ 15654.321 │
     # └────────────────────────────┴──────┴───────┴─────┴───────────┘
+
+.. _date_trunc:
+
+DATE_TRUNC
+----------
+Truncates a date (or datetime) to the given part. Supported parts are 'microsecond',
+'millisecond', 'second', 'minute', 'hour', 'day', 'week' (starts on Monday), 'month',
+'quarter' and 'year' (plural forms are also accepted). A date is returned as a timestamp.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {"dt": [datetime(2024, 5, 17, 13, 45, 30), datetime(2024, 11, 3, 8, 5, 0)]}
+    )
+    df.sql("""
+      SELECT dt, DATE_TRUNC('hour', dt) AS hour, DATE_TRUNC('month', dt) AS month FROM self
+    """)
+    # shape: (2, 3)
+    # ┌─────────────────────┬─────────────────────┬─────────────────────┐
+    # │ dt                  ┆ hour                ┆ month               │
+    # │ ---                 ┆ ---                 ┆ ---                 │
+    # │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        │
+    # ╞═════════════════════╪═════════════════════╪═════════════════════╡
+    # │ 2024-05-17 13:45:30 ┆ 2024-05-17 13:00:00 ┆ 2024-05-01 00:00:00 │
+    # │ 2024-11-03 08:05:00 ┆ 2024-11-03 08:00:00 ┆ 2024-11-01 00:00:00 │
+    # └─────────────────────┴─────────────────────┴─────────────────────┘
 
 .. _extract:
 

@@ -2294,3 +2294,64 @@ def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows(dead: pl.Expr) -> No
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("method", ["select", "with_columns"])
+def test_cspe_filter_on_redefined_column_not_pushed_into_cache_29788(
+    engine: EngineType, method: str
+) -> None:
+    base = pl.LazyFrame(
+        {"c": ["a", "b"], "d": ["x", "y"], "e": [1, 2], "v": [1, 2], "w": [3, 4]}
+    ).filter(pl.col("e") > 0)
+
+    def proj(v: str) -> pl.LazyFrame:
+        # Redefines "c" in terms of the original "c".
+        exprs = [(pl.col("c") + pl.col("d")).alias("c"), pl.col(v).alias("x")]
+        if method == "select":
+            lf = base.select(exprs)
+        else:
+            lf = base.with_columns(exprs)
+        return lf.select("c", "x")
+
+    q = pl.concat([proj("v"), proj("w")]).filter(pl.col("c") == "ax")
+
+    expected = pl.DataFrame({"c": ["ax", "ax"], "x": [1, 3]})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("method", ["select", "with_columns"])
+def test_cse_scalar_multichunk_projection_29902(method: str) -> None:
+    # The first chunk must be large enough to trigger chunk-wise evaluation.
+    n = 2 * pl.thread_pool_size() + 10
+    df = pl.concat(
+        [pl.DataFrame({"x": range(n)}), pl.DataFrame({"x": [n]})], rechunk=False
+    )
+    assert df.n_chunks() == 2
+
+    exprs = {"a": pl.col("x") + pl.col("x").sum(), "b": pl.col("x").sum()}
+    lf = df.lazy()
+    q = lf.select(**exprs) if method == "select" else lf.with_columns(**exprs)
+
+    total = sum(range(n + 1))
+    expected = pl.DataFrame(
+        {"a": [x + total for x in range(n + 1)], "b": [total] * (n + 1)}
+    )
+    if method == "with_columns":
+        expected = pl.concat([df.rechunk(), expected], how="horizontal")
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+def test_cse_group_by_scalar_28653() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "j": [1, 2, 3]})
+    lit = pl.lit(-1.5).abs()
+
+    q = lf.group_by("g", maintain_order=True).agg(a=lit, b=lit)
+    expected = pl.DataFrame({"g": [1, 2], "a": [1.5, 1.5], "b": [1.5, 1.5]})
+    out = q.collect()
+    assert_frame_equal(out, expected)
+    assert out.schema == q.collect_schema()
+
+    q = lf.group_by("g", maintain_order=True).agg(c=pl.col("j") + lit, d=lit)
+    expected = pl.DataFrame({"g": [1, 2], "c": [[2.5, 3.5], [4.5]], "d": [1.5, 1.5]})
+    assert_frame_equal(q.collect(), expected)
