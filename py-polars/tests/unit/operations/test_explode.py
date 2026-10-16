@@ -775,3 +775,10 @@ def test_explode_agg_chained_29993() -> None:
         .sort("k")
     )
     assert out["a"].to_list() == [["x", "z"], ["y"]]
+
+
+def test_list_agg_explode_30023() -> None:
+    s = pl.Series([[[]], [[1, 2]], [None, [3]]], dtype=pl.List(pl.List(pl.Int64)))
+    expected = [[], [1, 2], [None, 3]]
+    assert s.list.agg(pl.element().explode()).to_list() == expected
+    assert s.list.eval(pl.element().explode()).to_list() == expected
