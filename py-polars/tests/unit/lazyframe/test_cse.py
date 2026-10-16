@@ -323,9 +323,9 @@ def test_cse_group_by_10215() -> None:
         (pl.col("a").sum() * pl.col("a").sum()).alias("x"),
         (pl.col("b").sum() * pl.col("b").sum()).alias("y"),
         (pl.col("a").sum() * pl.col("a").sum()).alias("x2"),
-        ((pl.col("a") + 2).sum() * pl.col("a").sum()).alias("x3"),
-        ((pl.col("a") + 2).sum() * pl.col("b").sum()).alias("x4"),
-        ((pl.col("a") + 2).sum() * pl.col("b").sum()),
+        ((pl.col("a") * 2).sum() * pl.col("a").sum()).alias("x3"),
+        ((pl.col("a") * 2).sum() * pl.col("b").sum()).alias("x4"),
+        ((pl.col("a") * 2).sum() * pl.col("b").sum()),
     )
 
     assert "__POLARS_CSER" in result.explain(
@@ -337,9 +337,9 @@ def test_cse_group_by_10215() -> None:
             "x": [1],
             "y": [1],
             "x2": [1],
-            "x3": [3],
-            "x4": [3],
-            "a": [3],
+            "x3": [2],
+            "x4": [2],
+            "a": [2],
         }
     )
     assert_frame_equal(
