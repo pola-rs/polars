@@ -312,7 +312,7 @@ fn trace_probe_keys(
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));
-        let (dyn_node, pred) = new_dynamic_pred(column, expr_arena);
+        let (dyn_node, pred) = new_dynamic_pred(column, expr_arena, None);
         let predicate = ExprIR::from_node(dyn_node, expr_arena);
         let origins = scan_origins(probe_input, predicate, ir_arena, expr_arena, scratch);
         if !origins.is_empty() {

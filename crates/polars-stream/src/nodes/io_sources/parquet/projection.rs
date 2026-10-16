@@ -87,7 +87,6 @@ impl ArrowFieldProjection {
         }
     }
 
-    #[expect(unused)]
     pub fn output_dtype(&self) -> Cow<'_, DataType> {
         match self {
             Self::Plain(field) => Cow::Owned(DataType::from_arrow_field(field)),
