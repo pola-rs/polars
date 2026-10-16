@@ -22,7 +22,7 @@ use polars_arrow::array::{
     self, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray, NullArray, StaticArray,
     Utf8ViewArray, new_empty_array,
 };
-use polars_arrow::datatypes::{ArrowDataType, IdxArr};
+use polars_arrow::datatypes::{ArrowDataType, IdxArr, PhysicalType, PrimitiveType};
 use polars_arrow::types::Index;
 
 pub mod binary;
@@ -83,6 +83,44 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
             binview::take_binview_unchecked(array, indices).boxed()
         },
         t => unimplemented!("Take not supported for data type {:?}", t),
+    }
+}
+
+/// Whether [`take_unchecked`] supports `dtype` and returns it unchanged. Keep in sync with
+/// the match in [`take_unchecked`].
+pub(crate) fn has_native_take(dtype: &ArrowDataType) -> bool {
+    use ArrowDataType as D;
+    use PrimitiveType as P;
+    match dtype {
+        D::Extension(_) | D::Dictionary(..) => false,
+        D::LargeList(field) => has_native_take(field.dtype()),
+        // Its kernel rewrites null rows, changing nested-array hashes; slice instead.
+        D::FixedSizeList(..) => false,
+        D::Struct(fields) => fields.iter().all(|f| has_native_take(f.dtype())),
+        dt => match dt.to_physical_type() {
+            PhysicalType::Null
+            | PhysicalType::Boolean
+            | PhysicalType::BinaryView
+            | PhysicalType::Utf8View
+            | PhysicalType::LargeBinary => true,
+            PhysicalType::Primitive(p) => matches!(
+                p,
+                P::Int8
+                    | P::Int16
+                    | P::Int32
+                    | P::Int64
+                    | P::Int128
+                    | P::UInt8
+                    | P::UInt16
+                    | P::UInt32
+                    | P::UInt64
+                    | P::UInt128
+                    | P::Float16
+                    | P::Float32
+                    | P::Float64
+            ),
+            _ => false,
+        },
     }
 }
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -578,3 +579,57 @@ def test_gather_group_by_index_dtypes(idx: pl.Series) -> None:
     q = lf.group_by("g", maintain_order=True).agg(pl.col("x").gather(idx))
     expected = pl.DataFrame({"g": [1, 2], "x": [[2, 1], [4, 3]]})
     assert_frame_equal(q.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    ("data", "dtype"),
+    [
+        (
+            [["a", None], None, [], ["b", "a longer string value", "d"], None, ["e"]],
+            pl.List(pl.String),
+        ),
+        ([[1, None], None, [], [2, 3, 4], None, [5]], pl.List(pl.Int64)),
+        (
+            [[[1], None, []], None, [], [[2, 3]], None, [None]],
+            pl.List(pl.List(pl.Int64)),
+        ),
+        (
+            [[{"x": 1}, None], None, [], [{"x": None}, {"x": 2}], None, [{"x": 3}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[[1, 2], None], None, [], [[3, 4]], None, [[5, 6]]],
+            pl.List(pl.Array(pl.Int64, 2)),
+        ),
+    ],
+)
+def test_gather_list_29993(data: list[Any], dtype: pl.DataType) -> None:
+    s = pl.Series(data, dtype=dtype)
+    idx = [5, None, 3, 3, 1, 0, 2, None, 4]
+    expected = [None if i is None else data[i] for i in idx]
+    assert s.gather(pl.Series(idx, dtype=pl.get_index_type())).to_list() == expected
+    assert s[1:].gather([4, 0, 2]).to_list() == [data[5], data[1], data[3]]
+
+    df = pl.DataFrame({"k": [0, 1, 0, 1, 0, 1], "a": s})
+    out = df.group_by("k", maintain_order=True).agg("a")
+    assert out["a"].to_list() == [data[0::2], data[1::2]]
+
+
+def test_gather_list_null_rows_with_values() -> None:
+    # Null row 1 still spans the value 3.
+    s = pl.Series(
+        pa.LargeListArray.from_arrays(
+            pa.array([0, 2, 3, 5], pa.int64()),
+            pa.array([1, 2, 3, 4, 5]),
+            mask=pa.array([False, True, False]),
+        )
+    )
+    assert s.to_arrow().offsets.to_pylist() == [0, 2, 3, 5]
+    expected = pl.Series([[4, 5], None, [1, 2], None])
+    assert_series_equal(s.gather([2, 1, 0, 1]), expected)
+
+
+def test_gather_list_of_2d_array_null_hash() -> None:
+    # A null 2-D array element must hash the same after a gather.
+    s = pl.Series([[None, [[1, 2], [3, 4]]]], dtype=pl.List(pl.Array(pl.Int64, (2, 2))))
+    assert pl.concat([s, s.gather([0])]).n_unique() == 1
