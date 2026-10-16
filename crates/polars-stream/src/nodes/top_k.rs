@@ -20,6 +20,7 @@ use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
+use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
@@ -81,9 +82,10 @@ struct BottomKWithPayload<P> {
 
 impl<P: Ord + Clone> BottomKWithPayload<P> {
     pub fn new(k: usize, shared_optimum: Arc<RwLock<Option<P>>>) -> Self {
+        let initial_capacity = get_ideal_morsel_size().min(k + 1);
         Self {
             k,
-            heap: BinaryHeap::with_capacity(k + 1),
+            heap: BinaryHeap::with_capacity(initial_capacity),
             df_subsets: SlotMap::with_key(),
             row_idxs: SlotMap::with_key(),
             marked_for_pruning: SecondaryMap::new(),
