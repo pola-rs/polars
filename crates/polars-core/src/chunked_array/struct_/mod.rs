@@ -12,6 +12,7 @@ use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::ChunkedArray;
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
@@ -449,6 +450,7 @@ impl StructChunked {
         }
 
         self.compute_len();
+        self.set_flags(self.get_flags() - StatisticsFlags::HAS_PROPAGATED_NULLS);
         self.propagate_nulls_mut();
     }
 
@@ -494,6 +496,7 @@ impl StructChunked {
             }
         }
         self.compute_len();
+        self.set_flags(self.get_flags() - StatisticsFlags::HAS_PROPAGATED_NULLS);
         self.propagate_nulls_mut();
     }
 

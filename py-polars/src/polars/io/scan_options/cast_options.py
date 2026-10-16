@@ -62,6 +62,8 @@ class ScanCastOptions:
             Configuration for casting from integer types:
 
             * `upcast`: Allow lossless casting to wider integer types.
+              This also allows widening the precision of decimal types
+              with equal scale.
             * `allow-float`: Allow casting integers to float types.
             * `forbid`: Raises an error if dtypes do not match.
 
@@ -142,7 +144,12 @@ class ScanCastOptions:
             _DEFAULT_CAST_OPTIONS_ICEBERG = ScanCastOptions(
                 integer_cast="upcast",
                 float_cast=["upcast", "downcast"],
-                datetime_cast=("nanosecond-downcast", "convert-timezone"),
+                # Iceberg Java reads TIMESTAMP_MILLIS Parquet columns as microseconds.
+                datetime_cast=(
+                    "nanosecond-downcast",
+                    "millisecond-upcast",
+                    "convert-timezone",
+                ),
                 missing_struct_fields="insert",
                 extra_struct_fields="ignore",
                 categorical_to_string="allow",

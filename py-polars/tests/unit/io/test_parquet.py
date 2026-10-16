@@ -3042,6 +3042,21 @@ def test_utf8_verification_with_slice_20174() -> None:
     )
 
 
+@pytest.mark.parametrize("compression", ["snappy", "none"])
+def test_invalid_utf8_at_end_of_inline_string(compression: str) -> None:
+    # The invalid bytes are in the last 4 bytes of a string that is inlined in its
+    # view, next to a string of at least 128 bytes.
+    for value in [b"yyyyyabc\xe6\x9d", b"yyyyyyyyyyy\xff"]:
+        f = io.BytesIO()
+        s = pa.array([b"a" * 200, value], pa.binary()).view(pa.string())
+        pq.write_table(
+            pa.table({"s": s}), f, use_dictionary=False, compression=compression
+        )
+        f.seek(0)
+        with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
+            pl.read_parquet(f)
+
+
 @pytest.mark.parametrize("parallel", ["prefiltered", "row_groups"])
 @pytest.mark.parametrize(
     "projection",
@@ -4458,6 +4473,35 @@ def test_regex_prefiltering_parametric(s: pl.Series) -> None:
             pl.scan_parquet(f).filter(p).collect().to_series(),
             s.to_frame().filter(p).to_series(),
         )
+
+
+def test_literal_contains_prefiltering(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_OUTPUT_COLUMN_PREDS", "1")
+    # No nulls and no dictionary, so the decoder matches the pattern on the values.
+    df = pl.DataFrame({"a": ["a.b", "axb", "(x", "x(", "a+"], "b": range(5)})
+    f = io.BytesIO()
+    pq.write_table(df.to_arrow(), f, use_dictionary=False)
+
+    for pat in ["a.b", "(", "a+", ""]:
+        p = pl.col.a.str.contains(pat, literal=True)
+        f.seek(0)
+        capfd.readouterr()
+        assert_frame_equal(
+            pl.scan_parquet(f, parallel="prefiltered").filter(p).collect(),
+            df.filter(p),
+        )
+        assert "RegexMatch" in capfd.readouterr().err
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f, parallel="prefiltered")
+        .sql("SELECT * FROM self WHERE a LIKE '%(%'")
+        .collect(),
+        df.filter(pl.col.a.str.contains("(", literal=True)),
+    )
+    assert "RegexMatch" in capfd.readouterr().err
 
 
 @given(
@@ -5894,6 +5938,65 @@ def test_enum_table_statistics_prune() -> None:
     assert_frame_equal(out, pl.DataFrame(schema={"e": dtype}))
 
 
+@pytest.mark.parametrize(
+    ("dtype", "values"),
+    [
+        (pl.Decimal(9, 2), [Decimal("1.25"), Decimal("-3.00")]),
+        (pl.Date, [date(2000, 1, 1), date(1960, 1, 1)]),
+        (pl.Datetime("us", "UTC"), [datetime(2000, 1, 1), datetime(1960, 1, 1)]),
+        (pl.Time, [time(1), time(2)]),
+    ],
+)
+def test_filter_struct_field_with_logical_type_sibling(
+    dtype: pl.DataType, values: list[Any]
+) -> None:
+    df = pl.DataFrame(
+        {"s": [{"u": 5, "v": values[0]}, {"u": 1, "v": values[1]}, None]},
+        schema={"s": pl.Struct({"u": pl.Int32, "v": dtype})},
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    for predicate in [
+        pl.col("s").struct.field("u") > 1,
+        pl.col("s").struct.field("v") == pl.lit(values[0], dtype=dtype),
+        pl.col("s").struct.field("v") < pl.lit(values[0], dtype=dtype),
+    ]:
+        f.seek(0)
+        assert_frame_equal(
+            pl.scan_parquet(f).filter(predicate).collect(), df.filter(predicate)
+        )
+
+
+@pytest.mark.write_disk
+def test_filter_struct_column_missing_in_file(tmp_path: Path) -> None:
+    schema: dict[str, pl.DataType] = {
+        "id": pl.Int64(),
+        "st": pl.Struct({"x": pl.Int64}),
+    }
+    pl.DataFrame({"id": [1]}).write_parquet(tmp_path / "a.parquet")
+    pl.DataFrame({"id": [2], "st": [{"x": 1}]}, schema=schema).write_parquet(
+        tmp_path / "b.parquet"
+    )
+    df = pl.DataFrame({"id": [1, 2], "st": [None, {"x": 1}]}, schema=schema)
+
+    for predicate in [
+        pl.col("st").struct.field("x") == 1,
+        pl.col("st").is_null(),
+        pl.col("st").is_not_null(),
+    ]:
+        assert_frame_equal(
+            pl.scan_parquet(
+                [tmp_path / "a.parquet", tmp_path / "b.parquet"],
+                schema=schema,
+                missing_columns="insert",
+            )
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+        )
+
+
 @pytest.mark.parametrize("nullable", [True, False])
 @pytest.mark.parametrize("use_byte_stream_split", [True, False])
 @pytest.mark.parametrize("use_dictionary", [True, False])
@@ -6092,3 +6195,72 @@ def test_write_list_null_count(data_page_size: int | None) -> None:
     statistics_pa = pq.read_metadata(f_pa).row_group(0).column(0).statistics
 
     assert statistics.null_count == statistics_pa.null_count == 4
+
+
+@pytest.mark.parametrize("compression", ["snappy", "zstd", "none"])
+@pytest.mark.parametrize("data_page_version", ["1.0", "2.0"])
+def test_plain_strings_small_pages(compression: str, data_page_version: str) -> None:
+    values = [
+        "a" * 12,
+        "b" * 13,
+        "é" * 64,
+        None,
+        "",
+        "東" * 43,
+        "x" * 128,
+        "😀" * 64,
+        "ab",
+        "c" * 300,
+    ]
+    df = pl.DataFrame({"s": values * 30}).with_row_index()
+    df = df.with_columns(l=pl.concat_list("s", "s"))
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        compression=compression,
+        use_dictionary=False,
+        data_page_size=512,
+        data_page_version=data_page_version,
+    )
+
+    f.seek(0)
+    out = pl.read_parquet(f)
+    assert_frame_equal(out, df)
+
+    for expr in [
+        pl.col("index") % 10 == 3,
+        pl.col("index") % 10 != 3,
+        pl.col("s").str.contains("é"),
+        pl.col("s") != "ab",
+    ]:
+        f.seek(0)
+        assert_frame_equal(pl.scan_parquet(f).filter(expr).collect(), df.filter(expr))
+
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).slice(25, 100).collect(), df.slice(25, 100))
+
+    ipc = io.BytesIO()
+    out.write_ipc(ipc)
+    ipc.seek(0)
+    assert_frame_equal(pl.read_ipc(ipc), df)
+    assert_frame_equal(pl.from_arrow(out.to_arrow()), df)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [b"\x80abc", b"abc\xe6\x9d", b"ab\xbfcd" + b"y" * 20, b"y" * 200 + b"\xff"],
+)
+@pytest.mark.parametrize("neighbor", [b"x" * 5, "é".encode() * 100])
+@pytest.mark.parametrize("invalid_first", [True, False])
+def test_plain_strings_invalid_utf8(
+    invalid: bytes, neighbor: bytes, invalid_first: bool
+) -> None:
+    values = [invalid, neighbor] if invalid_first else [neighbor, invalid]
+    tbl = pa.table({"s": pa.array(values, pa.binary()).view(pa.string())})
+    f = io.BytesIO()
+    pq.write_table(tbl, f, use_dictionary=False, compression="snappy")
+    f.seek(0)
+    with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
+        pl.read_parquet(f)

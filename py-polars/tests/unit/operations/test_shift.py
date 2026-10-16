@@ -50,7 +50,6 @@ def test_shift_frame(fruits_cars: pl.DataFrame) -> None:
             assert res[rows, cols] is None
 
 
-@pytest.mark.may_fail_lazy_schema  # TODO: supertype
 def test_shift_fill_value() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
