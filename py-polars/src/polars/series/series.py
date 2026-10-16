@@ -1146,6 +1146,13 @@ class Series(metaclass=_Meta):
             self.dtype.is_decimal() or isinstance(self.dtype, Duration)
         ):
             return self.to_frame().select(F.col(self.name) / other).to_series()
+        if (
+            self.dtype == String
+            or isinstance(other, str)
+            or (isinstance(other, Series) and other.dtype == String)
+        ):
+            msg = "division with 'String' datatypes is not allowed"
+            raise InvalidOperationError(msg)
 
         self = (
             self
@@ -1253,6 +1260,11 @@ class Series(metaclass=_Meta):
 
         if isinstance(other, int):
             other = float(other)
+
+        if self.dtype == String or isinstance(other, str):
+            msg = "division with 'String' datatypes is not allowed"
+            raise InvalidOperationError(msg)
+
         return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
