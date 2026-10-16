@@ -31,7 +31,6 @@ sqlparser = { workspace = true }
 polars-core = { workspace = true, features = ["fmt"] }
 # required for local runs of the 'iss_23134' test
 polars-lazy = { workspace = true, features = ["streaming"] }
-tempfile = "3"
 
 [features]
 default = []
