@@ -122,6 +122,8 @@ pub struct KneeController {
     // Stable.
     knee: Option<u64>,
     bw_max: f64,
+    // Highest sustained bandwidth of the run, any phase.
+    sustained_bw_max: f64,
     last_bw_round: f64,
     recent_bw: VecDeque<f64>,
     stable_since: Option<Instant>,
@@ -169,6 +171,7 @@ impl KneeController {
             ramp_hist: Vec::new(),
             knee: None,
             bw_max: 0.0,
+            sustained_bw_max: 0.0,
             last_bw_round: 0.0,
             recent_bw: VecDeque::with_capacity(SUSTAINED_ROUNDS),
             stable_since: None,
@@ -197,6 +200,12 @@ impl KneeController {
 
     pub fn last_bw_round(&self) -> f64 {
         self.last_bw_round
+    }
+
+    /// Highest bandwidth sustained over `SUSTAINED_ROUNDS` rounds in this run, in bytes/s; 0 until
+    /// measured.
+    pub fn sustained_bw_max(&self) -> f64 {
+        self.sustained_bw_max
     }
 
     pub fn braking(&self) -> bool {
@@ -332,6 +341,7 @@ impl KneeController {
         } else {
             0.0
         };
+        self.sustained_bw_max = self.sustained_bw_max.max(sustained_bw);
 
         // The round binds and uses at least half of the applied budget after its first tick (not
         // scan start): on the mean for the lifetime, at a tick for a knee sample.

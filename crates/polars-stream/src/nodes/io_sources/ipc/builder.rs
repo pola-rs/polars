@@ -7,17 +7,13 @@ use polars_core::config;
 #[cfg(feature = "ipc")]
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
-#[cfg(feature = "ipc")]
-use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
 use polars_plan::dsl::ScanSource;
 #[cfg(feature = "ipc")]
 use polars_utils::pl_str::PlSmallStr;
 
-use super::super::shared::pipeline_budget::{
-    PipelineBudget, default_prefetch_kbytes_limit, env_nonzero_usize,
-};
+use super::super::shared::pipeline_budget::{ActiveScan, PipelineBudget, env_nonzero_usize};
 use super::{DynByteSourceBuilder, IpcFileReader};
 #[cfg(feature = "ipc")]
 use crate::metrics::IOMetrics;
@@ -61,36 +57,25 @@ impl FileReaderBuilder for IpcReaderBuilder {
             self.task_metrics.set(task_metrics).ok().unwrap();
         }
 
-        let prefetch_limit_env = env_nonzero_usize("POLARS_RECORD_BATCH_PREFETCH_SIZE");
-
-        let prefetch_limit = prefetch_limit_env.unwrap_or_else(|| {
-            // Similar to Parquet.
-            execution_state
-                .num_pipelines
-                .saturating_mul(2)
-                .max(get_inflight_request_budget() as usize)
-                .clamp(16, PipelineBudget::MAX_DEFAULT_COUNT_LIMIT)
-        });
-
-        let prefetch_kbytes_limit = env_nonzero_usize("POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET")
-            .unwrap_or_else(|| default_prefetch_kbytes_limit(execution_state.num_pipelines));
+        let pipeline_budget = PipelineBudget::new(
+            env_nonzero_usize("POLARS_RECORD_BATCH_PREFETCH_SIZE"),
+            env_nonzero_usize("POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET"),
+            execution_state.num_pipelines,
+        );
 
         if config::verbose() {
             eprintln!(
                 "[IpcReaderBuilder]: prefetch_limit: {}, prefetch_kbytes_limit: {}",
-                prefetch_limit, prefetch_kbytes_limit
+                pipeline_budget.count_limit(),
+                pipeline_budget.kbytes_limit()
             );
         }
 
-        let can_grow_for_ordered = prefetch_limit_env.is_none();
+        self.pipeline_budget.set(pipeline_budget).unwrap()
+    }
 
-        self.pipeline_budget
-            .set(PipelineBudget::new(
-                prefetch_limit,
-                prefetch_kbytes_limit,
-                can_grow_for_ordered,
-            ))
-            .unwrap()
+    fn active_scan(&self) -> Option<ActiveScan> {
+        self.pipeline_budget.get().map(PipelineBudget::active_scan)
     }
 
     fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {

@@ -435,6 +435,10 @@ impl ConcurrencyController {
                         limiter_admitted: limiter.map_or(0, |(_, admitted)| admitted),
                     })
                 });
+                let delivered_bw = knee
+                    .as_ref()
+                    .map_or(bw_hwm_held.unwrap_or(0.0), |k| k.sustained_bw_max());
+                admission.set_delivered_bandwidth(delivered_bw as u64);
 
                 if let Some(target) = knee_budget {
                     let current = admission.current_byte_budget();

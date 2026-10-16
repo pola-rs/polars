@@ -6,16 +6,13 @@ use polars_buffer::Buffer;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
-use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::super::shared::pipeline_budget::{
-    PipelineBudget, default_prefetch_kbytes_limit, env_nonzero_usize,
-};
+use super::super::shared::pipeline_budget::{ActiveScan, PipelineBudget, env_nonzero_usize};
 use super::{FileReader, ParquetFileReader};
 use crate::metrics::{IOMetrics, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
@@ -76,38 +73,27 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             let _ = self.task_metrics.set(task_metrics);
         }
 
-        let prefetch_limit_env = env_nonzero_usize("POLARS_ROW_GROUP_PREFETCH_SIZE");
-
         // Bound the number of fetches in the pipeline.
         // Together with `prefetch_kbytes_limit`; binds first for small row groups.
-        // This limit should be at least as large as the max in-flight concurrency.
-        let prefetch_limit = prefetch_limit_env.unwrap_or_else(|| {
-            execution_state
-                .num_pipelines
-                .saturating_mul(2)
-                .max(get_inflight_request_budget() as usize)
-                .clamp(16, PipelineBudget::MAX_DEFAULT_COUNT_LIMIT)
-        });
-
-        let prefetch_kbytes_limit = env_nonzero_usize("POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET")
-            .unwrap_or_else(|| default_prefetch_kbytes_limit(execution_state.num_pipelines));
+        let pipeline_budget = PipelineBudget::new(
+            env_nonzero_usize("POLARS_ROW_GROUP_PREFETCH_SIZE"),
+            env_nonzero_usize("POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET"),
+            execution_state.num_pipelines,
+        );
 
         if config::verbose() {
             eprintln!(
                 "[ParquetReaderBuilder]: prefetch_limit: {}, prefetch_kbytes_limit: {}",
-                prefetch_limit, prefetch_kbytes_limit
+                pipeline_budget.count_limit(),
+                pipeline_budget.kbytes_limit()
             );
         }
 
-        let can_grow_for_ordered = prefetch_limit_env.is_none();
+        self.pipeline_budget.set(pipeline_budget).unwrap()
+    }
 
-        self.pipeline_budget
-            .set(PipelineBudget::new(
-                prefetch_limit,
-                prefetch_kbytes_limit,
-                can_grow_for_ordered,
-            ))
-            .unwrap()
+    fn active_scan(&self) -> Option<ActiveScan> {
+        self.pipeline_budget.get().map(PipelineBudget::active_scan)
     }
 
     fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
