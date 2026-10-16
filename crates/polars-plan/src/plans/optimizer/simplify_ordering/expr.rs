@@ -4,7 +4,7 @@ use polars_utils::arena::{Arena, Node};
 
 use crate::dsl::{EvalVariant, WindowMapping};
 use crate::plans::{
-    AExpr, ExprIR, IRAggExpr, IRFunctionExpr, is_length_preserving_ae, is_order_insensitive_ae,
+    AExpr, IRAggExpr, IRFunctionExpr, is_length_preserving_ae, is_order_insensitive_ae,
     is_scalar_ae,
 };
 
