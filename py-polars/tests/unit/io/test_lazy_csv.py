@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 import tempfile
 import textwrap
@@ -9,6 +10,7 @@ from typing import IO, TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+import zstandard
 
 import polars as pl
 from polars.exceptions import (
@@ -743,6 +745,59 @@ def test_scan_csv_progressive_infer_schema_multiline_header(
     df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
 
     q = pl.scan_csv(file_path, infer_schema_length=infer_schema_length)
+    assert q.collect_schema() == df.schema
+    assert_frame_equal(q.collect(), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+@pytest.mark.parametrize("infer_schema_length", [0, 1])
+def test_scan_csv_progressive_infer_schema_bom_comment_multiline_header(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    compression: CsvCompression,
+    infer_schema_length: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # A UTF-8 BOM, then a comment line with an unmatched quote. The first downloaded
+    # prefix ends inside the quoted header, after its line break.
+    name = "foo\n" + "x" * 400_000
+    data = b'\xef\xbb\xbf#"\n"' + name.encode() + b'",bar\na,c\nb,d\n'
+    if compression == "zstd":
+        data = zstandard.compress(data)
+    elif compression == "gzip":
+        data = gzip.compress(data)
+    file_path.write_bytes(data)
+
+    df = pl.DataFrame({name: ["a", "b"], "bar": ["c", "d"]})
+    q = pl.scan_csv(
+        file_path, infer_schema_length=infer_schema_length, comment_prefix="#"
+    )
+    assert q.collect_schema() == df.schema
+    assert_frame_equal(q.collect(), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+def test_scan_csv_progressive_infer_schema_header_only_positional_overrides(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: CsvCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The first downloaded prefix ends inside the header.
+    df = pl.DataFrame({"a": [1, 2], "x" * 400_000: [3, 4]})
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    q = pl.scan_csv(
+        file_path, infer_schema_length=0, schema_overrides=[pl.Int64, pl.Int64]
+    )
     assert q.collect_schema() == df.schema
     assert_frame_equal(q.collect(), df)
 

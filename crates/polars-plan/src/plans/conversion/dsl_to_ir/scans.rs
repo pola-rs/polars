@@ -1095,10 +1095,13 @@ pub async fn csv_file_info(
             let mut truncated_bytes: Vec<u8> = Vec::with_capacity(INITIAL_FETCH);
             let mut reached_eof = false;
 
-            // With a header and `infer_schema_length == 0` only the complete header is needed.
+            // With a header and `infer_schema_length == 0` only the complete header is needed. An
+            // incomplete one gives no columns, so positional dtype overrides are only checked
+            // against the complete header, after the loop.
             let header_only_options =
                 (infer_schema_length == 0 && csv_options.has_header).then(|| CsvReadOptions {
                     raise_if_empty: false,
+                    dtype_overwrite: None,
                     ..csv_options.clone()
                 });
 
