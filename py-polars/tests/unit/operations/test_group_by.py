@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from polars._typing import EngineType, PolarsDataType, TimeUnit
+    from polars.lazyframe.group_by import LazyGroupBy
     from tests.conftest import PlMonkeyPatch
 
 
@@ -3502,3 +3503,70 @@ def test_moment_agg_unsupported_dtype_raises_27309(
             InvalidOperationError, match=f"`{op}` operation not supported"
         ):
             q.collect()
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_key_computed_from_other_keys(
+    engine: EngineType, maintain_order: bool
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 1, None, 3, None], "c": [1, 2, 3, 4, 5, 6]})
+    q = (
+        df.lazy()
+        .group_by(
+            b=pl.col("a") + 1,
+            a=pl.col("a"),
+            d=pl.col("a").cast(pl.String),
+            maintain_order=maintain_order,
+        )
+        .agg(pl.col("c").sum())
+    )
+    assert 'BY [col("a")]' in q.explain()
+    expected = pl.DataFrame(
+        {
+            "b": [2, 3, None, 4],
+            "a": [1, 2, None, 3],
+            "d": ["1", "2", None, "3"],
+            "c": [4, 2, 10, 5],
+        }
+    )
+    assert_frame_equal(
+        q.collect(engine=engine), expected, check_row_order=maintain_order
+    )
+
+
+@pytest.mark.parametrize(
+    "q",
+    [
+        # Reads a column that is not a key.
+        pl.LazyFrame({"a": [1, 1, 2], "c": [1, 2, 3]}).group_by("a", b=pl.col("c") + 1),
+        # Not row by row.
+        pl.LazyFrame({"a": [1, 1, 2], "c": [1, 2, 3]}).group_by(
+            "a", b=pl.col("a").cum_sum()
+        ),
+        # `-0.0` and `0.0` are one group, but not after `1 / a`.
+        pl.LazyFrame({"a": [-0.0, 0.0], "c": [1, 2]}).group_by(
+            "a", b=1 / pl.col("a"), maintain_order=True
+        ),
+        pl.LazyFrame(
+            {"a": [[-0.0], [0.0]], "c": [1, 2]},
+            schema_overrides={"a": pl.List(pl.Float64)},
+        ).group_by("a", b=1 / pl.col("a").list.first()),
+        # The sorted flag only holds before the aggregation.
+        pl.LazyFrame({"a": list(range(30)), "c": 1}).group_by(
+            "a", b=pl.col("a").set_sorted()
+        ),
+        # `b` reads the `a` from before the `with_columns`.
+        pl.LazyFrame({"a": [1, 1, 2], "c": [1, 2, 3]})
+        .with_columns(b=pl.col("a") + 1, a=pl.col("c"))
+        .group_by("a", "b"),
+    ],
+)
+def test_group_by_key_not_computed_from_other_keys(q: LazyGroupBy) -> None:
+    lf = q.agg(pl.len())
+    assert 'BY [col("a")]' not in lf.explain()
+    assert_frame_equal(
+        lf.collect(),
+        lf.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+        check_row_order=False,
+    )

@@ -32,6 +32,7 @@ pub use expand_datasets::attach_dataset_scan_statistics;
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
 pub mod deep_copy;
+mod dependent_group_keys;
 mod filter_constraint;
 mod ir_traversal;
 mod parquet_metadata_prune;
@@ -256,6 +257,17 @@ pub fn optimize(
     // reads.
     if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins {
         join_predicate_fusion::fuse_predicates(root, ir_arena, expr_arena)?;
+    }
+
+    // After predicate pushdown, as a filter can't pass a computed key, and before projection
+    // pushdown, which drops the columns the keys no longer read.
+    if opt_flags.simplify_expr() && get_or_init_members!().has_group_by {
+        root = opt.optimize_loop(
+            &mut [Box::new(dependent_group_keys::DependentGroupKeys) as _],
+            expr_arena,
+            ir_arena,
+            root,
+        )?;
     }
 
     if opt_flags.projection_pushdown() {
