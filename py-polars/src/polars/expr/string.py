@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import polars._reexport as pl
 from polars import functions as F
@@ -2869,8 +2869,7 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             patterns = list(patterns.keys())
 
         patterns_pyexpr = parse_into_expression(
-            patterns,  # type: ignore[arg-type]
-            str_as_lit=False,
+            cast("IntoExpr", patterns), str_as_lit=False
         )
         replace_with_pyexpr = parse_into_expression(replace_with, str_as_lit=True)
         return wrap_expr(
