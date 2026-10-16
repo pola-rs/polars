@@ -353,6 +353,7 @@ impl PushdownEligibility {
 }
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub fn pushdown_eligibility(
     projection_nodes: &[ExprIR],
     // Whether `projection_nodes` give the output columns, so that a predicate on an

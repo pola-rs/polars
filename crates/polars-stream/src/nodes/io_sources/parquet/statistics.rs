@@ -386,17 +386,20 @@ fn order_keeping_bounds(
             .strict_cast(&file_dtype)?;
         let column = projection.apply_transform(values.into_column())?;
         let df = DataFrame::new(column.len(), vec![column])?;
-        expr.evaluate_io(&df)?
+        Ok(expr
+            .evaluate_io(&df)?
             .as_materialized_series()
             .to_physical_repr()
-            .strict_cast(&DataType::Int128)
+            .into_owned())
     };
     let (mins, maxs) = (apply(mins).ok()?, apply(maxs).ok()?);
-    let (mins, maxs) = (mins.i128().ok()?, maxs.i128().ok()?);
     Some(
-        mins.iter()
-            .zip(maxs.iter())
-            .map(|(a, b)| Some((a?.min(b?), a?.max(b?))))
+        (0..mins.len())
+            .map(|i| {
+                let a = mins.get(i).ok()?.extract::<i128>()?;
+                let b = maxs.get(i).ok()?.extract::<i128>()?;
+                Some((a.min(b), a.max(b)))
+            })
             .collect(),
     )
 }
