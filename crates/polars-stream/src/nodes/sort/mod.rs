@@ -445,6 +445,7 @@ impl ComputeNode for SortNode {
 fn key_series(df: &DataFrame, key: &str) -> PolarsResult<Series> {
     let column = df.column(key)?.as_materialized_series();
     let keys = match column.dtype() {
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, _) if *precision <= 18 => {
             column.to_physical_repr().cast(&DataType::Int64)?
         },
