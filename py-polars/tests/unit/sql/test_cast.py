@@ -352,15 +352,24 @@ def test_cast_json() -> None:
             )
 
 
-def test_cast_struct() -> None:
-    # struct-to-struct casts match fields by name, as in Polars
+@pytest.mark.parametrize(
+    ("sql_type", "dtype"),
+    [
+        # reorder and add a field
+        (
+            "STRUCT<y VARCHAR, x BIGINT, z DOUBLE>",
+            pl.Struct({"y": pl.String, "x": pl.Int64, "z": pl.Float64}),
+        ),
+        # drop a field, narrow another and add one
+        ("STRUCT<x INT, z DOUBLE>", pl.Struct({"x": pl.Int32, "z": pl.Float64})),
+    ],
+)
+def test_try_cast_struct(sql_type: str, dtype: pl.DataType) -> None:
+    # TRY_CAST matches struct fields by name; an added field is null
     df = pl.DataFrame({"s": [{"x": 1, "y": "a"}, {"x": 2, "y": None}]})
-    dtype = pl.Struct({"y": pl.String, "x": pl.Int64, "z": pl.Float64})
-
-    res = df.sql(
-        "SELECT CAST(s AS STRUCT<y VARCHAR, x BIGINT, z DOUBLE>) AS s FROM self"
-    )
-    assert_frame_equal(res, df.select(pl.col("s").cast(dtype)))
+    res = df.sql(f"SELECT TRY_CAST(s AS {sql_type}) AS s FROM self")
+    assert_frame_equal(res, df.select(pl.col("s").cast(dtype, strict=False)))
+    assert res["s"].struct.field("z").null_count() == 2
 
 
 @pytest.mark.parametrize(
@@ -419,13 +428,38 @@ def test_struct_and_map_type_names(sql_type: str, dtype: pl.DataType) -> None:
         (
             "SELECT TRY_CAST('{}' AS MAP(VARCHAR, INT)) AS c",
             SQLInterfaceError,
-            "CAST from str to MAP is not supported",
+            "TRY_CAST from str to MAP is not supported",
         ),
         # a literal is named by the type it becomes
         (
             "SELECT CAST(1 AS STRUCT<x INT>) AS c",
             SQLInterfaceError,
             "CAST from i32 to STRUCT is not supported",
+        ),
+        (
+            "SELECT CAST(1 AS STRUCT<x INT>[]) AS c",
+            SQLInterfaceError,
+            r"CAST from i32 to STRUCT\[\] is not supported; only STRUCT\[\] values",
+        ),
+        # a nested mismatch says where it is
+        (
+            "SELECT CAST([1] AS STRUCT<x INT>[]) AS c",
+            SQLInterfaceError,
+            r"CAST from list\[i64\] to STRUCT\[\] is not supported: list element is i64; "
+            r"only STRUCT values",
+        ),
+        (
+            "SELECT CAST(CAST(NULL AS STRUCT<x INT>) AS STRUCT<x STRUCT<y INT>>) AS c",
+            SQLInterfaceError,
+            r"CAST from struct\[1\] to STRUCT is not supported: field 'x' is i32; "
+            r"only STRUCT values",
+        ),
+        (
+            "SELECT CAST(CAST(NULL AS MAP(VARCHAR, INT)) "
+            "AS STRUCT<key STRUCT<x VARCHAR>, value INT>[]) AS c",
+            SQLInterfaceError,
+            r"CAST from map\[str, i32\] to STRUCT\[\] is not supported: "
+            r"field 'key' of map entry is str; only STRUCT values",
         ),
     ],
 )
@@ -455,10 +489,17 @@ def test_struct_and_map_type_name_errors(
         # a struct is not a map, and the other way round
         "CAST(st AS MAP(VARCHAR, INT))",
         "CAST(m AS STRUCT<x INT>)",
-        # at any depth: a struct field, a list element, a map value
+        # at any depth: a struct field, a list element, a map value or key
         "CAST(st AS STRUCT<x STRUCT<y INT>>)",
         "TRY_CAST(ls AS STRUCT<y INT>[])",
         "CAST(m AS MAP(VARCHAR, STRUCT<y INT>))",
+        "CAST(m AS STRUCT<key STRUCT<x VARCHAR>, value INT>[])",
+        # a list target needs a list or map source
+        "TRY_CAST(i AS STRUCT<x INT>[])",
+        "CAST(CAST(NULL AS INT) AS STRUCT<x INT>[])",
+        "CAST(st AS STRUCT<x INT>[])",
+        "CAST(i AS MAP(VARCHAR, INT)[])",
+        "CAST(st AS STRUCT<x STRUCT<y INT>[]>)",
         # windows
         "CAST(FIRST_VALUE(i) OVER () AS STRUCT<x INT>)",
         "CAST(SUM(i) OVER () + 1 AS STRUCT<x INT>)",
@@ -486,7 +527,7 @@ def test_cast_to_nested_errors(cast_op: str) -> None:
     )
     with pytest.raises(
         SQLInterfaceError,
-        match=r"CAST from .+ is not supported; only (STRUCT|MAP) values or NULL",
+        match=r"(TRY_)?CAST from .+ is not supported(: .+)?; only (STRUCT|MAP)(\[\])* values",
     ):
         df.sql(f"SELECT {cast_op} AS r FROM self")
 
@@ -512,10 +553,24 @@ def test_cast_map_to_map() -> None:
             pl.Struct({"x": pl.Struct({"y": pl.Int64})}),
         ),
         ("CAST(lst AS STRUCT<y BIGINT>[])", "lst", pl.List(pl.Struct({"y": pl.Int64}))),
+        # a map is a list of key/value structs
+        (
+            "CAST(m AS STRUCT<key VARCHAR, value BIGINT>[])",
+            "m",
+            pl.List(pl.Struct({"key": pl.String, "value": pl.Int64})),
+        ),
     ],
 )
 def test_cast_nested_structs(cast_op: str, column: str, dtype: pl.DataType) -> None:
-    df = pl.DataFrame({"nst": [{"x": {"y": 1}}], "lst": [[{"y": 1}]]})
+    df = pl.DataFrame(
+        {
+            "nst": [{"x": {"y": 1}}],
+            "lst": [[{"y": 1}]],
+            "m": pl.Series(
+                [[{"key": "a", "value": 1}]], dtype=pl.Map(pl.String, pl.Int32)
+            ),
+        }
+    )
     res = df.sql(f"SELECT {cast_op} AS r FROM self")
     assert_frame_equal(res, df.select(pl.col(column).cast(dtype).alias("r")))
 
