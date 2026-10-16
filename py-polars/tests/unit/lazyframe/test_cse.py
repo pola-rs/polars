@@ -1625,7 +1625,7 @@ def test_cspe_with_non_pushable_filters_19479() -> None:
     # The predicates reference a column computed within the common subplan, so they
     # cannot be pushed past it. We keep the cache so the subplan is shared.
     lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
-    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+    common_subplan = lazy_df.with_columns(pl.col("foo") * pl.col("bar"))
 
     expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
     expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
@@ -1667,9 +1667,9 @@ def test_cspe_with_mixed_filters_19479() -> None:
     # shared across all branches rather than removing them for a partial pushdown.
     q_base = pl.LazyFrame(
         {"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]}
-    ).with_columns(pl.col("foo") * 2)
+    ).with_columns(pl.col("foo") * pl.col("bar"))
 
-    # `foo * 2` is computed within the subplan -> not pushable.
+    # `foo * bar` is computed within the subplan -> not pushable.
     q1 = q_base.filter(pl.col("foo") * 2 > 4)
     q2 = q_base.filter(pl.col("foo") * 2 < 8)
     # `bar` is available before the subplan -> pushable.
@@ -1690,7 +1690,7 @@ def test_cspe_with_mixed_filters_19479() -> None:
 
 def test_cspe_with_filters_sink_multiple_19479() -> None:
     lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
-    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+    common_subplan = lazy_df.with_columns(pl.col("foo") * pl.col("bar"))
 
     expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
     expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)

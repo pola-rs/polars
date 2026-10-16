@@ -228,12 +228,14 @@ pub(crate) fn push_past(
             acc.insert(tmp_key.clone(), filter.clone());
             let (eligibility, _) = pushdown_eligibility(
                 &[],
+                false,
                 &[(&tmp_key, filter.clone())],
                 &acc,
                 expr_arena,
                 scratch,
                 maintain_errors,
-                ir_arena.get(*input),
+                *input,
+                ir_arena,
             )?;
             Ok(eligibility.allows(&key).then_some(*input))
         },
@@ -243,23 +245,92 @@ pub(crate) fn push_past(
         } => {
             let mut acc = PlIndexMap::default();
             acc.insert(key.clone(), predicate.clone());
-            let (eligibility, renames) = pushdown_eligibility(
+            let (eligibility, projection_map) = pushdown_eligibility(
                 expr,
+                true,
                 &[],
                 &acc,
                 expr_arena,
                 scratch,
                 maintain_errors,
-                ir_arena.get(*input),
+                *input,
+                ir_arena,
             )?;
-            if !eligibility.allows(&key) {
+            if !eligibility.allows(&key)
+                || aexpr_to_leaf_names_iter(predicate.node(), expr_arena)
+                    .any(|name| projection_map.order_keeping_exprs.contains_key(name))
+            {
                 return Ok(None);
             }
-            map_column_references(predicate, expr_arena, &renames);
+            map_column_references(predicate, expr_arena, &projection_map.renames);
             Ok(Some(*input))
         },
         _ => Ok(None),
     }
+}
+
+/// How the output columns of a projection come from its input.
+#[derive(Default)]
+pub struct ProjectionMap {
+    /// Output name to input name of the plain columns that get another name.
+    pub renames: PlIndexMap<PlSmallStr, PlSmallStr>,
+    /// Output name to its order-keeping expression of one input column.
+    pub order_keeping_exprs: PlIndexMap<PlSmallStr, Node>,
+}
+
+impl ProjectionMap {
+    /// Rewrite `expr` on the output columns to the same expression on the input columns.
+    pub fn map_to_input(&self, expr: &mut ExprIR, expr_arena: &mut Arena<AExpr>) {
+        if self.order_keeping_exprs.is_empty() {
+            map_column_references(expr, expr_arena, &self.renames);
+            return;
+        }
+        let node = self.map_node_to_input(expr.node(), expr_arena);
+        *expr = ExprIR::from_node(node, expr_arena);
+    }
+
+    #[recursive::recursive]
+    fn map_node_to_input(&self, node: Node, expr_arena: &mut Arena<AExpr>) -> Node {
+        if let AExpr::Column(name) = expr_arena.get(node) {
+            if let Some(input_name) = self.renames.get(name) {
+                return expr_arena.add(AExpr::Column(input_name.clone()));
+            }
+            if let Some(&expr) = self.order_keeping_exprs.get(name) {
+                return copy_without_strict_casts(expr, expr_arena);
+            }
+            return node;
+        }
+        let mut inputs = vec![];
+        expr_arena.get(node).inputs_rev(&mut inputs);
+        let new_inputs = inputs
+            .iter()
+            .rev()
+            .map(|input| self.map_node_to_input(*input, expr_arena))
+            .collect::<Vec<_>>();
+        if new_inputs.iter().eq(inputs.iter().rev()) {
+            return node;
+        }
+        let ae = expr_arena.get(node).clone().replace_inputs(&new_inputs);
+        expr_arena.add(ae)
+    }
+}
+
+/// Copies an order-keeping expression. Its casts can't fail, so they are made non-strict to not
+/// block the pushdown of the predicate it ends up in.
+#[recursive::recursive]
+fn copy_without_strict_casts(node: Node, expr_arena: &mut Arena<AExpr>) -> Node {
+    let mut ae = expr_arena.get(node).clone();
+    if let AExpr::Cast { options, .. } = &mut ae {
+        *options = CastOptions::NonStrict;
+    }
+    let mut inputs = vec![];
+    ae.inputs_rev(&mut inputs);
+    let new_inputs = inputs
+        .iter()
+        .rev()
+        .map(|input| copy_without_strict_casts(*input, expr_arena))
+        .collect::<Vec<_>>();
+    expr_arena.add(ae.replace_inputs(&new_inputs))
 }
 
 #[derive(Debug)]
@@ -284,6 +355,9 @@ impl PushdownEligibility {
 #[allow(clippy::type_complexity)]
 pub fn pushdown_eligibility(
     projection_nodes: &[ExprIR],
+    // Whether `projection_nodes` give the output columns, so that a predicate on an
+    // order-keeping one may be rewritten to its expression.
+    is_projection: bool,
     // Predicates that need to be checked (key, expr_ir)
     new_predicates: &[(&PlSmallStr, ExprIR)],
     // Note: These predicates have already passed checks.
@@ -291,14 +365,18 @@ pub fn pushdown_eligibility(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
     maintain_errors: bool,
-    input_ir: &IR,
-) -> PolarsResult<(PushdownEligibility, PlIndexMap<PlSmallStr, PlSmallStr>)> {
+    input: Node,
+    ir_arena: &Arena<IR>,
+) -> PolarsResult<(PushdownEligibility, ProjectionMap)> {
     scratch.clear();
     let ae_nodes_stack = scratch;
+    let input_ir = ir_arena.get(input);
 
     let mut alias_to_col_map =
         optimizer::init_hashmap::<PlSmallStr, PlSmallStr>(Some(projection_nodes.len()));
     let mut col_to_alias_map = alias_to_col_map.clone();
+    let mut order_keeping_exprs = PlIndexMap::new();
+    let mut input_schema = None;
 
     let mut modified_projection_columns =
         PlIndexSet::<PlSmallStr>::with_capacity(projection_nodes.len());
@@ -389,7 +467,13 @@ pub fn pushdown_eligibility(
             continue;
         }
 
-        if !does_not_modify_rec(e.node(), expr_arena) {
+        let is_order_keeping = is_projection && {
+            let input_schema = input_schema.get_or_insert_with(|| input_ir.schema(ir_arena));
+            order_keeping_column(e.node(), expr_arena, input_schema).is_some()
+        };
+        if is_order_keeping {
+            order_keeping_exprs.insert(e.output_name().clone(), e.node());
+        } else if !does_not_modify_rec(e.node(), expr_arena) {
             modified_projection_columns.insert(e.output_name().clone());
         }
 
@@ -403,8 +487,12 @@ pub fn pushdown_eligibility(
         )
         .blocks_pushdown(maintain_errors)
         {
-            return Ok((PushdownEligibility::NoPushdown, alias_to_col_map));
+            return Ok((PushdownEligibility::NoPushdown, ProjectionMap::default()));
         }
+    }
+
+    if has_window {
+        modified_projection_columns.extend(order_keeping_exprs.drain(..).map(|(name, _)| name));
     }
 
     if has_window && !col_to_alias_map.is_empty() {
@@ -425,7 +513,7 @@ pub fn pushdown_eligibility(
         }
 
         if new.is_empty() {
-            return Ok((PushdownEligibility::NoPushdown, alias_to_col_map));
+            return Ok((PushdownEligibility::NoPushdown, ProjectionMap::default()));
         }
 
         common_window_inputs = new;
@@ -442,7 +530,7 @@ pub fn pushdown_eligibility(
         );
 
         if pd_group.blocks_pushdown(maintain_errors) {
-            return Ok((PushdownEligibility::NoPushdown, alias_to_col_map));
+            return Ok((PushdownEligibility::NoPushdown, ProjectionMap::default()));
         }
     }
 
@@ -528,16 +616,20 @@ pub fn pushdown_eligibility(
         })
         .collect::<Vec<_>>();
 
+    let projection_map = ProjectionMap {
+        renames: alias_to_col_map,
+        order_keeping_exprs,
+    };
     Ok(match to_local.len() {
-        0 => (PushdownEligibility::Full, alias_to_col_map),
+        0 => (PushdownEligibility::Full, projection_map),
         len if len == acc_predicates.len() => {
             if len == 1 && allow_single_fallible {
-                (PushdownEligibility::Full, alias_to_col_map)
+                (PushdownEligibility::Full, projection_map)
             } else {
-                (PushdownEligibility::NoPushdown, alias_to_col_map)
+                (PushdownEligibility::NoPushdown, projection_map)
             }
         },
-        _ => (PushdownEligibility::Partial { to_local }, alias_to_col_map),
+        _ => (PushdownEligibility::Partial { to_local }, projection_map),
     })
 }
 

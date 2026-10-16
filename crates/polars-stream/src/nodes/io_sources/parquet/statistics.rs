@@ -8,7 +8,9 @@ use polars_arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
-use polars_io::predicates::{ReadOrder, RuntimeRange, RuntimeRangeHint, ScanIOPredicate};
+use polars_io::predicates::{
+    ColumnIoExpr, ReadOrder, RuntimeRange, RuntimeRangeHint, ScanIOPredicate,
+};
 use polars_io::prelude::FileMetadata;
 use polars_parquet::read::RowGroupMetadata;
 use polars_parquet::read::statistics::{
@@ -316,10 +318,87 @@ struct ResolvedHint {
 }
 
 struct ResolvedLeaf {
-    bounds: LeafBounds,
     leaf_idx: usize,
+    /// The dtype of the bounds.
+    dtype: DataType,
+    bounds: ResolvedBounds,
+}
+
+enum ResolvedBounds {
+    /// The row group statistics of the column.
+    Statistics { bounds: LeafBounds, scale: i64 },
+    /// The bounds of an order-keeping expression of the column, per row group.
+    OrderKeeping(Vec<Option<(i128, i128)>>),
+}
+
+impl ResolvedLeaf {
+    /// The bounds of a row group, `None` when its values are not known to lie between them.
+    #[allow(clippy::type_complexity)]
+    fn row_group_bounds<'a>(
+        &'a self,
+        idx: usize,
+        metadata: &'a FileMetadata,
+    ) -> Option<(Option<Bound<&'a [u8]>>, Option<Bound<&'a [u8]>>)> {
+        match &self.bounds {
+            ResolvedBounds::Statistics { bounds, scale } => {
+                let (min, max) = bounds.bounds(&metadata.row_groups[idx], &metadata.footer_buf);
+                let min = min.and_then(|min| Bound::from_arrow(min, *scale));
+                let max = max.and_then(|max| Bound::from_arrow(max, *scale));
+                // Scaling wraps unseen values unless both bounds show it does not.
+                if *scale != 1 && (min.is_none() || max.is_none()) {
+                    return None;
+                }
+                Some((min, max))
+            },
+            ResolvedBounds::OrderKeeping(bounds) => {
+                let (lo, hi) = bounds[idx]?;
+                Some((Some(Bound::Int(lo)), Some(Bound::Int(hi))))
+            },
+        }
+    }
+}
+
+/// The bounds of `expr`, an order-keeping expression of the column of `projection`, per row group.
+fn order_keeping_bounds(
+    expr: &dyn ColumnIoExpr,
+    projection: &ArrowFieldProjection,
+    statistics: &LeafBounds,
     scale: i64,
-    file_dtype: DataType,
+    metadata: &FileMetadata,
+) -> Option<Vec<Option<(i128, i128)>>> {
+    let file_dtype = DataType::from_arrow_field(projection.arrow_field());
+    let mut mins = Vec::with_capacity(metadata.row_groups.len());
+    let mut maxs = Vec::with_capacity(metadata.row_groups.len());
+    for row_group in metadata.row_groups.iter() {
+        let (min, max) = statistics.bounds(row_group, &metadata.footer_buf);
+        let int = |b: Option<ArrowBound>| match b.and_then(|b| Bound::from_arrow(b, scale)) {
+            Some(Bound::Int(v)) => i64::try_from(v).ok(),
+            _ => None,
+        };
+        let (min, max) = (int(min), int(max));
+        let known = min.is_some() && max.is_some();
+        mins.push(min.filter(|_| known));
+        maxs.push(max.filter(|_| known));
+    }
+    let apply = |values: Vec<Option<i64>>| -> PolarsResult<Series> {
+        let values = Series::new(projection.output_name().clone(), values)
+            .strict_cast(&file_dtype.to_physical())?
+            .strict_cast(&file_dtype)?;
+        let column = projection.apply_transform(values.into_column())?;
+        let df = DataFrame::new(column.len(), vec![column])?;
+        expr.evaluate_io(&df)?
+            .as_materialized_series()
+            .to_physical_repr()
+            .strict_cast(&DataType::Int128)
+    };
+    let (mins, maxs) = (apply(mins).ok()?, apply(maxs).ok()?);
+    let (mins, maxs) = (mins.i128().ok()?, maxs.i128().ok()?);
+    Some(
+        mins.iter()
+            .zip(maxs.iter())
+            .map(|(a, b)| Some((a?.min(b?), a?.max(b?))))
+            .collect(),
+    )
 }
 
 /// What one range says about the row groups, read once for many of them.
@@ -359,11 +438,31 @@ impl RuntimeRangeSkipper {
             let [leaf_idx] = idxs else { return None };
             let bounds = LeafBounds::new(arrow_field, metadata, *leaf_idx)
                 .filter(|leaf| compares_exactly(leaf.conversion()))?;
+            let scale = DataType::arrow_value_scale(arrow_field.dtype());
+            let (dtype, bounds) = match &hint.order_keeping_expr {
+                None => (
+                    DataType::from_arrow_field(arrow_field),
+                    ResolvedBounds::Statistics { bounds, scale },
+                ),
+                Some(expr) => {
+                    let bounds =
+                        order_keeping_bounds(expr.as_ref(), projection, &bounds, scale, metadata)?;
+                    let column_dtype = projection.output_dtype();
+                    let dtype = expr
+                        .evaluate_io(&DataFrame::empty_with_schema(&Schema::from_iter([(
+                            hint.column.clone(),
+                            column_dtype.into_owned(),
+                        )])))
+                        .ok()?
+                        .dtype()
+                        .clone();
+                    (dtype, ResolvedBounds::OrderKeeping(bounds))
+                },
+            };
             Some(ResolvedLeaf {
-                bounds,
                 leaf_idx: *leaf_idx,
-                scale: DataType::arrow_value_scale(arrow_field.dtype()),
-                file_dtype: DataType::from_arrow_field(arrow_field),
+                dtype,
+                bounds,
             })
         };
         let hints = hints
@@ -407,7 +506,7 @@ impl RuntimeRangeSkipper {
                         };
                         let bound = |b: Option<Scalar>| match b {
                             None => Some(None),
-                            Some(b) => Bound::from_scalar(&b, &leaf.file_dtype).map(Some),
+                            Some(b) => Bound::from_scalar(&b, &leaf.dtype).map(Some),
                         };
                         match (bound(lo), bound(hi)) {
                             (Some(lo), Some(hi)) => RangeCheck::Bounds {
@@ -424,7 +523,7 @@ impl RuntimeRangeSkipper {
             .collect()
     }
 
-    fn skips_with(&self, checks: &[RangeCheck], row_group: &RowGroupMetadata) -> bool {
+    fn skips_with(&self, checks: &[RangeCheck], row_group_idx: usize) -> bool {
         checks.iter().any(|check| match check {
             RangeCheck::KeepAll => false,
             RangeCheck::SkipAll => true,
@@ -435,20 +534,18 @@ impl RuntimeRangeSkipper {
                 nulls_match,
             } => {
                 let leaf = self.hints[*leaf].leaf.as_ref().unwrap();
-                let (min, max) = leaf.bounds.bounds(row_group, &self.metadata.footer_buf);
-                let min = min.and_then(|min| Bound::from_arrow(min, leaf.scale));
-                let max = max.and_then(|max| Bound::from_arrow(max, leaf.scale));
-                // Scaling wraps unseen values unless both bounds show it does not.
-                if leaf.scale != 1 && (min.is_none() || max.is_none()) {
+                let Some((min, max)) = leaf.row_group_bounds(row_group_idx, &self.metadata) else {
                     return false;
-                }
+                };
                 let below = lo
                     .as_ref()
                     .is_some_and(|lo| max.as_ref().is_some_and(|max| max < lo));
                 let above = hi
                     .as_ref()
                     .is_some_and(|hi| min.as_ref().is_some_and(|min| min > hi));
-                (below || above) && (!nulls_match || has_no_nulls(row_group, leaf.leaf_idx))
+                (below || above)
+                    && (!nulls_match
+                        || has_no_nulls(&self.metadata.row_groups[row_group_idx], leaf.leaf_idx))
             },
         })
     }
@@ -461,10 +558,10 @@ impl RuntimeRangeSkipper {
         static_mask: Option<&Bitmap>,
     ) -> Option<Bitmap> {
         let checks = self.checks();
-        let row_groups = &self.metadata.row_groups[row_group_slice];
-        let mut mask = MutableBitmap::from_len_zeroed(row_groups.len());
-        for (i, rg) in row_groups.iter().enumerate() {
-            if !static_mask.is_some_and(|m| m.get_bit(i)) && self.skips_with(&checks, rg) {
+        let mut mask = MutableBitmap::from_len_zeroed(row_group_slice.len());
+        for (i, row_group_idx) in row_group_slice.enumerate() {
+            if !static_mask.is_some_and(|m| m.get_bit(i)) && self.skips_with(&checks, row_group_idx)
+            {
                 mask.set(i, true);
             }
         }
@@ -485,13 +582,11 @@ impl RuntimeRangeSkipper {
             return;
         };
         let key = |item: &T| {
-            let row_group = &self.metadata.row_groups[idx(item)];
-            let (min, max) = leaf.bounds.bounds(row_group, &self.metadata.footer_buf);
-            let bound = match order {
+            let (min, max) = leaf.row_group_bounds(idx(item), &self.metadata)?;
+            match order {
                 ReadOrder::LowFirst => min,
                 ReadOrder::HighFirst => max,
-            };
-            bound.and_then(|b| Bound::from_arrow(b, leaf.scale))
+            }
         };
         let keys: Vec<_> = items.iter().map(key).collect();
         let mut positions: Vec<usize> = (0..items.len()).collect();
@@ -524,9 +619,9 @@ impl RuntimeRangeSkipper {
         }
     }
 
-    /// Whether the ranges skip `row_group` now.
-    pub(super) fn skips(&self, row_group: &RowGroupMetadata) -> bool {
-        let skip = self.skips_with(&self.checks(), row_group);
+    /// Whether the ranges skip row group `row_group_idx` now.
+    pub(super) fn skips(&self, row_group_idx: usize) -> bool {
+        let skip = self.skips_with(&self.checks(), row_group_idx);
         if skip {
             self.skipped_while_reading
                 .fetch_add(1, AtomicOrdering::Relaxed);

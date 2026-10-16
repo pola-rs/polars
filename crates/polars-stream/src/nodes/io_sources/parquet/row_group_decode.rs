@@ -135,7 +135,7 @@ impl RowGroupDecoder {
         if self
             .runtime_range_skipper
             .as_ref()
-            .is_some_and(|s| s.skips(&row_group_data.row_group_metadata))
+            .is_some_and(|s| s.skips(row_group_data.row_group_idx))
         {
             return Ok(self.empty_df());
         }

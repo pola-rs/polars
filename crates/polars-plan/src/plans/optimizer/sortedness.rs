@@ -16,13 +16,14 @@ use serde::{Deserialize, Serialize};
 use crate::dsl::Operator;
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::plans::IRStringFunction;
+#[cfg(feature = "round_series")]
+#[cfg(feature = "round_series")]
+use crate::plans::int_literal;
 use crate::plans::schema::join_right_output_names;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
-#[cfg(feature = "round_series")]
-use crate::plans::{DynLiteralValue, LiteralValue};
 use crate::prelude::{JoinType, MaintainOrderJoin};
 
 /// Container for sortedness state at each stage in an IR plan.
@@ -970,16 +971,6 @@ pub fn function_expr_sortedness(
             rec_ae!(e.node())
         },
 
-        _ => None,
-    }
-}
-
-/// The value of an integer scalar literal.
-#[cfg(feature = "round_series")]
-fn int_literal(node: Node, arena: &Arena<AExpr>) -> Option<i128> {
-    match arena.get(node) {
-        AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))) => Some(*v),
-        AExpr::Literal(LiteralValue::Scalar(sc)) if sc.dtype().is_integer() => sc.value().extract(),
         _ => None,
     }
 }
