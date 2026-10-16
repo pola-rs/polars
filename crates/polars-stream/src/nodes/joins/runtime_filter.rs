@@ -517,8 +517,9 @@ impl PredicateExpr for KeyRange {
         match &self.bounds {
             None => RuntimeRange::Empty,
             Some((lo, hi)) => RuntimeRange::Range {
-                lo: lo.clone(),
-                hi: hi.clone(),
+                lo: Some(lo.clone()),
+                hi: Some(hi.clone()),
+                nulls_match: false,
             },
         }
     }
