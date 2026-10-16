@@ -410,6 +410,8 @@ struct Stats {
     last_tick: Option<Instant>,
     /// Bandwidth of the last finished round.
     last_bw_round: f64,
+    /// Highest sustained bandwidth of the run, any phase; kept while idle.
+    sustained_bw_max: f64,
 }
 
 impl Stats {
@@ -420,6 +422,7 @@ impl Stats {
             brake: Brake::new(),
             last_tick: None,
             last_bw_round: 0.0,
+            sustained_bw_max: 0.0,
         }
     }
 
@@ -450,6 +453,7 @@ impl Stats {
         let r = mem::take(&mut self.round);
         self.last_bw_round = r.bw();
         self.recent_bw.push(self.last_bw_round);
+        self.sustained_bw_max = self.sustained_bw_max.max(self.recent_bw.sustained());
         self.brake.end_round(r.limiter_bound);
         r
     }
@@ -624,6 +628,12 @@ impl KneeController {
 
     pub fn last_bw_round(&self) -> f64 {
         self.stats.last_bw_round
+    }
+
+    /// Highest bandwidth sustained over `SUSTAINED_ROUNDS` rounds in this run, in bytes/s; 0 until
+    /// measured.
+    pub fn sustained_bw_max(&self) -> f64 {
+        self.stats.sustained_bw_max
     }
 
     pub fn braking(&self) -> bool {

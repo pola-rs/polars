@@ -810,6 +810,28 @@ impl DynByteSource {
             Self::Cloud(source) => Some(source.concurrency_strategy()),
         }
     }
+
+    /// In-flight budget of the store behind a bytes-based cloud source.
+    #[cfg(feature = "cloud")]
+    pub fn inflight_budget(&self) -> Option<Arc<crate::cloud::concurrency::InFlightBudget>> {
+        match self {
+            Self::Cloud(source)
+                if matches!(
+                    source.concurrency_strategy(),
+                    ConcurrencyStrategy::BytesBased
+                ) =>
+            {
+                Some(
+                    source
+                        .store
+                        .get_or_init_concurrency()
+                        .inflight_budget()
+                        .clone(),
+                )
+            },
+            _ => None,
+        }
+    }
 }
 
 impl Default for DynByteSource {

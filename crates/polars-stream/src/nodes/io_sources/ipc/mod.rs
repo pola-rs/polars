@@ -310,12 +310,13 @@ impl FileReader for IpcFileReader {
         // Prepare parameters for Prefetch
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
 
-        // Ordered scans get a larger count budget: partly offsets head-of-line blocking.
+        // Ordered scans hold completed fetches behind the head of line.
         if maintain_order {
-            self.record_batch_prefetch_sync
-                .pipeline_budget
-                .grow_for_ordered();
+            self.record_batch_prefetch_sync.pipeline_budget.set_ordered();
         }
+        self.record_batch_prefetch_sync
+            .pipeline_budget
+            .attach_inflight(byte_source.inflight_budget());
 
         let record_batch_prefetch_size = self
             .record_batch_prefetch_sync

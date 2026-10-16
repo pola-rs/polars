@@ -1,14 +1,33 @@
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, Once};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use polars_core::config;
+use polars_io::cloud::concurrency::{InFlightBudget, get_inflight_request_budget};
 use polars_io::cloud::concurrency_config::{FetchConfig, get_download_chunk_size};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
     LazyLock::new(|| std::env::var("POLARS_LOG_CONCURRENCY").is_ok());
+
+/// Count limit of an ordered scan's pipeline. Its window is sized in bytes; this only bounds tasks
+/// and queue slots for fetches smaller than the window / this limit.
+const ORDERED_COUNT_LIMIT: usize = 8192;
+
+/// Reorder headroom of an ordered scan's window, as time at the store's delivered bandwidth.
+const ORDERED_SLACK: Duration = Duration::from_millis(250);
+
+/// Floor of a scan's share of the default count limit.
+const MIN_SHARE_COUNT_LIMIT: usize = 16;
+
+/// Scan nodes with a pipeline budget that are running, process-wide.
+static ACTIVE_SCANS: AtomicUsize = AtomicUsize::new(0);
+
+/// Pipeline kilobytes above the scans' default limits, process-wide: total memory / 16.
+static WINDOW_POOL_KBYTES: LazyLock<AtomicUsize> = LazyLock::new(|| {
+    AtomicUsize::new((polars_utils::sys::total_memory() / 16).div_ceil(1 << 10) as usize)
+});
 
 /// Value of `env_var` if set; panics if it is not a positive integer.
 pub(crate) fn env_nonzero_usize(env_var: &str) -> Option<usize> {
@@ -19,48 +38,145 @@ pub(crate) fn env_nonzero_usize(env_var: &str) -> Option<usize> {
     })
 }
 
-/// Default prefetch kilobyte limit for a scan pipeline, at least one download chunk.
-pub(crate) fn default_prefetch_kbytes_limit(num_pipelines: usize) -> usize {
+/// Default prefetch count limit for a scan pipeline: at least the in-flight request budget, split
+/// between `scans` running scans.
+fn default_prefetch_limit(num_pipelines: usize, scans: usize) -> usize {
+    let limit = num_pipelines
+        .saturating_mul(2)
+        .max(get_inflight_request_budget() as usize)
+        .clamp(MIN_SHARE_COUNT_LIMIT, PipelineBudget::MAX_DEFAULT_COUNT_LIMIT);
+    (limit / scans).max(MIN_SHARE_COUNT_LIMIT)
+}
+
+/// Default prefetch kilobyte limit for a scan pipeline, split between `scans` running scans, at
+/// least one download chunk.
+fn default_prefetch_kbytes_limit(num_pipelines: usize, scans: usize) -> usize {
     // This should be large enough to be non-blocking, but small enough to avoid
     // excessive memory use from a run-away prefetch pipeline.
     // "Correct" formula: (a) max effective in-flight bdp-based bytes budget + (b) decode pipeline.
     // Since we do not know (a) at startup, we use  '3 * (b) + buffer' as a proxy for (a), where the
     // multiplier reflects the max gain factor for in-flight control.
-    // TODO: Dynamically adapt the max memory to the observed BDP.
     // NOTE: This does not account for the decompression multiplier, so actual memory
     // usage can be substantially larger.
     let target_chunk_size_kb = FetchConfig::random_access().chunk_size.div_ceil(1024);
-    (4 * num_pipelines * target_chunk_size_kb).max(get_download_chunk_size().div_ceil(1024))
+    (4 * num_pipelines * target_chunk_size_kb / scans).max(get_download_chunk_size().div_ceil(1024))
 }
 
-/// Factor by which an ordered scan grows the default count limit.
-const ORDERED_WINDOW_FACTOR: usize = 2;
+/// A scan counted in `ACTIVE_SCANS`, with the kilobytes it holds from `WINDOW_POOL_KBYTES`.
+/// Released once, when the scan ends or its budget is dropped.
+#[derive(Debug)]
+struct ScanRegistration {
+    pool_kbytes: AtomicUsize,
+    released: AtomicBool,
+}
+
+impl ScanRegistration {
+    /// Registers a scan; returns it with the number of running scans, itself included.
+    fn register() -> (Self, usize) {
+        let scans = ACTIVE_SCANS.fetch_add(1, Ordering::Relaxed) + 1;
+        let registration = Self {
+            pool_kbytes: AtomicUsize::new(0),
+            released: AtomicBool::new(false),
+        };
+        (registration, scans)
+    }
+
+    /// Takes up to `kbytes` from the pool and returns the kilobytes granted.
+    fn draw(&self, kbytes: usize) -> usize {
+        if self.released.load(Ordering::SeqCst) {
+            return 0;
+        }
+        let free = WINDOW_POOL_KBYTES
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |free| {
+                (free > 0).then(|| free - free.min(kbytes))
+            })
+            .unwrap_or(0);
+        let granted = free.min(kbytes);
+        self.pool_kbytes.fetch_add(granted, Ordering::SeqCst);
+        // Raced with the release: give back what it missed.
+        if self.released.load(Ordering::SeqCst) {
+            WINDOW_POOL_KBYTES
+                .fetch_add(self.pool_kbytes.swap(0, Ordering::SeqCst), Ordering::SeqCst);
+            return 0;
+        }
+        granted
+    }
+
+    fn release(&self) {
+        if !self.released.swap(true, Ordering::SeqCst) {
+            ACTIVE_SCANS.fetch_sub(1, Ordering::Relaxed);
+            WINDOW_POOL_KBYTES
+                .fetch_add(self.pool_kbytes.swap(0, Ordering::SeqCst), Ordering::SeqCst);
+        }
+    }
+}
+
+impl Drop for ScanRegistration {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// Releases the scan's registration when dropped.
+pub struct ActiveScan {
+    registration: Arc<ScanRegistration>,
+}
+
+impl Drop for ActiveScan {
+    fn drop(&mut self) {
+        self.registration.release();
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct PipelineBudget {
     count: Arc<Semaphore>,
     kbytes: Arc<Semaphore>,
     count_limit: Arc<AtomicUsize>,
-    kbytes_limit: usize,
+    kbytes_limit: Arc<AtomicUsize>,
     /// False if the count limit was set by an env var.
-    can_grow_for_ordered: bool,
-    grown_for_ordered: Arc<Once>,
+    can_grow_count: bool,
+    /// False if the kbytes limit was set by an env var.
+    can_grow_kbytes: bool,
+    ordered: Arc<AtomicBool>,
+    num_pipelines: usize,
+    /// In-flight budget of the store the scan reads from, attached by the first cloud reader.
+    inflight: Arc<OnceLock<Arc<InFlightBudget>>>,
+    registration: Arc<ScanRegistration>,
+    growing: Arc<Mutex<()>>,
     last_reported: Arc<Mutex<Instant>>,
     report_interval: Duration,
 }
 
 impl PipelineBudget {
-    /// Cap of the default count limit, also after `grow_for_ordered`.
+    /// Upper bound of the default count limit.
     pub(crate) const MAX_DEFAULT_COUNT_LIMIT: usize = 2048;
 
-    pub fn new(count_limit: usize, kbytes_limit: usize, can_grow_for_ordered: bool) -> Self {
+    /// Registers the scan as running and takes its share of the default limits; a limit set by an
+    /// env var is used as is and never grows.
+    pub fn new(
+        count_limit_env: Option<usize>,
+        kbytes_limit_env: Option<usize>,
+        num_pipelines: usize,
+    ) -> Self {
+        let (registration, scans) = ScanRegistration::register();
+        let count_limit =
+            count_limit_env.unwrap_or_else(|| default_prefetch_limit(num_pipelines, scans));
+        let kbytes_limit = kbytes_limit_env
+            .unwrap_or_else(|| default_prefetch_kbytes_limit(num_pipelines, scans));
+
         Self {
             count: Arc::new(Semaphore::new(count_limit)),
             kbytes: Arc::new(Semaphore::new(kbytes_limit)),
             count_limit: Arc::new(AtomicUsize::new(count_limit)),
-            kbytes_limit,
-            can_grow_for_ordered,
-            grown_for_ordered: Arc::new(Once::new()),
+            kbytes_limit: Arc::new(AtomicUsize::new(kbytes_limit)),
+            can_grow_count: count_limit_env.is_none(),
+            can_grow_kbytes: kbytes_limit_env.is_none(),
+            ordered: Arc::new(AtomicBool::new(false)),
+            num_pipelines,
+            inflight: Arc::new(OnceLock::new()),
+            registration: Arc::new(registration),
+            growing: Arc::default(),
             last_reported: Arc::new(Mutex::new(Instant::now())),
             report_interval: Duration::from_millis(100),
         }
@@ -71,32 +187,88 @@ impl PipelineBudget {
     }
 
     pub(crate) fn kbytes_limit(&self) -> usize {
-        self.kbytes_limit
+        self.kbytes_limit.load(Ordering::Acquire)
     }
 
-    /// Grows the count limit by `ORDERED_WINDOW_FACTOR`, once per scan; not if set by an env var.
-    /// Call before sizing anything from `count_limit()`.
-    pub(crate) fn grow_for_ordered(&self) {
-        if !self.can_grow_for_ordered {
+    /// Guard that releases the scan's registration when dropped, for scans that end before their
+    /// budget is dropped.
+    pub(crate) fn active_scan(&self) -> ActiveScan {
+        ActiveScan {
+            registration: self.registration.clone(),
+        }
+    }
+
+    /// Marks the scan as ordered, once per budget (shared by clones): the count limit becomes
+    /// `ORDERED_COUNT_LIMIT` unless set by an env var, and the window grows by the reorder
+    /// headroom. Call before sizing anything from `count_limit()`.
+    pub(crate) fn set_ordered(&self) {
+        if self.ordered.swap(true, Ordering::AcqRel) || !self.can_grow_count {
             return;
         }
-        self.grown_for_ordered.call_once(|| {
-            let count_limit = self.count_limit();
-            let new_count_limit = count_limit
-                .saturating_mul(ORDERED_WINDOW_FACTOR)
-                .min(Self::MAX_DEFAULT_COUNT_LIMIT);
+        let prev = self
+            .count_limit
+            .fetch_max(ORDERED_COUNT_LIMIT, Ordering::AcqRel);
+        self.count
+            .add_permits(ORDERED_COUNT_LIMIT.saturating_sub(prev));
 
-            self.count
-                .add_permits(new_count_limit.saturating_sub(count_limit));
-            self.count_limit.store(new_count_limit, Ordering::Release);
+        if config::verbose() {
+            eprintln!(
+                "[PipelineBudget]: ordered scan: prefetch_limit: {prev} -> {}",
+                prev.max(ORDERED_COUNT_LIMIT)
+            );
+        }
+    }
 
-            if config::verbose() {
-                eprintln!(
-                    "[PipelineBudget]: ordered scan: prefetch_limit: {count_limit} -> \
-                    {new_count_limit}"
-                );
-            }
-        });
+    /// Lets the window grow with the in-flight budget of the scan's store. The first call with a
+    /// budget wins.
+    pub(crate) fn attach_inflight(&self, inflight: Option<Arc<InFlightBudget>>) {
+        if let (true, Some(inflight)) = (self.can_grow_kbytes, inflight) {
+            let _ = self.inflight.set(inflight);
+        }
+    }
+
+    /// Grows the kbytes limit from the window pool to the store's in-flight byte budget, plus the
+    /// reorder headroom of an ordered scan, plus one fetch of `n_bytes` per decode slot. At most
+    /// what the count limit holds at this fetch size. Never shrinks.
+    fn grow_window(&self, n_bytes: usize) {
+        let Some(inflight) = self.inflight.get() else {
+            return;
+        };
+        let Ok(_growing) = self.growing.try_lock() else {
+            return;
+        };
+
+        let headroom = if self.ordered.load(Ordering::Acquire) {
+            (inflight.delivered_bandwidth() as f64 * ORDERED_SLACK.as_secs_f64()) as usize
+        } else {
+            0
+        };
+        let target_bytes = (inflight.current_byte_budget() as usize)
+            .saturating_add(headroom)
+            .saturating_add((self.num_pipelines + 1).saturating_mul(n_bytes))
+            .min(self.count_limit().saturating_mul(n_bytes));
+
+        let kbytes_limit = self.kbytes_limit();
+        let Some(missing) = target_bytes
+            .div_ceil(1 << 10)
+            .checked_sub(kbytes_limit)
+            .filter(|&x| x > 0)
+        else {
+            return;
+        };
+        let granted = self.registration.draw(missing);
+        if granted == 0 {
+            return;
+        }
+        self.kbytes_limit.fetch_add(granted, Ordering::AcqRel);
+        self.kbytes.add_permits(granted);
+
+        if config::verbose() {
+            eprintln!(
+                "[PipelineBudget]: prefetch_kbytes_limit: {kbytes_limit} -> {}",
+                kbytes_limit + granted
+            );
+        }
     }
 
     /// Acquire permit for a fetch of `n_bytes`.
@@ -108,6 +280,10 @@ impl PipelineBudget {
     /// The requested capacity is capped at the kbytes limit, so a fetch larger than the
     /// limit still proceeds, and any positive limit makes progress.
     pub(crate) async fn acquire(&self, n_bytes: usize) -> PipelinePermit {
+        if self.kbytes.available_permits() < n_bytes.div_ceil(1 << 10) {
+            self.grow_window(n_bytes);
+        }
+
         let n_kbytes: u32 = self.permit_kbytes(n_bytes).try_into().unwrap_or(u32::MAX);
 
         // Semaphores are never closed, so acquire cannot fail.
@@ -122,7 +298,8 @@ impl PipelineBudget {
         if *SHOULD_LOG_CONCURRENCY {
             if let Ok(mut last_log) = self.last_reported.lock() {
                 let count_limit = self.count_limit();
-                let kbytes_in_use = self.kbytes_limit - self.kbytes.available_permits();
+                let kbytes_limit = self.kbytes_limit();
+                let kbytes_in_use = kbytes_limit.saturating_sub(self.kbytes.available_permits());
                 let count_in_use = count_limit.saturating_sub(self.count.available_permits());
                 if last_log.elapsed() > self.report_interval {
                     eprintln!(
@@ -134,9 +311,9 @@ impl PipelineBudget {
                         count_in_use={}, \
                         count_sat={:.2}",
                         chrono::Utc::now(),
-                        self.kbytes_limit as f64 / 1e3,
+                        kbytes_limit as f64 / 1e3,
                         kbytes_in_use as f64 / 1e3,
-                        kbytes_in_use as f64 / self.kbytes_limit as f64,
+                        kbytes_in_use as f64 / kbytes_limit as f64,
                         count_limit,
                         count_in_use,
                         count_in_use as f64 / count_limit as f64,
@@ -152,7 +329,7 @@ impl PipelineBudget {
     /// Kilobytes taken by the permit for a fetch of `n_bytes`.
     pub(crate) fn permit_kbytes(&self, n_bytes: usize) -> usize {
         // Capped at the limit to prevent deadlock.
-        n_bytes.div_ceil(1 << 10).min(self.kbytes_limit)
+        n_bytes.div_ceil(1 << 10).min(self.kbytes_limit())
     }
 }
 
