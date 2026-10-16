@@ -15,9 +15,33 @@ pub enum IRStructFunction {
     MapFieldNames(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is a Struct.
+    pub fn ensure_is_struct(&self) -> PolarsResult<()> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            dt.is_struct() || matches!(dt, DataType::Unknown(UnknownKind::Any)),
+            InvalidOperation:
+            "expected Struct data type for struct operation, got: {dt:?}"
+        );
+        Ok(())
+    }
+}
+
 impl IRStructFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRStructFunction::*;
+        // `json_encode` can encode any dtype, and `field` raises
+        // `StructFieldNotFoundError` on non-struct input itself.
+        let skip_check = match self {
+            FieldByName(_) => true,
+            #[cfg(feature = "json")]
+            JsonEncode => true,
+            _ => false,
+        };
+        if !skip_check {
+            mapper.ensure_is_struct()?;
+        }
 
         match self {
             FieldByName(name) => mapper.try_map_field(|field| {

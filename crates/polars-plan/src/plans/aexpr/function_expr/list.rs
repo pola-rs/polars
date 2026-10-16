@@ -59,46 +59,50 @@ pub enum IRListFunction {
 
 impl<'a> FieldsMapper<'a> {
     /// Validate that the dtype is a List.
-    pub fn ensure_is_list(self) -> PolarsResult<Self> {
+    pub fn ensure_is_list(&self) -> PolarsResult<()> {
         let dt = self.args()[0].dtype();
         polars_ensure!(
             dt.is_list(),
             InvalidOperation:
             "expected List data type for list operation, got: {dt:?}"
         );
-        Ok(self)
+        Ok(())
     }
 }
 
 impl IRListFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRListFunction::*;
+        // `Concat` is shared with `pl.concat_list`, which accepts non-list inputs.
+        if !matches!(self, Concat) {
+            mapper.ensure_is_list()?;
+        }
         match self {
             Concat => mapper.map_to_list_supertype(),
             #[cfg(feature = "is_in")]
-            Contains { .. } => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
+            Contains { .. } => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_drop_nulls")]
-            DropNulls => mapper.ensure_is_list()?.with_same_dtype(),
+            DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "list_sample")]
-            Sample { .. } => mapper.ensure_is_list()?.with_same_dtype(),
-            Slice => mapper.ensure_is_list()?.with_same_dtype(),
-            Shift => mapper.ensure_is_list()?.with_same_dtype(),
-            Get(_) => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
+            Sample { .. } => mapper.with_same_dtype(),
+            Slice => mapper.with_same_dtype(),
+            Shift => mapper.with_same_dtype(),
+            Get(_) => mapper.map_to_list_and_array_inner_dtype(),
             #[cfg(feature = "list_gather")]
-            Gather(_) => mapper.ensure_is_list()?.with_same_dtype(),
+            Gather(_) => mapper.with_same_dtype(),
             #[cfg(feature = "list_gather")]
-            GatherEvery => mapper.ensure_is_list()?.with_same_dtype(),
+            GatherEvery => mapper.with_same_dtype(),
             #[cfg(feature = "list_count")]
-            CountMatches => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
+            CountMatches => mapper.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
-            Min => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
-            Max => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
+            Min => mapper.map_to_list_and_array_inner_dtype(),
+            Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.nested_mean_median_type(),
             Median => mapper.nested_mean_median_type(),
-            Std(_) => mapper.ensure_is_list()?.var_dtype("std"),
-            Var(_) => mapper.ensure_is_list()?.var_dtype("var"),
-            ArgMin => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
-            ArgMax => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
+            Std(_) => mapper.var_dtype("std"),
+            Var(_) => mapper.var_dtype("var"),
+            ArgMin => mapper.with_dtype(IDX_DTYPE),
+            ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
             Diff { .. } => mapper.try_map_dtype(|dt| {
                 let DataType::List(inner) = dt else {
@@ -120,10 +124,10 @@ impl IRListFunction {
 
                 Ok(DataType::List(Box::new(inner_dt)))
             }),
-            Sort(_) => mapper.ensure_is_list()?.with_same_dtype(),
-            Length => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
+            Sort(_) => mapper.with_same_dtype(),
+            Length => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_sets")]
-            SetOperation(_) => mapper.ensure_is_list()?.with_same_dtype(),
+            SetOperation(_) => mapper.with_same_dtype(),
             Join(_) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
                     polars_bail!(
@@ -137,9 +141,7 @@ impl IRListFunction {
                 Ok(DataType::String)
             }),
             #[cfg(feature = "dtype-array")]
-            ToArray(width) => mapper
-                .ensure_is_list()?
-                .try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
+            ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
             #[cfg(feature = "list_to_struct")]
             ToStruct(names) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
