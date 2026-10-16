@@ -5,7 +5,11 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    SchemaFieldNotFoundError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -31,6 +35,19 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
             "has_header => false, infer_schema_length => NULL",
             {"has_header": False, "infer_schema_length": None},
         ),
+        # early rows narrower than the schema (#29970)
+        (
+            "C,NEMP.WORLD,PUBLIC_DAILY\nD,DREGION,1,NSW1\nD,DUNIT,1,UNIT_A,10.5,1\n",
+            "has_header => false, skip_rows => 1, missing_columns => 'insert', schema => {"
+            + ", ".join(f"'column_{i}': 'VARCHAR'" for i in range(6))
+            + "}",
+            {
+                "has_header": False,
+                "skip_rows": 1,
+                "missing_columns": "insert",
+                "schema": {f"column_{i}": pl.String for i in range(6)},
+            },
+        ),
         # layout
         (
             "a;b\n1,5;2\n",
@@ -53,6 +70,11 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
             "1,2\n3,4\n",
             "has_header => false, schema => {'x': 'BIGINT', 'y': 'VARCHAR'}",
             {"has_header": False, "schema": {"x": pl.Int64, "y": pl.String}},
+        ),
+        (
+            "a,b,c\n1,x,1.5\n",
+            "schema => {'a': 'BIGINT', 'b': 'VARCHAR'}, extra_columns => 'ignore'",
+            {"schema": {"a": pl.Int64, "b": pl.String}, "extra_columns": "ignore"},
         ),
         (
             "a,b\n1,2\n",
@@ -82,6 +104,8 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
             "truncate_ragged_lines => true",
             {"truncate_ragged_lines": True},
         ),
+        # implies `truncate_ragged_lines`; values are case-insensitive
+        ("a,b\n1,2,3\n4,5\n", "extra_columns => 'IGNORE'", {"extra_columns": "ignore"}),
         ("a\n1\n", "include_file_paths => 'file'", {"include_file_paths": "file"}),
         (
             "",
@@ -101,6 +125,40 @@ def test_read_csv_options_match_scan_csv(
     scan_kwargs: dict[str, Any] = {"try_parse_dates": True, **kwargs}
     expected = pl.scan_csv(path.as_posix(), **scan_kwargs).collect()
     assert_frame_equal(_read_csv_sql(path, options), expected)
+
+
+@pytest.mark.parametrize(
+    ("files", "options", "kwargs"),
+    [
+        # different headers: the union of the columns, or those of the first file
+        (
+            ["a,b\n1,x\n", "a,b,c\n2,y,1.5\n"],
+            "missing_columns => 'insert'",
+            {"missing_columns": "insert"},
+        ),
+        (
+            ["a,b\n1,x\n", "a,b,c\n2,y,1.5\n"],
+            "extra_columns => 'ignore', infer_schema_files => 1",
+            {"extra_columns": "ignore", "infer_schema_files": 1},
+        ),
+        # a wider type in the eleventh file, past the default of ten
+        (
+            ["a\n1.5\n" if i == 10 else "a\n1\n" for i in range(12)],
+            "infer_schema_files => 11",
+            {"infer_schema_files": 11},
+        ),
+    ],
+)
+def test_read_csv_options_across_files_match_scan_csv(
+    tmp_path: Path, files: list[str], options: str, kwargs: dict[str, Any]
+) -> None:
+    for i, contents in enumerate(files):
+        (tmp_path / f"part_{i:02}.csv").write_text(contents)
+    glob = tmp_path / "part_*.csv"
+
+    scan_kwargs: dict[str, Any] = {"try_parse_dates": True, **kwargs}
+    expected = pl.scan_csv(glob.as_posix(), **scan_kwargs).collect()
+    assert_frame_equal(_read_csv_sql(glob, options), expected)
 
 
 def test_read_csv_options_lossy_encoding(tmp_path: Path) -> None:
@@ -138,9 +196,31 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             r"option 'n_rows' is not supported in SQL: use LIMIT",
         ),
         (
-            "missing_columns => 'insert'",
+            "credential_provider => 'auto'",
             SQLInterfaceError,
-            r"is not supported in SQL: it is unstable; .* infer_schema_length => NULL",
+            r"is not supported in SQL: cloud credentials are read from the environment",
+        ),
+        (
+            "missing_columns => 'fill'",
+            SQLSyntaxError,
+            r"option 'missing_columns' expects 'insert' or 'raise'; found: 'fill'",
+        ),
+        # Python's `None` only means "the default" here, so NULL is rejected, as for
+        # `truncate_ragged_lines`; accepting it later would not break anything
+        (
+            "missing_columns => NULL",
+            SQLSyntaxError,
+            r"option 'missing_columns' expects 'insert' or 'raise'; found: NULL",
+        ),
+        (
+            "extra_columns => 'ignore', truncate_ragged_lines => false",
+            SQLSyntaxError,
+            r"cannot set truncate_ragged_lines => false with extra_columns => 'ignore'",
+        ),
+        (
+            "infer_schema_files => 0",
+            SQLSyntaxError,
+            r"option 'infer_schema_files' expects a positive integer; found: 0",
         ),
         (
             "has_header = false",
@@ -181,3 +261,315 @@ def test_read_csv_option_errors(
     path.write_text("a,b\n1,2\n")
     with pytest.raises(error, match=match):
         _read_csv_sql(path, options)
+
+
+def _read_ndjson_sql(
+    path: Path, options: str, function: str = "read_ndjson"
+) -> pl.DataFrame:
+    args = f"'{path.as_posix()}'" + (f", {options}" if options else "")
+    with pl.SQLContext() as ctx:
+        return ctx.execute(f"SELECT * FROM {function}({args})", eager=True)
+
+
+_NDJSON_ROWS = (
+    '{"a": 1, "b": "x", "s": {"x": 1}, "l": [1, 2], "d": "2026-01-02"}\n'
+    '{"a": "oops", "b": "y", "s": {"x": 2}, "l": [3], "d": "2026-01-03"}\n'
+)
+_NDJSON_KEY_LATE = (
+    "".join(f'{{"a": {i}}}\n' for i in range(150)) + '{"a": 150, "b": "late"}\n'
+)
+
+
+@pytest.mark.parametrize(
+    ("contents", "options", "kwargs"),
+    [
+        (_NDJSON_ROWS, "", {}),
+        # a key first seen after the inference window is dropped, unless inference
+        # covers it
+        (_NDJSON_KEY_LATE, "", {}),
+        (
+            _NDJSON_KEY_LATE,
+            "infer_schema_length => NULL",
+            {"infer_schema_length": None},
+        ),
+        # option names are case-insensitive, and `:=` works like `=>`
+        (
+            _NDJSON_KEY_LATE,
+            "INFER_SCHEMA_LENGTH := 200",
+            {"infer_schema_length": 200},
+        ),
+        (
+            _NDJSON_ROWS,
+            "schema => {'b': 'VARCHAR', 'c': 'INT'}",
+            {"schema": {"b": pl.String, "c": pl.Int32}},
+        ),
+        (
+            _NDJSON_ROWS,
+            "schema_overrides => {'s': 'VARCHAR', 'l': 'INT[]', 'd': 'DATE'}",
+            {
+                "schema_overrides": {
+                    "s": pl.String,
+                    "l": pl.List(pl.Int32),
+                    "d": pl.Date,
+                }
+            },
+        ),
+        (
+            _NDJSON_ROWS,
+            "schema_overrides => {'a': 'INT'}, ignore_errors => true",
+            {"schema_overrides": {"a": pl.Int32}, "ignore_errors": True},
+        ),
+        (
+            _NDJSON_ROWS,
+            "include_file_paths => 'path'",
+            {"include_file_paths": "path"},
+        ),
+    ],
+)
+def test_read_ndjson_options_match_scan_ndjson(
+    tmp_path: Path, contents: str, options: str, kwargs: dict[str, Any]
+) -> None:
+    path = tmp_path / "data.ndjson"
+    path.write_text(contents)
+
+    # the same path spelling as in the query keeps `include_file_paths` identical
+    expected = pl.scan_ndjson(path.as_posix(), **kwargs).collect()
+    assert_frame_equal(_read_ndjson_sql(path, options), expected)
+
+
+def test_read_ndjson_include_file_paths_over_a_glob(tmp_path: Path) -> None:
+    (tmp_path / "part_1.ndjson").write_text('{"a": 1}\n')
+    (tmp_path / "part_2.ndjson").write_text('{"a": 2}\n')
+    glob = tmp_path / "part_*.ndjson"
+
+    expected = pl.scan_ndjson(glob.as_posix(), include_file_paths="path").collect()
+    assert_frame_equal(_read_ndjson_sql(glob, "include_file_paths => 'path'"), expected)
+    assert expected["path"].n_unique() == 2
+
+
+def test_read_json_takes_only_a_path(tmp_path: Path) -> None:
+    path = tmp_path / "data.ndjson"
+    path.write_text(_NDJSON_ROWS)
+
+    assert_frame_equal(
+        _read_ndjson_sql(path, "", function="read_json"),
+        _read_ndjson_sql(path, ""),
+    )
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"`read_json` expects a single file path; found 2 arguments \(for options, use `read_ndjson`\)",
+    ):
+        _read_ndjson_sql(path, "ignore_errors => true", function="read_json")
+
+
+def test_read_ndjson_options_survive_plan_roundtrip(tmp_path: Path) -> None:
+    path = tmp_path / "data.ndjson"
+    path.write_text(_NDJSON_KEY_LATE)
+
+    q = pl.sql(
+        f"SELECT b FROM read_ndjson('{path.as_posix()}', "
+        "infer_schema_length => NULL) WHERE b IS NOT NULL"
+    )
+    roundtripped = pl.LazyFrame.deserialize(q.serialize())
+    assert_frame_equal(roundtripped.collect(), pl.DataFrame({"b": ["late"]}))
+
+
+@pytest.mark.parametrize(
+    ("options", "error", "match"),
+    [
+        (
+            "infer_schema_length => 0",
+            SQLSyntaxError,
+            r"option 'infer_schema_length' expects a positive integer or NULL; found: 0",
+        ),
+        (
+            "header => true",
+            SQLInterfaceError,
+            r"unknown `read_ndjson` option 'header'; valid options are: schema, ",
+        ),
+        (
+            "n_rows => 5",
+            SQLInterfaceError,
+            r"option 'n_rows' is not supported in SQL: use LIMIT",
+        ),
+        (
+            "storage_options => {'a': 'b'}",
+            SQLInterfaceError,
+            r"not supported in SQL: cloud credentials are read from the environment",
+        ),
+        # an excluded option without an alternative gets no trailing reason
+        (
+            "batch_size => 10",
+            SQLInterfaceError,
+            r"option 'batch_size' is not supported in SQL$",
+        ),
+        (
+            "ignore_errors = true",
+            SQLSyntaxError,
+            r"options must be named with '=>' \(found: ignore_errors = true\)",
+        ),
+        (
+            "ignore_errors => 'no'",
+            SQLSyntaxError,
+            r"option 'ignore_errors' expects a boolean; found: 'no'",
+        ),
+        (
+            "ignore_errors => true, IGNORE_ERRORS => false",
+            SQLSyntaxError,
+            r"option 'ignore_errors' is given more than once",
+        ),
+        (
+            "schema => {'x': 'INT('}",
+            SQLSyntaxError,
+            r"option 'schema' has an invalid type name: 'INT\('",
+        ),
+        # an override for a key the file doesn't have names it
+        (
+            "schema_overrides => {'zz': 'INT'}",
+            SchemaFieldNotFoundError,
+            r"zz",
+        ),
+    ],
+)
+def test_read_ndjson_option_errors(
+    tmp_path: Path, options: str, error: type[Exception], match: str
+) -> None:
+    path = tmp_path / "data.ndjson"
+    path.write_text(_NDJSON_ROWS)
+    with pytest.raises(error, match=match):
+        _read_ndjson_sql(path, options)
+
+
+def _read_parquet_sql(path: Path, options: str) -> pl.DataFrame:
+    args = f"'{path.as_posix()}'" + (f", {options}" if options else "")
+    with pl.SQLContext() as ctx:
+        return ctx.execute(f"SELECT * FROM read_parquet({args})", eager=True)
+
+
+def _write_hive_parquet(root: Path) -> Path:
+    # two hive partitions with date-like values; returns a glob over them
+    for d in ("2026-01-01", "2026-01-02"):
+        (root / f"d={d}").mkdir()
+        pl.DataFrame({"a": [1, 2]}).write_parquet(root / f"d={d}" / "data.parquet")
+    return root / "*" / "data.parquet"
+
+
+@pytest.mark.parametrize(
+    ("options", "kwargs"),
+    [
+        # unlike scan_parquet, hive partitions are read by default, for a glob too
+        ("", {}),
+        ("hive_partitioning => false", {"hive_partitioning": False}),
+        ("try_parse_hive_dates => false", {"try_parse_hive_dates": False}),
+        ("hive_schema => {'d': 'VARCHAR'}", {"hive_schema": {"d": pl.String}}),
+        ("include_file_paths => 'file'", {"include_file_paths": "file"}),
+    ],
+)
+def test_read_parquet_hive_options_match_scan_parquet(
+    tmp_path: Path, options: str, kwargs: dict[str, Any]
+) -> None:
+    glob = _write_hive_parquet(tmp_path)
+    scan_kwargs: dict[str, Any] = {"hive_partitioning": True, **kwargs}
+    expected = pl.scan_parquet(glob.as_posix(), **scan_kwargs).collect()
+    assert_frame_equal(_read_parquet_sql(glob, options), expected)
+
+
+def test_read_parquet_hive_column_of_a_single_file(tmp_path: Path) -> None:
+    # unlike scan_parquet's automatic choice, a single file in a hive folder gets it too
+    path = tmp_path / "d=2026-01-01" / "data.parquet"
+    path.parent.mkdir()
+    pl.DataFrame({"a": [1]}).write_parquet(path)
+
+    assert _read_parquet_sql(path, "").schema == {"a": pl.Int64, "d": pl.Date}
+    assert _read_parquet_sql(path, "hive_partitioning => false").schema == {
+        "a": pl.Int64
+    }
+
+
+@pytest.mark.parametrize(
+    ("options", "kwargs"),
+    [
+        # the first file defines the columns; later files lack one, or have another
+        (
+            "missing_columns => 'insert', extra_columns => 'ignore'",
+            {"missing_columns": "insert", "extra_columns": "ignore"},
+        ),
+        # the union of the columns, from a schema; values are case-insensitive
+        (
+            "schema => {'a': 'BIGINT', 'b': 'VARCHAR', 'c': 'DOUBLE'}, "
+            "missing_columns => 'INSERT'",
+            {
+                "schema": {"a": pl.Int64, "b": pl.String, "c": pl.Float64},
+                "missing_columns": "insert",
+            },
+        ),
+    ],
+)
+def test_read_parquet_column_options_match_scan_parquet(
+    tmp_path: Path, options: str, kwargs: dict[str, Any]
+) -> None:
+    pl.DataFrame({"a": [1], "b": ["x"]}).write_parquet(tmp_path / "part_1.parquet")
+    pl.DataFrame({"a": [2]}).write_parquet(tmp_path / "part_2.parquet")
+    pl.DataFrame({"a": [3], "b": ["z"], "c": [1.5]}).write_parquet(
+        tmp_path / "part_3.parquet"
+    )
+    glob = tmp_path / "part_*.parquet"
+
+    scan_kwargs: dict[str, Any] = {"hive_partitioning": True, **kwargs}
+    expected = pl.scan_parquet(glob.as_posix(), **scan_kwargs).collect()
+    assert_frame_equal(_read_parquet_sql(glob, options), expected)
+
+
+def test_read_parquet_options_survive_plan_roundtrip(tmp_path: Path) -> None:
+    glob = _write_hive_parquet(tmp_path)
+    q = pl.sql(
+        f"SELECT * FROM read_parquet('{glob.as_posix()}', hive_partitioning => false) "
+        "WHERE a > 1"
+    )
+    roundtripped = pl.LazyFrame.deserialize(q.serialize())
+    assert_frame_equal(roundtripped.collect(), pl.DataFrame({"a": [2, 2]}))
+
+
+@pytest.mark.parametrize(
+    ("options", "error", "match"),
+    [
+        # true or false only: NULL would not mean scan_parquet's automatic choice
+        (
+            "hive_partitioning => NULL",
+            SQLSyntaxError,
+            r"option 'hive_partitioning' expects a boolean; found: NULL",
+        ),
+        (
+            "missing_columns => 'fill'",
+            SQLSyntaxError,
+            r"option 'missing_columns' expects 'insert' or 'raise'; found: 'fill'",
+        ),
+        (
+            "header => true",
+            SQLInterfaceError,
+            r"unknown `read_parquet` option 'header'; valid options are: schema, ",
+        ),
+        (
+            "n_rows => 5",
+            SQLInterfaceError,
+            r"option 'n_rows' is not supported in SQL: use LIMIT",
+        ),
+        (
+            "columns => ['a']",
+            SQLInterfaceError,
+            r"option 'columns' is not supported in SQL: select the columns in the SELECT",
+        ),
+        (
+            "cast_options => NULL",
+            SQLInterfaceError,
+            r"option 'cast_options' is not supported in SQL$",
+        ),
+    ],
+)
+def test_read_parquet_option_errors(
+    tmp_path: Path, options: str, error: type[Exception], match: str
+) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"a": [1]}).write_parquet(path)
+    with pytest.raises(error, match=match):
+        _read_parquet_sql(path, options)

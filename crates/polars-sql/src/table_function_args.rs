@@ -1,9 +1,16 @@
 //! Arguments of SQL table functions: a positional path followed by named options, as in
 //! `read_csv('data.csv', has_header => false, separator => ';')`.
 
+#[cfg(any(feature = "csv", feature = "json"))]
+use std::num::NonZeroUsize;
+#[cfg(feature = "csv")]
+use std::str::FromStr;
+
 use polars_core::prelude::*;
+#[cfg(feature = "csv")]
+use sqlparser::ast::Array as SQLArray;
 use sqlparser::ast::{
-    Array as SQLArray, DictionaryField, Expr as SQLExpr, FunctionArg as SQLFunctionArg,
+    DictionaryField, Expr as SQLExpr, FunctionArg as SQLFunctionArg,
     FunctionArgExpr as SQLFunctionArgExpr, Value as SQLValue, ValueWithSpan as SQLValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
@@ -18,6 +25,7 @@ pub(crate) struct TableFunctionOptions<'a> {
 }
 
 /// A `schema_overrides` value: by column name, or by position.
+#[cfg(feature = "csv")]
 pub(crate) enum DtypeOverrides {
     ByName(Schema),
     ByPosition(Vec<DataType>),
@@ -103,6 +111,7 @@ impl<'a> TableFunctionOptions<'a> {
             .transpose()
     }
 
+    #[cfg(feature = "csv")]
     pub(crate) fn usize(&self, name: &str) -> PolarsResult<Option<usize>> {
         self.get(name)
             .map(|expr| self.expect_usize(name, expr))
@@ -110,6 +119,7 @@ impl<'a> TableFunctionOptions<'a> {
     }
 
     /// An integer, or NULL for "no limit".
+    #[cfg(feature = "csv")]
     pub(crate) fn nullable_usize(&self, name: &str) -> PolarsResult<Option<Option<usize>>> {
         self.get(name)
             .map(|expr| match literal(expr) {
@@ -119,12 +129,74 @@ impl<'a> TableFunctionOptions<'a> {
             .transpose()
     }
 
+    /// A positive integer, or NULL for "no limit".
+    #[cfg(feature = "json")]
+    pub(crate) fn nullable_positive_usize(
+        &self,
+        name: &str,
+    ) -> PolarsResult<Option<Option<NonZeroUsize>>> {
+        self.get(name)
+            .map(|expr| match literal(expr) {
+                Some(SQLValue::Null) => Ok(None),
+                Some(SQLValue::Number(n, _)) if let Ok(n) = n.parse::<NonZeroUsize>() => {
+                    Ok(Some(n))
+                },
+                _ => Err(self.type_error(name, "a positive integer or NULL", expr)),
+            })
+            .transpose()
+    }
+
+    #[cfg(feature = "csv")]
+    pub(crate) fn positive_usize(&self, name: &str) -> PolarsResult<Option<NonZeroUsize>> {
+        self.get(name)
+            .map(|expr| self.expect_number(name, expr, "a positive integer"))
+            .transpose()
+    }
+
+    #[cfg(feature = "csv")]
     fn expect_usize(&self, name: &str, expr: &SQLExpr) -> PolarsResult<usize> {
+        self.expect_number(name, expr, "a non-negative integer")
+    }
+
+    #[cfg(feature = "csv")]
+    fn expect_number<T: FromStr>(
+        &self,
+        name: &str,
+        expr: &SQLExpr,
+        expected: &str,
+    ) -> PolarsResult<T> {
         match literal(expr) {
-            Some(SQLValue::Number(n, _)) => n.parse::<usize>().ok(),
+            Some(SQLValue::Number(n, _)) => n.parse::<T>().ok(),
             _ => None,
         }
-        .ok_or_else(|| self.type_error(name, "a non-negative integer", expr))
+        .ok_or_else(|| self.type_error(name, expected, expr))
+    }
+
+    /// One of the string `values`, matched case-insensitively, as the value paired with it.
+    #[cfg(any(feature = "csv", feature = "parquet"))]
+    pub(crate) fn one_of<T: Copy>(
+        &self,
+        name: &str,
+        values: &[(&str, T)],
+    ) -> PolarsResult<Option<T>> {
+        self.get(name)
+            .map(|expr| {
+                string_literal(expr)
+                    .and_then(|s| {
+                        values
+                            .iter()
+                            .find(|(value, _)| value.eq_ignore_ascii_case(&s))
+                    })
+                    .map(|(_, out)| *out)
+                    .ok_or_else(|| {
+                        let expected: Vec<String> = values
+                            .iter()
+                            .map(|(value, _)| format!("'{value}'"))
+                            .collect();
+                        self.type_error(name, &expected.join(" or "), expr)
+                    })
+            })
+            .transpose()
     }
 
     pub(crate) fn string(&self, name: &str) -> PolarsResult<Option<String>> {
@@ -134,6 +206,7 @@ impl<'a> TableFunctionOptions<'a> {
     }
 
     /// A string, or NULL to unset the option.
+    #[cfg(feature = "csv")]
     pub(crate) fn nullable_string(&self, name: &str) -> PolarsResult<Option<Option<String>>> {
         self.get(name)
             .map(|expr| match literal(expr) {
@@ -148,6 +221,7 @@ impl<'a> TableFunctionOptions<'a> {
     }
 
     /// A single-byte character, or NULL or an empty string (as in Python) to unset the option.
+    #[cfg(feature = "csv")]
     pub(crate) fn nullable_byte(&self, name: &str) -> PolarsResult<Option<Option<u8>>> {
         self.nullable_string(name)?
             .map(|s| {
@@ -158,12 +232,14 @@ impl<'a> TableFunctionOptions<'a> {
             .transpose()
     }
 
+    #[cfg(feature = "csv")]
     pub(crate) fn byte(&self, name: &str) -> PolarsResult<Option<u8>> {
         self.string(name)?
             .map(|s| self.expect_byte(name, &s))
             .transpose()
     }
 
+    #[cfg(feature = "csv")]
     fn expect_byte(&self, name: &str, s: &str) -> PolarsResult<u8> {
         match s.as_bytes() {
             [b] => Ok(*b),
@@ -181,6 +257,7 @@ impl<'a> TableFunctionOptions<'a> {
         }
     }
 
+    #[cfg(feature = "csv")]
     pub(crate) fn strings(&self, name: &str) -> PolarsResult<Option<Vec<String>>> {
         self.get(name)
             .map(|expr| {
@@ -228,6 +305,7 @@ impl<'a> TableFunctionOptions<'a> {
     }
 
     /// A dictionary of column name to SQL type name, or a list of SQL type names by position.
+    #[cfg(feature = "csv")]
     pub(crate) fn dtype_overrides(&self, name: &str) -> PolarsResult<Option<DtypeOverrides>> {
         let Some(expr) = self.get(name) else {
             return Ok(None);
@@ -247,6 +325,7 @@ impl<'a> TableFunctionOptions<'a> {
     }
 
     /// One string, a list of strings, or a `{'key': 'value'}` dictionary of strings.
+    #[cfg(feature = "csv")]
     pub(crate) fn string_values(&self, name: &str) -> PolarsResult<Option<StringValues>> {
         self.get(name)
             .map(|expr| {
@@ -287,6 +366,7 @@ impl<'a> TableFunctionOptions<'a> {
 }
 
 /// The value of an option that accepts one string, a list of strings, or a dictionary.
+#[cfg(feature = "csv")]
 pub(crate) enum StringValues {
     One(String),
     List(Vec<String>),
@@ -307,6 +387,7 @@ fn string_literal(expr: &SQLExpr) -> Option<String> {
     }
 }
 
+#[cfg(feature = "csv")]
 fn array_elements(expr: &SQLExpr) -> Option<&[SQLExpr]> {
     match expr {
         SQLExpr::Array(SQLArray { elem, .. }) => Some(elem),

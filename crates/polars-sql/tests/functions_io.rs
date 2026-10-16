@@ -1,8 +1,8 @@
-#[cfg(any(feature = "csv", feature = "ipc"))]
+#[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
 use polars_core::prelude::*;
 #[cfg(any(feature = "csv", feature = "ipc"))]
 use polars_lazy::prelude::*;
-#[cfg(any(feature = "csv", feature = "ipc"))]
+#[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
 use polars_sql::*;
 use polars_utils::pl_path::PlRefPath;
 
@@ -398,10 +398,6 @@ mod read_csv_options {
             (
                 "n_rows => 5",
                 "`read_csv` option 'n_rows' is not supported in SQL: use LIMIT",
-            ),
-            (
-                "missing_columns => 'insert'",
-                "not supported in SQL: it is unstable; for rows of different widths, use infer_schema_length => NULL",
             ),
             (
                 "has_header = false",
