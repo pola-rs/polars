@@ -24,7 +24,7 @@ use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList};
+use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyMapping};
 
 use super::{PyLazyFrame, PyOptFlags};
 use crate::error::PyPolarsErr;
@@ -1269,14 +1269,14 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = missing_columns.extract::<Wrap<MissingColumnsPolicyOrExpr>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = missing_columns.cast::<PyDict>() {
+            } else if let Ok(mapping) = missing_columns.cast::<PyMapping>() {
                 out.extend(std::iter::repeat_n(
                     MissingColumnsPolicyOrExpr::Raise,
                     schema.len(),
                 ));
-                for (key, value) in dict.iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<Wrap<MissingColumnsPolicyOrExpr>>()?;
+                for item in mapping.items()?.iter() {
+                    let (key, value) =
+                        item.extract::<(String, Wrap<MissingColumnsPolicyOrExpr>)>()?;
                     out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
                 }
             } else {
@@ -1291,14 +1291,13 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = missing_struct_fields.extract::<Wrap<MissingColumnsPolicy>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = missing_struct_fields.cast::<PyDict>() {
+            } else if let Ok(mapping) = missing_struct_fields.cast::<PyMapping>() {
                 out.extend(std::iter::repeat_n(
                     MissingColumnsPolicy::Raise,
                     schema.len(),
                 ));
-                for (key, value) in dict.iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<Wrap<MissingColumnsPolicy>>()?;
+                for item in mapping.items()?.iter() {
+                    let (key, value) = item.extract::<(String, Wrap<MissingColumnsPolicy>)>()?;
                     out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
                 }
             } else {
@@ -1315,11 +1314,10 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = extra_struct_fields.extract::<Wrap<ExtraColumnsPolicy>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = extra_struct_fields.cast::<PyDict>() {
+            } else if let Ok(mapping) = extra_struct_fields.cast::<PyMapping>() {
                 out.extend(std::iter::repeat_n(ExtraColumnsPolicy::Raise, schema.len()));
-                for (key, value) in dict.iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<Wrap<ExtraColumnsPolicy>>()?;
+                for item in mapping.items()?.iter() {
+                    let (key, value) = item.extract::<(String, Wrap<ExtraColumnsPolicy>)>()?;
                     out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
                 }
             } else {
@@ -1336,11 +1334,10 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = cast.extract::<Wrap<UpcastOrForbid>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = cast.cast::<PyDict>() {
+            } else if let Ok(mapping) = cast.cast::<PyMapping>() {
                 out.extend(std::iter::repeat_n(UpcastOrForbid::Forbid, schema.len()));
-                for (key, value) in dict.iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<Wrap<UpcastOrForbid>>()?;
+                for item in mapping.items()?.iter() {
+                    let (key, value) = item.extract::<(String, Wrap<UpcastOrForbid>)>()?;
                     out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
                 }
             } else {

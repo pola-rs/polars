@@ -47,6 +47,13 @@ impl ComputeNode for RepeatNode {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
 
+        // E.g. a join with an empty build side stops reading.
+        if send[0] == PortState::Done {
+            recv[0] = PortState::Done;
+            recv[1] = PortState::Done;
+            return Ok(());
+        }
+
         if recv[0] == PortState::Done && recv[1] == PortState::Done {
             if let Self::GatheringParams { value, repeats } = self {
                 let repeats = repeats.get_output()?.unwrap();

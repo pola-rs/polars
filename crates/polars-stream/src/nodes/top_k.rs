@@ -322,11 +322,19 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> Predicat
             return Ok(None);
         };
 
+        if columns[0].is_empty() {
+            return Ok(Some(Column::new_empty(
+                PlSmallStr::EMPTY,
+                &DataType::Boolean,
+            )));
+        }
+
         if columns[0].dtype().is_null() || matches!(columns[0], Column::Scalar(_)) {
             let cv = columns[0]
                 .get(0)?
                 .null_to_none()
-                .map(|v| TotalOrdWrap(v.try_extract().unwrap()));
+                // Physical: e.g. decimals extract as their (truncated) logical value.
+                .map(|v| TotalOrdWrap(v.to_physical().try_extract().unwrap()));
             let keep = ReorderWithNulls(cv) < v;
             let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(keep));
             Ok(Some(Column::new_scalar(
@@ -412,6 +420,13 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
         let Some(v) = self.shared_optimum.read().clone() else {
             return Ok(None);
         };
+
+        if columns[0].is_empty() {
+            return Ok(Some(Column::new_empty(
+                PlSmallStr::EMPTY,
+                &DataType::Boolean,
+            )));
+        }
 
         if columns[0].dtype().is_null() || matches!(columns[0], Column::Scalar(_)) {
             let scalar = columns[0].get(0)?;

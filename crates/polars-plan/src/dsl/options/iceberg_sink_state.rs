@@ -32,6 +32,7 @@ pub struct IcebergSinkState {
     pub row_group_size: Option<usize>,
     pub maintain_order: bool,
     pub sort_order_id: Option<i32>,
+    pub partition_spec_id: Option<i32>,
 
     pub sink_uuid_str: String,
 
