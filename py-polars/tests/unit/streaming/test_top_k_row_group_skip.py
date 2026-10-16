@@ -172,7 +172,9 @@ def test_top_k_threshold_lowers_after_heap_is_full(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # A row index keeps the file order, so the best key comes after the heap is full.
-    df = pl.DataFrame({"k": [1000] * 1000 + [0] * 10 + [500] * 3000})
+    # The long tail keeps the reader from decoding all of it before the threshold drops.
+    plmonkeypatch.setenv("POLARS_ROW_GROUP_PREFETCH_SIZE", "1")
+    df = pl.DataFrame({"k": [1000] * 1000 + [0] * 10 + [500] * 30000})
     path = tmp_path / "data.parquet"
     df.write_parquet(path, row_group_size=ROWS_PER_GROUP)
     q = pl.scan_parquet(path, row_index_name="idx").sort("k").head(1)
