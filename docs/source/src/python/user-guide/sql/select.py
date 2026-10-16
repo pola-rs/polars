@@ -114,3 +114,13 @@ result = ctx.execute(
 )
 print(result)
 # --8<-- [end:tablefunctionoptions]
+
+# --8<-- [start:tablefunctionndjson]
+result = ctx.execute(
+    """
+        SELECT *
+        FROM read_ndjson('docs/assets/data/orders.ndjson', schema_overrides => {'date': 'DATE'})
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionndjson]
