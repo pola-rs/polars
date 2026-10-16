@@ -193,10 +193,14 @@ def _extract_table_statistics_from_delta_add_actions(
             # resolvable, letting the skip-batch predicate prune on an individual struct
             # field via `col("<c>_min").struct.field(..)`.
             stats[f"{col_name}_min"] = (
-                _align_struct(col_min, dtype) if col_min is not None else null_col(dtype)
+                _align_struct(col_min, dtype)
+                if col_min is not None
+                else null_col(dtype)
             )
             stats[f"{col_name}_max"] = (
-                _align_struct(col_max, dtype) if col_max is not None else null_col(dtype)
+                _align_struct(col_max, dtype)
+                if col_max is not None
+                else null_col(dtype)
             )
         else:
             stats[f"{col_name}_min"] = (
