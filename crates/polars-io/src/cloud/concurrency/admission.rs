@@ -1,8 +1,53 @@
-use std::sync::Arc;
-use std::sync::atomic::Ordering::Relaxed;
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::sync::atomic::Ordering::{Relaxed, SeqCst};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
-use tokio::sync::Notify;
+use tokio::sync::{Notify, oneshot};
+
+/// Order in which parked acquires of the in-flight byte budget are admitted.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AdmissionOrder {
+    /// Lowest issue number first (`with_issue_seq`); requests without one go first.
+    Issue,
+    /// Whichever waiter wins the race after a release; new arrivals may pass parked waiters.
+    Arrival,
+}
+
+static NEXT_ISSUE_SEQ: AtomicU64 = AtomicU64::new(1);
+
+tokio::task_local! {
+    static ISSUE_SEQ: u64;
+}
+
+/// Next issue number. Take it where fetches are issued in order, not where their tasks start.
+pub fn next_issue_seq() -> u64 {
+    NEXT_ISSUE_SEQ.fetch_add(1, Relaxed)
+}
+
+/// Runs `fut` with `seq` as the issue number of its in-flight byte budget acquires.
+pub async fn with_issue_seq<F: Future>(seq: u64, fut: F) -> F::Output {
+    ISSUE_SEQ.scope(seq, fut).await
+}
+
+/// Issue number of the current task, 0 if none.
+fn current_issue_seq() -> u64 {
+    ISSUE_SEQ.try_with(|seq| *seq).unwrap_or(0)
+}
+
+#[derive(Debug)]
+struct Waiter {
+    n_bytes: u64,
+    granted: oneshot::Sender<()>,
+}
+
+/// Parked acquires keyed by (issue number, arrival number).
+#[derive(Debug, Default)]
+struct IssueQueue {
+    next_arrival: u64,
+    waiters: BTreeMap<(u64, u64), Waiter>,
+}
 
 /// Byte-granularity budget with dynamic resize.
 ///
@@ -18,24 +63,41 @@ pub(super) struct ByteBudget {
     floor_budget: u64,
     // Volume in use for in-flight traffic, as allowed by the current_budget.
     inflight_in_use: AtomicU64,
+    // Acquires parked right now.
+    parked_now: AtomicU64,
+    order: AdmissionOrder,
+    // `AdmissionOrder::Arrival` waiters.
     waiters: Notify,
+    // `AdmissionOrder::Issue` waiters, and their count (read without the lock).
+    queue: Mutex<IssueQueue>,
+    queued: AtomicU64,
 }
 
 impl ByteBudget {
-    fn new(initial: u64, floor_budget: u64) -> Self {
+    fn new(initial: u64, floor_budget: u64, order: AdmissionOrder) -> Self {
         Self {
             current_budget: AtomicU64::new(initial),
             floor_budget,
             inflight_in_use: AtomicU64::new(0),
+            parked_now: AtomicU64::new(0),
+            order,
             waiters: Notify::new(),
+            queue: Mutex::default(),
+            queued: AtomicU64::new(0),
         }
     }
 
     /// Acquire a bytes-based permit. The call site is responsible for capping the
-    /// request size to prevent deadlock.
-    async fn acquire_strict(&self, n_bytes: u64) {
+    /// request size to prevent deadlock. Returns whether the caller parked.
+    async fn acquire_strict(&self, n_bytes: u64, issue_seq: u64) -> bool {
         // Pre-empt deadlock.
         assert!(n_bytes <= self.floor_budget);
+
+        if self.order == AdmissionOrder::Issue {
+            return self.acquire_in_issue_order(n_bytes, issue_seq).await;
+        }
+
+        let mut parked = false;
 
         // NOTE: Large waiters can starve under sustained small-request load.
         // In practice, this may not be material issue.
@@ -59,7 +121,7 @@ impl ByteBudget {
                     // acquires), so keep the wake chain alive — but only
                     // because progress occurred.
                     self.waiters.notify_one();
-                    return;
+                    return parked;
                 }
                 continue;
             }
@@ -71,21 +133,119 @@ impl ByteBudget {
             if inflight + n_bytes <= cap {
                 continue;
             }
+            let _parked = Parked::new(&self.parked_now);
             notified.await;
+            parked = true;
+        }
+    }
+
+    /// Waits behind every parked acquire with a lower issue number; passes the queue only if it
+    /// fits and none waits. Returns whether it parked because the bytes did not fit; a wait
+    /// behind a lower issue number while the bytes fit does not count.
+    async fn acquire_in_issue_order(&self, n_bytes: u64, issue_seq: u64) -> bool {
+        if self.queued.load(SeqCst) == 0 && self.try_take(n_bytes) {
+            return false;
+        }
+
+        let (key, granted, budget_bound) = {
+            let mut queue = self.queue.lock().unwrap();
+            let lower_waits = queue
+                .waiters
+                .keys()
+                .next()
+                .is_some_and(|&(seq, _)| seq < issue_seq);
+            if !lower_waits && self.try_take(n_bytes) {
+                return false;
+            }
+            let budget_bound =
+                self.inflight_in_use.load(SeqCst) + n_bytes > self.current_budget.load(SeqCst);
+            let key = (issue_seq, queue.next_arrival);
+            queue.next_arrival += 1;
+            let (tx, rx) = oneshot::channel();
+            queue.waiters.insert(
+                key,
+                Waiter {
+                    n_bytes,
+                    granted: tx,
+                },
+            );
+            // Counted before the grant below re-reads the bytes in use: a release that read
+            // `queued == 0` freed its bytes before this re-read.
+            self.queued.fetch_add(1, SeqCst);
+            self.grant_locked(&mut queue);
+            if !queue.waiters.contains_key(&key) {
+                // Granted by the call above: the bytes are taken.
+                return false;
+            }
+            (key, rx, budget_bound)
+        };
+
+        let mut wait = QueuedAcquire {
+            budget: self,
+            key,
+            n_bytes,
+            granted: false,
+        };
+        let _parked = budget_bound.then(|| Parked::new(&self.parked_now));
+        // The sender is only dropped unsent when `wait` removes its own entry.
+        let _ = granted.await;
+        wait.granted = true;
+        budget_bound
+    }
+
+    /// Takes `n_bytes` if they fit.
+    fn try_take(&self, n_bytes: u64) -> bool {
+        let cap = self.current_budget.load(SeqCst);
+        let mut inflight = self.inflight_in_use.load(SeqCst);
+        while inflight + n_bytes <= cap {
+            match self.inflight_in_use.compare_exchange_weak(
+                inflight,
+                inflight + n_bytes,
+                SeqCst,
+                SeqCst,
+            ) {
+                Ok(_) => return true,
+                Err(current) => inflight = current,
+            }
+        }
+        false
+    }
+
+    /// Admits parked acquires from the front of the queue while they fit.
+    fn grant_locked(&self, queue: &mut IssueQueue) {
+        while let Some(front) = queue.waiters.first_entry() {
+            if !self.try_take(front.get().n_bytes) {
+                break;
+            }
+            self.queued.fetch_sub(1, SeqCst);
+            // A cancelled acquire removes its entry under the lock, so the receiver is alive.
+            let _ = front.remove().granted.send(());
+        }
+    }
+
+    fn grant_if_queued(&self) {
+        if self.queued.load(SeqCst) > 0 {
+            self.grant_locked(&mut self.queue.lock().unwrap());
         }
     }
 
     fn release(&self, bytes: u64) {
-        self.inflight_in_use.fetch_sub(bytes, Ordering::AcqRel);
-        self.waiters.notify_one();
+        self.inflight_in_use.fetch_sub(bytes, SeqCst);
+        match self.order {
+            AdmissionOrder::Issue => self.grant_if_queued(),
+            AdmissionOrder::Arrival => self.waiters.notify_one(),
+        }
     }
 
     fn resize(&self, new: u64) {
         let new = new.max(self.floor_budget);
-        let old = self.current_budget.swap(new, Ordering::AcqRel);
+        let old = self.current_budget.swap(new, SeqCst);
         if new > old {
             // Grow: maybe someone can now proceed.
-            self.waiters.notify_waiters();
+            match self.order {
+                AdmissionOrder::Issue => self.grant_if_queued(),
+                AdmissionOrder::Arrival => self.waiters.notify_waiters(),
+            }
         }
     }
 
@@ -99,6 +259,47 @@ impl ByteBudget {
 
     fn inflight_in_use(&self) -> u64 {
         self.inflight_in_use.load(Ordering::Relaxed)
+    }
+}
+
+/// A parked `AdmissionOrder::Issue` acquire. Dropped before its grant (cancelled), it leaves the
+/// queue; dropped after a grant it did not observe, it returns the bytes.
+struct QueuedAcquire<'a> {
+    budget: &'a ByteBudget,
+    key: (u64, u64),
+    n_bytes: u64,
+    granted: bool,
+}
+
+impl Drop for QueuedAcquire<'_> {
+    fn drop(&mut self) {
+        if self.granted {
+            return;
+        }
+        let mut queue = self.budget.queue.lock().unwrap();
+        if queue.waiters.remove(&self.key).is_some() {
+            self.budget.queued.fetch_sub(1, SeqCst);
+        } else {
+            self.budget.inflight_in_use.fetch_sub(self.n_bytes, SeqCst);
+        }
+        // It may have been the front of the queue.
+        self.budget.grant_locked(&mut queue);
+    }
+}
+
+/// Counts one parked acquire while alive (also when the acquire is cancelled).
+struct Parked<'a>(&'a AtomicU64);
+
+impl<'a> Parked<'a> {
+    fn new(n: &'a AtomicU64) -> Self {
+        n.fetch_add(1, Relaxed);
+        Self(n)
+    }
+}
+
+impl Drop for Parked<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Relaxed);
     }
 }
 
@@ -189,6 +390,8 @@ pub struct InFlightStats {
     // May exceed 1.0 transiently after a budget shrink, while
     // previously-admitted traffic drains. Expected, not a bug.
     pub bytes_saturation: f64,
+    // Byte acquires parked right now.
+    pub bytes_waiting: u64,
     pub request_budget: u64,
     pub requests_in_use: u64,
     pub requests_saturation: f64,
@@ -198,6 +401,11 @@ pub struct InFlightStats {
 pub struct InFlightBudget {
     byte_budget: Arc<ByteBudget>,
     request_budget: Arc<RequestBudget>,
+    // Byte acquires that parked since the last `take_bytes_parked()`.
+    bytes_parked: AtomicU64,
+    // Admission numbers: last issued, and the highest one whose permit was released.
+    admitted_seq: AtomicU64,
+    completed_seq: Arc<AtomicU64>,
 }
 
 impl InFlightBudget {
@@ -206,13 +414,21 @@ impl InFlightBudget {
         floor_byte_budget: u64,
         initial_request_budget: u64,
         floor_request_budget: u64,
+        admission_order: AdmissionOrder,
     ) -> Self {
         let inflight_budget = Self {
-            byte_budget: Arc::new(ByteBudget::new(initial_byte_budget, floor_byte_budget)),
+            byte_budget: Arc::new(ByteBudget::new(
+                initial_byte_budget,
+                floor_byte_budget,
+                admission_order,
+            )),
             request_budget: Arc::new(RequestBudget::new(
                 initial_request_budget,
                 floor_request_budget,
             )),
+            bytes_parked: AtomicU64::new(0),
+            admitted_seq: AtomicU64::new(0),
+            completed_seq: Arc::new(AtomicU64::new(0)),
         };
 
         if polars_config::config().verbose() {
@@ -221,11 +437,13 @@ impl InFlightBudget {
                 initial_byte_budget: {}, \
                 floor_byte_budget: {}, \
                 request_budget: {}, \
-                floor_request_budget: {}",
+                floor_request_budget: {}, \
+                admission_order: {:?}",
                 initial_byte_budget,
                 floor_byte_budget,
                 initial_request_budget,
-                floor_request_budget
+                floor_request_budget,
+                admission_order,
             );
         }
 
@@ -238,7 +456,13 @@ impl InFlightBudget {
         let n_bytes = n_bytes.min(self.byte_budget.floor_byte_budget());
 
         // Byte budget (may wait). Cancel-safe internally.
-        self.byte_budget.acquire_strict(n_bytes).await;
+        if self
+            .byte_budget
+            .acquire_strict(n_bytes, current_issue_seq())
+            .await
+        {
+            self.bytes_parked.fetch_add(1, Relaxed);
+        }
 
         // Guard immediately — synchronous, so there's no cancellation
         // window between reservation and guard.
@@ -256,7 +480,21 @@ impl InFlightBudget {
         InFlightPermit {
             _bytes_reservation: bytes,
             _req_permit: request,
+            _completion: CompletionMark {
+                seq: self.admitted_seq.fetch_add(1, Relaxed) + 1,
+                completed: self.completed_seq.clone(),
+            },
         }
+    }
+
+    /// Number of the last admission.
+    pub fn admitted_seq(&self) -> u64 {
+        self.admitted_seq.load(Relaxed)
+    }
+
+    /// Highest admission number whose permit was released.
+    pub fn completed_seq(&self) -> u64 {
+        self.completed_seq.load(Relaxed)
     }
 
     pub fn current_byte_budget(&self) -> u64 {
@@ -273,6 +511,11 @@ impl InFlightBudget {
 
     pub fn resize_request_budget(&self, new: u64) {
         self.request_budget.resize(new);
+    }
+
+    /// Byte acquires that parked since the last call. Read and reset.
+    pub fn take_bytes_parked(&self) -> u64 {
+        self.bytes_parked.swap(0, Relaxed)
     }
 
     pub fn stats(&self) -> InFlightStats {
@@ -296,6 +539,7 @@ impl InFlightBudget {
             bytes_budget,
             bytes_in_use,
             bytes_saturation,
+            bytes_waiting: self.byte_budget.parked_now.load(Relaxed),
             request_budget,
             requests_in_use,
             requests_saturation,
@@ -327,4 +571,72 @@ impl Drop for RequestReservation {
 pub struct InFlightPermit {
     _bytes_reservation: BytesReservation,
     _req_permit: RequestReservation,
+    _completion: CompletionMark,
+}
+
+/// Records the permit's admission number as completed on release.
+struct CompletionMark {
+    seq: u64,
+    completed: Arc<AtomicU64>,
+}
+
+impl Drop for CompletionMark {
+    fn drop(&mut self) {
+        self.completed.fetch_max(self.seq, Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::pin::Pin;
+    use std::task::{Context, Poll, Waker};
+
+    use super::*;
+
+    fn poll<F: Future>(f: &mut Pin<Box<F>>) -> Poll<F::Output> {
+        f.as_mut().poll(&mut Context::from_waker(Waker::noop()))
+    }
+
+    #[test]
+    fn issue_order_admission() {
+        let b = ByteBudget::new(10, 10, AdmissionOrder::Issue);
+        assert_eq!(
+            poll(&mut Box::pin(b.acquire_strict(10, 5))),
+            Poll::Ready(false)
+        );
+
+        let mut a3 = Box::pin(b.acquire_strict(4, 3));
+        let mut a2 = Box::pin(b.acquire_strict(4, 2));
+        let mut a1 = Box::pin(b.acquire_strict(4, 1));
+        assert!(poll(&mut a3).is_pending() && poll(&mut a2).is_pending());
+        assert!(poll(&mut a1).is_pending());
+        // A 0-byte acquire without an issue number does not wait.
+        assert_eq!(
+            poll(&mut Box::pin(b.acquire_strict(0, 0))),
+            Poll::Ready(false)
+        );
+        // A cancelled front leaves the queue without taking bytes.
+        drop(a1);
+        assert_eq!(b.queued.load(SeqCst), 2);
+
+        b.release(2);
+        // Fits, but a lower issue number waits: parks, not counted as bound by the budget.
+        let mut a9 = Box::pin(b.acquire_strict(2, 9));
+        assert!(poll(&mut a9).is_pending());
+        // No issue number: passes the queue when it fits.
+        assert_eq!(
+            poll(&mut Box::pin(b.acquire_strict(2, 0))),
+            Poll::Ready(false)
+        );
+
+        b.release(6);
+        assert_eq!(poll(&mut a2), Poll::Ready(true));
+        assert!(poll(&mut a3).is_pending() && poll(&mut a9).is_pending());
+
+        b.release(4);
+        assert_eq!(poll(&mut a3), Poll::Ready(true));
+        assert_eq!(poll(&mut a9), Poll::Ready(false));
+        assert_eq!(b.queued.load(SeqCst), 0);
+        assert_eq!(b.inflight_in_use(), 10);
+    }
 }
