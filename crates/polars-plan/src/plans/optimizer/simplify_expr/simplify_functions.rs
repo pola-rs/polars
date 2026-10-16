@@ -346,6 +346,30 @@ pub(super) fn optimize_functions(
                 _ => None,
             }
         },
+        #[cfg(feature = "temporal")]
+        IRFunctionExpr::TemporalExpr(IRTemporalFunction::CastTimeUnit(tu)) => {
+            let Some(sc) = scalar_literal(input[0].node(), expr_arena) else {
+                return Ok(None);
+            };
+            let value = sc.as_any_value().extract::<i64>();
+            let out = match sc.dtype() {
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(from, tz) => match value {
+                    Some(v) => {
+                        let v = from.rescale_to(tu).datetime_value(v);
+                        Scalar::new_datetime(v, tu, tz.clone())
+                    },
+                    None => Scalar::null(DataType::Datetime(tu, tz.clone())),
+                },
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(from) => match value {
+                    Some(v) => Scalar::new_duration(from.rescale_to(tu).duration_value(v), tu),
+                    None => Scalar::null(DataType::Duration(tu)),
+                },
+                _ => return Ok(None),
+            };
+            Some(AExpr::Literal(LiteralValue::Scalar(out)))
+        },
         #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
         IRFunctionExpr::TemporalExpr(IRTemporalFunction::ReplaceTimeZone(
             ref time_zone,
@@ -424,7 +448,7 @@ fn get_string_concat_input(
 }
 
 /// Returns the value of `node` if it is a scalar literal of a known dtype.
-#[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+#[cfg(feature = "temporal")]
 fn scalar_literal(node: Node, expr_arena: &Arena<AExpr>) -> Option<&Scalar> {
     match expr_arena.get(node) {
         AExpr::Literal(LiteralValue::Scalar(sc)) => Some(sc),

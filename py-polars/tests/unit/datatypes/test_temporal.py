@@ -31,6 +31,7 @@ from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 if TYPE_CHECKING:
     from polars._typing import (
         Ambiguous,
+        PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
     )
@@ -1640,6 +1641,37 @@ def test_replace_time_zone_literal_constant_folding_raises() -> None:
     expr = pl.lit(datetime(2020, 10, 25, 1)).dt.replace_time_zone("Europe/London")
     with pytest.raises(ComputeError, match="ambiguous"):
         pl.select(expr)
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected", "dtype"),
+    [
+        (
+            pl.lit(datetime(2020, 1, 1, 12, 0, 0, 123456)).dt.cast_time_unit("ms"),
+            datetime(2020, 1, 1, 12, 0, 0, 123000),
+            pl.Datetime("ms"),
+        ),
+        (
+            pl.lit(datetime(2020, 1, 1, 12)).dt.cast_time_unit("ns"),
+            datetime(2020, 1, 1, 12),
+            pl.Datetime("ns"),
+        ),
+        (
+            pl.lit(timedelta(days=1, microseconds=1)).dt.cast_time_unit("ms"),
+            timedelta(days=1),
+            pl.Duration("ms"),
+        ),
+    ],
+)
+def test_cast_time_unit_literal_constant_folding(
+    expr: pl.Expr, expected: datetime | timedelta, dtype: PolarsDataType
+) -> None:
+    lf = pl.LazyFrame({"a": [expected]}).filter(pl.col("a") == expr)
+    assert "cast_time_unit" not in lf.explain()
+
+    result = pl.select(expr).to_series()
+    assert result.dtype == dtype
+    assert result.item() == expected
 
 
 def test_ambiguous_expressions() -> None:
