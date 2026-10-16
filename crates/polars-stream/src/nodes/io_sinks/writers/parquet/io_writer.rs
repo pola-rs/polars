@@ -39,6 +39,10 @@ impl IOWriter {
         } = self;
 
         let (mut file, sync_on_close) = file.await?;
+        #[cfg(target_os = "linux")]
+        let writeback_fd = file.local_raw_fd();
+        #[cfg(target_os = "linux")]
+        let mut written_back = 0u64;
         let mut buffered_file = file.as_buffered_writable();
 
         let mut parquet_writer = BatchedWriter::new(
@@ -62,6 +66,10 @@ impl IOWriter {
             } = handle.await?;
             assert_eq!(data.len(), num_leaf_columns);
             parquet_writer.write_row_group(num_rows as u64, &data)?;
+            #[cfg(target_os = "linux")]
+            if let Some(fd) = writeback_fd {
+                polars_io::utils::sync_on_close::start_writeback(fd, &mut written_back);
+            }
             drop(data);
             drop(morsel_permit);
         }
