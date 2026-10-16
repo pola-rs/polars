@@ -20,7 +20,7 @@ use polars_plan::dsl::deletion::DeletionFilesList;
 #[cfg(feature = "python")]
 use polars_plan::dsl::deletion::DeltaDeletionVectorProvider;
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource, ScanSources};
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
@@ -43,13 +43,9 @@ pub enum DeletionFilesProvider {
         // Amortized allocations
         reader_builder: ParquetReaderBuilder,
         projected_schema: SchemaRef,
-        #[expect(clippy::type_complexity)]
         deletion_load_tasks: Arc<
             parking_lot::Mutex<
-                PlHashMap<
-                    PlRefPath,
-                    Arc<tokio::sync::OnceCell<PlHashMap<PlRefPath, ExternalFilterMask>>>,
-                >,
+                PlHashMap<PlRefPath, Arc<tokio::sync::OnceCell<PuffinDeletionVectors>>>,
             >,
         >,
     },
@@ -238,6 +234,8 @@ impl DeletionFilesProvider {
                                     },
                                 };
 
+                                let projected_schema = projected_schema.clone();
+
                                 handles.push(AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
                                     read_task_metrics.as_deref(),
@@ -252,6 +250,13 @@ impl DeletionFilesProvider {
                                         }
 
                                         handle.await?;
+
+                                        // An empty file sends no morsels.
+                                        if dfs.is_empty() {
+                                            dfs.push(DataFrame::empty_with_schema(
+                                                &projected_schema,
+                                            ));
+                                        }
 
                                         let df = accumulate_dataframes_vertical_unchecked(dfs);
 
@@ -317,13 +322,17 @@ impl DeletionFilesProvider {
                         })
                     },
 
-                    IcebergDeletes::DeletionVector(path) => {
+                    IcebergDeletes::DeletionVector {
+                        path,
+                        content_offset,
+                    } => {
                         use polars_async::ASYNC;
                         use polars_utils::async_utils::tokio_handle_ext;
 
                         let deletion_load_tasks = Arc::clone(deletion_load_tasks);
                         let data_path = data_paths[scan_source_idx].clone();
                         let path = path.clone();
+                        let content_offset = *content_offset;
                         let cloud_options = cloud_options.clone();
                         let io_metrics = reader_builder.io_metrics.get().cloned();
 
@@ -332,8 +341,9 @@ impl DeletionFilesProvider {
                                 let mut tasks = deletion_load_tasks.lock();
                                 Arc::clone(tasks.entry(path.clone()).or_default())
                             };
+                            let dv_path = path.clone();
 
-                            Ok(deletions
+                            deletions
                                 .get_or_try_init(|| async move {
                                     let fetch_bytes_handle =
                                         tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn({
@@ -358,9 +368,7 @@ impl DeletionFilesProvider {
                                     load_iceberg_puffin_deletes(puffin_bytes)
                                 })
                                 .await?
-                                .get(&data_path)
-                                .cloned()
-                                .unwrap_or_default())
+                                .get(&dv_path, &data_path, content_offset)
                         })
                     },
                 };
@@ -656,9 +664,68 @@ fn nth_set_bit_extend(mask: &Bitmap, n: usize) -> usize {
     }
 }
 
-fn load_iceberg_puffin_deletes(
-    puffin_bytes: Buffer<u8>,
-) -> PolarsResult<PlHashMap<PlRefPath, ExternalFilterMask>> {
+/// `file://C:/x` → `file:///C:/x`, as data file paths are normalized when the scan is
+/// resolved, so that deletion vectors are found by their referenced data file.
+#[cfg(feature = "python")]
+fn normalize_windows_file_uri(path: &str) -> std::borrow::Cow<'_, str> {
+    match path.strip_prefix("file://") {
+        Some(rest) if matches!(rest.as_bytes(), [d, b':', ..] if d.is_ascii_alphabetic()) => {
+            format!("file:///{rest}").into()
+        },
+        _ => path.into(),
+    }
+}
+
+/// The deletion vectors of a Puffin file.
+pub struct PuffinDeletionVectors {
+    /// `(referenced data file, mask)` by blob offset.
+    by_offset: PlHashMap<u64, (PlRefPath, ExternalFilterMask)>,
+    /// Blob offsets by referenced data file.
+    offsets_by_data_path: PlHashMap<PlRefPath, Vec<u64>>,
+}
+
+impl PuffinDeletionVectors {
+    fn get(
+        &self,
+        dv_path: &PlRefPath,
+        data_path: &PlRefPath,
+        content_offset: Option<u64>,
+    ) -> PolarsResult<ExternalFilterMask> {
+        let offset = match content_offset {
+            Some(offset) => offset,
+            None => match self.offsets_by_data_path.get(data_path).map(Vec::as_slice) {
+                Some(&[offset]) => offset,
+                Some([]) | None => polars_bail!(
+                    ComputeError:
+                    "iceberg: deletion vector file {} has no deletion vector for data file {}",
+                    dv_path, data_path
+                ),
+                Some(_) => polars_bail!(
+                    ComputeError:
+                    "iceberg: deletion vector file {} has several deletion vectors for data \
+                    file {}, and the delete file entry has no content offset",
+                    dv_path, data_path
+                ),
+            },
+        };
+
+        match self.by_offset.get(&offset) {
+            Some((referenced, mask)) if referenced == data_path => Ok(mask.clone()),
+            Some((referenced, _)) => polars_bail!(
+                ComputeError:
+                "iceberg: deletion vector at offset {} of {} is of data file {}, expected {}",
+                offset, dv_path, referenced, data_path
+            ),
+            None => polars_bail!(
+                ComputeError:
+                "iceberg: deletion vector file {} has no deletion vector at offset {}",
+                dv_path, offset
+            ),
+        }
+    }
+}
+
+fn load_iceberg_puffin_deletes(puffin_bytes: Buffer<u8>) -> PolarsResult<PuffinDeletionVectors> {
     #[cfg(feature = "python")]
     {
         use std::sync::LazyLock;
@@ -669,64 +736,80 @@ fn load_iceberg_puffin_deletes(
         use polars_utils::index::idxsize_try_from;
         use pyo3::{Py, PyAny, Python};
 
-        let deletions: Vec<(PlRefPath, Series)> = Python::attach(|py| {
+        let deletions: Vec<(u64, PlRefPath, Series)> = Python::attach(|py| {
             use pyo3::pybacked::PyBackedStr;
-            use pyo3::types::PyAnyMethods;
+            use pyo3::types::{PyAnyMethods, PyTuple};
 
             if LazyLock::get(&LOAD_FROM_BYTES_FN).is_none() {
                 py.detach(|| LazyLock::force(&LOAD_FROM_BYTES_FN));
             }
 
-            let dict = LOAD_FROM_BYTES_FN.call1(py, (puffin_bytes.as_slice(),))?;
-            let dict = dict.bind(py);
+            // `[(offset, referenced data file, positions)]`
+            let blobs = LOAD_FROM_BYTES_FN.call1(py, (puffin_bytes.as_slice(),))?;
+            let blobs = blobs.bind(py);
 
-            dict.try_iter()?
-                .zip(dict.call_method0("values")?.try_iter()?)
-                .map(|(k, v)| {
+            blobs
+                .try_iter()?
+                .map(|blob| {
+                    let blob = blob?;
+                    let blob = blob.cast::<PyTuple>()?;
                     Ok((
-                        PlRefPath::new(&*k?.extract::<PyBackedStr>()?),
+                        blob.get_item(0)?.extract::<u64>()?,
+                        PlRefPath::new(&*normalize_windows_file_uri(
+                            &blob.get_item(1)?.extract::<PyBackedStr>()?,
+                        )),
                         *(polars_utils::python_convert_registry::get_python_convert_registry()
                             .from_py
-                            .series)(v?.getattr("_s")?.into())
+                            .series)(
+                            blob.get_item(2)?.getattr("_s")?.into()
+                        )
                         .unwrap()
                         .downcast::<Series>()
                         .unwrap(),
                     ))
                 })
-                .collect::<PolarsResult<Vec<(PlRefPath, Series)>>>()
+                .collect::<PolarsResult<Vec<(u64, PlRefPath, Series)>>>()
         })?;
 
-        return deletions
-            .into_iter()
-            .map(|(data_path, indices)| {
-                let filter_mask_len = indices.max::<u64>()?.map_or(0, |x| x.saturating_add(1));
+        let mut out = PuffinDeletionVectors {
+            by_offset: PlHashMap::with_capacity(deletions.len()),
+            offsets_by_data_path: PlHashMap::with_capacity(deletions.len()),
+        };
 
-                polars_ensure!(
-                    idxsize_try_from(filter_mask_len).is_ok(),
-                    ComputeError: LENGTH_LIMIT_MSG
-                );
+        for (offset, data_path, indices) in deletions {
+            let filter_mask_len = indices.max::<u64>()?.map_or(0, |x| x.saturating_add(1));
 
-                let indices = indices.rechunk();
-                let indices: &UInt64Array = indices.chunks()[0].as_any().downcast_ref().unwrap();
+            polars_ensure!(
+                idxsize_try_from(filter_mask_len).is_ok(),
+                ComputeError: LENGTH_LIMIT_MSG
+            );
 
-                let mut filter_mask = MutableBitmap::from_len_set(filter_mask_len as usize);
+            let indices = indices.rechunk();
+            let indices: &UInt64Array = indices.chunks()[0].as_any().downcast_ref().unwrap();
 
-                for idx in indices.non_null_values_iter() {
-                    let idx = usize::try_from(idx).unwrap();
-                    filter_mask.set(idx, false);
-                }
+            let mut filter_mask = MutableBitmap::from_len_set(filter_mask_len as usize);
 
-                let bitmap = filter_mask.freeze();
+            for idx in indices.non_null_values_iter() {
+                let idx = usize::try_from(idx).unwrap();
+                filter_mask.set(idx, false);
+            }
 
-                // Also trigger the bitcount to reduce blocking later down.
-                bitmap.unset_bits();
+            let bitmap = filter_mask.freeze();
 
-                let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, bitmap);
-                let mask = ExternalFilterMask::Iceberg { mask };
+            // Also trigger the bitcount to reduce blocking later down.
+            bitmap.unset_bits();
 
-                Ok((data_path, mask))
-            })
-            .collect();
+            let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, bitmap);
+            let mask = ExternalFilterMask::Iceberg { mask };
+
+            out.offsets_by_data_path
+                .entry(data_path.clone())
+                .or_default()
+                .push(offset);
+            out.by_offset.insert(offset, (data_path, mask));
+        }
+
+        return Ok(out);
 
         static LOAD_FROM_BYTES_FN: LazyLock<Py<PyAny>> = LazyLock::new(|| {
             Python::attach(|py| {

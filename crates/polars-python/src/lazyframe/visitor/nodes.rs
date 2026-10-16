@@ -180,7 +180,7 @@ impl PyFileOptions {
 
                             position_deletes.set_item(*k, py_paths)?;
                         },
-                        IcebergDeletes::DeletionVector(path) => {
+                        IcebergDeletes::DeletionVector { path, .. } => {
                             deletion_vectors.set_item(*k, path.as_str())?
                         },
                     }
@@ -208,7 +208,7 @@ impl PyFileOptions {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
-            Some(ColumnMapping::Iceberg(schema)) => (
+            Some(ColumnMapping::Iceberg { schema, .. }) => (
                 "iceberg-column-mapping",
                 iceberg_schema_to_pyobject(py, schema)?,
             )
@@ -236,6 +236,7 @@ impl PyFileOptions {
             Some(DefaultFieldValues::Iceberg(default_values)) => {
                 let IcebergDefaultFieldValues {
                     identity_transformed_partition_fields,
+                    identity_partition_present: _,
                     initial_defaults,
                 } = default_values.as_ref();
 
@@ -312,6 +313,7 @@ fn iceberg_column_to_pyobject(py: Python<'_>, column: &IcebergColumn) -> PyResul
         name,
         physical_id,
         type_,
+        mapped_names: _,
     } = column;
 
     let type_ = match type_ {

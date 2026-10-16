@@ -1117,6 +1117,23 @@ def test_fma_unknown_type_coercion_28315() -> None:
     )
 
 
+def test_bool_mul_float_literal_schema_28505() -> None:
+    lf = pl.LazyFrame(
+        {"b": [True, False], "f": [1.0, 2.0]},
+        schema={"b": pl.Boolean, "f": pl.Float32},
+    )
+    q = lf.select(
+        a=pl.col("b") * pl.lit(0.1),
+        c=pl.col("b") * 0.5 + pl.col("f"),
+    )
+    expected = pl.LazyFrame(
+        {"a": [0.1, 0.0], "c": [1.5, 2.0]},
+        schema={"a": pl.Float64, "c": pl.Float32},
+    )
+    assert_schema_equal(q.collect_schema(), expected.collect_schema())
+    assert_frame_equal(q, expected)
+
+
 def test_truediv_decimal_schema_28372() -> None:
     lf = pl.LazyFrame(
         {"x": [1.0, 2.5, 3.5656]}, schema={"x": pl.Decimal(15, 2)}
