@@ -424,6 +424,10 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> Predicat
         }
     }
 
+    fn filters_rows(&self) -> bool {
+        self.shared_optimum.read().is_some()
+    }
+
     fn runtime_range(&self) -> RuntimeRange {
         // Floats order NaN apart from statistics, enums by their categories.
         if !(self.dtype.is_integer() || self.dtype.is_temporal() || self.dtype.is_decimal()) {
@@ -568,6 +572,10 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
         }
     }
 
+    fn filters_rows(&self) -> bool {
+        self.shared_optimum.read().is_some()
+    }
+
     fn runtime_range(&self) -> RuntimeRange {
         let Some(ReorderWithNulls(Some(threshold))) = self.shared_optimum.read().clone() else {
             return RuntimeRange::Pending;
@@ -671,6 +679,10 @@ impl PredicateExpr for FirstKeyBottomKPredicate {
             .map(|row| row < threshold.as_slice())
             .collect_ca(PlSmallStr::EMPTY);
         Ok(Some(Column::from(pred.into_series())))
+    }
+
+    fn filters_rows(&self) -> bool {
+        self.shared_optimum.read().is_some()
     }
 
     fn runtime_range(&self) -> RuntimeRange {
