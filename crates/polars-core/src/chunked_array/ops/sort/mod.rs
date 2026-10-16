@@ -247,16 +247,34 @@ where
     }
 }
 
-fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, mut options: SortOptions) -> IdxCa
+fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> IdxCa
 where
     T: PolarsNumericType,
+{
+    arg_sort_numeric_by(ca, options, |v| v)
+}
+
+#[cfg(feature = "dtype-decimal")]
+pub(crate) fn arg_sort_i128_as_i64(ca: &Int128Chunked, options: SortOptions) -> IdxCa {
+    arg_sort_numeric_by(ca, options, |v| v as i64)
+}
+
+// `f` must preserve the order of the values.
+fn arg_sort_numeric_by<T, U>(
+    ca: &ChunkedArray<T>,
+    mut options: SortOptions,
+    f: impl Fn(T::Native) -> U + Copy,
+) -> IdxCa
+where
+    T: PolarsNumericType,
+    U: TotalOrd + Send + Sync,
 {
     options.multithreaded &= RAYON.current_num_threads() > 1;
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
         let iter = ca
             .downcast_iter()
-            .map(|arr| arr.values().as_slice().iter().copied());
+            .map(|arr| arr.values().as_slice().iter().map(move |&v| f(v)));
         arg_sort::arg_sort_no_nulls(
             ca.name().clone(),
             iter,
@@ -267,7 +285,7 @@ where
     } else {
         let iter = ca
             .downcast_iter()
-            .map(|arr| arr.iter().map(|opt| opt.copied()));
+            .map(|arr| arr.iter().map(move |opt| opt.map(|&v| f(v))));
         arg_sort::arg_sort(
             ca.name().clone(),
             iter,
@@ -952,6 +970,43 @@ mod test {
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
         let expected = [2, 4, 1, 5, 6, 0, 3, 7];
         assert_eq!(idx, expected);
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-decimal")]
+    fn test_arg_sort_decimal_i64_view() {
+        // 18 digits sort on the i64 view, 19 cannot: 10^19 - 1 overflows an i64
+        for (precision, max) in [(18, 10i128.pow(18) - 1), (19, 10i128.pow(19) - 1)] {
+            let s = Int128Chunked::new(
+                PlSmallStr::from_static("a"),
+                &[
+                    Some(max),  // 0
+                    None,       // 1
+                    Some(-max), // 2
+                    Some(0),    // 3
+                    Some(max),  // 4
+                    Some(-1),   // 5
+                    None,       // 6
+                    Some(1),    // 7
+                ],
+            )
+            .into_decimal(precision, 2)
+            .unwrap()
+            .into_series();
+
+            let idx = s.arg_sort(SortOptions {
+                nulls_last: true,
+                ..Default::default()
+            });
+            assert_eq!(idx.cont_slice().unwrap(), &[2, 5, 3, 7, 0, 4, 1, 6]);
+
+            let idx = s.arg_sort(SortOptions {
+                descending: true,
+                nulls_last: true,
+                ..Default::default()
+            });
+            assert_eq!(idx.cont_slice().unwrap(), &[0, 4, 7, 3, 5, 2, 1, 6]);
+        }
     }
 
     #[test]
