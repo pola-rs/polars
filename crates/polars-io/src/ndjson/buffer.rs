@@ -80,6 +80,46 @@ impl Buffer<'_> {
                 buf.append_option(v);
                 Ok(())
             },
+            #[cfg(feature = "dtype-i8")]
+            Int8(buf) => {
+                let v = deserialize_numeric::<Int8Type>(value, value.as_i8(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-i16")]
+            Int16(buf) => {
+                let v =
+                    deserialize_numeric::<Int16Type>(value, value.as_i16(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u8")]
+            UInt8(buf) => {
+                let v = deserialize_numeric::<UInt8Type>(value, value.as_u8(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u16")]
+            UInt16(buf) => {
+                let v =
+                    deserialize_numeric::<UInt16Type>(value, value.as_u16(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-time")]
+            Time(buf) => {
+                let v =
+                    deserialize_numeric::<Int64Type>(value, value.as_i64(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-duration")]
+            Duration(buf, _) => {
+                let v =
+                    deserialize_numeric::<Int64Type>(value, value.as_i64(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
             Float32(buf) => {
                 let v = deserialize_numeric::<Float32Type>(
                     value,
