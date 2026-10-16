@@ -371,6 +371,20 @@ pub(super) fn optimize_functions(
             Some(AExpr::Literal(LiteralValue::Scalar(out)))
         },
         #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
+        IRFunctionExpr::TemporalExpr(IRTemporalFunction::ConvertTimeZone(ref time_zone)) => {
+            let Some(sc) = scalar_literal(input[0].node(), expr_arena) else {
+                return Ok(None);
+            };
+            let DataType::Datetime(tu, _) = sc.dtype() else {
+                return Ok(None);
+            };
+            let out = match sc.as_any_value().extract::<i64>() {
+                Some(v) => Scalar::new_datetime(v, *tu, Some(time_zone.clone())),
+                None => Scalar::null(DataType::Datetime(*tu, Some(time_zone.clone()))),
+            };
+            Some(AExpr::Literal(LiteralValue::Scalar(out)))
+        },
+        #[cfg(all(feature = "dtype-datetime", feature = "timezones"))]
         IRFunctionExpr::TemporalExpr(IRTemporalFunction::ReplaceTimeZone(
             ref time_zone,
             non_existent,

@@ -1674,6 +1674,34 @@ def test_cast_time_unit_literal_constant_folding(
     assert result.item() == expected
 
 
+@pytest.mark.parametrize(
+    ("expr", "expected", "dtype"),
+    [
+        (
+            pl.lit(datetime(2020, 1, 1, 12, tzinfo=UTC)).dt.convert_time_zone(
+                "Europe/Amsterdam"
+            ),
+            datetime(2020, 1, 1, 13, tzinfo=ZoneInfo("Europe/Amsterdam")),
+            pl.Datetime("us", "Europe/Amsterdam"),
+        ),
+        (
+            pl.lit(datetime(2020, 1, 1, 12)).dt.convert_time_zone("Asia/Kathmandu"),
+            datetime(2020, 1, 1, 17, 45, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            pl.Datetime("us", "Asia/Kathmandu"),
+        ),
+    ],
+)
+def test_convert_time_zone_literal_constant_folding(
+    expr: pl.Expr, expected: datetime, dtype: PolarsDataType
+) -> None:
+    lf = pl.LazyFrame({"a": [expected]}).filter(pl.col("a") == expr)
+    assert "convert_time_zone" not in lf.explain()
+
+    result = pl.select(expr).to_series()
+    assert result.dtype == dtype
+    assert result.item() == expected
+
+
 def test_ambiguous_expressions() -> None:
     # strptime
     df = pl.DataFrame(
