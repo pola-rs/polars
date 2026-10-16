@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -204,3 +204,63 @@ def test_top_k_by_order_keeping_second_key(tmp_path: Path) -> None:
     df.write_parquet(path, row_group_size=ROWS_PER_GROUP)
     q = pl.scan_parquet(path, row_index_name="i").sort(["x", pl.col("x") * 2]).head(1)
     assert q.collect()["x"].to_list() == [60]
+
+
+HUGE_DATES = pl.Series([2**30] * 10).cast(pl.Date)
+
+
+@pytest.mark.parametrize(
+    ("values", "expr"),
+    [
+        (
+            pl.Series([date(2500, 1, 1)] * 10),
+            pl.col("t").cast(pl.Datetime("ns"), strict=False),
+        ),
+        (HUGE_DATES, pl.col("t").cast(pl.Datetime("us", "UTC"), strict=False)),
+        (
+            pl.Series([2**62] * 10).cast(pl.Datetime("ms")),
+            pl.col("t").cast(pl.Datetime("us"), strict=False),
+        ),
+        (
+            pl.Series([2**62] * 10).cast(pl.Duration("us")),
+            pl.col("t").cast(pl.Duration("ns"), strict=False),
+        ),
+        (HUGE_DATES, pl.col("t") + timedelta(days=1)),
+        (HUGE_DATES, pl.col("t") - date(1970, 1, 1)),
+        (
+            pl.Series(range(10)).cast(pl.Duration("us")),
+            pl.col("t") * pl.lit(2**63, pl.UInt64),
+        ),
+    ],
+)
+def test_expression_that_gives_null_keeps_null_filter(
+    values: pl.Series, expr: pl.Expr, tmp_path: Path
+) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"t": values}).write_parquet(path)
+    lf = pl.scan_parquet(path).with_columns(expr)
+    for predicate in [pl.col("t").is_null(), pl.col("t").is_not_null()]:
+        q = lf.filter(predicate)
+        assert_frame_equal(
+            q.collect(), lf.collect(engine="in-memory").filter(predicate)
+        )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expr"),
+    [
+        (pl.UInt32, -pl.col("t")),
+        (pl.Date, -pl.col("t")),
+        (pl.Int128, -pl.col("t")),
+        (pl.Duration("us"), pl.col("t") - datetime(1970, 1, 1)),
+        (pl.Datetime("us"), pl.col("t") - datetime(1970, 1, 1, tzinfo=UTC)),
+    ],
+)
+def test_expression_that_raises_is_evaluated(
+    dtype: pl.DataType, expr: pl.Expr, tmp_path: Path
+) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"t": [1, 2, 3]}).cast(dtype).write_parquet(path)
+    q = pl.scan_parquet(path).with_columns(k=expr).filter(pl.col("k").is_null())
+    with pytest.raises(pl.exceptions.PolarsError):
+        q.collect()
