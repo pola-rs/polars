@@ -210,17 +210,16 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
     ) -> bool {
         // We use a max-heap for our bottom k. This means the top element in our heap (peek())
         // is the first to be replaced.
-        let mut new_optimum = false;
-        if self.heap.len() < self.k || is_less(&key, self.peek_optimum().unwrap()) {
-            let row_idx_key = self.row_idxs.insert(row_idx);
-            let df_subset = &mut self.df_subsets[dfs_key];
-            df_subset.subset_len += 1;
-            df_subset.rows.push(row_idx_key);
-            let opt = self.heap.peek().map(|p| p.1);
-            self.heap
-                .push(Priority(to_owned(key), (dfs_key, row_idx_key)));
-            new_optimum = opt != self.heap.peek().map(|p| p.1);
+        if !(self.heap.len() < self.k || is_less(&key, self.peek_optimum().unwrap())) {
+            return false;
         }
+        let opt = self.heap.peek().map(|p| p.1);
+        let row_idx_key = self.row_idxs.insert(row_idx);
+        let df_subset = &mut self.df_subsets[dfs_key];
+        df_subset.subset_len += 1;
+        df_subset.rows.push(row_idx_key);
+        self.heap
+            .push(Priority(to_owned(key), (dfs_key, row_idx_key)));
 
         if self.heap.len() > self.k {
             let (dfs_key, row_idx_key) = self.heap.pop().unwrap().1;
@@ -229,7 +228,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             self.mark_if_sparse(dfs_key);
         }
 
-        new_optimum
+        opt != self.heap.peek().map(|p| p.1)
     }
 
     /// Schedules a subset for pruning once none of its rows are in the heap, or once at most half

@@ -166,3 +166,18 @@ def test_top_k_with_filter_matches_in_memory(tmp_path: Path) -> None:
         lf.filter(pl.col("s") != "").sort("t", "s").select("s").head(10),
     ]:
         assert_matches_in_memory(q, q.collect(engine="streaming"))
+
+
+def test_top_k_threshold_lowers_after_heap_is_full(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A row index keeps the file order, so the best key comes after the heap is full.
+    df = pl.DataFrame({"k": [1000] * 1000 + [0] * 10 + [500] * 3000})
+    path = tmp_path / "data.parquet"
+    df.write_parquet(path, row_group_size=ROWS_PER_GROUP)
+    q = pl.scan_parquet(path, row_index_name="idx").sort("k").head(1)
+
+    out, log = reader_log(q, plmonkeypatch, capfd)
+    assert out["k"].to_list() == [0]
+    assert "Reading row groups by" not in log
+    assert "Runtime ranges skipped" in log
