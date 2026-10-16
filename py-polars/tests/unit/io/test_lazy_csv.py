@@ -818,9 +818,49 @@ def test_scan_csv_progressive_infer_schema_header_only_row_estimate(
     file_path.write_text(",".join(names) + "\n" + data)
 
     q = pl.scan_csv(file_path, infer_schema_length=0)
-    # Without a data row there is no row estimate (it used to be u64::MAX).
-    assert "ESTIMATED ROWS" not in q.explain()
+    # Without a data row, the estimate comes from the header length if only the header
+    # was read, and is 0 if the whole file was (it used to be u64::MAX).
+    assert f"ESTIMATED ROWS: {int(with_data)}" in q.explain()
     assert q.collect().shape == (int(with_data), len(names))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("force_async", ["0", "1"])
+def test_scan_csv_row_estimate_with_header_only_file(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, force_async: str
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", force_async)
+
+    (tmp_path / "a.csv").write_text("a,b\n")
+    (tmp_path / "b.csv").write_text("a,b\n1,2\n3,4\n5,6\n")
+
+    # The header-only file adds 0 rows to the estimate of the other one.
+    q = pl.scan_csv([tmp_path / "a.csv", tmp_path / "b.csv"], infer_schema_files=2)
+    assert "ESTIMATED ROWS: 4" in q.explain()
+    assert q.collect().height == 3
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["zstd", "gzip"])
+def test_scan_csv_progressive_infer_schema_cut_off_compressed_file(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: CsvCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # Cut off halfway, the file decompresses to less than inference first asks for. It
+    # used to keep asking for more data forever.
+    df = pl.DataFrame({"a": [1] * 50_000, "b": [2] * 50_000})
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+    data = file_path.read_bytes()
+    file_path.write_bytes(data[: len(data) // 2])
+
+    with pytest.raises(OSError):
+        pl.scan_csv(file_path).collect_schema()
 
 
 @pytest.mark.write_disk

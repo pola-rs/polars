@@ -3639,7 +3639,6 @@ dependencies = [
  "hex",
  "indexmap",
  "libloading",
- "memchr",
  "memmap2",
  "murmur3",
  "num-traits",

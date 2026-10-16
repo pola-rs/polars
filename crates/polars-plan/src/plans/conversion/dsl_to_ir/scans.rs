@@ -297,13 +297,6 @@ fn slice_reaches_eof(
     offset >= file_size && (compression.is_none() || bytes_read < read_size)
 }
 
-/// A reader over bytes that are already decompressed. Unlike `ByteSourceReader::from_memory`, it
-/// does not look for compression magic bytes, which the decompressed text may start with.
-#[cfg(feature = "csv")]
-fn decompressed_reader(slice: Buffer<u8>) -> ByteSourceReader<ReaderSource> {
-    ByteSourceReader::UncompressedMemory { slice, offset: 0 }
-}
-
 /// Before EOF a slice from progressive schema inference may end inside a row. Keep only the
 /// complete rows, so that we neither count nor infer from an incomplete row. `complete_len`
 /// returns the length of the complete rows in the given bytes.
@@ -1052,6 +1045,8 @@ pub async fn csv_file_info(
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let source = sources.at(i);
 
+        // Whether the whole file is read, rather than a prefix for schema inference.
+        let mut read_whole_file = true;
         let (mut reader, file_size, decompressed_slice_size_hint, compression) = if run_async
             && let Some(infer_schema_length) = infer_schema_length
         {
@@ -1141,7 +1136,8 @@ pub async fn csv_file_info(
                     {
                         Ok(v) => v,
                         // We assume that unexpected EOF indicates that we lack sufficient data.
-                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                        // Once all of it is fetched, the compressed file is cut off.
+                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !reached_eof => {
                             fetch_size *= 2;
                             continue;
                         },
@@ -1171,14 +1167,14 @@ pub async fn csv_file_info(
                         missing_columns_policy == MissingColumnsPolicy::Insert,
                         Some(slice.len()),
                         None,
-                        &mut decompressed_reader(slice.clone()),
+                        &mut ByteSourceReader::from_uncompressed_memory(slice.clone()),
                     )?;
                     !header_schema.is_empty()
                 } else {
                     // Before EOF too few lines (e.g. to skip) only means we need more data, so
                     // don't let the row counter raise on that.
                     let row_count = polars_io::csv::read::count_rows_from_reader_par(
-                        decompressed_reader(slice.clone()),
+                        ByteSourceReader::from_uncompressed_memory(slice.clone()),
                         csv_options.parse_options.quote_char,
                         csv_options.parse_options.comment_prefix.as_ref(),
                         csv_options.parse_options.eol_char,
@@ -1205,6 +1201,7 @@ pub async fn csv_file_info(
                     continue;
                 }
 
+                read_whole_file = at_eof;
                 break slice;
             };
 
@@ -1212,7 +1209,7 @@ pub async fn csv_file_info(
             // compressed bytes again can run into their end while looking for a line ending.
             let decompressed_slice_size_hint = Some(decompressed_slice.len());
             (
-                decompressed_reader(decompressed_slice),
+                ByteSourceReader::from_uncompressed_memory(decompressed_slice),
                 file_size,
                 decompressed_slice_size_hint,
                 compression,
@@ -1221,17 +1218,13 @@ pub async fn csv_file_info(
             let mem_slice_raw =
                 source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), i)?;
             let file_size = mem_slice_raw.len();
-            let compression = SupportedCompression::check(&mem_slice_raw);
+            let reader = ByteSourceReader::from_memory(mem_slice_raw)?;
+            let compression = reader.compression();
             let decompressed_slice_size_hint = Some(match compression {
                 None => file_size,
                 Some(_) => file_size * ASSUMED_COMPRESSION_RATIO,
             });
-            (
-                ByteSourceReader::from_memory(mem_slice_raw)?,
-                file_size,
-                decompressed_slice_size_hint,
-                compression,
-            )
+            (reader, file_size, decompressed_slice_size_hint, compression)
         };
 
         let mut first_row_len = 0;
@@ -1254,51 +1247,54 @@ pub async fn csv_file_info(
 
         // TODO. We can do (much) better by collect statistics as part of row count and/or schema
         // inference, including observed average row_length and compression ratio.
-        // Without a data row, e.g. when only the header was needed and fetched, there is no
-        // estimate.
-        let estimated_rows = (first_row_len > 0)
-            .then(|| (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize);
+        let estimated_rows = if first_row_len > 0 {
+            (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize
+        } else if read_whole_file {
+            // The file has no data rows.
+            0
+        } else {
+            // Only the header was needed and fetched, so estimate from the length up to and
+            // including the header instead.
+            let header_len = decompressed_slice_size_hint.unwrap_or(1).max(1);
+            (decompressed_file_size_hint as f64 / header_len as f64).round() as usize
+        };
 
         Ok((schema, estimated_rows))
     };
 
-    // The total is unknown if any part is.
-    let add_row_estimates =
-        |a: Option<usize>, b: Option<usize>| a.zip(b).map(|(a, b)| a.saturating_add(b));
-
-    let merge_func = |a: PolarsResult<(Schema, Option<usize>)>,
-                      b: PolarsResult<(Schema, Option<usize>)>| match (a, b) {
-        (Err(e), _) | (_, Err(e)) => Err(e),
-        (Ok((mut schema_a, row_estimate_a)), Ok((schema_b, row_estimate_b))) => {
-            match (schema_a.is_empty(), schema_b.is_empty()) {
-                (true, _) => Ok((schema_b, row_estimate_b)),
-                (_, true) => Ok((schema_a, row_estimate_a)),
-                _ => match missing_columns_policy {
-                    MissingColumnsPolicy::Raise => {
-                        schema_a.to_supertype(&schema_b)?;
-                        Ok((schema_a, add_row_estimates(row_estimate_a, row_estimate_b)))
-                    },
-                    MissingColumnsPolicy::Insert => {
-                        // Union merge: keep all columns from both schemas,
-                        // supertype columns that exist in both.
-                        use polars_core::utils::try_get_supertype;
-                        for (name, dtype) in schema_b.iter() {
-                            match schema_a.get(name) {
-                                Some(existing_dtype) => {
-                                    let st = try_get_supertype(existing_dtype, dtype)?;
-                                    schema_a.with_column(name.clone(), st);
-                                },
-                                None => {
-                                    schema_a.with_column(name.clone(), dtype.clone());
-                                },
+    let merge_func =
+        |a: PolarsResult<(Schema, usize)>, b: PolarsResult<(Schema, usize)>| match (a, b) {
+            (Err(e), _) | (_, Err(e)) => Err(e),
+            (Ok((mut schema_a, row_estimate_a)), Ok((schema_b, row_estimate_b))) => {
+                match (schema_a.is_empty(), schema_b.is_empty()) {
+                    (true, _) => Ok((schema_b, row_estimate_b)),
+                    (_, true) => Ok((schema_a, row_estimate_a)),
+                    _ => match missing_columns_policy {
+                        MissingColumnsPolicy::Raise => {
+                            schema_a.to_supertype(&schema_b)?;
+                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                        },
+                        MissingColumnsPolicy::Insert => {
+                            // Union merge: keep all columns from both schemas,
+                            // supertype columns that exist in both.
+                            use polars_core::utils::try_get_supertype;
+                            for (name, dtype) in schema_b.iter() {
+                                match schema_a.get(name) {
+                                    Some(existing_dtype) => {
+                                        let st = try_get_supertype(existing_dtype, dtype)?;
+                                        schema_a.with_column(name.clone(), st);
+                                    },
+                                    None => {
+                                        schema_a.with_column(name.clone(), dtype.clone());
+                                    },
+                                }
                             }
-                        }
-                        Ok((schema_a, add_row_estimates(row_estimate_a, row_estimate_b)))
+                            Ok((schema_a, row_estimate_a.saturating_add(row_estimate_b)))
+                        },
                     },
-                },
-            }
-        },
-    };
+                }
+            },
+        };
 
     assert!(
         csv_options.schema.is_none(),
@@ -1331,7 +1327,7 @@ pub async fn csv_file_info(
     Ok(FileInfo::new(
         schema,
         Some(Either::Right(reader_schema)),
-        estimated_n_rows.map_or_else(ScanStats::unknown, |n| ScanStats::approx_rows(n as u64)),
+        ScanStats::approx_rows(estimated_n_rows as u64),
     ))
 }
 
@@ -1457,7 +1453,8 @@ pub async fn ndjson_file_info(
                 match reader.read_next_slice(&Buffer::new(), read_size, uncompressed_size_hint) {
                     Ok(v) => v,
                     // We assume that unexpected EOF indicates that we lack sufficient data.
-                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    // Once all of it is fetched, the compressed file is cut off.
+                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !reached_eof => {
                         fetch_size *= 2;
                         continue;
                     },
@@ -1465,9 +1462,7 @@ pub async fn ndjson_file_info(
                 };
 
             let at_eof = slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
-            let slice = complete_rows(slice, at_eof, |bytes| {
-                memchr::memrchr(b'\n', bytes).map_or(0, |i| i + 1)
-            });
+            let slice = complete_rows(slice, at_eof, polars_io::ndjson::complete_rows_len);
 
             if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !at_eof {
                 if compression.is_some() && bytes_read == read_size {
