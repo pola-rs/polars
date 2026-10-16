@@ -329,6 +329,11 @@ pub(super) trait Decoder: Sized {
     /// Initializes a new [`Self::DecodedState`].
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
+    /// Whether the output may keep the buffer of `page` alive instead of copying out of it.
+    fn can_share_page_buffer(&self, _page: &DataPage) -> bool {
+        false
+    }
+
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict>;
 
@@ -655,7 +660,10 @@ impl<D: Decoder> PageDecoder<D> {
 
             let iter = &mut self.iter;
             let (page, time) = option_time(self.metrics.is_some(), move || page.decompress(iter));
-            let page = page?;
+            let mut page = page?;
+            if self.decoder.can_share_page_buffer(&page) {
+                page.share_buffer();
+            }
 
             if let Some(time) = time {
                 let metrics = self.metrics.as_deref_mut().unwrap();
@@ -840,7 +848,10 @@ impl<D: Decoder> PageDecoder<D> {
 
             let iter = &mut self.iter;
             let (page, time) = option_time(self.metrics.is_some(), move || page.decompress(iter));
-            let page = page?;
+            let mut page = page?;
+            if self.decoder.can_share_page_buffer(&page) {
+                page.share_buffer();
+            }
 
             if let Some(time) = time {
                 let metrics = self.metrics.as_deref_mut().unwrap();

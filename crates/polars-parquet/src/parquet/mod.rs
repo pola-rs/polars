@@ -11,6 +11,8 @@ pub mod page;
 mod parquet_bridge;
 pub mod read;
 pub mod schema;
+#[cfg(feature = "snappy")]
+pub(crate) mod snappy;
 pub mod statistics;
 pub mod types;
 pub mod write;

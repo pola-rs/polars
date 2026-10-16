@@ -19,8 +19,10 @@ use crate::SQLContext;
 use crate::context::SubqueryShape;
 use crate::functions::series_expr;
 use crate::sql_expr::parse_sql_expr;
+#[cfg(any(feature = "csv", feature = "json"))]
+use crate::table_function_args::TableFunctionOptions;
 #[cfg(feature = "csv")]
-use crate::table_function_args::{DtypeOverrides, StringValues, TableFunctionOptions};
+use crate::table_function_args::{DtypeOverrides, StringValues};
 
 /// Table functions that are supported by Polars
 #[allow(clippy::enum_variant_names)]
@@ -44,12 +46,21 @@ pub(crate) enum PolarsTableFunctions {
     /// ```
     #[cfg(feature = "ipc")]
     ReadIpc,
-    /// SQL 'read_json' function (*only ndjson is currently supported*).
+    /// SQL 'read_json' function: reads newline-delimited JSON from a path only; for named options,
+    /// use `read_ndjson`. It stays path-only so that it can later read JSON documents, as Python's
+    /// `read_json` does, without a change of meaning for its options.
     /// ```sql
-    /// SELECT * FROM read_json('path/to/file.json')
+    /// SELECT * FROM read_json('path/to/file.ndjson')
     /// ```
     #[cfg(feature = "json")]
     ReadJson,
+    /// SQL 'read_ndjson' function, with optional named options as in Python's `scan_ndjson`.
+    /// ```sql
+    /// SELECT * FROM read_ndjson('path/to/file.ndjson')
+    /// SELECT * FROM read_ndjson('path/to/file.ndjson', infer_schema_length => NULL)
+    /// ```
+    #[cfg(feature = "json")]
+    ReadNdjson,
     /// SQL 'generate_series' function (stop included).
     /// ```sql
     /// SELECT * FROM generate_series(1, 10, 2)
@@ -77,6 +88,8 @@ impl FromStr for PolarsTableFunctions {
             "read_ipc" => PolarsTableFunctions::ReadIpc,
             #[cfg(feature = "json")]
             "read_json" => PolarsTableFunctions::ReadJson,
+            #[cfg(feature = "json")]
+            "read_ndjson" => PolarsTableFunctions::ReadNdjson,
             "generate_series" => PolarsTableFunctions::GenerateSeries,
             "range" => PolarsTableFunctions::Range,
             _ => polars_bail!(SQLInterface: "'{}' is not a supported table function", s),
@@ -99,7 +112,9 @@ impl PolarsTableFunctions {
             #[cfg(feature = "ipc")]
             PolarsTableFunctions::ReadIpc => self.read_ipc(args)?,
             #[cfg(feature = "json")]
-            PolarsTableFunctions::ReadJson => self.read_ndjson(args)?,
+            PolarsTableFunctions::ReadJson => self.read_json(args)?,
+            #[cfg(feature = "json")]
+            PolarsTableFunctions::ReadNdjson => self.read_ndjson(args)?,
             PolarsTableFunctions::GenerateSeries => return self.series(args, ctx, true),
             PolarsTableFunctions::Range => return self.series(args, ctx, false),
         };
@@ -152,6 +167,7 @@ impl PolarsTableFunctions {
 
         use polars_io::csv::read::{CsvEncoding, NullValues};
         use polars_lazy::frame::LazyFileListReader;
+        use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy};
 
         let (path_arg, options) = TableFunctionOptions::parse(
             "read_csv",
@@ -188,14 +204,14 @@ impl PolarsTableFunctions {
         if let Some(n) = options.usize("skip_lines")? {
             reader = reader.with_skip_lines(n);
         }
-        if let Some(encoding) = options.string("encoding")? {
-            reader = reader.with_encoding(match encoding.to_lowercase().as_str() {
-                "utf8" => CsvEncoding::Utf8,
-                "utf8-lossy" => CsvEncoding::LossyUtf8,
-                _ => polars_bail!(
-                    SQLSyntax: "`read_csv` option 'encoding' expects 'utf8' or 'utf8-lossy'; found: '{}'", encoding
-                ),
-            });
+        if let Some(encoding) = options.one_of(
+            "encoding",
+            &[
+                ("utf8", CsvEncoding::Utf8),
+                ("utf8-lossy", CsvEncoding::LossyUtf8),
+            ],
+        )? {
+            reader = reader.with_encoding(encoding);
         }
         if let Some(names) = options.strings("new_columns")? {
             let names: Vec<PlSmallStr> = names.into_iter().map(PlSmallStr::from).collect();
@@ -212,6 +228,9 @@ impl PolarsTableFunctions {
         }
         if let Some(n) = options.nullable_usize("infer_schema_length")? {
             reader = reader.with_infer_schema_length(n);
+        }
+        if let Some(n) = options.positive_usize("infer_schema_files")? {
+            reader = reader.with_infer_schema_files(n);
         }
         // As in Python: `infer_schema => false` reads every column as a string.
         if options.bool("infer_schema")? == Some(false) {
@@ -238,8 +257,36 @@ impl PolarsTableFunctions {
         if let Some(ignore_errors) = options.bool("ignore_errors")? {
             reader = reader.with_ignore_errors(ignore_errors);
         }
-        if let Some(truncate) = options.bool("truncate_ragged_lines")? {
+        if let Some(policy) = options.one_of(
+            "missing_columns",
+            &[
+                ("insert", MissingColumnsPolicy::Insert),
+                ("raise", MissingColumnsPolicy::Raise),
+            ],
+        )? {
+            reader = reader.with_missing_columns_policy(Some(policy));
+        }
+        let extra_columns = options.one_of(
+            "extra_columns",
+            &[
+                ("ignore", ExtraColumnsPolicy::Ignore),
+                ("raise", ExtraColumnsPolicy::Raise),
+            ],
+        )?;
+        // As in Python: ignoring extra columns also truncates rows with extra fields, unless
+        // `truncate_ragged_lines` is given. The reader doesn't apply this rule itself, so `scan_csv`
+        // and `read_csv` each do, as for `raise_if_empty` above.
+        let ignore_extra_columns = extra_columns == Some(ExtraColumnsPolicy::Ignore);
+        let truncate = options.bool("truncate_ragged_lines")?;
+        polars_ensure!(
+            !(ignore_extra_columns && truncate == Some(false)),
+            SQLSyntax: "`read_csv` cannot set truncate_ragged_lines => false with extra_columns => 'ignore'"
+        );
+        if let Some(truncate) = truncate.or(ignore_extra_columns.then_some(true)) {
             reader = reader.with_truncate_ragged_lines(truncate);
+        }
+        if let Some(policy) = extra_columns {
+            reader = reader.with_extra_columns_policy(policy);
         }
         if let Some(column) = options.string("include_file_paths")? {
             reader = reader.with_include_file_paths(Some(column.into()));
@@ -267,14 +314,50 @@ impl PolarsTableFunctions {
         Ok((path, lf))
     }
     #[cfg(feature = "json")]
+    fn read_json(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
+        use polars_lazy::frame::LazyFileListReader;
+        use polars_lazy::prelude::LazyJsonLineReader;
+
+        polars_ensure!(
+            args.len() == 1,
+            SQLSyntax: "`read_json` expects a single file path; found {} arguments{}",
+            args.len(),
+            if args.len() > 1 { " (for options, use `read_ndjson`)" } else { "" }
+        );
+        let path = self.get_file_path_from_arg(&args[0])?;
+        let lf = LazyJsonLineReader::new(path.clone()).finish()?;
+        Ok((path, lf))
+    }
+
+    #[cfg(feature = "json")]
     fn read_ndjson(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
-        polars_ensure!(args.len() == 1, SQLSyntax: "`read_ndjson` expects a single file path; found {:?} arguments", args.len());
+        use std::sync::Arc;
 
         use polars_lazy::frame::LazyFileListReader;
         use polars_lazy::prelude::LazyJsonLineReader;
 
-        let path = self.get_file_path_from_arg(&args[0])?;
-        let lf = LazyJsonLineReader::new(path.clone()).finish()?;
+        let (path_arg, options) = TableFunctionOptions::parse(
+            "read_ndjson",
+            args,
+            READ_NDJSON_OPTIONS,
+            READ_NDJSON_EXCLUDED_OPTIONS,
+        )?;
+        let path = self.get_file_path_from_arg(path_arg)?;
+
+        let mut reader = LazyJsonLineReader::new(path.clone())
+            .with_schema(options.schema("schema")?.map(Arc::new))
+            .with_schema_overwrite(options.schema("schema_overrides")?.map(Arc::new));
+        if let Some(n) = options.nullable_positive_usize("infer_schema_length")? {
+            reader = reader.with_infer_schema_length(n);
+        }
+        if let Some(ignore_errors) = options.bool("ignore_errors")? {
+            reader = reader.with_ignore_errors(ignore_errors);
+        }
+        if let Some(column) = options.string("include_file_paths")? {
+            reader = reader.with_include_file_paths(Some(column.into()));
+        }
+
+        let lf = reader.finish()?;
         Ok((path, lf))
     }
 
@@ -295,7 +378,7 @@ impl PolarsTableFunctions {
     }
 }
 
-/// Named options of `read_csv`: the stable options of Python's `scan_csv` that SQL can express.
+/// Named options of `read_csv`: the options of Python's `scan_csv` that SQL can express.
 #[cfg(feature = "csv")]
 const READ_CSV_OPTIONS: &[&str] = &[
     "has_header",
@@ -311,23 +394,21 @@ const READ_CSV_OPTIONS: &[&str] = &[
     "schema_overrides",
     "infer_schema",
     "infer_schema_length",
+    "infer_schema_files",
     "try_parse_dates",
     "decimal_comma",
     "null_values",
     "ignore_errors",
     "truncate_ragged_lines",
+    "missing_columns",
+    "extra_columns",
     "include_file_paths",
 ];
 
-/// Options of Python's `scan_csv` that `read_csv` does not accept, with what to do instead.
+/// Options of Python's `scan_csv` and `read_csv` that `read_csv` does not accept, with what to do
+/// instead.
 #[cfg(feature = "csv")]
 const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
-    (
-        "missing_columns",
-        "it is unstable; for rows of different widths, use infer_schema_length => NULL",
-    ),
-    ("extra_columns", "it is unstable"),
-    ("infer_schema_files", "it is unstable"),
     (
         "credential_provider",
         "cloud credentials are read from the environment",
@@ -338,11 +419,43 @@ const READ_CSV_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ),
     ("with_column_names", "use new_columns"),
     ("n_rows", "use LIMIT, which is pushed down into the scan"),
+    (
+        "columns",
+        "select the columns in the SELECT list; to set their types, use schema",
+    ),
     ("low_memory", ""),
     ("eol_char", ""),
     ("raise_if_empty", ""),
     ("glob", ""),
     ("empty_string_is_null", ""),
+    ("row_index_name", ""),
+    ("row_index_offset", ""),
+];
+
+/// Named options of `read_ndjson`: the stable options of Python's `scan_ndjson` that SQL can express.
+#[cfg(feature = "json")]
+const READ_NDJSON_OPTIONS: &[&str] = &[
+    "schema",
+    "schema_overrides",
+    "infer_schema_length",
+    "ignore_errors",
+    "include_file_paths",
+];
+
+/// Options of Python's `scan_ndjson` that `read_ndjson` does not accept, with what to do instead.
+#[cfg(feature = "json")]
+const READ_NDJSON_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
+    (
+        "credential_provider",
+        "cloud credentials are read from the environment",
+    ),
+    (
+        "storage_options",
+        "cloud credentials are read from the environment",
+    ),
+    ("n_rows", "use LIMIT, which is pushed down into the scan"),
+    ("batch_size", ""),
+    ("low_memory", ""),
     ("row_index_name", ""),
     ("row_index_offset", ""),
 ];
@@ -359,6 +472,8 @@ impl PolarsTableFunctions {
             "read_ipc",
             #[cfg(feature = "json")]
             "read_json",
+            #[cfg(feature = "json")]
+            "read_ndjson",
             "generate_series",
             "range",
         ]

@@ -39,7 +39,7 @@ an empty table from the schema of an existing table.
 
 .. code-block:: sql
 
-    CREATE TABLE tbl(colx VARCHAR, coly DATE, colz ARRAY<DOUBLE>)
+    CREATE TABLE tbl(colx VARCHAR, coly DATE, colz ARRAY<DOUBLE>, cols STRUCT<a INT, b VARCHAR>)
 
 .. code-block:: sql
 
