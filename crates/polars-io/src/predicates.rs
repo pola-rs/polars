@@ -348,7 +348,7 @@ pub trait SkipBatchPredicate: Send + Sync {
                 None => (
                     Scalar::null(dtype.clone()),
                     Scalar::null(dtype.clone()),
-                    Scalar::null(IDX_DTYPE),
+                    Scalar::null(null_count_dtype(dtype)),
                 ),
                 Some(stat) => (
                     Scalar::new(dtype.clone(), stat.min),
@@ -373,6 +373,21 @@ pub trait SkipBatchPredicate: Send + Sync {
         Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
     }
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
+}
+
+/// Dtype of a column's `<col>_nc` statistic: per field for structs (see
+/// `polars_plan::plans::predicates::null_count_dtype`).
+fn null_count_dtype(dtype: &DataType) -> DataType {
+    match dtype {
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => DataType::Struct(
+            fields
+                .iter()
+                .map(|f| Field::new(f.name().clone(), null_count_dtype(f.dtype())))
+                .collect(),
+        ),
+        _ => IDX_DTYPE,
+    }
 }
 
 /// The conjuncts of a row predicate that read one column, conjoined.
@@ -488,8 +503,8 @@ impl StagedScanIOPredicate {
     }
 }
 
-/// What a producer has published for a column, read once per file: a reader
-/// skips the batches whose statistics fall outside the range.
+/// What a producer has published for a column: a reader skips the batches whose
+/// statistics fall outside the range. It can change while a file is read.
 #[derive(Clone, Debug)]
 pub enum RuntimeRange {
     /// Not published yet. Every batch is kept; a later file may see a range.
@@ -498,13 +513,32 @@ pub enum RuntimeRange {
     Disabled,
     /// No value can match. Every batch is skipped.
     Empty,
-    /// Only values in `lo..=hi` can match.
-    Range { lo: Scalar, hi: Scalar },
+    /// Only values in `lo..=hi` can match, a missing bound does not limit that
+    /// side. Nulls match when `nulls_match`.
+    Range {
+        lo: Option<Scalar>,
+        hi: Option<Scalar>,
+        nulls_match: bool,
+    },
+}
+
+/// The order in which a reader best reads batches for a predicate that keeps
+/// fewer values as its producer sees more.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadOrder {
+    /// The batches with the lowest minimum first.
+    LowFirst,
+    /// The batches with the highest maximum first.
+    HighFirst,
 }
 
 /// A reader's view of a predicate that a producer sets at run time.
 pub trait DynamicPredicateSource: Send + Sync {
     fn runtime_range(&self) -> RuntimeRange;
+
+    fn read_order(&self) -> Option<ReadOrder> {
+        None
+    }
 
     /// Whether the producer has published a predicate that rejects rows.
     fn filters_rows(&self) -> bool;
@@ -543,14 +577,23 @@ impl RuntimeRangeHint {
         match range {
             RuntimeRange::Pending | RuntimeRange::Disabled => None,
             RuntimeRange::Empty => Some(false),
-            RuntimeRange::Range { lo, hi } => {
+            RuntimeRange::Range {
+                lo,
+                hi,
+                nulls_match,
+            } => {
                 if value.is_null() {
-                    return Some(false);
+                    return Some(*nulls_match);
                 }
-                let lo = cast_bound(lo, value.dtype())?;
-                let hi = cast_bound(hi, value.dtype())?;
-                let value = value.value();
-                Some(value >= lo.value() && value <= hi.value())
+                let above_lo = match lo {
+                    Some(lo) => value.value() >= cast_bound(lo, value.dtype())?.value(),
+                    None => true,
+                };
+                let below_hi = match hi {
+                    Some(hi) => value.value() <= cast_bound(hi, value.dtype())?.value(),
+                    None => true,
+                };
+                Some(above_lo && below_hi)
             },
         }
     }
@@ -615,13 +658,15 @@ impl ScanIOPredicate {
             for (c, v) in constant_columns.iter() {
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_min"), v.clone()));
                 sbp_constant_columns.push((format_pl_smallstr!("{c}_max"), v.clone()));
-                let nc = if v.is_null() {
+                let nc_dtype = null_count_dtype(v.dtype());
+                // Struct null counts are per field, and unknown here.
+                let nc = if v.is_null() || nc_dtype != IDX_DTYPE {
                     AnyValue::Null
                 } else {
                     (0 as IdxSize).into()
                 };
                 sbp_constant_columns
-                    .push((format_pl_smallstr!("{c}_nc"), Scalar::new(IDX_DTYPE, nc)));
+                    .push((format_pl_smallstr!("{c}_nc"), Scalar::new(nc_dtype, nc)));
             }
             self.skip_batch_predicate = Some(Arc::new(PhysicalExprWithConstCols {
                 constants: sbp_constant_columns,

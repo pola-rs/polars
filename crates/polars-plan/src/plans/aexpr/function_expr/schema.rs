@@ -1,6 +1,6 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
-use polars_core::utils::materialize_dyn_int;
+use polars_core::utils::{get_supertype, materialize_dyn_int};
 
 use super::*;
 
@@ -133,7 +133,21 @@ impl IRFunctionExpr {
                     },
                 }
             },
-            ShiftAndFill => mapper.with_same_dtype(),
+            ShiftAndFill => {
+                // Mirror type coercion, which casts the input and fill value to their supertype.
+                // @3.0: Raise a type error instead of upcasting the input.
+                let dtype = mapper.args()[0].dtype();
+                let fill_dtype = mapper.args()[2].dtype();
+                let is_cat_with_str_fill = (dtype.is_categorical() || dtype.is_enum())
+                    && matches!(
+                        fill_dtype,
+                        DataType::String | DataType::Unknown(UnknownKind::Str)
+                    );
+                match get_supertype(dtype, fill_dtype) {
+                    Some(st) if !is_cat_with_str_fill => mapper.with_dtype(st),
+                    _ => mapper.with_same_dtype(),
+                }
+            },
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsError, PolarsResult, polars_err};
 use polars_plan::dsl::sink::{SinkedPathInfo, SinkedPathsCallback, SinkedPathsCallbackArgs};
@@ -71,6 +72,11 @@ impl SinkedPathInfoEntry {
 
     pub fn set_num_bytes(&self, num_bytes: u64) {
         self.path_info_list.path_info_list.lock()[self.entry_idx].num_bytes = num_bytes;
+    }
+
+    pub fn set_partition_keys(&self, partition_keys: Arc<DataFrame>) {
+        self.path_info_list.path_info_list.lock()[self.entry_idx].partition_keys =
+            Some(partition_keys);
     }
 
     pub fn set_parquet_metadata(&self, parquet_metadata: Vec<u8>) {

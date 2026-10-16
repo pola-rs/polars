@@ -18,6 +18,7 @@ fn compress_data(
         descriptor,
         num_rows,
         num_nulls,
+        shared_capacity: _,
     } = page;
     let uncompressed_page_size = buffer.len();
     let num_rows = num_rows.expect("We should have num_rows when we are writing");

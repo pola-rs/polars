@@ -709,6 +709,14 @@ fn conjunct_selectivity(
     schema: &Schema,
     rows: f64,
 ) -> Option<f64> {
+    // Its value is only known at run time.
+    if let AExpr::Function {
+        function: IRFunctionExpr::DynamicPred { .. },
+        ..
+    } = expr_arena.get(conjunct)
+    {
+        return Some(1.0);
+    }
     if let AExpr::BinaryExpr {
         left,
         op: Operator::Or | Operator::LogicalOr,

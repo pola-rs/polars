@@ -2191,7 +2191,7 @@ def test_read_csv_invalid_schema_overrides(chunk_override: None) -> None:
     )
     f = io.StringIO(csv)
     with pytest.raises(
-        TypeError, match="`schema_overrides` should be of type list or dict"
+        TypeError, match="`schema_overrides` should be a mapping or a sequence"
     ):
         pl.read_csv(f, schema_overrides={pl.Int64, pl.String})  # type: ignore[arg-type]
 
