@@ -11,7 +11,7 @@ use super::utils::{
 use super::{Filter, PredicateFilter, dictionary_encoded};
 use crate::parquet::encoding::{Encoding, delta_byte_array, delta_length_byte_array, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{DataPage, DictPage, split_buffer};
+use crate::parquet::page::{DataPage, DictPage, SharedPageBuffer, split_buffer};
 use crate::read::deserialize::utils::{self, Decoded};
 use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
@@ -42,7 +42,8 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
         match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                let values = BinaryIter::new(values, page.num_values());
+                let mut values = BinaryIter::new(values, page.num_values());
+                values.page_buffer = page.shared_buffer();
 
                 Ok(Self::Plain(values))
             },
@@ -192,6 +193,7 @@ impl utils::Decoded for DecodedState {
 #[allow(clippy::too_many_arguments)]
 fn decode_plain(
     values: &[u8],
+    page_buffer: Option<SharedPageBuffer<'_>>,
     max_num_values: usize,
     state: &mut DecodedState,
     is_optional: bool,
@@ -255,6 +257,7 @@ fn decode_plain(
         (None, None) => required::decode(
             max_num_values,
             values,
+            page_buffer,
             None,
             &mut state.binview,
             verify_utf8,
@@ -262,6 +265,7 @@ fn decode_plain(
         (Some(Filter::Range(rng)), None) if rng.start == 0 => required::decode(
             max_num_values,
             values,
+            page_buffer,
             Some(rng.end),
             &mut state.binview,
             verify_utf8,
@@ -269,6 +273,7 @@ fn decode_plain(
         (None, Some(page_validity)) => optional::decode(
             page_validity.set_bits(),
             values,
+            page_buffer,
             &mut state.binview,
             &page_validity,
             verify_utf8,
@@ -276,6 +281,7 @@ fn decode_plain(
         (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => optional::decode(
             page_validity.set_bits(),
             values,
+            page_buffer,
             &mut state.binview,
             &page_validity,
             verify_utf8,
@@ -283,6 +289,7 @@ fn decode_plain(
         (Some(Filter::Mask(mask)), None) => required_masked::decode(
             max_num_values,
             values,
+            page_buffer,
             &mut state.binview,
             &mask,
             verify_utf8,
@@ -290,6 +297,7 @@ fn decode_plain(
         (Some(Filter::Mask(mask)), Some(page_validity)) => optional_masked::decode(
             page_validity.set_bits(),
             values,
+            page_buffer,
             &mut state.binview,
             &page_validity,
             &mask,
@@ -298,6 +306,7 @@ fn decode_plain(
         (Some(Filter::Range(rng)), None) => required_masked::decode(
             max_num_values,
             values,
+            page_buffer,
             &mut state.binview,
             &filter_from_range(rng),
             verify_utf8,
@@ -305,6 +314,7 @@ fn decode_plain(
         (Some(Filter::Range(rng)), Some(page_validity)) => optional_masked::decode(
             page_validity.set_bits(),
             values,
+            page_buffer,
             &mut state.binview,
             &page_validity,
             &filter_from_range(rng),
@@ -326,8 +336,38 @@ fn invalid_utf8_err() -> ParquetError {
     ParquetError::oos("String data contained invalid UTF-8")
 }
 
+/// Checks that the inlined values of `views` are valid UTF-8.
+fn inlined_are_valid_utf8(views: &[View]) -> bool {
+    let mut all_inlined_are_ascii = true;
+    for view in views {
+        // Inlined views are zero after the value, and their length is below 128.
+        all_inlined_are_ascii &= (view.length > View::MAX_INLINE_SIZE)
+            | (view.as_u128() & 0x8080_8080_8080_8080_8080_8080_8080_8080 == 0);
+    }
+    if all_inlined_are_ascii {
+        return true;
+    }
+
+    let mut inlined = Vec::new();
+    for view in views {
+        if view.length <= View::MAX_INLINE_SIZE {
+            let value = unsafe { view.get_inlined_slice_unchecked() };
+            if value.first().is_some_and(|b| b & 0xC0 == 0x80) {
+                return false;
+            }
+            inlined.extend_from_slice(value);
+        }
+    }
+    simdutf8::basic::from_utf8(&inlined).is_ok()
+}
+
+/// Decodes plain-encoded values. Without `page_buffer`, the non-inlined values are copied into a
+/// new buffer. If `page_buffer` holds `values` and the non-inlined values take up at least 3/4 of
+/// its allocation, the views point into the page buffer and it becomes a data buffer of `target`.
+/// Otherwise, the non-inlined values are copied into a new buffer afterwards.
 pub fn decode_plain_generic(
     values: &[u8],
+    page_buffer: Option<SharedPageBuffer<'_>>,
     target: &mut MutableBinaryViewArray<[u8]>,
 
     num_rows: usize,
@@ -335,39 +375,38 @@ pub fn decode_plain_generic(
 
     verify_utf8: bool,
 ) -> ParquetResult<()> {
-    // Since the offset in the buffer is decided by the interleaved lengths, every value has to be
-    // walked no matter what. This makes decoding rather inefficient in general.
-    //
-    // There are three cases:
-    // 1. All inlinable values
-    //    - Most time is spend in decoding
-    //    - No additional buffer has to be formed
-    //    - Possible UTF-8 verification is fast because the len_below_128 trick
-    // 2. All non-inlinable values
-    //    - Little time is spend in decoding
-    //    - Most time is spend in buffer memcopying (we remove the interleaved lengths)
-    //    - Possible UTF-8 verification is fast because the continuation byte trick
-    // 3. Mixed inlinable and non-inlinable values
-    //    - Time shared between decoding and buffer forming
-    //    - UTF-8 verification might still use len_below_128 trick, but might need to fall back to
-    //      slow path.
-
     target.finish_in_progress();
     unsafe { target.views_mut() }.reserve(num_rows);
 
     let start_target_length = target.len();
-
     let buffer_idx = target.completed_buffers().len() as u32;
-    let mut buffer = Vec::with_capacity(values.len() + 1);
-    let mut none_starting_with_continuation_byte = true; // Whether the transition from between strings is valid
-    // UTF-8
-    let mut all_len_below_128 = true; // Whether all the lengths of the values are below 128, this
-    // allows us to make UTF-8 verification a lot faster.
+    // The offset of `values` in the page buffer. View offsets are relative to the page buffer.
+    let values_offset = match page_buffer {
+        Some(page_buffer) => {
+            let page_buffer = page_buffer.buffer.as_slice();
+            let values_offset = values.as_ptr() as usize - page_buffer.as_ptr() as usize;
+            assert!(values_offset + values.len() <= page_buffer.len());
+            values_offset
+        },
+        None => 0,
+    };
+    assert!(values_offset + values.len() <= u32::MAX as usize);
+    let page_start = values.as_ptr() as usize - values_offset;
+
+    let mut buffer = page_buffer
+        .is_none()
+        .then(|| Vec::with_capacity(values.len()));
+    let verify_page_utf8 = verify_utf8 && page_buffer.is_some();
 
     let mut total_bytes_len = 0;
-    let mut num_inlined = 0;
+    let mut noninlined_bytes_len = 0;
+    // If no value starts with a continuation byte, the values are valid UTF-8 exactly when their
+    // concatenation is.
+    let mut none_starting_with_continuation_byte = true;
+    let mut remaining = values;
+    // The bytes in `values[utf8_start..]` before `remaining` still have to be checked for UTF-8.
+    let mut utf8_start = 0;
 
-    let mut mvalues = values;
     while let Some((is_valid, is_selected)) = next() {
         if !is_valid {
             if is_selected {
@@ -376,107 +415,100 @@ pub fn decode_plain_generic(
             continue;
         }
 
-        if mvalues.len() < 4 {
+        let Some((length, rest)) = remaining.split_first_chunk::<4>() else {
             return Err(invalid_input_err());
-        }
-
-        let length;
-        (length, mvalues) = mvalues.split_at(4);
-        let length: &[u8; 4] = unsafe { length.try_into().unwrap_unchecked() };
+        };
         let length = u32::from_le_bytes(*length);
-
-        if mvalues.len() < length as usize {
+        let Some((value, rest)) = rest.split_at_checked(length as usize) else {
             return Err(invalid_input_err());
+        };
+
+        // A length with all bytes below 128 is valid UTF-8 itself, so it can be checked together
+        // with the values around it. Otherwise, the values before it are checked separately.
+        // Every checked range starts and ends at a value boundary, so a value that starts or ends
+        // inside a character always fails the check.
+        if verify_page_utf8 && length & 0x8080_8080 != 0 {
+            let position = values.len() - remaining.len();
+            if simdutf8::basic::from_utf8(&values[utf8_start..position]).is_err() {
+                return Err(invalid_utf8_err());
+            }
+            utf8_start = position + 4;
         }
-
-        let value;
-        (value, mvalues) = mvalues.split_at(length as usize);
-
-        all_len_below_128 &= value.len() < 128;
-        // Everything starting with 10.. .... is a continuation byte.
-        none_starting_with_continuation_byte &=
-            value.is_empty() || value[0] & 0b1100_0000 != 0b1000_0000;
+        remaining = rest;
 
         if !is_selected {
             continue;
         }
 
-        let offset = buffer.len() as u32;
-
-        if value.len() <= View::MAX_INLINE_SIZE as usize {
+        if length <= View::MAX_INLINE_SIZE {
             unsafe { target.views_mut() }.push(unsafe { View::new_inline_unchecked(value) });
-            num_inlined += 1;
         } else {
-            buffer.extend_from_slice(value);
+            let offset = match &mut buffer {
+                Some(buffer) => {
+                    // Everything starting with 10.. .... is a continuation byte.
+                    none_starting_with_continuation_byte &= value[0] & 0b1100_0000 != 0b1000_0000;
+                    let offset = buffer.len() as u32;
+                    buffer.extend_from_slice(value);
+                    offset
+                },
+                None => (value.as_ptr() as usize - page_start) as u32,
+            };
             unsafe { target.views_mut() }
                 .push(unsafe { View::new_noninline_unchecked(value, buffer_idx, offset) });
+            noninlined_bytes_len += length as usize;
         }
+        total_bytes_len += length as usize;
+    }
 
-        total_bytes_len += value.len();
+    if verify_utf8 {
+        let is_valid = match &buffer {
+            Some(buffer) => {
+                none_starting_with_continuation_byte
+                    && simdutf8::basic::from_utf8(buffer).is_ok()
+                    && (total_bytes_len == noninlined_bytes_len
+                        || inlined_are_valid_utf8(&target.views()[start_target_length..]))
+            },
+            None => {
+                let position = values.len() - remaining.len();
+                simdutf8::basic::from_utf8(&values[utf8_start..position]).is_ok()
+            },
+        };
+        if !is_valid {
+            return Err(invalid_utf8_err());
+        }
     }
 
     unsafe {
         target.set_total_bytes_len(target.total_bytes_len() + total_bytes_len);
     }
-
-    if verify_utf8 {
-        // This is a trick that allows us to check the resulting buffer which allows to batch the
-        // UTF-8 verification.
-        //
-        // This is allowed if none of the strings start with a UTF-8 continuation byte, so we keep
-        // track of that during the decoding.
-        if num_inlined == 0 {
-            if !none_starting_with_continuation_byte || simdutf8::basic::from_utf8(&buffer).is_err()
-            {
-                return Err(invalid_utf8_err());
-            }
-
-        // This is a small trick that allows us to check the Parquet buffer instead of the view
-        // buffer. Batching the UTF-8 verification is more performant. For this to be allowed,
-        // all the interleaved lengths need to be valid UTF-8.
-        //
-        // Every strings prepended by 4 bytes (L, 0, 0, 0), since we check here L < 128. L is
-        // only a valid first byte of a UTF-8 code-point and (L, 0, 0, 0) is valid UTF-8.
-        // Consequently, it is valid to just check the whole buffer.
-        } else if all_len_below_128 {
-            if simdutf8::basic::from_utf8(&values[..values.len() - mvalues.len()]).is_err() {
-                return Err(invalid_utf8_err());
-            }
-        } else {
-            // We check all the non-inlined values here.
-            if !none_starting_with_continuation_byte || simdutf8::basic::from_utf8(&buffer).is_err()
-            {
-                return Err(invalid_utf8_err());
-            }
-
-            let mut all_inlined_are_ascii = true;
-
-            // @NOTE: This is only valid because we initialize our inline View's to be zeroes on
-            // non-included bytes. The mask also covers the length, which is below 128 for inline
-            // views.
-            for view in &target.views()[start_target_length..] {
-                all_inlined_are_ascii &= (view.length > View::MAX_INLINE_SIZE)
-                    | (view.as_u128() & 0x8080_8080_8080_8080_8080_8080_8080_8080 == 0);
-            }
-
-            // This is the very slow path.
-            if !all_inlined_are_ascii {
-                let mut is_valid = true;
-                for view in &target.views()[start_target_length..] {
-                    if view.length <= View::MAX_INLINE_SIZE {
-                        is_valid &=
-                            std::str::from_utf8(unsafe { view.get_inlined_slice_unchecked() })
-                                .is_ok();
-                    }
-                }
-
-                if !is_valid {
-                    return Err(invalid_utf8_err());
-                }
-            }
-        }
+    if noninlined_bytes_len == 0 {
+        return Ok(());
     }
 
+    if let Some(mut buffer) = buffer {
+        if buffer.len() < buffer.capacity() - buffer.capacity() / 4 {
+            buffer.shrink_to_fit();
+        }
+        target.push_buffer(buffer.into());
+        return Ok(());
+    }
+
+    if let Some(page_buffer) = page_buffer
+        && noninlined_bytes_len >= page_buffer.capacity - page_buffer.capacity / 4
+    {
+        target.push_buffer(page_buffer.buffer.clone());
+        return Ok(());
+    }
+
+    let mut buffer = Vec::with_capacity(noninlined_bytes_len);
+    for view in &mut unsafe { target.views_mut() }[start_target_length..] {
+        if view.length > View::MAX_INLINE_SIZE {
+            let start = view.offset as usize - values_offset;
+            let value = unsafe { values.get_unchecked(start..start + view.length as usize) };
+            view.offset = buffer.len() as u32;
+            buffer.extend_from_slice(value);
+        }
+    }
     target.push_buffer(buffer.into());
 
     Ok(())
@@ -487,6 +519,10 @@ impl utils::Decoder for BinViewDecoder {
     type Dict = BinaryViewArray;
     type DecodedState = DecodedState;
     type Output = Box<dyn Array>;
+
+    fn can_share_page_buffer(&self, page: &DataPage) -> bool {
+        page.encoding() == Encoding::Plain
+    }
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         DecodedState {
@@ -627,7 +663,7 @@ impl utils::Decoder for BinViewDecoder {
         let num_values = page.num_values;
 
         let mut arr = MutableBinaryViewArray::new();
-        required::decode(num_values, values, None, &mut arr, self.is_string)?;
+        required::decode(num_values, values, None, None, &mut arr, self.is_string)?;
 
         Ok(arr.freeze())
     }
@@ -685,6 +721,7 @@ impl utils::Decoder for BinViewDecoder {
         match state.translation {
             StateTranslation::Plain(iter) => decode_plain(
                 iter.values,
+                iter.page_buffer,
                 iter.max_num_values,
                 decoded,
                 state.is_optional,
@@ -848,6 +885,8 @@ impl utils::Decoder for BinViewDecoder {
 #[derive(Debug, Clone)]
 pub struct BinaryIter<'a> {
     values: &'a [u8],
+    /// The page buffer that holds `values`, if the output may keep it alive.
+    page_buffer: Option<SharedPageBuffer<'a>>,
 
     /// A maximum number of items that this [`BinaryIter`] may produce.
     ///
@@ -860,6 +899,7 @@ impl<'a> BinaryIter<'a> {
     pub fn new(values: &'a [u8], max_num_values: usize) -> Self {
         Self {
             values,
+            page_buffer: None,
             max_num_values,
         }
     }
