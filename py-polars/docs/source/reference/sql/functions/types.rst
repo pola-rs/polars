@@ -48,6 +48,29 @@ Note that the more compact PostgreSQL `<expr>::type` syntax is also supported.
     # │ 30.0 ┆ 2024-01-01 │
     # └──────┴────────────┘
 
+Nested types are written as `STRUCT<name TYPE, ...>` and `MAP(KEY, VALUE)`. A struct is cast
+field by field, matching fields by name: a target field that is not in the input is null.
+Only a `STRUCT` value or `NULL` can be cast to `STRUCT`, and only a `MAP` value or `NULL` to `MAP`.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"s": [{"x": 1, "y": "a"}, {"x": 2, "y": "b"}]})
+    df.sql("""
+      SELECT CAST(s AS STRUCT<y VARCHAR, x BIGINT, z DOUBLE>) AS s
+      FROM self
+    """)
+    # shape: (2, 1)
+    # ┌──────────────┐
+    # │ s            │
+    # │ ---          │
+    # │ struct[3]    │
+    # ╞══════════════╡
+    # │ {"a",1,null} │
+    # │ {"b",2,null} │
+    # └──────────────┘
+
 
 .. _try_cast:
 
