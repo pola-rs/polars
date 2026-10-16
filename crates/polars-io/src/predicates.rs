@@ -503,8 +503,8 @@ impl StagedScanIOPredicate {
     }
 }
 
-/// What a producer has published for a column, read once per file: a reader
-/// skips the batches whose statistics fall outside the range.
+/// What a producer has published for a column: a reader skips the batches whose
+/// statistics fall outside the range. It can change while a file is read.
 #[derive(Clone, Debug)]
 pub enum RuntimeRange {
     /// Not published yet. Every batch is kept; a later file may see a range.
@@ -513,13 +513,32 @@ pub enum RuntimeRange {
     Disabled,
     /// No value can match. Every batch is skipped.
     Empty,
-    /// Only values in `lo..=hi` can match.
-    Range { lo: Scalar, hi: Scalar },
+    /// Only values in `lo..=hi` can match, a missing bound does not limit that
+    /// side. Nulls match when `nulls_match`.
+    Range {
+        lo: Option<Scalar>,
+        hi: Option<Scalar>,
+        nulls_match: bool,
+    },
+}
+
+/// The order in which a reader best reads batches for a predicate that keeps
+/// fewer values as its producer sees more.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadOrder {
+    /// The batches with the lowest minimum first.
+    LowFirst,
+    /// The batches with the highest maximum first.
+    HighFirst,
 }
 
 /// A reader's view of a predicate that a producer sets at run time.
 pub trait DynamicPredicateSource: Send + Sync {
     fn runtime_range(&self) -> RuntimeRange;
+
+    fn read_order(&self) -> Option<ReadOrder> {
+        None
+    }
 
     /// Whether the producer has published a predicate that rejects rows.
     fn filters_rows(&self) -> bool;
@@ -558,14 +577,23 @@ impl RuntimeRangeHint {
         match range {
             RuntimeRange::Pending | RuntimeRange::Disabled => None,
             RuntimeRange::Empty => Some(false),
-            RuntimeRange::Range { lo, hi } => {
+            RuntimeRange::Range {
+                lo,
+                hi,
+                nulls_match,
+            } => {
                 if value.is_null() {
-                    return Some(false);
+                    return Some(*nulls_match);
                 }
-                let lo = cast_bound(lo, value.dtype())?;
-                let hi = cast_bound(hi, value.dtype())?;
-                let value = value.value();
-                Some(value >= lo.value() && value <= hi.value())
+                let above_lo = match lo {
+                    Some(lo) => value.value() >= cast_bound(lo, value.dtype())?.value(),
+                    None => true,
+                };
+                let below_hi = match hi {
+                    Some(hi) => value.value() <= cast_bound(hi, value.dtype())?.value(),
+                    None => true,
+                };
+                Some(above_lo && below_hi)
             },
         }
     }

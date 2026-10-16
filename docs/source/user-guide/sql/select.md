@@ -95,9 +95,10 @@ The supported options are:
 - Layout: `has_header`, `separator`, `quote_char`, `comment_prefix`, `skip_rows`,
   `skip_rows_after_header`, `skip_lines`, `encoding`.
 - Names and types: `new_columns`, `schema`, `schema_overrides`, `infer_schema`,
-  `infer_schema_length`, `try_parse_dates`, `decimal_comma`.
+  `infer_schema_length`, `infer_schema_files`, `try_parse_dates`, `decimal_comma`.
 - Values and errors: `null_values`, `ignore_errors`.
-- Ragged rows and multiple files: `truncate_ragged_lines`, `include_file_paths`.
+- Ragged rows and multiple files: `truncate_ragged_lines`, `missing_columns`, `extra_columns`,
+  `include_file_paths`.
 
 Values are SQL literals:
 
@@ -110,3 +111,8 @@ Values are SQL literals:
 - Escape sequences need an `E''` string, as in `separator => E'\t'` for tab-separated files.
 
 Unlike `scan_csv`, `read_csv` tries to parse dates by default (`try_parse_dates => true`).
+
+Some options are unstable: those marked as such in the
+[`scan_csv`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_csv.html) API
+reference are unstable in `read_csv` too, and may be changed at any point without it being
+considered a breaking change.
