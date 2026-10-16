@@ -1250,6 +1250,9 @@ class Series(metaclass=_Meta):
         return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __rtruediv__(self, other: Any) -> Series:
+        if self.dtype == String or isinstance(other, str):
+            msg = "division with 'String' datatypes is not allowed"
+            raise InvalidOperationError(msg)
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
@@ -1260,11 +1263,6 @@ class Series(metaclass=_Meta):
 
         if isinstance(other, int):
             other = float(other)
-
-        if self.dtype == String or isinstance(other, str):
-            msg = "division with 'String' datatypes is not allowed"
-            raise InvalidOperationError(msg)
-
         return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
