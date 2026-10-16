@@ -400,10 +400,6 @@ mod read_csv_options {
                 "`read_csv` option 'n_rows' is not supported in SQL: use LIMIT",
             ),
             (
-                "missing_columns => 'insert'",
-                "not supported in SQL: it is unstable; for rows of different widths, use infer_schema_length => NULL",
-            ),
-            (
                 "has_header = false",
                 "`read_csv` options must be named with '=>' (found: has_header = false)",
             ),

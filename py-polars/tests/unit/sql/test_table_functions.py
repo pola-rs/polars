@@ -31,6 +31,19 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
             "has_header => false, infer_schema_length => NULL",
             {"has_header": False, "infer_schema_length": None},
         ),
+        # early rows narrower than the schema (#29970)
+        (
+            "C,NEMP.WORLD,PUBLIC_DAILY\nD,DREGION,1,NSW1\nD,DUNIT,1,UNIT_A,10.5,1\n",
+            "has_header => false, skip_rows => 1, missing_columns => 'insert', schema => {"
+            + ", ".join(f"'column_{i}': 'VARCHAR'" for i in range(6))
+            + "}",
+            {
+                "has_header": False,
+                "skip_rows": 1,
+                "missing_columns": "insert",
+                "schema": {f"column_{i}": pl.String for i in range(6)},
+            },
+        ),
         # layout
         (
             "a;b\n1,5;2\n",
@@ -53,6 +66,11 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
             "1,2\n3,4\n",
             "has_header => false, schema => {'x': 'BIGINT', 'y': 'VARCHAR'}",
             {"has_header": False, "schema": {"x": pl.Int64, "y": pl.String}},
+        ),
+        (
+            "a,b,c\n1,x,1.5\n",
+            "schema => {'a': 'BIGINT', 'b': 'VARCHAR'}, extra_columns => 'ignore'",
+            {"schema": {"a": pl.Int64, "b": pl.String}, "extra_columns": "ignore"},
         ),
         (
             "a,b\n1,2\n",
@@ -82,6 +100,8 @@ _WIDE_ROW_LATE = "".join(f"{i},b\n" for i in range(1, 151)) + "151,b,late\n"
             "truncate_ragged_lines => true",
             {"truncate_ragged_lines": True},
         ),
+        # implies `truncate_ragged_lines`; values are case-insensitive
+        ("a,b\n1,2,3\n4,5\n", "extra_columns => 'IGNORE'", {"extra_columns": "ignore"}),
         ("a\n1\n", "include_file_paths => 'file'", {"include_file_paths": "file"}),
         (
             "",
@@ -101,6 +121,40 @@ def test_read_csv_options_match_scan_csv(
     scan_kwargs: dict[str, Any] = {"try_parse_dates": True, **kwargs}
     expected = pl.scan_csv(path.as_posix(), **scan_kwargs).collect()
     assert_frame_equal(_read_csv_sql(path, options), expected)
+
+
+@pytest.mark.parametrize(
+    ("files", "options", "kwargs"),
+    [
+        # different headers: the union of the columns, or those of the first file
+        (
+            ["a,b\n1,x\n", "a,b,c\n2,y,1.5\n"],
+            "missing_columns => 'insert'",
+            {"missing_columns": "insert"},
+        ),
+        (
+            ["a,b\n1,x\n", "a,b,c\n2,y,1.5\n"],
+            "extra_columns => 'ignore', infer_schema_files => 1",
+            {"extra_columns": "ignore", "infer_schema_files": 1},
+        ),
+        # a wider type in the eleventh file, past the default of ten
+        (
+            ["a\n1.5\n" if i == 10 else "a\n1\n" for i in range(12)],
+            "infer_schema_files => 11",
+            {"infer_schema_files": 11},
+        ),
+    ],
+)
+def test_read_csv_options_across_files_match_scan_csv(
+    tmp_path: Path, files: list[str], options: str, kwargs: dict[str, Any]
+) -> None:
+    for i, contents in enumerate(files):
+        (tmp_path / f"part_{i:02}.csv").write_text(contents)
+    glob = tmp_path / "part_*.csv"
+
+    scan_kwargs: dict[str, Any] = {"try_parse_dates": True, **kwargs}
+    expected = pl.scan_csv(glob.as_posix(), **scan_kwargs).collect()
+    assert_frame_equal(_read_csv_sql(glob, options), expected)
 
 
 def test_read_csv_options_lossy_encoding(tmp_path: Path) -> None:
@@ -138,9 +192,37 @@ def test_read_csv_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             r"option 'n_rows' is not supported in SQL: use LIMIT",
         ),
         (
-            "missing_columns => 'insert'",
+            "credential_provider => 'auto'",
             SQLInterfaceError,
-            r"is not supported in SQL: it is unstable; .* infer_schema_length => NULL",
+            r"is not supported in SQL: cloud credentials are read from the environment",
+        ),
+        (
+            "missing_columns => 'fill'",
+            SQLSyntaxError,
+            r"option 'missing_columns' expects 'insert' or 'raise'; found: 'fill'",
+        ),
+        # Python's `None` only means "the default" here, so NULL is rejected, as for
+        # `truncate_ragged_lines`; accepting it later would not break anything
+        (
+            "missing_columns => NULL",
+            SQLSyntaxError,
+            r"option 'missing_columns' expects 'insert' or 'raise'; found: NULL",
+        ),
+        (
+            "extra_columns => 'ignore', truncate_ragged_lines => false",
+            SQLSyntaxError,
+            r"cannot set truncate_ragged_lines => false with extra_columns => 'ignore'",
+        ),
+        (
+            "infer_schema_files => 0",
+            SQLSyntaxError,
+            r"option 'infer_schema_files' expects a positive integer; found: 0",
+        ),
+        (
+            "columns => ['a']",
+            SQLInterfaceError,
+            r"option 'columns' is not supported in SQL: select the columns in the SELECT "
+            r"list; to set their types, use schema",
         ),
         (
             "has_header = false",
