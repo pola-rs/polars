@@ -225,6 +225,8 @@ pub struct InFlightBudget {
     request_budget: Arc<RequestBudget>,
     // Flow: byte acquires admitted after parking, since the last `take_byte_acquires_unparked()`.
     byte_acquires_unparked: AtomicU64,
+    // Best sustained delivered bandwidth in bytes/s, set by the controller.
+    delivered_bandwidth: AtomicU64,
 }
 
 impl InFlightBudget {
@@ -241,6 +243,7 @@ impl InFlightBudget {
                 floor_request_budget,
             )),
             byte_acquires_unparked: AtomicU64::new(0),
+            delivered_bandwidth: AtomicU64::new(0),
         }
     }
 
@@ -287,6 +290,15 @@ impl InFlightBudget {
 
     pub fn resize_request_budget(&self, new: u64) {
         self.request_budget.resize(new);
+    }
+
+    /// Best sustained delivered bandwidth of the store in bytes/s; 0 until measured.
+    pub fn delivered_bandwidth(&self) -> u64 {
+        self.delivered_bandwidth.load(Relaxed)
+    }
+
+    pub(super) fn set_delivered_bandwidth(&self, bytes_per_sec: u64) {
+        self.delivered_bandwidth.store(bytes_per_sec, Relaxed);
     }
 
     /// Flow: byte acquires admitted after parking, since the last call. Read and reset.
