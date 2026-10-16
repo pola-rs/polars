@@ -582,19 +582,19 @@ def test_coalesce_null_and_scalar_inputs(engine: EngineType) -> None:
 
     result = lf.select(
         null_lit=pl.coalesce(null, "a"),
-        null_lits=pl.coalesce(null, null, "b"),
+        null_null_lit=pl.coalesce(null, null, "b"),
         null_col_lit=pl.coalesce("n", pl.lit(5), "b"),
         mid_break=pl.coalesce("a", pl.lit(1), "b"),
     ).collect(engine=engine)
     expected = pl.DataFrame(
         {
             "null_lit": [None, 2, 3],
-            "null_lits": [10, None, 30],
+            "null_null_lit": [10, None, 30],
             "null_col_lit": [5, 5, 5],
             "mid_break": [1, 2, 3],
         },
         schema=dict.fromkeys(
-            ["null_lit", "null_lits", "null_col_lit", "mid_break"], pl.Int64
+            ["null_lit", "null_null_lit", "null_col_lit", "mid_break"], pl.Int64
         ),
     )
     assert_frame_equal(result, expected)
