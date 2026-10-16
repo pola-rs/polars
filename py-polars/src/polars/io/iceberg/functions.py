@@ -68,6 +68,19 @@ def scan_iceberg(
     catalog
         PyIceberg catalog to load the table from if the provided `target`
         was a table name.
+
+        Encrypted scans use native AWS KMS when the catalog properties contain
+        ``encryption.kms-type=aws``. AWS credentials and region are resolved
+        through the AWS SDK's default provider chains, with optional overrides
+        from ``profile_name``, ``region_name``, ``aws_access_key_id``,
+        ``aws_secret_access_key``, and ``aws_session_token``. For static metadata
+        paths, provide KMS configuration through ``storage_options``.
+        Custom Python KMS implementations can be configured with ``py-kms-impl``.
+
+        Encrypted scan support is unstable. It supports local filesystem, S3,
+        GCS, and Azure Data Lake Storage tables. Predicates and projections use
+        the native Polars scan optimizations.
+        Incremental append scans can span snapshots with different encryption keys.
     reader_override
         Overrides the reader used to read the data.
 

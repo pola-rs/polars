@@ -7,3 +7,6 @@ pub mod decrypt;
 #[allow(dead_code)]
 pub mod encrypt;
 mod modules;
+
+pub use ciphers::AesGcmBlockDecryptor as AesGcmDecryptor;
+pub mod iceberg;

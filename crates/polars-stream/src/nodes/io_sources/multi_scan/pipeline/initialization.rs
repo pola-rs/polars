@@ -401,6 +401,7 @@ async fn finish_initialize_multi_scan_pipeline(
         // the first callback has everything needed to request all deletion vectors.
         let deletion_files_provider = DeletionFilesProvider::try_new(
             config.deletion_files.clone(),
+            config.file_reader_builder.as_ref(),
             config.sources.clone(),
             &execution_state,
             io_metrics,
