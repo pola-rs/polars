@@ -23,9 +23,23 @@ pub enum IRBinaryFunction {
     Get(bool),
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is Binary.
+    pub fn ensure_is_binary(&self) -> PolarsResult<()> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            matches!(dt, DataType::Binary | DataType::Unknown(UnknownKind::Any)),
+            InvalidOperation:
+            "expected Binary data type for binary operation, got: {dt:?}"
+        );
+        Ok(())
+    }
+}
+
 impl IRBinaryFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRBinaryFunction::*;
+        mapper.ensure_is_binary()?;
         match self {
             Contains => mapper.with_dtype(DataType::Boolean),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
