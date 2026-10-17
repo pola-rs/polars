@@ -24,9 +24,163 @@ html[data-theme="dark"] {
     --pst-color-border: #444444;
 }
 
+/* Fluid primary sidebar width (theme default is a flat 25%). See #22580. */
+html {
+    --pst-sidebar-primary-width: min(28rem, 33%);
+    --pst-sidebar-resize-gutter: 24px;
+}
+
 /* add subtle gradients to sidebar and card elements */
 div.bd-sidebar-primary {
     background-image: linear-gradient(90deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
+}
+
+/* :not(:disabled) beats theme button cursor rules without !important */
+button.bd-sidebar-resize-handle:not(:disabled) {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    cursor: col-resize;
+    margin: 0;
+    opacity: 0;
+    outline: none;
+    padding: 0;
+    touch-action: none;
+    user-select: none;
+    z-index: 1100;
+}
+
+button.bd-sidebar-resize-handle:not(:disabled):hover,
+button.bd-sidebar-resize-handle:not(:disabled):active,
+body.bd-sidebar-resizing button.bd-sidebar-resize-handle:not(:disabled) {
+    background: transparent;
+    cursor: col-resize;
+    opacity: 0;
+}
+
+button.bd-sidebar-resize-handle:not(:disabled):focus-visible {
+    background: transparent;
+    box-shadow: inset 0 0 0 2px var(--pst-color-primary);
+    cursor: col-resize;
+    opacity: 1;
+    outline: none;
+}
+
+/* !important: theme cursor rules on descendants otherwise win during drag */
+body.bd-sidebar-resizing,
+body.bd-sidebar-resizing * {
+    cursor: col-resize !important;
+    user-select: none;
+}
+
+body.bd-sidebar-resizing iframe,
+body.bd-sidebar-resizing .bd-main {
+    pointer-events: none;
+}
+
+@media (min-width: 960px) {
+    div.bd-sidebar-primary {
+        flex: 0 0 auto;
+        width: var(--pst-sidebar-primary-width);
+        position: sticky;
+    }
+
+    button.bd-sidebar-resize-handle {
+        position: fixed;
+    }
+
+    .bd-sidebar-mobile-close {
+        display: none;
+    }
+}
+
+/* Mobile: theme drawer is #pst-primary-sidebar-modal; park the off-canvas shell. */
+@media (max-width: 959.98px) {
+    html {
+        --pst-sidebar-mobile-drawer-width: min(75vw, 350px);
+        --pst-sidebar-resize-gutter: 16px;
+    }
+
+    .bd-header button.primary-toggle {
+        margin-right: 0.75rem;
+    }
+
+    /* Keep parked sidebar inert so it doesn't flash beside the dialog */
+    #pst-primary-sidebar,
+    div.bd-sidebar-primary {
+        border: 0;
+        height: 0;
+        left: 0;
+        margin: 0;
+        max-height: 0;
+        max-width: 0;
+        overflow: hidden;
+        padding: 0;
+        pointer-events: none;
+        position: fixed;
+        top: 0;
+        visibility: hidden;
+        width: 0;
+        z-index: -1;
+    }
+
+    /* Pin under header; !important fights UA <dialog> margin/translate centering */
+    #pst-primary-sidebar-modal {
+        height: calc(100dvh - var(--pst-header-offset, var(--pst-header-height)));
+        margin: 0 !important;
+        max-height: calc(100dvh - var(--pst-header-offset, var(--pst-header-height)));
+        position: fixed;
+        top: var(--pst-header-offset, var(--pst-header-height));
+        transform: none !important;
+        transition: none;
+    }
+
+    #pst-primary-sidebar-modal[open] {
+        max-width: 90vw;
+        overflow: auto;
+        visibility: visible;
+        width: var(--pst-sidebar-mobile-drawer-width);
+        z-index: 1055;
+    }
+
+    #pst-primary-sidebar-modal[open]::backdrop {
+        background-color: rgb(0 0 0 / 0.5);
+        cursor: pointer;
+    }
+
+    #pst-primary-sidebar-modal[open] > button.bd-sidebar-resize-handle:not(:disabled) {
+        background: transparent;
+        border: 0;
+        bottom: 0;
+        cursor: col-resize;
+        display: block;
+        height: auto;
+        opacity: 0;
+        position: absolute;
+        right: -4px;
+        top: 0;
+        width: var(--pst-sidebar-resize-gutter);
+        z-index: 30;
+    }
+
+    .bd-sidebar-mobile-close {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        color: var(--pst-color-text-muted);
+        cursor: pointer;
+        display: inline-flex;
+        font-size: 1.25rem;
+        justify-content: center;
+        margin: 0.5rem 0.5rem 0.5rem auto;
+        padding: 0.35rem;
+    }
+
+    .bd-sidebar-mobile-close:hover,
+    .bd-sidebar-mobile-close:focus-visible {
+        color: var(--pst-color-primary);
+    }
 }
 
 div.sd-card {
