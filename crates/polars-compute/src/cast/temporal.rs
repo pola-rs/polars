@@ -1,4 +1,3 @@
-use chrono::format::{Parsed, StrftimeItems};
 use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
 use polars_arrow::datatypes::TimeUnit;
 pub use polars_arrow::temporal_conversions::{
@@ -17,21 +16,16 @@ pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {
 }
 
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp without timezone.
-/// Returns in scale `tz` of `TimeUnit`.
+/// Returns in scale `tu` of `TimeUnit`.
 #[inline]
 pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> Option<i64> {
-    let fmt = StrftimeItems::new(fmt);
-    let mut parsed = Parsed::new();
-    chrono::format::parse(&mut parsed, value, fmt.clone()).ok();
-    parsed
-        .to_naive_datetime_with_offset(0)
-        .map(|x| match tu {
-            TimeUnit::Second => x.and_utc().timestamp(),
-            TimeUnit::Millisecond => x.and_utc().timestamp_millis(),
-            TimeUnit::Microsecond => x.and_utc().timestamp_micros(),
-            TimeUnit::Nanosecond => x.and_utc().timestamp_nanos_opt().unwrap(),
-        })
-        .ok()
+    let ndt = polars_arrow::temporal_conversions::parse_iso8601_datetime_components(value, fmt)?;
+    Some(match tu {
+        TimeUnit::Second => ndt.and_utc().timestamp(),
+        TimeUnit::Millisecond => ndt.and_utc().timestamp_millis(),
+        TimeUnit::Microsecond => ndt.and_utc().timestamp_micros(),
+        TimeUnit::Nanosecond => ndt.and_utc().timestamp_nanos_opt().unwrap(),
+    })
 }
 
 /// Parses an ISO-8601 date (`YYYY-MM-DD`) into days since the Unix
