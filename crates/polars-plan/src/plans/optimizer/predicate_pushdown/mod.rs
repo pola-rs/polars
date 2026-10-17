@@ -113,14 +113,16 @@ impl PredicatePushDown {
             };
 
             let maintain_errors = self.maintain_errors;
-            let (eligibility, alias_rename_map) = pushdown_eligibility(
+            let (eligibility, projection_map) = pushdown_eligibility(
                 &lp.exprs().cloned().collect::<Vec<_>>(),
+                matches!(lp, IR::Select { .. } | IR::HStack { .. }),
                 &[],
                 &acc_predicates,
                 expr_arena,
                 self.nodes_scratch.get(),
                 maintain_errors,
-                lp_arena.get(input),
+                input,
+                lp_arena,
             )?;
 
             let local_predicates = match eligibility {
@@ -137,9 +139,10 @@ impl PredicatePushDown {
                 },
             };
 
-            if !alias_rename_map.is_empty() {
+            if !projection_map.renames.is_empty() || !projection_map.order_keeping_exprs.is_empty()
+            {
                 for (_, expr_ir) in acc_predicates.iter_mut() {
-                    map_column_references(expr_ir, expr_arena, &alias_rename_map);
+                    projection_map.map_to_input(expr_ir, expr_arena);
                 }
             }
 
@@ -282,12 +285,14 @@ impl PredicatePushDown {
 
                 let local_predicates = match pushdown_eligibility(
                     &[],
+                    false,
                     &[(&tmp_key, predicate.clone())],
                     &acc_predicates,
                     expr_arena,
                     self.nodes_scratch.get(),
                     maintain_errors,
-                    lp_arena.get(input),
+                    input,
+                    lp_arena,
                 )?
                 .0
                 {
