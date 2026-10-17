@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
+import math
 import re
 import uuid
 from _ast import GtE, Lt, LtE
@@ -31,7 +32,8 @@ import polars._reexport as pl
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
-from polars.exceptions import ComputeError
+from polars.datatypes import Boolean
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.io._utils import null_count_dtype
 
 if TYPE_CHECKING:
@@ -1403,3 +1405,137 @@ class LoadStringFromBytes(LoadFromBytesImpl):
         import polars as pl
 
         return pl.Series(byte_values, dtype=pl.Binary).cast(pl.String)
+
+
+def predicate_to_pyiceberg_delete_filter(
+    predicate: pl.Expr, table: Table
+) -> pyiceberg.expressions.BooleanExpression:
+    """
+    Convert a Polars predicate to a PyIceberg filter selecting exactly the same rows.
+
+    Raises if the predicate cannot be converted exactly.
+    """
+    from pyiceberg.expressions import (
+        AlwaysFalse,
+        AlwaysTrue,
+        And,
+        EqualTo,
+        In,
+        IsNaN,
+        IsNull,
+        LessThan,
+        LessThanOrEqual,
+        NotNaN,
+        NotNull,
+        Or,
+        Reference,
+        UnboundPredicate,
+    )
+    from pyiceberg.expressions.literals import Literal
+    from pyiceberg.expressions.visitors import rewrite_not
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+    from pyiceberg.types import DoubleType, FloatType
+
+    def error(reason: str) -> InvalidOperationError:
+        msg = (
+            f"cannot convert predicate to an equivalent PyIceberg expression: {reason}"
+            f"\n\npredicate: {predicate}"
+        )
+        return InvalidOperationError(msg)
+
+    if not isinstance(predicate, pl.Expr):
+        msg = f"expected predicate to be an Expr, got {type(predicate).__name__!r}"
+        raise TypeError(msg)
+
+    iceberg_schema = table.schema()
+    schema = pl.Schema(schema_to_pyarrow(iceberg_schema))
+
+    # Raises for unknown columns and invalid or non-boolean predicates.
+    dtype = pl.LazyFrame(schema=schema).select(predicate).collect_schema().dtypes()
+    if dtype != [Boolean]:
+        msg = f"predicate must be a single boolean expression, got dtypes {dtype}"
+        raise InvalidOperationError(msg)
+
+    pyarrow_predicate = predicate._pyexpr.to_pyarrow_predicate(schema)
+    if pyarrow_predicate is None:
+        msg = "unsupported expression"
+        raise error(msg)
+
+    try:
+        expr = _ensure_boolean_expression(
+            _convert_predicate(_to_ast(pyarrow_predicate), iceberg_schema)
+        )
+    except Exception as e:
+        raise error(str(e)) from e
+
+    if not isinstance(expr, pyiceberg.expressions.BooleanExpression):
+        msg = "not a boolean expression"
+        raise error(msg)
+
+    def is_unsafe_float_literal(v: Any) -> bool:
+        v = v.value if isinstance(v, Literal) else v
+        # NaN is compared with `IsNaN`. PyArrow `is_in` and Parquet statistics
+        # distinguish -0.0 from 0.0.
+        return isinstance(v, float) and (math.isnan(v) or v == 0)
+
+    def visit(
+        e: pyiceberg.expressions.BooleanExpression,
+    ) -> pyiceberg.expressions.BooleanExpression:
+        if isinstance(e, (And, Or)):
+            return type(e)(visit(e.left), visit(e.right))
+        if isinstance(e, (AlwaysTrue, AlwaysFalse)):
+            return e
+        if not isinstance(e, UnboundPredicate) or not isinstance(e.term, Reference):
+            msg = f"unsupported expression {e!r}"
+            raise error(msg)
+
+        name = e.term.name
+        path = name.split(".")
+        try:
+            field = iceberg_schema.find_field(name, case_sensitive=True)
+        except ValueError as err:
+            raise error(str(err)) from err
+        if not _is_null_pushdown_safe(path, iceberg_schema):
+            msg = f"nested field {name!r} has an optional parent"
+            raise error(msg)
+        if not field.field_type.is_primitive:
+            msg = f"field {name!r} is not of a primitive type"
+            raise error(msg)
+
+        if isinstance(e, (IsNull, NotNull)):
+            return e
+
+        if isinstance(field.field_type, (FloatType, DoubleType)) and not (
+            isinstance(e, (IsNaN, NotNaN))
+            or (
+                # Not satisfied by NaN in either Polars or Iceberg. Polars
+                # orders NaN above all values, whereas Iceberg comparisons are
+                # false for NaN.
+                isinstance(e, (LessThan, LessThanOrEqual, EqualTo, In))
+                and not any(
+                    is_unsafe_float_literal(v)
+                    for v in [
+                        *getattr(e, "literals", ()),
+                        *([e.literal] if hasattr(e, "literal") else []),
+                    ]
+                )
+            )
+        ):
+            msg = f"{type(e).__name__} on floating-point field {name!r}"
+            raise error(msg)
+
+        # PyIceberg keeps rows where the filter is null only for columns that
+        # no `is_null` / `not_null` refers to. Polars always keeps them, so
+        # make the filter two-valued: after `rewrite_not` it is monotone, and
+        # each atom is true exactly where it is true and not null.
+        return And(e, NotNull(e.term))  # type: ignore[call-arg]
+
+    out = visit(rewrite_not(expr))
+
+    if not isinstance(out, (AlwaysTrue, AlwaysFalse)) and (
+        filter_for_truncate_overflow(out, table) != out
+    ):
+        msg = "PyIceberg prunes `truncate` partitions of negative integers incorrectly"
+        raise error(msg)
+
+    return out
