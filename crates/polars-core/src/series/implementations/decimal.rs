@@ -2,6 +2,7 @@ use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
+use crate::chunked_array::ops::sort::arg_sort_i128_as_i64;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DecimalChunked {
@@ -384,6 +385,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        if self.0.precision() <= 18 {
+            return arg_sort_i128_as_i64(self.0.physical(), options);
+        }
         self.0.physical().arg_sort(options)
     }
 

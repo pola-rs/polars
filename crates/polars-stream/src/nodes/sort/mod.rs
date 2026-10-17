@@ -440,13 +440,17 @@ impl ComputeNode for SortNode {
 }
 
 /// The key column in the representation that is sampled and classified: the
-/// physical representation, with `String` as `Binary`.
+/// physical representation, with `String` as `Binary` and decimals of up to
+/// 18 digits as `Int64`.
 fn key_series(df: &DataFrame, key: &str) -> PolarsResult<Series> {
-    let keys = df
-        .column(key)?
-        .as_materialized_series()
-        .to_physical_repr()
-        .into_owned();
+    let column = df.column(key)?.as_materialized_series();
+    let keys = match column.dtype() {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, _) if *precision <= 18 => {
+            column.to_physical_repr().cast(&DataType::Int64)?
+        },
+        _ => column.to_physical_repr().into_owned(),
+    };
     Ok(match keys.dtype() {
         DataType::String => keys.str().unwrap().as_binary().into_series(),
         _ => keys,
