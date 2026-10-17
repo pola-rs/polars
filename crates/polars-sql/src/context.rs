@@ -229,9 +229,9 @@ pub struct SQLContext {
 
     cte_map: PlHashMap<String, LazyFrame>,
     table_aliases: PlHashMap<String, String>,
-    /// Relations the current `FROM` declares, which are the only ones a
-    /// qualified column may name.
-    active_relations: PlHashSet<String>,
+    /// Relations the current `FROM` declares (once per occurrence), which are the
+    /// only ones a qualified column may name.
+    active_relations: Vec<String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     join_base: Option<JoinBase>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
@@ -394,11 +394,20 @@ impl SQLContext {
     ///
     /// `stmt` is kept alongside so that resolving does not parse `query` again.
     fn defer_query(&self, query: &str, mut stmt: Statement) -> DslPlan {
-        let relations = statement_table_identifiers(&stmt, false, true)
+        let relations = statement_table_identifiers(&stmt, true, true)
             .into_iter()
-            .filter_map(|name| {
-                let lf = self.get_table_from_current_scope(&name)?;
-                Some((PlSmallStr::from_string(name), lf.logical_plan))
+            .flat_map(|name| {
+                if let Ok(Some(lf)) = self.get_table_from_current_scope(&name) {
+                    return vec![(PlSmallStr::from_string(name), lf.logical_plan)];
+                }
+                // Tables matching only ignoring case are all kept, so resolving reports them.
+                self.table_map
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .filter(|(key, _)| key.eq_ignore_ascii_case(&name))
+                    .map(|(key, lf)| (PlSmallStr::from_str(key), lf.logical_plan.clone()))
+                    .collect()
             })
             .collect();
 
@@ -543,29 +552,72 @@ impl SQLContext {
         }))
     }
 
-    /// Whether `name` may be used as a table qualifier. Nothing is known before
-    /// a `FROM` is processed, so anything is allowed until then.
-    pub(super) fn relation_in_scope(&self, name: &str) -> bool {
-        self.active_relations.is_empty()
-            || self.active_relations.contains(name)
-            || self
-                .active_relations
-                .iter()
-                .any(|relation| relation.eq_ignore_ascii_case(name))
+    /// The relation qualifying a compound identifier (see `match_qualifier`) and the qualifier's
+    /// length. Before a `FROM` is processed, any leading run naming a table qualifies.
+    pub(crate) fn resolve_qualifier(
+        &self,
+        idents: &[Ident],
+    ) -> PolarsResult<Option<(String, usize)>> {
+        if self.active_relations.is_empty() {
+            for len in (1..idents.len()).rev() {
+                let qualifier = join_idents(&idents[..len]);
+                if self.get_table_from_current_scope(&qualifier)?.is_some() {
+                    return Ok(Some((qualifier, len)));
+                }
+            }
+            return Ok(None);
+        }
+        let relations = self.active_relations.iter().map(String::as_str);
+        match match_qualifier(idents, relations) {
+            None => Ok(None),
+            Some((matches, len)) => match matches.as_slice() {
+                [relation] => Ok(Some((relation.to_string(), len))),
+                _ => Err(ambiguous_relation_err(
+                    &join_idents(&idents[..len]),
+                    &matches,
+                )),
+            },
+        }
+    }
+
+    /// Make the relations of `from` the ones a qualified column may name.
+    pub(crate) fn set_active_relations(&mut self, from: &[TableWithJoins]) {
+        self.active_relations = declared_relations(from);
+    }
+
+    /// Hint for a qualifier that names no relation in scope because an alias hides it.
+    pub(crate) fn hidden_by_alias_hint(&self, qualifier: &str) -> Option<String> {
+        self.active_relations.iter().find_map(|alias| {
+            let table = self.table_aliases.get(alias)?;
+            qualifier_names(table, qualifier)
+                .then(|| format!("; table \"{qualifier}\" is hidden by alias \"{alias}\""))
+        })
     }
 
     /// Resolve a relation innermost-scope-first: a `FROM` alias, then a CTE, then
     /// a registered table.
-    pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
-        get_ignoring_case(&self.table_aliases, name)
-            .and_then(|aliased| self.get_table_unaliased(aliased))
-            .or_else(|| self.get_table_unaliased(name))
+    pub(super) fn get_table_from_current_scope(
+        &self,
+        name: &str,
+    ) -> PolarsResult<Option<LazyFrame>> {
+        if let Some(aliased) = get_ignoring_case(&self.table_aliases, name)? {
+            if let Some(lf) = self.get_table_unaliased(aliased)? {
+                return Ok(Some(lf));
+            }
+        }
+        self.get_table_unaliased(name)
     }
 
-    fn get_table_unaliased(&self, name: &str) -> Option<LazyFrame> {
-        get_ignoring_case(&self.cte_map, name)
-            .cloned()
-            .or_else(|| get_ignoring_case(&self.table_map.read().unwrap(), name).cloned())
+    fn get_table_unaliased(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
+        if let Some(lf) = get_ignoring_case(&self.cte_map, name)? {
+            return Ok(Some(lf.clone()));
+        }
+        Ok(get_ignoring_case(&self.table_map.read().unwrap(), name)?.cloned())
+    }
+
+    /// The registered table `name` refers to (ignoring case, as in `FROM`).
+    fn registered_table_key(&self, name: &str) -> PolarsResult<Option<String>> {
+        Ok(key_ignoring_case(&self.table_map.read().unwrap(), name)?.cloned())
     }
 
     /// Execute a query in an isolated context. This prevents subqueries from mutating
@@ -770,13 +822,13 @@ impl SQLContext {
         Ok(())
     }
 
-    pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
-        if let Some(aliases) = get_ignoring_case(&self.joined_aliases, tbl_name) {
+    pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> PolarsResult<String> {
+        if let Some(aliases) = get_ignoring_case(&self.joined_aliases, tbl_name)? {
             if let Some(name) = aliases.get(column_name) {
-                return name.to_string();
+                return Ok(name.to_string());
             }
         }
-        column_name.to_string()
+        Ok(column_name.to_string())
     }
 
     /// Clone `query` with `order_by` cleared, for passing to the operands of a set operation.
@@ -817,13 +869,16 @@ impl SQLContext {
 
             SetExpr::Table(tbl) => {
                 if let Some(table_name) = tbl.table_name.as_ref() {
-                    self.get_table_from_current_scope(table_name)
-                        .ok_or_else(|| {
-                            polars_err!(
-                                SQLInterface: "no table or alias named '{}' found",
-                                tbl
-                            )
-                        })
+                    let name = match &tbl.schema_name {
+                        Some(schema_name) => format!("{schema_name}.{table_name}"),
+                        None => table_name.clone(),
+                    };
+                    self.get_table_from_current_scope(&name)?.ok_or_else(|| {
+                        polars_err!(
+                            SQLInterface: "no table or alias named '{}' found",
+                            tbl
+                        )
+                    })
                 } else {
                     polars_bail!(SQLInterface: "'TABLE' requires valid table name")
                 }
@@ -1116,12 +1171,17 @@ impl SQLContext {
             polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
             polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
 
+            let mut table_map = self.table_map.write().unwrap();
             for name in names {
-                let tbl = name.to_string();
+                let tbl = object_name_to_string(name);
                 // `DROP TABLE IF EXISTS <tbl>` is a no-op on a missing table;
                 // otherwise dropping a table that doesn't exist is an error.
-                if self.table_map.write().unwrap().remove(&tbl).is_none() && !if_exists {
-                    polars_bail!(SQLInterface: "table '{}' does not exist", tbl);
+                match key_ignoring_case(&table_map, &tbl)?.cloned() {
+                    Some(key) => {
+                        table_map.remove(&key);
+                    },
+                    None if *if_exists => {},
+                    None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
                 }
             }
             Ok(DataFrame::empty().lazy())
@@ -1213,15 +1273,17 @@ impl SQLContext {
                     if table_names.len() != 1 {
                         polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
                     }
-                    let tbl = table_names[0].name.to_string();
-                    if let Some(lf) = self.table_map.write().unwrap().get_mut(&tbl) {
-                        *lf = lf.clone().clear();
-                        Ok(lf.clone())
-                    } else if *if_exists {
+                    let tbl = object_name_to_string(&table_names[0].name);
+                    let mut table_map = self.table_map.write().unwrap();
+                    match key_ignoring_case(&table_map, &tbl)?.cloned() {
+                        Some(key) => {
+                            let lf = table_map.get_mut(&key).unwrap();
+                            *lf = lf.clone().clear();
+                            Ok(lf.clone())
+                        },
                         // `TRUNCATE TABLE IF EXISTS <tbl>` is a no-op on a missing table.
-                        Ok(DataFrame::empty().lazy())
-                    } else {
-                        polars_bail!(SQLInterface: "table '{}' does not exist", tbl);
+                        None if *if_exists => Ok(DataFrame::empty().lazy()),
+                        None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
                     }
                 },
                 _ => {
@@ -2755,14 +2817,17 @@ impl SQLContext {
                 SQLExpr::Identifier(ident) => column_side(&ident.value),
                 // A table qualifier takes precedence over a struct column of the same name. The
                 // right input is a single relation, so any other relation is in the left input.
-                SQLExpr::CompoundIdentifier(idents) if self.relation_in_scope(&idents[0].value) => {
-                    let name = idents[0].value.as_str();
-                    let is_right = name == tbl_right.name
-                        || (!self.active_relations.contains(name)
-                            && name.eq_ignore_ascii_case(&tbl_right.name));
-                    Some(!is_right)
+                SQLExpr::CompoundIdentifier(idents) => match self.resolve_qualifier(idents) {
+                    Ok(Some((name, _))) => {
+                        let is_right = name == tbl_right.name.as_str()
+                            || (!self.active_relations.contains(&name)
+                                && name.eq_ignore_ascii_case(&tbl_right.name));
+                        Some(!is_right)
+                    },
+                    Ok(None) => column_side(&idents[0].value),
+                    // An ambiguous qualifier is reported when the condition is parsed.
+                    Err(_) => None,
                 },
-                SQLExpr::CompoundIdentifier(idents) => column_side(&idents[0].value),
                 _ => None,
             };
             match side {
@@ -2983,7 +3048,7 @@ impl SQLContext {
         while !pending.is_empty() {
             let left_schema = self.get_frame_schema(lf)?;
             // Relations each pending entry brings into scope.
-            let pending_relations: Vec<PlHashSet<String>> = pending
+            let pending_relations: Vec<Vec<String>> = pending
                 .iter()
                 .map(|(tbl_expr, ..)| declared_relations(std::slice::from_ref(*tbl_expr)))
                 .collect();
@@ -3003,6 +3068,7 @@ impl SQLContext {
                         &joined_table_names,
                         r_name,
                         &deferred_tables(i),
+                        &self.active_relations,
                         &left_schema,
                         right_schema,
                     )
@@ -3017,6 +3083,7 @@ impl SQLContext {
                 &joined_table_names,
                 &r_name,
                 &deferred,
+                &self.active_relations,
                 &left_schema,
                 &right_schema,
             );
@@ -3131,10 +3198,14 @@ impl SQLContext {
                 ..
             } = create_table;
 
-            let tbl_name = name.0.first().unwrap().as_ident().unwrap().value.as_str();
-            if *if_not_exists && self.table_map.read().unwrap().contains_key(tbl_name) {
+            let tbl_name = object_name_to_string(name);
+            let existing = self.registered_table_key(&tbl_name)?;
+            if *if_not_exists && existing.is_some() {
                 polars_bail!(SQLInterface: "relation '{}' already exists", tbl_name);
             }
+            // A table matching ignoring case is replaced under its existing name.
+            let tbl_name = existing.unwrap_or(tbl_name);
+            let tbl_name = tbl_name.as_str();
             let lf = match (query, columns.is_empty(), like) {
                 (Some(query), true, None) => {
                     // ----------------------------------------------------
@@ -3162,18 +3233,12 @@ impl SQLContext {
                         CreateTableLikeKind::Plain(like)
                         | CreateTableLikeKind::Parenthesized(like) => &like.name,
                     };
-                    let like_table = like_name
-                        .0
-                        .first()
-                        .unwrap()
-                        .as_ident()
-                        .unwrap()
-                        .value
-                        .as_str();
-                    if let Some(table) = self.table_map.read().unwrap().get(like_table).cloned() {
-                        table.clear()
-                    } else {
-                        polars_bail!(SQLInterface: "table given in LIKE does not exist: {}", like_table)
+                    let like_table = object_name_to_string(like_name);
+                    match get_ignoring_case(&self.table_map.read().unwrap(), &like_table)? {
+                        Some(table) => table.clone().clear(),
+                        None => {
+                            polars_bail!(SQLInterface: "table given in LIKE does not exist: {}", like_table)
+                        },
                     }
                 },
                 // No valid options provided
@@ -3192,7 +3257,7 @@ impl SQLContext {
             };
             self.register(tbl_name, lf);
 
-            let df_created = df! { "Response" => [format!("CREATE TABLE {}", name.0.first().unwrap().as_ident().unwrap().value)] };
+            let df_created = df! { "Response" => [format!("CREATE TABLE {tbl_name}")] };
             Ok(df_created.unwrap().lazy())
         } else {
             unreachable!()
@@ -3208,15 +3273,16 @@ impl SQLContext {
                 if let Some(args) = args {
                     return self.execute_table_function(name, alias, &args.args);
                 }
-                let tbl_name = name.0.first().unwrap().as_ident().unwrap().value.as_str();
-                if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
+                // A qualified name (`schema.table`) is looked up as a whole.
+                let tbl_name = object_name_to_string(name);
+                if let Some(lf) = self.get_table_from_current_scope(&tbl_name)? {
                     match alias {
                         Some(alias) => {
                             self.table_aliases
-                                .insert(alias.name.value.clone(), tbl_name.to_string());
+                                .insert(alias.name.value.clone(), tbl_name);
                             Ok((alias.name.value.clone(), lf))
                         },
-                        None => Ok((tbl_name.to_string(), lf)),
+                        None => Ok((tbl_name, lf)),
                     }
                 } else {
                     polars_bail!(SQLInterface: "relation '{}' was not found", tbl_name);
@@ -3239,7 +3305,7 @@ impl SQLContext {
                     let name = alias.name.value.clone();
                     {
                         let mut table_map = self.table_map.write().unwrap();
-                        if get_ignoring_case(&table_map, &name).is_none() {
+                        if !table_map.keys().any(|key| key.eq_ignore_ascii_case(&name)) {
                             table_map.insert(name.clone(), lf.clone());
                         }
                     }
@@ -3343,7 +3409,8 @@ impl SQLContext {
         alias: &Option<TableAlias>,
         args: &[FunctionArg],
     ) -> PolarsResult<(String, LazyFrame)> {
-        let tbl_fn = name.0.first().unwrap().as_ident().unwrap().value.as_str();
+        let tbl_fn = object_name_to_string(name);
+        let tbl_fn = tbl_fn.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, mut lf) = read_fn.execute(args, self)?;
         let tbl_name = match alias {
@@ -4301,13 +4368,77 @@ fn is_regex_colname(nm: &str) -> bool {
 }
 
 /// Render an `ObjectName` (dot-separated identifier parts) back to a string.
-fn object_name_to_string(name: &ObjectName) -> String {
+pub(crate) fn object_name_to_string(name: &ObjectName) -> String {
     name.0
         .iter()
         .filter_map(|p| p.as_ident())
         .map(|i| i.value.as_str())
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// Join identifier parts with dots, as relation names are spelled.
+pub(crate) fn join_idents(idents: &[Ident]) -> String {
+    idents
+        .iter()
+        .map(|i| i.value.as_str())
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// Whether `qualifier` names `relation`: the whole name or a trailing run of its dot-separated
+/// parts (`lineitem` and `tpch.lineitem` both name `tpch.lineitem`), ignoring case.
+pub(crate) fn qualifier_names(relation: &str, qualifier: &str) -> bool {
+    let Some(start) = relation.len().checked_sub(qualifier.len()) else {
+        return false;
+    };
+    (start == 0 || relation.as_bytes()[start - 1] == b'.')
+        && relation
+            .get(start..)
+            .is_some_and(|tail| tail.eq_ignore_ascii_case(qualifier))
+}
+
+/// The relations that the longest leading run of `idents` (leaving at least one part) names,
+/// with the run's length. Exact-case matches win over those equal only ignoring case.
+pub(crate) fn match_qualifier<'a>(
+    idents: &[Ident],
+    relations: impl Iterator<Item = &'a str> + Clone,
+) -> Option<(Vec<&'a str>, usize)> {
+    (1..idents.len()).rev().find_map(|len| {
+        let qualifier = join_idents(&idents[..len]);
+        let matches: Vec<&str> = relations
+            .clone()
+            .filter(|relation| qualifier_names(relation, &qualifier))
+            .collect();
+        let exact: Vec<&str> = matches
+            .iter()
+            .copied()
+            .filter(|relation| relation.ends_with(qualifier.as_str()))
+            .collect();
+        match (exact.is_empty(), matches.is_empty()) {
+            (false, _) => Some((exact, len)),
+            (true, false) => Some((matches, len)),
+            (true, true) => None,
+        }
+    })
+}
+
+/// Error for a qualifier naming several relations in scope.
+fn ambiguous_relation_err(qualifier: &str, relations: &[&str]) -> PolarsError {
+    let distinct: PlIndexSet<&str> = relations.iter().copied().collect();
+    if distinct.len() < relations.len() {
+        polars_err!(
+            SQLInterface: "ambiguous reference to table \"{}\" (it appears more than once in FROM; give each an alias)",
+            qualifier
+        )
+    } else {
+        let names: Vec<&str> = distinct.into_iter().collect();
+        let (last, init) = names.split_last().unwrap();
+        polars_err!(
+            SQLInterface: "ambiguous reference to table \"{}\" (use: {} or {})",
+            qualifier, init.join(", "), last
+        )
+    }
 }
 
 /// Casts an `ASOF JOIN` key pair to one dtype. Temporal keys of different dtypes become Int128
@@ -4389,13 +4520,38 @@ fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_
     }
 }
 
-/// Look up a relation name, falling back to a case-insensitive match.
-fn get_ignoring_case<'a, V>(map: &'a PlHashMap<String, V>, name: &str) -> Option<&'a V> {
-    map.get(name).or_else(|| {
-        map.iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value)
-    })
+/// Look up a relation name, falling back to the only case-insensitive match (error if several).
+fn get_ignoring_case<'a, V>(
+    map: &'a PlHashMap<String, V>,
+    name: &str,
+) -> PolarsResult<Option<&'a V>> {
+    Ok(key_ignoring_case(map, name)?.map(|key| &map[key]))
+}
+
+/// The key of `map` that `name` refers to: an exact match, else the only key equal to it
+/// ignoring case. Several keys equal to it ignoring case are an error.
+fn key_ignoring_case<'a, V>(
+    map: &'a PlHashMap<String, V>,
+    name: &str,
+) -> PolarsResult<Option<&'a String>> {
+    if let Some((key, _)) = map.get_key_value(name) {
+        return Ok(Some(key));
+    }
+    let mut matches = map.keys().filter(|key| key.eq_ignore_ascii_case(name));
+    let first = matches.next();
+    if matches.next().is_some() {
+        let mut names: Vec<String> = map
+            .keys()
+            .filter(|key| key.eq_ignore_ascii_case(name))
+            .map(|key| format!("'{key}'"))
+            .collect();
+        names.sort();
+        polars_bail!(
+            SQLInterface: "relation '{}' matches more than one table ignoring case ({}); write the name with its exact case",
+            name, names.join(", ")
+        );
+    }
+    Ok(first)
 }
 
 /// Prefix for the internal outer columns produced by correlated-subquery decorrelation.
@@ -4408,8 +4564,8 @@ pub(crate) fn is_correlated_result_col(name: &str) -> bool {
 /// Extract the table name (or alias) from a TableFactor.
 /// A nested join is flattened rather than bound to its alias, so its own
 /// relations are declared too.
-fn declared_relations(from: &[TableWithJoins]) -> PlHashSet<String> {
-    fn walk(tbl: &TableWithJoins, names: &mut PlHashSet<String>) {
+fn declared_relations(from: &[TableWithJoins]) -> Vec<String> {
+    fn walk(tbl: &TableWithJoins, names: &mut Vec<String>) {
         let factors = std::iter::once(&tbl.relation).chain(tbl.joins.iter().map(|j| &j.relation));
         for factor in factors {
             names.extend(get_table_name(factor));
@@ -4422,23 +4578,21 @@ fn declared_relations(from: &[TableWithJoins]) -> PlHashSet<String> {
         }
     }
 
-    let mut names = PlHashSet::new();
+    let mut names = Vec::new();
     for tbl in from {
         walk(tbl, &mut names);
     }
     names
 }
 
+/// The name a relation is known by: its alias, else its full (possibly qualified) name.
 pub(crate) fn get_table_name(factor: &TableFactor) -> Option<String> {
     match factor {
-        TableFactor::Table { name, alias, .. } => {
-            alias.as_ref().map(|a| a.name.value.clone()).or_else(|| {
-                name.0
-                    .last()
-                    .and_then(|p| p.as_ident())
-                    .map(|i| i.value.clone())
-            })
-        },
+        TableFactor::Table { name, alias, .. } => Some(
+            alias
+                .as_ref()
+                .map_or_else(|| object_name_to_string(name), |a| a.name.value.clone()),
+        ),
         TableFactor::Derived { alias, .. }
         | TableFactor::NestedJoin { alias, .. }
         | TableFactor::TableFunction { alias, .. } => alias.as_ref().map(|a| a.name.value.clone()),
@@ -4637,12 +4791,12 @@ fn determine_left_right_join_on(
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
     let left_refs = (
-        expr_refers_to_table(expr_left, &tbl_left.name),
-        expr_refers_to_table(expr_left, &tbl_right.name),
+        expr_refers_to_table(expr_left, &tbl_left.name, &ctx.active_relations),
+        expr_refers_to_table(expr_left, &tbl_right.name, &ctx.active_relations),
     );
     let right_refs = (
-        expr_refers_to_table(expr_right, &tbl_left.name),
-        expr_refers_to_table(expr_right, &tbl_right.name),
+        expr_refers_to_table(expr_right, &tbl_left.name, &ctx.active_relations),
+        expr_refers_to_table(expr_right, &tbl_right.name, &ctx.active_relations),
     );
     // an operand's dtypes come from the table it names; the merged schema keeps the left
     // dtype for a column name that exists in both tables
@@ -4801,12 +4955,12 @@ fn process_join_predicate(
     let mut sql_expr = sql_expr.clone();
     let _ = visit_expressions_mut(&mut sql_expr, |e| {
         if let SQLExpr::CompoundIdentifier(idents) = e
-            && idents.len() >= 2
-            && idents[0].value == tbl_right.name
-            && conflicts(&idents[1].value)
+            && let Ok(Some((name, len))) = ctx.resolve_qualifier(idents)
+            && name == tbl_right.name.as_str()
+            && conflicts(&idents[len].value)
         {
-            let suffixed = Ident::new(format!("{}{suffix}", idents[1].value));
-            idents.splice(0..2, [suffixed]);
+            let suffixed = Ident::new(format!("{}{suffix}", idents[len].value));
+            idents.splice(0..=len, [suffixed]);
             if idents.len() == 1 {
                 *e = SQLExpr::Identifier(idents.pop().unwrap());
             }
@@ -4965,15 +5119,14 @@ fn is_join_comparison(
     left_tables: &[String],
     right_table: &str,
     deferred_tables: &[String],
+    relations: &[String],
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> bool {
+    let refers_to = |expr: &SQLExpr, table: &str| expr_refers_to_table(expr, table, relations);
     // A condition naming a relation joined in a later round stays in the
     // residual WHERE until that relation is present.
-    if deferred_tables
-        .iter()
-        .any(|table| expr_refers_to_table(expr, table.as_str()))
-    {
+    if deferred_tables.iter().any(|table| refers_to(expr, table)) {
         return false;
     }
     // A subquery is not a join key; its correlated columns name outer relations.
@@ -4993,10 +5146,8 @@ fn is_join_comparison(
     } = expr
     {
         let operand_side = |operand: &SQLExpr| -> (bool, bool) {
-            let refs_right = expr_refers_to_table(operand, right_table);
-            let refs_left = left_tables
-                .iter()
-                .any(|t| expr_refers_to_table(operand, t.as_str()));
+            let refs_right = refers_to(operand, right_table);
+            let refs_left = left_tables.iter().any(|t| refers_to(operand, t));
             if refs_right || refs_left {
                 (refs_right, refs_left)
             } else {
@@ -5025,6 +5176,7 @@ fn extract_join_predicates(
     left_tables: &[String],
     right_table: &str,
     deferred_tables: &[String],
+    relations: &[String],
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> (Option<SQLExpr>, Option<SQLExpr>) {
@@ -5040,6 +5192,7 @@ fn extract_join_predicates(
             left_tables,
             right_table,
             deferred_tables,
+            relations,
             left_schema,
             right_schema,
         ) {
