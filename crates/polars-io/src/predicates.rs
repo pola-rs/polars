@@ -549,14 +549,22 @@ pub trait DynamicPredicateSource: Send + Sync {
     fn can_bypass(&self) -> bool;
 }
 
+/// An expression a reader evaluates to a column, rather than to a predicate mask.
+pub trait ColumnIoExpr: Send + Sync {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Column>;
+}
+
 /// A column whose batches a reader may skip by a [`RuntimeRange`]. It is never
 /// evaluated per row.
 #[derive(Clone)]
 pub struct RuntimeRangeHint {
     pub column: PlSmallStr,
+    /// An order-keeping expression of `column` that the range is on. The range is on
+    /// the column itself when `None`.
+    pub order_keeping_expr: Option<Arc<dyn ColumnIoExpr>>,
     pub source: Arc<dyn DynamicPredicateSource>,
-    /// The column's value in this file when it is not stored in the file, such as
-    /// a hive column or a missing column with a default.
+    /// The value the range is compared with in this file when the column is not
+    /// stored in the file, such as a hive column or a missing column with a default.
     pub constant: Option<Scalar>,
 }
 
@@ -601,8 +609,19 @@ impl RuntimeRangeHint {
     /// Bind the hints of column `name` to its constant value in a file.
     pub fn set_constant(hints: &mut [Self], name: &str, value: &Scalar) {
         for hint in hints.iter_mut().filter(|h| h.column == name) {
-            hint.constant = Some(value.clone());
+            hint.constant = match &hint.order_keeping_expr {
+                None => Some(value.clone()),
+                Some(expr) => hint.apply_order_keeping_expr(expr.as_ref(), value),
+            };
         }
+    }
+
+    fn apply_order_keeping_expr(&self, expr: &dyn ColumnIoExpr, value: &Scalar) -> Option<Scalar> {
+        let column = Column::new_scalar(self.column.clone(), value.clone(), 1);
+        let df = DataFrame::new(1, vec![column]).ok()?;
+        let out = expr.evaluate_io(&df).ok()?;
+        let value = out.get(0).ok()?.into_static();
+        Some(Scalar::new(out.dtype().clone(), value))
     }
 }
 
