@@ -1143,3 +1143,14 @@ def test_truediv_decimal_schema_28372() -> None:
     )
     assert_schema_equal(lf.collect_schema(), expected.collect_schema())
     assert_frame_equal(lf, expected)
+
+
+def test_reflected_arithmetic_series_27752() -> None:
+    lhs = pl.Series("lhs", [2, 3, 4])
+    rhs = pl.Series("rhs", [-5, 7, 9])
+    assert_series_equal(lhs.__rsub__(rhs), rhs - lhs)
+    assert_series_equal(lhs.__rtruediv__(rhs), rhs / lhs)
+    assert_series_equal(lhs.__rfloordiv__(rhs), rhs // lhs)
+    assert_series_equal(lhs.__rmod__(rhs), rhs % lhs)
+    assert_series_equal(lhs.__rpow__(rhs), rhs**lhs)
+    assert_series_equal(lhs.__rsub__(np.array([5, 7, 9])), pl.Series("lhs", [3, 4, 5]))
