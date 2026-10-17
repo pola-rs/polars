@@ -1589,3 +1589,14 @@ def test_list_to_struct_outer_nulls_28210() -> None:
             },
         ),
     )
+
+
+def test_list_explode_on_non_list_raises_25649() -> None:
+    """Test that list.explode on a non-list column raises during schema collection."""
+    lf = pl.LazyFrame({"a": ["a", "b", "c"]})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected List data type for list operation",
+    ):
+        lf.select(pl.col("a").list.explode()).collect_schema()
