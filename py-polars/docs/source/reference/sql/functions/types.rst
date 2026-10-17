@@ -49,8 +49,11 @@ Note that the more compact PostgreSQL `<expr>::type` syntax is also supported.
     # └──────┴────────────┘
 
 Nested types are written as `STRUCT<name TYPE, ...>` and `MAP(KEY, VALUE)`. A struct is cast
-field by field, matching fields by name: a target field that is not in the input is null.
+field by field. To reorder, drop or add fields, use `TRY_CAST`, which matches fields by name (an
+added field is null).
 Only a `STRUCT` value or `NULL` can be cast to `STRUCT`, and only a `MAP` value or `NULL` to `MAP`.
+For a list of nested structs, separate the closing brackets: `STRUCT<a STRUCT<b INT> >[]`; the
+parser currently reads `STRUCT<a STRUCT<b INT>>[]` as `STRUCT<a STRUCT<b INT>[]>`.
 
 **Example:**
 
@@ -58,7 +61,7 @@ Only a `STRUCT` value or `NULL` can be cast to `STRUCT`, and only a `MAP` value 
 
     df = pl.DataFrame({"s": [{"x": 1, "y": "a"}, {"x": 2, "y": "b"}]})
     df.sql("""
-      SELECT CAST(s AS STRUCT<y VARCHAR, x BIGINT, z DOUBLE>) AS s
+      SELECT TRY_CAST(s AS STRUCT<y VARCHAR, x BIGINT, z DOUBLE>) AS s
       FROM self
     """)
     # shape: (2, 1)

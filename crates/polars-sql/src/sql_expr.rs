@@ -389,7 +389,7 @@ impl SQLExprVisitor<'_> {
         let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
         if let Some(dtype) = resolve_common_dtype(&cast_dtypes, Some("array literal "))? {
             // Checked on the assembled series, whose elements share one type.
-            ensure_nested_cast_source(&dtype, s.dtype())?;
+            ensure_nested_cast_source("CAST", &dtype, s.dtype())?;
             s = cast_literal_series(&s, &dtype)?;
         }
         Ok(s)
@@ -1414,7 +1414,7 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
-        if contains_struct_or_map(&polars_type) {
+        if nested_target_name(&polars_type).is_some() {
             // A scalar subquery only gets a type from its plan, and a window has the type of its
             // function (`OVER ()` partitions by a column that isn't in the schema).
             let typed = self
@@ -1425,7 +1425,12 @@ impl SQLExprVisitor<'_> {
                     e => e,
                 });
             if let Some(source) = self.cast_or_expr_dtype(&typed) {
-                ensure_nested_cast_source(&polars_type, &source)?;
+                let kind = match cast_kind {
+                    CastKind::TryCast => "TRY_CAST",
+                    CastKind::SafeCast => "SAFE_CAST",
+                    CastKind::Cast | CastKind::DoubleColon => "CAST",
+                };
+                ensure_nested_cast_source(kind, &polars_type, &source)?;
             }
         }
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
@@ -2340,60 +2345,95 @@ pub(crate) fn resolve_expr_dtype(expr: &Expr, schema: Option<&Schema>) -> Option
         .map(|fld| fld.dtype)
 }
 
-/// The SQL name of a `STRUCT` or `MAP` cast target.
-fn nested_target_name(dtype: &DataType) -> Option<&'static str> {
+/// The SQL name of a `STRUCT` or `MAP` cast target, possibly inside lists (`STRUCT[]`).
+fn nested_target_name(dtype: &DataType) -> Option<String> {
     match dtype {
-        DataType::Struct(_) => Some("STRUCT"),
+        DataType::List(inner) | DataType::Array(inner, _) => {
+            nested_target_name(inner).map(|name| format!("{name}[]"))
+        },
+        DataType::Struct(_) => Some("STRUCT".to_string()),
         #[cfg(feature = "dtype-map")]
-        DataType::Map(..) => Some("MAP"),
+        DataType::Map(..) => Some("MAP".to_string()),
         _ => None,
-    }
-}
-
-/// Whether a cast target has a `STRUCT` or `MAP` in it, possibly inside lists.
-fn contains_struct_or_map(dtype: &DataType) -> bool {
-    match dtype {
-        DataType::List(inner) | DataType::Array(inner, _) => contains_struct_or_map(inner),
-        _ => nested_target_name(dtype).is_some(),
     }
 }
 
 /// Only a `STRUCT` (`MAP`) value or `NULL` casts to `STRUCT` (`MAP`), at any depth, as in
 /// PostgreSQL. Polars' cast would wrap a value into a 1-field struct (`1` -> `{1}`), and strings
 /// stay free for parsing later. A source of unknown type (no schema) still uses Polars' cast.
-fn ensure_nested_cast_source(target: &DataType, source: &DataType) -> PolarsResult<()> {
+fn ensure_nested_cast_source(
+    cast_kind: &str,
+    target: &DataType,
+    source: &DataType,
+) -> PolarsResult<()> {
+    let Some(mismatch) = nested_cast_mismatch(target, source) else {
+        return Ok(());
+    };
+    // A literal's dynamic type (`dyn int`) is shown as the type it becomes.
+    let source = source.clone().materialize_unknown(true)?;
+    let name = mismatch.target;
+    if mismatch.path.is_empty() {
+        polars_bail!(
+            SQLInterface: "{} from {} to {} is not supported; only {} values or NULL can be cast to {}",
+            cast_kind, source, name, name, name
+        )
+    }
+    polars_bail!(
+        SQLInterface: "{} from {} to {} is not supported: {} is {}; only {} values or NULL can be cast to {}",
+        cast_kind, source, nested_target_name(target).unwrap_or_default(),
+        mismatch.path.join(" of "), mismatch.source.materialize_unknown(true)?, name, name
+    )
+}
+
+/// Where a cast source doesn't fit a `STRUCT` or `MAP` in the target.
+struct NestedCastMismatch {
+    source: DataType,
+    target: String,
+    /// Where in the cast it is, innermost first: `["list element", "field 'a'"]`.
+    path: Vec<String>,
+}
+
+fn nested_cast_mismatch(target: &DataType, source: &DataType) -> Option<NestedCastMismatch> {
+    let within = |segment: String, mismatch: Option<NestedCastMismatch>| {
+        mismatch.map(|mut mismatch| {
+            mismatch.path.push(segment);
+            mismatch
+        })
+    };
     match (target, source) {
-        (_, DataType::Null | DataType::Unknown(UnknownKind::Any)) => Ok(()),
+        (_, DataType::Null | DataType::Unknown(UnknownKind::Any)) => None,
         (
             DataType::List(target) | DataType::Array(target, _),
             DataType::List(source) | DataType::Array(source, _),
-        ) => ensure_nested_cast_source(target, source),
+        ) => within("list element".into(), nested_cast_mismatch(target, source)),
         (DataType::Struct(target_fields), DataType::Struct(source_fields)) => {
-            for field in target_fields {
-                if let Some(source_field) = source_fields.iter().find(|f| f.name == field.name) {
-                    ensure_nested_cast_source(&field.dtype, &source_field.dtype)?;
-                }
-            }
-            Ok(())
+            target_fields.iter().find_map(|field| {
+                let source_field = source_fields.iter().find(|f| f.name == field.name)?;
+                within(
+                    format!("field '{}'", field.name),
+                    nested_cast_mismatch(&field.dtype, &source_field.dtype),
+                )
+            })
         },
         #[cfg(feature = "dtype-map")]
         (DataType::Map(key, value), DataType::Map(source_key, source_value)) => {
-            ensure_nested_cast_source(key, source_key)?;
-            ensure_nested_cast_source(value, source_value)
+            within("map key".into(), nested_cast_mismatch(key, source_key)).or_else(|| {
+                within(
+                    "map value".into(),
+                    nested_cast_mismatch(value, source_value),
+                )
+            })
         },
-        _ => {
-            let Some(name) = nested_target_name(target) else {
-                return Ok(());
-            };
-            // A literal's dynamic type (`dyn int`) is shown as the type it becomes.
-            let source = match source {
-                DataType::Unknown(kind) => kind.materialize().unwrap_or_else(|| source.clone()),
-                _ => source.clone(),
-            };
-            polars_bail!(
-                SQLInterface: "CAST from {} to {} is not supported; only {} values or NULL can be cast to {}",
-                source, name, name, name
-            )
-        },
+        // A map is stored as a list of `{key, value}` structs, which a list target can take.
+        #[cfg(feature = "dtype-map")]
+        (DataType::List(target) | DataType::Array(target, _), DataType::Map(..)) => within(
+            "map entry".into(),
+            nested_cast_mismatch(target, &source.map_entries_dtype()?),
+        ),
+        _ => nested_target_name(target).map(|target| NestedCastMismatch {
+            source: source.clone(),
+            target,
+            path: Vec::new(),
+        }),
     }
 }
