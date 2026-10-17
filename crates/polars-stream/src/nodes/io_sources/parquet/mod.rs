@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+#[cfg(feature = "dtype-map")]
+use polars_arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
 use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
@@ -92,6 +94,14 @@ fn int96_options(
                 .iter()
                 .map(|f| (f.name().clone(), int96_options(f.dtype(), default)))
                 .collect(),
+        ),
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(key, value) => (
+            default.int96_coerce_to_timeunit,
+            PlHashMap::from_iter([
+                (MAP_KEY_NAME, int96_options(key, default)),
+                (MAP_VALUE_NAME, int96_options(value, default)),
+            ]),
         ),
         _ => (default.int96_coerce_to_timeunit, PlHashMap::default()),
     };

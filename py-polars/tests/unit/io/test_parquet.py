@@ -3388,7 +3388,18 @@ def test_int96_timestamps_respect_scan_schema_time_unit_29184() -> None:
         datetime(2024, 6, 1, 12),
         None,
     ]
-    df = pl.DataFrame({"a": values, "b": [{"t": v} for v in values]})
+    df = pl.DataFrame(
+        {
+            "a": values,
+            "b": [{"t": v} for v in values],
+            "c": [{"k": v} for v in values],
+        },
+        schema={
+            "a": pl.Datetime("us"),
+            "b": pl.Struct({"t": pl.Datetime("us")}),
+            "c": pl.Map(pl.String, pl.Datetime("us")),
+        },
+    )
 
     pq.write_table(
         df.to_arrow(),
