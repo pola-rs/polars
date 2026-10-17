@@ -68,6 +68,11 @@ impl<'a> FieldsMapper<'a> {
         );
         Ok(())
     }
+
+    /// Inner dtype of the List input. Only call after [`Self::ensure_is_list`].
+    fn list_inner_dtype(&self) -> &DataType {
+        self.args()[0].dtype().inner_dtype().unwrap()
+    }
 }
 
 impl IRListFunction {
@@ -104,12 +109,8 @@ impl IRListFunction {
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
-            Diff { .. } => mapper.try_map_dtype(|dt| {
-                let DataType::List(inner) = dt else {
-                    polars_bail!(op = "list.diff", dt);
-                };
-
-                let inner_dt = match inner.as_ref() {
+            Diff { .. } => {
+                let inner_dt = match mapper.list_inner_dtype() {
                     #[cfg(feature = "dtype-datetime")]
                     DataType::Datetime(tu, _) => DataType::Duration(*tu),
                     #[cfg(feature = "dtype-date")]
@@ -122,53 +123,34 @@ impl IRListFunction {
                     inner_dt => inner_dt.clone(),
                 };
 
-                Ok(DataType::List(Box::new(inner_dt)))
-            }),
+                mapper.with_dtype(DataType::List(Box::new(inner_dt)))
+            },
             Sort(_) => mapper.with_same_dtype(),
             Length => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_sets")]
             SetOperation(_) => mapper.with_same_dtype(),
-            Join(_) => mapper.try_map_dtype(|dtype| {
-                let DataType::List(inner_dtype) = dtype else {
-                    polars_bail!(
-                        InvalidOperation:
-                        "attempted list join on non-list dtype: {dtype}",
-                    );
-                };
-                let inner_dtype = inner_dtype.as_ref();
-                polars_ensure!(inner_dtype.is_string(), InvalidOperation:
-                            "attempted list join with non-string dtype: {dtype}",);
-                Ok(DataType::String)
-            }),
+            Join(_) => {
+                polars_ensure!(mapper.list_inner_dtype().is_string(), InvalidOperation:
+                    "attempted list join with non-string dtype: {}", mapper.args()[0].dtype());
+                mapper.with_dtype(DataType::String)
+            },
             #[cfg(feature = "dtype-array")]
-            ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
+            ToArray(width) => mapper.with_dtype(DataType::Array(
+                Box::new(mapper.list_inner_dtype().clone()),
+                *width,
+            )),
             #[cfg(feature = "list_to_struct")]
-            ToStruct(names) => mapper.try_map_dtype(|dtype| {
-                let DataType::List(inner_dtype) = dtype else {
-                    polars_bail!(
-                        InvalidOperation:
-                        "attempted list to_struct on non-list dtype: {dtype}",
-                    );
-                };
-                let inner_dtype = inner_dtype.as_ref();
-
-                Ok(DataType::Struct(
+            ToStruct(names) => {
+                let inner = mapper.list_inner_dtype();
+                mapper.with_dtype(DataType::Struct(
                     names
                         .iter()
-                        .map(|x| Field::new(x.clone(), inner_dtype.clone()))
+                        .map(|x| Field::new(x.clone(), inner.clone()))
                         .collect::<Vec<_>>(),
                 ))
-            }),
+            },
             #[cfg(feature = "dtype-map")]
-            ToMap => mapper.try_map_dtype(|dtype| {
-                let DataType::List(entries) = dtype else {
-                    polars_bail!(
-                        InvalidOperation:
-                        "`list.to_map` requires a List dtype, got `{dtype}`",
-                    );
-                };
-                entries.map_from_named_entries_dtype()
-            }),
+            ToMap => mapper.with_dtype(mapper.list_inner_dtype().map_from_named_entries_dtype()?),
         }
     }
 
@@ -219,15 +201,6 @@ impl IRListFunction {
             #[cfg(feature = "dtype-map")]
             L::ToMap => FunctionOptions::elementwise(),
         }
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-fn map_list_dtype_to_array_dtype(datatype: &DataType, width: usize) -> PolarsResult<DataType> {
-    if let DataType::List(inner) = datatype {
-        Ok(DataType::Array(inner.clone(), width))
-    } else {
-        polars_bail!(ComputeError: "expected List dtype")
     }
 }
 

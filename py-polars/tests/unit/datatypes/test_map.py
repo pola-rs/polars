@@ -1029,7 +1029,7 @@ def test_map_entries_requires_map_dtype() -> None:
 @pytest.mark.parametrize(
     ("data", "dtype", "match"),
     [
-        pytest.param([1], pl.Int64, "requires a List dtype", id="not-a-list"),
+        pytest.param([1], pl.Int64, "expected List data type", id="not-a-list"),
         pytest.param([[1]], pl.List(pl.Int64), "must be `Struct", id="not-a-struct"),
     ],
 )
