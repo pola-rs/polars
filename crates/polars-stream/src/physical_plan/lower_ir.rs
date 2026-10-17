@@ -43,7 +43,7 @@ use slotmap::{DenseSlotMap, SecondaryMap};
 
 use super::lower_expr::{build_hstack_stream, build_sort_stream};
 use super::scalar_window::is_reducible_windows;
-use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use super::{CachedStream, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 #[cfg(feature = "python")]
 use crate::nodes::io_sources;
 use crate::nodes::io_sources::multi_scan;
@@ -240,7 +240,7 @@ pub fn lower_ir(
     original_ir_len: usize,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
-    cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
+    cache_nodes: &mut PlHashMap<UniqueId, CachedStream>,
     ctx: StreamingLowerIRContext<'_>,
     disable_morsel_split: Option<bool>,
 ) -> PolarsResult<PhysStream> {
@@ -283,7 +283,7 @@ fn lower_ir_inner(
     original_ir_len: usize,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
-    cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
+    cache_nodes: &mut PlHashMap<UniqueId, CachedStream>,
     ctx: StreamingLowerIRContext<'_>,
     mut disable_morsel_split: Option<bool>,
 ) -> PolarsResult<PhysStream> {
@@ -1194,11 +1194,17 @@ fn lower_ir_inner(
         IR::Cache { input, id } => {
             let id = *id;
             if let Some(cached) = cache_nodes.get(&id) {
-                return Ok(*cached);
+                return Ok(cached.stream);
             }
 
             let phys_input = lower_ir!(*input)?;
-            cache_nodes.insert(id, phys_input);
+            cache_nodes.insert(
+                id,
+                CachedStream {
+                    stream: phys_input,
+                    cache_node: node,
+                },
+            );
             return Ok(phys_input);
         },
 

@@ -126,6 +126,13 @@ pub struct PhysStream {
     pub port: usize,
 }
 
+/// The lowering of a `Cache` IR node, shared by every `Cache` with the same id.
+pub struct CachedStream {
+    pub stream: PhysStream,
+    /// The first `Cache` IR node lowered for the id.
+    pub cache_node: Node,
+}
+
 impl PhysStream {
     #[allow(unused)]
     pub fn new(node: PhysNodeKey, port: usize) -> Self {
@@ -868,10 +875,14 @@ fn _visit_nodes_impl(
     }
 }
 
+/// A cache lowers to the stream it caches, so no physical node is the cache's own. The multiplexer
+/// that fans the stream out is the cache's one physical footprint, so it goes to the `Cache` IR
+/// node rather than to the node producing the stream.
 fn insert_multiplexers(
     roots: Vec<PhysNodeKey>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
     phys_to_ir: &mut SecondaryMap<PhysNodeKey, Node>,
+    cache_streams: &PlHashMap<PhysStream, Node>,
 ) {
     let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
@@ -887,7 +898,10 @@ fn insert_multiplexers(
                 (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
                 PhysNodeKind::Multiplexer { input: stream },
             ));
-            let source_ir_node = phys_to_ir[stream.node];
+            let source_ir_node = cache_streams
+                .get(&stream)
+                .copied()
+                .unwrap_or_else(|| phys_to_ir[stream.node]);
             phys_to_ir.insert(multiplexer_node, source_ir_node);
             (stream, PhysStream::first(multiplexer_node))
         })
@@ -1049,7 +1063,16 @@ pub fn build_physical_plan(
         ctx,
         None,
     )?;
-    insert_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
+    let cache_streams = cache_nodes
+        .into_values()
+        .map(|c| (c.stream, c.cache_node))
+        .collect();
+    insert_multiplexers(
+        vec![phys_root.node],
+        phys_sm,
+        &mut phys_to_ir,
+        &cache_streams,
+    );
     split_multiplexers(vec![phys_root.node], phys_sm, &mut phys_to_ir);
     fuse_drops(vec![phys_root.node], phys_sm, &mut phys_to_ir);
 
