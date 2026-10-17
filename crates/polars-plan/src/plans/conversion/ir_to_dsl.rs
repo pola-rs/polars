@@ -980,6 +980,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "repeat_by")]
         IF::RepeatBy => F::RepeatBy,
         IF::ArgUnique => F::ArgUnique,
+        IF::UniqueId { maintain_order } => F::UniqueId { maintain_order },
         IF::ArgMin => F::ArgMin,
         IF::ArgMax => F::ArgMax,
         IF::ArgSort {

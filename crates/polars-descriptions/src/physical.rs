@@ -211,6 +211,7 @@ pub enum PhysicalPropsDescription {
     Repeat,
     Rle,
     RleId,
+    UniqueId,
     Select {
         selectors: Vec<String>,
         extend_original: bool,

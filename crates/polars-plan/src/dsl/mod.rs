@@ -270,6 +270,15 @@ impl Expr {
         self.map_unary(FunctionExpr::ArgUnique)
     }
 
+    /// Assign a unique ID to each unique value.
+    ///
+    /// Equal values always get the same ID and distinct values always get
+    /// distinct IDs, in the range `0..n_unique`. If `maintain_order` is true the
+    /// IDs are assigned in order of first occurrence.
+    pub fn unique_id(self, maintain_order: bool) -> Self {
+        self.map_unary(FunctionExpr::UniqueId { maintain_order })
+    }
+
     /// Get an index of a minimal value.
     ///
     /// In the case of a tie, this may return the index of any of the minimum values.

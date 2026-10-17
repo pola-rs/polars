@@ -304,6 +304,7 @@ pub fn function_expr_to_udf(
         #[cfg(feature = "moment")]
         F::Kurtosis(fisher, bias) => map!(misc::kurtosis, fisher, bias),
         F::ArgUnique => map!(misc::arg_unique),
+        F::UniqueId { maintain_order } => map!(misc::unique_id, maintain_order),
         F::ArgMin => map!(misc::arg_min),
         F::ArgMax => map!(misc::arg_max),
         F::ArgSort {

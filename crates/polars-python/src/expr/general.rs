@@ -163,6 +163,9 @@ impl PyExpr {
     fn arg_unique(&self) -> Self {
         self.inner.clone().arg_unique().into()
     }
+    fn unique_id(&self, maintain_order: bool) -> Self {
+        self.inner.clone().unique_id(maintain_order).into()
+    }
     fn unique(&self) -> Self {
         self.inner.clone().unique().into()
     }

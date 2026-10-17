@@ -914,6 +914,19 @@ fn to_graph_rec<'a>(
                 [(input_key, input.port)],
             )
         },
+        UniqueId {
+            input,
+            maintain_order: _,
+        } => {
+            // The grouper assigns dense IDs in first-occurrence order, a correct
+            // unique ID regardless of maintain_order.
+            let key_schema = input.output_schema(ctx.phys_sm).clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::unique_id::UniqueIdNode::new(key_schema, PlRandomState::default()),
+                [(input_key, input.port)],
+            )
+        },
 
         ForwardFill { input, limit } => {
             let input_key = to_graph_rec(input.node, ctx)?;
