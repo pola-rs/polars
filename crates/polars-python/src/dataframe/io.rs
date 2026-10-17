@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 
 use super::PyDataFrame;
 use crate::conversion::Wrap;
-use crate::file::{get_file_like, get_mmap_bytes_reader};
+use crate::file::{get_file_like, get_incremental_bytes_reader, get_mmap_bytes_reader};
 use crate::prelude::PyCompatLevel;
 use crate::utils::EnterPolarsExt;
 
@@ -62,9 +62,11 @@ impl PyDataFrame {
             name: name.into(),
             offset,
         });
-        let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
+        // Read lazily so a file handle is left positioned at the end of the stream,
+        // allowing multiple streams to be read from the same handle.
+        let bytes_r = get_incremental_bytes_reader(&py_f)?;
         py.enter_polars_df(move || {
-            IpcStreamReader::new(mmap_bytes_r)
+            IpcStreamReader::new(bytes_r)
                 .with_projection(projection)
                 .with_columns(columns)
                 .with_n_rows(n_rows)
