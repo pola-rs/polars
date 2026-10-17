@@ -950,7 +950,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let values = values.into_columns(input_schema.as_ref(), &Default::default())?;
 
             polars_ensure!(!on.is_empty(), InvalidOperation: "`pivot` called without `on` columns.");
-            polars_ensure!(on.len() == on_columns.width(), InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns.");
+            polars_ensure!(
+                on.len() == on_columns.width(),
+                InvalidOperation: "`pivot` expected `on` and `on_columns` to have the same amount of columns (got {} and {}).",
+                on.len(), on_columns.width()
+            );
             if on.len() > 1 {
                 polars_ensure!(
                     on_columns.columns().iter().zip(on.iter()).all(|(c, o)| o == c.name()),
