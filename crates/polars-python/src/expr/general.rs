@@ -10,6 +10,7 @@ use polars_core::chunked_array::cast::CastOptions;
 #[cfg(feature = "cutqcut")]
 use polars_plan::dsl::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
+use polars_plan::plans::python::pyarrow::predicate_to_pa;
 use polars_plan::plans::{
     AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
 };
@@ -1178,6 +1179,22 @@ impl PyExpr {
             PolarsResult::Ok(Some(Self {
                 inner: skip_batch_predicate,
             }))
+        })
+    }
+
+    /// The predicate as a PyArrow compute expression string, or `None` if (any
+    /// part of) it cannot be converted.
+    #[pyo3(signature = (schema))]
+    fn to_pyarrow_predicate(
+        &self,
+        py: Python<'_>,
+        schema: Wrap<Schema>,
+    ) -> PyResult<Option<String>> {
+        let mut aexpr_arena = Arena::new();
+        py.enter_polars(|| {
+            let mut ctx = ExprToIRContext::new(&mut aexpr_arena, &schema.0);
+            let node = to_expr_ir(self.inner.clone(), &mut ctx)?.node();
+            PolarsResult::Ok(predicate_to_pa(node, &aexpr_arena, &schema.0))
         })
     }
 
