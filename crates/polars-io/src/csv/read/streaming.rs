@@ -9,7 +9,7 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure};
 
 use crate::csv::read::schema_inference::infer_file_schema_impl;
 use crate::prelude::_csv_read_internal::{SplitLines, is_comment_line};
-use crate::prelude::{CsvParseOptions, CsvReadOptions};
+use crate::prelude::{CsvParseOptions, CsvReadOptions, NullValues};
 use crate::utils::compression::{ByteSourceReader, CompressedReader};
 use crate::utils::stream_buf_reader::ReaderSource;
 
@@ -184,7 +184,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
 
     let infer_all_as_str = infer_schema_length == Some(0);
 
-    let inferred_schema = infer_schema(
+    let (inferred_schema, _) = infer_schema(
         &header_line,
         &content_lines,
         infer_all_as_str,
@@ -201,6 +201,8 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
 ///
 /// Returns the inferred schema and leftover bytes not yet consumed, which may be empty. The
 /// leftover bytes + `reader.read_next_slice` is guaranteed to start at first real content row.
+/// Also returns the named null values re-keyed to the `column_names_overwrite` names, if that
+/// changed any key; the reader must use those instead.
 ///
 /// `inspect_first_content_row_fn` allows looking at the first content row, this is where parsing
 /// will start. Beware even if the function is provided it's *not* guaranteed that the returned
@@ -218,7 +220,7 @@ pub fn read_until_start_and_infer_schema(
     decompressed_file_size_hint: Option<usize>,
     mut inspect_first_content_row_fn: Option<InspectContentFn<'_>>,
     reader: &mut ByteSourceReader<ReaderSource>,
-) -> PolarsResult<(Schema, Buffer<u8>)> {
+) -> PolarsResult<(Schema, Buffer<u8>, Option<NullValues>)> {
     // It's better to be above than below here.
     const ESTIMATED_BYTES_PER_ROW: usize = 200;
 
@@ -369,7 +371,7 @@ pub fn read_until_start_and_infer_schema(
 
     let infer_all_as_str = infer_schema_length == Some(0);
 
-    let inferred_schema = infer_schema(
+    let (inferred_schema, rekeyed_null_values) = infer_schema(
         &header_line,
         &content_lines,
         infer_all_as_str,
@@ -379,7 +381,7 @@ pub fn read_until_start_and_infer_schema(
         insert_missing_columns,
     )?;
 
-    Ok((inferred_schema, leftover))
+    Ok((inferred_schema, leftover, rekeyed_null_values))
 }
 
 enum LineUse {
@@ -770,7 +772,7 @@ fn infer_schema(
     projected_schema: Option<SchemaRef>,
     ignore_extra_columns: bool,
     insert_missing_columns: bool,
-) -> PolarsResult<Schema> {
+) -> PolarsResult<(Schema, Option<NullValues>)> {
     let has_no_inference_data = if options.has_header {
         header_line.is_none()
     } else {
@@ -781,8 +783,8 @@ fn infer_schema(
         polars_bail!(NoData: "empty CSV");
     }
 
-    let mut inferred_schema = if has_no_inference_data {
-        Schema::default()
+    let (mut inferred_schema, rekeyed_null_values) = if has_no_inference_data {
+        (Schema::default(), None)
     } else {
         infer_file_schema_impl(
             header_line,
@@ -893,5 +895,5 @@ fn infer_schema(
         }
     }
 
-    Ok(inferred_schema)
+    Ok((inferred_schema, rekeyed_null_values))
 }
