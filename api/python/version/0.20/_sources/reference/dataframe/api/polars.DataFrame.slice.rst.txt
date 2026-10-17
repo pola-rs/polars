@@ -1,0 +1,6 @@
+﻿polars.DataFrame.slice
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.slice

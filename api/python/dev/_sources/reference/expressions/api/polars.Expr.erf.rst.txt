@@ -1,0 +1,6 @@
+﻿polars.Expr.erf
+===============
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.erf

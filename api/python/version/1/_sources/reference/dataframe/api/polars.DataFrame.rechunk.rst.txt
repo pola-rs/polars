@@ -1,0 +1,6 @@
+﻿polars.DataFrame.rechunk
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.rechunk

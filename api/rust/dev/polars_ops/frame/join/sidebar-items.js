@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["_coalesce_full_join","_join_suffix_name","default_join_ids","private_left_join_multiple_keys"],"mod":["merge_join"],"trait":["CrossJoin","DataFrameJoinOps","JoinDispatch","SeriesJoin"],"type":["ChunkJoinIds","ChunkJoinOptIds","InnerJoinIds","LeftJoinIds"]};

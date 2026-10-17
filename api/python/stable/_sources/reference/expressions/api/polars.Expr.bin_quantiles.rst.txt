@@ -1,0 +1,6 @@
+﻿polars.Expr.bin\_quantiles
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.bin_quantiles

@@ -1,0 +1,6 @@
+﻿polars.json\_normalize
+======================
+
+.. currentmodule:: polars
+
+.. autofunction:: json_normalize

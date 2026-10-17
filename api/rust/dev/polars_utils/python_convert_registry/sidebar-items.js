@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_python_convert_registry","register_converters"],"struct":["FromPythonConvertRegistry","PythonConvertRegistry","ToPythonConvertRegistry"],"type":["FromPython","ToPython"]};

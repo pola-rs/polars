@@ -1,0 +1,6 @@
+﻿polars.union
+============
+
+.. currentmodule:: polars
+
+.. autofunction:: union

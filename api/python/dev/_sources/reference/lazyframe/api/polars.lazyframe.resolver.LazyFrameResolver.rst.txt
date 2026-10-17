@@ -1,0 +1,26 @@
+﻿polars.lazyframe.resolver.LazyFrameResolver
+===========================================
+
+.. currentmodule:: polars.lazyframe.resolver
+
+.. autoclass:: LazyFrameResolver
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~LazyFrameResolver.__init__
+      ~LazyFrameResolver.cse_eq
+      ~LazyFrameResolver.lazy
+      ~LazyFrameResolver.resolve_lazyframe
+      ~LazyFrameResolver.schema
+   
+   
+
+   
+   
+   

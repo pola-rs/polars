@@ -1,0 +1,6 @@
+﻿polars.Config.set\_thousands\_separator
+=======================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_thousands_separator

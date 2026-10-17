@@ -1,0 +1,33 @@
+﻿polars.datatypes.Object
+=======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Object
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Object.__init__
+      ~Object.base_type
+      ~Object.is_
+      ~Object.is_decimal
+      ~Object.is_float
+      ~Object.is_integer
+      ~Object.is_nested
+      ~Object.is_not
+      ~Object.is_numeric
+      ~Object.is_signed_integer
+      ~Object.is_temporal
+      ~Object.is_unsigned_integer
+   
+   
+
+   
+   
+   

@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.serialize
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.serialize

@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.truncate
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.truncate

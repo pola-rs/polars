@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.time
+===================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.time

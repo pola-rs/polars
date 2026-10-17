@@ -1,0 +1,6 @@
+﻿polars.io.csv.batched\_reader.BatchedCsvReader.next\_batches
+============================================================
+
+.. currentmodule:: polars.io.csv.batched_reader
+
+.. automethod:: BatchedCsvReader.next_batches
