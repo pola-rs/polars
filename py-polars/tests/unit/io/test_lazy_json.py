@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -364,6 +364,36 @@ def test_scan_ndjson_schema_overwrite_22514() -> None:
     q = pl.scan_ndjson(buf, schema_overrides={"a": pl.String})
     assert q.collect_schema() == {"a": pl.String}
     assert_frame_equal(q.collect(), pl.DataFrame({"a": "1"}))
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Int8, pl.Int16, pl.UInt8, pl.UInt16, pl.Time, pl.Duration("us")],
+)
+def test_scan_ndjson_schema_overrides_small_int_time_duration_30017(
+    dtype: PolarsDataType,
+) -> None:
+    buf = b"""\
+{"a": 1}
+{"a": null}
+"""
+
+    out = pl.scan_ndjson(buf, schema_overrides={"a": dtype}).collect()
+    assert_series_equal(out["a"], pl.Series("a", [1, None]).cast(dtype))
+
+
+def test_scan_ndjson_schema_overrides_small_int_out_of_range_30017() -> None:
+    buf = b"""\
+{"a": 300}
+"""
+
+    with pytest.raises(pl.exceptions.ComputeError, match="cannot parse"):
+        pl.scan_ndjson(buf, schema_overrides={"a": pl.Int8}).collect()
+
+    out = pl.scan_ndjson(
+        buf, schema_overrides={"a": pl.Int8}, ignore_errors=True
+    ).collect()
+    assert_series_equal(out["a"], pl.Series("a", [None], dtype=pl.Int8))
 
 
 @pytest.mark.slow
