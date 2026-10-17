@@ -37,6 +37,8 @@ String
      - Returns the position of a substring within a string.
    * - :ref:`REGEXP_LIKE <regexp_like>`
      - Returns True if `pattern` matches the value (optional: `flags`).
+   * - :ref:`REGEXP_REPLACE <regexp_replace>`
+     - Replaces the first match of `pattern` with `replacement` (optional: `flags`; 'g' replaces all matches).
    * - :ref:`REPLACE <replace>`
      - Replaces a given substring with another string.
    * - :ref:`REVERSE <reverse>`
@@ -537,6 +539,34 @@ Returns True if `pattern` matches the value (optional: `flags`).
     # │ abc456 ┆ true          │
     # │ 321cba ┆ false         │
     # └────────┴───────────────┘
+
+.. _regexp_replace:
+
+REGEXP_REPLACE
+--------------
+Replaces the first match of `pattern` with `replacement` (optional: `flags`). The 'g' flag
+replaces all matches; other flags are applied as inline regex flags, such as 'i' for a
+case-insensitive match. In `replacement`, `\1` refers to the first capture group and `\&`
+to the whole match.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["abc-123", "ab-cd", "x"]})
+    df.sql(r"""
+      SELECT foo, REGEXP_REPLACE(foo, '(\w+)-(\w+)', '\2-\1') AS bar FROM self
+    """)
+    # shape: (3, 2)
+    # ┌─────────┬─────────┐
+    # │ foo     ┆ bar     │
+    # │ ---     ┆ ---     │
+    # │ str     ┆ str     │
+    # ╞═════════╪═════════╡
+    # │ abc-123 ┆ 123-abc │
+    # │ ab-cd   ┆ cd-ab   │
+    # │ x       ┆ x       │
+    # └─────────┴─────────┘
 
 .. _replace:
 

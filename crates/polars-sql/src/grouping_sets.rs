@@ -220,43 +220,14 @@ impl GroupingSets {
         contains_grouping_placeholder(expr, self.placeholders())
     }
 
-    /// Point computed grouping expressions in a post-aggregation expression at the
-    /// columns holding their grouped values. A key is matched as a whole before its
-    /// children are visited, and aggregate arguments keep reading the original input.
-    pub(crate) fn bind_stored_keys(&self, expr: Expr, key_schema: &Schema) -> Expr {
-        struct Binder<'a> {
-            keys: Vec<(Expr, &'a PlSmallStr)>,
-        }
-        impl RewritingVisitor for Binder<'_> {
-            type Node = Expr;
-            type Arena = ();
-
-            fn pre_visit(&mut self, node: &Expr, _: &mut ()) -> PolarsResult<RewriteRecursion> {
-                Ok(match node {
-                    Expr::Agg(_) | Expr::Len => RewriteRecursion::Stop,
-                    _ if self.keys.iter().any(|(k, _)| k == node) => {
-                        RewriteRecursion::MutateAndStop
-                    },
-                    _ => RewriteRecursion::NoMutateAndContinue,
-                })
-            }
-
-            fn mutate(&mut self, node: Expr, _: &mut ()) -> PolarsResult<Expr> {
-                let (_, name) = self.keys.iter().find(|(k, _)| *k == node).unwrap();
-                Ok(col((*name).clone()))
-            }
-        }
-        let keys = self
-            .stripped_keys
+    /// The computed keys, each with the name of the column that holds its grouped values.
+    pub(crate) fn stored_keys(&self, key_schema: &Schema) -> Vec<(Expr, PlSmallStr)> {
+        self.stripped_keys
             .iter()
             .zip(key_schema.iter_names())
-            .map(|(key, name)| (key.clone(), name))
             .filter(|(key, _)| !matches!(key, Expr::Column(_)))
-            .collect::<Vec<_>>();
-        if keys.is_empty() {
-            return expr;
-        }
-        expr.rewrite(&mut Binder { keys }, &mut ()).unwrap()
+            .map(|(key, name)| (key.clone(), name.clone()))
+            .collect()
     }
 
     /// The `GROUPING()` bits of a call within one set: an argument the set omits
@@ -350,4 +321,34 @@ impl GroupingSets {
             )
         }
     }
+}
+
+/// Point computed group keys in a post-aggregation expression at the columns holding
+/// their grouped values. A key is matched as a whole before its children are visited,
+/// and aggregate arguments keep reading the original input.
+pub(crate) fn bind_stored_keys(expr: Expr, keys: &[(Expr, PlSmallStr)]) -> Expr {
+    struct Binder<'a> {
+        keys: &'a [(Expr, PlSmallStr)],
+    }
+    impl RewritingVisitor for Binder<'_> {
+        type Node = Expr;
+        type Arena = ();
+
+        fn pre_visit(&mut self, node: &Expr, _: &mut ()) -> PolarsResult<RewriteRecursion> {
+            Ok(match node {
+                Expr::Agg(_) | Expr::Len => RewriteRecursion::Stop,
+                _ if self.keys.iter().any(|(k, _)| k == node) => RewriteRecursion::MutateAndStop,
+                _ => RewriteRecursion::NoMutateAndContinue,
+            })
+        }
+
+        fn mutate(&mut self, node: Expr, _: &mut ()) -> PolarsResult<Expr> {
+            let (_, name) = self.keys.iter().find(|(k, _)| *k == node).unwrap();
+            Ok(col(name.clone()))
+        }
+    }
+    if keys.is_empty() {
+        return expr;
+    }
+    expr.rewrite(&mut Binder { keys }, &mut ()).unwrap()
 }

@@ -617,6 +617,21 @@ fn is_literal_pat(pat: &str) -> bool {
     pat.chars().all(|c| !c.is_ascii_punctuation())
 }
 
+/// A pattern without punctuation only matches itself, so the `$` references in the
+/// replacement expand to the same string for every match.
+#[cfg(feature = "regex")]
+fn expand_for_literal_pat<'a>(pat: &str, val: &'a str) -> PolarsResult<std::borrow::Cow<'a, str>> {
+    if !val.contains('$') {
+        return Ok(std::borrow::Cow::Borrowed(val));
+    }
+    let reg = polars_utils::regex_cache::compile_regex(pat)?;
+    let mut out = String::new();
+    if let Some(caps) = reg.captures(pat) {
+        caps.expand(val, &mut out);
+    }
+    Ok(std::borrow::Cow::Owned(out))
+}
+
 #[cfg(feature = "regex")]
 fn replace_n(
     ca: &StringChunked,
@@ -631,17 +646,16 @@ fn replace_n(
             let Some(val) = val.get(0) else {
                 return Ok(ca.clone());
             };
-            let literal = literal || is_literal_pat(pat);
-
-            match literal {
-                true => ca.replace_literal(pat, val, n),
-                false => {
-                    if n > 1 {
-                        polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
-                    }
-                    ca.replace(pat, val)
-                },
+            if literal {
+                return ca.replace_literal(pat, val, n);
             }
+            if is_literal_pat(pat) {
+                return ca.replace_literal(pat, &expand_for_literal_pat(pat, val)?, n);
+            }
+            if n > 1 {
+                polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
+            }
+            ca.replace(pat, val)
         },
         (1, len_val) => {
             if n > 1 {
@@ -698,12 +712,13 @@ fn replace_all(
             let val = val.get(0).ok_or_else(
                 || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
             )?;
-            let literal = literal || is_literal_pat(pat);
-
-            match literal {
-                true => ca.replace_literal_all(pat, val),
-                false => ca.replace_all(pat, val),
+            if literal {
+                return ca.replace_literal_all(pat, val);
             }
+            if is_literal_pat(pat) {
+                return ca.replace_literal_all(pat, &expand_for_literal_pat(pat, val)?);
+            }
+            ca.replace_all(pat, val)
         },
         (1, len_val) => {
             let mut pat = get_pat(pat)?.to_string();

@@ -396,10 +396,10 @@ class Col:
                             name = name.removeprefix(mangled_prefix)
                             break
 
-        # help autocomplete work with IPython
-        with contextlib.suppress(AttributeError):
-            if name.startswith("__wrapped__"):
-                return getattr(type(self), name)
+        # `inspect.unwrap` (used by IPython/Jupyter autocomplete) probes this
+        if name == "__wrapped__":
+            msg = f"{type(self).__name__!r} object has no attribute {name!r}"
+            raise AttributeError(msg)
 
         return _create_col(name)
 

@@ -115,10 +115,9 @@ fn specialize(
             options: _,
         } if matches!(
             str_function,
-            crate::plans::IRStringFunction::Contains {
-                literal: _,
-                strict: true
-            } | crate::plans::IRStringFunction::EndsWith
+            crate::plans::IRStringFunction::Contains { literal: true, .. }
+                | crate::plans::IRStringFunction::Contains { strict: true, .. }
+                | crate::plans::IRStringFunction::EndsWith
                 | crate::plans::IRStringFunction::StartsWith
         ) =>
         {
@@ -140,6 +139,9 @@ fn specialize(
                     } else {
                         lv.to_string()
                     };
+                    // The column kernel raises or returns nulls if it cannot compile the
+                    // pattern, e.g. due to `POLARS_REGEX_SIZE_LIMIT`.
+                    polars_utils::regex_cache::compile_regex(&pattern).ok()?;
                     let pattern = regex::bytes::Regex::new(&pattern).ok()?;
                     Some(SpecializedColumnPredicate::RegexMatch(pattern.into()))
                 },

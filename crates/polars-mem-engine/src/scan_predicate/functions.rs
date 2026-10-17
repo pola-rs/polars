@@ -5,12 +5,15 @@ use polars_arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{
-    IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet, Scalar,
+    Column, DataFrame, IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet, Scalar,
 };
 use polars_core::schema::Schema;
 use polars_error::polars_warn;
+use polars_expr::prelude::PhysicalExpr;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
-use polars_io::predicates::{DynamicPredicateSource, RuntimeRangeHint, ScanIOPredicate};
+use polars_io::predicates::{
+    ColumnIoExpr, DynamicPredicateSource, RuntimeRangeHint, ScanIOPredicate,
+};
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
@@ -21,7 +24,10 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{
     aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
 };
-use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter};
+use polars_plan::plans::{
+    AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter, OrderKeeping,
+    order_keeping_column,
+};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::aliases::PlIndexMapHashable;
 use polars_utils::arena::{Arena, Node};
@@ -45,9 +51,11 @@ pub fn create_scan_predicate(
     // Every dynamic part gives a range hint to skip batches by.
     let mut predicate = predicate.clone();
     let mut filters_rows = true;
-    let runtime_ranges: Vec<RuntimeRangeHint> = MintermIter::new(predicate.node(), expr_arena)
-        .filter_map(|part| runtime_range_hint(part, expr_arena))
-        .collect();
+    let runtime_ranges = MintermIter::new(predicate.node(), expr_arena)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .filter_map(|part| runtime_range_hint(part, expr_arena, schema, state).transpose())
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
@@ -287,24 +295,55 @@ fn create_staged_predicate(
     })
 }
 
-/// The range hint of a dynamic predicate over a scan column.
-fn runtime_range_hint(part: Node, expr_arena: &Arena<AExpr>) -> Option<RuntimeRangeHint> {
+/// The range hint of a dynamic predicate over a scan column, or over an order-keeping
+/// expression of one.
+fn runtime_range_hint(
+    part: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Arc<Schema>,
+    state: &mut ExpressionConversionState,
+) -> PolarsResult<Option<RuntimeRangeHint>> {
     let AExpr::Function {
         input,
         function: IRFunctionExpr::DynamicPred { pred, .. },
         ..
     } = expr_arena.get(part)
     else {
-        return None;
+        return Ok(None);
     };
-    let AExpr::Column(column) = expr_arena.get(input[0].node()) else {
-        return None;
+    let input = input[0].node();
+    let source = Arc::new(pred.clone());
+    if let AExpr::Column(column) = expr_arena.get(input) {
+        return Ok(Some(RuntimeRangeHint {
+            column: column.clone(),
+            order_keeping_expr: None,
+            source,
+            constant: None,
+        }));
+    }
+    let Some(OrderKeeping { column, .. }) = order_keeping_column(input, expr_arena, schema) else {
+        return Ok(None);
     };
-    Some(RuntimeRangeHint {
-        column: column.clone(),
-        source: Arc::new(pred.clone()),
+    let expr = create_physical_expr(
+        &ExprIR::from_node(input, expr_arena),
+        expr_arena,
+        schema,
+        state,
+    )?;
+    Ok(Some(RuntimeRangeHint {
+        column,
+        order_keeping_expr: Some(Arc::new(OrderKeepingExpr(expr))),
+        source,
         constant: None,
-    })
+    }))
+}
+
+struct OrderKeepingExpr(Arc<dyn PhysicalExpr>);
+
+impl ColumnIoExpr for OrderKeepingExpr {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Column> {
+        self.0.evaluate(df, &Default::default())
+    }
 }
 
 #[derive(Default)]
@@ -695,6 +734,7 @@ where
         DefaultFieldValues::Iceberg(v) => {
             let IcebergDefaultFieldValues {
                 identity_transformed_partition_fields,
+                identity_partition_present,
                 initial_defaults,
             } = v.as_ref();
 
@@ -729,10 +769,25 @@ where
                 );
             }
 
+            // Sources past the end of a mask become null (not present).
+            let new_identity_partition_present = identity_partition_present
+                .iter()
+                .map(|(k, present)| {
+                    let indices = gather_indices.entry(present.len()).or_insert_with(|| {
+                        selected_path_indices
+                            .clone()
+                            .map(|i| (i < present.len()).then(|| IdxSize::try_from(i).unwrap()))
+                            .collect::<IdxCa>()
+                    });
+                    (*k, unsafe { present.take_unchecked(indices) })
+                })
+                .collect();
+
             DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
                 identity_transformed_partition_fields: PlIndexMapHashable(
                     new_identity_transformed_partition_fields,
                 ),
+                identity_partition_present: PlIndexMapHashable(new_identity_partition_present),
                 initial_defaults: initial_defaults.clone(),
             }))
         },

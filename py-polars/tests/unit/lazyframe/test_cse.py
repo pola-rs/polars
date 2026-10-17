@@ -323,9 +323,9 @@ def test_cse_group_by_10215() -> None:
         (pl.col("a").sum() * pl.col("a").sum()).alias("x"),
         (pl.col("b").sum() * pl.col("b").sum()).alias("y"),
         (pl.col("a").sum() * pl.col("a").sum()).alias("x2"),
-        ((pl.col("a") + 2).sum() * pl.col("a").sum()).alias("x3"),
-        ((pl.col("a") + 2).sum() * pl.col("b").sum()).alias("x4"),
-        ((pl.col("a") + 2).sum() * pl.col("b").sum()),
+        ((pl.col("a") * 2).sum() * pl.col("a").sum()).alias("x3"),
+        ((pl.col("a") * 2).sum() * pl.col("b").sum()).alias("x4"),
+        ((pl.col("a") * 2).sum() * pl.col("b").sum()),
     )
 
     assert "__POLARS_CSER" in result.explain(
@@ -337,9 +337,9 @@ def test_cse_group_by_10215() -> None:
             "x": [1],
             "y": [1],
             "x2": [1],
-            "x3": [3],
-            "x4": [3],
-            "a": [3],
+            "x3": [2],
+            "x4": [2],
+            "a": [2],
         }
     )
     assert_frame_equal(
@@ -1625,7 +1625,7 @@ def test_cspe_with_non_pushable_filters_19479() -> None:
     # The predicates reference a column computed within the common subplan, so they
     # cannot be pushed past it. We keep the cache so the subplan is shared.
     lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
-    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+    common_subplan = lazy_df.with_columns(pl.col("foo") * pl.col("bar"))
 
     expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
     expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
@@ -1667,9 +1667,9 @@ def test_cspe_with_mixed_filters_19479() -> None:
     # shared across all branches rather than removing them for a partial pushdown.
     q_base = pl.LazyFrame(
         {"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]}
-    ).with_columns(pl.col("foo") * 2)
+    ).with_columns(pl.col("foo") * pl.col("bar"))
 
-    # `foo * 2` is computed within the subplan -> not pushable.
+    # `foo * bar` is computed within the subplan -> not pushable.
     q1 = q_base.filter(pl.col("foo") * 2 > 4)
     q2 = q_base.filter(pl.col("foo") * 2 < 8)
     # `bar` is available before the subplan -> pushable.
@@ -1690,7 +1690,7 @@ def test_cspe_with_mixed_filters_19479() -> None:
 
 def test_cspe_with_filters_sink_multiple_19479() -> None:
     lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
-    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+    common_subplan = lazy_df.with_columns(pl.col("foo") * pl.col("bar"))
 
     expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
     expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
@@ -2340,3 +2340,18 @@ def test_cse_scalar_multichunk_projection_29902(method: str) -> None:
     if method == "with_columns":
         expected = pl.concat([df.rechunk(), expected], how="horizontal")
     assert_frame_equal(q.collect(engine="in-memory"), expected)
+
+
+def test_cse_group_by_scalar_28653() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "j": [1, 2, 3]})
+    lit = pl.lit(-1.5).abs()
+
+    q = lf.group_by("g", maintain_order=True).agg(a=lit, b=lit)
+    expected = pl.DataFrame({"g": [1, 2], "a": [1.5, 1.5], "b": [1.5, 1.5]})
+    out = q.collect()
+    assert_frame_equal(out, expected)
+    assert out.schema == q.collect_schema()
+
+    q = lf.group_by("g", maintain_order=True).agg(c=pl.col("j") + lit, d=lit)
+    expected = pl.DataFrame({"g": [1, 2], "c": [[2.5, 3.5], [4.5]], "d": [1.5, 1.5]})
+    assert_frame_equal(q.collect(), expected)
