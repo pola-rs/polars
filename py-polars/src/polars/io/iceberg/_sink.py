@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import pyiceberg.catalog
     import pyiceberg.table
+    from pyiceberg.expressions import BooleanExpression
     from pyiceberg.io.pyarrow import StatisticsCollector
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionSpec
@@ -327,11 +328,163 @@ def _data_file_from_sink_metadata(
     return factory(**data_file_args)
 
 
-def _add_files(
+def _data_files_for_commit(
     transaction: Transaction,
     sinked_files: list[_IcebergSinkedFile],
-    snapshot_properties: dict[str, str],
     sort_order_id: int | None,
+) -> list[DataFile]:
+    return list(
+        _data_files_from_sink_metadata(
+            transaction.table_metadata,
+            sinked_files,
+            sort_order_id,
+        )
+    )
+
+
+def _dynamic_overwrite_filter(
+    table_metadata: TableMetadata, data_files: list[DataFile]
+) -> BooleanExpression:
+    """Match the rows of the partitions that `data_files` are written to."""
+    from pyiceberg.expressions import AlwaysFalse, And, EqualTo, IsNull, Or, Reference
+
+    spec = table_metadata.spec()
+    schema = table_metadata.schema()
+    _check_dynamic_overwrite_spec(spec, schema)
+    names = [schema.find_column_name(field.source_id) for field in spec.fields]
+
+    partition_filters: list[BooleanExpression] = []
+    for partition in {data_file.partition for data_file in data_files}:
+        predicates: list[BooleanExpression] = []
+        for i, name in enumerate(names):
+            assert name is not None
+            value = partition[i]
+            if value is None:
+                predicates.append(IsNull(Reference(name)))  # type: ignore[call-arg]
+            else:
+                predicates.append(EqualTo(Reference(name), value))  # type: ignore[call-arg]
+        partition_filters.append(
+            And(*predicates) if len(predicates) > 1 else predicates[0]
+        )
+
+    if not partition_filters:
+        return AlwaysFalse()
+    if len(partition_filters) == 1:
+        return partition_filters[0]
+    return Or(*partition_filters)
+
+
+def _polars_expr_to_overwrite_filter(
+    expr: pl.Expr, schema: Schema
+) -> BooleanExpression:
+    """Convert a Polars predicate to an Iceberg delete filter, or raise.
+
+    The filter matches exactly the rows for which `expr` is true. Iceberg
+    predicates are not three-valued (e.g. `NotEqualTo` matches nulls), so
+    negations are pushed down to the leaves, which is valid in three-valued logic,
+    and every leaf other than a null check is guarded with `NotNull`. With only
+    `&` and `|` left, a row then matches iff `expr` is true.
+
+    Floating-point columns are rejected, as Polars orders NaN differently.
+    Columns nested within an optional struct are rejected, as PyIceberg's
+    `NotNull` only checks the leaf field.
+    """
+    from pyiceberg.expressions import (
+        AlwaysFalse,
+        AlwaysTrue,
+        And,
+        BooleanExpression,
+        IsNull,
+        NotNull,
+        Or,
+        UnboundPredicate,
+    )
+    from pyiceberg.expressions.visitors import bind, extract_field_ids, rewrite_not
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+    from pyiceberg.types import DoubleType, FloatType
+
+    import polars as pl
+    from polars.io.iceberg._utils import (
+        _convert_predicate,
+        _ensure_boolean_expression,
+        _is_null_pushdown_safe,
+        _to_ast,
+    )
+
+    def err(reason: str) -> ValueError:
+        return ValueError(f"unsupported overwrite_filter {expr}: {reason}")
+
+    empty_df = pl.DataFrame(schema_to_pyarrow(schema).empty_table())
+    # Raise the errors Polars would raise when evaluating the predicate.
+    try:
+        empty_df.filter(expr)
+    except Exception as e:
+        raise err(str(e)) from e
+
+    pyarrow_predicate = expr._pyexpr._to_pyarrow_predicate(empty_df.schema)
+
+    converted: Any = None
+    if pyarrow_predicate is not None:
+        with contextlib.suppress(Exception):
+            converted = _ensure_boolean_expression(
+                _convert_predicate(_to_ast(pyarrow_predicate), schema)
+            )
+    if not isinstance(converted, BooleanExpression):
+        msg = "cannot be converted to an Iceberg expression"
+        raise err(msg)
+
+    for field_id in extract_field_ids(bind(schema, converted, case_sensitive=True)):
+        if isinstance(schema.find_type(field_id), (FloatType, DoubleType)):
+            msg = "floating-point columns are not supported"
+            raise err(msg)
+        path = schema.find_column_name(field_id)
+        assert path is not None
+        if not _is_null_pushdown_safe(path.split("."), schema):
+            msg = f"column '{path}' is nested within an optional struct"
+            raise err(msg)
+
+    def guard_nulls(e: BooleanExpression) -> BooleanExpression:
+        if isinstance(e, (And, Or)):
+            return type(e)(guard_nulls(e.left), guard_nulls(e.right))
+        if isinstance(e, (IsNull, NotNull, AlwaysTrue, AlwaysFalse)):
+            return e
+        if isinstance(e, UnboundPredicate):
+            return And(NotNull(e.term), e)  # type: ignore[call-arg]
+        msg = f"unexpected Iceberg expression {e}"
+        raise err(msg)
+
+    return guard_nulls(rewrite_not(converted))
+
+
+def _check_dynamic_overwrite_spec(spec: PartitionSpec, schema: Schema) -> None:
+    from pyiceberg.transforms import IdentityTransform
+    from pyiceberg.types import DoubleType, FloatType
+
+    if spec.is_unpartitioned():
+        msg = "partition_overwrite='dynamic' requires a partitioned Iceberg table"
+        raise ValueError(msg)
+    for field in spec.fields:
+        if not isinstance(field.transform, IdentityTransform):
+            msg = (
+                "partition_overwrite='dynamic' only supports identity partition "
+                f"transforms, got {field.transform} for partition field '{field.name}'"
+            )
+            raise NotImplementedError(msg)
+        # NaN partition values cannot be matched with `EqualTo`.
+        if isinstance(
+            schema.find_field(field.source_id).field_type, (FloatType, DoubleType)
+        ):
+            msg = (
+                "partition_overwrite='dynamic' does not support floating-point "
+                f"partition source columns (partition field '{field.name}')"
+            )
+            raise NotImplementedError(msg)
+
+
+def _add_files(
+    transaction: Transaction,
+    data_files: list[DataFile],
+    snapshot_properties: dict[str, str],
 ) -> None:
     from pyiceberg.table import TableProperties
 
@@ -346,11 +499,7 @@ def _add_files(
     with transaction.update_snapshot(
         snapshot_properties=snapshot_properties
     ).fast_append() as append_files:
-        for data_file in _data_files_from_sink_metadata(
-            table_metadata,
-            sinked_files,
-            sort_order_id,
-        ):
+        for data_file in data_files:
             append_files.append_data_file(data_file)
 
 
@@ -702,6 +851,10 @@ class IcebergSinkState:
     table_name: str
     mode: Literal["append", "overwrite"]
     schema_mode: Literal["merge", "overwrite"] | None
+    # Rows deleted by `mode="overwrite"`. None deletes all rows.
+    # A `pl.Expr` is converted when the sink is resolved.
+    overwrite_filter: BooleanExpression | pl.Expr | None
+    dynamic_partition_overwrite: bool
     create_if_not_exists: bool
     snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
@@ -725,6 +878,8 @@ class IcebergSinkState:
         *,
         mode: Literal["append", "overwrite"] = "append",
         schema_mode: Literal["merge", "overwrite"] | None = None,
+        overwrite_filter: pl.Expr | BooleanExpression | str | None = None,
+        partition_overwrite: Literal["dynamic"] | None = None,
         create_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
@@ -737,6 +892,39 @@ class IcebergSinkState:
         if schema_mode == "overwrite" and mode != "overwrite":
             msg = "schema_mode='overwrite' requires mode='overwrite'"
             raise ValueError(msg)
+
+        if partition_overwrite not in (None, "dynamic"):
+            msg = f"invalid partition_overwrite: {partition_overwrite!r}"
+            raise ValueError(msg)
+
+        if overwrite_filter is not None or partition_overwrite is not None:
+            if mode != "overwrite":
+                msg = (
+                    "overwrite_filter and partition_overwrite require mode='overwrite'"
+                )
+                raise ValueError(msg)
+            if overwrite_filter is not None and partition_overwrite is not None:
+                msg = "overwrite_filter and partition_overwrite are mutually exclusive"
+                raise ValueError(msg)
+            if schema_mode == "overwrite":
+                msg = (
+                    "schema_mode='overwrite' cannot be combined with overwrite_filter "
+                    "or partition_overwrite"
+                )
+                raise ValueError(msg)
+
+        if isinstance(overwrite_filter, str):
+            from pyiceberg.expressions.parser import parse
+
+            overwrite_filter = parse(overwrite_filter)
+
+        import polars as pl
+
+        if isinstance(overwrite_filter, pl.Expr) and not isinstance(target, str):
+            # Fail early when the schema is available.
+            overwrite_filter = _polars_expr_to_overwrite_filter(
+                overwrite_filter, target.schema()
+            )
 
         if create_if_not_exists and not isinstance(target, str):
             msg = "create_if_not_exists=True requires a table identifier as `target`"
@@ -776,6 +964,8 @@ class IcebergSinkState:
             table_name=target if isinstance(target, str) else ".".join(target.name()),
             mode=mode,
             schema_mode=schema_mode,
+            overwrite_filter=overwrite_filter,
+            dynamic_partition_overwrite=partition_overwrite == "dynamic",
             create_if_not_exists=create_if_not_exists,
             snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
@@ -935,6 +1125,19 @@ class IcebergSinkState:
         )
 
         schema, arrow_schema = self._schemas_for_write(table)
+
+        # Fail before writing any data.
+        if self.dynamic_partition_overwrite:
+            _check_dynamic_overwrite_spec(table.spec(), schema)
+        if isinstance(self.overwrite_filter, pl.Expr):
+            self.overwrite_filter = _polars_expr_to_overwrite_filter(
+                self.overwrite_filter, schema
+            )
+        elif self.overwrite_filter is not None:
+            from pyiceberg.expressions.visitors import bind
+
+            bind(schema, self.overwrite_filter, case_sensitive=True)
+
         lf = wrap_ldf(plf)
         self.sort_order_id = None
         if sort_order.fields:
@@ -1076,22 +1279,44 @@ class IcebergSinkState:
                     raise ValueError(msg)
                 self._update_schema(tx)
 
-                if self.mode == "overwrite":
-                    from pyiceberg.expressions import AlwaysTrue
+                data_files = _data_files_for_commit(
+                    tx, sinked_files, self.sort_order_id
+                )
 
-                    tx.delete(AlwaysTrue(), snapshot_properties=snapshot_properties)
+                if self.mode == "overwrite":
+                    from pyiceberg.expressions import AlwaysFalse, AlwaysTrue
+
+                    if self.dynamic_partition_overwrite:
+                        delete_filter = _dynamic_overwrite_filter(
+                            tx.table_metadata, data_files
+                        )
+                    elif self.overwrite_filter is not None:
+                        # Converted from a `pl.Expr` when the sink was resolved.
+                        delete_filter = self.overwrite_filter  # type: ignore[assignment]
+                    else:
+                        delete_filter = AlwaysTrue()
+
+                    if verbose:
+                        kind = (
+                            "dynamic partitions"
+                            if self.dynamic_partition_overwrite
+                            else "filter"
+                            if self.overwrite_filter is not None
+                            else "all rows"
+                        )
+                        eprint(f"IcebergSinkState[commit]: overwrite: {kind}")
+
+                    if delete_filter != AlwaysFalse():
+                        tx.delete(
+                            delete_filter, snapshot_properties=snapshot_properties
+                        )
 
                 if verbose:
                     eprint("IcebergSinkState[commit]: begin add_files")
 
                 start_instant = perf_counter()
 
-                _add_files(
-                    tx,
-                    sinked_files,
-                    snapshot_properties,
-                    self.sort_order_id,
-                )
+                _add_files(tx, data_files, snapshot_properties)
 
                 if verbose:
                     elapsed = perf_counter() - start_instant
