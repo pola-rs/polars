@@ -274,15 +274,11 @@ def delete_iceberg(
     predicate: Expr,
 ) -> None:
     """
-    Delete the rows matching a predicate from an Apache Iceberg table.
+    Delete the rows matching a predicate from an Iceberg table.
 
     .. warning::
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
-
-    The delete is performed eagerly by PyIceberg's `Table.delete`. Data files
-    that only contain matching rows are removed from the table metadata, other
-    data files with matching rows are rewritten.
 
     Parameters
     ----------
@@ -291,18 +287,6 @@ def delete_iceberg(
     predicate
         Boolean expression selecting the rows to delete. Rows for which it
         evaluates to null are kept, as with :meth:`DataFrame.remove`.
-
-        The predicate must have an exact PyIceberg equivalent, e.g. comparisons
-        of columns with literals, `is_in`, `is_between`, `is_null`, `is_nan` and
-        `str.starts_with`, combined with `&`, `|` and `~`. On floating-point
-        columns, only `<`, `<=`, `==` and `is_in` with non-zero literals and
-        null / NaN checks are supported, as PyIceberg orders NaN differently.
-
-    Raises
-    ------
-    InvalidOperationError
-        If the predicate cannot be converted to an exactly equivalent PyIceberg
-        expression.
 
     Examples
     --------
