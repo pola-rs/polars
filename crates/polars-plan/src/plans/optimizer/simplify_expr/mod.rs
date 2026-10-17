@@ -3,6 +3,7 @@ mod sort_lowering;
 
 use num_traits::Zero;
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
@@ -69,8 +70,14 @@ fn sum_null_on_empty(
     None
 }
 
-/// For `x + c`, `x - c` or `c - x` with a column `x` and a literal `c`, the nodes of `x` and `c`.
-fn column_with_literal(node: Node, expr_arena: &Arena<AExpr>) -> Option<(Node, Node)> {
+/// For `x + c`, `x - c` or `c - x` with a column `x` and a literal `c`, the nodes of `x` and `c`
+/// and the dtype of the result. `x` and `c` must already have that dtype, or a cast to it that
+/// keeps all values, so that `x + c` is null only where `x` is null.
+fn column_with_literal(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> Option<(Node, Node, DataType)> {
     let AExpr::BinaryExpr {
         left,
         op: Operator::Plus | Operator::Minus,
@@ -85,13 +92,35 @@ fn column_with_literal(node: Node, expr_arena: &Arena<AExpr>) -> Option<(Node, N
         _ => false,
     };
     let is_literal = |node: Node| matches!(expr_arena.get(node), AExpr::Literal(lv) if lv.is_scalar() && !lv.is_null());
-    if is_column(*left) && is_literal(*right) {
-        Some((*left, *right))
+    let (column, literal) = if is_column(*left) && is_literal(*right) {
+        (*left, *right)
     } else if is_literal(*left) && is_column(*right) {
-        Some((*right, *left))
+        (*right, *left)
     } else {
-        None
+        return None;
+    };
+
+    let ctx = ToFieldContext::new(expr_arena, schema);
+    let dtype_of = |node: Node| expr_arena.get(node).to_dtype(&ctx).ok();
+    let dtype = dtype_of(node)?;
+    if !dtype.is_primitive_numeric() || dtype_of(column)? != dtype {
+        return None;
     }
+    if let AExpr::Cast { expr, .. } = expr_arena.get(column) {
+        let from = dtype_of(*expr)?;
+        if from != dtype
+            && get_numeric_upcast_supertype_lossless(&from, &dtype).as_ref() != Some(&dtype)
+        {
+            return None;
+        }
+    }
+    if dtype.is_integer() {
+        let value = integer_literal_value(expr_arena.get(literal))?;
+        if !dtype.value_within_range(AnyValue::Int64(value)) {
+            return None;
+        }
+    }
+    Some((column, literal, dtype))
 }
 
 /// `(x + c).count()` -> `x.count()` for a numeric column `x` and a literal `c`. The same for
@@ -108,14 +137,7 @@ fn count_of_column_with_literal(
     else {
         return None;
     };
-    let (column, _) = column_with_literal(*input, expr_arena)?;
-    let dtype = expr_arena
-        .get(*input)
-        .to_dtype(&ToFieldContext::new(expr_arena, schema))
-        .ok()?;
-    if !dtype.is_primitive_numeric() {
-        return None;
-    }
+    let (column, _, _) = column_with_literal(*input, expr_arena, schema)?;
     Some(AExpr::Agg(IRAggExpr::Count {
         input: column,
         include_nulls: *include_nulls,
@@ -137,17 +159,15 @@ fn sum_of_column_with_literal(
         return None;
     };
     let (input, null_on_empty) = (*input, *null_on_empty);
-    let (column, literal) = column_with_literal(input, expr_arena)?;
+    let (column, literal, dtype) = column_with_literal(input, expr_arena, schema)?;
     let AExpr::BinaryExpr { left, op, .. } = expr_arena.get(input) else {
         unreachable!()
     };
     let (left, op) = (*left, *op);
 
     let ctx = ToFieldContext::new(expr_arena, schema);
-    let column_dtype = expr_arena.get(column).to_dtype(&ctx).ok()?;
-    let dtype = expr_arena.get(input).to_dtype(&ctx).ok()?;
     let out_dtype = expr_arena.get(expr_node).to_dtype(&ctx).ok()?;
-    if !column_dtype.is_integer() || !dtype.is_integer() || !out_dtype.is_integer() {
+    if !dtype.is_integer() || !out_dtype.is_integer() {
         return None;
     }
 
@@ -157,11 +177,6 @@ fn sum_of_column_with_literal(
             dtype: dtype.clone(),
             options: CastOptions::Overflowing,
         })
-    };
-    let sum_input = if column_dtype == dtype {
-        column
-    } else {
-        cast(column, &dtype, expr_arena)
     };
     let literal = cast(literal, &out_dtype, expr_arena);
     let count = expr_arena.add(AExpr::Agg(IRAggExpr::Count {
@@ -175,7 +190,7 @@ fn sum_of_column_with_literal(
         right: literal,
     });
     let sum = expr_arena.add(AExpr::Agg(IRAggExpr::Sum {
-        input: sum_input,
+        input: column,
         null_on_empty,
     }));
     let (left, right) = if column == left {

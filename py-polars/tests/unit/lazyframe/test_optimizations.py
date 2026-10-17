@@ -253,6 +253,19 @@ def test_sum_of_column_with_literal(engine: EngineType, dtype: pl.DataType) -> N
         assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
 
 
+def test_sum_of_column_with_literal_that_changes_dtype() -> None:
+    x = pl.col("x")
+    lf = pl.LazyFrame({"x": pl.Series([2**63, 1], dtype=pl.UInt64)})
+    q = lf.select(
+        a=(x + -1).count() + 1,
+        b=(x + -1).sum() + 1,
+        c=(x.cast(pl.Int64, strict=False) + 1).sum(),
+        d=(x + 2**64).count(),
+    )
+    no_simplify = QueryOptFlags(simplify_expression=False)
+    assert_frame_equal(q.collect(), q.collect(optimizations=no_simplify))
+
+
 def test_drop_nulls_followed_by_len() -> None:
     lf = pl.LazyFrame({"group": [0, 0, 0, 1, 2], "val": [6, 0, None, None, 5]})
 
