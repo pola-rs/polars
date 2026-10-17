@@ -19,6 +19,7 @@ from polars.functions.as_datatype import (
     concat_str,
     duration,
     format,
+    from_year_week_day,
     list,
     struct,
 )
@@ -157,6 +158,7 @@ __all__ = [
     "fold",
     "format",
     "from_epoch",
+    "from_year_week_day",
     "head",
     "implode",
     "int_range",
