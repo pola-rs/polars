@@ -101,6 +101,15 @@ impl TimeUnit {
             TimeUnit::Milliseconds => datetime_to_timestamp_ms(dt),
         }
     }
+
+    /// The naive UTC datetime `dt` as a timestamp in this unit, if it fits in an [`i64`].
+    #[inline]
+    pub(crate) fn datetime_to_timestamp_opt(self, dt: NaiveDateTime) -> Option<i64> {
+        match self {
+            TimeUnit::Nanoseconds => dt.and_utc().timestamp_nanos_opt(),
+            TimeUnit::Microseconds | TimeUnit::Milliseconds => Some(self.datetime_to_timestamp(dt)),
+        }
+    }
 }
 
 #[cfg(any(feature = "rows", feature = "object"))]
