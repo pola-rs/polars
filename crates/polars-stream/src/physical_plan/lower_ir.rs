@@ -786,6 +786,7 @@ fn lower_ir_inner(
             PhysNodeKind::Zip {
                 inputs,
                 zip_behavior,
+                can_broadcast: None,
             }
         },
 
@@ -1942,6 +1943,7 @@ fn lower_ir_inner(
                             PhysNodeKind::Zip {
                                 inputs: trans_inputs,
                                 zip_behavior: ZipBehavior::Broadcast,
+                                can_broadcast: None,
                             },
                         ));
 

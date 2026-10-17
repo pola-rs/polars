@@ -470,3 +470,15 @@ def test_log_metrics_reports_query_io_time(
     assert " IO active: " in header
     assert " rx, " in header
     assert " tx), detailed breakdown:" in header
+
+
+def test_streaming_mismatched_length_1_row_29924() -> None:
+    lf = pl.LazyFrame({"x1": [1]}).with_columns(foo=pl.lit(pl.Series([1, 2])))
+    with pytest.raises(pl.exceptions.ShapeError):
+        lf.collect(engine="streaming")
+
+    lf_match = pl.LazyFrame({"x1": [1]}).with_columns(foo=pl.lit(pl.Series([2])))
+    assert_frame_equal(
+        lf_match.collect(engine="streaming"),
+        pl.DataFrame({"x1": [1], "foo": [2]}),
+    )
