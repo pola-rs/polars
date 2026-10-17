@@ -21,7 +21,12 @@ from polars.testing.parametric.strategies.core import column, dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
+    from polars._typing import (
+        AsofJoinStrategy,
+        JoinBuildSide,
+        JoinStrategy,
+        MaintainOrderJoin,
+    )
     from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -978,3 +983,36 @@ def test_merge_join_set_sorted_key() -> None:
     expected = q.collect(engine="in-memory")
     assert expected.height == 4
     assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize("build_side", ["force_left", "force_right"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
+def test_streaming_join_unmatched_build_rows_single_key(
+    how: JoinStrategy,
+    build_side: JoinBuildSide,
+    nulls_equal: bool,
+    maintain_order: MaintainOrderJoin,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Small morsels so the unmatched rows of a table are emitted in parts.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+    i = pl.int_range(300)
+    left = pl.select(k=pl.when(i % 7 != 0).then(i % 50), v=i).lazy()
+    i = pl.int_range(60)
+    # Both sides have keys without a match.
+    right = pl.select(k=pl.when(i % 5 != 0).then(i % 25 + 30), w=i).lazy()
+    q = left.join(
+        right,
+        on="k",
+        how=how,
+        build_side=build_side,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=maintain_order != "none",
+    )
