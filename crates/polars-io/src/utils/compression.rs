@@ -384,6 +384,13 @@ impl ByteSourceReader<ReaderSource> {
             _ => Self::try_new(ReaderSource::Memory(Cursor::new(slice)), compression),
         }
     }
+
+    /// A reader over bytes that are known to be uncompressed, e.g. already decompressed. Unlike
+    /// [`Self::from_memory`], it does not look for compression magic bytes, which text may start
+    /// with.
+    pub fn from_uncompressed_memory(slice: Buffer<u8>) -> Self {
+        Self::UncompressedMemory { slice, offset: 0 }
+    }
 }
 
 #[cfg(feature = "decompress")]
