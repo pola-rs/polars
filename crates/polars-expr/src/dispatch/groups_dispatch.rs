@@ -2,8 +2,9 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::array::PrimitiveArray;
-use polars_arrow::bitmap::Bitmap;
 use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::offset::OffsetsBuffer;
 use polars_arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
@@ -11,8 +12,9 @@ use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
-    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions,
-    GroupsType, IDX_DTYPE, IntoColumn,
+    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, ExplodeOptions,
+    Float64Chunked, GroupPositions, GroupsType, IDX_DTYPE, IntoColumn, IntoSeries, LargeListArray,
+    ListChunked, explode_with_row_offsets,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -503,6 +505,165 @@ pub fn drop_nulls<'a>(
     drop_items(ac, &predicate)
 }
 
+pub fn explode<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    options: ExplodeOptions,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 1);
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    ac.set_groups_for_undefined_agg_states();
+
+    if matches!(ac.agg_state(), AggState::NotAggregated(_))
+        && is_nested(ac.agg_state().flat_dtype())
+        && explode_slice_groups(&mut ac, options)?
+    {
+        return Ok(ac);
+    }
+
+    let agg = match ac.agg_state() {
+        AggState::AggregatedScalar(c) => c.as_materialized_series().to_unit_list(),
+        _ => ac.aggregated().list()?.clone(),
+    };
+    let out = explode_within_lists(&agg, options)?;
+
+    ac.with_update_groups(UpdateGroups::WithSeriesLen);
+    ac.with_values_and_args(out.into_column(), true, None, false, false)?;
+    Ok(ac)
+}
+
+fn is_nested(dtype: &DataType) -> bool {
+    #[cfg(feature = "dtype-array")]
+    return dtype.is_list() || dtype.is_array();
+    #[cfg(not(feature = "dtype-array"))]
+    return dtype.is_list();
+}
+
+/// Slice groups of a flat column map to slices of the exploded column, so rolling
+/// windows stay lazy. Returns `false` for other group types.
+fn explode_slice_groups(
+    ac: &mut AggregationContext,
+    options: ExplodeOptions,
+) -> PolarsResult<bool> {
+    ac.groups();
+    let GroupsType::Slice {
+        groups: slices,
+        overlapping,
+        monotonic,
+    } = &**ac.groups.as_ref()
+    else {
+        return Ok(false);
+    };
+    let (values, row_offsets) =
+        explode_with_row_offsets(ac.flat_naive().as_materialized_series(), options)?;
+    let row_offsets = row_offsets.as_slice();
+    let slices = slices
+        .iter()
+        .map(|[start, len]| {
+            let lo = row_offsets[*start as usize];
+            let hi = row_offsets[(*start + *len) as usize];
+            [lo as IdxSize, (hi - lo) as IdxSize]
+        })
+        .collect();
+    let groups = GroupsType::new_slice(slices, *overlapping, *monotonic).into_sliceable();
+
+    ac.state = AggState::NotAggregated(values.into_column());
+    ac.with_groups(groups);
+    Ok(true)
+}
+
+/// Explode each row of a `list[list[T]]` or `list[array[T]]` into a `list[T]` row.
+fn explode_within_lists(ca: &ListChunked, options: ExplodeOptions) -> PolarsResult<ListChunked> {
+    if !is_nested(ca.inner_dtype()) {
+        return Ok(ca.clone());
+    }
+
+    let ca = ca.rechunk();
+    let arr = ca.downcast_as_array();
+    let outer = arr.offsets().as_slice();
+    let (first, last) = (outer[0] as usize, outer[outer.len() - 1] as usize);
+    // SAFETY: the inner dtype matches the child array.
+    let mut rows = unsafe {
+        Series::from_chunks_and_dtype_unchecked(
+            ca.name().clone(),
+            vec![arr.values().sliced(first, last - first)],
+            ca.inner_dtype(),
+        )
+    };
+    if let Ok(inner) = rows.list()
+        && null_rows_are_empty(inner.downcast_as_array())
+    {
+        // Lets explode reuse the values buffer when the options allow it.
+        let mut inner = inner.clone();
+        inner.set_fast_explode();
+        rows = inner.into_series();
+    }
+    let (mut values, row_offsets) = explode_with_row_offsets(&rows, options)?;
+    let row_offsets = row_offsets.as_slice();
+    let mut offsets = outer
+        .iter()
+        .map(|o| row_offsets[*o as usize - first])
+        .collect::<Vec<_>>();
+
+    // Null groups stay null rows; drop any values they span.
+    let validity = arr.validity().filter(|v| v.unset_bits() > 0).cloned();
+    if let Some(validity) = &validity {
+        let hides_values = offsets
+            .windows(2)
+            .zip(validity.iter())
+            .any(|(w, valid)| !valid && w[1] > w[0]);
+        if hides_values {
+            (values, offsets) = drop_null_rows(&values, &offsets, validity)?;
+        }
+    }
+
+    let dtype = DataType::List(Box::new(values.dtype().clone()));
+    // Physical chunk, as List chunks store it; `to_arrow` would convert logical types.
+    let values = values.rechunk().array_ref(0).clone();
+    let arr = LargeListArray::new(
+        LargeListArray::default_datatype(values.dtype().clone()),
+        // SAFETY: monotonically increasing.
+        unsafe { OffsetsBuffer::new_unchecked(offsets.into()) },
+        values,
+        validity,
+    );
+    // SAFETY: the arrow dtype matches the physical `dtype`.
+    Ok(unsafe { ListChunked::from_chunks_and_dtype(ca.name().clone(), vec![arr.boxed()], dtype) })
+}
+
+/// Whether no null row spans values, so the values buffer is the exploded output.
+fn null_rows_are_empty(arr: &LargeListArray) -> bool {
+    arr.validity().is_none_or(|v| {
+        arr.offsets()
+            .lengths()
+            .zip(v.iter())
+            .all(|(len, valid)| valid || len == 0)
+    })
+}
+
+/// Remove the values of null rows, returning the filtered values and new offsets.
+fn drop_null_rows(
+    values: &Series,
+    offsets: &[i64],
+    validity: &Bitmap,
+) -> PolarsResult<(Series, Vec<i64>)> {
+    let mut keep = MutableBitmap::with_capacity(values.len());
+    let mut new_offsets = Vec::with_capacity(offsets.len());
+    let mut length_so_far = 0;
+    new_offsets.push(length_so_far);
+    for (i, w) in offsets.windows(2).enumerate() {
+        let len = w[1] - w[0];
+        let is_valid = validity.get_bit(i);
+        keep.extend_constant(len as usize, is_valid);
+        length_so_far += if is_valid { len } else { 0 };
+        new_offsets.push(length_so_far);
+    }
+    let keep = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, keep.freeze());
+    Ok((values.filter(&keep)?, new_offsets))
+}
+
 pub fn quantile<'a>(
     inputs: &[Arc<dyn PhysicalExpr>],
     df: &DataFrame,
@@ -915,4 +1076,50 @@ pub fn backward_fill_null<'a>(
         arg_backward_fill!(iter, validity, length),
         arg_backward_fill!(iter, validity, length),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_arrow::array::{Array, Int64Array};
+    use polars_core::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn test_explode_within_lists_null_rows() {
+        // Rows: [1, 2], [3], [], [4, 5].
+        let inner = LargeListArray::new(
+            LargeListArray::default_datatype(ArrowDataType::Int64),
+            vec![0i64, 2, 3, 3, 5].try_into().unwrap(),
+            Int64Array::from_slice([1, 2, 3, 4, 5]).boxed(),
+            None,
+        );
+        // The null group still spans rows `[3]` and `[]`.
+        let outer = LargeListArray::new(
+            LargeListArray::default_datatype(inner.dtype().clone()),
+            vec![0i64, 1, 3, 4].try_into().unwrap(),
+            inner.boxed(),
+            Some(Bitmap::from_iter([true, false, true])),
+        );
+        let ca = ListChunked::with_chunk("a".into(), outer);
+
+        for empty_as_null in [false, true] {
+            for keep_nulls in [false, true] {
+                let options = ExplodeOptions {
+                    empty_as_null,
+                    keep_nulls,
+                };
+                let out = explode_within_lists(&ca, options).unwrap();
+                let expected: ListChunked = ca
+                    .series_iter()
+                    .map(|s| s.map(|s| s.explode(options).unwrap()))
+                    .collect();
+                assert_eq!(
+                    out.rechunk().downcast_as_array().offsets().as_slice(),
+                    &[0, 2, 2, 4]
+                );
+                assert!(out.into_series().equals_missing(&expected.into_series()));
+            }
+        }
+    }
 }
