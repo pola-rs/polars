@@ -3,8 +3,7 @@ use std::sync::Arc;
 use polars_arrow::compute::utils::combine_validities_and;
 use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{
-    Column, DataType, ExplodeOptions, IDX_DTYPE, Int64Chunked, IntoColumn, ListChunked,
-    SortOptions,
+    Column, DataType, ExplodeOptions, IDX_DTYPE, Int64Chunked, IntoColumn, ListChunked, SortOptions,
 };
 use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
