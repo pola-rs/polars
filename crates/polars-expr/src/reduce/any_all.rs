@@ -38,6 +38,11 @@ impl GroupedReduction for AnyIgnoreNullGroupedReduction {
         self.values.resize(num_groups as usize, false);
     }
 
+    fn is_group_done(&self, group_idx: IdxSize) -> bool {
+        // Locked to `true` as soon as a single true value has been seen.
+        self.values.get(group_idx as usize)
+    }
+
     fn update_group(
         &mut self,
         values: &[&Column],
@@ -135,6 +140,11 @@ impl GroupedReduction for AllIgnoreNullGroupedReduction {
 
     fn resize(&mut self, num_groups: IdxSize) {
         self.values.resize(num_groups as usize, true);
+    }
+
+    fn is_group_done(&self, group_idx: IdxSize) -> bool {
+        // Locked to `false` as soon as a single false value has been seen.
+        !self.values.get(group_idx as usize)
     }
 
     fn update_group(
@@ -238,6 +248,11 @@ impl GroupedReduction for AnyKleeneNullGroupedReduction {
     fn resize(&mut self, num_groups: IdxSize) {
         self.seen_true.resize(num_groups as usize, false);
         self.seen_null.resize(num_groups as usize, false);
+    }
+
+    fn is_group_done(&self, group_idx: IdxSize) -> bool {
+        // Kleene `any` is `true` (overriding any nulls) once a true is seen.
+        self.seen_true.get(group_idx as usize)
     }
 
     fn update_group(
@@ -364,6 +379,11 @@ impl GroupedReduction for AllKleeneNullGroupedReduction {
     fn resize(&mut self, num_groups: IdxSize) {
         self.seen_false.resize(num_groups as usize, false);
         self.seen_null.resize(num_groups as usize, false);
+    }
+
+    fn is_group_done(&self, group_idx: IdxSize) -> bool {
+        // Kleene `all` is `false` (overriding any nulls) once a false is seen.
+        self.seen_false.get(group_idx as usize)
     }
 
     fn update_group(
