@@ -63,6 +63,24 @@ def test_lit_numpy_array_input() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_lit_numpy_zero_dim_array_input_29821() -> None:
+    # a 0-d array is a scalar literal, like the equivalent NumPy scalar
+    df = pl.DataFrame({"a": [1, 2]})
+    for value in (np.array(5, dtype=np.int16), np.array(1.5), np.array("x")):
+        assert_frame_equal(
+            df.with_columns(b=pl.lit(value)),
+            df.with_columns(b=pl.lit(value[()])),
+        )
+    assert_frame_equal(
+        df.with_columns(b=np.array(5)),
+        df.with_columns(b=pl.lit(np.int64(5))),
+    )
+    assert_frame_equal(
+        df.with_columns(b=pl.lit(np.array(5), dtype=pl.UInt8)),
+        df.with_columns(b=pl.lit(5, dtype=pl.UInt8)),
+    )
+
+
 def test_lit_ambiguous_datetimes_11379() -> None:
     df = pl.DataFrame(
         {

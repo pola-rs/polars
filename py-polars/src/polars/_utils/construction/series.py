@@ -232,6 +232,14 @@ def sequence_to_pyseries(
         # generic default dtype
         python_dtype = type(value)
 
+        # a 0-d array is a scalar; infer as the equivalent NumPy scalar
+        if (
+            _check_for_numpy(value)
+            and isinstance(value, np.ndarray)
+            and value.ndim == 0
+        ):
+            python_dtype = type(value[()])
+
     # temporal branch
     if issubclass(python_dtype, tuple(py_temporal_types)):
         if dtype is None:
@@ -274,6 +282,10 @@ def sequence_to_pyseries(
         and isinstance(value, np.ndarray)
         and len(value.shape) == 1
     ):
+        if not all(isinstance(v, np.ndarray) and v.ndim == 1 for v in values):
+            # mixed with other values (e.g. 0-d arrays); use the generic converter
+            return PySeries.new_from_any_values(name, values, strict=strict)
+
         n_elems = len(value)
         if all(len(v) == n_elems for v in values):
             # can take (much) faster path if all lists are the same length

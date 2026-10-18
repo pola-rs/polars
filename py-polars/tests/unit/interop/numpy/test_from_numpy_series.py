@@ -119,3 +119,34 @@ def test_from_numpy_unaligned_ndarray_view_27794() -> None:
     assert not view.flags["ALIGNED"]
     s = pl.Series(view)
     assert s.to_list() == view.tolist()
+
+
+def test_series_from_zero_dim_ndarrays_29821() -> None:
+    # 0-d arrays in a sequence are scalars, inferred like the equivalent NumPy scalar
+    s = pl.Series("a", [np.array(1, dtype=np.int8), None, np.array(3, dtype=np.int8)])
+    assert s.dtype == pl.Int8
+    assert s.to_list() == [1, None, 3]
+
+    s = pl.Series([np.array(1.5, dtype=np.float32)])
+    assert s.dtype == pl.Float32
+    assert s.to_list() == [1.5]
+
+    s = pl.Series([np.array("x")])
+    assert s.dtype == pl.String
+    assert s.to_list() == ["x"]
+
+    # unmasked 0-d masked arrays unwrap; `np.ma.masked` must not recurse forever
+    assert pl.Series([np.ma.array(1)]).to_list() == [1]
+    with pytest.raises(TypeError, match="cannot convert 0-d array"):
+        pl.Series([np.ma.masked])
+    with pytest.raises(TypeError, match="cannot convert 0-d array"):
+        pl.from_dicts([{"a": np.ma.masked_array(1, mask=True)}])
+
+
+def test_series_from_1d_ndarrays_mixed_with_other_values_29821() -> None:
+    s = pl.Series([np.array([1, 2]), None])
+    assert s.dtype == pl.List(pl.Int64)
+    assert s.to_list() == [[1, 2], None]
+
+    with pytest.raises(TypeError, match="unexpected value"):
+        pl.Series([np.array([1]), np.array(1)])

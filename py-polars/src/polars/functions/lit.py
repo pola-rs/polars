@@ -191,6 +191,9 @@ def lit(
         return wrap_expr(plr.lit(value, allow_object, is_scalar=False))
 
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
+        # a 0-d array is a scalar; treat it as the equivalent NumPy scalar
+        if value.ndim == 0 and not isinstance(scalar := value[()], np.ndarray):
+            return lit(scalar, dtype=dtype, allow_object=allow_object)
         return lit(pl.Series("literal", value, dtype=dtype))
 
     elif _check_for_torch(value) and isinstance(value, torch.Tensor):

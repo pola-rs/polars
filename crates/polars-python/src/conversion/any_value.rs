@@ -525,6 +525,25 @@ pub(crate) fn py_object_to_any_value(
         }
     }
 
+    fn get_ndarray(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        let py = ob.py();
+        if ob.getattr(intern!(py, "ndim"))?.extract::<usize>()? == 0 {
+            // A 0-d array is a scalar, so convert it like the equivalent NumPy scalar.
+            let scalar = ob.get_item(PyTuple::empty(py))?;
+            // Some subclasses return a 0-d array again (e.g. `np.ma.masked`).
+            if scalar.is_instance(&ob.get_type())? {
+                return Err(PyTypeError::new_err(format!(
+                    "cannot convert 0-d array of type {} to a scalar",
+                    ob.get_type().name()?
+                )));
+            }
+            py_object_to_any_value(&scalar, strict, true, None)
+        } else {
+            // will convert via Series -> mmap_numpy_array
+            get_list(ob, strict)
+        }
+    }
+
     fn get_list_from_series(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let s = super::get_series(ob)?;
         Ok(AnyValue::List(s))
@@ -647,8 +666,7 @@ pub(crate) fn py_object_to_any_value(
             static NDARRAY_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if let Ok(ndarray_type) = NDARRAY_TYPE.import(py, "numpy", "ndarray") {
                 if ob.is_instance(ndarray_type)? {
-                    // will convert via Series -> mmap_numpy_array
-                    return Ok(get_list as InitFn);
+                    return Ok(get_ndarray as InitFn);
                 }
             }
             static DECIMAL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();

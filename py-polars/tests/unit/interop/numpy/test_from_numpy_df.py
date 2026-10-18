@@ -192,3 +192,32 @@ def test_from_numpy_unaligned_structured_array_27794() -> None:
         df = pl.DataFrame(arr)
         assert df["a"].to_list() == arr["a"].tolist()
         assert df["b"].to_list() == arr["b"].tolist()
+
+
+def test_zero_dim_ndarray_as_scalar_29821() -> None:
+    # 0-d arrays are scalars, and convert like the equivalent NumPy scalar
+    expected = pl.DataFrame({"a": [1]})
+    assert_frame_equal(pl.from_dicts([{"a": np.array(1)}]), expected)
+    assert_frame_equal(pl.DataFrame([{"a": np.array(1)}]), expected)
+    assert_frame_equal(pl.DataFrame({"a": np.array(1)}), expected)
+    assert_frame_equal(pl.Series("a", [np.array(1)]).to_frame(), expected)
+    assert_frame_equal(
+        pl.DataFrame([{"a": np.int64(1)}, {"a": np.array(2)}]),
+        pl.DataFrame({"a": [1, 2]}),
+    )
+    assert_frame_equal(
+        pl.from_dicts([{"a": np.array(1.5)}, {"a": np.array("x")}], strict=False),
+        pl.from_dicts([{"a": np.float64(1.5)}, {"a": np.str_("x")}], strict=False),
+    )
+
+    # broadcast against other columns
+    assert_frame_equal(
+        pl.DataFrame({"a": np.array(1), "b": [1, 2]}),
+        pl.DataFrame({"a": [1, 1], "b": [1, 2]}),
+    )
+
+
+def test_zero_dim_ndarray_mixed_with_list_29821() -> None:
+    # mixing scalars and lists is an error, as with Python ints and lists
+    with pytest.raises(pl.exceptions.SchemaError, match="supertype"):
+        pl.DataFrame([{"a": np.array([1])}, {"a": np.array(1)}])
