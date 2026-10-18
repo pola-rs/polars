@@ -21,6 +21,7 @@ import polars as pl
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from tests.unit.io.test_iceberg import (  # noqa: F401
+    _pyiceberg_planner,
     new_iceberg_table,
     sqlcatalog_uses_null_pool_connections,
 )
