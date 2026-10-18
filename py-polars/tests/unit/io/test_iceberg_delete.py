@@ -20,7 +20,10 @@ from pyiceberg.types import (
 import polars as pl
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal
-from tests.unit.io.test_iceberg import new_iceberg_table
+from tests.unit.io.test_iceberg import (  # noqa: F401
+    new_iceberg_table,
+    sqlcatalog_uses_null_pool_connections,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
