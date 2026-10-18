@@ -66,7 +66,7 @@ impl IR {
 
             Sort { by_column, .. } => Exprs::slice(by_column),
             Select { expr, .. } => Exprs::slice(expr),
-            HStack { exprs, .. } => Exprs::slice(exprs),
+            HStack { exprs, .. } | Window { exprs, .. } => Exprs::slice(exprs),
 
             GroupBy { keys, aggs, .. } => Exprs::double_slice(keys, aggs),
 
@@ -127,7 +127,7 @@ impl IR {
 
             Sort { by_column, .. } => ExprsMut::slice(by_column),
             Select { expr, .. } => ExprsMut::slice(expr),
-            HStack { exprs, .. } => ExprsMut::slice(exprs),
+            HStack { exprs, .. } | Window { exprs, .. } => ExprsMut::slice(exprs),
 
             GroupBy { keys, aggs, .. } => ExprsMut::double_slice(keys, aggs),
 
@@ -191,6 +191,7 @@ impl IR {
             } => Inputs::double(*input_left, *input_right),
             Gather { input, idxs, .. } => Inputs::double(*input, *idxs),
             HStack { input, .. } => Inputs::single(*input),
+            Window { input, .. } => Inputs::single(*input),
             Distinct { input, .. } => Inputs::single(*input),
             MapFunction { input, .. } => Inputs::single(*input),
             Sink { input, .. } => Inputs::single(*input),
@@ -230,6 +231,7 @@ impl IR {
             } => InputsMut::double(input_left, input_right),
             Gather { input, idxs, .. } => InputsMut::double(input, idxs),
             HStack { input, .. } => InputsMut::single(input),
+            Window { input, .. } => InputsMut::single(input),
             Distinct { input, .. } => InputsMut::single(input),
             MapFunction { input, .. } => InputsMut::single(input),
             Sink { input, .. } => InputsMut::single(input),
@@ -398,6 +400,22 @@ impl<'a> Exprs<'a> {
                 .chain(on.iter().map(pair_rhs as _)),
         )
     }
+
+    /// [`Self::pair_sides`], then `extra` if there is one.
+    pub(crate) fn pair_sides_then(on: &'a [(ExprIR, ExprIR)], extra: Option<&'a ExprIR>) -> Self {
+        if extra.is_none() {
+            return Self::pair_sides(on);
+        }
+        Self::Boxed(Box::new(
+            on.iter()
+                .map(pair_lhs as fn(&'a (ExprIR, ExprIR)) -> &'a ExprIR)
+                .chain(
+                    on.iter()
+                        .map(pair_rhs as fn(&'a (ExprIR, ExprIR)) -> &'a ExprIR),
+                )
+                .chain(extra),
+        ))
+    }
 }
 
 fn pair_lhs((lhs, _): &(ExprIR, ExprIR)) -> &ExprIR {
@@ -450,8 +468,17 @@ impl<'a> ExprsMut<'a> {
     /// Collects the borrows because two disjoint `&mut` iterators over one slice of pairs
     /// cannot be built in safe Rust.
     pub(crate) fn pair_sides(on: &'a mut [(ExprIR, ExprIR)]) -> Self {
+        Self::pair_sides_then(on, None)
+    }
+
+    /// [`Self::pair_sides`], then `extra` if there is one. Must match
+    /// [`Exprs::pair_sides_then`].
+    pub(crate) fn pair_sides_then(
+        on: &'a mut [(ExprIR, ExprIR)],
+        extra: Option<&'a mut ExprIR>,
+    ) -> Self {
         let (lhs, rhs): (Vec<_>, Vec<_>) = on.iter_mut().map(|(l, r)| (l, r)).unzip();
-        Self::Boxed(Box::new(lhs.into_iter().chain(rhs)))
+        Self::Boxed(Box::new(lhs.into_iter().chain(rhs).chain(extra)))
     }
 }
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;

@@ -69,7 +69,8 @@ def test_rank_funcs_with_partition(df_test: pl.DataFrame) -> None:
         },
     )
 
-    # We expect to see differences (in the same query) when there *are* ties
+    # We expect to see differences (in the same query) when there *are* ties;
+    # ROW_NUMBER also orders by `id`, as the order of tied rows is not defined
     df = pl.DataFrame(
         {
             "id": [1, 2, 3, 4, 5, 6, 7, 8],
@@ -77,6 +78,16 @@ def test_rank_funcs_with_partition(df_test: pl.DataFrame) -> None:
             "value": [10, 10, 20, 20, 30, 30, 30, 30],
         }
     )
+    query = """
+        SELECT
+            category,
+            value,
+            ROW_NUMBER() OVER (PARTITION BY category ORDER BY value, id) AS row_num,
+            RANK() OVER (PARTITION BY category ORDER BY value) AS rank,
+            DENSE_RANK() OVER (PARTITION BY category ORDER BY value) AS dense
+        FROM self
+        ORDER BY category, value, id
+    """
     assert_sql_matches(
         df,
         query=query,
@@ -117,24 +128,150 @@ def test_rank_funcs_desc(df_test: pl.DataFrame) -> None:
     )
 
 
-def test_rank_funcs_require_order_by(df_test: pl.DataFrame) -> None:
+def test_rank_funcs_without_order_by(df_test: pl.DataFrame) -> None:
     # ROW_NUMBER without ORDER BY is fine (uses arbitrary order)
     query_row_num = "SELECT id, ROW_NUMBER() OVER () FROM self"
     result = df_test.sql(query_row_num)
     assert result.height == 7  # Just verify it runs
 
-    # RANK without ORDER BY should error
-    query_rank = "SELECT id, RANK() OVER (PARTITION BY category) FROM self"
-    with pytest.raises(
-        pl.exceptions.SQLSyntaxError,
-        match="RANK requires an OVER clause with ORDER BY",
-    ):
-        df_test.sql(query_rank)
+    # without ORDER BY, all rows of the partition are peers
+    query = """
+        SELECT
+            id,
+            RANK() OVER (PARTITION BY category) AS rank,
+            DENSE_RANK() OVER () AS dense_rank,
+            PERCENT_RANK() OVER (PARTITION BY category) AS percent_rank,
+            CUME_DIST() OVER () AS cume_dist
+        FROM self
+        ORDER BY id
+    """
+    assert_sql_matches(df_test, query=query, compare_with="duckdb", check_dtypes=True)
 
-    # DENSE_RANK without ORDER BY should error
-    query_dense = "SELECT id, DENSE_RANK() OVER () FROM self"
-    with pytest.raises(
-        pl.exceptions.SQLSyntaxError,
-        match="DENSE_RANK requires an OVER clause with ORDER BY",
-    ):
-        df_test.sql(query_dense)
+
+@pytest.fixture
+def df_ties() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6, 7, 8],
+            "g": [1, 1, 1, 1, 2, 2, None, 3],
+            "x": [10, None, 20, 10, None, None, 3, 1],
+            "y": [1, 2, 2, 1, None, 3, 3, None],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        "x",
+        "x DESC",
+        "x NULLS FIRST",
+        "x DESC NULLS LAST",
+        "x, y DESC",
+        "x DESC NULLS LAST, y NULLS FIRST",
+        # constant keys don't change the order
+        "x, 1",
+        "LOWER('A'), x DESC",
+    ],
+)
+@pytest.mark.parametrize("partition_by", ["", "PARTITION BY g"])
+def test_rank_funcs_nulls_and_ties(
+    df_ties: pl.DataFrame, partition_by: str, order_by: str
+) -> None:
+    query = f"""
+        SELECT
+            id,
+            RANK() OVER w AS rank,
+            DENSE_RANK() OVER w AS dense_rank,
+            PERCENT_RANK() OVER w AS percent_rank,
+            CUME_DIST() OVER w AS cume_dist
+        FROM self
+        WINDOW w AS ({partition_by} ORDER BY {order_by})
+        ORDER BY id
+    """
+    assert_sql_matches(
+        df_ties,
+        query=query,
+        compare_with="duckdb",
+        check_dtypes=True,
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_rank_funcs_empty_input(df_ties: pl.DataFrame) -> None:
+    query = """
+        SELECT
+            RANK() OVER () AS rank,
+            PERCENT_RANK() OVER () AS percent_rank,
+            CUME_DIST() OVER (ORDER BY x) AS cume_dist,
+            NTILE(2) OVER (PARTITION BY g ORDER BY id) AS ntile
+        FROM self
+    """
+    assert_sql_matches(
+        df_ties.clear(),
+        query=query,
+        compare_with="duckdb",
+        check_dtypes=True,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("buckets", [1, 2, 3, 5, 9])
+def test_ntile(df_ties: pl.DataFrame, buckets: int) -> None:
+    query = f"""
+        SELECT
+            id,
+            NTILE({buckets}) OVER (ORDER BY id) AS a,
+            NTILE({buckets}) OVER (PARTITION BY g ORDER BY x DESC, id) AS b
+        FROM self
+        ORDER BY id
+    """
+    assert_sql_matches(
+        df_ties,
+        query=query,
+        compare_with="duckdb",
+        check_dtypes=True,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("window_fn", "error"),
+    [
+        ("NTILE(0) OVER (ORDER BY id)", "NTILE expects a positive integer"),
+        ("NTILE(x) OVER (ORDER BY id)", "NTILE expects a positive integer"),
+        ("NTILE() OVER (ORDER BY id)", r"NTILE expects 1 argument \(found 0\)"),
+        ("NTILE(2)", "NTILE requires an OVER clause"),
+        ("CUME_DIST()", "CUME_DIST requires an OVER clause"),
+        ("RANK(x) OVER (ORDER BY id)", r"RANK expects 0 arguments \(found 1\)"),
+    ],
+)
+def test_rank_funcs_errors(df_ties: pl.DataFrame, window_fn: str, error: str) -> None:
+    with pytest.raises(pl.exceptions.SQLSyntaxError, match=error):
+        df_ties.sql(f"SELECT {window_fn} AS a FROM self")
+
+
+@pytest.mark.parametrize("func", ["RANK()", "DENSE_RANK()", "PERCENT_RANK()"])
+def test_rank_funcs_order_by_count_after_group_by(func: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
+    assert_sql_matches(
+        df,
+        query=f"SELECT g, {func} OVER (ORDER BY COUNT(*) DESC) AS r FROM self GROUP BY g ORDER BY g",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("func", ["RANK()", "DENSE_RANK()", "PERCENT_RANK()"])
+@pytest.mark.parametrize("nulls", ["NULLS FIRST", "NULLS LAST"])
+def test_rank_funcs_order_by_group_key(func: str, nulls: str) -> None:
+    df = pl.DataFrame({"g": [1, 2, 2, None]})
+    assert_sql_matches(
+        df,
+        query=f"""
+            SELECT g, {func} OVER (ORDER BY g {nulls}) AS r
+            FROM self GROUP BY g ORDER BY g NULLS LAST
+        """,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )

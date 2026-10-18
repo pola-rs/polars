@@ -1,6 +1,8 @@
 use std::ops::Div;
 
-use arrow::temporal_conversions::{MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY};
+use polars_arrow::temporal_conversions::{
+    MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY,
+};
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 
@@ -285,7 +287,7 @@ pub trait TemporalMethods: AsSeries {
             DataType::Time => {
                 let format = get_strftime_format(format, s.dtype())?;
                 s.time()
-                    .map(|ca| ca.to_string(format.as_str()).into_series())
+                    .map(|ca| Ok(ca.to_string(format.as_str())?.into_series()))?
             },
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => s

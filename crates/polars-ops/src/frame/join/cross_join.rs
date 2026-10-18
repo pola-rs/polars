@@ -2,6 +2,7 @@ use polars_core::utils::{
     _set_partition_size, CustomIterTools, NoNull, accumulate_dataframes_vertical_unchecked,
     concat_df_unchecked, par_iter_bounded, split,
 };
+use polars_defs::join::{CrossJoinOptions, JoinType, MaintainOrderJoin};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
@@ -189,9 +190,12 @@ pub(super) fn fused_cross_filter(
                 unsafe { joined.hstack_mut_unchecked(&right_columns) };
 
                 if !emit_unmatched_left {
-                    cross_join_options.predicate.apply(joined)
+                    cross_join_options.predicate.apply(joined, false)
                 } else {
-                    let mask = cross_join_options.predicate.evaluate(&joined)?;
+                    let mask = cross_join_options
+                        .predicate
+                        .evaluate(&joined)?
+                        .broadcast_owned_to(joined.height())?;
 
                     let len_left = left_chunk.height();
                     debug_assert_eq!(joined.height(), len_left * len_right);

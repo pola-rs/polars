@@ -132,6 +132,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             rechunk: self.rechunk,
             cache: false,
             glob: true,
+            expand_paths: true,
             hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
@@ -145,6 +146,8 @@ impl LazyFileListReader for LazyJsonLineReader {
             deletion_files: None,
             table_statistics: None,
             row_count: None,
+            source_sizes: None,
+            resolve_heavy_sources: None,
         };
 
         let options = NDJsonReadOptions {

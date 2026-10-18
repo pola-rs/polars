@@ -42,15 +42,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Clone polars-iceberg
+        uses: ./.github/actions/clone-polars-iceberg
+
       - name: Set up Rust
         run: rustup component add clippy
+
+      # Add polars-iceberg to Cargo.lock so `--locked` passes. `--workspace` only touches workspace
+      # members; fail if any existing lock entry changed (i.e. anything other than an addition).
+      - name: Add polars-iceberg to Cargo.lock
+        run: |
+          cargo update --workspace
+          git diff --stat Cargo.lock
+          if git diff -U0 Cargo.lock | grep -q '^-[^-]'; then
+            git diff Cargo.lock
+            echo "::error::Updating Cargo.lock for polars-iceberg changed existing entries"
+            exit 1
+          fi
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Run cargo clippy with all features enabled
         run: python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
@@ -72,7 +86,6 @@ jobs:
         with:
           env-vars: ImageVersion
           save-if: ${{ github.event_name == 'push' }}
-          key: ${{ github.ref_name }}
 
       - name: Run cargo clippy
         run: python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
@@ -82,6 +95,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Clone polars-iceberg
+        uses: ./.github/actions/clone-polars-iceberg
 
       - name: Set up Rust
         run: rustup component add rustfmt
@@ -108,6 +124,7 @@ jobs:
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
           POLARS_ALLOW_EXTENSION: '1'
+          POLARS_OVERRIDE_TOTAL_MEMORY_MB: '1000'  # So we don't ask for memory which miri doesn't support
         run: >
           cargo miri test
           --features object

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
 import polars as pl
 from polars.exceptions import (
     ColumnNotFoundError,
+    ComputeError,
     InvalidOperationError,
     SQLInterfaceError,
     SQLSyntaxError,
@@ -114,6 +116,23 @@ def test_join_cross_11927() -> None:
 
     res = pl.sql("SELECT * FROM df1 CROSS JOIN df3 WHERE df1.id = df3.id")
     assert res.collect().is_empty()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_cross_join_filter_decimal_scales_29762(engine: Any) -> None:
+    pv = pl.DataFrame(
+        {"ps_partkey": [1, 2, 3], "value": ["10.50", "2.25", "7.00"]},
+        schema_overrides={"value": pl.Decimal(38, 2)},
+    )
+    src = pl.DataFrame({"v": ["100.00"]}, schema_overrides={"v": pl.Decimal(38, 2)})
+    res = pl.SQLContext(pv=pv, src=src).execute(
+        """
+        WITH gv AS (SELECT SUM(v) * (0.0001 / 30) AS threshold FROM src)
+        SELECT pv.ps_partkey FROM pv CROSS JOIN gv
+        WHERE pv.value > gv.threshold ORDER BY pv.value DESC
+        """
+    )
+    assert res.collect(engine=engine)["ps_partkey"].to_list() == [1, 3, 2]
 
 
 def test_cross_join_unnest_from_table() -> None:
@@ -1624,6 +1643,138 @@ def test_ambiguous_column_detection_in_joins() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        "s.DUID IN (SELECT DUID FROM dd)",
+        "EXISTS (SELECT 1 FROM dd WHERE dd.DUID = s.DUID AND DUID IS NOT NULL)",
+        "s.v = (SELECT MIN(v) FROM (SELECT 1 AS v, DUID FROM dd))",
+    ],
+)
+def test_unqualified_column_in_subquery_after_join(where_clause: str) -> None:
+    # https://github.com/pola-rs/polars/issues/29876
+    s = pl.DataFrame({"DUID": ["A", "B"], "v": [1, 2]})
+    d = pl.DataFrame({"DUID": ["A", "B"], "region": ["X", "Y"]})
+    dd = pl.DataFrame({"DUID": ["A"]})
+
+    res = pl.SQLContext(s=s, d=d, dd=dd).execute(
+        f"""
+        SELECT s.DUID, (SELECT COUNT(DUID) FROM dd) AS n
+        FROM s JOIN d ON s.DUID = d.DUID
+        WHERE {where_clause}
+        """,
+        eager=True,
+    )
+    assert_frame_equal(
+        res,
+        pl.DataFrame({"DUID": ["A"], "n": [1]}),
+        check_dtypes=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        # outer reference that is ambiguous in the outer query
+        "EXISTS (SELECT 1 FROM dd WHERE dd.x = id)",
+        "EXISTS (SELECT 999 AS id FROM dd WHERE dd.x = id)",
+        "EXISTS (SELECT 1 FROM dd, a WHERE dd.x = id)",
+        "s.id IN (SELECT x FROM dd WHERE x = id)",
+        "s.v = (SELECT MIN(x) FROM dd WHERE x = id)",
+        # reference that is ambiguous in the subquery's own join
+        "s.id IN (SELECT id FROM s JOIN d ON s.v = d.v)",
+        "EXISTS (SELECT 1 FROM s JOIN d ON s.v = d.v WHERE id = 1)",
+        "s.id IN (SELECT id FROM s, d)",
+        "EXISTS (SELECT 1 FROM s, d WHERE s.v = d.v AND id = 1)",
+        "s.v = (SELECT MIN(id) FROM s, d)",
+    ],
+)
+def test_ambiguous_column_in_subquery_after_join(where_clause: str) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    dd = pl.DataFrame({"x": [1]})
+    a = pl.DataFrame({"k": [1]})
+
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r'ambiguous reference to column "id" \(use one of: d\."id", s\."id"\)',
+    ):
+        pl.SQLContext(s=s, d=d, dd=dd, a=a).execute(
+            f"SELECT s.id FROM s JOIN d ON s.v = d.v WHERE {where_clause}",
+            eager=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("where_clause", "expected"),
+    [
+        ("EXISTS (SELECT 1 FROM dd WHERE dd.x = s.id)", [1]),
+        ("EXISTS (SELECT 1 FROM dd WHERE dd.x = d.id)", [2]),
+        ("s.id IN (SELECT x FROM dd WHERE x = d.id)", []),
+        ("s.v > (SELECT MIN(x) FROM dd WHERE x = d.id)", [2]),
+    ],
+)
+def test_qualified_outer_column_in_subquery_after_join(
+    where_clause: str, expected: list[int]
+) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    dd = pl.DataFrame({"x": [1, 4]})
+
+    res = pl.SQLContext(s=s, d=d, dd=dd).execute(
+        f"SELECT s.id FROM s JOIN d ON s.v = d.v WHERE {where_clause} ORDER BY s.id",
+        eager=True,
+    )
+    assert res["id"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    "where_clause",
+    [
+        "k IN (SELECT d.id FROM s JOIN d ON s.v = d.v)",
+        "k IN (SELECT d.id FROM s, d WHERE s.v = d.v)",
+        "EXISTS (SELECT 1 FROM s JOIN d ON s.v = d.v WHERE d.id = a.k)",
+        "EXISTS (SELECT 1 FROM s, d WHERE s.v = d.v AND d.id = a.k)",
+        "k = (SELECT MAX(d.id) FROM s JOIN d ON s.v = d.v WHERE d.id = a.k)",
+    ],
+)
+def test_qualified_inner_column_in_subquery_join(where_clause: str) -> None:
+    s = pl.DataFrame({"id": [1, 2], "v": [10, 20]})
+    d = pl.DataFrame({"id": [3, 4], "v": [10, 20]})
+    a = pl.DataFrame({"k": [1, 2, 3, 4]})
+
+    res = pl.SQLContext(s=s, d=d, a=a).execute(
+        f"SELECT k FROM a WHERE {where_clause} ORDER BY k",
+        eager=True,
+    )
+    assert res["k"].to_list() == [3, 4]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id AS k FROM s, d JOIN e USING(id) ORDER BY k",
+        "SELECT k FROM a WHERE k IN (SELECT id FROM s, d JOIN e USING(id)) ORDER BY k",
+    ],
+)
+def test_using_column_in_later_from_entry(query: str) -> None:
+    a = pl.DataFrame({"k": [1, 2, 3, 4]})
+    s = pl.DataFrame({"x": [1]})
+    d = pl.DataFrame({"id": [1, 2]})
+    e = pl.DataFrame({"id": [1, 2]})
+
+    res = pl.SQLContext(a=a, s=s, d=d, e=e).execute(query, eager=True)
+    assert res["k"].to_list() == [1, 2]
+
+    # USING only merges `d.id` and `e.id`, not `s.id`
+    s = pl.DataFrame({"id": [9]})
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r'ambiguous reference to column "id" \(use one of: d\."id", s\."id"\)',
+    ):
+        pl.SQLContext(a=a, s=s, d=d, e=e).execute(query, eager=True)
+
+
 def test_duplicate_column_detection_via_wildcard() -> None:
     # selecting a column explicitly that is already included in a qualified
     # wildcard from the same table should raise a duplicate column error
@@ -1834,9 +1985,7 @@ def test_join_on_invalid_expr() -> None:
         "df1": pl.DataFrame({"a": [1, 2, 3]}),
         "df2": pl.DataFrame({"a": [2, 3, 9]}),
     }
-    with pytest.raises(
-        SQLInterfaceError, match="unsupported join constraint expression"
-    ):
+    with pytest.raises(ComputeError, match="predicates must resolve to boolean"):
         pl.SQLContext(frames, eager=True).execute(
             "SELECT * FROM df1 JOIN df2 ON (df1.a)"
         )
@@ -1951,3 +2100,527 @@ def test_join_predicate_operand_spanning_both_sides() -> None:
         """,
         compare_with="sqlite",
     )
+
+
+@pytest.mark.parametrize(
+    "join_type",
+    [
+        "INNER JOIN",
+        "LEFT JOIN",
+        "RIGHT JOIN",
+        "FULL OUTER JOIN",
+        "SEMI JOIN",
+        "ANTI JOIN",
+    ],
+)
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "TRUE",
+        "FALSE",
+        "NULL",
+        "1 = 1",
+        "1 = 0",
+        "NULL = NULL",
+        "1 < 2",
+        "'13' = 13",
+        "UPPER('x') = 'X'",
+        "(1 = 1) AND (2 > 1)",
+        "CASE WHEN 1 = 1 THEN TRUE ELSE FALSE END",
+        "1 IN (1, 2)",
+        "3 NOT IN (1, 2)",
+        "'b' IN ('a', 'c')",
+        "(1 + 0) IN (1, 2)",
+        "UPPER('a') IN ('A', 'B')",
+        "CAST(1 AS INT) NOT IN (1, 2)",
+        "ARRAY_LENGTH(ARRAY[1, 2]) IN (2, 3)",
+        "ARRAY_CONTAINS(ARRAY[1, 2], 1)",
+    ],
+)
+@pytest.mark.parametrize("empty_side", [None, "a", "b"])
+def test_join_on_constant_condition(
+    join_type: str, condition: str, empty_side: str | None
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["p", "q"]}),
+        "b": pl.DataFrame({"k": [2, 3], "y": ["r", "s"]}),
+    }
+    if empty_side:
+        frames[empty_side] = frames[empty_side].clear()
+
+    if "SEMI" in join_type or "ANTI" in join_type:
+        query = f"SELECT a.k, a.x FROM a {join_type} b ON {condition} ORDER BY 1, 2"
+    else:
+        query = f"""
+            SELECT a.k, a.x, b.k AS bk, b.y
+            FROM a {join_type} b ON {condition}
+            ORDER BY 1, 2, 3, 4
+        """
+    assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    "join_type",
+    [
+        "INNER JOIN",
+        "LEFT JOIN",
+        "RIGHT JOIN",
+        "FULL OUTER JOIN",
+        "SEMI JOIN",
+        "ANTI JOIN",
+    ],
+)
+def test_join_on_constant_any_condition(join_type: str) -> None:
+    # DuckDB does not support ANY(array) outside inner joins; compare with TRUE/FALSE
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2]}),
+        "b": pl.DataFrame({"v": ["r", "s"]}),
+    }
+    ctx = pl.SQLContext(frames=frames)
+    for condition, verdict in [
+        ("1 = ANY(ARRAY[1, 2])", "TRUE"),
+        ("3 = ANY(ARRAY[1, 2])", "FALSE"),
+    ]:
+        res = ctx.execute(f"SELECT * FROM a {join_type} b ON {condition}").collect()
+        expected = ctx.execute(f"SELECT * FROM a {join_type} b ON {verdict}").collect()
+        assert_frame_equal(res, expected, check_row_order=False)
+
+
+def test_join_on_constant_true_plans_cross_join() -> None:
+    frames = {
+        "a": pl.LazyFrame({"k": [1, 2]}),
+        "b": pl.LazyFrame({"v": ["r", "s"]}),
+    }
+    ctx = pl.SQLContext(frames=frames)
+    for condition in ["TRUE", "1 = 1", "1 < 2"]:
+        plan = ctx.execute(f"SELECT * FROM a JOIN b ON {condition}").explain()
+        assert plan.startswith("CROSS JOIN")
+    # an always-true outer join is not a cross join: it must keep unmatched rows
+    plan = ctx.execute("SELECT * FROM a LEFT JOIN b ON TRUE").explain()
+    assert "CROSS JOIN" not in plan
+
+
+def test_constant_key_join_keeps_validation() -> None:
+    a = pl.LazyFrame({"k": [1, 2]})
+    b = pl.LazyFrame({"v": ["r", "s"]})
+    assert a.join(b, left_on=pl.lit(1), right_on=pl.lit(1)).collect().height == 4
+    for validate in ["1:1", "1:m", "m:1"]:
+        with pytest.raises(ComputeError, match="join keys did not fulfill"):
+            a.join(
+                b,
+                left_on=pl.lit(1),
+                right_on=pl.lit(1),
+                validate=validate,  # type: ignore[arg-type]
+            ).collect()
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+def test_join_on_pattern_predicates(join_type: str) -> None:
+    frames = {
+        "customer": pl.DataFrame({"c_key": [1, 2, 3], "c_name": ["a", "b", "c"]}),
+        "orders": pl.DataFrame(
+            {
+                "o_key": [1, 1, 2, 3],
+                "o_comment": ["special requests", "no", "special packages", "no"],
+                "c_name": ["x", "x", "y", "z"],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT c_key, COUNT(o_key) AS n_orders
+            FROM customer
+            {join_type} JOIN orders
+              ON c_key = o_key AND o_comment NOT LIKE '%special%requests%'
+            GROUP BY c_key
+            ORDER BY c_key
+        """,
+        compare_with="duckdb",
+    )
+    # predicates on a right-table column that also exists on the left
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT customer.c_name, orders.c_name AS o_name, o_comment
+            FROM customer
+            {join_type} JOIN orders
+              ON customer.c_key = orders.o_key
+              AND orders.c_name IN ('x', 'z')
+              AND o_comment ILIKE 'NO%'
+            ORDER BY 1, 2, 3
+        """,
+        compare_with="duckdb",
+    )
+    # the same clashing column name on both sides of one predicate
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT c_key, orders.c_name AS o_name
+            FROM customer
+            {join_type} JOIN orders
+              ON c_key = o_key AND customer.c_name < orders.c_name
+              AND orders.c_name NOT IN (customer.c_name, 'y')
+            ORDER BY 1, 2
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_join_disjunction_over_several_relations() -> None:
+    # Each OR branch pairs a dimension condition with a fact condition. What the
+    # disjunction implies about each relation alone is pushed into the scans; the
+    # disjunction itself is applied where the relations meet, after reordering.
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "cust": [1, 2, 3, 4, 1, 2, 3, 4],
+                "addr": [10, 20, 30, 40, 40, 30, 20, 10],
+                "price": [120, 75, 175, 10, 60, 130, 5, 160],
+                "profit": [150, 200, 100, 999, 250, 160, 60, 20],
+                "qty": [1, 2, 3, 4, 5, 6, 7, 8],
+            }
+        ),
+        "demo": pl.DataFrame(
+            {
+                "cust": [1, 2, 3, 4],
+                "marital": ["M", "S", "W", "M"],
+                "education": ["Advanced Degree", "College", "2 yr Degree", "College"],
+            }
+        ),
+        "address": pl.DataFrame(
+            {
+                "addr": [10, 20, 30, 40],
+                "state": ["TX", "OR", "VA", "NY"],
+                "country": ["United States"] * 4,
+            }
+        ),
+    }
+    query = """
+        SELECT SUM(qty) AS total
+        FROM sales, demo, address
+        WHERE sales.cust = demo.cust
+          AND ((marital = 'M' AND education = 'Advanced Degree'
+                AND price BETWEEN 100 AND 150)
+            OR (marital = 'S' AND education = 'College'
+                AND price BETWEEN 50 AND 100)
+            OR (marital = 'W' AND education = '2 yr Degree'
+                AND price BETWEEN 150 AND 200))
+          AND ((sales.addr = address.addr AND country = 'United States'
+                AND state IN ('TX', 'OH') AND profit BETWEEN 100 AND 200)
+            OR (sales.addr = address.addr AND country = 'United States'
+                AND state IN ('OR', 'NM') AND profit BETWEEN 150 AND 300)
+            OR (sales.addr = address.addr AND country = 'United States'
+                AND state IN ('VA', 'MS') AND profit BETWEEN 50 AND 250))
+    """
+    assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+    plan = pl.SQLContext(frames=frames).execute(query).explain()
+    # Every relation is filtered before it is joined.
+    for derived in ('col("state")', 'col("marital")', 'col("price")', 'col("profit")'):
+        assert plan.rindex(derived) > plan.rindex("INNER JOIN:"), plan
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT", "RIGHT"])
+@pytest.mark.parametrize("qualified", [False, True])
+@pytest.mark.parametrize("with_key", [False, True])
+def test_join_on_input_filter(join_type: str, qualified: bool, with_key: bool) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3, None], "comment": ["ok", "bad", None, "ok"]}),
+        "b": pl.DataFrame(
+            {
+                "k": [1, 1, 2, 3, 4, None],
+                "comment": ["bad", "ok", None, "bad", "ok", "ok"],
+            }
+        ),
+    }
+    side = "a" if join_type == "RIGHT" else "b"
+    if qualified:
+        column = f"{side}.comment"
+    else:
+        frames[side] = frames[side].rename({"comment": "note"})
+        column = "note"
+    condition = f"{column} NOT LIKE '%bad%'"
+    if with_key:
+        condition = f"a.k = b.k AND {condition}"
+    query = f"SELECT a.k, b.k AS bk FROM a {join_type} JOIN b ON {condition}"
+    assert_sql_matches(
+        frames, query=query, compare_with="duckdb", check_row_order=False
+    )
+    plan = pl.SQLContext(frames).execute(query).explain()
+    assert "NESTED LOOP JOIN" not in plan
+
+
+def test_join_on_preserved_input_filter() -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3], "v": [1, -1, None]}),
+        "b": pl.DataFrame({"k": [1, 2, 3], "v": [-1, 1, None]}),
+    }
+    query = """
+        SELECT a.k, b.k AS bk
+        FROM a LEFT JOIN b ON a.k = b.k AND a.v > 0 AND b.v > 0
+    """
+    assert_sql_matches(
+        frames, query=query, compare_with="duckdb", check_row_order=False
+    )
+
+
+@pytest.mark.parametrize("how", ["inner", "left"])
+def test_join_on_filter_with_aggregate_key(how: Literal["inner", "left"]) -> None:
+    left = pl.LazyFrame({"k": [3]})
+    right = pl.LazyFrame({"v": [1, 2]})
+    query = f"SELECT * FROM l {how} JOIN r ON k = SUM(v) AND v < 2"
+    sql = pl.SQLContext(l=left, r=right).execute(query)
+    api = left.join_where(
+        right, pl.col("k") == pl.col("v").sum(), pl.col("v") < 2, how=how
+    )
+    expected = pl.DataFrame({"k": [3], "v": [1]})
+    for result in [sql, api]:
+        assert_frame_equal(result.collect(), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.k, b.v FROM a JOIN b ON a.k = b.j AND b.j = a.k",
+        "SELECT a.k, b.v FROM a, b WHERE b.j = a.k AND a.k = b.j",
+    ],
+)
+def test_join_on_repeated_key(query: str) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3]}),
+        "b": pl.DataFrame({"j": [2, 3, 4], "v": ["x", "y", "z"]}),
+    }
+    assert_sql_matches(
+        frames, query=query, compare_with="duckdb", check_row_order=False
+    )
+
+
+@pytest.fixture
+def asof_frames() -> dict[str, pl.DataFrame]:
+    # neither frame is sorted on `ts`
+    return {
+        "trades": pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4, 5],
+                "sym": ["a", "b", "a", "b", None],
+                "ts": [5, 5, 2, 12, 5],
+            }
+        ),
+        "quotes": pl.DataFrame(
+            {
+                "sym": ["a", "b", "a", "b", "a", None],
+                "ts": [6, 1, 2, 9, 4, 5],
+                "px": [60, 10, 20, 90, 40, 50],
+            }
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("match_condition", "px"),
+    [
+        ("t.ts >= q.ts", [40, 10, 20, 90, None]),
+        ("q.ts <= t.ts", [40, 10, 20, 90, None]),
+        ("t.ts > q.ts", [40, 10, None, 90, None]),
+        ("q.ts < t.ts", [40, 10, None, 90, None]),
+        ("t.ts <= q.ts", [60, 90, 20, None, None]),
+        ("q.ts >= t.ts", [60, 90, 20, None, None]),
+        ("(t.ts < q.ts)", [60, 90, 40, None, None]),
+        ("q.ts > t.ts", [60, 90, 40, None, None]),
+    ],
+)
+@pytest.mark.parametrize("constraint", ["ON t.sym = q.sym", "USING (sym)"])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_asof_join(
+    asof_frames: dict[str, pl.DataFrame],
+    match_condition: str,
+    px: list[int | None],
+    constraint: str,
+    engine: Literal["in-memory", "streaming"],
+) -> None:
+    query = f"""
+        SELECT t.id, q.px
+        FROM trades t ASOF JOIN quotes q MATCH_CONDITION ({match_condition})
+        {constraint}
+        ORDER BY t.id
+    """
+    result = pl.SQLContext(asof_frames).execute(query).collect(engine=engine)
+    expected = pl.DataFrame({"id": [1, 2, 3, 4, 5], "px": px})
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_without_keys(asof_frames: dict[str, pl.DataFrame]) -> None:
+    query = """
+        SELECT t.id, q.px
+        FROM trades t ASOF JOIN quotes q MATCH_CONDITION (t.ts >= q.ts)
+        ORDER BY t.id
+    """
+    result = pl.SQLContext(asof_frames, eager=True).execute(query)
+    expected = pl.DataFrame({"id": [1, 2, 3, 4, 5], "px": [50, 50, 20, 90, 50]})
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_select_star() -> None:
+    population = pl.DataFrame(
+        {
+            "date": [date(2019, 1, 1), date(2015, 6, 1), date(2018, 8, 1)],
+            "population": [83.12, 81.5, 82.66],
+        }
+    )
+    gdp = pl.DataFrame(
+        {
+            "date": pl.date_range(date(2016, 1, 1), date(2020, 1, 1), "1y", eager=True),
+            "gdp": [4164, 4411, 4566, 4696, 4827],
+        }
+    )
+    query = """
+        SELECT * FROM population p
+        ASOF JOIN gdp g MATCH_CONDITION (p.date >= g.date)
+        ORDER BY p.date
+    """
+    result = pl.SQLContext(population=population, gdp=gdp, eager=True).execute(query)
+    expected = pl.DataFrame(
+        {
+            "date": [date(2015, 6, 1), date(2018, 8, 1), date(2019, 1, 1)],
+            "population": [81.5, 82.66, 83.12],
+            "date:g": [None, date(2018, 1, 1), date(2019, 1, 1)],
+            "gdp": [None, 4566, 4696],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_key_expressions_and_dtypes() -> None:
+    left = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "sym": ["A", "b", "a"],
+            "region": pl.Series([1, 2, 1], dtype=pl.Int8),
+            "d": [date(2024, 1, 2), date(2024, 1, 2), date(2024, 1, 1)],
+        }
+    )
+    right = pl.DataFrame(
+        {
+            "sym": ["a", "b", "a"],
+            "region": pl.Series([1, 2, 1], dtype=pl.Int64),
+            "ts": [
+                datetime(2024, 1, 1, 12),
+                datetime(2024, 1, 1, 6),
+                datetime(2024, 1, 2, 0),
+            ],
+            "v": [10, 20, 30],
+        }
+    )
+    query = """
+        SELECT l.id, r.v, r.sym
+        FROM l ASOF JOIN r MATCH_CONDITION (l.d > r.ts - INTERVAL '1 hour')
+        ON LOWER(l.sym) = r.sym AND l.region = r.region
+        ORDER BY l.id
+    """
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    expected = pl.DataFrame(
+        {"id": [1, 2, 3], "v": [30, 20, None], "sym": ["a", "b", None]}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_asof_join_keeps_finest_time_unit() -> None:
+    left = pl.DataFrame(
+        {"ts": pl.Series([datetime(2024, 1, 1, 0, 0, 2)], dtype=pl.Datetime("ms"))}
+    )
+    right = pl.DataFrame(
+        {
+            "ts": pl.Series(
+                [datetime(2024, 1, 1, 0, 0, 1, 2), datetime(2024, 1, 1, 0, 0, 1, 1)],
+                dtype=pl.Datetime("us"),
+            ),
+            "v": [2, 1],
+        }
+    )
+    query = "SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION (l.ts >= r.ts)"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [2]
+
+
+@pytest.mark.parametrize(
+    "left_ts",
+    [
+        pl.Series([datetime(2500, 1, 1)], dtype=pl.Datetime("ms", "UTC")),
+        pl.Series([date(2500, 1, 1)]),
+    ],
+)
+def test_asof_join_keeps_time_range(left_ts: pl.Series) -> None:
+    left = pl.DataFrame({"ts": left_ts})
+    right = pl.DataFrame(
+        {
+            "ts": pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("ns", "UTC")),
+            "v": [1],
+        }
+    )
+    query = "SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION (l.ts >= r.ts)"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [1]
+
+
+@pytest.mark.parametrize("match_condition", ["y.ts >= z.ts", "z.ts <= y.ts"])
+def test_asof_join_after_join(match_condition: str) -> None:
+    frames = {
+        "x": pl.DataFrame({"id": [1, 2]}),
+        "y": pl.DataFrame({"id": [1, 2], "ts": [5, 10]}),
+        "z": pl.DataFrame({"ts": [1, 7], "v": [10, 70]}),
+    }
+    query = f"""
+        SELECT x.id, z.v
+        FROM x JOIN y ON x.id = y.id
+        ASOF JOIN z MATCH_CONDITION ({match_condition})
+        ORDER BY x.id
+    """
+    result = pl.SQLContext(frames, eager=True).execute(query)
+    assert_frame_equal(result, pl.DataFrame({"id": [1, 2], "v": [10, 70]}))
+
+
+@pytest.mark.parametrize("match_condition", ["L.lt >= R.rt", "R.rt <= L.lt"])
+def test_asof_join_qualifier_case(match_condition: str) -> None:
+    left = pl.DataFrame({"lt": [5]})
+    right = pl.DataFrame({"rt": [4], "v": [1]})
+    query = f"SELECT r.v FROM l ASOF JOIN r MATCH_CONDITION ({match_condition})"
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.to_series().to_list() == [1]
+
+
+@pytest.mark.parametrize(
+    "match_condition", ["nested.x >= rnested.x", "rnested.x <= nested.x"]
+)
+def test_asof_join_struct_fields(match_condition: str) -> None:
+    left = pl.DataFrame({"nested": [{"x": 5}, {"x": 3}]})
+    right = pl.DataFrame({"rnested": [{"x": 4}], "v": [1]})
+    query = f"""
+        SELECT l.nested.x, r.v
+        FROM l ASOF JOIN r MATCH_CONDITION ({match_condition})
+        ORDER BY l.nested.x
+    """
+    result = pl.SQLContext(l=left, r=right, eager=True).execute(query)
+    assert result.rows() == [(3, None), (5, 1)]
+
+
+@pytest.mark.parametrize(
+    ("join", "error"),
+    [
+        ("MATCH_CONDITION (t.ts = q.ts)", "single `>=`, `>`, `<=` or `<` comparison"),
+        ("MATCH_CONDITION (t.ts >= 5)", "must compare a column of each table"),
+        ("MATCH_CONDITION (t.ts >= t.ts)", "must compare a column of each table"),
+        ("MATCH_CONDITION (q.ts < q.ts)", "must compare a column of each table"),
+        ("MATCH_CONDITION (ts >= ts)", "MATCH_CONDITION is ambiguous"),
+        (
+            "MATCH_CONDITION (t.ts >= q.ts) ON t.sym = q.sym AND t.id > q.px",
+            "only supports `=` conditions in ON",
+        ),
+    ],
+)
+def test_asof_join_errors(
+    asof_frames: dict[str, pl.DataFrame], join: str, error: str
+) -> None:
+    query = f"SELECT * FROM trades t ASOF JOIN quotes q {join}"
+    with pytest.raises(SQLSyntaxError, match=error):
+        pl.SQLContext(asof_frames).execute(query).collect()

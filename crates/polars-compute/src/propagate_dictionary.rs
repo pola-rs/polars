@@ -1,6 +1,6 @@
-use arrow::array::{Array, BinaryViewArray, PrimitiveArray, Utf8ViewArray};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType::UInt32;
+use polars_arrow::array::{Array, BinaryViewArray, PrimitiveArray, Utf8ViewArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::ArrowDataType::UInt32;
 
 /// Propagate the nulls from the dictionary values into the keys and remove those nulls from the
 /// values.

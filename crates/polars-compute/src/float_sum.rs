@@ -2,11 +2,11 @@ use std::ops::{Add, IndexMut};
 #[cfg(feature = "simd")]
 use std::simd::{prelude::*, *};
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
-use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::bitmap::bitmask::BitMask;
+use polars_arrow::types::NativeType;
 #[cfg(feature = "simd")]
 use polars_utils::float16::pf16;
 
@@ -23,6 +23,7 @@ macro_rules! impl_cast_custom {
     ($_type:ty) => {
         #[cfg(feature = "simd")]
         impl<const N: usize> SimdCastGeneric<N> for Simd<$_type, N> {
+            #[inline]
             fn cast_generic<U: SimdCast>(self) -> Simd<U, N> {
                 self.cast::<U>()
             }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given
@@ -9,6 +10,9 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_corr() -> None:
@@ -74,6 +78,24 @@ def test_cov(fruits_cars: pl.DataFrame) -> None:
             ldf.select(cov_ab).collect().to_series(),
             pl.Series("A", [-2.5], pl.Float64()),
         )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_cov_one_row(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 2, 2], "a": [1.0, 2.0, 3.0], "b": [1.0, 3.0, 2.0]})
+    out = (
+        lf.group_by("g")
+        .agg(
+            pl.cov("a", "b", ddof=1).alias("samp"),
+            pl.cov("a", "b", ddof=0).alias("pop"),
+        )
+        .sort("g")
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame({"g": [1, 2], "samp": [None, -0.5], "pop": [0.0, -0.25]})
+    assert_frame_equal(out, expected)
+    out = lf.head(1).select(pl.cov("a", "b", ddof=1)).collect(engine=engine)
+    assert out.item() is None
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
@@ -263,3 +285,14 @@ def test_kurtosis_streaming_matches_in_memory(
         .collect(engine="streaming")
     )
     assert_frame_equal(in_memory, streaming, rel_tol=1e-5)
+
+
+def test_spearman_corr_constant_column_29315() -> None:
+    df = pl.DataFrame({"col1": [0.0] * 245, "col2": list(range(245))})
+    assert math.isnan(df.select(pl.corr("col1", "col2", method="spearman")).item())
+
+
+@pytest.mark.parametrize("n", [117, 245])
+def test_pearson_corr_zero_column_29315(n: int) -> None:
+    df = pl.DataFrame({"col1": [0.0] * n, "col2": list(range(n))})
+    assert math.isnan(df.select(pl.corr("col1", "col2")).item())

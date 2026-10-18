@@ -1,10 +1,10 @@
-use arrow::datatypes::TimeUnit;
-pub use arrow::temporal_conversions::{
+use chrono::format::{Parsed, StrftimeItems};
+use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
+use polars_arrow::datatypes::TimeUnit;
+pub use polars_arrow::temporal_conversions::{
     EPOCH_DAYS_FROM_CE, MICROSECONDS, MICROSECONDS_IN_DAY, MILLISECONDS, MILLISECONDS_IN_DAY,
     NANOSECONDS, NANOSECONDS_IN_DAY, SECONDS_IN_DAY,
 };
-use chrono::format::{Parsed, StrftimeItems};
-use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
 
 /// Get the time unit as a multiple of a second
 pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {
@@ -13,37 +13,6 @@ pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {
         TimeUnit::Millisecond => MILLISECONDS,
         TimeUnit::Microsecond => MICROSECONDS,
         TimeUnit::Nanosecond => NANOSECONDS,
-    }
-}
-
-/// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
-///
-/// `tz` must be built from `timezone` (either via [`parse_offset`] or `chrono-tz`).
-/// Returns in scale `tz` of `TimeUnit`.
-#[inline]
-pub fn utf8_to_timestamp_scalar<T: chrono::TimeZone>(
-    value: &str,
-    fmt: &str,
-    tz: &T,
-    tu: &TimeUnit,
-) -> Option<i64> {
-    let mut parsed = Parsed::new();
-    let fmt = StrftimeItems::new(fmt);
-    let r = chrono::format::parse(&mut parsed, value, fmt).ok();
-    if r.is_some() {
-        parsed
-            .to_datetime()
-            .map(|x| x.naive_utc())
-            .map(|x| tz.from_utc_datetime(&x))
-            .map(|x| match tu {
-                TimeUnit::Second => x.timestamp(),
-                TimeUnit::Millisecond => x.timestamp_millis(),
-                TimeUnit::Microsecond => x.timestamp_micros(),
-                TimeUnit::Nanosecond => x.timestamp_nanos_opt().unwrap(),
-            })
-            .ok()
-    } else {
-        None
     }
 }
 

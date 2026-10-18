@@ -202,10 +202,11 @@ impl<W: Write> FileWriter<W> {
                     group.columns.iter_mut().zip(pages.iter()).try_for_each(
                         |(column, pages)| {
                             let offset = self.offset;
-                            column.column_index_offset = Some(offset as i64);
-                            self.offset += write_column_index(&mut self.writer, pages)?;
-                            let length = self.offset - offset;
-                            column.column_index_length = Some(length as i32);
+                            if let Some(length) = write_column_index(&mut self.writer, pages)? {
+                                self.offset += length;
+                                column.column_index_offset = Some(offset as i64);
+                                column.column_index_length = Some(length as i32);
+                            }
                             ParquetResult::Ok(())
                         },
                     )?;

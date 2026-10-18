@@ -9,16 +9,19 @@ repository = { workspace = true }
 description = "Enable running Polars workloads in Python"
 
 [dependencies]
+polars-arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
+polars-defs = { workspace = true }
 polars-descriptions = { workspace = true, optional = true }
 polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-ffi = { workspace = true }
 polars-io = { workspace = true }
+polars-io-ext-ffi = { workspace = true, optional = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true, features = ["python"] }
 polars-observer = { workspace = true, optional = true }
@@ -33,7 +36,6 @@ polars-time = { workspace = true }
 polars-utils = { workspace = true, features = ["python"] }
 
 arboard = { workspace = true, optional = true }
-arrow = { workspace = true }
 bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
@@ -48,14 +50,16 @@ libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
+object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods", "uuid"] }
+pyo3 = { workspace = true, features = ["abi3-py311", "chrono", "chrono-tz", "multiple-pymethods", "uuid"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["sync"] }
 uuid = { workspace = true }
 
 [dependencies.polars]
@@ -63,6 +67,7 @@ workspace = true
 features = [
   "abs",
   "approx_unique",
+  "approx_quantile",
   "arg_where",
   "bitwise",
   "business",
@@ -193,7 +198,18 @@ cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-lazy/ffi_plugin"]
-cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
+cloud = [
+  "polars/cloud",
+  "polars/aws",
+  "polars/gcp",
+  "polars/azure",
+  "polars/http",
+  # I/O plugins (`io::iceberg_plugin`).
+  "dep:object_store",
+  "dep:polars-io-ext-ffi",
+  "polars-io-ext-ffi/iceberg",
+  "dep:tokio",
+]
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
@@ -206,6 +222,7 @@ streaming = [
 ]
 bitwise = ["polars/bitwise"]
 approx_unique = ["polars/approx_unique"]
+approx_quantile = ["polars/approx_quantile"]
 string_normalize = ["polars/string_normalize"]
 
 dtype-i8 = []
@@ -234,6 +251,7 @@ dtypes = [
 
 operations = [
   "approx_unique",
+  "approx_quantile",
   "array_count",
   "bitwise",
   "is_in",

@@ -188,6 +188,25 @@ impl<'a> IRDotDisplay<'a> {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
             },
+            Window {
+                input,
+                partition_by,
+                order_by,
+                exprs,
+                maintain_order,
+                ordered_eval,
+                ..
+            } => {
+                let header = super::format::WindowHeaderDisplay {
+                    partition_by,
+                    order_by: order_by.as_ref(),
+                    maintain_order: *maintain_order,
+                    ordered_eval: *ordered_eval,
+                };
+                let exprs = self.display_exprs(exprs);
+                recurse!(*input);
+                write_label(f, id, |f| write!(f, "{header}\n{exprs}"))?;
+            },
             Slice { input, offset, len } => {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;
@@ -236,6 +255,7 @@ impl<'a> IRDotDisplay<'a> {
                 scan_type,
                 unified_scan_args,
                 output_schema: _,
+                maintain_order: _,
             } => {
                 let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);
@@ -248,7 +268,23 @@ impl<'a> IRDotDisplay<'a> {
                     file_info.schema.len() - usize::from(unified_scan_args.row_index.is_some());
 
                 write_label(f, id, |f| {
-                    write!(f, "{name} SCAN {path}\nπ {with_columns}/{total_columns};",)?;
+                    write!(f, "{name} SCAN {path}")?;
+
+                    if let FileScanIR::ExternalReaderBuilder { external } = &**scan_type {
+                        let props = match external.explain_properties() {
+                            Ok(x) => x,
+                            Err(e) => polars_utils::aliases::PlIndexMap::from_iter([(
+                                "Error:".into(),
+                                format!("failed explain_properties(): {e:?}"),
+                            )]),
+                        };
+
+                        for (k, v) in props {
+                            write!(f, "\n{k}: {v}").unwrap();
+                        }
+                    }
+
+                    write!(f, "\nπ {with_columns}/{total_columns};")?;
 
                     if let Some(predicate) = predicate.as_ref() {
                         write!(f, "\nσ {}", self.display_expr(predicate))?;

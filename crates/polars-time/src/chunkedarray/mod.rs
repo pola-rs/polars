@@ -8,11 +8,9 @@ mod duration;
 mod kernels;
 #[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
 mod rolling_window;
-pub mod string;
 #[cfg(feature = "dtype-time")]
 mod time;
 
-use arrow::legacy::utils::CustomIterTools;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(feature = "dtype-date")]
 pub use date::DateMethods;
@@ -21,10 +19,10 @@ pub use datetime::DatetimeMethods;
 #[cfg(feature = "dtype-duration")]
 pub use duration::DurationMethods;
 use kernels::*;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 #[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
 pub use rolling_window::*;
-pub use string::StringMethods;
 #[cfg(feature = "dtype-time")]
 pub use time::TimeMethods;
 

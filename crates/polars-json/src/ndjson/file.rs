@@ -1,9 +1,9 @@
 use std::io::BufRead;
 use std::num::NonZeroUsize;
 
-use arrow::datatypes::ArrowDataType;
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexSet;
+use polars_arrow::datatypes::ArrowDataType;
 use polars_error::*;
 use polars_utils::aliases::{PlIndexSet, PlRandomState};
 use simd_json::BorrowedValue;

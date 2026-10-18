@@ -1,23 +1,41 @@
 use num_traits::AsPrimitive;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_defs::expr::RoundMode;
 use polars_utils::float16::pf16;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 
 use crate::series::ops::SeriesSealed;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[strum(serialize_all = "snake_case")]
-#[derive(Default)]
-pub enum RoundMode {
-    #[default]
-    HalfToEven,
-    HalfAwayFromZero,
-    ToZero,
+/// The precision of a rounded `Decimal(precision, _)`: rounding away from zero can carry
+/// into one more integer digit.
+#[cfg(feature = "dtype-decimal")]
+fn rounded_decimal_precision(precision: usize) -> usize {
+    (precision + 1).min(polars_compute::decimal::DEC128_MAX_PREC)
+}
+
+/// Wraps rounded decimal values, raising if a carry doesn't fit the widened precision
+/// (only possible at the maximum precision).
+#[cfg(feature = "dtype-decimal")]
+fn rounded_decimal(
+    values: Int128Chunked,
+    precision: usize,
+    scale: usize,
+    op: &str,
+) -> PolarsResult<Series> {
+    let precision = rounded_decimal_precision(precision);
+    if precision == polars_compute::decimal::DEC128_MAX_PREC
+        && values
+            .iter()
+            .flatten()
+            .any(|v| !polars_compute::decimal::dec128_fits(v, precision))
+    {
+        polars_bail!(
+            ComputeError: "overflow in decimal {op}: result doesn't fit Decimal({precision}, {scale})"
+        );
+    }
+    Ok(values
+        .into_decimal_unchecked(precision, scale)
+        .into_series())
 }
 
 /// Apply the given rounding operation across f16/f32/f64 types.
@@ -146,18 +164,14 @@ pub trait RoundSeries: SeriesSealed {
 
             let res = match mode {
                 RoundMode::HalfToEven => ca.physical().apply_values(|v| {
-                    let rem_big = v % (2 * multiplier);
-                    let is_v_floor_even = rem_big.abs() < multiplier;
-                    let rem = if is_v_floor_even {
-                        rem_big
-                    } else if rem_big > 0 {
-                        rem_big - multiplier
-                    } else {
-                        rem_big + multiplier
-                    };
-
-                    let threshold = threshold + i128::from(is_v_floor_even);
-                    let round_offset = if rem.abs() >= threshold {
+                    // Compares the remainder with half the multiplier without doubling
+                    // either, which could overflow i128 at scale 38.
+                    let rem = v % multiplier;
+                    let r = rem.unsigned_abs();
+                    let rest = multiplier as u128 - r;
+                    let odd = (v / multiplier) % 2 != 0;
+                    let round_away = r > rest || (r == rest && odd);
+                    let round_offset = if round_away {
                         if v < 0 { -multiplier } else { multiplier }
                     } else {
                         0
@@ -173,11 +187,14 @@ pub trait RoundSeries: SeriesSealed {
                     };
                     v - rem + round_offset
                 }),
-                RoundMode::ToZero => ca.physical().apply_values(|v| v - (v % multiplier)),
+                RoundMode::ToZero => {
+                    let res = ca.physical().apply_values(|v| v - (v % multiplier));
+                    return Ok(res
+                        .into_decimal_unchecked(ca.precision(), scale as usize)
+                        .into_series());
+                },
             };
-            return Ok(res
-                .into_decimal_unchecked(ca.precision(), scale as usize)
-                .into_series());
+            return rounded_decimal(res, ca.precision(), scale as usize, "rounding");
         }
 
         let op = match mode {
@@ -185,57 +202,67 @@ pub trait RoundSeries: SeriesSealed {
             RoundMode::HalfToEven => "rounding ('half_to_even')",
             RoundMode::HalfAwayFromZero => "rounding ('half_away_from_zero')",
         };
-        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "{} can only be used on numeric types", op);
+        polars_ensure!(
+            s.dtype().is_integer(),
+            op = op,
+            got = s.dtype(),
+            expected = "numeric"
+        );
         Ok(s.clone())
     }
 
     /// Round underlying floating point array to the given number of significant digits.
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
         let s = self.as_series();
-        polars_ensure!(digits >= 1, InvalidOperation: "digits must be an integer >= 1");
+        polars_ensure!(
+            digits >= 1,
+            InvalidOperation: "digits must be an integer >= 1, got {}", digits
+        );
 
         #[cfg(feature = "dtype-decimal")]
         if let Some(ca) = s.try_decimal() {
             let precision = ca.precision();
             let scale = ca.scale() as u32;
 
-            let s = ca
-                .physical()
-                .apply_values(|v| {
-                    if v == 0 {
-                        return 0;
-                    }
+            let s = ca.physical().apply_values(|v| {
+                if v == 0 {
+                    return 0;
+                }
 
-                    let mut magnitude = v.abs().ilog10();
-                    let magnitude_mult = 10i128.pow(magnitude); // @Q? It might be better to do this with a
-                    // LUT.
-                    if v.abs() > magnitude_mult {
-                        magnitude += 1;
-                    }
-                    let decimals = magnitude.saturating_sub(digits as u32);
-                    let multiplier = 10i128.pow(decimals); // @Q? It might be better to do this with a
-                    // LUT.
-                    let threshold = multiplier / 2;
+                let mut magnitude = v.abs().ilog10();
+                let magnitude_mult = 10i128.pow(magnitude); // @Q? It might be better to do this with a
+                // LUT.
+                if v.abs() > magnitude_mult {
+                    magnitude += 1;
+                }
+                let decimals = magnitude.saturating_sub(digits as u32);
+                let multiplier = 10i128.pow(decimals); // @Q? It might be better to do this with a
+                // LUT.
+                let threshold = multiplier / 2;
 
-                    // We use rounding=ROUND_HALF_EVEN
-                    let rem = v % multiplier;
-                    let is_v_floor_even = decimals <= scale && ((v - rem) / multiplier) % 2 == 0;
-                    let threshold = threshold + i128::from(is_v_floor_even);
-                    let round_offset = if rem.abs() >= threshold {
-                        multiplier
-                    } else {
-                        0
-                    };
-                    let round_offset = if v < 0 { -round_offset } else { round_offset };
-                    v - rem + round_offset
-                })
-                .into_decimal_unchecked(precision, scale as usize)
-                .into_series();
+                // We use rounding=ROUND_HALF_EVEN
+                let rem = v % multiplier;
+                let is_v_floor_even = decimals <= scale && ((v - rem) / multiplier) % 2 == 0;
+                let threshold = threshold + i128::from(is_v_floor_even);
+                // An exact value doesn't round, even when the threshold is 0.
+                let round_offset = if rem != 0 && rem.abs() >= threshold {
+                    multiplier
+                } else {
+                    0
+                };
+                let round_offset = if v < 0 { -round_offset } else { round_offset };
+                v - rem + round_offset
+            });
 
-            return Ok(s);
+            return rounded_decimal(s, precision, scale as usize, "rounding");
         }
 
-        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "round_sig_figs can only be used on numeric types" );
+        polars_ensure!(
+            s.dtype().is_primitive_numeric(),
+            opq = round_sig_figs,
+            got = s.dtype(),
+            expected = "numeric"
+        );
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let s = ca.apply_values(|value| {
@@ -287,20 +314,22 @@ pub trait RoundSeries: SeriesSealed {
             let decimal_delta = scale;
             let multiplier = 10i128.pow(decimal_delta);
 
-            let ca = ca
-                .physical()
-                .apply_values(|v| {
-                    let rem = v % multiplier;
-                    let round_offset = if v < 0 { multiplier + rem } else { rem };
-                    let round_offset = if rem == 0 { 0 } else { round_offset };
-                    v - round_offset
-                })
-                .into_decimal_unchecked(precision, scale as usize);
+            let ca = ca.physical().apply_values(|v| {
+                let rem = v % multiplier;
+                let round_offset = if v < 0 { multiplier + rem } else { rem };
+                let round_offset = if rem == 0 { 0 } else { round_offset };
+                v - round_offset
+            });
 
-            return Ok(ca.into_series());
+            return rounded_decimal(ca, precision, scale as usize, "floor");
         }
 
-        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "floor can only be used on numeric types" );
+        polars_ensure!(
+            s.dtype().is_primitive_numeric(),
+            opq = floor,
+            got = s.dtype(),
+            expected = "numeric"
+        );
         Ok(s.clone())
     }
 
@@ -327,20 +356,22 @@ pub trait RoundSeries: SeriesSealed {
             let decimal_delta = scale;
             let multiplier = 10i128.pow(decimal_delta);
 
-            let ca = ca
-                .physical()
-                .apply_values(|v| {
-                    let rem = v % multiplier;
-                    let round_offset = if v < 0 { -rem } else { multiplier - rem };
-                    let round_offset = if rem == 0 { 0 } else { round_offset };
-                    v + round_offset
-                })
-                .into_decimal_unchecked(precision, scale as usize);
+            let ca = ca.physical().apply_values(|v| {
+                let rem = v % multiplier;
+                let round_offset = if v < 0 { -rem } else { multiplier - rem };
+                let round_offset = if rem == 0 { 0 } else { round_offset };
+                v + round_offset
+            });
 
-            return Ok(ca.into_series());
+            return rounded_decimal(ca, precision, scale as usize, "ceil");
         }
 
-        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "ceil can only be used on numeric types" );
+        polars_ensure!(
+            s.dtype().is_primitive_numeric(),
+            opq = ceil,
+            got = s.dtype(),
+            expected = "numeric"
+        );
         Ok(s.clone())
     }
 }

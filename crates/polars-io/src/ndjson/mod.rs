@@ -1,7 +1,7 @@
 use core::json_lines;
 use std::num::NonZeroUsize;
 
-use arrow::array::StructArray;
+use polars_arrow::array::StructArray;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -43,4 +43,10 @@ pub fn infer_schema<R: std::io::BufRead>(
 /// This does not check if the lines are valid NDJSON - it assumes that is the case.
 pub fn count_rows(full_bytes: &[u8]) -> usize {
     json_lines(full_bytes).count()
+}
+
+/// Returns the length of the longest prefix of `bytes` that only holds complete rows, i.e. up to
+/// and including the last line break.
+pub fn complete_rows_len(bytes: &[u8]) -> usize {
+    memchr::memrchr(b'\n', bytes).map_or(0, |i| i + 1)
 }

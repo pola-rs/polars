@@ -6,10 +6,22 @@ import os
 from typing import Final
 
 MONITORING_ENV_VAR: Final[str] = "POLARS_QUERY_MONITORING"
+MONITORING_WORKSPACE_ENV_VAR: Final[str] = "POLARS_QUERY_MONITORING_WORKSPACE"
+MONITORING_ORGANIZATION_ENV_VAR: Final[str] = "POLARS_QUERY_MONITORING_ORGANIZATION"
 
 
 def monitoring_enabled_globally() -> bool:
     return os.environ.get(MONITORING_ENV_VAR) == "1"
+
+
+def monitoring_workspace() -> str | None:
+    """The Polars Cloud workspace metrics are sent to, `None` for the default one."""
+    return os.environ.get(MONITORING_WORKSPACE_ENV_VAR) or None
+
+
+def monitoring_organization() -> str | None:
+    """The Polars Cloud organization metrics are sent to, `None` for the default one."""
+    return os.environ.get(MONITORING_ORGANIZATION_ENV_VAR) or None
 
 
 def activate_monitoring() -> None:
@@ -20,6 +32,6 @@ def activate_monitoring() -> None:
         "polars_cloud",
         err_prefix="query monitoring requires the",
         install_message=(
-            "Please install using the command `pip install 'polars-cloud>=0.11.0'`."
+            "Please install using the command `pip install 'polars-cloud>=0.13.0'`."
         ),
     ).authenticate()

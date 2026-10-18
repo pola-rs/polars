@@ -367,6 +367,87 @@ def test_nested_cte_column_aliasing() -> None:
     }
 
 
+def test_cte_in_derived_table_29877() -> None:
+    df = pl.DataFrame({"id": ["A", "B"]})
+    with pl.SQLContext(s=df, eager=True) as ctx:
+        for query in (
+            "SELECT * FROM (WITH x AS (SELECT id FROM s) SELECT * FROM x) AS t",
+            "SELECT * FROM (WITH x AS (SELECT id FROM s) SELECT * FROM x)",
+            "WITH t AS (WITH x AS (SELECT id FROM s) SELECT * FROM x) SELECT * FROM t",
+            "(WITH x AS (SELECT id FROM s) SELECT * FROM x) ORDER BY id",
+        ):
+            assert_frame_equal(ctx.execute(query), df)
+
+        # the inner CTE shadows the outer one only inside the derived table
+        res = ctx.execute(
+            """
+            WITH x AS (SELECT 'C' AS id)
+            SELECT t.id, x.id AS outer_id
+            FROM (WITH x AS (SELECT id FROM s) SELECT * FROM x) AS t, x
+            ORDER BY t.id
+            """
+        )
+        assert res.to_dict(as_series=False) == {
+            "id": ["A", "B"],
+            "outer_id": ["C", "C"],
+        }
+
+        res = ctx.execute(
+            """
+            WITH x AS (SELECT 'C' AS id)
+            SELECT * FROM (
+              (WITH x AS (SELECT id FROM s) SELECT * FROM x)
+              UNION ALL
+              SELECT * FROM x
+            ) AS t
+            ORDER BY id
+            """
+        )
+        assert res.to_series().to_list() == ["A", "B", "C"]
+
+        # the ORDER BY of a nested query can still see its relations
+        res = ctx.execute(
+            "(WITH x AS (SELECT id FROM s) SELECT * FROM x) ORDER BY x.id DESC"
+        )
+        assert res.to_series().to_list() == ["B", "A"]
+        res = ctx.execute(
+            """
+            WITH x AS (SELECT 'C' AS id)
+            SELECT * FROM (
+              ((WITH x AS (SELECT id FROM s) SELECT * FROM x))
+              ORDER BY id = (SELECT MAX(id) FROM x) DESC
+            ) AS t
+            """
+        )
+        assert res.to_series().to_list() == ["B", "A"]
+
+        # names are case-insensitive, so `X` shadows the outer `x`
+        res = ctx.execute(
+            """
+            WITH x AS (SELECT 'C' AS id)
+            SELECT * FROM (WITH X AS (SELECT id FROM s) SELECT * FROM x) AS t
+            """
+        )
+        assert_frame_equal(res, df)
+
+        # the inner CTE is not visible outside the derived table
+        with pytest.raises(SQLInterfaceError, match="relation 'x' was not found"):
+            ctx.execute(
+                "SELECT * FROM (WITH x AS (SELECT id FROM s) SELECT * FROM x) AS t, x"
+            )
+
+        # nor in the next statement, even if this one fails
+        with pytest.raises(SQLInterfaceError, match="no column named 'missing'"):
+            ctx.execute(
+                """
+                (WITH x AS (SELECT id FROM s) SELECT * FROM (SELECT * FROM x) t)
+                ORDER BY t.missing
+                """
+            )
+        with pytest.raises(SQLInterfaceError, match="relation 'x' was not found"):
+            ctx.execute("SELECT * FROM x")
+
+
 def test_invalid_derived_table_column_aliases() -> None:
     values_query = "SELECT * FROM (VALUES (1,2), (3,4))"
 
@@ -416,7 +497,7 @@ def test_read_csv(tmp_path: Path) -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match="`read_csv` expects a single file path; found 3 arguments",
+        match=r"`read_csv` options must be named with '=>' \(found: 'b'\)",
     ):
         pl.sql("SELECT * FROM read_csv('a','b','c')").collect()
 

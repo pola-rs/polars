@@ -31,6 +31,12 @@ mod direct_io;
 #[allow(async_fn_in_trait)]
 pub trait ByteSource: Send + Sync {
     async fn get_size(&self) -> PolarsResult<usize>;
+    /// Fetch the last `n` bytes and the total size of the source, in a single request. Returns
+    /// fewer than `n` bytes if the source is smaller than `n`.
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)>;
+    /// Fetch the first `n` bytes and the total size of the source, in a single request where
+    /// supported. Returns fewer than `n` bytes if the source is smaller than `n`.
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)>;
     /// # Panics
     /// Panics if `range` is not in bounds.
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>>;
@@ -66,6 +72,16 @@ impl BufferByteSource {
 impl ByteSource for BufferByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
         Ok(self.0.as_ref().len())
+    }
+
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let len = self.0.as_ref().len();
+        Ok((self.0.clone().sliced(len.saturating_sub(n)..len), len))
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let len = self.0.as_ref().len();
+        Ok((self.0.clone().sliced(0..n.min(len)), len))
     }
 
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
@@ -115,6 +131,34 @@ pub struct FileReadContext {
     pub permits: Arc<Semaphore>,
     /// Ignored when direct I/O is active: there is no page cache to advise.
     pub advice: FileAdvice,
+}
+
+impl FileReadContext {
+    pub fn from_config(name: &str) -> Self {
+        let cfg = polars_config::config();
+        let enable_o_direct = cfg.direct_io();
+        let concurrency = cfg.file_read_concurrency().max(1) as usize;
+
+        // TODO: Posix_fadv should follow the access-pattern, which varies
+        // by file type and projection.
+        let fadv = cfg.file_posix_fadv();
+
+        if cfg.verbose() {
+            eprintln!(
+                "[{name}]: file read_context as configured: \
+                    read_concurrency: {concurrency}, \
+                    posix_fadv: {fadv}, \
+                    o_direct: {enable_o_direct}"
+            );
+        }
+
+        Self {
+            enable_o_direct,
+            concurrency,
+            permits: global_read_permits(),
+            advice: fadv,
+        }
+    }
 }
 
 impl std::fmt::Debug for FileReadContext {
@@ -396,12 +440,145 @@ impl FileByteSource {
     pub fn io_metrics(&self) -> &OptIOMetrics {
         &self.io_metrics
     }
+
+    /// Whether every page of `ranges` is in the page cache. `false` when the OS cannot tell
+    /// (non-Linux, kernels before 6.5) and under direct I/O.
+    pub fn is_cached(&self, ranges: &[Range<usize>]) -> bool {
+        #[cfg(all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
+        if self.o_direct_align.is_none() {
+            return cachestat::all_cached(&self.file, ranges);
+        }
+
+        let _ = ranges;
+        false
+    }
+
+    /// Reads `range` on the calling thread.
+    pub fn read_blocking(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
+        assert!(range.end as u64 <= self.size);
+
+        self.io_metrics()
+            .record_io_read_blocking(range.len() as u64, || {
+                read_at(
+                    &self.file,
+                    self.o_direct_align,
+                    range.start as u64,
+                    range.len(),
+                    self.size,
+                )
+            })
+    }
+}
+
+/// `cachestat(2)`, Linux 6.5+.
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+mod cachestat {
+    use std::ops::Range;
+    use std::os::fd::AsRawFd;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use polars_utils::mem::PAGE_SIZE;
+
+    #[repr(C)]
+    struct CachestatRange {
+        off: u64,
+        len: u64,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct Cachestat {
+        nr_cache: u64,
+        nr_dirty: u64,
+        nr_writeback: u64,
+        nr_evicted: u64,
+        nr_recently_evicted: u64,
+    }
+
+    /// Not in `libc` for these targets yet; the same number on both.
+    const SYS_CACHESTAT: libc::c_long = 451;
+
+    /// Set once the kernel has refused the call, so later checks skip the syscall.
+    static UNSUPPORTED: AtomicBool = AtomicBool::new(false);
+
+    /// Whether every page overlapping `ranges` is in the page cache.
+    pub(super) fn all_cached(file: &std::fs::File, ranges: &[Range<usize>]) -> bool {
+        if UNSUPPORTED.load(Ordering::Relaxed) {
+            return false;
+        }
+
+        // One call per run of adjacent or overlapping ranges, e.g. the column chunks of a row
+        // group. Gaps are not bridged: their pages need not be cached.
+        let mut spans: Vec<Range<usize>> =
+            ranges.iter().filter(|r| !r.is_empty()).cloned().collect();
+        spans.sort_unstable_by_key(|r| r.start);
+        spans.dedup_by(|next, cur| {
+            let merge = next.start <= cur.end;
+            if merge {
+                cur.end = cur.end.max(next.end);
+            }
+            merge
+        });
+
+        let page = *PAGE_SIZE;
+        for r in &spans {
+            let mut range = CachestatRange {
+                off: r.start as u64,
+                len: r.len() as u64,
+            };
+            let mut cs = Cachestat::default();
+            // Safety: both structs match the kernel's layout and outlive the call.
+            let ret = unsafe {
+                libc::syscall(
+                    SYS_CACHESTAT,
+                    file.as_raw_fd() as libc::c_long,
+                    &mut range as *mut CachestatRange,
+                    &mut cs as *mut Cachestat,
+                    0 as libc::c_long,
+                )
+            };
+            if ret != 0 {
+                // ENOSYS before 6.5 and EPERM under some seccomp filters hold for every file.
+                // Others, like EOPNOTSUPP on hugetlbfs, are about this file only.
+                if let Some(libc::ENOSYS | libc::EPERM) =
+                    std::io::Error::last_os_error().raw_os_error()
+                {
+                    UNSUPPORTED.store(true, Ordering::Relaxed);
+                }
+                return false;
+            }
+            // The kernel counts the pages that overlap the byte range.
+            let pages = (r.end - 1) / page - r.start / page + 1;
+            if cs.nr_cache < pages as u64 {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl ByteSource for FileByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
         usize::try_from(self.size)
             .map_err(|_| polars_err!(ComputeError: "file size {} does not fit in usize", self.size))
+    }
+
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let size = self.get_size().await?;
+        let bytes = self.get_range(size.saturating_sub(n)..size).await?;
+        Ok((bytes, size))
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let size = self.get_size().await?;
+        let bytes = self.get_range(0..n.min(size)).await?;
+        Ok((bytes, size))
     }
 
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
@@ -503,6 +680,7 @@ impl ByteSource for FileByteSource {
 }
 
 #[cfg(feature = "cloud")]
+#[derive(Clone)]
 pub struct ObjectStoreByteSource {
     store: PolarsObjectStore,
     path: ObjectStorePath,
@@ -550,6 +728,14 @@ impl ByteSource for ObjectStoreByteSource {
             .size as usize)
     }
 
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        self.store.get_suffix(&self.path, n, self.config).await
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        self.store.get_prefix(&self.path, n, self.config).await
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         self.store.get_range(&self.path, range, self.config).await
     }
@@ -579,6 +765,21 @@ impl DynByteSource {
             Self::File(_) => "File",
             #[cfg(feature = "cloud")]
             Self::Cloud(_) => "Cloud",
+        }
+    }
+
+    /// A clone of this object store source with a different fetch configuration. The clone
+    /// shares the underlying store, and this source keeps its configuration. Returns `None` for
+    /// non-object store sources.
+    #[cfg_attr(not(feature = "cloud"), allow(unused_variables))]
+    pub fn with_fetch_config(&self, config: FetchConfig) -> Option<Self> {
+        match self {
+            Self::Buffer(_) | Self::File(_) => None,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => Some(Self::Cloud(ObjectStoreByteSource {
+                config,
+                ..v.clone()
+            })),
         }
     }
 
@@ -624,6 +825,24 @@ impl ByteSource for DynByteSource {
             Self::File(v) => v.get_size().await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_size().await,
+        }
+    }
+
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        match self {
+            Self::Buffer(v) => v.get_suffix(n).await,
+            Self::File(v) => v.get_suffix(n).await,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.get_suffix(n).await,
+        }
+    }
+
+    async fn get_prefix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        match self {
+            Self::Buffer(v) => v.get_prefix(n).await,
+            Self::File(v) => v.get_prefix(n).await,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.get_prefix(n).await,
         }
     }
 
@@ -805,5 +1024,82 @@ mod tests {
                 assert_eq!(got.as_ref(), &contents[r.clone()], "{name}: {r:?}");
             }
         }
+    }
+
+    #[test]
+    fn read_blocking_reads_the_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let (source, contents) = source(dir.path(), 3 * MIB);
+
+        for r in [0..0, 0..1, 100..4096, MIB - 7..MIB + 9, 0..3 * MIB] {
+            let got = source.read_blocking(r.clone()).unwrap();
+            assert_eq!(got.as_ref(), &contents[r.clone()], "{r:?}");
+        }
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    #[test]
+    fn is_cached_follows_the_page_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let (source, _) = source(dir.path(), 4 * MIB);
+        let ranges = [0..100, MIB + 1..2 * MIB + 1, 4 * MIB - 1..4 * MIB, 5..5];
+
+        // Just written, so cached; `false` means the kernel lacks cachestat(2).
+        if !source.is_cached(&ranges) {
+            return;
+        }
+        assert!(source.is_cached(&[]));
+
+        // Drop the pages. tmpfs keeps them, so only check where they can go.
+        source.file.sync_all().unwrap();
+        unsafe { libc::posix_fadvise(source.file.as_raw_fd(), 0, 0, libc::POSIX_FADV_DONTNEED) };
+        let mut st: libc::statfs = unsafe { std::mem::zeroed() };
+        let path = std::ffi::CString::new(dir.path().as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(unsafe { libc::statfs(path.as_ptr(), &mut st) }, 0);
+        if st.f_type == libc::TMPFS_MAGIC {
+            return;
+        }
+        assert!(!source.is_cached(&ranges));
+
+        let read = MIB + 1..2 * MIB + 1;
+        source.read_blocking(read.clone()).unwrap();
+        assert!(source.is_cached(std::slice::from_ref(&read)));
+        assert!(!source.is_cached(&ranges));
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    #[test]
+    fn is_cached_does_not_bridge_gaps() {
+        let page = *polars_utils::mem::PAGE_SIZE;
+        let dir = tempfile::tempdir().unwrap();
+        let (source, _) = source(dir.path(), 3 * page);
+        let (all, middle) = (0..3 * page, page..2 * page);
+        // Just written, so cached; `false` means the kernel lacks cachestat(2).
+        if !source.is_cached(std::slice::from_ref(&all)) {
+            return;
+        }
+
+        // Drop only the middle page. tmpfs keeps it, so only check where it can go.
+        source.file.sync_all().unwrap();
+        unsafe {
+            libc::posix_fadvise(
+                source.file.as_raw_fd(),
+                page as libc::off_t,
+                page as libc::off_t,
+                libc::POSIX_FADV_DONTNEED,
+            )
+        };
+        if source.is_cached(std::slice::from_ref(&middle)) {
+            return;
+        }
+        assert!(source.is_cached(&[2 * page..3 * page, 0..page]));
+        assert!(!source.is_cached(&[0..page, page..2 * page]));
+        assert!(!source.is_cached(std::slice::from_ref(&all)));
     }
 }

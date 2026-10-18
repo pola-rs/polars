@@ -1,7 +1,7 @@
 //! Implements the Dremel encoding part of Parquet with *repetition-levels* and *definition-levels*
 
-use arrow::bitmap::Bitmap;
-use arrow::offset::OffsetsBuffer;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::offset::OffsetsBuffer;
 use polars_utils::fixedringbuffer::FixedRingBuffer;
 
 use super::super::pages::Nested;

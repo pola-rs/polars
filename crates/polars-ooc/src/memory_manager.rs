@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 
 use polars_async::ASYNC;
-use polars_async::executor::TaskPriority;
+use polars_async::executor::{self, TaskPriority};
 use polars_config::config;
 use polars_utils::total_ord::TotalOrd;
 use polars_utils::with_drop::WithDrop;
@@ -66,7 +66,7 @@ impl MemoryManager {
             > config().ooc_memory_budget_bytes()
     }
 
-    fn should_prefetch(&self) -> bool {
+    pub(crate) fn should_prefetch(&self) -> bool {
         if !self.spills_exist.load(Ordering::Acquire) {
             return false;
         }
@@ -133,13 +133,14 @@ impl MemoryManager {
                 },
             ));
 
+            let task_metrics = ctx.task_metrics();
             for (spillable, spill_in_progress, rt) in spillables {
                 let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
 
                 let successful_spill = successful_spill.clone();
                 let ctx = ctx.clone();
 
-                polars_async::executor::spawn(TaskPriority::High, async move {
+                executor::spawn(TaskPriority::High, task_metrics.as_deref(), async move {
                     // Spill, or reinsert if a failure.
                     match spillable.clone().try_spill(ctx.clone()) {
                         Ok(spill_success) => {

@@ -31,7 +31,7 @@ from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import PolarsIntegerType
+    from polars._typing import EngineType, PolarsIntegerType
 
 
 @pytest.mark.parametrize(
@@ -252,7 +252,8 @@ def test_series_expr_arithm() -> None:
     assert (s % pl.col("a")).meta == pl.lit(s) % pl.col("a")
 
 
-def test_fused_arithm() -> None:
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_fused_arithm(engine: EngineType) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],
@@ -270,18 +271,18 @@ def test_fused_arithm() -> None:
         """col("a").fma([col("b"), col("c")]), col("b").fma([col("c"), col("a")]).alias("2")"""
         in q.explain()
     )
-    assert q.collect().to_dict(as_series=False) == {
+    assert q.collect(engine=engine).to_dict(as_series=False) == {
         "a": [15, 45, 95],
         "2": [51, 102, 153],
     }
     # fsm
     q = df.lazy().select(pl.col("a") - pl.col("b") * pl.col("c"))
     assert """col("a").fsm([col("b"), col("c")])""" in q.explain()
-    assert q.collect()["a"].to_list() == [-49, -98, -147]
+    assert q.collect(engine=engine)["a"].to_list() == [-49, -98, -147]
     # fms
     q = df.lazy().select(pl.col("a") * pl.col("b") - pl.col("c"))
     assert """col("a").fms([col("b"), col("c")])""" in q.explain()
-    assert q.collect()["a"].to_list() == [5, 35, 85]
+    assert q.collect(engine=engine)["a"].to_list() == [5, 35, 85]
 
     # check if we constant fold instead of fma
     q = df.lazy().select(pl.lit(1) * pl.lit(2) - pl.col("c"))
@@ -300,6 +301,22 @@ def test_fused_arithm() -> None:
         assert all(el not in q.explain() for el in ["fms", "fsm", "fma"]), (
             f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
         )
+
+    for expr, values in (
+        (pl.col("a") * pl.col("b") + pl.struct("c"), [15, 45, 95]),
+        (pl.struct("c") + pl.col("a") * pl.col("b"), [15, 45, 95]),
+        (pl.col("a") * pl.col("b") - pl.struct("c"), [5, 35, 85]),
+        (pl.struct("c") - pl.col("a") * pl.col("b"), [-5, -35, -85]),
+    ):
+        q = df.lazy().select(expr.alias("result"))
+        expected = pl.Series(
+            "result",
+            [{"c": value} for value in values],
+            dtype=pl.Struct({"c": pl.Int64}),
+        )
+        assert all(fused not in q.explain() for fused in ("fma", "fms", "fsm"))
+        assert q.collect_schema() == {"result": expected.dtype}
+        assert_series_equal(q.collect(engine=engine).to_series(), expected)
 
 
 def test_literal_no_upcast() -> None:
@@ -1098,6 +1115,23 @@ def test_fma_unknown_type_coercion_28315() -> None:
         df.select(expr),
         pl.Series("x", [1e-30, 1.0], dtype=pl.Float32).to_frame(),
     )
+
+
+def test_bool_mul_float_literal_schema_28505() -> None:
+    lf = pl.LazyFrame(
+        {"b": [True, False], "f": [1.0, 2.0]},
+        schema={"b": pl.Boolean, "f": pl.Float32},
+    )
+    q = lf.select(
+        a=pl.col("b") * pl.lit(0.1),
+        c=pl.col("b") * 0.5 + pl.col("f"),
+    )
+    expected = pl.LazyFrame(
+        {"a": [0.1, 0.0], "c": [1.5, 2.0]},
+        schema={"a": pl.Float64, "c": pl.Float32},
+    )
+    assert_schema_equal(q.collect_schema(), expected.collect_schema())
+    assert_frame_equal(q, expected)
 
 
 def test_truediv_decimal_schema_28372() -> None:

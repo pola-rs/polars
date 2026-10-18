@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
-use polars_async::executor::{self, TaskPriority};
+use polars_arrow::datatypes::ArrowSchemaRef;
+use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_buffer::Buffer;
@@ -27,6 +27,7 @@ pub struct RowGroupEncoder {
     pub write_options: WriteOptions,
     pub encodings: Buffer<Vec<Encoding>>,
     pub num_leaf_columns: usize,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl RowGroupEncoder {
@@ -39,15 +40,19 @@ impl RowGroupEncoder {
             write_options,
             encodings,
             num_leaf_columns,
+            task_metrics,
         } = self;
 
         while let Ok(morsel) = morsel_rx.recv().await {
             let arrow_schema = Arc::clone(&arrow_schema);
             let schema_descriptor = Arc::clone(&schema_descriptor);
             let encodings = Buffer::clone(&encodings);
+            let column_task_metrics = task_metrics.clone();
 
-            let row_group_encode_handle =
-                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
+            let row_group_encode_handle = executor::AbortOnDropHandle::new(executor::spawn(
+                TaskPriority::High,
+                task_metrics.as_deref(),
+                async move {
                     let (df, morsel_permit) = morsel.into_inner();
                     let num_rows = df.height();
 
@@ -55,6 +60,7 @@ impl RowGroupEncoder {
 
                     for fut in parallelize_first_to_local(
                         TaskPriority::High,
+                        column_task_metrics.as_deref(),
                         df.into_columns().into_iter().enumerate().map(|(i, c)| {
                             let arrow_schema = Arc::clone(&arrow_schema);
                             let schema_descriptor = Arc::clone(&schema_descriptor);
@@ -108,7 +114,8 @@ impl RowGroupEncoder {
                         data,
                         morsel_permit,
                     })
-                }));
+                },
+            ));
 
             if encoded_row_group_tx
                 .send(row_group_encode_handle)

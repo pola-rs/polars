@@ -15,11 +15,13 @@ use super::super::IRStructFunction;
 use super::super::evaluate::constant_evaluate;
 use super::super::{AExpr, IRBooleanFunction, IRFunctionExpr, LiteralValue, Operator};
 use crate::plans::aexpr::builder::IntoAExprBuilder;
-#[cfg(feature = "dtype-struct")]
 use crate::plans::expr_ir::ExprIR;
 #[cfg(feature = "is_in")]
 use crate::plans::predicates::try_extract_is_in_haystack;
-use crate::plans::{AExprBuilder, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
+use crate::plans::{
+    AExprBuilder, OrderKeeping, aexpr_to_leaf_names_iter, is_scalar_ae, order_keeping_column,
+    rename_columns,
+};
 
 /// A resolved reference to a (possibly nested) statistics target: a top-level column,
 /// optionally followed by a struct-field path.
@@ -35,6 +37,9 @@ struct StatTarget {
     /// Field path into a struct column, outermost first. Empty for a whole column.
     #[cfg_attr(not(feature = "dtype-struct"), allow(dead_code))]
     path: Vec<PlSmallStr>,
+    /// An order-keeping expression of `col` to take the statistics of instead, and whether it is
+    /// increasing.
+    order_keeping: Option<(Node, bool)>,
 }
 
 impl StatTarget {
@@ -54,10 +59,21 @@ impl StatTarget {
     }
 
     fn min(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
-        self.stat("min", arena)
+        self.min_or_max(true, arena)
     }
     fn max(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
-        self.stat("max", arena)
+        self.min_or_max(false, arena)
+    }
+    fn min_or_max(&self, min: bool, arena: &mut Arena<AExpr>) -> AExprBuilder {
+        let Some((expr, increasing)) = self.order_keeping else {
+            return self.stat(if min { "min" } else { "max" }, arena);
+        };
+        let suffix = if min == increasing { "min" } else { "max" };
+        let stat_names = PlIndexMap::from_iter([(
+            self.col.clone(),
+            format_pl_smallstr!("{}_{suffix}", self.col),
+        )]);
+        AExprBuilder::new_from_node(rename_columns(expr, arena, &stat_names))
     }
     fn null_count(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
         self.stat("nc", arena)
@@ -73,13 +89,14 @@ fn struct_field(base: AExprBuilder, name: PlSmallStr, arena: &mut Arena<AExpr>) 
     )
 }
 
-/// Resolve a `col(..)` or chained `col(..).struct.field(..)` expression to a [`StatTarget`].
-/// Returns `None` for anything else (literals, computed expressions, ...).
-fn resolve_stat_target(e: Node, arena: &Arena<AExpr>) -> Option<StatTarget> {
+/// Resolve a `col(..)`, chained `col(..).struct.field(..)` or order-keeping expression of a
+/// column to a [`StatTarget`]. Returns `None` for anything else.
+fn resolve_stat_target(e: Node, arena: &Arena<AExpr>, schema: &Schema) -> Option<StatTarget> {
     match arena.get(e) {
         AExpr::Column(c) => Some(StatTarget {
             col: c.clone(),
             path: Vec::new(),
+            order_keeping: None,
         }),
         #[cfg(feature = "dtype-struct")]
         AExpr::Function {
@@ -87,11 +104,18 @@ fn resolve_stat_target(e: Node, arena: &Arena<AExpr>) -> Option<StatTarget> {
             function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)),
             ..
         } if input.len() == 1 => {
-            let mut inner = resolve_stat_target(input[0].node(), arena)?;
+            let mut inner = resolve_stat_target(input[0].node(), arena, schema)?;
             inner.path.push(name.clone());
             Some(inner)
         },
-        _ => None,
+        _ => {
+            let OrderKeeping { column, increasing } = order_keeping_column(e, arena, schema)?;
+            Some(StatTarget {
+                col: column,
+                path: Vec::new(),
+                order_keeping: Some((e, increasing)),
+            })
+        },
     }
 }
 
@@ -140,8 +164,8 @@ fn get_binary_expr_target_and_lv<'a>(
     schema: &Schema,
 ) -> Option<((StatTarget, Node), (Option<Cow<'a, LiteralValue>>, Node))> {
     match (
-        resolve_stat_target(left, arena),
-        resolve_stat_target(right, arena),
+        resolve_stat_target(left, arena, schema),
+        resolve_stat_target(right, arena, schema),
         constant_evaluate(left, arena, schema, 0),
         constant_evaluate(right, arena, schema, 0),
     ) {
@@ -193,6 +217,36 @@ fn can_use_min_max_stats(
         Some(O::Lt | O::LtEq) => true,
         None | Some(O::Eq | O::EqValidity) => !lv_is_nan && lv.is_some(),
         Some(O::Gt) => lv_is_nan,
+        _ => false,
+    }
+}
+
+/// Whether a runtime key range may skip batches of a column with this dtype.
+///
+/// The range is compared against the batch's min/max with polars' ordering, so the
+/// type must be one whose parquet statistics are ordered the same way. Floats are out
+/// because the statistics leave out NaN; 128-bit integers because their statistics
+/// are byte-wise.
+pub(crate) fn supports_runtime_range(dtype: &DataType) -> bool {
+    use DataType as D;
+    match dtype {
+        D::Boolean
+        | D::UInt8
+        | D::UInt16
+        | D::UInt32
+        | D::UInt64
+        | D::Int8
+        | D::Int16
+        | D::Int32
+        | D::Int64
+        | D::String
+        | D::Binary
+        | D::Date
+        | D::Datetime(..)
+        | D::Duration(_)
+        | D::Time => true,
+        #[cfg(feature = "dtype-decimal")]
+        D::Decimal(..) => true,
         _ => false,
     }
 }
@@ -469,7 +523,7 @@ fn aexpr_to_skip_batch_predicate_rec(
             } => match function {
                 IRFunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
-                    IRBooleanFunction::IsIn { nulls_equal } => {
+                    IRBooleanFunction::IsIn { nulls_equal, .. } => {
                         if !is_scalar_ae(input[1].node(), arena) {
                             return None;
                         }
@@ -477,14 +531,20 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
-                            resolve_stat_target(input[0].node(), arena),
+                            resolve_stat_target(input[0].node(), arena, schema),
                             constant_evaluate(lv_node, arena, schema, 0),
                         ) {
-                            (Some(target), Some(_)) => {
+                            (Some(target), Some(_)) if target.order_keeping.is_none() => {
                                 use polars_core::prelude::ExplodeOptions;
 
                                 let dtype = target_leaf_dtype(&target, schema)?;
                                 if !can_use_min_max_stats(dtype, None, None) {
+                                    return None;
+                                }
+                                if !function.membership_compares_in_needle_dtype(
+                                    dtype,
+                                    input[1].dtype(schema, arena).ok()?,
+                                ) {
                                     return None;
                                 }
 
@@ -594,7 +654,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         }
                     },
                     IRBooleanFunction::Not => {
-                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena, schema)?;
                         let dtype = target_leaf_dtype(&target, schema)?;
                         if !matches!(dtype, DataType::Boolean) {
                             return None;
@@ -614,7 +674,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         Some(all_null.or(min, arena).node())
                     },
                     IRBooleanFunction::IsNull => {
-                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena, schema)?;
 
                         // col(A).is_null() -> null_count(A) == 0
                         //
@@ -649,7 +709,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         Some(col_nc.eq(idx_zero, arena).node())
                     },
                     IRBooleanFunction::IsNotNull => {
-                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena, schema)?;
 
                         // A struct row with null *fields* is still a non-null *struct*, and the
                         // struct's row-level null count is unrecoverable from per-field counts, so
@@ -670,7 +730,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     },
                     #[cfg(feature = "is_between")]
                     IRBooleanFunction::IsBetween { closed } => {
-                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena, schema)?;
                         let dtype = target_leaf_dtype(&target, schema)?;
 
                         // col(A).is_between(X, Y) ->
@@ -698,7 +758,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let col_min = target.min(arena);
                         let col_max = target.max(arena);
 
-                        use polars_ops::series::ClosedInterval;
+                        use polars_defs::expr::ClosedInterval;
                         let (left, right) = match closed {
                             ClosedInterval::Both => (O::Lt, O::Gt),
                             ClosedInterval::Left => (O::Lt, O::GtEq),
@@ -724,6 +784,28 @@ fn aexpr_to_skip_batch_predicate_rec(
                         )
                     },
                     _ => None,
+                },
+                IRFunctionExpr::DynamicPred { pred, .. } => {
+                    let target = resolve_stat_target(input[0].node(), arena, schema)?;
+                    let dtype = target_leaf_dtype(&target, schema)?;
+                    if !supports_runtime_range(dtype) {
+                        return None;
+                    }
+                    let function = IRFunctionExpr::DynamicSkipBatch { pred: pred.clone() };
+                    let options = function.function_options();
+                    let input = [
+                        target.min(arena),
+                        target.max(arena),
+                        target.null_count(arena),
+                    ]
+                    .into_iter()
+                    .map(|b| ExprIR::from_node(b.node(), arena))
+                    .collect();
+                    Some(arena.add(AExpr::Function {
+                        input,
+                        function,
+                        options,
+                    }))
                 },
                 _ => None,
             },

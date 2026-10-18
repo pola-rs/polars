@@ -1,9 +1,9 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, Utf8ViewArray};
-use arrow::datatypes::{ArrowSchema, Field};
-use arrow::record_batch::RecordBatchT;
+use polars_arrow::array::{ArrayRef, Utf8ViewArray};
+use polars_arrow::datatypes::{ArrowSchema, Field};
+use polars_arrow::record_batch::RecordBatchT;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::arrow::write::{FileWriter, WriteOptions};

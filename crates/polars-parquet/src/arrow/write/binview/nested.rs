@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryViewArray};
+use polars_arrow::array::BinaryViewArray;
 use polars_error::PolarsResult;
 
 use super::super::{WriteOptions, nested, utils};
@@ -31,11 +31,12 @@ pub fn array_to_page(
         None
     };
 
+    let num_values = nested::num_values(nested);
     utils::build_plain_page(
         buffer,
-        nested::num_values(nested),
+        num_values,
         nested[0].len(),
-        array.null_count(),
+        nested::num_nulls(num_values, array),
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,

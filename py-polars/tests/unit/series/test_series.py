@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import operator
 import re
+import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -33,8 +34,9 @@ from polars.exceptions import (
     PolarsInefficientMapWarning,
     ShapeError,
 )
+from polars.series.utils import _is_empty_method
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES, NUMERIC_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
@@ -42,6 +44,46 @@ if TYPE_CHECKING:
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
+
+
+def test_empty_method_detection() -> None:
+    # note: correct "empty method" detection is crucial for Series -> Expr dispatch
+
+    def documented_stub() -> None:
+        """Empty, has docstring."""
+
+    def returns_docstring() -> str:
+        """Non-empty, has docstring."""
+        return "miscellaneous"
+
+    def returns_none() -> None:
+        return None
+
+    def returns_true() -> bool:
+        return True
+
+    def returns_false() -> bool:
+        return False
+
+    def returns_zero() -> int:
+        return 0
+
+    def returns_empty_string() -> str:
+        return ""
+
+    assert _is_empty_method(documented_stub)  # type: ignore[arg-type]
+
+    for method in (
+        returns_docstring,
+        returns_true,
+        returns_false,
+        returns_zero,
+        returns_empty_string,
+    ):
+        assert not _is_empty_method(method)  # type: ignore[arg-type]
+
+    # note: in -OO mode, an explicit None return is indistinguishable from an empty stub
+    assert _is_empty_method(returns_none) is (sys.flags.optimize == 2)  # type: ignore[arg-type]
 
 
 def test_cum_agg() -> None:
@@ -81,6 +123,38 @@ def test_cum_min_max_bool() -> None:
     assert_series_equal(
         s.cum_max(reverse=True).cast(pl.Int32), s.cast(pl.Int32).cum_max(reverse=True)
     )
+
+
+@pytest.mark.parametrize("dtype", [pl.String, pl.Binary])
+def test_cum_min_max_string(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [None, "b", "c", None, "a", "bb"]).cast(dtype)
+    expected_min = pl.Series("a", [None, "b", "b", None, "a", "a"]).cast(dtype)
+    expected_max = pl.Series("a", [None, "b", "c", None, "c", "c"]).cast(dtype)
+    assert_series_equal(s.cum_min(), expected_min)
+    assert_series_equal(s.cum_max(), expected_max)
+    expected_min = pl.Series("a", [None, "a", "a", None, "a", "bb"]).cast(dtype)
+    expected_max = pl.Series("a", [None, "c", "c", None, "bb", "bb"]).cast(dtype)
+    assert_series_equal(s.cum_min(reverse=True), expected_min)
+    assert_series_equal(s.cum_max(reverse=True), expected_max)
+
+
+@pytest.mark.parametrize("dtype", [pl.String, pl.Binary])
+def test_cum_min_max_string_streaming(dtype: pl.DataType) -> None:
+    # Each frame is its own morsel, so the running value carries over between morsels.
+    lfs = [
+        pl.LazyFrame({"a": values}).cast(dtype)
+        for values in (["b", None], [None, "c"], ["a", "bb"])
+    ]
+    out = pl.concat(lfs).select(
+        pl.col("a").cum_min().alias("min"), pl.col("a").cum_max().alias("max")
+    )
+    expected = pl.DataFrame(
+        {
+            "min": ["b", None, None, "b", "a", "a"],
+            "max": ["b", None, None, "c", "c", "c"],
+        }
+    ).cast(dtype)
+    assert_frame_equal(out.collect(engine="streaming"), expected)
 
 
 def test_init_inputs(plmonkeypatch: PlMonkeyPatch) -> None:
@@ -1492,6 +1566,8 @@ def test_arg_sort() -> None:
         (pl.Series([None, 5, 1]), 2, 1),
         (pl.Series([float("nan"), 3.0, 5.0]), 1, 2),
         (pl.Series([None, float("nan"), 3.0, 5.0]), 2, 3),
+        (pl.Series([float("nan")] + [float("inf")] * 63), 1, 1),
+        (pl.Series([float("nan")] + [float("-inf")] * 63), 1, 1),
         # Boolean
         (pl.Series([True, False]), 1, 0),
         (pl.Series([True, True]), 0, 0),
@@ -1541,6 +1617,15 @@ def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
 def test_arg_min_arg_max_all_nulls_or_empty(series: pl.Series) -> None:
     assert series.arg_min() is None
     assert series.arg_max() is None
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_arg_min_arg_max_nulls_chunked(dtype: pl.DataType) -> None:
+    values = [None if i % 7 == 0 else 10 + (i * 37) % 101 for i in range(300)]
+    s = pl.concat([pl.Series(values, dtype=dtype)] * 2, rechunk=False).slice(3, 500)
+    valid = [(v, i) for i, v in enumerate(s.to_list()) if v is not None]
+    assert s.arg_min() == min(valid)[1]
+    assert s.arg_max() == max(valid, key=lambda t: (t[0], -t[1]))[1]
 
 
 def test_arg_min_and_arg_max_sorted() -> None:

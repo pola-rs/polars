@@ -1,4 +1,4 @@
-use arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::BitmapBuilder;
 
 use crate::prelude::*;
 

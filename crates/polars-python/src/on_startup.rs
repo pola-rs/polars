@@ -2,10 +2,10 @@
 use std::any::Any;
 use std::sync::OnceLock;
 
-use arrow::array::Array;
 use polars::chunked_array::object::ObjectArray;
 use polars::prelude::file_provider::FileProviderReturn;
 use polars::prelude::*;
+use polars_arrow::array::Array;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
@@ -23,11 +23,13 @@ use pyo3::types::PyCFunction;
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
+use crate::expr::PyExpr;
 use crate::lazyframe::PyLazyFrame;
 use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
 use crate::py_modules::{pl_df, polars, polars_rs};
 use crate::series::PySeries;
+use crate::utils::{EnterPolarsExt, to_py_err};
 
 fn python_function_caller_series(
     s: &[Column],
@@ -198,10 +200,6 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             });
             Box::new(object) as Box<dyn Any>
         });
-        let pyobject_converter = Arc::new(|av: AnyValue| {
-            let object = Python::attach(|py| Wrap(av).into_py_any(py).unwrap());
-            Box::new(object) as Box<dyn Any>
-        });
         fn object_array_getter(arr: &dyn Array, idx: usize) -> Option<AnyValue<'_>> {
             let arr = arr
                 .as_any()
@@ -245,6 +243,12 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                         Ok(Box::new(py_f.extract::<Wrap<polars_core::schema::Schema>>(py)?.0) as _)
                     })
                 }),
+                expr: Arc::new(|py_f| {
+                    Python::attach(|py| Ok(Box::new(py_f.extract::<PyExpr>(py)?.inner) as _))
+                }),
+                dtype: Arc::new(|py_f| {
+                    Python::attach(|py| Ok(Box::new(py_f.extract::<Wrap<DataType>>(py)?.0) as _))
+                }),
             },
             to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
                 df: Arc::new(|df| {
@@ -281,6 +285,16 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                         .into_py_any(py)
                     })
                 }),
+                expr: Arc::new(|expr| {
+                    Python::attach(|py| {
+                        PyExpr::from(expr.downcast_ref::<Expr>().unwrap().clone()).into_py_any(py)
+                    })
+                }),
+                dtype: Arc::new(|dtype| {
+                    Python::attach(|py| {
+                        (&Wrap(dtype.downcast_ref::<DataType>().unwrap().clone())).into_py_any(py)
+                    })
+                }),
             },
         });
 
@@ -289,7 +303,6 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         registry::register_object_builder(
             object_builder,
             object_converter,
-            pyobject_converter,
             physical_dtype,
             Arc::new(object_array_getter),
             Arc::new(with_gil),
@@ -304,6 +317,14 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
                 extract_py_resolved_dsl: crate::conversion::extract_py_resolved_dsl,
             }
         });
+
+        polars_stream::nodes::io_sources::external_python::PY_EXTERNAL_READER_VTABLE.get_or_init(
+            || polars_stream::nodes::io_sources::external_python::PyExternalReaderVTable {
+                extract_schema: dataset_provider_funcs::extract_schema,
+                enter_polars_send_df: |py, df, tx: &polars_stream::nodes::io_sources::external_python::ExternalPythonReaderDataFrameTx| py.enter_polars_ok(|| tx.send_df_(df)).unwrap(),
+                extract_df: |py, py_df| python_df_to_rust(py, py_df).map_err(to_py_err),
+            },
+        );
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,

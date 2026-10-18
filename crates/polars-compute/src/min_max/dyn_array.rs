@@ -1,7 +1,9 @@
-use arrow::array::{
+use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
 };
-use arrow::scalar::{BinaryScalar, BinaryViewScalar, BooleanScalar, PrimitiveScalar, Scalar};
+use polars_arrow::scalar::{
+    BinaryScalar, BinaryViewScalar, BooleanScalar, PrimitiveScalar, Scalar,
+};
 
 use crate::min_max::MinMaxKernel;
 
@@ -38,7 +40,7 @@ macro_rules! call {
     ($arr:expr, $op:path$(, $variant:ident)?) => {{
         let arr = $arr;
 
-        use arrow::datatypes::{PhysicalType as PH, PrimitiveType as PR};
+        use polars_arrow::datatypes::{PhysicalType as PH, PrimitiveType as PR};
         use PrimitiveArray as PArr;
         use PrimitiveScalar as PScalar;
         use polars_utils::float16::pf16;
@@ -77,6 +79,10 @@ pub fn dyn_array_min_ignore_nan(arr: &dyn Array) -> Option<Box<dyn Scalar>> {
 
 pub fn dyn_array_max_ignore_nan(arr: &dyn Array) -> Option<Box<dyn Scalar>> {
     call!(arr, MinMaxKernel::max_ignore_nan_kernel)
+}
+
+pub fn dyn_array_min_max_ignore_nan(arr: &dyn Array) -> Option<(Box<dyn Scalar>, Box<dyn Scalar>)> {
+    call!(arr, MinMaxKernel::min_max_ignore_nan_kernel, ret_two)
 }
 
 pub fn dyn_array_min_propagate_nan(arr: &dyn Array) -> Option<Box<dyn Scalar>> {

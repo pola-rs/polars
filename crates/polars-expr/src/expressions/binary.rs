@@ -2,6 +2,10 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
+#[cfg(feature = "dtype-struct")]
+use polars_utils::aliases::PlHashMap;
+#[cfg(feature = "dtype-struct")]
+use polars_utils::broadcast::broadcast_len;
 use recursive::recursive;
 
 use super::*;
@@ -47,6 +51,10 @@ impl BinaryExpr {
 /// Can partially do operations in place.
 fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResult<Column> {
     match op {
+        #[cfg(feature = "dtype-struct")]
+        _ if left.dtype().is_struct() || right.dtype().is_struct() => {
+            apply_operator(&left, &right, op)
+        },
         Operator::Plus => left.try_add_owned(right),
         Operator::Minus => left.try_sub_owned(right),
         Operator::Multiply
@@ -58,8 +66,64 @@ fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResu
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+fn try_apply_struct_numeric_operator(
+    left: &Column,
+    right: &Column,
+    op: Operator,
+) -> Option<PolarsResult<Column>> {
+    if !op.is_arithmetic() {
+        return None;
+    }
+    let (struct_column, numeric, numeric_left) = match (left.dtype(), right.dtype()) {
+        (DataType::Struct(_), dtype) if dtype.is_primitive_numeric() => (left, right, false),
+        (dtype, DataType::Struct(_)) if dtype.is_primitive_numeric() => (right, left, true),
+        _ => return None,
+    };
+    Some((|| {
+        let len = broadcast_len([struct_column, numeric]).context("struct arithmetic")?;
+        let struct_column = struct_column.broadcast_to(len)?;
+        let mut cast_cache: PlHashMap<DataType, Column> = PlHashMap::new();
+        let mut out = struct_column
+            .as_materialized_series()
+            .struct_()?
+            .try_apply_fields(|field| {
+                let dtype = field.dtype().leaf_dtype();
+                let numeric = if field.dtype().is_struct()
+                    || matches!(field.dtype(), DataType::Duration(_)) && op == Operator::Multiply
+                    || numeric.dtype() == dtype
+                {
+                    numeric.clone()
+                } else if let Some(casted) = cast_cache.get(dtype) {
+                    casted.clone()
+                } else {
+                    let casted = numeric.cast(dtype)?;
+                    cast_cache.insert(dtype.clone(), casted.clone());
+                    casted
+                };
+                let field = field.clone().into_column();
+                let mut out = if numeric_left {
+                    apply_operator(&numeric, &field, op)?
+                } else {
+                    apply_operator(&field, &numeric, op)?
+                };
+                out.rename(field.name().clone());
+                Ok(out.take_materialized_series())
+            })?;
+        if numeric_left {
+            out.rename(numeric.name().clone());
+        }
+        Ok(out.into_column())
+    })())
+}
+
 pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResult<Column> {
     use DataType::*;
+    #[cfg(feature = "dtype-struct")]
+    if let Some(output) = try_apply_struct_numeric_operator(left, right, op) {
+        return output;
+    }
+
     match op {
         Operator::Gt => ChunkCompareIneq::gt(left, right).map(|ca| ca.into_column()),
         Operator::GtEq => ChunkCompareIneq::gt_eq(left, right).map(|ca| ca.into_column()),

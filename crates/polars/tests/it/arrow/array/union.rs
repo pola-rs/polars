@@ -1,6 +1,6 @@
-use arrow::array::*;
-use arrow::datatypes::*;
-use arrow::scalar::{PrimitiveScalar, Scalar, UnionScalar, Utf8Scalar, new_scalar};
+use polars_arrow::array::*;
+use polars_arrow::datatypes::*;
+use polars_arrow::scalar::{PrimitiveScalar, Scalar, UnionScalar, Utf8Scalar, new_scalar};
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 

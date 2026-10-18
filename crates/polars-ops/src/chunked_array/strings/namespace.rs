@@ -1,19 +1,22 @@
-use arrow::array::ValueSize;
-use arrow::legacy::kernels::string::*;
-#[cfg(feature = "string_encoding")]
-use base64::Engine as _;
-#[cfg(feature = "string_encoding")]
-use base64::engine::general_purpose;
+use std::cell::RefCell;
+use std::sync::Arc;
+
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
+use polars_arrow::array::ValueSize;
+use polars_arrow::legacy::kernels::string::*;
 use polars_core::prelude::arity::*;
+#[cfg(feature = "string_normalize")]
+use polars_defs::expr::UnicodeForm;
+use polars_utils::cache::LruCache;
 use polars_utils::regex_cache::{compile_regex, with_regex_cache};
+use regex::{Regex, Replacer};
+use regex_syntax::hir::{Class, Hir, HirKind, Look};
 
+use super::literal_chain::LiteralChain;
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
-#[cfg(feature = "string_normalize")]
-use crate::prelude::strings::normalize::UnicodeForm;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]
@@ -22,6 +25,225 @@ where
     F: for<'a, 'b> FnMut(Option<&'a str>, Option<&'b str>) -> Option<bool>,
 {
     f
+}
+
+/// Write `s` into `buf` with the first `limit` matches of `reg` replaced by `rep` (all matches if
+/// `limit` is 0). Returns `false` if nothing matched; `buf` is then not filled.
+///
+/// This is [`Regex::replacen`] writing into a reused buffer.
+pub fn regex_replacen_into<R: Replacer>(
+    reg: &Regex,
+    s: &str,
+    limit: usize,
+    mut rep: R,
+    buf: &mut String,
+) -> bool {
+    buf.clear();
+    let mut last_match = 0;
+    if let Some(rep) = rep.no_expansion() {
+        let mut it = reg.find_iter(s).enumerate().peekable();
+        if it.peek().is_none() {
+            return false;
+        }
+        for (i, m) in it {
+            buf.push_str(&s[last_match..m.start()]);
+            buf.push_str(&rep);
+            last_match = m.end();
+            if limit > 0 && i >= limit - 1 {
+                break;
+            }
+        }
+        buf.push_str(&s[last_match..]);
+        return true;
+    }
+
+    let mut it = reg.captures_iter(s).enumerate().peekable();
+    if it.peek().is_none() {
+        return false;
+    }
+    for (i, cap) in it {
+        let m = cap.get(0).unwrap();
+        buf.push_str(&s[last_match..m.start()]);
+        rep.replace_append(&cap, buf);
+        last_match = m.end();
+        if limit > 0 && i >= limit - 1 {
+            break;
+        }
+    }
+    buf.push_str(&s[last_match..]);
+    true
+}
+
+/// A regex that ends in `.*$`, e.g. `^https?://([^/]+)/.*$`. In a string without a newline that
+/// `.` would not match, its match runs from the match of the regex before the `.*$` (the head) to
+/// the end of the string. Finding the capture groups of the head is much cheaper than finding them
+/// over the whole match.
+struct MatchesToEnd {
+    head: Regex,
+    dot_matches_newline: bool,
+}
+
+thread_local! {
+    static LOCAL_MATCHES_TO_END_CACHE: RefCell<LruCache<String, Option<Arc<MatchesToEnd>>>> =
+        RefCell::new(LruCache::with_capacity(32));
+}
+
+impl MatchesToEnd {
+    /// Like `parse`, but cached per thread, including patterns that cannot use the fast path.
+    fn cached(pat: &str, reg: &Regex) -> Option<Arc<Self>> {
+        LOCAL_MATCHES_TO_END_CACHE.with_borrow_mut(|cache| {
+            cache
+                .get_or_insert_with(pat, |pat| Self::parse(pat, reg).map(Arc::new))
+                .clone()
+        })
+    }
+
+    fn parse(pat: &str, reg: &Regex) -> Option<Self> {
+        let hir = regex_syntax::parse(pat).ok()?;
+        let HirKind::Concat(items) = hir.kind() else {
+            return None;
+        };
+        let [head @ .., rest, end] = items.as_slice() else {
+            return None;
+        };
+        if head.is_empty() || !matches!(end.kind(), HirKind::Look(Look::End)) {
+            return None;
+        }
+        let HirKind::Repetition(rep) = rest.kind() else {
+            return None;
+        };
+        if rep.min != 0 || rep.max.is_some() {
+            return None;
+        }
+        let HirKind::Class(Class::Unicode(cls)) = rep.sub.kind() else {
+            return None;
+        };
+        let dot_matches_newline = match cls.ranges() {
+            [all] if all.start() == '\0' && all.end() == char::MAX => true,
+            [before, after]
+                if before.start() == '\0'
+                    && before.end() == '\t'
+                    && after.start() == '\x0B'
+                    && after.end() == char::MAX =>
+            {
+                false
+            },
+            _ => return None,
+        };
+        let head = compile_regex(&Hir::concat(head.to_vec()).to_string()).ok()?;
+        // Groups that cannot match, as `(a){0}`, are not printed.
+        if head.captures_len() != reg.captures_len()
+            || !head.capture_names().eq(reg.capture_names())
+        {
+            return None;
+        }
+        Some(Self {
+            head,
+            dot_matches_newline,
+        })
+    }
+
+    /// Whether the replacement `val` reads the whole match, as `$0`, which ends at the end of the
+    /// string rather than at the end of the head. See [`regex::Captures::expand`] for the syntax.
+    fn reads_whole_match(val: &str) -> bool {
+        let mut rest = val;
+        while let Some(i) = rest.find('$') {
+            rest = &rest[i + 1..];
+            let name = if let Some(after) = rest.strip_prefix('$') {
+                rest = after;
+                continue;
+            } else if let Some((name, after)) =
+                rest.strip_prefix('{').and_then(|r| r.split_once('}'))
+            {
+                rest = after;
+                name
+            } else {
+                let len = rest
+                    .bytes()
+                    .take_while(|b| *b == b'_' || b.is_ascii_alphanumeric())
+                    .count();
+                let name;
+                (name, rest) = rest.split_at(len);
+                name
+            };
+            if name.parse::<usize>() == Ok(0) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The capture group that `val` consists of, if it is a single reference as `${1}`.
+    fn group_ref(&self, val: &str) -> Option<usize> {
+        let name = match val.strip_prefix("${").and_then(|v| v.strip_suffix('}')) {
+            Some(name) => name,
+            None => val.strip_prefix('$').filter(|name| {
+                !name.is_empty() && name.bytes().all(|b| b == b'_' || b.is_ascii_alphanumeric())
+            })?,
+        };
+        let idx = match name.parse::<usize>() {
+            Ok(idx) => idx,
+            Err(_) => self
+                .head
+                .capture_names()
+                .position(|group| group == Some(name))?,
+        };
+        (idx < self.head.captures_len()).then_some(idx)
+    }
+
+    /// [`regex_replacen`] with a limit of 1, where `reg` is the whole regex.
+    fn replace<'a>(&self, ca: &'a StringChunked, reg: &Regex, val: &str) -> StringChunked {
+        let group = self.group_ref(val);
+        let mut buf = String::new();
+        ca.apply_mut(|s: &'a str| {
+            if !self.dot_matches_newline && memchr::memchr(b'\n', s.as_bytes()).is_some() {
+                if !regex_replacen_into(reg, s, 1, val, &mut buf) {
+                    return s;
+                }
+            } else {
+                let Some(caps) = self.head.captures(s) else {
+                    return s;
+                };
+                let m = caps.get(0).unwrap();
+                if let (0, Some(group)) = (m.start(), group) {
+                    return caps.get(group).map_or("", |g| g.as_str());
+                }
+                buf.clear();
+                buf.push_str(&s[..m.start()]);
+                let mut rep = val;
+                rep.replace_append(&caps, &mut buf);
+            }
+            // SAFETY: `apply_mut` copies the returned value before the next call.
+            unsafe { std::mem::transmute::<&str, &'a str>(buf.as_str()) }
+        })
+    }
+}
+
+fn regex_replacen<'a>(
+    ca: &'a StringChunked,
+    pat: &str,
+    val: &str,
+    limit: usize,
+) -> PolarsResult<StringChunked> {
+    let reg = compile_regex(pat)?;
+    // Without `$` the replacement reads no capture groups, and the whole regex finds the match
+    // fastest.
+    if limit == 1
+        && val.contains('$')
+        && !MatchesToEnd::reads_whole_match(val)
+        && let Some(matches_to_end) = MatchesToEnd::cached(pat, &reg)
+    {
+        return Ok(matches_to_end.replace(ca, &reg, val));
+    }
+    let mut buf = String::new();
+    Ok(ca.apply_mut(|s: &'a str| {
+        if regex_replacen_into(&reg, s, limit, val, &mut buf) {
+            // SAFETY: `apply_mut` copies the returned value before the next call.
+            unsafe { std::mem::transmute::<&str, &'a str>(buf.as_str()) }
+        } else {
+            s
+        }
+    }))
 }
 
 #[cfg(feature = "string_to_integer")]
@@ -117,8 +339,7 @@ pub trait StringNameSpaceImpl: AsString {
     #[must_use]
     #[cfg(feature = "string_encoding")]
     fn hex_encode(&self) -> StringChunked {
-        let ca = self.as_string();
-        ca.apply_values(|s| hex::encode(s).into())
+        crate::chunked_array::binary::binary_to_hex(&self.as_string().as_binary())
     }
 
     #[cfg(not(feature = "binary_encoding"))]
@@ -135,8 +356,7 @@ pub trait StringNameSpaceImpl: AsString {
     #[must_use]
     #[cfg(feature = "string_encoding")]
     fn base64_encode(&self) -> StringChunked {
-        let ca = self.as_string();
-        ca.apply_values(|s| general_purpose::STANDARD.encode(s).into())
+        crate::chunked_array::binary::binary_to_base64(&self.as_string().as_binary())
     }
 
     #[cfg(feature = "string_to_integer")]
@@ -334,6 +554,11 @@ pub trait StringNameSpaceImpl: AsString {
     /// ```
     fn contains(&self, pat: &str, strict: bool) -> PolarsResult<BooleanChunked> {
         let ca = self.as_string();
+        if let Some(chain) = LiteralChain::cached(pat) {
+            return Ok(unary_elementwise_values(ca, |s| {
+                chain.is_match(s.as_bytes())
+            }));
+        }
         let res_reg = polars_utils::regex_cache::compile_regex(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
         let out: BooleanChunked = if let Some(reg) = opt_reg {
@@ -372,11 +597,8 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     /// Replace the leftmost regex-matched (sub)string with another string
-    fn replace<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
-        let reg = polars_utils::regex_cache::compile_regex(pat)?;
-        let f = |s: &'a str| reg.replace(s, val);
-        let ca = self.as_string();
-        Ok(ca.apply_values(f))
+    fn replace(&self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
+        regex_replacen(self.as_string(), pat, val, 1)
     }
 
     /// Replace the leftmost literal (sub)string with another string
@@ -422,9 +644,7 @@ pub trait StringNameSpaceImpl: AsString {
 
     /// Replace all regex-matched (sub)strings with another string
     fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
-        let ca = self.as_string();
-        let reg = polars_utils::regex_cache::compile_regex(pat)?;
-        Ok(ca.apply_values(|s| reg.replace_all(s, val)))
+        regex_replacen(self.as_string(), pat, val, 0)
     }
 
     /// Replace all matching literal (sub)strings with another string

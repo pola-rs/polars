@@ -14,6 +14,7 @@ struct Key {
 }
 
 impl Key {
+    #[inline]
     unsafe fn get<'k>(&self, key_data: &'k [Vec<u8>]) -> &'k [u8] {
         let buf = unsafe { key_data.get_unchecked(self.key_buffer as usize) };
         unsafe { buf.get_unchecked(self.key_offset..self.key_offset + self.key_length as usize) }
@@ -55,29 +56,33 @@ impl<V> BytesIndexMap<V> {
         self.tuples.reserve(additional);
     }
 
+    #[inline]
     pub fn len(&self) -> IdxSize {
         self.tuples.len() as IdxSize
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.tuples.is_empty()
     }
 
     pub fn get(&self, hash: u64, key: &[u8]) -> Option<&V> {
-        let idx = self.table.find(hash.wrapping_mul(self.seed), |i| unsafe {
-            let t = self.tuples.get_unchecked(*i as usize);
-            hash == t.0.key_hash && key == t.0.get(&self.key_data)
-        })?;
-        unsafe { Some(&self.tuples.get_unchecked(*idx as usize).1) }
+        let idx = self.get_index_of(hash, key)?;
+        unsafe { Some(&self.tuples.get_unchecked(idx as usize).1) }
     }
 
     pub fn contains_key(&self, hash: u64, key: &[u8]) -> bool {
+        self.get_index_of(hash, key).is_some()
+    }
+
+    /// Gets the index by insertion order of the given key.
+    pub fn get_index_of(&self, hash: u64, key: &[u8]) -> Option<IdxSize> {
         self.table
             .find(hash.wrapping_mul(self.seed), |i| unsafe {
                 let t = self.tuples.get_unchecked(*i as usize);
                 hash == t.0.key_hash && key == t.0.get(&self.key_data)
             })
-            .is_some()
+            .copied()
     }
 
     pub fn entry<'k>(&mut self, hash: u64, key: &'k [u8]) -> Entry<'_, 'k, V> {
@@ -125,11 +130,13 @@ impl<V> BytesIndexMap<V> {
         unsafe { (t.0.key_hash, t.0.get(&self.key_data), &t.1) }
     }
 
-    /// Iterates over the (hash, key) pairs in insertion order.
-    pub fn iter_hash_keys(&self) -> impl Iterator<Item = (u64, &[u8])> {
-        self.tuples
-            .iter()
-            .map(|t| unsafe { (t.0.key_hash, t.0.get(&self.key_data)) })
+    /// Iterates over the (hash, key) pairs in insertion order, where each key slice runs to the
+    /// end of the buffer that holds it.
+    pub fn iter_hash_keys_to_buffer_end(&self) -> impl Iterator<Item = (u64, &[u8])> {
+        self.tuples.iter().map(|t| unsafe {
+            let buf = self.key_data.get_unchecked(t.0.key_buffer as usize);
+            (t.0.key_hash, buf.get_unchecked(t.0.key_offset..))
+        })
     }
 
     /// Iterates over the values in insertion order.

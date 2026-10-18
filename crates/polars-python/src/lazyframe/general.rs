@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use arrow::ffi::export_iterator;
 use either::Either;
 use parking_lot::Mutex;
 #[cfg(feature = "pivot")]
 use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::prelude::iceberg_sink_state::IcebergSinkState;
-use polars::time::*;
+use polars_arrow::ffi::export_iterator;
 #[cfg(feature = "csv")]
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
+use polars_io::external_reader::ExternalReaderBuilder;
+use polars_io::external_reader::python::PythonFileReaderBuilder;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -23,7 +24,7 @@ use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList};
+use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyMapping};
 
 use super::{PyLazyFrame, PyOptFlags};
 use crate::error::PyPolarsErr;
@@ -33,6 +34,8 @@ use crate::expr::selector::PySelector;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
+#[cfg(feature = "parquet")]
+use crate::io::parquet_encryption::PyFileDecryptionProperties;
 use crate::io::scan_options::PyScanOptions;
 use crate::io::sink_options::PySinkOptions;
 use crate::io::sink_output::PyFileSinkDestination;
@@ -291,7 +294,8 @@ impl PyLazyFrame {
                         .extract::<Vec<String>>(py)
                         .expect("python function should return List[str]");
                     polars_ensure!(new_names.len() == schema.len(),
-                        ShapeMismatch: "The length of the new names list should be equal to or less than the original column length",
+                        ShapeMismatch: "The length of the new names list ({}) should be equal to the original column length ({})",
+                        new_names.len(), schema.len(),
                     );
                     Ok(schema
                         .iter_values()
@@ -309,7 +313,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (
-        sources, schema, scan_options, parallel, low_memory, use_statistics
+        sources, schema, scan_options, parallel, low_memory, use_statistics, decryption_properties
     ))]
     fn new_from_parquet(
         sources: Wrap<ScanSources>,
@@ -318,6 +322,7 @@ impl PyLazyFrame {
         parallel: Wrap<ParallelStrategy>,
         low_memory: bool,
         use_statistics: bool,
+        decryption_properties: Option<PyFileDecryptionProperties>,
     ) -> PyResult<Self> {
         use crate::utils::to_py_err;
 
@@ -328,6 +333,8 @@ impl PyLazyFrame {
             parallel,
             low_memory,
             use_statistics,
+            decryption_properties: decryption_properties
+                .map(|p| PlFileDecryptionProperties(p.inner)),
         };
 
         let sources = sources.0;
@@ -414,23 +421,72 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[pyo3(signature = (
-        dataset_object
+        dataset_object,
+        resolve_heavy_sources = None,
     ))]
-    fn new_from_dataset_object(dataset_object: Py<PyAny>) -> PyResult<Self> {
-        let lf =
-            LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
-                .into();
+    fn new_from_dataset_object(
+        dataset_object: Py<PyAny>,
+        // Equivalent to `scan_parquet(_resolve_heavy_sources=)` for expanded datasets.
+        resolve_heavy_sources: Option<u32>,
+    ) -> PyResult<Self> {
+        let resolve_heavy_sources = resolve_heavy_sources
+            .map(|n| {
+                std::num::NonZeroU32::new(n).ok_or_else(|| {
+                    PyValueError::new_err("resolve_heavy_sources must be at least 1")
+                })
+            })
+            .transpose()?;
 
-        Ok(lf)
+        let mut dsl = DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build();
+
+        if let Some(n_parts) = resolve_heavy_sources
+            && let polars_plan::dsl::DslPlan::Scan {
+                unified_scan_args, ..
+            } = &mut dsl
+        {
+            unified_scan_args.resolve_heavy_sources = Some(n_parts);
+        }
+
+        Ok(LazyFrame::from(dsl).into())
     }
 
     #[staticmethod]
     #[pyo3(signature = (resolver))]
     fn from_lazyframe_resolver(resolver: Py<PyAny>) -> PyResult<Self> {
-        let lf = LazyFrame::from(
+        let lf: PyLazyFrame = LazyFrame::from(
             DslBuilder::from_dsl_resolver(Arc::new(DslResolver::new_python(PythonObject(
                 resolver,
             ))))
+            .build(),
+        )
+        .into();
+
+        Ok(lf)
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (sources, reader_builder, schema, scan_options))]
+    fn new_from_external_reader_builder(
+        sources: Wrap<ScanSources>,
+        reader_builder: Py<PyAny>,
+        schema: Wrap<Schema>,
+        scan_options: PyScanOptions,
+    ) -> PyResult<Self> {
+        let sources = sources.0;
+
+        let first_path = sources.first_path();
+
+        let mut unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.and_then(|x| x.scheme()))?;
+
+        unified_scan_args.schema = Some(schema.0.into());
+
+        let lf: PyLazyFrame = LazyFrame::from(
+            DslBuilder::from_external_reader_builder(
+                sources,
+                ExternalReaderBuilder::Python(PythonFileReaderBuilder::new(reader_builder)),
+                unified_scan_args,
+            )
             .build(),
         )
         .into();
@@ -527,6 +583,39 @@ impl PyLazyFrame {
 
     fn describe_optimized_plan_tree(&self, py: Python) -> PyResult<String> {
         py.enter_polars(|| self.ldf.read().describe_optimized_plan_tree())
+    }
+
+    /// Optimize and return retained `(source index, row group count)` pairs for tests,
+    /// grouped by Parquet scan.
+    #[cfg(feature = "parquet")]
+    fn _retained_parquet_footers(&self, py: Python) -> PyResult<Vec<Vec<(usize, usize)>>> {
+        use polars_plan::dsl::FileScanIR;
+        use polars_plan::plans::{ArenaLpIter as _, IR};
+
+        py.enter_polars(|| {
+            let plan = self.ldf.read().clone().to_alp_optimized()?;
+
+            PolarsResult::Ok(
+                plan.lp_arena
+                    .iter(plan.lp_top)
+                    .filter_map(|(_, ir)| match ir {
+                        IR::Scan { scan_type, .. } => match scan_type.as_ref() {
+                            FileScanIR::Parquet {
+                                metadata_per_source,
+                                ..
+                            } => Some(
+                                metadata_per_source
+                                    .iter_resolved()
+                                    .map(|(i, md)| (i, md.row_groups.len()))
+                                    .collect(),
+                            ),
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        })
     }
 
     fn to_dot(&self, py: Python<'_>, optimized: bool) -> PyResult<String> {
@@ -1180,14 +1269,14 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = missing_columns.extract::<Wrap<MissingColumnsPolicyOrExpr>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = missing_columns.cast::<PyDict>() {
+            } else if let Ok(mapping) = missing_columns.cast::<PyMapping>() {
                 out.extend(std::iter::repeat_n(
                     MissingColumnsPolicyOrExpr::Raise,
                     schema.len(),
                 ));
-                for (key, value) in dict.iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<Wrap<MissingColumnsPolicyOrExpr>>()?;
+                for item in mapping.items()?.iter() {
+                    let (key, value) =
+                        item.extract::<(String, Wrap<MissingColumnsPolicyOrExpr>)>()?;
                     out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
                 }
             } else {
@@ -1202,14 +1291,13 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = missing_struct_fields.extract::<Wrap<MissingColumnsPolicy>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = missing_struct_fields.cast::<PyDict>() {
+            } else if let Ok(mapping) = missing_struct_fields.cast::<PyMapping>() {
                 out.extend(std::iter::repeat_n(
                     MissingColumnsPolicy::Raise,
                     schema.len(),
                 ));
-                for (key, value) in dict.iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<Wrap<MissingColumnsPolicy>>()?;
+                for item in mapping.items()?.iter() {
+                    let (key, value) = item.extract::<(String, Wrap<MissingColumnsPolicy>)>()?;
                     out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
                 }
             } else {
@@ -1226,11 +1314,10 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = extra_struct_fields.extract::<Wrap<ExtraColumnsPolicy>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = extra_struct_fields.cast::<PyDict>() {
+            } else if let Ok(mapping) = extra_struct_fields.cast::<PyMapping>() {
                 out.extend(std::iter::repeat_n(ExtraColumnsPolicy::Raise, schema.len()));
-                for (key, value) in dict.iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<Wrap<ExtraColumnsPolicy>>()?;
+                for item in mapping.items()?.iter() {
+                    let (key, value) = item.extract::<(String, Wrap<ExtraColumnsPolicy>)>()?;
                     out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
                 }
             } else {
@@ -1247,11 +1334,10 @@ impl PyLazyFrame {
             let mut out = Vec::with_capacity(schema.len());
             if let Ok(policy) = cast.extract::<Wrap<UpcastOrForbid>>() {
                 out.extend(std::iter::repeat_n(policy.0, schema.len()));
-            } else if let Ok(dict) = cast.cast::<PyDict>() {
+            } else if let Ok(mapping) = cast.cast::<PyMapping>() {
                 out.extend(std::iter::repeat_n(UpcastOrForbid::Forbid, schema.len()));
-                for (key, value) in dict.iter() {
-                    let key = key.extract::<String>()?;
-                    let value = value.extract::<Wrap<UpcastOrForbid>>()?;
+                for item in mapping.items()?.iter() {
+                    let (key, value) = item.extract::<(String, Wrap<UpcastOrForbid>)>()?;
                     out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
                 }
             } else {
@@ -1693,7 +1779,7 @@ impl Iterator for ArrowStreamIterator {
             Some(Ok(df)) => {
                 let height = df.height();
                 let arrays = df.rechunk_into_arrow(CompatLevel::newest());
-                Some(Ok(Box::new(arrow::array::StructArray::new(
+                Some(Ok(Box::new(polars_arrow::array::StructArray::new(
                     self.dtype.clone(),
                     height,
                     arrays,

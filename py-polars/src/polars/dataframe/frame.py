@@ -67,7 +67,7 @@ from polars._utils.expired import (
     removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_list_of_expressions_require_selectors
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -82,7 +82,7 @@ from polars._utils.various import (
     scale_bytes,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
+from polars._utils.wrap import wrap_ldf, wrap_s
 from polars.config import Config
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
@@ -127,7 +127,6 @@ if TYPE_CHECKING:
         Callable,
         Collection,
         Iterator,
-        Mapping,
     )
     from datetime import timedelta
     from io import IOBase
@@ -247,6 +246,8 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
+        A flat sequence of scalar values is treated as one column unless
+        `orient="row"` is specified, in which case it is treated as one row.
     infer_schema_length : int or None
         The maximum number of rows to scan for schema inference. If set to `None`, the
         full data may be scanned *(this can be slow)*. This parameter only applies if
@@ -389,18 +390,22 @@ class DataFrame:
         if height is not None:
             msg = "the `height` parameter of `DataFrame` is considered unstable."
             issue_unstable_warning(msg)
+        if orient is not None and orient not in ("col", "row"):
+            msg = f"orient must be one of {{'col', 'row'}}, got {orient!r}"
+            raise ValueError(msg)
 
         if data is None:
             self._df = dict_to_pydf(
-                {}, schema=schema, schema_overrides=schema_overrides
+                data={},
+                schema=schema,
+                schema_overrides=schema_overrides,
             )
-
             if height is not None and self.width == 0:
                 self._df = PyDataFrame.empty_with_height(height)
 
-        elif isinstance(data, dict):
+        elif isinstance(data, Mapping):
             self._df = dict_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -409,7 +414,7 @@ class DataFrame:
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -420,12 +425,15 @@ class DataFrame:
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -435,17 +443,23 @@ class DataFrame:
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_torch(data) and isinstance(data, torch.Tensor):
             self._df = numpy_to_pydf(
-                data.numpy(force=False),
+                data=data.numpy(force=False),
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -459,7 +473,7 @@ class DataFrame:
             and isinstance(data, (Generator, Iterable))
         ):
             self._df = iterable_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -469,12 +483,15 @@ class DataFrame:
 
         elif isinstance(data, pl.DataFrame):
             self._df = dataframe_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif is_pycapsule(data):
             self._df = pycapsule_to_frame(
-                data,
+                obj=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
             )._df
@@ -2824,6 +2841,11 @@ class DataFrame:
         --------
         DataFrame.write_ndjson
 
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2915,6 +2937,11 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
 
         Examples
         --------
@@ -7879,12 +7906,14 @@ class DataFrame:
         other
             Lazy DataFrame to join with.
         left_on
-            Join column of the left DataFrame.
+            Ordered asof key (column name, expression, or selector) for the left
+            DataFrame.
         right_on
-            Join column of the right DataFrame.
+            Ordered asof key (column name, expression, or selector) for the right
+            DataFrame.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
+            Ordered asof key (column name, expression, or selector) for both DataFrames.
+            If set, `left_on` and `right_on` should be None.
         by_left
             Join on these columns before doing asof join
         by_right
@@ -7934,8 +7963,7 @@ class DataFrame:
             - *True*: Always coalesce join columns.
             - *False*: Never coalesce join columns.
 
-            Note that joining on any other expressions than `col`
-            will turn off coalescing.
+            Only keys that expand to plain column references support coalescing.
         allow_exact_matches
             Whether exact matches are valid join predicates.
 
@@ -7953,6 +7981,10 @@ class DataFrame:
         --------
         join
         join_where
+
+        Notes
+        -----
+        The asof key must expand to exactly one expression per input.
 
         Examples
         --------
@@ -8226,8 +8258,8 @@ class DataFrame:
         other
             DataFrame to join with.
         on
-            Name(s) of the join columns in both DataFrames. If set, `left_on` and
-            `right_on` should be None. This should not be specified if `how='cross'`.
+            Names, expressions, or selectors used on both DataFrames. If set,
+            `left_on` and `right_on` should be None. Do not use with `how='cross'`.
         how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -8255,9 +8287,9 @@ class DataFrame:
                    table. Does not return columns from the right table.
 
         left_on
-            Name(s) of the left join column(s).
+            Join column names, expressions, or selectors of the left DataFrame.
         right_on
-            Name(s) of the right join column(s).
+            Join column names, expressions, or selectors of the right DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
         validate: {'m:m', 'm:1', '1:m', '1:1'}
@@ -8295,8 +8327,7 @@ class DataFrame:
                  - Never coalesce join columns.
 
             .. note::
-                Joining on any other expressions than `col`
-                will turn off coalescing.
+                Only keys that expand to plain column references support coalescing.
         maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
             Do not rely on any observed ordering without explicitly setting this
@@ -8342,7 +8373,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
-
 
         See Also
         --------
@@ -11456,14 +11486,14 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
+    def n_unique(self, subset: IntoExpr | Collection[IntoExpr] | None = None) -> int:
         """
         Return the number of unique rows, or the number of unique row-subsets.
 
         Parameters
         ----------
         subset
-            One or more columns/expressions that define what to count;
+            Column name(s), selector(s), or expressions that define what to count;
             omit to return the count of unique rows.
 
         Notes
@@ -11513,29 +11543,12 @@ class DataFrame:
         ... )
         3
         """
-        if subset is None and self.width == 0:
-            # With no columns all rows are identical, so there is a single
-            # distinct row for any non-empty frame.
-            return min(self.height, 1)
-
-        if isinstance(subset, str):
-            expr = F.col(subset)
-        elif isinstance(subset, pl.Expr):
-            expr = subset
-        elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_into_expression(subset[0]))
-        else:
-            struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)
-
-        from polars.lazyframe.opt_flags import QueryOptFlags
-
-        df = (
-            self.lazy()
-            .select(expr.n_unique())
-            ._collect_eager(optimizations=QueryOptFlags._eager())
+        parsed_subset = (
+            None
+            if subset is None
+            else parse_into_list_of_expressions_require_selectors(subset)
         )
-        return 0 if df.is_empty() else df.row(0)[0]
+        return self._df.n_unique(parsed_subset)
 
     def rechunk(self) -> DataFrame:
         """
@@ -12095,7 +12108,13 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
-        zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
+        if values.width == 0:
+            data_rows: Iterable[Any] = (
+                ({} if named else ()) for _ in range(self.height)
+            )
+        else:
+            data_rows = values.iter_rows(named=named)  # type: ignore[call-overload]
+        zipped = zip(keys, data_rows, strict=True)
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.

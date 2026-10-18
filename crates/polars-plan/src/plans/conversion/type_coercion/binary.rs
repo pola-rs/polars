@@ -49,52 +49,36 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
 }
 
 #[cfg(feature = "dtype-struct")]
-// Ensure we don't cast to supertype
-// otherwise we will fill a struct with null fields
 fn process_struct_numeric_arithmetic(
     type_left: DataType,
     type_right: DataType,
-    node_left: Node,
-    node_right: Node,
+    mut node_left: Node,
+    mut node_right: Node,
     op: Operator,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
-    match (&type_left, &type_right) {
-        (DataType::Struct(fields), _) => {
-            if let Some(first) = fields.first() {
-                let new_node_right = expr_arena.add(AExpr::Cast {
-                    expr: node_right,
-                    dtype: DataType::Struct(vec![first.clone()]),
-                    options: CastOptions::NonStrict,
-                });
-                Ok(Some(AExpr::BinaryExpr {
-                    left: node_left,
-                    op,
-                    right: new_node_right,
-                }))
-            } else {
-                Ok(None)
-            }
-        },
-        (_, DataType::Struct(fields)) => {
-            if let Some(first) = fields.first() {
-                let new_node_left = expr_arena.add(AExpr::Cast {
-                    expr: node_left,
-                    dtype: DataType::Struct(vec![first.clone()]),
-                    options: CastOptions::NonStrict,
-                });
-
-                Ok(Some(AExpr::BinaryExpr {
-                    left: new_node_left,
-                    op,
-                    right: node_right,
-                }))
-            } else {
-                Ok(None)
-            }
-        },
-        _ => unreachable!(),
+    let (struct_dtype, numeric_dtype, struct_node) = match &type_left {
+        DataType::Struct(_) => (&type_left, &type_right, &mut node_left),
+        _ => (&type_right, &type_left, &mut node_right),
+    };
+    let DataType::Struct(fields) = struct_dtype else {
+        unreachable!()
+    };
+    let dtype = get_struct_numeric_dtype(fields, numeric_dtype, op)?;
+    if &dtype == struct_dtype {
+        return Ok(None);
     }
+
+    *struct_node = expr_arena.add(AExpr::Cast {
+        expr: *struct_node,
+        dtype,
+        options: CastOptions::NonStrict,
+    });
+    Ok(Some(AExpr::BinaryExpr {
+        left: node_left,
+        op,
+        right: node_right,
+    }))
 }
 
 fn process_list_numeric_arithmetic(
@@ -282,6 +266,62 @@ pub(super) fn coerced_binop_dtype(
     Ok(Some(st))
 }
 
+/// Decimal operands of arithmetic and comparisons are not cast to a common type: the
+/// kernels handle mixed scales, and a common type may not hold both operands. Integers
+/// are cast to `Decimal(38, 0)`, which only 128-bit integers can overflow.
+#[cfg(feature = "dtype-decimal")]
+fn process_decimal_binary(
+    expr_arena: &mut Arena<AExpr>,
+    node_left: Node,
+    type_left: &DataType,
+    op: Operator,
+    node_right: Node,
+    type_right: &DataType,
+) -> Option<Option<AExpr>> {
+    let supported_op = op.is_comparison()
+        || matches!(
+            op,
+            Operator::Plus
+                | Operator::Minus
+                | Operator::Multiply
+                | Operator::TrueDivide
+                | Operator::RustDivide
+                | Operator::FloorDivide
+                | Operator::Modulus
+        );
+    let is_int =
+        |dt: &DataType| dt.is_integer() || matches!(dt, DataType::Unknown(UnknownKind::Int(_)));
+    if !supported_op
+        || !((type_left.is_decimal() && (type_right.is_decimal() || is_int(type_right)))
+            || (is_int(type_left) && type_right.is_decimal()))
+    {
+        return None;
+    }
+
+    let mut to_decimal = |node: Node, dtype: &DataType| {
+        if dtype.is_decimal() {
+            node
+        } else {
+            let options = if matches!(dtype, DataType::Int128 | DataType::UInt128) {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+            expr_arena.add(AExpr::Cast {
+                expr: node,
+                dtype: DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, 0),
+                options,
+            })
+        }
+    };
+    let left = to_decimal(node_left, type_left);
+    let right = to_decimal(node_right, type_right);
+    if left == node_left && right == node_right {
+        return Some(None);
+    }
+    Some(Some(AExpr::BinaryExpr { left, op, right }))
+}
+
 pub(super) fn process_binary(
     expr_arena: &mut Arena<AExpr>,
     input_schema: &Schema,
@@ -404,6 +444,18 @@ pub(super) fn process_binary(
     }
 
     unpack!(early_escape(&type_left, &type_right));
+
+    #[cfg(feature = "dtype-decimal")]
+    if let Some(ae) = process_decimal_binary(
+        expr_arena,
+        node_left,
+        &type_left,
+        op,
+        node_right,
+        &type_right,
+    ) {
+        return Ok(ae);
+    }
 
     #[cfg(feature = "dtype-struct")]
     if op.is_arithmetic()
@@ -688,6 +740,14 @@ pub(super) fn coerce_comparison_literal(
                     let upper_lit =
                         Scalar::new(dtype_lhs.clone(), lit_casted_upper_equality_bound?);
                     return Some(ReplaceLit(upper_lit));
+                },
+                Operator::Gt if let Some(upper) = lit_casted_upper_equality_bound => {
+                    return Some(ReplaceLit(Scalar::new(dtype_lhs.clone(), upper)));
+                },
+                Operator::NotEq | Operator::EqValidity | Operator::NotEqValidity
+                    if lit_casted_upper_equality_bound.is_some() =>
+                {
+                    return None;
                 },
                 Operator::Eq => {
                     // E.g.

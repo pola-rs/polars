@@ -1,6 +1,6 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::scalar::PrimitiveScalar;
-use arrow::types::NativeType;
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::scalar::PrimitiveScalar;
+use polars_arrow::types::NativeType;
 use polars_error::{PolarsResult, polars_bail};
 
 use super::super::{WriteOptions, utils};
@@ -200,20 +200,21 @@ where
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
 {
+    // Parquet leaves NaN out of the bounds. If all non-null values are NaN, there is no min/max.
     let (min_value, max_value) = match (options.min_value, options.max_value) {
         (true, true) => {
-            match polars_compute::min_max::dyn_array_min_max_propagate_nan(array as &dyn Array) {
+            match polars_compute::min_max::dyn_array_min_max_ignore_nan(array as &dyn Array) {
                 None => (None, None),
                 Some((l, r)) => (Some(l), Some(r)),
             }
         },
         (true, false) => (
-            polars_compute::min_max::dyn_array_min_propagate_nan(array as &dyn Array),
+            polars_compute::min_max::dyn_array_min_ignore_nan(array as &dyn Array),
             None,
         ),
         (false, true) => (
             None,
-            polars_compute::min_max::dyn_array_max_propagate_nan(array as &dyn Array),
+            polars_compute::min_max::dyn_array_max_ignore_nan(array as &dyn Array),
         ),
         (false, false) => (None, None),
     };
@@ -223,14 +224,18 @@ where
             .downcast_ref::<PrimitiveScalar<T>>()
             .unwrap()
             .value()
-            .map(|x| x.as_().norm_min())
+            .map(|x| x.as_())
+            .filter(|x| !x.is_nan())
+            .map(|x| x.norm_min())
     });
     let max_value = max_value.and_then(|s| {
         s.as_any()
             .downcast_ref::<PrimitiveScalar<T>>()
             .unwrap()
             .value()
-            .map(|x| x.as_().norm_max())
+            .map(|x| x.as_())
+            .filter(|x| !x.is_nan())
+            .map(|x| x.norm_max())
     });
 
     PrimitiveStatistics::<P> {

@@ -1,5 +1,5 @@
-use arrow::array::{Array, StructArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::array::{Array, StructArray};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 
 use super::TotalEqKernel;
 use crate::comparisons::dyn_array::array_tot_eq_missing_kernel;

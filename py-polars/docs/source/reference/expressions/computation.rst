@@ -8,6 +8,7 @@ Computation
 
     Expr.abs
     Expr.approx_n_unique
+    Expr.approx_quantile
     Expr.arccos
     Expr.arccosh
     Expr.arcsin
@@ -41,6 +42,8 @@ Computation
     Expr.ewm_sum_by
     Expr.ewm_std
     Expr.ewm_var
+    Expr.erf
+    Expr.erfc
     Expr.exp
     Expr.hash
     Expr.hist

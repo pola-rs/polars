@@ -7,6 +7,7 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 pub use categorical::PyCategories;
 #[cfg(feature = "object")]
@@ -21,11 +22,13 @@ use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_core::utils::arrow::array::Array;
 use polars_core::utils::materialize_dyn_int;
+use polars_core::utils::polars_arrow::array::Array;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
@@ -43,7 +46,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
+use pyo3::types::{IntoPyDict, PyDict, PyList, PyMapping, PySequence, PyString, PyTuple};
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -83,10 +86,6 @@ pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
     let vec_ptr: *mut T = manual_drop_vec.as_mut_ptr();
     let ptr: *mut T::Target = vec_ptr as *mut T::Target;
     unsafe { Vec::from_raw_parts(ptr, len, cap) }
-}
-
-pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
-    reinterpret_vec(buf)
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -666,14 +665,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Schema> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let dict = ob.cast::<PyDict>()?;
+        let items = ob.cast::<PyMapping>()?.items()?;
 
         Ok(Wrap(
-            dict.iter()
-                .map(|(key, val)| {
-                    let key = key.extract::<PyBackedStr>()?;
-                    let val = val.extract::<Wrap<DataType>>()?;
-
+            items
+                .iter()
+                .map(|item| {
+                    let (key, val) = item.extract::<(PyBackedStr, Wrap<DataType>)>()?;
                     Ok(Field::new((&*key).into(), val.0))
                 })
                 .collect::<PyResult<Schema>>()?,
@@ -1194,6 +1192,18 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<IndexOrder> {
     }
 }
 
+#[cfg(feature = "approx_quantile")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ApproxQuantileMethod> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let s = ob.extract::<PyBackedStr>()?;
+        let parsed =
+            ApproxQuantileMethod::from_str(&s).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Wrap(parsed))
+    }
+}
+
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QuantileMethod> {
     type Error = PyErr;
 
@@ -1665,6 +1675,85 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
     }
 }
 
+impl<'py> IntoPyObject<'py> for Wrap<CastColumnsPolicy> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let CastColumnsPolicy {
+            integer_upcast,
+            integer_to_float_cast,
+            float_upcast,
+            float_downcast,
+            datetime_nanoseconds_downcast,
+            datetime_microseconds_downcast,
+            datetime_milliseconds_upcast,
+            datetime_microseconds_upcast,
+            datetime_convert_timezone,
+            null_upcast,
+            categorical_to_string,
+            missing_struct_fields,
+            extra_struct_fields,
+        } = self.0;
+
+        let out = PyDict::new(py);
+        out.set_item("integer_upcast", integer_upcast)?;
+        out.set_item("integer_to_float_cast", integer_to_float_cast)?;
+        out.set_item("float_upcast", float_upcast)?;
+        out.set_item("float_downcast", float_downcast)?;
+        out.set_item(
+            "datetime_nanoseconds_downcast",
+            datetime_nanoseconds_downcast,
+        )?;
+        out.set_item(
+            "datetime_microseconds_downcast",
+            datetime_microseconds_downcast,
+        )?;
+        out.set_item("datetime_milliseconds_upcast", datetime_milliseconds_upcast)?;
+        out.set_item("datetime_microseconds_upcast", datetime_microseconds_upcast)?;
+        out.set_item("datetime_convert_timezone", datetime_convert_timezone)?;
+        out.set_item("null_upcast", null_upcast)?;
+        out.set_item("categorical_to_string", categorical_to_string)?;
+        out.set_item("missing_struct_fields", Wrap(missing_struct_fields))?;
+        out.set_item("extra_struct_fields", Wrap(extra_struct_fields))?;
+
+        Ok(out)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<HiveOptions> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let HiveOptions {
+            enabled,
+            hive_start_idx,
+            schema,
+            try_parse_dates,
+        } = self.0;
+
+        let out = PyDict::new(py);
+        out.set_item("enabled", enabled)?;
+        out.set_item("hive_start_idx", hive_start_idx)?;
+        out.set_item(
+            "schema",
+            match schema {
+                None => py.None(),
+                Some(schema) => Wrap(schema.as_ref().clone())
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            },
+        )?;
+        out.set_item("try_parse_dates", try_parse_dates)?;
+
+        Ok(out)
+    }
+}
+
 pub(crate) fn parse_fill_null_strategy(
     strategy: &str,
     limit: FillNullLimit,
@@ -1851,6 +1940,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ExtraColumnsPolicy> {
     }
 }
 
+impl<'py> IntoPyObject<'py> for Wrap<ExtraColumnsPolicy> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self.0 {
+            ExtraColumnsPolicy::Ignore => "ignore",
+            ExtraColumnsPolicy::Raise => "raise",
+        }
+        .into_pyobject(py)
+    }
+}
+
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MissingColumnsPolicy> {
     type Error = PyErr;
 
@@ -1865,6 +1968,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MissingColumnsPolicy> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<MissingColumnsPolicy> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self.0 {
+            MissingColumnsPolicy::Insert => "insert",
+            MissingColumnsPolicy::Raise => "raise",
+        }
+        .into_pyobject(py)
     }
 }
 
@@ -1893,14 +2010,36 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ColumnMapping> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let (column_mapping_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+        // `(type, value)` or `(type, value, name_mapping)`.
+        let tuple = ob.cast::<PyTuple>()?;
+        let column_mapping_type: PyBackedStr = tuple.get_item(0)?.extract()?;
+        let ob = tuple.get_item(1)?;
 
         Ok(Wrap(match &*column_mapping_type {
             "iceberg-column-mapping" => {
                 let arrow_schema: Wrap<ArrowSchema> = ob.extract()?;
-                ColumnMapping::Iceberg(Arc::new(
-                    IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?,
-                ))
+                let mut schema =
+                    IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?;
+                // Names by field ID.
+                let names: Option<std::collections::HashMap<u32, Vec<String>>> = if tuple.len() > 2
+                {
+                    tuple.get_item(2)?.extract()?
+                } else {
+                    None
+                };
+                let has_name_mapping = names.is_some();
+                if let Some(names) = names {
+                    schema.apply_name_mapping(
+                        &names
+                            .into_iter()
+                            .map(|(id, n)| (id, n.into_iter().map(Into::into).collect()))
+                            .collect(),
+                    );
+                }
+                ColumnMapping::Iceberg {
+                    schema: Arc::new(schema),
+                    has_name_mapping,
+                }
             },
 
             v => {
@@ -1952,9 +2091,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
                     .zip(deletion_vectors.call_method0("values")?.try_iter()?)
                 {
                     let k: usize = k?.extract()?;
-                    let v: Wrap<PlRefPath> = v?.extract()?;
+                    let v = v?;
+                    // A path, or `(path, content_offset)`.
+                    let (path, content_offset): (Wrap<PlRefPath>, Option<u64>) = match v.extract() {
+                        Ok(path) => (path, None),
+                        Err(_) => v.extract()?,
+                    };
 
-                    out.insert(k, IcebergDeletes::DeletionVector(v.0));
+                    out.insert(
+                        k,
+                        IcebergDeletes::DeletionVector {
+                            path: path.0,
+                            content_offset,
+                        },
+                    );
                 }
 
                 DeletionFilesList::Iceberg(Arc::new(out))
@@ -1982,13 +2132,36 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
 
         Ok(Wrap(match &*default_values_type {
             "iceberg" => {
-                let (identity_transformed_partition_values, initial_defaults): (
+                // `(identity values, initial defaults[, identity presence])`.
+                let (identity_transformed_partition_values, initial_defaults, identity_present): (
                     Bound<'_, PyDict>,
                     Bound<'_, PyDict>,
-                ) = ob.extract()?;
+                    Option<Bound<'_, PyDict>>,
+                ) = match ob.extract::<(Bound<'_, PyDict>, Bound<'_, PyDict>, Bound<'_, PyDict>)>()
+                {
+                    Ok((a, b, c)) => (a, b, Some(c)),
+                    Err(_) => {
+                        let (a, b) = ob.extract()?;
+                        (a, b, None)
+                    },
+                };
 
                 let mut converted_identity_transformed_partition_values = PlIndexMap::new();
+                let mut converted_identity_present = PlIndexMap::new();
                 let mut converted_initial_defaults = PlIndexMap::new();
+
+                if let Some(identity_present) = identity_present {
+                    for (k, v) in identity_present
+                        .try_iter()?
+                        .zip(identity_present.call_method0("values")?.try_iter()?)
+                    {
+                        let k: u32 = k?.extract()?;
+                        let v = get_series(&v?)?
+                            .cast(&DataType::Boolean)
+                            .map_err(to_py_err)?;
+                        converted_identity_present.insert(k, v.into_column());
+                    }
+                }
 
                 for (k, v) in identity_transformed_partition_values.try_iter()?.zip(
                     identity_transformed_partition_values
@@ -2025,6 +2198,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
                     identity_transformed_partition_fields: PlIndexMapHashable(
                         converted_identity_transformed_partition_values,
                     ),
+                    identity_partition_present: PlIndexMapHashable(converted_identity_present),
                     initial_defaults: PlIndexMapHashable(converted_initial_defaults),
                 }))
             },

@@ -4,24 +4,36 @@ use super::PageReader;
 use crate::parquet::CowBuffer;
 use crate::parquet::compression::{self, Compression, DecompressionContext};
 use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{
     CompressedDataPage, CompressedPage, DataPage, DataPageHeader, DictPage, Page,
 };
 
+/// Decompresses into `buffer`, which ends up holding exactly `uncompressed_size` bytes.
+#[inline]
 fn decompress_v1(
     compressed: &[u8],
     compression: Compression,
-    buffer: &mut [u8],
+    buffer: &mut Vec<u8>,
+    uncompressed_size: usize,
     context: &mut DecompressionContext,
 ) -> ParquetResult<()> {
-    compression::decompress(compression, compressed, buffer, context)
+    compression::decompress(
+        compression,
+        compressed,
+        buffer,
+        0,
+        uncompressed_size,
+        context,
+    )
 }
 
 fn decompress_v2(
     compressed: &[u8],
     page_header: &DataPageHeaderV2,
     compression: Compression,
-    buffer: &mut [u8],
+    buffer: &mut Vec<u8>,
+    uncompressed_size: usize,
     context: &mut DecompressionContext,
 ) -> ParquetResult<()> {
     // When processing data page v2, depending on enabled compression for the
@@ -36,30 +48,41 @@ fn decompress_v2(
     let can_decompress = page_header.is_compressed.unwrap_or(true);
 
     if can_decompress {
-        if offset > buffer.len() || offset > compressed.len() {
+        if offset > uncompressed_size || offset > compressed.len() {
             return Err(ParquetError::oos(
                 "V2 Page Header reported incorrect offset to compressed data",
             ));
         }
 
-        (buffer[..offset]).copy_from_slice(&compressed[..offset]);
+        if buffer.len() >= offset {
+            buffer[..offset].copy_from_slice(&compressed[..offset]);
+        } else {
+            buffer.clear();
+            buffer.extend_from_slice(&compressed[..offset]);
+        }
 
         // https://github.com/pola-rs/polars/issues/22170
         if compressed.len() > offset {
             compression::decompress(
                 compression,
                 &compressed[offset..],
-                &mut buffer[offset..],
+                buffer,
+                offset,
+                uncompressed_size - offset,
                 context,
             )?;
+        } else {
+            buffer.truncate(offset);
+            buffer.resize(uncompressed_size, 0);
         }
     } else {
-        if buffer.len() != compressed.len() {
+        buffer.clear();
+        if uncompressed_size != compressed.len() {
             return Err(ParquetError::oos(
                 "V2 Page Header reported incorrect decompressed size",
             ));
         }
-        buffer.copy_from_slice(compressed);
+        buffer.extend_from_slice(compressed);
     }
     Ok(())
 }
@@ -79,22 +102,19 @@ pub fn decompress(
             page.descriptor,
         )),
         (_, CompressedPage::Data(page)) => {
-            // prepare the compression buffer
             let read_size = page.uncompressed_size();
-            if read_size > buffer.capacity() {
-                // Clear before resizing to avoid memcpy'ing junk we don't care about anymore rather
-                // than just memset'ing zeroes.
-                buffer.clear();
-            }
-            buffer.resize(read_size, 0);
-
             match page.header() {
                 DataPageHeader::V1(_) => {
-                    decompress_v1(&page.buffer, page.compression, buffer, context)?
+                    decompress_v1(&page.buffer, page.compression, buffer, read_size, context)?
                 },
-                DataPageHeader::V2(header) => {
-                    decompress_v2(&page.buffer, header, page.compression, buffer, context)?
-                },
+                DataPageHeader::V2(header) => decompress_v2(
+                    &page.buffer,
+                    header,
+                    page.compression,
+                    buffer,
+                    read_size,
+                    context,
+                )?,
             }
             let buffer = CowBuffer::Owned(std::mem::take(buffer));
 
@@ -106,16 +126,13 @@ pub fn decompress(
             is_sorted: page.is_sorted,
         }),
         (_, CompressedPage::Dict(page)) => {
-            // prepare the compression buffer
-            let read_size = page.uncompressed_page_size;
-            if read_size > buffer.capacity() {
-                // Clear before resizing to avoid memcpy'ing junk we don't care about anymore rather
-                // than just memset'ing zeroes.
-                buffer.clear();
-            }
-            buffer.resize(read_size, 0);
-
-            decompress_v1(&page.buffer, page.compression(), buffer, context)?;
+            decompress_v1(
+                &page.buffer,
+                page.compression(),
+                buffer,
+                page.uncompressed_page_size,
+                context,
+            )?;
             let buffer = CowBuffer::Owned(std::mem::take(buffer));
 
             Page::Dict(DictPage {
@@ -178,6 +195,10 @@ impl BasicDecompressor {
         self.reader.total_num_values()
     }
 
+    pub fn descriptor(&self) -> &Descriptor {
+        self.reader.descriptor()
+    }
+
     /// Returns its internal buffer, consuming itself.
     pub fn into_inner(self) -> Vec<u8> {
         self.buffer
@@ -203,9 +224,8 @@ impl BasicDecompressor {
     }
 
     pub fn reuse_page_buffer(&mut self, page: DataPage) {
-        let buffer = match page.buffer {
-            CowBuffer::Borrowed(_) => return,
-            CowBuffer::Owned(vec) => vec,
+        let Some(buffer) = page.into_owned_buffer() else {
+            return;
         };
 
         if self.buffer.capacity() > buffer.capacity() {
@@ -221,6 +241,7 @@ pub struct DataPageItem {
 }
 
 impl DataPageItem {
+    #[inline]
     pub fn num_values(&self) -> usize {
         self.page.num_values()
     }
@@ -299,7 +320,7 @@ mod tests {
         compressed: &[u8],
         page_header: &DataPageHeaderV2,
         compression: Compression,
-        buffer: &mut [u8],
+        buffer: &mut Vec<u8>,
         expected: &[u8],
     ) {
         decompress_v2(
@@ -307,6 +328,7 @@ mod tests {
             page_header,
             compression,
             buffer,
+            expected.len(),
             &mut DecompressionContext::Unset,
         )
         .unwrap();

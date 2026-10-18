@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use arrow::array::ValueSize;
+use polars_arrow::array::ValueSize;
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
@@ -292,12 +292,6 @@ pub trait ListNameSpaceImpl: AsList {
             }),
         };
         Ok(self.same_type(out))
-    }
-
-    fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
-        let ca = self.as_list();
-        // SAFETY: `slice` doesn't change the dtype
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().slice(offset, length)) }
     }
 
     fn lst_lengths(&self) -> IdxCa {
@@ -683,6 +677,10 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_concat(&self, other: &[Column]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
+        if other.is_empty() {
+            return Ok(ca.clone());
+        }
+
         let other_len = other.len();
         let length = ca.len();
         let mut other = other.to_vec();
@@ -850,10 +848,9 @@ pub fn slice_broadcast_list(
     let iter = (0..target_len).map(|index| {
         let opt_offset = offsets.get(if offsets.len() == 1 { 0 } else { index });
         let opt_length = lengths.get(if lengths.len() == 1 { 0 } else { index });
-        match (opt_offset, opt_length) {
-            (Some(offset), Some(length)) => Some(single_list.slice(offset, length as usize)),
-            _ => None,
-        }
+        let offset = opt_offset?;
+        let length = opt_length.map_or(usize::MAX, |l| l as usize);
+        Some(single_list.slice(offset, length))
     });
 
     let mut out: ListChunked = iter.collect_trusted();

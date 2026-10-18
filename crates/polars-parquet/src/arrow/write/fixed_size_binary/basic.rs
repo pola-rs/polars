@@ -1,4 +1,4 @@
-use arrow::array::{Array, FixedSizeBinaryArray};
+use polars_arrow::array::{Array, FixedSizeBinaryArray};
 use polars_error::PolarsResult;
 
 use super::encode_plain;

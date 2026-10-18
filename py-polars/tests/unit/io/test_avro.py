@@ -89,3 +89,19 @@ def test_with_name() -> None:
     read_df = pl.read_json(raw[raw.find(b"{") : raw.rfind(b"}") + 1])
 
     assert_frame_equal(expected, read_df)
+
+
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_from_to_buffer_multiple_chunks_29568(compression: AvroCompression) -> None:
+    df = pl.concat(
+        [pl.DataFrame({"i64": [1, 2]}), pl.DataFrame({"i64": [3]})], rechunk=False
+    )
+    assert df.n_chunks() == 2
+
+    buf = io.BytesIO()
+    df.write_avro(buf, compression=compression)
+    assert buf.getvalue().count(b"Obj\x01") == 1
+    buf.seek(0)
+
+    read_df = pl.read_avro(buf)
+    assert_frame_equal(df, read_df)

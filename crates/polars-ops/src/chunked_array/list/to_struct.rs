@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, StructArray};
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::{Array, StructArray};
+use polars_arrow::datatypes::ArrowDataType;
 use polars_core::chunked_array::StructChunked;
 use polars_core::datatypes::{CompatLevel, DataType, Field, ListChunked};
 use polars_core::runtime::RAYON;

@@ -1,5 +1,5 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use arrow::array::Utf8ViewArray;
+use polars_arrow::array::Utf8ViewArray;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
@@ -131,8 +131,11 @@ pub fn replace_all(
 
     let ac = build_ac(patterns, ascii_case_insensitive, leftmost)?;
 
-    Ok(unary_elementwise(ca, |opt_val| {
-        opt_val.map(|val| ac.replace_all(val, replace_with.as_slice()))
+    Ok(ca.apply_into_string_amortized(|val, buf| {
+        ac.replace_all_with(val, buf, |m, _, dst| {
+            dst.push_str(replace_with[m.pattern().as_usize()]);
+            true
+        })
     }))
 }
 

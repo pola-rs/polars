@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import InvalidOperationError, SchemaError, SQLInterfaceError
 from tests.unit.sql import assert_sql_matches
 
 
@@ -50,6 +50,7 @@ def test_filter_clause_grouped(lf: pl.LazyFrame, agg: str, values: list[Any]) ->
         ("MEDIAN(x) FILTER (WHERE y > 20)", [3.0, 5.0]),
         ("STDDEV_SAMP(x) FILTER (WHERE y > 20)", [None, math.sqrt(2.0)]),
         ("VAR_SAMP(x) FILTER (WHERE y > 20)", [None, 2.0]),
+        ("QUANTILE_CONT(x, 0.5) FILTER (WHERE y > 20)", [3.0, 5.0]),
     ],
 )
 def test_filter_clause_misc_aggfuncs(
@@ -60,6 +61,19 @@ def test_filter_clause_misc_aggfuncs(
         query=f"SELECT grp, {agg} AS v FROM self GROUP BY grp ORDER BY grp",
         compare_with="duckdb",
         expected={"grp": ["a", "b"], "v": values},
+    )
+
+
+def test_filter_clause_approx_quantile(lf: pl.LazyFrame) -> None:
+    # not compared against a reference backend: other engines use a different sketch
+    assert_sql_matches(
+        frames=lf,
+        query="""
+            SELECT grp, APPROX_QUANTILE(x, 0.5) FILTER (WHERE y > 20) AS v
+            FROM self GROUP BY grp ORDER BY grp
+        """,
+        compare_with=None,
+        expected={"grp": ["a", "b"], "v": [3, 6]},
     )
 
 
@@ -126,9 +140,98 @@ def test_filter_clause_multi_parameter_func() -> None:
     )
 
 
-def test_filter_clause_filter_plus_over_unsupported() -> None:
+@pytest.mark.parametrize(
+    "agg", ["SUM(x)", "COUNT(*)", "COUNT(x)", "MIN(x)", "MAX(x)", "AVG(x)"]
+)
+@pytest.mark.parametrize(
+    "over",
+    ["PARTITION BY grp", "PARTITION BY grp ORDER BY y", "ORDER BY y ROWS 1 PRECEDING"],
+)
+def test_filter_clause_with_over(agg: str, over: str) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["a", "a", "b", "b", "b"],
+            "x": [1, None, 2, 3, 4],
+            "y": [10, 30, 20, 40, 50],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query=f"SELECT y, {agg} FILTER (WHERE y > 15) OVER ({over}) AS v FROM self ORDER BY y",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_filter_clause_with_over_unsupported() -> None:
     df = pl.DataFrame({"grp": ["a", "b"], "x": [1, 2], "y": [10, 30]})
-    with pytest.raises(SQLInterfaceError, match=r"FILTER.*OVER"):
+    with pytest.raises(
+        SQLInterfaceError,
+        match="'FILTER' combined with 'OVER' is not supported for STDDEV",
+    ):
         pl.sql(
-            "SELECT SUM(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df"
+            "SELECT STDDEV(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df"
         ).collect()
+
+
+@pytest.mark.parametrize("agg", ["SUM(2)", "COUNT(*)", "SUM(x)"])
+def test_filter_clause_non_boolean_error(agg: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    for pred in (
+        "x",
+        "x + (SELECT 0)",
+        "x + CAST(x IN (SELECT x FROM self) AS INT)",
+        "x + CAST(x = ANY (SELECT x FROM self) AS INT)",
+    ):
+        with pytest.raises(InvalidOperationError, match="must be of type `Boolean`"):
+            df.sql(f"SELECT {agg} FILTER (WHERE {pred}) FROM self")
+    # Without a schema, the predicate is checked when it runs.
+    for engine in ("in-memory", "streaming"):
+        with pytest.raises(SchemaError, match="`Boolean`"):
+            df.lazy().select(pl.sql_expr(f"{agg} FILTER (WHERE x)")).collect(
+                engine=engine
+            )
+
+
+def test_filter_clause_subquery_non_boolean_cast_error() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(InvalidOperationError, match="casting from"):
+        df.sql("SELECT COUNT(*) FILTER (WHERE (SELECT 'abc')) FROM self")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        """
+        SELECT
+          SUM(2) FILTER (WHERE (SELECT TRUE)) AS a,
+          COUNT(*) FILTER (WHERE (SELECT TRUE)) AS b,
+          STDDEV(1) FILTER (WHERE (SELECT TRUE)) AS c,
+          SUM(x) FILTER (WHERE x > (SELECT 1)) AS d
+        FROM self
+        """,
+        """
+        SELECT
+          g,
+          SUM(2) FILTER (WHERE (SELECT TRUE)) AS a,
+          COUNT(*) FILTER (WHERE x > (SELECT 1)) AS b
+        FROM self GROUP BY g ORDER BY g
+        """,
+        # A condition that reads no input is cast to boolean.
+        """
+        SELECT
+          COUNT(*) FILTER (WHERE (SELECT NULL)) AS a,
+          COUNT(*) FILTER (WHERE (SELECT 0)) AS b,
+          SUM(2) FILTER (WHERE (SELECT 1)) AS c,
+          SUM(2) FILTER (WHERE 1 + CAST(1 IN (SELECT x FROM self) AS INT)) AS d,
+          SUM(x) FILTER (WHERE 1 + CAST(1 = ANY (SELECT x FROM self) AS INT)) AS e
+        FROM self
+        """,
+    ],
+)
+def test_filter_clause_subquery(query: str) -> None:
+    # The predicate reads a subquery value once per row.
+    df = pl.DataFrame({"g": [1, 1, 2], "x": [1, 2, 3]})
+    assert_sql_matches(
+        df, query=query, compare_with="duckdb", engines=["in-memory", "streaming"]
+    )

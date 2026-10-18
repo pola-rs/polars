@@ -1,7 +1,7 @@
 mod mutable;
 
-use arrow::array::*;
-use arrow::datatypes::ArrowDataType;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::ArrowDataType;
 
 #[test]
 fn try_new_ok() {

@@ -1,7 +1,7 @@
-/// Functionality shared between list and array arithmetic implementations.
-use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
+/// Functionality shared between list and array arithmetic implementations.
+use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::arithmetic::ArithmeticKernel;
 use polars_compute::comparisons::TotalEqKernel;
 use polars_error::PolarsResult;

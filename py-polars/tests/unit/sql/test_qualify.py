@@ -296,8 +296,6 @@ def test_qualify_expected_errors(df_test: pl.DataFrame) -> None:
 
 
 def test_qualify_with_subquery_does_not_leak_placeholder() -> None:
-    # QUALIFY runs after the final projection, so the column that `process_subqueries`
-    # broadcasts onto the frame has to be dropped explicitly.
     frames = {
         "t1": pl.DataFrame({"k": [1, 2, 3]}),
         "t2": pl.DataFrame({"k": [1, 1, 2]}),
@@ -308,3 +306,136 @@ def test_qualify_with_subquery_does_not_leak_placeholder() -> None:
     )
     assert res.columns == ["k", "rn"]
     assert res["k"].to_list() == [2, 3]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # columns that are not selected
+        """
+        SELECT id FROM df
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY category ORDER BY value DESC) = 1
+        ORDER BY id
+        """,
+        "SELECT id FROM df QUALIFY value = MAX(value) OVER (PARTITION BY category)",
+        # an input column comes before a SELECT alias of the same name
+        "SELECT value AS id, id AS value FROM df QUALIFY id = MAX(id) OVER ()",
+        # windows over grouped rows
+        """
+        SELECT category, COUNT(*) AS n FROM df GROUP BY category
+        QUALIFY RANK() OVER (ORDER BY SUM(value) DESC) = 1
+        """,
+        """
+        SELECT category FROM df GROUP BY category
+        QUALIFY SUM(SUM(value)) OVER (ORDER BY category) > 500
+        ORDER BY category
+        """,
+        "SELECT COUNT(*) AS n FROM df QUALIFY ROW_NUMBER() OVER () = 1",
+        # aliases of aggregates in a window
+        """
+        SELECT category, COUNT(*) AS n FROM df GROUP BY category
+        QUALIFY LAG(n) OVER (ORDER BY category) > 2
+        """,
+        """
+        SELECT category, SUM(value) AS s FROM df GROUP BY category
+        QUALIFY RANK() OVER (ORDER BY s DESC) = 1
+        """,
+        """
+        SELECT category, SUM(value) AS s FROM df GROUP BY category
+        QUALIFY s * 2 > SUM(s) OVER ()
+        """,
+        # a renamed column
+        """
+        SELECT * RENAME (value AS v) FROM df
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY category ORDER BY v) = 1
+        ORDER BY id
+        """,
+    ],
+)
+def test_qualify_before_projection(df_test: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"df": df_test},
+        query=query,
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_qualify_column_named_like_internal_column() -> None:
+    df = pl.DataFrame({"g": [1, 1, 2], "__POLARS_QUALIFY": [7, 8, 9]})
+    for query in [
+        'SELECT "__POLARS_QUALIFY", g FROM self QUALIFY ROW_NUMBER() OVER (ORDER BY g) = 1',
+        """
+        SELECT g, MAX("__POLARS_QUALIFY") AS "__POLARS_QUALIFY" FROM self GROUP BY g
+        QUALIFY RANK() OVER (ORDER BY g) = 1
+        """,
+    ]:
+        res = df.sql(query)
+        assert sorted(res.columns) == ["__POLARS_QUALIFY", "g"]
+        assert res.height == 1
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id, s AS v FROM t QUALIFY v = 1 AND ROW_NUMBER() OVER (ORDER BY id) > 0",
+        "SELECT id, s AS v FROM t QUALIFY ROW_NUMBER() OVER (PARTITION BY v = 1 ORDER BY id) = 1",
+        """
+        SELECT g, MAX(s) AS m FROM t GROUP BY g
+        QUALIFY m = 1 AND RANK() OVER (ORDER BY g) > 0
+        """,
+    ],
+)
+def test_qualify_alias_types(query: str) -> None:
+    # The type of an alias is known where QUALIFY compares it with a literal.
+    df = pl.DataFrame({"id": [1, 2, 3], "s": ["1", "2", "1"], "g": [1, 1, 2]})
+    assert_sql_matches(
+        {"t": df},
+        query=f"{query} ORDER BY 1",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_qualify_renamed_column_type() -> None:
+    df = pl.DataFrame({"id": [1, 2, 3], "s": ["1", "2", "1"]})
+    res = df.sql(
+        """
+        SELECT * RENAME (s AS v) FROM self
+        QUALIFY v = 1 AND ROW_NUMBER() OVER (ORDER BY id) > 0
+        ORDER BY id
+        """
+    )
+    assert res.to_dict(as_series=False) == {"id": [1, 3], "v": ["1", "1"]}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id, (SELECT 2) AS a FROM t QUALIFY a = 2 AND ROW_NUMBER() OVER (ORDER BY id) > 0",
+        "SELECT id, (SELECT MAX(s) FROM t) AS a FROM t QUALIFY a = 2 AND ROW_NUMBER() OVER (ORDER BY id) > 0",
+        "SELECT id, (SELECT 2) AS a FROM t QUALIFY SUM(a) OVER () = 6",
+        "SELECT id, (SELECT 2) AS a FROM t QUALIFY LAG(a) OVER (ORDER BY id) = 2",
+        """
+        SELECT g, (SELECT 2) AS a, COUNT(*) AS n FROM t GROUP BY g
+        QUALIFY SUM(a * n) OVER () = 6
+        """,
+        """
+        SELECT g, COUNT(*) + (SELECT 2) AS a FROM t GROUP BY g
+        QUALIFY SUM(a) OVER () > 6
+        """,
+        """
+        SELECT g, MAX(g + ARRAY_LENGTH(ARRAY_REVERSE((SELECT ARRAY[1, 2])))) AS a
+        FROM t GROUP BY g
+        QUALIFY SUM(a) OVER () > 6
+        """,
+    ],
+)
+def test_qualify_subquery_alias(query: str) -> None:
+    df = pl.DataFrame({"id": [1, 2, 3], "g": [1, 1, 2], "s": ["1", "2", "1"]})
+    assert_sql_matches(
+        {"t": df},
+        query=f"{query} ORDER BY 1",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )

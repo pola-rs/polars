@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::datatypes::ArrowSchemaRef;
+use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self};
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;

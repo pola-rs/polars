@@ -129,7 +129,7 @@ def _switcher_version(git_ref: str) -> str:
 
 
 # The major version served at /api/python/stable/. Bump on a major release.
-STABLE_MAJOR = "1"
+STABLE_MAJOR = "2"
 
 git_ref = os.environ.get("POLARS_VERSION", "main")
 switcher_version = _switcher_version(git_ref)
@@ -240,7 +240,7 @@ def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
                 # Accessing deprecated objects will generate noisy warnings
                 warnings.simplefilter("ignore", FutureWarning)
                 obj = getattr(obj, part)
-        except AttributeError:  # noqa: PERF203
+        except AttributeError:
             return None
 
     try:

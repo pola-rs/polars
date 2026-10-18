@@ -3,10 +3,11 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::*;
-use arrow::bitmap::Bitmap;
-use arrow::compute::concatenate::concatenate_unchecked;
-use arrow::compute::utils::combine_validities_and;
+use num_traits::Signed;
+use polars_arrow::array::*;
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::concatenate::concatenate_unchecked;
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::filter::filter_with_bitmap;
 use polars_utils::broadcast::BroadcastLength;
 
@@ -239,6 +240,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.get_flags().can_fast_explode_list()
     }
 
+    #[inline]
     pub fn get_flags(&self) -> StatisticsFlags {
         self.flags.get()
     }
@@ -492,11 +494,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &mut self.chunks
     }
 
-    /// Returns true if contains a single chunk and has no null values
-    pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && self.null_count() == 0
-    }
-
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
     ///
     /// # Safety
@@ -506,6 +503,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Get data type of [`ChunkedArray`].
+    #[inline(always)]
     pub fn dtype(&self) -> &DataType {
         self.field.dtype()
     }
@@ -515,11 +513,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Name of the [`ChunkedArray`].
+    #[inline]
     pub fn name(&self) -> &PlSmallStr {
         self.field.name()
     }
 
     /// Get a reference to the field.
+    #[inline(always)]
     pub fn ref_field(&self) -> &Field {
         &self.field
     }
@@ -807,7 +807,7 @@ impl ArrayChunked {
             .to_fixed_size_list(width, true);
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
-            use arrow::array::builder::{ArrayBuilder, make_builder};
+            use polars_arrow::array::builder::{ArrayBuilder, make_builder};
             let values = make_builder(&inner_dtype.to_arrow(CompatLevel::newest())).freeze();
             return ArrayChunked::new_with_compute_len(
                 field,
@@ -838,7 +838,7 @@ impl ArrayChunked {
         let chunks = self
             .downcast_iter()
             .map(|chunk| {
-                use arrow::offset::OffsetsBuffer;
+                use polars_arrow::offset::OffsetsBuffer;
 
                 let inner_dtype = chunk.dtype().inner_dtype().unwrap();
                 let dtype = inner_dtype.clone().to_large_list(true);
@@ -1029,6 +1029,22 @@ where
                 .map(|v| *v)
                 .trust_my_length(self.len())
         }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Signed,
+{
+    /// Whether any value is negative. Masked out values are also checked.
+    pub fn has_negative(&self) -> bool {
+        // Check in blocks, so the inner loop can be vectorized and we can still stop early.
+        self.data_views().any(|values| {
+            values
+                .chunks(1024)
+                .any(|block| block.iter().fold(false, |acc, v| acc | v.is_negative()))
+        })
     }
 }
 
@@ -1345,13 +1361,13 @@ pub(crate) mod test {
         let before = arr
             .chunks()
             .iter()
-            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| polars_arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
             .sum::<usize>();
         arr.shrink_to_fit();
         let after = arr
             .chunks()
             .iter()
-            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| polars_arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
             .sum::<usize>();
         assert!(before > after);
     }

@@ -1,7 +1,7 @@
-use arrow::io::ipc::read;
-use arrow::io::ipc::read::{Dictionaries, FileMetadata};
-use arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
-use arrow::record_batch::RecordBatch;
+use polars_arrow::io::ipc::read;
+use polars_arrow::io::ipc::read::{Dictionaries, FileMetadata};
+use polars_arrow::mmap::{mmap_dictionaries_unchecked, mmap_unchecked};
+use polars_arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 use polars_utils::mmap::MMapSemaphore;
 

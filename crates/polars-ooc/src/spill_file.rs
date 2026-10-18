@@ -66,6 +66,7 @@ impl Drop for SpillFile {
 
 struct SpillCleaner {
     send_rq: Sender<CleanRequest>,
+    pid: u32,
 }
 
 impl SpillCleaner {
@@ -106,7 +107,10 @@ static SPILL_CLEANER: LazyLock<SpillCleaner> = LazyLock::new(|| {
         .spawn(move || SpillCleaner::run(recv_rq))
         .expect("failed to spawn polars-ooc cleaner thread");
 
-    SpillCleaner { send_rq }
+    SpillCleaner {
+        send_rq,
+        pid: std::process::id(),
+    }
 });
 
 enum CleanRequest {
@@ -147,6 +151,11 @@ pub fn init_ooc_cleaner() {
 
 /// Wait for all dead files for out-of-core execution to be cleaned up.
 pub fn flush_ooc_cleanup() {
+    // A forked child does not inherit the cleaner thread, nothing would answer.
+    if SPILL_CLEANER.pid != std::process::id() {
+        return;
+    }
+
     let (ack_send, ack_recv) = channel();
     if SPILL_CLEANER
         .send_rq

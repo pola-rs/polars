@@ -31,7 +31,7 @@ or set 'streaming'",
 
 #[cfg(feature = "cloud")]
 pub use async_impl::ParquetObjectStore;
-pub use options::{ParallelStrategy, ParquetOptions};
+pub use options::{ParallelStrategy, ParquetOptions, PlFileDecryptionProperties};
 use polars_error::{ErrString, PolarsError};
 pub use polars_parquet::arrow::read::infer_schema;
 pub use polars_parquet::read::FileMetadata;
@@ -41,6 +41,6 @@ pub use utils::materialize_empty_df;
 
 pub mod _internal {
     pub use super::mmap::to_deserializer;
-    pub use super::read_impl::{PrefilterMaskSetting, calc_prefilter_cost};
+    pub use super::read_impl::calc_prefilter_cost;
     pub use super::utils::{canonicalize_parquet_maps, ensure_matching_dtypes_if_found};
 }

@@ -13,7 +13,6 @@ bitflags::bitflags! {
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct StatisticsFlags: u32 {
         const IS_SORTED_ANY = 0x03;
-
         const IS_SORTED_ASC = 0x01;
         const IS_SORTED_DSC = 0x02;
         const CAN_FAST_EXPLODE_LIST = 0x04;
@@ -53,26 +52,34 @@ impl From<StatisticsFlags> for StatisticsFlagsIM {
 }
 
 impl StatisticsFlagsIM {
+    #[inline]
     pub fn new(value: StatisticsFlags) -> Self {
         Self {
             inner: RelaxedCell::from(value.bits()),
         }
     }
 
+    #[inline]
     pub fn empty() -> Self {
         Self::new(StatisticsFlags::empty())
     }
 
+    #[inline]
     pub fn get_mut(&mut self) -> StatisticsFlags {
         StatisticsFlags::from_bits(*self.inner.get_mut()).unwrap()
     }
+
+    #[inline]
     pub fn set_mut(&mut self, value: StatisticsFlags) {
         *self.inner.get_mut() = value.bits();
     }
 
+    #[inline]
     pub fn get(&self) -> StatisticsFlags {
         StatisticsFlags::from_bits(self.inner.load()).unwrap()
     }
+
+    #[inline]
     pub fn set(&self, value: StatisticsFlags) {
         self.inner.store(value.bits());
     }
@@ -104,6 +111,7 @@ impl StatisticsFlags {
         self.insert(is_sorted);
     }
 
+    #[inline]
     pub fn is_sorted_any(&self) -> bool {
         self.contains(Self::IS_SORTED_ASC) | self.contains(Self::IS_SORTED_DSC)
     }

@@ -546,6 +546,15 @@ pub fn map_expr(
 }
 
 #[pyfunction]
+pub fn pipe_with_dtype(exprs: Vec<PyExpr>, callback: Py<PyAny>) -> PyExpr {
+    dsl::pipe_with_dtype(
+        exprs.to_exprs(),
+        PlanCallback::new_python(PythonObject(callback)),
+    )
+    .into()
+}
+
+#[pyfunction]
 pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
     dsl::pearson_corr(a.inner, b.inner).into()
 }

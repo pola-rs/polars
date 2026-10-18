@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use arrow::datatypes::ArrowSchema;
+use polars_arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::version::{
     get_polars_lib_build_commit, get_polars_lib_name, get_polars_lib_version,

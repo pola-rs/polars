@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
-use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::{ArrowDataType, PhysicalType};
-use arrow::offset::{Offset, OffsetsBuffer};
+use polars_arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
+use polars_arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::datatypes::{ArrowDataType, PhysicalType};
+use polars_arrow::offset::{Offset, OffsetsBuffer};
 use polars_error::{PolarsResult, polars_bail};
 
 use super::{Encoding, WriteOptions, array_to_pages};
@@ -576,65 +576,15 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     Ok(x)
 }
 
-pub fn arrays_to_columns<A: AsRef<dyn Array> + Send + Sync>(
-    arrays: &[A],
-    type_: ParquetType,
-    options: WriteOptions,
-    encoding: &[Encoding],
-) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
-    let array = arrays[0].as_ref();
-    let nested = to_nested(array, &type_)?;
-
-    let types = to_parquet_leaves(type_);
-
-    // leaves; index level is nesting depth.
-    // index i: has a vec because we have multiple chunks.
-    let mut leaves = vec![];
-
-    // Ensure we transpose the leaves. So that all the leaves from the same columns are at the same level vec.
-    let mut scratch = vec![];
-    for arr in arrays {
-        to_leaves(arr.as_ref(), &mut scratch);
-        for (i, leave) in std::mem::take(&mut scratch).into_iter().enumerate() {
-            while i < leaves.len() {
-                leaves.push(vec![]);
-            }
-            leaves[i].push(leave);
-        }
-    }
-
-    leaves
-        .into_iter()
-        .zip(nested)
-        .zip(types)
-        .zip(encoding.iter())
-        .map(move |(((values, nested), type_), encoding)| {
-            let iter = values.into_iter().map(|leave_values| {
-                array_to_pages(
-                    leave_values.as_ref(),
-                    type_.clone(),
-                    &nested,
-                    options,
-                    *encoding,
-                )
-            });
-
-            // Need a scratch to bubble up the error :/
-            let mut scratch = Vec::with_capacity(iter.size_hint().0);
-            for v in iter {
-                scratch.push(v?)
-            }
-            Ok(DynIter::new(scratch.into_iter().flatten()))
-        })
-        .collect::<PolarsResult<Vec<_>>>()
-}
-
 #[cfg(test)]
 mod tests {
-    use arrow::array::*;
-    use arrow::datatypes::*;
+    use polars_arrow::array::*;
+    use polars_arrow::datatypes::*;
 
-    use super::super::{FieldInfo, ParquetPhysicalType};
+    use super::super::{
+        CompressionOptions, FieldInfo, ParquetPhysicalType, StatisticsOptions, Version,
+        to_parquet_type,
+    };
     use super::*;
     use crate::parquet::schema::Repetition;
     use crate::parquet::schema::types::{
@@ -1004,5 +954,48 @@ mod tests {
                 ],
             ]
         );
+    }
+
+    #[test]
+    fn test_list_num_nulls() {
+        // [[1, null], null, [], [2]], where the null list hides the value 9.
+        let values = Int32Array::from([Some(1), None, Some(9), Some(2)]).boxed();
+        let array = ListArray::new(
+            ArrowDataType::List(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int32,
+                true,
+            ))),
+            vec![0i32, 2, 3, 3, 4].try_into().unwrap(),
+            values,
+            Some(Bitmap::from([true, false, true, true])),
+        );
+        let type_ = to_parquet_type(&Field::new("a".into(), array.dtype().clone(), true)).unwrap();
+
+        for version in [Version::V1, Version::V2] {
+            let options = WriteOptions {
+                statistics: StatisticsOptions::full(),
+                version,
+                compression: CompressionOptions::Uncompressed,
+                data_page_size: None,
+            };
+            let mut columns = array_to_columns(
+                array.clone().boxed(),
+                type_.clone(),
+                options,
+                &[Encoding::Plain],
+            )
+            .unwrap();
+            let Some(Ok(Page::Data(page))) = columns[0].next() else {
+                panic!("expected a data page");
+            };
+
+            // The values 1 and 2 are the only non-null values of the 5 values.
+            assert_eq!(page.num_values(), 5);
+            assert_eq!(page.num_nulls, Some(3));
+            if version == Version::V2 {
+                assert_eq!(page.null_count(), Some(3));
+            }
+        }
     }
 }

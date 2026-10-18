@@ -1,4 +1,4 @@
-use super::group_by::ClosedWindow;
+use polars_defs::time::group_by::ClosedWindow;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Bounds {

@@ -100,10 +100,23 @@ impl StructNameSpace {
             .map_unary(FunctionExpr::StructExpr(StructFunction::JsonEncode))
     }
 
+    /// Add or overwrite fields of the [`StructChunked`], retaining the fields that are not
+    /// part of `fields`.
     pub fn with_fields(self, fields: Vec<Expr>) -> Expr {
         Expr::StructEval {
             expr: Arc::new(self.0),
             evaluation: fields,
+            variant: StructEvalVariant::WithFields,
+        }
+    }
+
+    /// Project `fields` on the [`StructChunked`], dropping the fields that are not part of
+    /// `fields`.
+    pub fn eval(self, fields: Vec<Expr>) -> Expr {
+        Expr::StructEval {
+            expr: Arc::new(self.0),
+            evaluation: fields,
+            variant: StructEvalVariant::Select,
         }
     }
 }

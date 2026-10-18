@@ -74,10 +74,6 @@ macro_rules! impl_cat_series {
                     self.0.physical().into_total_ord_inner()
                 }
             }
-            fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-                invalid_operation_panic!(into_total_eq_inner, self)
-            }
-
             fn vec_hash(
                 &self,
                 random_state: PlSeedableRandomStateQuality,

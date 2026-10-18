@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
-use arrow::types::PrimitiveType;
 use num_traits::ToBytes;
+use polars_arrow::types::PrimitiveType;
 use polars_compute::cast::SerPrimitive;
 use polars_error::feature_gated;
 use polars_utils::float16::pf16;
@@ -120,30 +120,6 @@ pub enum AnyValue<'a> {
 }
 
 impl AnyValue<'static> {
-    pub fn zero_sum(dtype: &DataType) -> Self {
-        match dtype {
-            DataType::String => AnyValue::StringOwned(PlSmallStr::EMPTY),
-            DataType::Binary => AnyValue::BinaryOwned(Vec::new()),
-            DataType::Boolean => (0 as IdxSize).into(),
-            // SAFETY: numeric values are static, inform the compiler of this.
-            d if d.is_primitive_numeric() => unsafe {
-                std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(
-                    AnyValue::UInt8(0).cast(dtype),
-                )
-            },
-            #[cfg(feature = "dtype-duration")]
-            DataType::Duration(unit) => AnyValue::Duration(0, *unit),
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(p, s) => AnyValue::Decimal(0, *p, *s),
-            _ => AnyValue::Null,
-        }
-    }
-
-    /// Can the [`AnyValue`] exist as having `dtype` as its `DataType`.
-    pub fn can_have_dtype(&self, dtype: &DataType) -> bool {
-        matches!(self, AnyValue::Null) || dtype == &self.dtype()
-    }
-
     /// Generate a default dummy value for a given datatype.
     pub fn default_value(
         dtype: &DataType,
@@ -458,6 +434,10 @@ impl<'a> AnyValue<'a> {
             (av, DataType::Int64) => AnyValue::Int64(av.extract::<i64>()?),
             (av, DataType::Int128) => AnyValue::Int128(av.extract::<i128>()?),
             (av, DataType::Float16) => AnyValue::Float16(av.extract::<pf16>()?),
+            #[cfg(feature = "dtype-decimal")]
+            (AnyValue::Decimal(v, _, s), DataType::Float32) => {
+                AnyValue::Float32(polars_compute::decimal::dec128_to_f32(*v, *s))
+            },
             (av, DataType::Float32) => AnyValue::Float32(av.extract::<f32>()?),
             (av, DataType::Float64) => AnyValue::Float64(av.extract::<f64>()?),
 
@@ -626,14 +606,9 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Duration(av.extract::<i64>()?, *tu)
             },
             #[cfg(all(feature = "dtype-duration", feature = "dtype-time"))]
-            (AnyValue::Time(v), DataType::Duration(tu)) => AnyValue::Duration(
-                match *tu {
-                    TimeUnit::Nanoseconds => *v,
-                    TimeUnit::Microseconds => *v / 1_000i64,
-                    TimeUnit::Milliseconds => *v / 1_000_000i64,
-                },
-                *tu,
-            ),
+            (AnyValue::Time(v), DataType::Duration(tu)) => {
+                AnyValue::Duration(tu.from_nsecs(*v), *tu)
+            },
             #[cfg(feature = "dtype-duration")]
             (AnyValue::Duration(v, tu), DataType::Duration(tu_r)) => AnyValue::Duration(
                 match (tu, tu_r) {

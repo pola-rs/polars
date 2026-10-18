@@ -1,9 +1,11 @@
 #[cfg(feature = "timezones")]
 use polars_core::prelude::time_zone::parse_time_zone;
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 #[cfg(feature = "dtype-date")]
 use polars_plan::dsl::DateRangeArgs;
-use polars_time::{ClosedWindow, Duration, datetime_range_impl};
+use polars_time::datetime_range_impl;
 
 use super::utils::{
     ensure_items_contain_exactly_one_value, temporal_ranges_impl_broadcast,

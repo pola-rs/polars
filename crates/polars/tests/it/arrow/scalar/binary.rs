@@ -1,5 +1,5 @@
-use arrow::datatypes::ArrowDataType;
-use arrow::scalar::{BinaryScalar, Scalar};
+use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::scalar::{BinaryScalar, Scalar};
 
 #[allow(clippy::eq_op)]
 #[test]

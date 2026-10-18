@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use polars::prelude::default_values::DefaultFieldValues;
@@ -6,9 +7,11 @@ use polars::prelude::{
     CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
     PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
 };
+use polars_buffer::Buffer;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
+use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -54,6 +57,7 @@ impl PyScanOptions<'_> {
             missing_columns: Wrap<MissingColumnsPolicy>,
             include_file_paths: Option<Wrap<PlSmallStr>>,
             glob: bool,
+            expand_paths: bool,
             hidden_file_prefix: Option<Vec<PyBackedStr>>,
             column_mapping: Option<Wrap<ColumnMapping>>,
             default_values: Option<Wrap<DefaultFieldValues>>,
@@ -67,6 +71,8 @@ impl PyScanOptions<'_> {
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
+            source_sizes: Option<Vec<u64>>,
+            resolve_heavy_sources: Option<u32>,
         }
 
         let Extract {
@@ -79,6 +85,7 @@ impl PyScanOptions<'_> {
             column_mapping,
             default_values,
             glob,
+            expand_paths,
             hidden_file_prefix,
             hive_partitioning,
             hive_schema,
@@ -90,6 +97,8 @@ impl PyScanOptions<'_> {
             deletion_files,
             table_statistics,
             row_count,
+            source_sizes,
+            resolve_heavy_sources,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -120,6 +129,7 @@ impl PyScanOptions<'_> {
             rechunk,
             cache,
             glob,
+            expand_paths,
             hidden_file_prefix: hidden_file_prefix
                 .map(|x| x.into_iter().map(|x| (*x).into()).collect()),
             projection: None,
@@ -136,6 +146,14 @@ impl PyScanOptions<'_> {
             deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
+            source_sizes: source_sizes.map(Buffer::from),
+            resolve_heavy_sources: resolve_heavy_sources
+                .map(|n| {
+                    NonZeroU32::new(n).ok_or_else(|| {
+                        PyValueError::new_err("_resolve_heavy_sources must be at least 1")
+                    })
+                })
+                .transpose()?,
         };
 
         Ok(unified_scan_args)

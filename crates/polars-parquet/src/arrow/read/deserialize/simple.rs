@@ -1,11 +1,13 @@
-use arrow::array::{Array, BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray, StructArray};
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::{
+use ethnum::I256;
+use polars_arrow::array::{
+    Array, BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray, StructArray,
+};
+use polars_arrow::bitmap::Bitmap;
+use polars_arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
     DTYPE_ENUM_VALUES_NEW, Field, IntegerType, IntervalUnit, TimeUnit,
 };
-use arrow::types::{days_ms, i256};
-use ethnum::I256;
+use polars_arrow::types::{days_ms, i256};
 use polars_compute::cast::CastOptionsImpl;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -316,43 +318,19 @@ pub fn page_iter_to_array(
             init_nested,
         )?
         .collect_boxed(filter)?,
-        (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) if *n > 16 => {
+        (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) if *n == 0 || *n > 16 => {
             return Err(ParquetError::not_supported(format!(
                 "not implemented: can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
             )));
         },
-        (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) => {
-            // @TODO: Make a separate decoder for this
-
-            let n = *n;
-
-            let (nested, array, ptm) = PageDecoder::new(
-                &field.name,
-                pages,
-                ArrowDataType::FixedSizeBinary(n),
-                fixed_size_binary::BinaryDecoder { size: n },
-                init_nested,
-            )?
-            .collect(filter)?;
-
-            let array = array
-                .into_iter()
-                .map(|array| {
-                    let values = array
-                        .values()
-                        .chunks_exact(n)
-                        .map(|value: &[u8]| super::super::convert_i128(value, n))
-                        .collect::<Vec<_>>();
-                    let validity = array.validity().cloned();
-                    Ok(
-                        PrimitiveArray::<i128>::try_new(dtype.clone(), values.into(), validity)?
-                            .to_boxed(),
-                    )
-                })
-                .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
-
-            (nested, array, ptm)
-        },
+        (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) => PageDecoder::new(
+            &field.name,
+            pages,
+            dtype,
+            primitive::FixedLenDecimalDecoder::new(*n),
+            init_nested,
+        )?
+        .collect_boxed(filter)?,
         (PhysicalType::ByteArray, Decimal(_, _)) => {
             // @TODO: Make a separate decoder for this
 
@@ -373,7 +351,7 @@ pub fn page_iter_to_array(
                         .values_iter()
                         .map(|value: &[u8]| {
                             if value.len() <= 16 {
-                                Ok(super::super::convert_i128(value, value.len()))
+                                Ok(primitive::convert_i128(value))
                             } else {
                                 Err(ParquetError::OutOfSpec(
                                     "value has too many bytes for Decimal128".to_string(),
@@ -407,6 +385,11 @@ pub fn page_iter_to_array(
             init_nested,
         )?
         .collect_boxed(filter)?,
+        (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n == 0 || *n > 32 => {
+            return Err(ParquetError::not_supported(format!(
+                "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}",
+            )));
+        },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 16 => {
             // @TODO: Make a separate decoder for this
 
@@ -427,7 +410,7 @@ pub fn page_iter_to_array(
                     let values = array
                         .values()
                         .chunks_exact(n)
-                        .map(|value: &[u8]| i256(I256::new(super::super::convert_i128(value, n))))
+                        .map(|value: &[u8]| i256(I256::new(primitive::convert_i128(value))))
                         .collect::<Vec<_>>();
                     let validity = array.validity().cloned();
                     Ok(
@@ -470,11 +453,6 @@ pub fn page_iter_to_array(
                 .collect::<ParquetResult<Vec<Box<dyn Array>>>>()?;
 
             (nested, array, ptm)
-        },
-        (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n > 32 => {
-            return Err(ParquetError::not_supported(format!(
-                "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}",
-            )));
         },
         (PhysicalType::Int32, Date64) => PageDecoder::new(
             &field.name,
@@ -644,7 +622,7 @@ pub fn page_iter_to_array(
 
 /// Unify the timestamp unit from parquet TimeUnit into arrow's TimeUnit
 /// Returns (a int64 factor, is_multiplier)
-fn unify_timestamp_unit(
+pub(crate) fn unify_timestamp_unit(
     logical_type: &Option<PrimitiveLogicalType>,
     time_unit: TimeUnit,
 ) -> (i64, bool) {

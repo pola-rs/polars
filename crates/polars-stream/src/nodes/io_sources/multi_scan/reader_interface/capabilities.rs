@@ -2,7 +2,7 @@ use bitflags::bitflags;
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub struct ReaderCapabilities: u8 {
+    pub struct ReaderCapabilities: u16 {
         /// Supports attaching a row index column.
         ///
         /// Readers may want to implement this if they implement any of:
@@ -41,5 +41,9 @@ bitflags! {
         /// Signals to the multi-scan pipeline to initialize cloud paths in the file cache before
         /// starting the reader.
         const NEEDS_FILE_CACHE_INIT = 1 << 7;
+
+        /// Opts in to the multi-scan emitting files unordered when order is not observed.
+        /// Only applies to remote (async) sources.
+        const UNORDERED_FILES = 1 << 8;
     }
 }

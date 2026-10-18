@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -14,6 +14,9 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
+
+    from tests.conftest import PlMonkeyPatch
 
 
 class CapturingDataset:
@@ -233,8 +236,8 @@ def test_dataset_provider_predicate_eq_missing(df: pl.DataFrame) -> None:
 def test_dataset_provider_predicate_xor(df: pl.DataFrame) -> None:
     # PyArrow expressions have no `^` operator.
     assert lowered_predicate(df, (pl.col("id") > 3) ^ (pl.col("val") > 1.0)) == (
-        "(((pa.compute.field('id') > 3) | (pa.compute.field('val') > 1))"
-        " & ~((pa.compute.field('id') > 3) & (pa.compute.field('val') > 1)))"
+        "(((pa.compute.field('id') > 3) | (pa.compute.field('val') > 1.0))"
+        " & ~((pa.compute.field('id') > 3) & (pa.compute.field('val') > 1.0)))"
     )
     # `^` on integers is a bitwise operation, which the rewrite does not hold for.
     assert lowered_predicate(df, (pl.col("id") ^ 1) > 2) is None
@@ -260,9 +263,56 @@ def test_dataset_provider_predicate_xor_operands(df: pl.DataFrame) -> None:
     )
 
 
+def test_dataset_provider_predicate_arithmetic(df: pl.DataFrame) -> None:
+    # Only `Float64` arithmetic lowers: PyArrow's checked kernels raise on
+    # integer overflow where Polars wraps.
+    assert (
+        lowered_predicate(df, pl.col("val") * 2 > 1.0)
+        == "((pa.compute.field('val') * 2.0) > 1.0)"
+    )
+    assert (
+        lowered_predicate(df, pl.col("val") + 1.0 <= 1.5)
+        == "((pa.compute.field('val') + 1.0) <= 1.5)"
+    )
+    # PyArrow expressions have no reflected arithmetic, so a literal on the left
+    # has to become an expression of its own.
+    assert (
+        lowered_predicate(df, 2.0 - pl.col("val") > 1.0)
+        == "((pa.compute.scalar(2.0) - pa.compute.field('val')) > 1.0)"
+    )
+
+
+def test_dataset_provider_predicate_arithmetic_not_lowered(
+    df: pl.DataFrame,
+) -> None:
+    # Integer arithmetic would raise on overflow in PyArrow where Polars wraps.
+    assert lowered_predicate(df, pl.col("id") * pl.col("id") > 4) is None
+    assert lowered_predicate(df, pl.col("id") + 1 > 0) is None
+    # `/` never lowers: PyArrow raises on division by zero where Polars yields
+    # `inf`/`NaN`, follows the operand types where Polars always float-divides,
+    # and its safe casts lose precision (`Float32`) or error (large integers).
+    assert lowered_predicate(df, pl.col("id") / 4 > 1.0) is None
+    assert lowered_predicate(df, pl.col("val") / 2.0 > 1.0) is None
+    # `Float32` arithmetic is not `Float64`: rounding can differ.
+    floats = pl.DataFrame({"x": [1.0]}, schema={"x": pl.Float32})
+    assert lowered_predicate(floats, pl.col("x") * 2 > 1.0) is None
+    # Temporal arithmetic has no PyArrow equivalent with Polars' semantics
+    # (`Date + Duration` truncates to a `Date` in Polars).
+    temporal = pl.DataFrame(
+        {
+            "x": [date(2024, 1, 1)],
+            "d": [timedelta(hours=1)],
+            "y": [date(2024, 1, 1)],
+        }
+    )
+    assert (
+        lowered_predicate(temporal, (pl.col("x") + pl.col("d")) == pl.col("y")) is None
+    )
+
+
 def test_dataset_provider_predicate_not_lowered(df: pl.DataFrame) -> None:
-    # Arithmetic has no lowering.
-    assert lowered_predicate(df, pl.col("val") * 2 > 1.0) is None
+    # `%` has no PyArrow expression form.
+    assert lowered_predicate(df, pl.col("id") % 2 == 0) is None
     # Neither does a cast.
     assert lowered_predicate(df, pl.col("id").cast(pl.String) == "1") is None
 
@@ -275,3 +325,177 @@ def test_dataset_provider_predicate_partial(df: pl.DataFrame) -> None:
         )
         == "(pa.compute.field('id') > 3)"
     )
+
+
+class ParquetDataset:
+    """Test dataset provider that expands to a Parquet scan."""
+
+    def __init__(self, paths: list[Path], schema: pl.Schema | None = None) -> None:
+        self.paths = paths
+        self.pl_schema = (
+            schema if schema is not None else pl.scan_parquet(paths[0]).collect_schema()
+        )
+        self.arrow_schema = self.pl_schema.to_arrow()
+
+    def schema(self) -> pa.Schema:
+        return self.arrow_schema
+
+    def to_dataset_scan(self, **_kwargs: Any) -> tuple[pl.LazyFrame, str]:
+        # Provide known file sizes, as native Iceberg and Delta scans do.
+        sizes = [p.stat().st_size for p in self.paths]
+        lf = pl.scan_parquet(self.paths, schema=self.pl_schema, _source_sizes=sizes)
+        return lf, "v1"
+
+
+def test_python_dataset_resolves_heavy_footers(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Dataset expansion must resolve heavy-file footers after DSL-to-IR conversion.
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    paths = []
+    for i, n in enumerate([1, 1, 4000]):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+        paths.append(path)
+
+    dataset = ParquetDataset(paths)
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset, resolve_heavy_sources=4))
+
+    # Partial metadata requires source 0; source 2 is heavy.
+    assert lf._ldf._retained_parquet_footers() == [[(0, 1), (2, 8)]]
+    assert lf.collect().height == 4002
+
+    captured = capfd.readouterr().err
+    assert "parquet resolve: pinned 1 / 1 heavy sources" in captured
+
+
+def test_python_dataset_leaves_footers_alone_without_the_flag(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    paths = []
+    for i, n in enumerate([1, 4000]):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+        paths.append(path)
+
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(ParquetDataset(paths)))
+
+    assert lf._ldf._retained_parquet_footers() == [[]]
+    assert lf.collect().height == 4001
+    assert "heavy sources" not in capfd.readouterr().err
+
+
+def test_python_dataset_with_no_sources_resolves_nothing() -> None:
+    # Empty datasets must not attempt to read source 0.
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            ParquetDataset([], pl.Schema({"x": pl.Int64})), resolve_heavy_sources=4
+        )
+    )
+
+    assert lf._ldf._retained_parquet_footers() == [[]]
+    assert lf.collect().height == 0
+
+
+@pytest.mark.parametrize("mode", ["none", "row_counts"])
+def test_python_dataset_heavy_footers_disabled_by_the_resolve_mode(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+    mode: str,
+) -> None:
+    # Expanded datasets need no planning footer reads in these modes.
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    paths = []
+    for i, n in enumerate([20, 4000, 20]):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+        paths.append(path)
+
+    capfd.readouterr()
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            ParquetDataset(paths), resolve_heavy_sources=4
+        )
+    )
+
+    assert lf._ldf._retained_parquet_footers() == [[]]
+    assert "heavy sources" not in capfd.readouterr().err
+
+
+def test_python_dataset_survives_an_unreadable_heavy_footer(tmp_path: Path) -> None:
+    # Failed footer reads leave sources unresolved; execution still raises.
+    paths = []
+    for i, n in enumerate([20, 4000, 20]):
+        path = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"x": range(n)}).write_parquet(path, row_group_size=500)
+        paths.append(path)
+
+    # Corrupt the footer without changing the reported file size.
+    size = paths[1].stat().st_size
+    with paths[1].open("r+b") as f:
+        f.write(b"x" * size)
+
+    lf = wrap_ldf(
+        PyLazyFrame.new_from_dataset_object(
+            ParquetDataset(paths, pl.Schema({"x": pl.Int64})), resolve_heavy_sources=4
+        )
+    )
+
+    lf.explain(optimized=True)
+    assert lf._ldf._retained_parquet_footers() == [[(0, 1)]]
+
+    with pytest.raises(pl.exceptions.ComputeError, match="parquet magic bytes"):
+        lf.collect()
+
+
+def test_python_dataset_rejects_zero_heavy_sources() -> None:
+    with pytest.raises(ValueError, match="must be at least 1"):
+        PyLazyFrame.new_from_dataset_object(
+            ParquetDataset([], pl.Schema({"x": pl.Int64})), resolve_heavy_sources=0
+        )
+
+
+class AllRowsDeletedDataset:
+    """Dataset provider over a file whose rows are all deleted."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.path = tmp_path / "data.parquet"
+        pl.DataFrame({"k": [1, 2]}).write_parquet(self.path)
+        self.deletes = tmp_path / "deletes.parquet"
+        pl.DataFrame({"file_path": ["", ""], "pos": [0, 1]}).write_parquet(self.deletes)
+
+    def schema(self) -> pa.Schema:
+        return pa.schema([("k", pa.int64())])
+
+    def to_dataset_scan(self, **_kwargs: Any) -> tuple[pl.LazyFrame, str]:
+        idx = pl.get_index_type()
+        statistics = pl.DataFrame(
+            {"len": [2], "k_nc": [0], "k_min": [1], "k_max": [2]},
+            schema={"len": idx, "k_nc": idx, "k_min": pl.Int64, "k_max": pl.Int64},
+        )
+        lf = pl.scan_parquet(
+            self.path,
+            _deletion_files=("iceberg", ({0: [str(self.deletes)]}, {})),
+            _row_count=(2, 2),
+            _table_statistics=statistics,
+        )
+        return lf, "v1"
+
+
+@pytest.mark.write_disk
+def test_python_dataset_join_with_every_row_deleted(tmp_path: Path) -> None:
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(AllRowsDeletedDataset(tmp_path)))
+    q = lf.join(pl.LazyFrame({"k": [1, 2, 3]}), on="k").join(
+        pl.LazyFrame({"k": [1, 2]}), on="k"
+    )
+    assert q.collect().height == 0

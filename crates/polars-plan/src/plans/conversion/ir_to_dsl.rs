@@ -88,24 +88,36 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Min {
                 input,
                 propagate_nans,
+                propagate_nulls,
             } => {
                 let exp = node_to_expr(input, expr_arena);
-                AggExpr::Min {
-                    input: Arc::new(exp),
+                let agg = AggExpr::Min {
+                    input: Arc::new(exp.clone()),
                     propagate_nans,
                 }
-                .into()
+                .into();
+                if propagate_nulls {
+                    null_if_has_nulls(exp, agg)
+                } else {
+                    agg
+                }
             },
             IRAggExpr::Max {
                 input,
                 propagate_nans,
+                propagate_nulls,
             } => {
                 let exp = node_to_expr(input, expr_arena);
-                AggExpr::Max {
-                    input: Arc::new(exp),
+                let agg = AggExpr::Max {
+                    input: Arc::new(exp.clone()),
                     propagate_nans,
                 }
-                .into()
+                .into();
+                if propagate_nulls {
+                    null_if_has_nulls(exp, agg)
+                } else {
+                    agg
+                }
             },
 
             IRAggExpr::Mean(expr) => {
@@ -155,9 +167,18 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Sum(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Sum(Arc::new(exp)).into()
+            IRAggExpr::Sum {
+                input,
+                null_on_empty,
+            } => {
+                let exp = node_to_expr(input, expr_arena);
+                if null_on_empty {
+                    when(exp.clone().count().gt(lit(0)))
+                        .then(exp.sum())
+                        .otherwise(Expr::Literal(LiteralValue::untyped_null()))
+                } else {
+                    exp.sum()
+                }
             },
             IRAggExpr::Std(expr, ddof) => {
                 let exp = node_to_expr(expr, expr_arena);
@@ -226,9 +247,14 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             variant,
         },
         #[cfg(feature = "dtype-struct")]
-        AExpr::StructEval { expr, evaluation } => Expr::StructEval {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => Expr::StructEval {
             expr: Arc::new(node_to_expr(expr, expr_arena)),
             evaluation: expr_irs_to_exprs(evaluation, expr_arena),
+            variant,
         },
         AExpr::Function {
             input,
@@ -290,6 +316,25 @@ fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()
 }
 
+fn null_if_has_nulls(input: Expr, agg: Expr) -> Expr {
+    when(input.has_nulls())
+        .then(lit(LiteralValue::untyped_null()))
+        .otherwise(agg)
+}
+
+fn total_min_max_by_to_dsl(input: Vec<Expr>, nulls_largest: bool, is_max: bool) -> Expr {
+    let [expr, by] = <[Expr; 2]>::try_from(input).unwrap();
+    let sorted = expr.sort_by(
+        [by],
+        SortMultipleOptions::default().with_nulls_last(nulls_largest),
+    );
+    if is_max {
+        sorted.last()
+    } else {
+        sorted.first()
+    }
+}
+
 pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
     use FunctionExpr as F;
     use IRFunctionExpr as IF;
@@ -317,7 +362,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Get(v) => A::Get(v),
                 IA::Join(v) => A::Join(v),
                 #[cfg(feature = "is_in")]
-                IA::Contains { nulls_equal } => A::Contains { nulls_equal },
+                IA::Contains { nulls_equal, .. } => A::Contains { nulls_equal },
                 #[cfg(feature = "array_count")]
                 IA::CountMatches => A::CountMatches,
                 IA::Shift => A::Shift,
@@ -378,6 +423,11 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use MapFunction as M;
             F::MapExpr(match f {
                 IM::Entries => M::Entries,
+                IM::Keys => M::Keys,
+                IM::Values => M::Values,
+                IM::Length => M::Length,
+                IM::ContainsKey { .. } => M::ContainsKey,
+                IM::Get { .. } => M::Get,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -395,7 +445,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             F::ListExpr(match f {
                 IL::Concat => L::Concat,
                 #[cfg(feature = "is_in")]
-                IL::Contains { nulls_equal } => L::Contains { nulls_equal },
+                IL::Contains { nulls_equal, .. } => L::Contains { nulls_equal },
                 #[cfg(feature = "list_drop_nulls")]
                 IL::DropNulls => L::DropNulls,
                 #[cfg(feature = "list_sample")]
@@ -696,7 +746,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "is_between")]
                 IB::IsBetween { closed } => B::IsBetween { closed },
                 #[cfg(feature = "is_in")]
-                IB::IsIn { nulls_equal } => B::IsIn { nulls_equal },
+                IB::IsIn { nulls_equal, .. } => B::IsIn { nulls_equal },
                 #[cfg(feature = "is_close")]
                 IB::IsClose {
                     abs_tol,
@@ -939,8 +989,18 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             descending,
             nulls_last,
         },
-        IF::MinBy => F::MinBy,
-        IF::MaxBy => F::MaxBy,
+        IF::MinBy {
+            order: MinMaxByOrder::SkipNulls,
+        } => F::MinBy,
+        IF::MaxBy {
+            order: MinMaxByOrder::SkipNulls,
+        } => F::MaxBy,
+        IF::MinBy {
+            order: MinMaxByOrder::Total { nulls_largest },
+        } => return total_min_max_by_to_dsl(input, nulls_largest, false),
+        IF::MaxBy {
+            order: MinMaxByOrder::Total { nulls_largest },
+        } => return total_min_max_by_to_dsl(input, nulls_largest, true),
         IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
@@ -993,6 +1053,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::UniqueCounts => F::UniqueCounts,
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
+        #[cfg(feature = "approx_quantile")]
+        ref f @ (IF::ApproxQuantileSketch { .. } | IF::ApproxQuantileEstimate { .. }) => {
+            return Expr::Display {
+                inputs: input,
+                fmt_str: Box::new(format_pl_smallstr!("{f}")),
+            };
+        },
         IF::Coalesce => F::Coalesce,
         #[cfg(feature = "diff")]
         IF::Diff(nb) => F::Diff(nb),
@@ -1010,9 +1077,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Log1p => F::Log1p,
         #[cfg(feature = "log")]
         IF::Exp => F::Exp,
+        #[cfg(feature = "log")]
+        IF::Erf => F::Erf,
+        #[cfg(feature = "log")]
+        IF::Erfc => F::Erfc,
         IF::Unique(v) => F::Unique(v),
         #[cfg(feature = "round_series")]
         IF::Round { decimals, mode } => F::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        IF::DecimalArith { op, scale } => F::DecimalArith { op, scale },
+        IF::TruncArith(op) => F::TruncArith(op),
         #[cfg(feature = "round_series")]
         IF::RoundSF { digits } => F::RoundSF { digits },
         #[cfg(feature = "round_series")]
@@ -1078,6 +1152,30 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             allow_duplicates,
             include_breaks,
         },
+        #[cfg(feature = "cutqcut")]
+        IF::Bin(IRBinOptions {
+            method,
+            labels,
+            include_intervals,
+        }) => F::Bin(BinOptions {
+            method: match method {
+                IRBinMethod::Intervals { spec, right_closed } => BinMethod::Intervals {
+                    spec: match spec {
+                        IntervalSpec::Breaks(breaks) => {
+                            DslIntervalSpec::Breaks(breaks.into_series())
+                        },
+                        IntervalSpec::Count(n_bins) => DslIntervalSpec::Count(n_bins),
+                    },
+                    right_closed,
+                },
+                IRBinMethod::Quantiles { spec, right_closed } => {
+                    BinMethod::Quantiles { spec, right_closed }
+                },
+                IRBinMethod::Ranks { spec } => BinMethod::Ranks { spec },
+            },
+            labels,
+            include_intervals,
+        }),
         #[cfg(feature = "rle")]
         IF::RLE => F::RLE,
         #[cfg(feature = "rle")]
@@ -1107,11 +1205,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "ffi_plugin")]
         IF::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
@@ -1191,7 +1291,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
             v,
         ),
-        IF::DynamicPred { pred } => {
+        IF::DynamicPred { pred, .. } | IF::DynamicSkipBatch { pred } => {
             return Expr::Display {
                 inputs: input,
                 fmt_str: Box::new(format_pl_smallstr!("{pred:?}")),

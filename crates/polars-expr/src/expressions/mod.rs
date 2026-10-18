@@ -30,9 +30,6 @@ use std::fmt::{Display, Formatter};
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
-use arrow::array::ArrayRef;
-use arrow::bitmap::MutableBitmap;
-use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
@@ -45,9 +42,13 @@ pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use len::*;
 pub(crate) use literal::*;
+use polars_arrow::array::ArrayRef;
+use polars_arrow::bitmap::MutableBitmap;
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::prelude::*;
+use polars_utils::UnitVec;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
@@ -56,8 +57,7 @@ pub(crate) use sortby::*;
 #[cfg(feature = "dtype-struct")]
 pub(crate) use structeval::*;
 pub(crate) use ternary::*;
-pub use window::window_function_format_order_by;
-pub(crate) use window::*;
+pub use window::{WindowExpr, window_function_format_order_by};
 
 use crate::state::ExecutionState;
 
@@ -676,6 +676,48 @@ impl<'a> AggregationContext<'a> {
                 });
             },
         }
+    }
+
+    /// Repeats each unit-length group to the length of the matching group in `other`, returning
+    /// whether any group was repeated.
+    pub(crate) fn broadcast_unit_groups_to(&mut self, other: &mut AggregationContext) -> bool {
+        let other_groups = other.groups();
+        let needs_broadcast = self
+            .groups()
+            .iter()
+            .zip(other_groups.iter())
+            .any(|(g, o)| g.len() == 1 && o.len() != 1);
+        if !needs_broadcast {
+            return false;
+        }
+
+        let other_lengths = other_groups.iter().map(|g| g.len());
+        let groups: GroupsIdx = match self.groups.as_ref().as_ref() {
+            GroupsType::Idx(i) => i
+                .iter()
+                .zip(other_lengths)
+                .map(|((fst, idxs), l)| {
+                    if idxs.len() != l && idxs.len() == 1 {
+                        (fst, UnitVec::from_iter(std::iter::repeat_n(fst, l)))
+                    } else {
+                        (fst, idxs.clone())
+                    }
+                })
+                .collect(),
+            GroupsType::Slice { groups, .. } => groups
+                .iter()
+                .zip(other_lengths)
+                .map(|(&[start, length], l)| {
+                    if length as usize != l && length == 1 {
+                        (start, UnitVec::from_iter(std::iter::repeat_n(start, l)))
+                    } else {
+                        (start, UnitVec::from_iter(start..start + length))
+                    }
+                })
+                .collect(),
+        };
+        self.with_groups(GroupsType::Idx(groups).into_sliceable());
+        true
     }
 
     pub fn into_static(&self) -> AggregationContext<'static> {

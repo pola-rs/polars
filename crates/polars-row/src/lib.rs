@@ -277,7 +277,7 @@ mod utils;
 pub(crate) mod variable;
 mod widths;
 
-use arrow::array::*;
+use polars_arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;
 
 pub use encode::{

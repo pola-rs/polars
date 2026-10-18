@@ -207,7 +207,7 @@ impl ApplyExtraOps {
                     external_filter_mask,
                     row_index: row_index.map(|ri| (ri, row_index_col_idx)),
                     column_selectors,
-                    predicate,
+                    predicate: predicate.map(|x| x.scan_io_predicate),
                 };
 
                 // Return a `Noop` if our initialized state does not have any operations. Downstream

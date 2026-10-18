@@ -1,5 +1,5 @@
-use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
+use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
