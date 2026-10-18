@@ -3,7 +3,10 @@ use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 
 use crate::dsl::{EvalVariant, WindowMapping};
-use crate::plans::{AExpr, ExprIR, IRAggExpr, IRFunctionExpr, is_length_preserving_ae};
+use crate::plans::{
+    AExpr, IRAggExpr, IRFunctionExpr, is_length_preserving_ae, is_order_insensitive_ae,
+    is_scalar_ae,
+};
 
 bitflags! {
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -488,6 +491,11 @@ impl ExprOrderSimplifier<'_> {
                 let maintain_order = sort_options.maintain_order;
                 let by_len = by.len();
 
+                if let Some(new_ae) = drop_scalar_sort_by_keys(current_ae_node, self.expr_arena) {
+                    self.expr_arena.replace(current_ae_node, new_ae);
+                    return self.rec(current_ae_node, recursion);
+                }
+
                 if recursion.allows_deorder()
                     && is_length_preserving_ae(expr, self.expr_arena)
                     && (0..by_len).all(|i| {
@@ -576,7 +584,7 @@ impl ExprOrderSimplifier<'_> {
 
             AExpr::Function {
                 input,
-                function: IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy,
+                function: IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. },
                 ..
             } => {
                 check_return_cached!();
@@ -785,62 +793,48 @@ pub(crate) fn is_order_insensitive_window(node: Node, arena: &Arena<AExpr>) -> b
     };
 
     *mapping == WindowMapping::GroupsToRows
-        && is_order_insensitive(*function, arena)
-        && partition_by.iter().all(|n| is_order_insensitive(*n, arena))
+        && is_order_insensitive_ae(*function, arena)
+        && partition_by
+            .iter()
+            .all(|n| is_order_insensitive_ae(*n, arena))
         && order_by
             .as_ref()
-            .is_none_or(|(n, _)| is_order_insensitive(*n, arena))
+            .is_none_or(|(n, _)| is_order_insensitive_ae(*n, arena))
 }
 
-/// Whether every output value only depends on the values in its own row and on the set of rows
-/// in the group, not on the order of those rows.
-#[recursive::recursive]
-fn is_order_insensitive(node: Node, arena: &Arena<AExpr>) -> bool {
-    let inputs_insensitive =
-        |input: &[ExprIR]| input.iter().all(|e| is_order_insensitive(e.node(), arena));
-
-    match arena.get(node) {
-        AExpr::Column(_) | AExpr::Len => true,
-        AExpr::Literal(lv) => lv.is_scalar(),
-        AExpr::Cast { expr, .. } => is_order_insensitive(*expr, arena),
-        AExpr::BinaryExpr { left, op: _, right } => {
-            is_order_insensitive(*left, arena) && is_order_insensitive(*right, arena)
-        },
-        AExpr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => [*predicate, *truthy, *falsy]
-            .into_iter()
-            .all(|n| is_order_insensitive(n, arena)),
-        AExpr::Agg(agg) => match agg {
-            IRAggExpr::Min { input, .. }
-            | IRAggExpr::Max { input, .. }
-            | IRAggExpr::Median(input)
-            | IRAggExpr::NUnique(input)
-            | IRAggExpr::Item { input, .. }
-            | IRAggExpr::Mean(input)
-            | IRAggExpr::Sum { input, .. }
-            | IRAggExpr::Count { input, .. }
-            | IRAggExpr::Std(input, _)
-            | IRAggExpr::Var(input, _) => is_order_insensitive(*input, arena),
-            IRAggExpr::First(_)
-            | IRAggExpr::FirstNonNull(_)
-            | IRAggExpr::Last(_)
-            | IRAggExpr::LastNonNull(_)
-            | IRAggExpr::Implode { .. } => false,
-        },
-        AExpr::Function {
-            function: IRFunctionExpr::SetSortedFlag(_),
-            ..
-        } => false,
-        AExpr::Function { input, options, .. } => {
-            let flags = options.flags;
-            !flags.observes_input_order()
-                && flags.non_order_producing()
-                && (flags.is_length_preserving() || flags.returns_scalar())
-                && inputs_insensitive(input)
-        },
-        _ => false,
+/// Drops the scalar keys of a `sort_by`, which are constant within the input (or each group).
+fn drop_scalar_sort_by_keys(node: Node, arena: &Arena<AExpr>) -> Option<AExpr> {
+    let AExpr::SortBy {
+        expr,
+        by,
+        sort_options,
+    } = arena.get(node)
+    else {
+        unreachable!()
+    };
+    if !by.iter().any(|&e| is_scalar_ae(e, arena)) {
+        return None;
     }
+
+    let flag = |flags: &[bool], i: usize| flags.get(i).or(flags.first()) == Some(&true);
+    let mut sort_options = sort_options.clone();
+    let (mut descending, mut nulls_last) = (Vec::new(), Vec::new());
+    let mut non_scalar_by = Vec::new();
+    for (i, &e) in by.iter().enumerate() {
+        if !is_scalar_ae(e, arena) {
+            non_scalar_by.push(e);
+            descending.push(flag(&sort_options.descending, i));
+            nulls_last.push(flag(&sort_options.nulls_last, i));
+        }
+    }
+    if non_scalar_by.is_empty() {
+        return Some(arena.get(*expr).clone());
+    }
+    sort_options.descending = descending;
+    sort_options.nulls_last = nulls_last;
+    Some(AExpr::SortBy {
+        expr: *expr,
+        by: non_scalar_by,
+        sort_options,
+    })
 }

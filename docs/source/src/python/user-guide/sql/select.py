@@ -104,3 +104,23 @@ result = ctx.execute(
 )
 print(result)
 # --8<-- [end:tablefunctions]
+
+# --8<-- [start:tablefunctionoptions]
+result = ctx.execute(
+    """
+        SELECT *
+        FROM read_csv('docs/assets/data/iris.csv', infer_schema => false, skip_rows_after_header => 147)
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionoptions]
+
+# --8<-- [start:tablefunctionndjson]
+result = ctx.execute(
+    """
+        SELECT *
+        FROM read_ndjson('docs/assets/data/orders.ndjson', schema_overrides => {'date': 'DATE'})
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionndjson]

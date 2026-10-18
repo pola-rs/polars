@@ -293,7 +293,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
                 .into_series()
                 .time()
                 .unwrap()
-                .to_string("%T")
+                .to_string("%T")?
                 .into_series()),
             _ => self.0.cast_with_options(dtype, cast_options),
         }

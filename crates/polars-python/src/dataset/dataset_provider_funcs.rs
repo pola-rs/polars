@@ -97,6 +97,7 @@ pub fn to_dataset_scan(
     limit: Option<usize>,
     projection: Option<&[PlSmallStr]>,
     filter_columns: Option<&[PlSmallStr]>,
+    statistics_columns: Option<&[PlSmallStr]>,
     pyarrow_predicate: Option<&str>,
     py_scan_resolve_threadpool: &PyScanResolveThreadPool,
 ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
@@ -130,6 +131,16 @@ pub fn to_dataset_scan(
             }
 
             kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
+        }
+
+        if let Some(statistics_columns) = statistics_columns {
+            let statistics_columns_list = PyList::empty(py);
+
+            for name in statistics_columns {
+                statistics_columns_list.append(name.as_str())?;
+            }
+
+            kwargs.set_item(intern!(py, "statistics_columns"), statistics_columns_list)?;
         }
 
         if let Some(pyarrow_predicate) = pyarrow_predicate {

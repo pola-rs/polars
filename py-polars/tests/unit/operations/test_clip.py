@@ -229,6 +229,55 @@ def test_clip_mixed_scalar_series_bound_with_nulls_lazy_27086() -> None:
     assert_frame_equal(result, pl.LazyFrame({"a": [None, 5, 7]}))
 
 
+def test_clip_length_one_input_broadcasts_to_bounds_29644() -> None:
+    s = pl.Series([5])
+    bounds = pl.Series([1, 2, 3, 4])
+
+    assert_series_equal(s.clip(upper_bound=bounds), pl.Series([1, 2, 3, 4]))
+    assert_series_equal(s.clip(lower_bound=bounds), pl.Series([5, 5, 5, 5]))
+    assert_series_equal(s.clip(bounds, bounds + 10), pl.Series([5, 5, 5, 5]))
+    assert_series_equal(s.clip(bounds + 3, bounds + 10), pl.Series([5, 5, 6, 7]))
+    assert_series_equal(
+        s.clip(lower_bound=6, upper_bound=bounds), pl.Series([6, 6, 6, 6])
+    )
+    assert_series_equal(
+        s.clip(lower_bound=bounds, upper_bound=3), pl.Series([3, 3, 3, 3])
+    )
+
+    # Null bounds leave the broadcast input untouched.
+    nulls = pl.Series([None, 2, None], dtype=pl.Int64)
+    assert_series_equal(s.clip(upper_bound=nulls), pl.Series([5, 2, 5]))
+    assert_series_equal(s.clip(nulls, nulls), pl.Series([5, 2, 5]))
+
+    # A null input stays null.
+    null_input = pl.Series([None], dtype=pl.Int64)
+    assert_series_equal(
+        null_input.clip(upper_bound=bounds), pl.Series([None] * 4, dtype=pl.Int64)
+    )
+
+    # A length-1 input with length-1 bounds is not broadcast.
+    assert_series_equal(s.clip(pl.Series([1]), pl.Series([3])), pl.Series([3]))
+
+
+def test_clip_length_one_input_broadcasts_to_bounds_lazy_29644() -> None:
+    lf = pl.LazyFrame({"a": [1.0, 2.0, None, 3.0]})
+    q = lf.select(
+        x=pl.lit(5).clip(pl.col("a") + 3, pl.col("a") + 10),
+        y=pl.lit(5).clip(upper_bound=pl.col("a")),
+        z="a",
+    )
+    expected = pl.DataFrame(
+        {
+            "x": [5, 5, 5, 6],
+            "y": [1, 2, 5, 3],
+            "z": [1.0, 2.0, None, 3.0],
+        },
+        schema_overrides={"y": pl.Int32, "x": pl.Int32},
+    )
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
 def test_clip_bound_nan() -> None:
     assert_series_equal(
         pl.Series([1.0, 2.0]).clip(float("nan"), float("nan")),

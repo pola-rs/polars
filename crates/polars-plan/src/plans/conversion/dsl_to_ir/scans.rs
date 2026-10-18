@@ -130,6 +130,11 @@ pub(super) async fn dsl_to_ir(
                 .await?
         };
 
+        // Footer statistics are keyed on the file column names.
+        if unified_scan_args.column_mapping.is_some() {
+            file_info.stats = ScanStats::new(file_info.stats.rows);
+        }
+
         if unified_scan_args.hive_options.enabled.is_none() {
             // We expect this to be `Some(_)` after this point. If it hasn't been auto-enabled
             // we explicitly set it to disabled.
@@ -279,6 +284,35 @@ fn prepare_schemas(
     })
 }
 
+/// Whether a (decompressed) slice from progressive schema inference holds the rest of the file:
+/// everything was fetched, and when compressed, the decompressor gave less than was asked for.
+#[cfg(any(feature = "json", feature = "csv"))]
+fn slice_reaches_eof(
+    offset: usize,
+    file_size: usize,
+    compression: Option<SupportedCompression>,
+    bytes_read: usize,
+    read_size: usize,
+) -> bool {
+    offset >= file_size && (compression.is_none() || bytes_read < read_size)
+}
+
+/// Before EOF a slice from progressive schema inference may end inside a row. Keep only the
+/// complete rows, so that we neither count nor infer from an incomplete row. `complete_len`
+/// returns the length of the complete rows in the given bytes.
+#[cfg(any(feature = "json", feature = "csv"))]
+fn complete_rows(
+    slice: Buffer<u8>,
+    at_eof: bool,
+    complete_len: impl FnOnce(&[u8]) -> usize,
+) -> Buffer<u8> {
+    if at_eof {
+        return slice;
+    }
+    let complete_len = complete_len(&slice);
+    slice.sliced(..complete_len)
+}
+
 #[cfg(feature = "parquet")]
 pub(super) async fn parquet_file_info(
     sources: &ScanSources,
@@ -289,6 +323,7 @@ pub(super) async fn parquet_file_info(
     resolve_heavy_sources: Option<NonZeroU32>,
     use_statistics: bool,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<&polars_io::parquet::read::PlFileDecryptionProperties>,
 ) -> PolarsResult<(FileInfo, MetadataPerSource)> {
     use futures::stream::{FuturesOrdered, FuturesUnordered, StreamExt};
     use polars_core::error::feature_gated;
@@ -306,7 +341,9 @@ pub(super) async fn parquet_file_info(
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
                 let mut reader =
-                    ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None).await?;
+                    ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None)
+                        .await?
+                        .with_decryption_properties(decryption_properties.cloned());
                 PolarsResult::Ok((
                     reader.schema().await?,
                     reader.num_rows().await?,
@@ -315,7 +352,14 @@ pub(super) async fn parquet_file_info(
             })
         } else {
             let memslice = first_scan_source.to_memslice()?;
-            let mut reader = ParquetReader::new(Cursor::new(memslice));
+            let mut cursor = Cursor::new(memslice);
+            let metadata = polars_parquet::parquet::read::read_metadata_with_decryption(
+                &mut cursor,
+                decryption_properties.map(|p| &p.0),
+                None,
+            )?;
+            let mut reader = ParquetReader::new(cursor);
+            reader.set_metadata(Arc::new(metadata));
             PolarsResult::Ok((
                 reader.schema()?,
                 reader.num_rows()?,
@@ -382,7 +426,12 @@ pub(super) async fn parquet_file_info(
                 let rest_fut = async move {
                     let mut futures = (1..n_sources)
                         .map(|i| async move {
-                            read_parquet_num_rows(sources.at(i), cloud_options).await
+                            read_parquet_num_rows(
+                                sources.at(i),
+                                cloud_options,
+                                decryption_properties,
+                            )
+                            .await
                         })
                         .collect::<FuturesUnordered<_>>();
 
@@ -418,7 +467,8 @@ pub(super) async fn parquet_file_info(
                     debug_assert!(b.iter().all(|&size| size > 0));
                 });
                 let rest_fut = async move {
-                    let pairs = read_footers(sources, sample, cloud_options).await;
+                    let pairs =
+                        read_footers(sources, sample, cloud_options, decryption_properties).await;
                     let rows = pairs
                         .iter()
                         .fold(0usize, |acc, (_, m)| acc.saturating_add(m.num_rows));
@@ -495,7 +545,13 @@ pub(super) async fn parquet_file_info(
                 // with file 0; `None` marks a file that failed to decode.
                 let rest_fut = async move {
                     let mut futures = (1..n_sources)
-                        .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
+                        .map(|i| {
+                            read_parquet_metadata(
+                                sources.at(i),
+                                cloud_options,
+                                decryption_properties,
+                            )
+                        })
                         .collect::<FuturesOrdered<_>>();
                     let mut rest: Vec<Option<FileMetadataRef>> = Vec::with_capacity(n_sources - 1);
                     while let Some(file_result) = futures.next().await {
@@ -638,9 +694,19 @@ fn parquet_column_stats(
             };
 
             a.nested |= path.len() > 1;
+
+            // Encrypted columns may be missing metadata if their key is unavailable.
+            let (Ok(uncompressed_size), Ok(num_values)) =
+                (chunk.uncompressed_size(), chunk.num_values())
+            else {
+                a.nulls_unknown = true;
+                a.int_range_incomplete = true;
+                continue;
+            };
+
             a.uncompressed = a
                 .uncompressed
-                .saturating_add(chunk.uncompressed_size().max(0) as u64);
+                .saturating_add(uncompressed_size.max(0) as u64);
 
             let chunk_nulls = chunk.null_count().filter(|n| *n >= 0).map(|n| n as u64);
             match chunk_nulls {
@@ -649,8 +715,7 @@ fn parquet_column_stats(
             }
 
             // A distinct count may not exceed the values actually present.
-            let non_null =
-                (chunk.num_values().max(0) as u64).saturating_sub(chunk_nulls.unwrap_or(0));
+            let non_null = (num_values.max(0) as u64).saturating_sub(chunk_nulls.unwrap_or(0));
             if let Some(d) = chunk.distinct_count().filter(|d| *d >= 0)
                 && d as u64 <= non_null
             {
@@ -980,7 +1045,9 @@ pub async fn csv_file_info(
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let source = sources.at(i);
 
-        let (mem_slice_raw, file_size, decompressed_slice_size_hint) = if run_async
+        // Whether the whole file is read, rather than a prefix for schema inference.
+        let mut read_whole_file = true;
+        let (mut reader, file_size, decompressed_slice_size_hint, compression) = if run_async
             && let Some(infer_schema_length) = infer_schema_length
         {
             // Only download what we need for schema inference.
@@ -1023,8 +1090,18 @@ pub async fn csv_file_info(
             let mut truncated_bytes: Vec<u8> = Vec::with_capacity(INITIAL_FETCH);
             let mut reached_eof = false;
 
+            // With a header and `infer_schema_length == 0` only the complete header is needed. An
+            // incomplete one gives no columns, so positional dtype overrides are only checked
+            // against the complete header, after the loop.
+            let header_only_options =
+                (infer_schema_length == 0 && csv_options.has_header).then(|| CsvReadOptions {
+                    raise_if_empty: false,
+                    dtype_overwrite: None,
+                    ..csv_options.clone()
+                });
+
             // Collect enough rows to satisfy infer_schema_length.
-            let (mem_slice_raw, decompressed_slice_size_hint) = loop {
+            let decompressed_slice = loop {
                 let range = offset..std::cmp::min(file_size, offset + fetch_size);
 
                 if range.is_empty() {
@@ -1059,26 +1136,60 @@ pub async fn csv_file_info(
                     {
                         Ok(v) => v,
                         // We assume that unexpected EOF indicates that we lack sufficient data.
-                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                        // Once all of it is fetched, the compressed file is cut off.
+                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !reached_eof => {
                             fetch_size *= 2;
                             continue;
                         },
                         Err(e) => Err(e)?,
                     };
 
-                let row_count = polars_io::csv::read::count_rows_from_slice_par(
-                    slice.clone(),
-                    csv_options.parse_options.quote_char,
-                    csv_options.parse_options.comment_prefix.as_ref(),
-                    csv_options.parse_options.eol_char,
-                    csv_options.has_header,
-                    csv_options.skip_lines,
-                    csv_options.skip_rows,
-                    csv_options.skip_rows_after_header,
-                    csv_options.raise_if_empty,
-                )?;
+                let at_eof =
+                    slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
+                // Quoted fields, including in the header, may contain line breaks.
+                let parse_options = &csv_options.parse_options;
+                let slice = complete_rows(slice, at_eof, |bytes| {
+                    polars_io::csv::read::complete_rows_len(
+                        bytes,
+                        parse_options.quote_char,
+                        parse_options.comment_prefix.as_ref(),
+                        parse_options.eol_char,
+                        csv_options.skip_lines,
+                    )
+                });
 
-                if row_count < infer_schema_length && !reached_eof {
+                let enough_rows = if let Some(options) = &header_only_options {
+                    // The header is incomplete if none is found.
+                    let (header_schema, _) = read_until_start_and_infer_schema(
+                        options,
+                        None,
+                        extra_columns_policy == ExtraColumnsPolicy::Ignore,
+                        missing_columns_policy == MissingColumnsPolicy::Insert,
+                        Some(slice.len()),
+                        None,
+                        &mut ByteSourceReader::from_uncompressed_memory(slice.clone()),
+                    )?;
+                    !header_schema.is_empty()
+                } else {
+                    // Before EOF too few lines (e.g. to skip) only means we need more data, so
+                    // don't let the row counter raise on that.
+                    let row_count = polars_io::csv::read::count_rows_from_reader_par(
+                        ByteSourceReader::from_uncompressed_memory(slice.clone()),
+                        csv_options.parse_options.quote_char,
+                        csv_options.parse_options.comment_prefix.as_ref(),
+                        csv_options.parse_options.eol_char,
+                        csv_options.has_header,
+                        csv_options.skip_lines,
+                        csv_options.skip_rows,
+                        csv_options.skip_rows_after_header,
+                        csv_options.raise_if_empty && at_eof,
+                        Some(slice.len()),
+                    )?;
+                    // Without a header, the first row determines the columns.
+                    row_count >= infer_schema_length.max(1)
+                };
+
+                if !enough_rows && !at_eof {
                     if compression.is_some() && bytes_read == read_size {
                         // Decompressor had more to give — read_size too small
                         try_read_size *= 2;
@@ -1090,23 +1201,31 @@ pub async fn csv_file_info(
                     continue;
                 }
 
-                break (Buffer::from_owner(truncated_bytes), Some(bytes_read));
+                read_whole_file = at_eof;
+                break slice;
             };
-            (mem_slice_raw, file_size, decompressed_slice_size_hint)
+
+            // Infer from the already decompressed complete rows: decompressing the truncated
+            // compressed bytes again can run into their end while looking for a line ending.
+            let decompressed_slice_size_hint = Some(decompressed_slice.len());
+            (
+                ByteSourceReader::from_uncompressed_memory(decompressed_slice),
+                file_size,
+                decompressed_slice_size_hint,
+                compression,
+            )
         } else {
             let mem_slice_raw =
                 source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), i)?;
             let file_size = mem_slice_raw.len();
-            let compression = SupportedCompression::check(&mem_slice_raw);
+            let reader = ByteSourceReader::from_memory(mem_slice_raw)?;
+            let compression = reader.compression();
             let decompressed_slice_size_hint = Some(match compression {
                 None => file_size,
                 Some(_) => file_size * ASSUMED_COMPRESSION_RATIO,
             });
-            (mem_slice_raw, file_size, decompressed_slice_size_hint)
+            (reader, file_size, decompressed_slice_size_hint, compression)
         };
-
-        let mut reader = ByteSourceReader::from_memory(mem_slice_raw)?;
-        let compression = reader.compression();
 
         let mut first_row_len = 0;
         let (schema, _) = read_until_start_and_infer_schema(
@@ -1128,8 +1247,17 @@ pub async fn csv_file_info(
 
         // TODO. We can do (much) better by collect statistics as part of row count and/or schema
         // inference, including observed average row_length and compression ratio.
-        let estimated_rows =
-            (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize;
+        let estimated_rows = if first_row_len > 0 {
+            (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize
+        } else if read_whole_file {
+            // The file has no data rows.
+            0
+        } else {
+            // Only the header was needed and fetched, so estimate from the length up to and
+            // including the header instead.
+            let header_len = decompressed_slice_size_hint.unwrap_or(1).max(1);
+            (decompressed_file_size_hint as f64 / header_len as f64).round() as usize
+        };
 
         Ok((schema, estimated_rows))
     };
@@ -1325,14 +1453,18 @@ pub async fn ndjson_file_info(
                 match reader.read_next_slice(&Buffer::new(), read_size, uncompressed_size_hint) {
                     Ok(v) => v,
                     // We assume that unexpected EOF indicates that we lack sufficient data.
-                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    // Once all of it is fetched, the compressed file is cut off.
+                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !reached_eof => {
                         fetch_size *= 2;
                         continue;
                     },
                     Err(e) => Err(e)?,
                 };
 
-            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !reached_eof {
+            let at_eof = slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
+            let slice = complete_rows(slice, at_eof, polars_io::ndjson::complete_rows_len);
+
+            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !at_eof {
                 if compression.is_some() && bytes_read == read_size {
                     // Decompressor had more to give — read_size too small
                     try_read_size *= 2;
@@ -1392,6 +1524,8 @@ enum CachedSourceKey {
         resolve_heavy_sources: Option<NonZeroU32>,
         // Heavy-source selection depends on the sizes, not just the paths.
         bytes_per_source: Option<Buffer<u64>>,
+        #[cfg(feature = "parquet")]
+        decryption_properties: Option<polars_io::parquet::read::PlFileDecryptionProperties>,
     },
     CsvJson {
         paths: Buffer<PlRefPath>,
@@ -1445,7 +1579,14 @@ impl SourcesToFileInfo {
                         bytes_per_source.as_deref(),
                     ) {
                         (Some(n_parts), Some(bytes)) => {
-                            resolve_for_splitting(sources, bytes, n_parts, cloud_options).await
+                            resolve_for_splitting(
+                                sources,
+                                bytes,
+                                n_parts,
+                                cloud_options,
+                                options.decryption_properties.as_ref(),
+                            )
+                            .await
                         },
                         _ => Unresolved,
                     };
@@ -1490,6 +1631,7 @@ impl SourcesToFileInfo {
                             unified_scan_args.resolve_heavy_sources,
                             options.use_statistics,
                             cloud_options,
+                            options.decryption_properties.as_ref(),
                         )
                         .await?;
 
@@ -1760,6 +1902,7 @@ impl SourcesToFileInfo {
                     schema_overwrite: options.schema.clone(),
                     resolve_heavy_sources: unified_scan_args.resolve_heavy_sources,
                     bytes_per_source: bytes_per_source.clone(),
+                    decryption_properties: options.decryption_properties.clone(),
                 };
 
                 let guard = self.inner.read().unwrap();
@@ -1773,6 +1916,8 @@ impl SourcesToFileInfo {
                     schema_overwrite: None,
                     resolve_heavy_sources: None,
                     bytes_per_source: None,
+                    #[cfg(feature = "parquet")]
+                    decryption_properties: None,
                 };
 
                 let guard = self.inner.read().unwrap();

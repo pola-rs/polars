@@ -88,6 +88,14 @@ impl ComputeNode for DynamicSliceNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self {
+            Self::GatheringParams { .. } => NodeMemoryUsage::Bounded,
+            Self::Streaming(node) => node.memory_usage(),
+            Self::Negative(node) => node.memory_usage(),
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,

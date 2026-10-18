@@ -40,6 +40,7 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_last_distinct(&s);
         },
+        BinaryOffset => return is_last_distinct_by_groups(&s),
         dt if dt.is_float() => {
             with_match_physical_float_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

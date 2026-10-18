@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
 import pytest
 from hypothesis import given
 
@@ -14,6 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from polars._typing import EngineType, PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 @given(
@@ -1283,6 +1286,46 @@ def test_sort_by_dynamic_24057(expr: pl.Expr, result: list[list[int]]) -> None:
     assert_frame_equal(out, expected)
 
 
+def test_sort_by_scalar_key_29583_29760() -> None:
+    df = pl.DataFrame({"k": [0, 0, 0, 1, 1, 1], "a": [12, 10, 11, 22, 20, 21]})
+    a = pl.col("a")
+    by_scalar = (pl.lit(1), a.max())
+
+    for key in by_scalar:
+        out = df.select(a.sort_by(key))["a"].to_list()
+        assert sorted(out) == sorted(df["a"])
+        out = df.select(a.sort_by(key, "a", descending=[False, True]))["a"].to_list()
+        assert out == [22, 21, 20, 12, 11, 10]
+
+        grouped = df.group_by("k", maintain_order=True)
+        out = grouped.agg(a.head(1).sort_by(key))["a"].to_list()
+        assert out == [[12], [22]]
+        out = grouped.agg(a.sort_by(key, "a", descending=[False, True]))["a"].to_list()
+        assert out == [[12, 11, 10], [22, 21, 20]]
+
+        out = df.select(a.sort_by(key, "a").over("k"))["a"].to_list()
+        assert out == [10, 11, 12, 20, 21, 22]
+
+    # A unit-length group of a non-scalar key is not broadcast.
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.group_by("k").agg(a.sort_by(a.head(1)))
+
+    # Sorting a scalar input keeps it scalar.
+    q = df.lazy().group_by("k", maintain_order=True).agg(a.max().sort_by(a.max(), 1))
+    expected = pl.DataFrame({"k": [0, 1], "a": [12, 22]})
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expected)
+    q = df.lazy().group_by("a").agg(pl.col("k").max().sort_by("k"))
+    assert q.collect().schema == q.collect_schema()
+
+    # A scalar key is still evaluated.
+    lf = pl.LazyFrame({"a": [3, 1], "s": ["x", "y"]})
+    q = lf.select(a.sort_by(pl.col("s").first().cast(pl.Int64)))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
+        q.collect(optimizations=pl.QueryOptFlags.none())
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="arithmetic"):
+        lf.select(a.sort_by(pl.col("s").first() + 1)).collect()
+
+
 def test_sort_by_reordered_input_29630() -> None:
     df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [2, 1, 4, 3]})
 
@@ -1386,6 +1429,35 @@ def test_sort_by_empty_list_eval_25433() -> None:
     out = df.select(pl.col.a.list.eval(pl.element().sort_by(pl.element())))
     expected = pl.DataFrame({"a": [sorted(some_list), []]})
     assert_frame_equal(out, expected)
+
+
+def test_sort_by_empty_list_eval_multiple_by_25433() -> None:
+    some_list = [2, 1, 3]
+    df = pl.DataFrame({"a": [some_list, []]})
+    out = df.select(
+        pl.col.a.list.eval(pl.element().sort_by(pl.element(), pl.element() * 2))
+    )
+    expected = pl.DataFrame({"a": [sorted(some_list), []]})
+    assert_frame_equal(out, expected)
+
+
+def test_sort_by_empty_group_multiple_by_25433() -> None:
+    df = pl.DataFrame(
+        {
+            "k": [0, 0, 1, 1],
+            "a": [11, 10, 20, 21],
+            "b": [1, 1, None, None],
+        }
+    )
+    out = df.group_by("k", maintain_order=True).agg(
+        pl.col("a")
+        .filter(pl.col("b").is_not_null())
+        .sort_by(
+            pl.col("b").filter(pl.col("b").is_not_null()),
+            pl.col("a").filter(pl.col("b").is_not_null()),
+        )
+    )
+    assert out["a"].to_list() == [[10, 11], []]
 
 
 def test_sort_already_sorted_no_rechunk_25733() -> None:
@@ -1584,3 +1656,323 @@ def test_sort_multiple_keys_maintain_order_reversed_input(engine: EngineType) ->
         lf.sort("a", "b", maintain_order=True).collect(engine=engine),
         pl.DataFrame({"a": [1, 1, 2, 3], "b": [4, 4, 5, 6]}),
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sort_by_first_last_to_min_max_by(
+    engine: EngineType, descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 3],
+            "x": [1, 2, 3, 4, 5, 6],
+            "a": [2, None, 2, 1, 1, None],
+            "b": ["q", "p", "o", "s", "r", "t"],
+        }
+    )
+    e = pl.col("x").sort_by("a", "b", descending=descending, nulls_last=nulls_last)
+    expected = (
+        df.group_by("g")
+        .agg(e)
+        .select("g", first=pl.col("x").list.first(), last=pl.col("x").list.last())
+    )
+
+    q = df.lazy().group_by("g").agg(first=e.first(), last=e.last())
+    plan = q.explain()
+    assert "min_by" in plan
+    assert "max_by" in plan
+    assert "sort_by" not in plan
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "in-memory-map" not in dot
+    assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+    q = df.lazy().select(first=e.first(), last=e.last())
+    sorted_x = df.select(e)["x"]
+    assert_frame_equal(
+        q.collect(engine=engine),
+        pl.DataFrame({"first": sorted_x[0], "last": sorted_x[-1]}),
+    )
+
+    q = df.lazy().select(first=e.first().over("g"), last=e.last().over("g"))
+    assert_frame_equal(
+        q.collect(engine=engine),
+        df.select("g").join(expected, on="g", maintain_order="left").drop("g"),
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sort_by_first_maintain_order(engine: EngineType) -> None:
+    df = pl.DataFrame(
+        {"g": [1, 1, 1, 2, 2], "x": [1, 2, 3, 4, 5], "a": [1, 0, 0, None, None]}
+    )
+    for by in [["a"], ["a", "g"]]:
+        e = pl.col("x").sort_by(by, maintain_order=True)
+        q = df.lazy().group_by("g").agg(first=e.first(), last=e.last())
+        assert "min_by" not in q.explain()
+        assert_frame_equal(
+            q.collect(engine=engine),
+            pl.DataFrame({"g": [1, 2], "first": [2, 4], "last": [1, 5]}),
+            check_row_order=False,
+        )
+        assert df.lazy().select(e.first()).collect(engine=engine).item() == 4
+
+
+def test_sort_by_first_last_head_with_cse() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3], "a": [2, None, 1], "b": [1.0, 2.0, 3.0]})
+    e = pl.col("x").sort_by("a", "b")
+
+    q = df.lazy().select(first=e.first(), last=e.last())
+    assert "sort_by" not in q.explain(engine="in-memory")
+    assert q.collect(engine="in-memory").row(0) == (2, 1)
+
+    q = df.lazy().select(h2=e.head(2).sum(), h3=e.head(3).sum())
+    plan = q.explain(engine="in-memory")
+    assert "limit: Some(2)" in plan
+    assert "limit: Some(3)" in plan
+    assert "limit: None" not in plan
+    assert q.collect(engine="in-memory").row(0) == (5, 6)
+
+    # Other uses still need the full sort, so it is shared.
+    q = df.lazy().select(c=e.cum_sum().last(), m=e.cum_max().last(), f=e.first())
+    assert "__POLARS_CSER" in q.explain(engine="in-memory")
+    assert q.collect(engine="in-memory").row(0) == (6, 3, 2)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sort_limit_shared_by_cse(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"x": [3, 1, 2, 5, 4]})
+    h = pl.col("x").sort().head(3)
+    expected = pl.DataFrame({"x": [3, 1, 2, 5, 4], "s": [6] * 5, "m": [3] * 5})
+
+    q = lf.select("x", s=h.sum(), m=h.max())
+    plan = q.explain(engine="in-memory")
+    assert "sort(asc, limit=3)" in plan
+    assert "__POLARS_CSER" in plan
+    assert_frame_equal(q.collect(engine=engine), expected)
+    q = lf.with_columns(s=h.sum(), m=h.max())
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.Null, pl.Int64])
+def test_sort_by_first_last_null_key(engine: EngineType, dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1], "x": [7, 7], "k": pl.Series([None, None], dtype=dtype)}
+    )
+    e = pl.col("x").sort_by("k")
+    q = lf.select(first=e.first(), last=e.last())
+    assert q.collect(engine=engine).row(0) == (7, 7)
+    q = lf.group_by("g").agg(first=e.first(), last=e.last())
+    assert q.collect(engine=engine).row(0) == (1, 7, 7)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_sort_by_last_nan_under_null(engine: EngineType) -> None:
+    # Row 0 is null, but the value stored under it is NaN.
+    values = pa.array([float("nan"), 2.0, float("nan")]).buffers()[1]
+    k = pa.Array.from_buffers(pa.float64(), 3, [pa.py_buffer(b"\x06"), values])
+    lf = pl.LazyFrame({"x": [10, 20, 30], "k": pl.from_arrow(k)})
+    q = lf.select(pl.col("x").sort_by("k").last())
+    assert q.collect(engine=engine).item() == 30
+
+
+def _key_frame(dtype: PolarsDataType) -> pl.DataFrame:
+    # The codes -2, -3 and -4 are NaN, -inf and inf. Equal keys have the same `x`, so
+    # it does not matter which row of equal keys is picked.
+    is_float = dtype in (pl.Float32, pl.Float64)
+    if dtype == pl.Boolean:
+        g = [1, 1, 2, 2, 3, 4]
+        codes: list[int | None] = [1, 0, None, 1, None, 0]
+    else:
+        g = [1, 1, 1, 2, 2, 2, 3, 4, 4]
+        codes = [3, 1, 2, 2, None, 1, None, 5, 5]
+    if is_float:
+        g += [5, 5, 5, 6, 6, 7, 7, 8, 9, 10, 10, 10]
+        codes += [1, -2, None, -2, -2, -2, None, -3, -4, None, -3, -4]
+
+    def key(c: int) -> Any:
+        if dtype == pl.Boolean:
+            return bool(c)
+        if is_float:
+            return {-2: float("nan"), -3: float("-inf"), -4: float("inf")}.get(
+                c, float(c)
+            )
+        if dtype == pl.Date:
+            return date(2020, 1, c)
+        if dtype == pl.Decimal(10, 2):
+            return Decimal(c)
+        if dtype in (pl.String, pl.Categorical) or isinstance(dtype, pl.Enum):
+            return f"s{c}"
+        return c
+
+    keys = [None if c is None else key(c) for c in codes]
+    x = [-1 if c is None else c for c in codes]
+    return pl.DataFrame(
+        {"g": g, "x": x, "k": pl.Series(keys, dtype=dtype, strict=False)}
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Int64,
+        pl.Float32,
+        pl.Float64,
+        pl.String,
+        pl.Boolean,
+        pl.Date,
+        pl.Decimal(10, 2),
+        pl.Categorical,
+        pl.Enum(["s5", "s3", "s2", "s1"]),
+    ],
+)
+def test_sort_first_last_to_total_min_max(
+    engine: EngineType, dtype: PolarsDataType, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    lf = _key_frame(dtype).lazy()
+    exprs = []
+    for descending in [False, True]:
+        for nulls_last in [False, True]:
+            opts = {"descending": descending, "nulls_last": nulls_last}
+            sort_by = pl.col("x").sort_by("k", **opts)
+            sort = pl.col("k").sort(**opts)
+            # The filter leaves group 4 empty.
+            sort_filtered = pl.col("k").filter(pl.col("g") != 4).sort(**opts)
+            name = f"{descending}_{nulls_last}"
+            exprs += [
+                sort_by.first().alias(f"by_first_{name}"),
+                sort_by.last().alias(f"by_last_{name}"),
+                sort.first().alias(f"first_{name}"),
+                sort.last().alias(f"last_{name}"),
+                sort_filtered.first().alias(f"filtered_first_{name}"),
+                sort_filtered.last().alias(f"filtered_last_{name}"),
+            ]
+    no_rewrite = pl.QueryOptFlags(simplify_expression=False)
+
+    q = lf.group_by("g").agg(exprs)
+    plan = q.explain()
+    assert "min_by" in plan
+    assert "max_by" in plan
+    assert "sort" not in plan
+    assert_frame_equal(
+        q.collect(engine=engine),
+        q.collect(engine=engine, optimizations=no_rewrite),
+        check_row_order=False,
+    )
+
+    q = lf.select(exprs)
+    assert "sort" not in q.explain()
+    assert_frame_equal(
+        q.collect(engine=engine), q.collect(engine=engine, optimizations=no_rewrite)
+    )
+
+    q = lf.select(e.over("g") for e in exprs)
+    assert_frame_equal(
+        q.collect(engine=engine), q.collect(engine=engine, optimizations=no_rewrite)
+    )
+
+    q = lf.with_row_index("t").rolling("t", period="3i").agg(exprs)
+    assert_frame_equal(
+        q.collect(engine=engine), q.collect(engine=engine, optimizations=no_rewrite)
+    )
+
+
+@pytest.mark.parametrize("by", [["a"], ["a", "b"]])
+def test_sort_by_first_last_streaming_evictions(
+    by: list[str], plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "2")
+    n = 100
+    # `x` is a function of `a`, so it does not matter which row of equal keys is picked.
+    a = [None if i % 7 == 0 else (i * 31) % 101 for i in range(n)]
+    df = pl.DataFrame(
+        {
+            "g": [i % 5 for i in range(n)],
+            "x": [-1 if v is None else v for v in a],
+            "a": a,
+            "b": [i % 3 for i in range(n)],
+        }
+    )
+    exprs = [
+        pl.col("x").min_by("a").alias("min_by"),
+        pl.col("x").max_by("a").alias("max_by"),
+    ]
+    for nulls_last in [False, True]:
+        e = pl.col("x").sort_by(by, nulls_last=nulls_last)
+        exprs += [
+            e.first().alias(f"first_{nulls_last}"),
+            e.last().alias(f"last_{nulls_last}"),
+        ]
+    q = df.lazy().group_by("g").agg(exprs)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("maintain_order", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize(
+    ("offset", "length"), [(0, 0), (0, 1), (0, 3), (2, 2), (0, 20)]
+)
+def test_sort_head_uses_limit(
+    engine: EngineType,
+    maintain_order: bool,
+    nulls_last: bool,
+    offset: int,
+    length: int,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1, 1, 2, 2, 2],
+            "x": [1, 2, 3, 4, 5, 6, 7, 8],
+            "a": [None, 2, None, 2, 1, None, None, 3],
+            "b": [5, 1, 3, 2, 4, 0, 6, 7],
+        }
+    )
+    exprs = [
+        pl.col("a").sort(nulls_last=nulls_last),
+        pl.col("x").sort_by(
+            "a", "b", nulls_last=nulls_last, maintain_order=maintain_order
+        ),
+    ]
+    if maintain_order:
+        # Without a tie breaker, only a stable sort gives a known result.
+        exprs.append(
+            pl.col("x").sort_by("a", nulls_last=nulls_last, maintain_order=True)
+        )
+
+    for e in exprs:
+        q = df.lazy().select(e.slice(offset, length))
+        expected = df.select(e).slice(offset, length)
+        assert_frame_equal(q.collect(engine=engine), expected)
+
+        q = df.lazy().group_by("g").agg(e.slice(offset, length))
+        expected = df.group_by("g").agg(e.implode().list.slice(offset, length))
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+        if offset == 0 and length == 1:
+            q = df.lazy().group_by("g").agg(e.first())
+            expected = df.group_by("g").agg(e.implode().list.first())
+            assert_frame_equal(
+                q.collect(engine=engine), expected, check_row_order=False
+            )
+
+
+def test_sort_head_streaming_top_k() -> None:
+    lf = pl.LazyFrame({"x": [3, 1, 2], "a": [1, 2, 3], "b": [3, 2, 1]})
+    for q in [
+        lf.select(pl.col("x").sort().head(2)),
+        lf.select(pl.col("x").sort_by("a", "b").head(2)),
+        lf.select(pl.col("x").sort_by("a", maintain_order=True).first()),
+    ]:
+        dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+        assert "top-k" in dot or "bottom-k" in dot

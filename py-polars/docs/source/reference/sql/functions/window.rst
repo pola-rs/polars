@@ -48,6 +48,12 @@ Window
     between runs. Add columns to the `ORDER BY` to make
     the order unique.
 
+.. note::
+
+    In a query with `GROUP BY`, or with aggregates and no `GROUP BY`, window functions run on
+    the aggregated rows. Their arguments, `PARTITION BY` and `ORDER BY` can use group keys and
+    aggregates, as in `RANK() OVER (ORDER BY SUM(x) DESC)` or `SUM(COUNT(*)) OVER ()`.
+
 
 .. _cume_dist:
 

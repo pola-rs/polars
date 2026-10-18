@@ -1,13 +1,16 @@
 use std::cmp::Ordering;
 use std::ops::Range;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
-use polars_arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
+use polars_arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
-use polars_io::predicates::{RuntimeRange, RuntimeRangeHint, ScanIOPredicate};
+use polars_io::predicates::{
+    ColumnIoExpr, ReadOrder, RuntimeRange, RuntimeRangeHint, ScanIOPredicate,
+};
 use polars_io::prelude::FileMetadata;
 use polars_parquet::read::RowGroupMetadata;
 use polars_parquet::read::statistics::{
@@ -88,6 +91,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     row_index: Option<RowIndex>,
     verbose: bool,
     task_metrics: Option<&TaskMetricAggregator>,
+    runtime_range_skipper: Option<&RuntimeRangeSkipper>,
 ) -> PolarsResult<Option<Bitmap>> {
     if !use_statistics {
         return Ok(None);
@@ -113,22 +117,17 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
         None => None,
     };
 
-    let mask = if predicate.runtime_ranges.is_empty() {
-        static_mask
-    } else {
-        let runtime_mask = runtime_range_skip_mask(
-            &predicate.runtime_ranges,
-            metadata,
-            row_group_slice.clone(),
-            &projected_arrow_fields,
-            static_mask.as_ref(),
-        );
-        match (static_mask, runtime_mask) {
-            (Some(s), Some(r)) => Some(&s | &r),
-            (s, r) => s.or(r),
-        }
+    let mask = match runtime_range_skipper {
+        None => static_mask,
+        Some(skipper) => {
+            let runtime_mask = skipper.skip_mask(row_group_slice.clone(), static_mask.as_ref());
+            match (static_mask, runtime_mask) {
+                (Some(s), Some(r)) => Some(&s | &r),
+                (s, r) => s.or(r),
+            }
+        },
     };
-    if verbose && (mask.is_some() || !predicate.runtime_ranges.is_empty()) {
+    if verbose && (mask.is_some() || runtime_range_skipper.is_some()) {
         let num_row_groups = row_group_slice.len();
         eprintln!(
             "[ParquetFileReader]: Predicate pushdown: \
@@ -188,6 +187,18 @@ async fn static_skip_mask(
             // that it may set the column name.
             statistics.min = projection.apply_transform(statistics.min)?;
             statistics.max = projection.apply_transform(statistics.max)?;
+            // The null counts of struct fields have the file's field layout. The transform may
+            // reorder, rename or insert fields (e.g. by field ID), and casts the leaves, so it
+            // does not apply to them: use unknown null counts.
+            if let ArrowFieldProjection::Mapped { output_dtype, .. } = projection
+                && matches!(projection.arrow_field().dtype(), ArrowDataType::Struct(_))
+            {
+                statistics.null_count = Column::full_null(
+                    PlSmallStr::EMPTY,
+                    statistics.null_count.len(),
+                    &null_count_dtype(output_dtype),
+                );
+            }
 
             let statistics = statistics.with_base_column_name(c);
 
@@ -289,104 +300,370 @@ fn compares_exactly(conversion: BoundConversion) -> bool {
     )
 }
 
-/// Which row groups the runtime ranges skip, among those `static_mask` keeps.
-/// `None` when they skip nothing. Every range is read once, before any bound is
-/// decoded, and only the kept groups' bounds are decoded.
-fn runtime_range_skip_mask(
-    hints: &[RuntimeRangeHint],
-    metadata: &FileMetadata,
-    row_group_slice: Range<usize>,
-    projected_arrow_fields: &[ArrowFieldProjection],
-    static_mask: Option<&Bitmap>,
-) -> Option<Bitmap> {
-    let row_groups = &metadata.row_groups[row_group_slice.clone()];
-    let mut mask: Option<MutableBitmap> = None;
-    let is_kept = |mask: &Option<MutableBitmap>, i: usize| {
-        !static_mask.is_some_and(|m| m.get_bit(i)) && !mask.as_ref().is_some_and(|m| m.get(i))
-    };
+/// The runtime ranges of a scan, resolved against the columns of one file. The
+/// ranges can change while the file is read, so row groups are checked again
+/// right before they are fetched and decoded.
+pub(super) struct RuntimeRangeSkipper {
+    metadata: Arc<FileMetadata>,
+    hints: Vec<ResolvedHint>,
+    verbose: bool,
+    /// Row groups skipped after the file was opened.
+    skipped_while_reading: AtomicUsize,
+}
 
-    for hint in hints {
-        if mask.as_ref().is_some_and(|m| m.unset_bits() == 0) {
-            break;
-        }
-        let range = hint.source.runtime_range();
-        let skip_all = match (&hint.constant, &range) {
-            (Some(value), _) => RuntimeRangeHint::constant_matches(&range, value) == Some(false),
-            (None, RuntimeRange::Pending | RuntimeRange::Disabled) => false,
-            (None, RuntimeRange::Empty) => true,
-            (None, RuntimeRange::Range { lo, hi }) => {
-                let resolved = projected_arrow_fields
-                    .iter()
-                    .find(|p| p.output_name() == &hint.column)
-                    .and_then(|projection| {
-                        let arrow_field = projection.arrow_field();
-                        let idxs = row_groups
-                            .first()?
-                            .columns_idxs_under_root_iter(&arrow_field.name)?;
-                        let [idx] = idxs else { return None };
-                        let leaf = LeafBounds::new(arrow_field, metadata, *idx)
-                            .filter(|leaf| compares_exactly(leaf.conversion()))?;
-                        let scale = DataType::arrow_value_scale(arrow_field.dtype());
-                        let file_dtype = DataType::from_arrow_field(arrow_field);
-                        let lo = Bound::from_scalar(lo, &file_dtype)?;
-                        let hi = Bound::from_scalar(hi, &file_dtype)?;
-                        Some((leaf, scale, lo, hi))
-                    });
-                let Some((leaf, scale, lo, hi)) = resolved else {
-                    continue;
-                };
-                for (i, rg) in row_groups.iter().enumerate() {
-                    if !is_kept(&mask, i) {
-                        continue;
-                    }
-                    let (min, max) = leaf.bounds(rg, &metadata.footer_buf);
-                    let min = min.and_then(|min| Bound::from_arrow(min, scale));
-                    let max = max.and_then(|max| Bound::from_arrow(max, scale));
-                    // Scaling wraps unseen values unless both bounds show it does not.
-                    if scale != 1 && (min.is_none() || max.is_none()) {
-                        continue;
-                    }
-                    if max.is_some_and(|max| max < lo) || min.is_some_and(|min| min > hi) {
-                        mask.get_or_insert_with(|| {
-                            MutableBitmap::from_len_zeroed(row_groups.len())
-                        })
-                        .set(i, true);
-                    }
+struct ResolvedHint {
+    hint: RuntimeRangeHint,
+    /// `None` when the column's statistics cannot be compared with a range.
+    leaf: Option<ResolvedLeaf>,
+}
+
+struct ResolvedLeaf {
+    leaf_idx: usize,
+    /// The dtype of the bounds.
+    dtype: DataType,
+    bounds: ResolvedBounds,
+}
+
+enum ResolvedBounds {
+    /// The row group statistics of the column.
+    Statistics { bounds: LeafBounds, scale: i64 },
+    /// The bounds of an order-keeping expression of the column, per row group.
+    OrderKeeping(Vec<Option<(i128, i128)>>),
+}
+
+impl ResolvedLeaf {
+    /// The bounds of a row group, `None` when its values are not known to lie between them.
+    #[allow(clippy::type_complexity)]
+    fn row_group_bounds<'a>(
+        &'a self,
+        idx: usize,
+        metadata: &'a FileMetadata,
+    ) -> Option<(Option<Bound<&'a [u8]>>, Option<Bound<&'a [u8]>>)> {
+        match &self.bounds {
+            ResolvedBounds::Statistics { bounds, scale } => {
+                let (min, max) = bounds.bounds(&metadata.row_groups[idx], &metadata.footer_buf);
+                let min = min.and_then(|min| Bound::from_arrow(min, *scale));
+                let max = max.and_then(|max| Bound::from_arrow(max, *scale));
+                // Scaling wraps unseen values unless both bounds show it does not.
+                if *scale != 1 && (min.is_none() || max.is_none()) {
+                    return None;
                 }
-                false
+                Some((min, max))
             },
+            ResolvedBounds::OrderKeeping(bounds) => {
+                let (lo, hi) = bounds[idx]?;
+                Some((Some(Bound::Int(lo)), Some(Bound::Int(hi))))
+            },
+        }
+    }
+}
+
+/// The bounds of `expr`, an order-keeping expression of the column of `projection`, per row group.
+fn order_keeping_bounds(
+    expr: &dyn ColumnIoExpr,
+    projection: &ArrowFieldProjection,
+    statistics: &LeafBounds,
+    scale: i64,
+    metadata: &FileMetadata,
+) -> Option<Vec<Option<(i128, i128)>>> {
+    let file_dtype = DataType::from_arrow_field(projection.arrow_field());
+    let mut mins = Vec::with_capacity(metadata.row_groups.len());
+    let mut maxs = Vec::with_capacity(metadata.row_groups.len());
+    for row_group in metadata.row_groups.iter() {
+        let (min, max) = statistics.bounds(row_group, &metadata.footer_buf);
+        let int = |b: Option<ArrowBound>| match b.and_then(|b| Bound::from_arrow(b, scale)) {
+            Some(Bound::Int(v)) => i64::try_from(v).ok(),
+            _ => None,
         };
-        if skip_all {
-            mask = Some(MutableBitmap::from_len_set(row_groups.len()));
+        let (min, max) = (int(min), int(max));
+        let known = min.is_some() && max.is_some();
+        mins.push(min.filter(|_| known));
+        maxs.push(max.filter(|_| known));
+    }
+    let apply = |values: Vec<Option<i64>>| -> PolarsResult<Series> {
+        let values = Series::new(projection.output_name().clone(), values)
+            .strict_cast(&file_dtype.to_physical())?
+            .strict_cast(&file_dtype)?;
+        let column = projection.apply_transform(values.into_column())?;
+        let df = DataFrame::new(column.len(), vec![column])?;
+        Ok(expr
+            .evaluate_io(&df)?
+            .as_materialized_series()
+            .to_physical_repr()
+            .into_owned())
+    };
+    let (mins, maxs) = (apply(mins).ok()?, apply(maxs).ok()?);
+    Some(
+        (0..mins.len())
+            .map(|i| {
+                let a = mins.get(i).ok()?.extract::<i128>()?;
+                let b = maxs.get(i).ok()?.extract::<i128>()?;
+                Some((a.min(b), a.max(b)))
+            })
+            .collect(),
+    )
+}
+
+/// What one range says about the row groups, read once for many of them.
+enum RangeCheck {
+    KeepAll,
+    SkipAll,
+    Bounds {
+        leaf: usize,
+        lo: Option<Bound<Vec<u8>>>,
+        hi: Option<Bound<Vec<u8>>>,
+        nulls_match: bool,
+    },
+}
+
+impl RuntimeRangeSkipper {
+    pub(super) fn new(
+        hints: &[RuntimeRangeHint],
+        metadata: &Arc<FileMetadata>,
+        projected_arrow_fields: &[ArrowFieldProjection],
+        verbose: bool,
+    ) -> Option<Self> {
+        if hints.is_empty() {
+            return None;
+        }
+        let resolve = |hint: &RuntimeRangeHint| {
+            if hint.constant.is_some() {
+                return None;
+            }
+            let projection = projected_arrow_fields
+                .iter()
+                .find(|p| p.output_name() == &hint.column)?;
+            let arrow_field = projection.arrow_field();
+            let idxs = metadata
+                .row_groups
+                .first()?
+                .columns_idxs_under_root_iter(&arrow_field.name)?;
+            let [leaf_idx] = idxs else { return None };
+            let bounds = LeafBounds::new(arrow_field, metadata, *leaf_idx)
+                .filter(|leaf| compares_exactly(leaf.conversion()))?;
+            let scale = DataType::arrow_value_scale(arrow_field.dtype());
+            let (dtype, bounds) = match &hint.order_keeping_expr {
+                None => (
+                    DataType::from_arrow_field(arrow_field),
+                    ResolvedBounds::Statistics { bounds, scale },
+                ),
+                Some(expr) => {
+                    let bounds =
+                        order_keeping_bounds(expr.as_ref(), projection, &bounds, scale, metadata)?;
+                    let column_dtype = projection.output_dtype();
+                    let dtype = expr
+                        .evaluate_io(&DataFrame::empty_with_schema(&Schema::from_iter([(
+                            hint.column.clone(),
+                            column_dtype.into_owned(),
+                        )])))
+                        .ok()?
+                        .dtype()
+                        .clone();
+                    (dtype, ResolvedBounds::OrderKeeping(bounds))
+                },
+            };
+            Some(ResolvedLeaf {
+                leaf_idx: *leaf_idx,
+                dtype,
+                bounds,
+            })
+        };
+        let hints = hints
+            .iter()
+            .map(|hint| ResolvedHint {
+                hint: hint.clone(),
+                leaf: resolve(hint),
+            })
+            .collect();
+        Some(Self {
+            metadata: metadata.clone(),
+            hints,
+            verbose,
+            skipped_while_reading: AtomicUsize::new(0),
+        })
+    }
+
+    /// Reads every range once.
+    fn checks(&self) -> Vec<RangeCheck> {
+        self.hints
+            .iter()
+            .enumerate()
+            .map(|(i, resolved)| {
+                let range = resolved.hint.source.runtime_range();
+                if let Some(value) = &resolved.hint.constant {
+                    return match RuntimeRangeHint::constant_matches(&range, value) {
+                        Some(false) => RangeCheck::SkipAll,
+                        _ => RangeCheck::KeepAll,
+                    };
+                }
+                match range {
+                    RuntimeRange::Pending | RuntimeRange::Disabled => RangeCheck::KeepAll,
+                    RuntimeRange::Empty => RangeCheck::SkipAll,
+                    RuntimeRange::Range {
+                        lo,
+                        hi,
+                        nulls_match,
+                    } => {
+                        let Some(leaf) = &resolved.leaf else {
+                            return RangeCheck::KeepAll;
+                        };
+                        let bound = |b: Option<Scalar>| match b {
+                            None => Some(None),
+                            Some(b) => Bound::from_scalar(&b, &leaf.dtype).map(Some),
+                        };
+                        match (bound(lo), bound(hi)) {
+                            (Some(lo), Some(hi)) => RangeCheck::Bounds {
+                                leaf: i,
+                                lo,
+                                hi,
+                                nulls_match,
+                            },
+                            _ => RangeCheck::KeepAll,
+                        }
+                    },
+                }
+            })
+            .collect()
+    }
+
+    fn skips_with(&self, checks: &[RangeCheck], row_group_idx: usize) -> bool {
+        checks.iter().any(|check| match check {
+            RangeCheck::KeepAll => false,
+            RangeCheck::SkipAll => true,
+            RangeCheck::Bounds {
+                leaf,
+                lo,
+                hi,
+                nulls_match,
+            } => {
+                let leaf = self.hints[*leaf].leaf.as_ref().unwrap();
+                let Some((min, max)) = leaf.row_group_bounds(row_group_idx, &self.metadata) else {
+                    return false;
+                };
+                let below = lo
+                    .as_ref()
+                    .is_some_and(|lo| max.as_ref().is_some_and(|max| max < lo));
+                let above = hi
+                    .as_ref()
+                    .is_some_and(|hi| min.as_ref().is_some_and(|min| min > hi));
+                (below || above)
+                    && (!nulls_match
+                        || has_no_nulls(&self.metadata.row_groups[row_group_idx], leaf.leaf_idx))
+            },
+        })
+    }
+
+    /// Which row groups of `row_group_slice` the ranges skip, among those
+    /// `static_mask` keeps. `None` when they skip nothing.
+    fn skip_mask(
+        &self,
+        row_group_slice: Range<usize>,
+        static_mask: Option<&Bitmap>,
+    ) -> Option<Bitmap> {
+        let checks = self.checks();
+        let mut mask = MutableBitmap::from_len_zeroed(row_group_slice.len());
+        for (i, row_group_idx) in row_group_slice.enumerate() {
+            if !static_mask.is_some_and(|m| m.get_bit(i)) && self.skips_with(&checks, row_group_idx)
+            {
+                mask.set(i, true);
+            }
+        }
+        (mask.set_bits() > 0).then(|| mask.freeze())
+    }
+
+    /// Sorts `items` by the statistics of the first range that has a read order.
+    /// Row groups without the statistic go last.
+    pub(super) fn sort_by_read_order<T>(&self, items: &mut [T], idx: impl Fn(&T) -> usize) {
+        let Some((order, resolved)) = self
+            .hints
+            .iter()
+            .find_map(|resolved| Some((resolved.hint.source.read_order()?, resolved)))
+        else {
+            return;
+        };
+        let Some(leaf) = &resolved.leaf else {
+            return;
+        };
+        let key = |item: &T| {
+            let (min, max) = leaf.row_group_bounds(idx(item), &self.metadata)?;
+            match order {
+                ReadOrder::LowFirst => min,
+                ReadOrder::HighFirst => max,
+            }
+        };
+        let keys: Vec<_> = items.iter().map(key).collect();
+        let mut positions: Vec<usize> = (0..items.len()).collect();
+        positions.sort_by(|&l, &r| match (&keys[l], &keys[r]) {
+            (Some(l), Some(r)) => {
+                let ord = l.partial_cmp(r).unwrap_or(Ordering::Equal);
+                match order {
+                    ReadOrder::LowFirst => ord,
+                    ReadOrder::HighFirst => ord.reverse(),
+                }
+            },
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        });
+        let mut rank = vec![0; self.metadata.row_groups.len()];
+        for (r, &pos) in positions.iter().enumerate() {
+            rank[idx(&items[pos])] = r;
+        }
+        items.sort_unstable_by_key(|item| rank[idx(item)]);
+        if self.verbose {
+            eprintln!(
+                "[ParquetFileReader]: Reading row groups by the {} of '{}'",
+                match order {
+                    ReadOrder::LowFirst => "min",
+                    ReadOrder::HighFirst => "max",
+                },
+                resolved.hint.column
+            );
         }
     }
 
-    mask.filter(|m| m.set_bits() > 0).map(MutableBitmap::freeze)
+    /// Whether the ranges skip row group `row_group_idx` now.
+    pub(super) fn skips(&self, row_group_idx: usize) -> bool {
+        let skip = self.skips_with(&self.checks(), row_group_idx);
+        if skip {
+            self.skipped_while_reading
+                .fetch_add(1, AtomicOrdering::Relaxed);
+        }
+        skip
+    }
 }
 
-/// Assembled `min` / `max` / `null_count` statistics arrays for a (possibly nested) struct field.
-struct StructStatisticsArrays {
-    min: Box<dyn Array>,
-    max: Box<dyn Array>,
-    null_count: Box<dyn Array>,
+fn has_no_nulls(row_group: &RowGroupMetadata, leaf_idx: usize) -> bool {
+    let column = &row_group.parquet_columns()[leaf_idx];
+    column.descriptor().descriptor.max_def_level == 0 || column.null_count() == Some(0)
 }
 
-/// Recursively assemble per-field `min` / `max` / `null_count` statistics arrays for a
+impl Drop for RuntimeRangeSkipper {
+    fn drop(&mut self) {
+        let skipped = *self.skipped_while_reading.get_mut();
+        if self.verbose && skipped > 0 {
+            eprintln!(
+                "[ParquetFileReader]: Runtime ranges skipped {skipped} more row groups while reading"
+            );
+        }
+    }
+}
+
+/// Recursively assemble per-field `min` / `max` / `null_count` statistics columns for a
 /// (possibly nested) struct field, consuming one parquet leaf column per scalar leaf. Returns
 /// `None` (signalling the caller to fall back to null statistics) for an empty struct, an
 /// unsupported leaf type (e.g. a nested list), or if the leaves run out before the fields do.
-fn build_struct_statistics_arrays(
+fn build_struct_statistics_columns(
     field: &ArrowField,
     metadata: &FileMetadata,
     row_groups: &[RowGroupMetadata],
     leaf_idxs: &[usize],
     cursor: &mut usize,
-) -> PolarsResult<Option<StructStatisticsArrays>> {
+) -> PolarsResult<Option<StatisticsColumns>> {
     let height = row_groups.len();
     match field.dtype() {
         ArrowDataType::Struct(children) => {
-            // An empty struct has no leaf statistics to reason about, and `StructArray::new`
-            // panics on a struct dtype with no children, so bail to null statistics.
+            // An empty struct has no leaf statistics to reason about.
             if children.is_empty() {
                 return Ok(None);
             }
@@ -399,33 +676,31 @@ fn build_struct_statistics_arrays(
             // from the same parquet schema, so their leaf orders match; the caller's `cursor`
             // length check catches a leaf-count mismatch.
             for child in children {
-                let Some(child) =
-                    build_struct_statistics_arrays(child, metadata, row_groups, leaf_idxs, cursor)?
+                let Some(child_statistics) = build_struct_statistics_columns(
+                    child, metadata, row_groups, leaf_idxs, cursor,
+                )?
                 else {
                     return Ok(None);
                 };
-                mins.push(child.min);
-                maxs.push(child.max);
-                ncs.push(child.null_count);
+                mins.push(child_statistics.min.with_name(child.name.clone()));
+                maxs.push(child_statistics.max.with_name(child.name.clone()));
+                ncs.push(child_statistics.null_count.with_name(child.name.clone()));
             }
 
-            let min = StructArray::new(field.dtype().clone(), height, mins, None).to_boxed();
-            let max = StructArray::new(field.dtype().clone(), height, maxs, None).to_boxed();
-
             // The null-count struct mirrors the field's shape with each leaf replaced by the
-            // index type; read that shape straight off the assembled per-field arrays.
-            let nc_fields: Vec<ArrowField> = children
-                .iter()
-                .zip(ncs.iter())
-                .map(|(child, nc)| ArrowField::new(child.name.clone(), nc.dtype().clone(), true))
-                .collect();
-            let null_count =
-                StructArray::new(ArrowDataType::Struct(nc_fields), height, ncs, None).to_boxed();
+            // index type.
+            let to_struct = |fields: &[Column]| {
+                PolarsResult::Ok(
+                    StructChunked::from_columns(PlSmallStr::EMPTY, height, fields)?
+                        .into_series()
+                        .into_column(),
+                )
+            };
 
-            Ok(Some(StructStatisticsArrays {
-                min,
-                max,
-                null_count,
+            Ok(Some(StatisticsColumns {
+                min: to_struct(&mins)?,
+                max: to_struct(&maxs)?,
+                null_count: to_struct(&ncs)?,
             }))
         },
         _ => {
@@ -443,11 +718,10 @@ fn build_struct_statistics_arrays(
                 metadata.column_order(idx),
                 &metadata.footer_buf,
             )? {
-                Some(statistics) => Ok(Some(StructStatisticsArrays {
-                    min: statistics.min_value,
-                    max: statistics.max_value,
-                    null_count: statistics.null_count.to_boxed(),
-                })),
+                // Converted to the logical type here, the statistics arrays are physical.
+                Some(statistics) => Ok(Some(StatisticsColumns::from_arrow_statistics(
+                    statistics, field,
+                )?)),
                 // Unsupported leaf type (e.g. a list nested inside the struct).
                 None => Ok(None),
             }
@@ -462,11 +736,8 @@ fn load_struct_column_statistics(
     leaf_idxs: &[usize],
 ) -> PolarsResult<Option<StatisticsColumns>> {
     let mut cursor = 0;
-    let Some(StructStatisticsArrays {
-        min,
-        max,
-        null_count,
-    }) = build_struct_statistics_arrays(arrow_field, metadata, row_groups, leaf_idxs, &mut cursor)?
+    let Some(statistics) =
+        build_struct_statistics_columns(arrow_field, metadata, row_groups, leaf_idxs, &mut cursor)?
     else {
         return Ok(None);
     };
@@ -477,31 +748,7 @@ fn load_struct_column_statistics(
         return Ok(None);
     }
 
-    let min = unsafe {
-        Series::_try_from_arrow_unchecked_with_md(
-            PlSmallStr::EMPTY,
-            vec![min],
-            arrow_field.dtype(),
-            arrow_field.metadata.as_deref(),
-        )
-    }?
-    .into_column();
-    let max = unsafe {
-        Series::_try_from_arrow_unchecked_with_md(
-            PlSmallStr::EMPTY,
-            vec![max],
-            arrow_field.dtype(),
-            arrow_field.metadata.as_deref(),
-        )
-    }?
-    .into_column();
-    let null_count = Series::from_arrow(PlSmallStr::EMPTY, null_count)?.into_column();
-
-    Ok(Some(StatisticsColumns {
-        min,
-        max,
-        null_count,
-    }))
+    Ok(Some(statistics))
 }
 
 fn load_parquet_column_statistics(

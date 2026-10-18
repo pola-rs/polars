@@ -11,7 +11,10 @@ where
     ChunkedArray<T>: ChunkVar,
 {
     if a.len() == 1 || b.len() == 1 {
-        return Some(0.0); // (Broadcasted) constant -> zero covariance.
+        // (Broadcasted) constant -> zero covariance, over the rows where both are valid.
+        let (constant, other) = if a.len() == 1 { (a, b) } else { (b, a) };
+        let n = other.len() - other.null_count();
+        return (constant.null_count() == 0 && n > ddof as usize).then_some(0.0);
     }
     let (a, b) = align_chunks_binary(a, b);
     let mut out = CovState::default();

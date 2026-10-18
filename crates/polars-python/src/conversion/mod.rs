@@ -46,7 +46,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
+use pyo3::types::{IntoPyDict, PyDict, PyList, PyMapping, PySequence, PyString, PyTuple};
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -86,10 +86,6 @@ pub(crate) fn reinterpret_vec<T: Transparent>(input: Vec<T>) -> Vec<T::Target> {
     let vec_ptr: *mut T = manual_drop_vec.as_mut_ptr();
     let ptr: *mut T::Target = vec_ptr as *mut T::Target;
     unsafe { Vec::from_raw_parts(ptr, len, cap) }
-}
-
-pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
-    reinterpret_vec(buf)
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -669,14 +665,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Schema> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let dict = ob.cast::<PyDict>()?;
+        let items = ob.cast::<PyMapping>()?.items()?;
 
         Ok(Wrap(
-            dict.iter()
-                .map(|(key, val)| {
-                    let key = key.extract::<PyBackedStr>()?;
-                    let val = val.extract::<Wrap<DataType>>()?;
-
+            items
+                .iter()
+                .map(|item| {
+                    let (key, val) = item.extract::<(PyBackedStr, Wrap<DataType>)>()?;
                     Ok(Field::new((&*key).into(), val.0))
                 })
                 .collect::<PyResult<Schema>>()?,
@@ -2015,14 +2010,36 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ColumnMapping> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let (column_mapping_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+        // `(type, value)` or `(type, value, name_mapping)`.
+        let tuple = ob.cast::<PyTuple>()?;
+        let column_mapping_type: PyBackedStr = tuple.get_item(0)?.extract()?;
+        let ob = tuple.get_item(1)?;
 
         Ok(Wrap(match &*column_mapping_type {
             "iceberg-column-mapping" => {
                 let arrow_schema: Wrap<ArrowSchema> = ob.extract()?;
-                ColumnMapping::Iceberg(Arc::new(
-                    IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?,
-                ))
+                let mut schema =
+                    IcebergSchema::from_arrow_schema(&arrow_schema.0).map_err(to_py_err)?;
+                // Names by field ID.
+                let names: Option<std::collections::HashMap<u32, Vec<String>>> = if tuple.len() > 2
+                {
+                    tuple.get_item(2)?.extract()?
+                } else {
+                    None
+                };
+                let has_name_mapping = names.is_some();
+                if let Some(names) = names {
+                    schema.apply_name_mapping(
+                        &names
+                            .into_iter()
+                            .map(|(id, n)| (id, n.into_iter().map(Into::into).collect()))
+                            .collect(),
+                    );
+                }
+                ColumnMapping::Iceberg {
+                    schema: Arc::new(schema),
+                    has_name_mapping,
+                }
             },
 
             v => {
@@ -2074,9 +2091,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
                     .zip(deletion_vectors.call_method0("values")?.try_iter()?)
                 {
                     let k: usize = k?.extract()?;
-                    let v: Wrap<PlRefPath> = v?.extract()?;
+                    let v = v?;
+                    // A path, or `(path, content_offset)`.
+                    let (path, content_offset): (Wrap<PlRefPath>, Option<u64>) = match v.extract() {
+                        Ok(path) => (path, None),
+                        Err(_) => v.extract()?,
+                    };
 
-                    out.insert(k, IcebergDeletes::DeletionVector(v.0));
+                    out.insert(
+                        k,
+                        IcebergDeletes::DeletionVector {
+                            path: path.0,
+                            content_offset,
+                        },
+                    );
                 }
 
                 DeletionFilesList::Iceberg(Arc::new(out))
@@ -2104,13 +2132,36 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
 
         Ok(Wrap(match &*default_values_type {
             "iceberg" => {
-                let (identity_transformed_partition_values, initial_defaults): (
+                // `(identity values, initial defaults[, identity presence])`.
+                let (identity_transformed_partition_values, initial_defaults, identity_present): (
                     Bound<'_, PyDict>,
                     Bound<'_, PyDict>,
-                ) = ob.extract()?;
+                    Option<Bound<'_, PyDict>>,
+                ) = match ob.extract::<(Bound<'_, PyDict>, Bound<'_, PyDict>, Bound<'_, PyDict>)>()
+                {
+                    Ok((a, b, c)) => (a, b, Some(c)),
+                    Err(_) => {
+                        let (a, b) = ob.extract()?;
+                        (a, b, None)
+                    },
+                };
 
                 let mut converted_identity_transformed_partition_values = PlIndexMap::new();
+                let mut converted_identity_present = PlIndexMap::new();
                 let mut converted_initial_defaults = PlIndexMap::new();
+
+                if let Some(identity_present) = identity_present {
+                    for (k, v) in identity_present
+                        .try_iter()?
+                        .zip(identity_present.call_method0("values")?.try_iter()?)
+                    {
+                        let k: u32 = k?.extract()?;
+                        let v = get_series(&v?)?
+                            .cast(&DataType::Boolean)
+                            .map_err(to_py_err)?;
+                        converted_identity_present.insert(k, v.into_column());
+                    }
+                }
 
                 for (k, v) in identity_transformed_partition_values.try_iter()?.zip(
                     identity_transformed_partition_values
@@ -2147,6 +2198,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
                     identity_transformed_partition_fields: PlIndexMapHashable(
                         converted_identity_transformed_partition_values,
                     ),
+                    identity_partition_present: PlIndexMapHashable(converted_identity_present),
                     initial_defaults: PlIndexMapHashable(converted_initial_defaults),
                 }))
             },

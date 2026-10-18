@@ -30,7 +30,7 @@ pub enum ColumnStore {
 pub(super) fn mmap_columns<'a>(
     store: &'a ColumnStore,
     field_columns: &'a [&ColumnChunkMetadata],
-) -> Vec<(&'a ColumnChunkMetadata, Buffer<u8>)> {
+) -> PolarsResult<Vec<(&'a ColumnChunkMetadata, Buffer<u8>)>> {
     field_columns
         .iter()
         .map(|meta| _mmap_single_column(store, meta))
@@ -40,14 +40,14 @@ pub(super) fn mmap_columns<'a>(
 fn _mmap_single_column<'a>(
     store: &'a ColumnStore,
     meta: &'a ColumnChunkMetadata,
-) -> (&'a ColumnChunkMetadata, Buffer<u8>) {
-    let byte_range = meta.byte_range();
+) -> PolarsResult<(&'a ColumnChunkMetadata, Buffer<u8>)> {
+    let byte_range = meta.byte_range()?;
     let chunk = match store {
         ColumnStore::Local(mem_slice) => mem_slice
             .clone()
             .sliced(byte_range.start as usize..byte_range.end as usize),
     };
-    (meta, chunk)
+    Ok((meta, chunk))
 }
 
 // similar to arrow2 serializer, except this accepts a slice instead of a vec.
@@ -57,19 +57,19 @@ pub fn to_deserializer(
     field: Field,
     filter: Option<Filter>,
 ) -> PolarsResult<(Vec<Box<dyn Array>>, Bitmap)> {
-    let (columns, types): (Vec<_>, Vec<_>) = columns
+    let (columns, types) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
             // Advise fetching the data for the column chunk
             prefetch_l2(&chunk);
 
-            let pages = PageReader::new(Cursor::new(chunk), column_meta, vec![], usize::MAX);
-            (
+            let pages = PageReader::new(Cursor::new(chunk), column_meta, vec![], usize::MAX)?;
+            PolarsResult::Ok((
                 BasicDecompressor::new(pages, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,
-            )
+            ))
         })
-        .unzip();
+        .collect::<PolarsResult<(Vec<_>, Vec<_>)>>()?;
 
     column_iter_to_arrays(columns, types, field, filter)
 }

@@ -879,6 +879,14 @@ impl ComputeNode for GroupByNode {
         "group-by"
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            GroupByState::Sink(_) => NodeMemoryUsage::Accumulating,
+            GroupByState::Source(src) => src.memory_usage(),
+            GroupByState::Done => NodeMemoryUsage::Bounded,
+        }
+    }
+
     fn update_state(
         &mut self,
         recv: &mut [PortState],

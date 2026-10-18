@@ -127,6 +127,7 @@ if TYPE_CHECKING:
     from builtins import set as set_
     from builtins import str as str_
     from collections.abc import Callable, Collection, Generator, Mapping
+    from typing import Self
 
     import jax
 
@@ -156,11 +157,6 @@ if TYPE_CHECKING:
         TemporalLiteral,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 elif BUILDING_SPHINX_DOCS:
@@ -9959,8 +9955,8 @@ class Series(metaclass=_Meta):
 
         Notes
         -----
-        * As long as your data can fit in RAM, it is always more efficient to use the
-          regular :meth:`quantile` function instead.
+        * If the series has fewer than 100 million items, it is generally more efficient
+          to use the regular :meth:`quantile` function instead.
 
         * NaN values are regarded as larger than any finite number (and equal to one
           another). As a result, ``NaN`` values are treated as the largest values when

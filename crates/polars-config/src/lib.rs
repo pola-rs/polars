@@ -1,5 +1,5 @@
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::{LazyLock, Once};
 use std::time::Duration;
 
 mod engine;
@@ -72,7 +72,6 @@ const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
 const OOC_SPILL_COMPRESSION_LEVEL: &str = "POLARS_OOC_SPILL_COMPRESSION_LEVEL";
 const DEFAULT_OOC_SPILL_COMPRESSION_LEVEL: u64 = 0;
 
-// Unused at the moment.
 const OOC_MEMORY_BUDGET_FRACTION: &str = "POLARS_OOC_MEMORY_BUDGET_FRACTION";
 const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
 
@@ -131,6 +130,10 @@ const DEFAULT_DISABLE_HTTP_RATE_LIMIT: bool = false;
 
 const HTTP_SKIP_SYSTEM_CERTIFICATES: &str = "POLARS_HTTP_SKIP_SYSTEM_CERTIFICATES";
 const DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES: bool = false;
+
+/// Max number of cached per-origin HTTP object stores; 0 disables the cache.
+const HTTP_STORE_CACHE_SIZE: &str = "POLARS_HTTP_STORE_CACHE_SIZE";
+const DEFAULT_HTTP_STORE_CACHE_SIZE: u64 = 256;
 
 /// Use direct I/O (Linux: `O_DIRECT`), bypassing the page cache.
 const DIRECT_IO: &str = "POLARS_DIRECT_IO";
@@ -214,6 +217,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     NUMA_MOCK_REGIONS,
     DISABLE_HTTP_RATE_LIMIT,
     HTTP_SKIP_SYSTEM_CERTIFICATES,
+    HTTP_STORE_CACHE_SIZE,
     DIRECT_IO,
     FILE_READ_CONCURRENCY,
     FILE_POSIX_FADV,
@@ -258,6 +262,7 @@ pub struct Config {
     numa_mock_regions: AtomicU64,
     disable_http_rate_limit: AtomicBool,
     http_skip_system_certificates: AtomicBool,
+    http_store_cache_size: AtomicU64,
     direct_io: AtomicBool,
     file_read_concurrency: AtomicU64,
     file_posix_fadv: AtomicU8,
@@ -266,6 +271,7 @@ pub struct Config {
     max_hot_table_size: AtomicU64,
 
     // Derived from others.
+    ooc_effective_memory_budget_bytes: AtomicU64,
     ooc_memory_prefetch_bytes: AtomicU64,
 }
 
@@ -321,12 +327,14 @@ impl Config {
             numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
             disable_http_rate_limit: AtomicBool::new(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
             http_skip_system_certificates: AtomicBool::new(DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES),
+            http_store_cache_size: AtomicU64::new(DEFAULT_HTTP_STORE_CACHE_SIZE),
             direct_io: AtomicBool::new(DEFAULT_DIRECT_IO),
             file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
             file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
             file_defer_cached_reads: AtomicBool::new(DEFAULT_FILE_DEFER_CACHED_READS),
             hot_table_size: AtomicU64::new(DEFAULT_HOT_TABLE_SIZE),
             max_hot_table_size: AtomicU64::new(DEFAULT_MAX_HOT_TABLE_SIZE),
+            ooc_effective_memory_budget_bytes: AtomicU64::new(0),
             ooc_memory_prefetch_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
@@ -352,7 +360,22 @@ impl Config {
     }
 
     fn recompute_derived(&self) {
-        let bytes = self.ooc_memory_budget_bytes.load(Ordering::Relaxed);
+        static LOGGED_TOTAL_MEMORY: Once = Once::new();
+        if self.verbose() {
+            LOGGED_TOTAL_MEMORY.call_once(|| {
+                let v = total_memory();
+                let gib = (v as f64) / (1024.0 * 1024.0 * 1024.0);
+                eprintln!("total memory: {gib:.3} GiB ({v} bytes)")
+            });
+        }
+
+        let budget_frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
+        let bytes = u64::min(
+            self.ooc_memory_budget_bytes.load(Ordering::Relaxed),
+            (total_memory() as f64 * budget_frac) as u64,
+        );
+        self.ooc_effective_memory_budget_bytes
+            .store(bytes, Ordering::Relaxed);
         let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
@@ -544,6 +567,11 @@ impl Config {
                     .unwrap_or(DEFAULT_HTTP_SKIP_SYSTEM_CERTIFICATES),
                 Ordering::Relaxed,
             ),
+            HTTP_STORE_CACHE_SIZE => self.http_store_cache_size.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_HTTP_STORE_CACHE_SIZE),
+                Ordering::Relaxed,
+            ),
             DIRECT_IO => self.direct_io.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_DIRECT_IO),
@@ -691,9 +719,12 @@ impl Config {
         f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed))
     }
 
+    /// The stricter of `POLARS_OOC_MEMORY_BUDGET_FRACTION` times the total memory and
+    /// `POLARS_OOC_MEMORY_BUDGET_MB`.
     #[inline(always)]
     pub fn ooc_memory_budget_bytes(&self) -> u64 {
-        self.ooc_memory_budget_bytes.load(Ordering::Relaxed)
+        self.ooc_effective_memory_budget_bytes
+            .load(Ordering::Relaxed)
     }
 
     #[inline(always)]
@@ -791,6 +822,11 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn http_store_cache_size(&self) -> u64 {
+        self.http_store_cache_size.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn direct_io(&self) -> bool {
         self.direct_io.load(Ordering::Relaxed)
     }
@@ -826,6 +862,29 @@ impl Config {
 pub fn config() -> &'static Config {
     static CONFIG: LazyLock<Config> = LazyLock::new(Config::new);
     &CONFIG
+}
+
+/// Return the total system memory in bytes, respecting cgroup limits and
+/// `POLARS_OVERRIDE_TOTAL_MEMORY_MB`.
+pub fn total_memory() -> u64 {
+    static TOTAL_MEMORY: LazyLock<u64> = LazyLock::new(|| {
+        if let Ok(s) = std::env::var("POLARS_OVERRIDE_TOTAL_MEMORY_MB") {
+            return s
+                .parse::<u64>()
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_OVERRIDE_TOTAL_MEMORY_MB: {s}")
+                })
+                .saturating_mul(1_000_000);
+        }
+
+        let mut sys = sysinfo::System::new();
+        sys.refresh_memory_specifics(sysinfo::MemoryRefreshKind::nothing().with_ram());
+        match sys.cgroup_limits() {
+            Some(limits) => limits.total_memory,
+            None => sys.total_memory(),
+        }
+    });
+    *TOTAL_MEMORY
 }
 
 // These have to be standalone because LazyLock may not be called from allocator.

@@ -21,6 +21,7 @@ pub struct IcebergSinkState {
     pub table_name: PlSmallStr,
     pub mode: IcebergCommitMode,
     pub schema_mode: Option<IcebergSchemaMode>,
+    pub create_if_not_exists: bool,
     pub snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub iceberg_storage_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub compression: PlSmallStr,
@@ -28,6 +29,7 @@ pub struct IcebergSinkState {
     pub row_group_size: Option<usize>,
     pub maintain_order: bool,
     pub sort_order_id: Option<i32>,
+    pub partition_spec_id: Option<i32>,
 
     pub sink_uuid_str: String,
 

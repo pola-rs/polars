@@ -6,19 +6,13 @@ from typing import TYPE_CHECKING
 from polars._dependencies import altair as alt
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable
+    from typing import Unpack
 
     from altair.typing import EncodeKwds
 
-    from polars.dataframe.plotting import Encodings
-
-    if sys.version_info >= (3, 11):
-        from typing import Unpack
-    else:
-        from typing_extensions import Unpack
-
     from polars import Series
+    from polars.dataframe.plotting import Encodings
 
 
 class SeriesPlot:

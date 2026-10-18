@@ -25,15 +25,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PySQLContext
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable, Collection, Mapping
     from types import TracebackType
-    from typing import Any, Final, Literal, TypeAlias
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
+    from typing import Any, Final, Literal, Self, TypeAlias
 
     CompatibleFrameType: TypeAlias = (
         DataFrame

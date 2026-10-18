@@ -179,16 +179,11 @@ where
                 }
 
                 let chunk_min: Option<(usize, T::Native)> = if arr.null_count() > 0 {
-                    arr.into_iter()
-                        .enumerate()
-                        .flat_map(|(idx, val)| Some((idx, *(val?))))
-                        .reduce(|acc, (idx, val)| {
-                            if MinIgnoreNan::is_better(&val, &acc.1) {
-                                (idx, val)
-                            } else {
-                                acc
-                            }
-                        })
+                    let (validity, offset, _) = arr.validity().unwrap().as_slice();
+                    arr.values()
+                        .as_slice()
+                        .argmin_masked(validity, offset)
+                        .map(|idx| (idx, arr.value(idx)))
                 } else {
                     // When no nulls & array not empty => we can use fast argmin.
                     let min_idx: usize = arr.values().as_slice().argmin();
@@ -229,16 +224,11 @@ where
                 }
 
                 let chunk_max: Option<(usize, T::Native)> = if arr.null_count() > 0 {
-                    arr.into_iter()
-                        .enumerate()
-                        .flat_map(|(idx, val)| Some((idx, *(val?))))
-                        .reduce(|acc, (idx, val)| {
-                            if MaxIgnoreNan::is_better(&val, &acc.1) {
-                                (idx, val)
-                            } else {
-                                acc
-                            }
-                        })
+                    let (validity, offset, _) = arr.validity().unwrap().as_slice();
+                    arr.values()
+                        .as_slice()
+                        .argmax_masked(validity, offset)
+                        .map(|idx| (idx, arr.value(idx)))
                 } else {
                     // When no nulls & array not empty => we can use fast argmax.
                     let max_idx: usize = arr.values().as_slice().argmax();

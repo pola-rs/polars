@@ -17,9 +17,12 @@ fn compress_data(
         header,
         descriptor,
         num_rows,
+        num_nulls,
+        shared_capacity: _,
     } = page;
     let uncompressed_page_size = buffer.len();
     let num_rows = num_rows.expect("We should have num_rows when we are writing");
+    let num_nulls = num_nulls.expect("We should have num_nulls when we are writing");
     if compression != CompressionOptions::Uncompressed {
         match &header {
             DataPageHeader::V1(_) => {
@@ -48,6 +51,7 @@ fn compress_data(
         uncompressed_page_size,
         descriptor,
         num_rows,
+        num_nulls,
     ))
 }
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
@@ -84,6 +84,93 @@ def test_arrow_dict_to_polars() -> None:
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
     assert_series_equal(s, pl.Series("pa_dict", pa_dict))
+
+
+def _arrow_field(dtype: pl.DataType) -> pa.Field:
+    return pl.DataFrame({"x": pl.Series([], dtype=dtype)}).to_arrow().schema.field("x")
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected", "expected_cats", "expected_phys"),
+    [
+        # More rows than dictionary values: each value is looked up once.
+        (
+            [2, None, 0, 2, 3, 0],
+            ["b", None, "a", "b", None, "a"],
+            ["b", "a"],
+            [0, None, 1, 0, None, 1],
+        ),
+        ([3, 0, 3, 2], [None, "a", None, "b"], ["a", "b"], [None, 0, None, 1]),
+        ([2, 0, 2, 0], ["b", "a", "b", "a"], ["b", "a"], [0, 1, 0, 1]),
+        # Fewer rows than dictionary values: each row is looked up.
+        ([2, 3], ["b", None], ["b"], [0, None]),
+    ],
+)
+def test_arrow_dict_to_categorical(
+    keys: list[int | None],
+    expected: list[str | None],
+    expected_cats: list[str],
+    expected_phys: list[int | None],
+) -> None:
+    cats = pl.Categories.random(physical=pl.UInt8)
+    field = _arrow_field(pl.Categorical(cats))
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array(keys, pa.uint8()),
+        pa.array(["a", "unused", "b", None], pa.large_string()),
+    )
+    s = cast("pl.DataFrame", pl.from_arrow(pa.table({"x": arr}, pa.schema([field]))))[
+        "x"
+    ]
+    assert s.dtype == pl.Categorical(cats)
+    assert s.to_list() == expected
+    # Unused dictionary values are not inserted, and ids follow first use.
+    assert cats.to_series().to_list() == expected_cats
+    assert s.to_physical().to_list() == expected_phys
+
+
+@pytest.mark.parametrize(
+    ("keys", "expected"),
+    [([-1, 0, 1, 0], [None, "a", "b", "a"]), ([-1], [None])],
+)
+def test_arrow_dict_negative_keys(keys: list[int], expected: list[str | None]) -> None:
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array(keys, pa.int32()), pa.array(["a", "b"]), safe=False
+    )
+    assert cast("pl.Series", pl.from_arrow(arr)).to_list() == expected
+
+
+def test_arrow_dict_out_of_bounds_keys() -> None:
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array([0, 2, 1], pa.int32()), pa.array(["a", "b"]), safe=False
+    )
+    with pytest.raises(pl.exceptions.PanicException):
+        pl.from_arrow(arr)
+
+
+def test_arrow_dict_to_enum() -> None:
+    dtype = pl.Enum(["b", "c"])
+    field = _arrow_field(dtype)
+    arr = pa.DictionaryArray.from_arrays(
+        pa.array([2, None, 0, 2, 3, 0], pa.uint8()),
+        pa.array(["a", "unused", "b", None], pa.large_string()),
+    )
+    s = cast("pl.DataFrame", pl.from_arrow(pa.table({"x": arr}, pa.schema([field]))))[
+        "x"
+    ]
+    assert s.dtype == dtype
+    assert s.to_list() == ["b", None, None, "b", None, None]
+
+
+def test_arrow_dict_chunks_to_categorical() -> None:
+    ca = pa.chunked_array(
+        [
+            pa.DictionaryArray.from_arrays([1, 0, 1], ["a", "b"]),
+            pa.DictionaryArray.from_arrays([0, None, 1], ["c", "a"]),
+        ]
+    )
+    s = cast("pl.Series", pl.from_arrow(ca))
+    assert s.dtype == pl.Categorical
+    assert s.to_list() == ["b", "a", "b", "c", None, "a"]
 
 
 def test_arrow_list_chunked_array() -> None:
@@ -947,9 +1034,9 @@ def test_from_arrow_fixed_offset(fixed_offset: str, etc_tz: str) -> None:
         type=pa.timestamp("us", tz=fixed_offset),
     )
     result = cast("pl.Series", pl.from_arrow(arr))
-    expected = pl.Series(
-        [datetime(2021, 1, 1, tzinfo=timezone.utc)]
-    ).dt.convert_time_zone(etc_tz)
+    expected = pl.Series([datetime(2021, 1, 1, tzinfo=UTC)]).dt.convert_time_zone(
+        etc_tz
+    )
     assert_series_equal(result, expected)
 
 

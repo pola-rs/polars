@@ -103,8 +103,9 @@ jobs:
           single-commit: true
 
       - name: Deploy Python docs for latest release version - stable
-        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false' || (github.event_name == 'workflow_dispatch' && steps.version.outputs.version == '1') 
-        uses: JamesIves/github-pages-deploy-action@v4 
+        # Keep the major version in sync with STABLE_MAJOR in py-polars/docs/source/conf.py.
+        if: steps.version.outputs.version == '2' && (github.event_name == 'workflow_dispatch' || github.event.client_payload.is_prerelease == 'false')
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
           target-folder: api/python/stable

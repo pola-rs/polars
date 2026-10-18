@@ -58,6 +58,15 @@ impl std::fmt::Write for IgnoreFmt {
     }
 }
 
+/// Lets `fmt::Write` users, like chrono's `write_to`, write straight into a byte buffer.
+struct VecFmt<'a>(&'a mut Vec<u8>);
+impl std::fmt::Write for VecFmt<'_> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.extend_from_slice(s.as_bytes());
+        Ok(())
+    }
+}
+
 pub(super) trait Serializer<'a> {
     fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions);
 }
@@ -395,7 +404,7 @@ fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
             let callback = move |item, buf: &mut Vec<u8>| {
                 let item = convert(item);
                 // We checked the format is valid above.
-                let _ = write!(buf, "{}", format_fn(&item, format.iter()));
+                let _ = format_fn(&item, format.iter()).write_to(&mut VecFmt(buf));
             };
             date_and_time_final_serializer(array, callback, options)
         },
@@ -838,7 +847,9 @@ pub(super) fn serializer_for<'a>(
                         let item = time_unit.timestamp_to_datetime(item);
                         let item = time_zone.from_utc_datetime(&item);
                         // We checked the format is valid above.
-                        let _ = write!(buf, "{}", item.format_with_items(format.iter()));
+                        let _ = item
+                            .format_with_items(format.iter())
+                            .write_to(&mut VecFmt(buf));
                     };
                     date_and_time_final_serializer(array, callback, options)
                 },
@@ -848,7 +859,9 @@ pub(super) fn serializer_for<'a>(
                     let callback = move |item, buf: &mut Vec<u8>| {
                         let item = time_unit.timestamp_to_datetime(item);
                         // We checked the format is valid above.
-                        let _ = write!(buf, "{}", item.format_with_items(format.iter()));
+                        let _ = item
+                            .format_with_items(format.iter())
+                            .write_to(&mut VecFmt(buf));
                     };
                     date_and_time_final_serializer(array, callback, options)
                 },

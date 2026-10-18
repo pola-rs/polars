@@ -391,9 +391,20 @@ fn create_physical_expr_inner(
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
             let groupby = GroupByMethod::from(agg.clone());
+            let propagate_nulls = matches!(
+                agg,
+                IRAggExpr::Min {
+                    propagate_nulls: true,
+                    ..
+                } | IRAggExpr::Max {
+                    propagate_nulls: true,
+                    ..
+                }
+            );
             let agg_type = AggregationType {
                 groupby,
                 allow_threading,
+                propagate_nulls,
             };
 
             Ok(Arc::new(AggregationExpr::new(
@@ -424,6 +435,7 @@ fn create_physical_expr_inner(
             let agg_type = AggregationType {
                 groupby,
                 allow_threading: state.allow_threading,
+                propagate_nulls: false,
             };
 
             Ok(Arc::new(AggregationExpr::new(
@@ -434,18 +446,18 @@ fn create_physical_expr_inner(
         },
         Function {
             input: inputs,
-            function: function @ (IRFunctionExpr::MinBy | IRFunctionExpr::MaxBy),
+            function: function @ (IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. }),
             options: _,
         } => {
             assert!(inputs.len() == 2);
-            let new_minmax_by = match function {
-                IRFunctionExpr::MinBy => AggMinMaxByExpr::new_min_by,
-                IRFunctionExpr::MaxBy => AggMinMaxByExpr::new_max_by,
-                _ => unreachable!(), // guaranteed by pattern
-            };
             let input = create_physical_expr_inner(inputs[0].node(), expr_arena, schema, state)?;
             let by = create_physical_expr_inner(inputs[1].node(), expr_arena, schema, state)?;
-            return Ok(Arc::new(new_minmax_by(input, by)));
+            let expr = match function {
+                IRFunctionExpr::MinBy { order } => AggMinMaxByExpr::new_min_by(input, by, order),
+                IRFunctionExpr::MaxBy { order } => AggMinMaxByExpr::new_max_by(input, by, order),
+                _ => unreachable!(), // guaranteed by pattern
+            };
+            return Ok(Arc::new(expr));
         },
         Cast {
             expr,

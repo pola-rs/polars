@@ -135,9 +135,9 @@ dependencies = [
 
 [[package]]
 name = "argminmax"
-version = "0.6.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70f13d10a41ac8d2ec79ee34178d61e6f47a29c2edfe7ef1721c7383b0359e65"
+checksum = "b6c5fb0d1ac4352a9581c758c2e942e0228ae4476ec32ddcc9fcc95b82d1a183"
 dependencies = [
  "half",
  "num-traits",
@@ -172,6 +172,12 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
 ]
+
+[[package]]
+name = "async-ffi"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39cd9de47399986d5b216c6bef9434dfff1689ab61ba8d1e2720dc5fe5c84083"
 
 [[package]]
 name = "async-stream"
@@ -3204,6 +3210,7 @@ version = "0.55.1"
 dependencies = [
  "polars-error",
  "serde",
+ "sysinfo",
 ]
 
 [[package]]
@@ -3425,6 +3432,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-io-ext-ffi"
+version = "0.1.0"
+dependencies = [
+ "async-ffi",
+]
+
+[[package]]
 name = "polars-json"
 version = "0.55.1"
 dependencies = [
@@ -3579,6 +3593,7 @@ name = "polars-parquet"
 version = "0.55.1"
 dependencies = [
  "async-stream",
+ "aws-lc-rs",
  "base64 0.22.1",
  "brotli",
  "bytemuck",
@@ -3688,6 +3703,7 @@ dependencies = [
  "ndarray",
  "num-traits",
  "numpy",
+ "object_store",
  "parking_lot",
  "polars",
  "polars-arrow",
@@ -3702,6 +3718,7 @@ dependencies = [
  "polars-expr",
  "polars-ffi",
  "polars-io",
+ "polars-io-ext-ffi",
  "polars-lazy",
  "polars-mem-engine",
  "polars-observer",
@@ -3721,6 +3738,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slotmap",
+ "tokio",
  "uuid",
  "version_check",
 ]
@@ -3742,7 +3760,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",
@@ -3753,7 +3771,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",
@@ -3764,7 +3782,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "2.0.0-rc.2"
+version = "2.0.0"
 dependencies = [
  "either",
  "libc",
@@ -3795,6 +3813,7 @@ dependencies = [
  "polars-core",
  "polars-defs",
  "polars-error",
+ "polars-io",
  "polars-lazy",
  "polars-ops",
  "polars-plan",
@@ -3841,6 +3860,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-row",
  "polars-time",
  "polars-utils",
  "pyo3",
@@ -4569,9 +4589,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -4960,9 +4980,9 @@ checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "simd-json"
-version = "0.17.3"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e32d7ab2678282d21e53374fbead7119b7eacbede73685dcaac472870a29a11c"
+checksum = "6ebe141eb4a23ecc4d5de93fa5b139ac65dc07c38037a2fe9a8fb7c9d36bd832"
 dependencies = [
  "ahash",
  "halfbrown",

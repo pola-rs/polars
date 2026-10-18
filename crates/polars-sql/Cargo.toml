@@ -13,7 +13,8 @@ polars-compute = { workspace = true, features = ["dtype-decimal"] }
 polars-core = { workspace = true, features = ["rows"] }
 polars-defs = { workspace = true }
 polars-error = { workspace = true }
-polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_str", "cov", "cross_join", "cum_agg", "dtype-array", "dtype-date", "dtype-decimal", "dtype-struct", "is_in", "list_eval", "log", "meta", "offset_by", "range", "regex", "round_series", "sign", "string_normalize", "string_pad", "string_reverse", "strings", "timezones", "trigonometry"] }
+polars-io = { workspace = true }
+polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_str", "cov", "cross_join", "cum_agg", "dtype-array", "dtype-date", "dtype-decimal", "dtype-struct", "is_in", "list_eval", "log", "meta", "offset_by", "propagate_nans", "range", "regex", "round_series", "sign", "string_normalize", "string_pad", "string_reverse", "strings", "timezones", "trigonometry"] }
 polars-ops = { workspace = true, features = ["iejoin"] }
 polars-plan = { workspace = true, features = ["iejoin"] }
 polars-testing = { workspace = true }
@@ -35,13 +36,24 @@ polars-lazy = { workspace = true, features = ["streaming"] }
 default = []
 nightly = ["polars-lazy/nightly"]
 approx_quantile = ["polars-lazy/approx_quantile"]
+asof_join = ["polars-lazy/asof_join", "polars-lazy/dtype-i128"]
 binary_encoding = ["polars-lazy/binary_encoding"]
 bitwise = ["polars-lazy/bitwise"]
-csv = ["polars-lazy/csv"]
+# `read_csv` parses dates by default, which needs the temporal dtypes.
+csv = ["polars-lazy/csv", "polars-io/csv", "polars-io/temporal"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
 dtype-decimal = ["polars-lazy/dtype-decimal"]
+# Opt-in: `dtype-map` also makes Arrow `MAP` columns import as `Map` instead of `List(Struct)`, program-wide.
+dtype-map = ["polars-lazy/dtype-map", "polars-io/dtype-map", "polars-ops/dtype-map"]
 ipc = ["polars-lazy/ipc"]
-json = ["polars-lazy/json", "polars-plan/json", "polars-lazy/extract_jsonpath", "polars-plan/extract_jsonpath"]
+# `read_ndjson` schemas can name temporal types, which the NDJSON reader needs enabled.
+json = [
+  "polars-lazy/json",
+  "polars-plan/json",
+  "polars-lazy/extract_jsonpath",
+  "polars-plan/extract_jsonpath",
+  "polars-io/temporal",
+]
 list_eval = ["polars-lazy/list_eval"]
 parquet = ["polars-lazy/parquet"]
 rank = ["polars-lazy/rank"]
