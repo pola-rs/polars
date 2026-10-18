@@ -1,3 +1,4 @@
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -52,16 +53,76 @@ pub fn into_reduction(
                 propagate_nulls,
                 input,
             } => {
-                let min = new_min_reduction(get_dt(*input)?, *propagate_nans)?;
-                (null_if_has_nulls(min, *propagate_nulls), *input)
+                let input = *input;
+                let propagate_nulls = *propagate_nulls;
+                let dtype = get_dt(input)?;
+
+                if matches!(&dtype, DataType::List(_)) {
+                    let encoded_input: Node = AExprBuilder::row_encode(
+                        vec![ExprIR::from_node(input, expr_arena)],
+                        vec![dtype.clone()],
+                        RowEncodingVariant::Ordered {
+                            descending: None,
+                            nulls_last: None,
+                            broadcast_nulls: Some(true),
+                        },
+                        expr_arena,
+                    )
+                    .node();
+
+                    let order = if propagate_nulls {
+                        MinMaxByOrder::Total {
+                            nulls_largest: false,
+                        }
+                    } else {
+                        MinMaxByOrder::SkipNulls
+                    };
+                    let reduction = new_min_by_reduction(dtype, DataType::BinaryOffset, order)?;
+
+                    return Ok((reduction, vec![input, encoded_input]));
+                }
+
+                (
+                    null_if_has_nulls(new_min_reduction(dtype, *propagate_nans)?, propagate_nulls),
+                    input,
+                )
             },
             IRAggExpr::Max {
                 propagate_nans,
                 propagate_nulls,
                 input,
             } => {
-                let max = new_max_reduction(get_dt(*input)?, *propagate_nans)?;
-                (null_if_has_nulls(max, *propagate_nulls), *input)
+                let input = *input;
+                let propagate_nulls = *propagate_nulls;
+                let dtype = get_dt(input)?;
+                if matches!(&dtype, DataType::List(_)) {
+                    let encoded_input: Node = AExprBuilder::row_encode(
+                        vec![ExprIR::from_node(input, expr_arena)],
+                        vec![dtype.clone()],
+                        RowEncodingVariant::Ordered {
+                            descending: None,
+                            nulls_last: None,
+                            broadcast_nulls: Some(true),
+                        },
+                        expr_arena,
+                    )
+                    .node();
+
+                    let order = if propagate_nulls {
+                        MinMaxByOrder::Total {
+                            nulls_largest: true,
+                        }
+                    } else {
+                        MinMaxByOrder::SkipNulls
+                    };
+                    let reduction = new_max_by_reduction(dtype, DataType::BinaryOffset, order)?;
+
+                    return Ok((reduction, vec![input, encoded_input]));
+                }
+                (
+                    null_if_has_nulls(new_max_reduction(dtype, *propagate_nans)?, propagate_nulls),
+                    input,
+                )
             },
             IRAggExpr::Var(input, ddof) => (
                 new_var_std_reduction(get_dt(*input)?, false, *ddof)?,

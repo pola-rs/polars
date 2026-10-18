@@ -1,5 +1,8 @@
 use super::*;
-use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
+use crate::chunked_array::{arg_max_binary_offset, arg_min_binary_offset};
+use crate::prelude::row_encode::{
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
+};
 use crate::prelude::*;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
@@ -48,6 +51,16 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
+        self.min_max_agg(groups, false)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
+        self.min_max_agg(groups, true)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
@@ -72,6 +85,80 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         self.0.remainder(rhs)
+    }
+}
+
+impl SeriesWrap<ListChunked> {
+    fn min_max_reduce(&self, is_max: bool) -> PolarsResult<Scalar> {
+        let encoded = _get_rows_encoded_ca(
+            self.0.name().clone(),
+            &[self.0.clone().into_column()],
+            &[false],
+            &[false],
+            true,
+        )?;
+
+        let result_index = if is_max {
+            arg_max_binary_offset(&encoded)
+        } else {
+            arg_min_binary_offset(&encoded)
+        };
+
+        match result_index {
+            Some(index) => {
+                let value = self.get(index)?.into_static();
+                Ok(Scalar::new(self.0.dtype().clone(), value))
+            },
+            None => Ok(Scalar::null(self.0.dtype().clone())),
+        }
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn min_max_index(
+        encoded: &BinaryOffsetChunked,
+        indices: impl Iterator<Item = IdxSize>,
+        is_max: bool,
+    ) -> Option<IdxSize> {
+        indices
+            .filter_map(|index| encoded.get(index as usize).map(|bytes| (index, bytes)))
+            .reduce(|best, candidate| {
+                let replace = if is_max {
+                    candidate.1 > best.1
+                } else {
+                    candidate.1 < best.1
+                };
+
+                if replace { candidate } else { best }
+            })
+            .map(|(index, _)| index)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn min_max_agg(&self, groups: &GroupsType, is_max: bool) -> Series {
+        let encoded = _get_rows_encoded_ca(
+            self.0.name().clone(),
+            &[self.0.clone().into_column()],
+            &[false],
+            &[false],
+            true,
+        )
+        // The row-encoding wrapper currently has no error-returning path.
+        .expect("row encoding must return Ok");
+
+        let winning_indices: Series = match groups {
+            GroupsType::Idx(groups) => _agg_helper_idx_idx(groups, |(_first, indices)| {
+                Self::min_max_index(&encoded, indices.iter().copied(), is_max)
+            }),
+            GroupsType::Slice { groups, .. } => _agg_helper_slice_idx(groups, |[start, length]| {
+                Self::min_max_index(&encoded, start..start + length, is_max)
+            }),
+        };
+
+        let winning_indices = winning_indices
+            .idx()
+            .expect("group index helpers must produce IDX_DTYPE");
+        self.take(winning_indices)
+            .expect("winning indices from valid groups must be in bounds")
     }
 }
 
@@ -103,6 +190,14 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
             self.dtype(),
             hint = "you may mean to call `concat_list`"
         );
+    }
+
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        self.min_max_reduce(false)
+    }
+
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        self.min_max_reduce(true)
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

@@ -670,3 +670,37 @@ def test_streaming_group_by_null_on_empty_after_valid_morsels(
         None,
     )
     assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+
+
+def test_min_max_list_streaming_grouped_batches_9859(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "50")
+    df = pl.DataFrame(
+        {
+            "group": ["A", "B"] * 500,
+            "values": [[5]] * 996 + [[1], [2], [9], [8]],
+        },
+        schema={"group": pl.String, "values": pl.List(pl.Int64)},
+    )
+
+    result = (
+        df.lazy()
+        .group_by("group")
+        .agg(
+            pl.col("values").min().alias("minimum"),
+            pl.col("values").max().alias("maximum"),
+        )
+        .sort("group")
+        .collect(engine="streaming")
+    )
+    expected = pl.DataFrame(
+        {"group": ["A", "B"], "minimum": [[1], [2]], "maximum": [[9], [8]]},
+        schema={
+            "group": pl.String,
+            "minimum": pl.List(pl.Int64),
+            "maximum": pl.List(pl.Int64),
+        },
+    )
+
+    assert_frame_equal(result, expected)

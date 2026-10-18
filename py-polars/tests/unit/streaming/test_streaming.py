@@ -470,3 +470,26 @@ def test_log_metrics_reports_query_io_time(
     assert " IO active: " in header
     assert " rx, " in header
     assert " tx), detailed breakdown:" in header
+
+
+def test_min_max_list_streaming_batches_9859(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "50")
+    df = pl.DataFrame(
+        {"values": [[5]] * 996 + [[1], [2], [9], [8]]},
+        schema={"values": pl.List(pl.Int64)},
+    )
+
+    result = (
+        df.lazy()
+        .select(
+            pl.col("values").min().alias("minimum"),
+            pl.col("values").max().alias("maximum"),
+        )
+        .collect(engine="streaming")
+    )
+    expected = pl.DataFrame(
+        {"minimum": [[1]], "maximum": [[9]]},
+        schema={"minimum": pl.List(pl.Int64), "maximum": pl.List(pl.Int64)},
+    )
+
+    assert_frame_equal(result, expected)

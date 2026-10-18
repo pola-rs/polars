@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from polars._typing import (
         ApproxQuantileMethod,
+        EngineType,
         PolarsDataType,
         TimeUnit,
     )
@@ -1168,6 +1169,184 @@ def test_min_max_2850() -> None:
         )
         assert cast("int", computed[0, "min"]) == minimum
         assert cast("float", computed[0, "max"]) == maximum
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("agg", "values", "expected_value", "dtype"),
+    [
+        (pl.Expr.min, [[1, 3], [1, 2], [1, 2, 3]], [1, 2], pl.List(pl.Int64)),
+        (pl.Expr.max, [[1, 3], [1, 2], [1, 2, 3]], [1, 3], pl.List(pl.Int64)),
+        (pl.Expr.min, [[1, 2], [], [1, 3]], [], pl.List(pl.Int64)),
+        (pl.Expr.max, [[1, 2], [], [1, 3]], [1, 3], pl.List(pl.Int64)),
+        (pl.Expr.min, [], None, pl.List(pl.Int64)),
+        (pl.Expr.max, [], None, pl.List(pl.Int64)),
+        (pl.Expr.min, [None, None], None, pl.List(pl.Int64)),
+        (pl.Expr.max, [None, None], None, pl.List(pl.Int64)),
+        (pl.Expr.min, [[1, 2], None, [1, 3]], [1, 2], pl.List(pl.Int64)),
+        (pl.Expr.max, [[1, 2], None, [1, 3]], [1, 3], pl.List(pl.Int64)),
+        (pl.Expr.min, [[1, 2], [1, None], [1, 3]], [1, None], pl.List(pl.Int64)),
+        (pl.Expr.max, [[1, 2], [1, None], [1, 3]], [1, 3], pl.List(pl.Int64)),
+        (
+            pl.Expr.min,
+            [[[1, 3]], [[1, 2], [9]], [[1, 2]]],
+            [[1, 2]],
+            pl.List(pl.List(pl.Int64)),
+        ),
+        (
+            pl.Expr.max,
+            [[[1, 3]], [[1, 2], [9]], [[1, 2]]],
+            [[1, 3]],
+            pl.List(pl.List(pl.Int64)),
+        ),
+    ],
+    ids=[
+        "min-basic",
+        "max-basic",
+        "min-empty-list",
+        "max-empty-list",
+        "min-empty-column",
+        "max-empty-column",
+        "min-all-null",
+        "max-all-null",
+        "min-outer-null",
+        "max-outer-null",
+        "min-inner-null",
+        "max-inner-null",
+        "min-nested-list",
+        "max-nested-list",
+    ],
+)
+def test_min_max_list_9859(
+    agg: Callable[[pl.Expr], pl.Expr],
+    values: list[list[int | None] | list[list[int]] | None],
+    expected_value: list[int | None] | list[list[int]] | None,
+    dtype: pl.List,
+    engine: EngineType,
+) -> None:
+    df = pl.DataFrame(
+        {"values": values},
+        schema={"values": dtype},
+    )
+
+    result = df.lazy().select(agg(pl.col("values"))).collect(engine=engine)
+    expected = pl.DataFrame({"values": [expected_value]}, schema=df.schema)
+
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected_values"),
+    [
+        (pl.Expr.min, [[1, 2], [2, 1]]),
+        (pl.Expr.max, [[1, 3], [2, 4]]),
+    ],
+    ids=["min", "max"],
+)
+@pytest.mark.parametrize("sorted_keys", [False, True], ids=["unsorted", "sorted"])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_min_max_list_grouped_9859(
+    agg: Callable[[pl.Expr], pl.Expr],
+    expected_values: list[list[int]],
+    sorted_keys: bool,
+    engine: EngineType,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "B", "A", "B"],
+            "values": [[1, 3], [2, 1], [1, 2], [2, 4]],
+        },
+        schema={"group": pl.String, "values": pl.List(pl.Int64)},
+    )
+
+    if sorted_keys:
+        df = df.sort("group")
+
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(agg(pl.col("values")))
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"group": ["A", "B"], "values": expected_values},
+        schema=df.schema,
+    )
+
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("sorted_keys", [False, True], ids=["unsorted", "sorted"])
+@pytest.mark.parametrize(
+    ("agg", "expected_values"),
+    [
+        (pl.Expr.min, [[1, 2], None, [1, None]]),
+        (pl.Expr.max, [[1, 2], None, [1, 3]]),
+    ],
+    ids=["min", "max"],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_min_max_list_grouped_nulls_9859(
+    agg: Callable[[pl.Expr], pl.Expr],
+    expected_values: list[list[int | None] | None],
+    sorted_keys: bool,
+    engine: EngineType,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "B", "C", "A", "B", "C"],
+            "values": [None, None, [1, None], [1, 2], None, [1, 3]],
+        },
+        schema={"group": pl.String, "values": pl.List(pl.Int64)},
+    )
+
+    if sorted_keys:
+        df = df.sort("group")
+
+    result = (
+        df.lazy()
+        .group_by("group", maintain_order=True)
+        .agg(agg(pl.col("values")))
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"group": ["A", "B", "C"], "values": expected_values},
+        schema=df.schema,
+    )
+
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("agg", "expected_value"),
+    [
+        (pl.Expr.min, [1]),
+        (pl.Expr.max, [4]),
+    ],
+    ids=["min", "max"],
+)
+def test_min_max_list_multichunk_9859(
+    agg: Callable[[pl.Expr], pl.Expr],
+    expected_value: list[int],
+    engine: EngineType,
+) -> None:
+    first = pl.Series("values", [[2], [3]], dtype=pl.List(pl.Int64))
+    second = pl.Series("values", [[1], [4]], dtype=pl.List(pl.Int64))
+
+    values = pl.concat([first, second], rechunk=False)
+    assert values.n_chunks() == 2
+
+    df = values.to_frame()
+
+    result = df.lazy().select(agg(pl.col("values"))).collect(engine=engine)
+
+    expected = pl.DataFrame(
+        {"values": [expected_value]},
+        schema={"values": pl.List(pl.Int64)},
+    )
+
+    assert_frame_equal(result, expected)
 
 
 def test_multi_arg_structify_15834() -> None:

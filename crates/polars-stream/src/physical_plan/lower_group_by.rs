@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::datatypes::DataType;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
 use polars_core::scalar::Scalar;
@@ -569,9 +570,55 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         AExpr::Agg(agg) => {
             match agg {
-                IRAggExpr::Min { .. }
-                | IRAggExpr::Max { .. }
-                | IRAggExpr::First(_)
+                IRAggExpr::Min {
+                    input,
+                    propagate_nulls,
+                    ..
+                }
+                | IRAggExpr::Max {
+                    input,
+                    propagate_nulls,
+                    ..
+                } => {
+                    let input = ExprIR::from_node(*input, expr_arena);
+                    let dtype = input.dtype(input_schema, expr_arena).ok()?.clone();
+
+                    if !matches!(&dtype, DataType::List(_)) {
+                        return Some(replace_agg_uniq!(expr));
+                    }
+
+                    let is_max = matches!(agg, IRAggExpr::Max { .. });
+                    let order = if *propagate_nulls {
+                        MinMaxByOrder::Total {
+                            nulls_largest: is_max,
+                        }
+                    } else {
+                        MinMaxByOrder::SkipNulls
+                    };
+                    let function = if is_max {
+                        IRFunctionExpr::MaxBy { order }
+                    } else {
+                        IRFunctionExpr::MinBy { order }
+                    };
+
+                    let encoded = AExprBuilder::row_encode(
+                        vec![input.clone()],
+                        vec![dtype],
+                        RowEncodingVariant::Ordered {
+                            descending: None,
+                            nulls_last: None,
+                            broadcast_nulls: Some(true),
+                        },
+                        expr_arena,
+                    )
+                    .expr_ir_unnamed();
+
+                    let lowered =
+                        AExprBuilder::function(vec![input, encoded], function, expr_arena).node();
+
+                    Some(replace_agg_uniq!(lowered))
+                },
+                IRAggExpr::First(_)
                 | IRAggExpr::FirstNonNull(_)
                 | IRAggExpr::Last(_)
                 | IRAggExpr::LastNonNull(_)
