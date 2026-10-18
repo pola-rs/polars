@@ -30,9 +30,9 @@ pub struct SingleKeyIdxTable<T: PolarsDataType> {
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
     nulls_emitted: RelaxedCell<bool>,
-    /// For each build row, whether a probe key matched it. Only kept when the
-    /// unmatched rows are tracked.
-    matched: Vec<RelaxedCell<bool>>,
+    /// A bit per build row, set once a probe key matched it. Only kept when
+    /// the unmatched rows are tracked.
+    matched: Vec<RelaxedCell<u64>>,
 }
 
 impl<T: PolarsDataType> SingleKeyIdxTable<T> {
@@ -72,8 +72,8 @@ where
 
     #[inline(always)]
     fn mark_row(&self, idx: IdxSize) {
-        if let Some(matched) = self.matched.get(idx as usize) {
-            matched.store(true);
+        if let Some(word) = self.matched.get(idx as usize / 64) {
+            word.fetch_or(1 << (idx % 64));
         }
     }
 
@@ -245,7 +245,8 @@ where
         assert!(new_idx_offset <= MARKED as usize, "{}", LENGTH_LIMIT_MSG);
 
         if track_unmatchable {
-            self.matched.resize_with(new_idx_offset, Default::default);
+            self.matched
+                .resize_with(new_idx_offset.div_ceil(64), Default::default);
         }
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
@@ -346,26 +347,28 @@ where
         out.clear();
 
         // The offset is a build row. The rows are emitted in order so their
-        // payload is gathered sequentially.
-        let rows = &self.matched[(offset as usize).min(self.matched.len())..];
-        let mut rows_processed = 0;
-        for block in rows.chunks(BLOCK_SIZE) {
-            if out.len() >= limit as usize {
-                break;
+        // payload is gathered sequentially. Don't read past the bitset if not
+        // all rows were inserted while tracking.
+        let num_rows = (self.idx_offset as usize).min(self.matched.len() * 64);
+        let mut row = offset as usize;
+        'words: while row < num_rows {
+            let base = row & !63;
+            let word = unsafe { self.matched.get_unchecked(base / 64) }.load();
+            let mut unmatched = !word & (u64::MAX << (row - base));
+            if num_rows - base < 64 {
+                unmatched &= (1 << (num_rows - base)) - 1;
             }
-            out.reserve(block.len());
-            let out_ptr = out.as_mut_ptr();
-            let mut len = out.len();
-            for matched in block {
-                if len >= limit as usize {
-                    break;
+            row = base + 64;
+            while unmatched != 0 {
+                let bit = unmatched.trailing_zeros() as usize;
+                if out.len() >= limit as usize {
+                    row = base + bit;
+                    break 'words;
                 }
-                unsafe { *out_ptr.add(len) = offset + rows_processed };
-                len += !matched.load() as usize;
-                rows_processed += 1;
+                out.push((base + bit) as IdxSize);
+                unmatched &= unmatched - 1;
             }
-            unsafe { out.set_len(len) };
         }
-        rows_processed
+        row.min(num_rows).saturating_sub(offset as usize) as IdxSize
     }
 }

@@ -998,7 +998,8 @@ def test_streaming_join_unmatched_build_rows_single_key(
 ) -> None:
     # Small morsels so the unmatched rows of a table are emitted in parts.
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
-    i = pl.int_range(300)
+    # Enough rows that a partition of the table spans several 64-row words.
+    i = pl.int_range(3000)
     left = pl.select(k=pl.when(i % 7 != 0).then(i % 50), v=i).lazy()
     i = pl.int_range(60)
     # Both sides have keys without a match.
