@@ -215,6 +215,65 @@ macro_rules! eval_binary_same_type {
     }};
 }
 
+macro_rules! eval_binary_integer_same_type {
+    ($lhs:expr, $rhs:expr, |$l: ident, $r: ident| $ret: expr) => {{
+        if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
+            match (lit_left, lit_right) {
+                (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
+                    match (l.as_any_value(), r.as_any_value()) {
+                        (AnyValue::Int8($l), AnyValue::Int8($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i8>>::from($ret).into()))
+                        },
+                        (AnyValue::Int16($l), AnyValue::Int16($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i16>>::from($ret).into()))
+                        },
+                        (AnyValue::Int32($l), AnyValue::Int32($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i32>>::from($ret).into()))
+                        },
+                        (AnyValue::Int64($l), AnyValue::Int64($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i64>>::from($ret).into()))
+                        },
+                        (AnyValue::Int128($l), AnyValue::Int128($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i128>>::from($ret).into()))
+                        },
+
+                        (AnyValue::UInt8($l), AnyValue::UInt8($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u8>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt16($l), AnyValue::UInt16($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u16>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt32($l), AnyValue::UInt32($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u32>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt64($l), AnyValue::UInt64($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u64>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt128($l), AnyValue::UInt128($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u128>>::from($ret).into()))
+                        },
+
+                        _ => None,
+                    }
+                },
+                (
+                    LiteralValue::Dyn(DynLiteralValue::Int($l)),
+                    LiteralValue::Dyn(DynLiteralValue::Int($r)),
+                ) => {
+                    let $l = *$l;
+                    let $r = *$r;
+                    Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(
+                        $ret,
+                    ))))
+                },
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }};
+}
+
 macro_rules! eval_binary_cmp_same_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
@@ -916,9 +975,17 @@ impl OptimizationRule for SimplifyExprRule {
                     },
                     GtEq => eval_binary_cmp_same_type!(left_aexpr, >=, right_aexpr),
                     LtEq => eval_binary_cmp_same_type!(left_aexpr, <=, right_aexpr),
-                    And | LogicalAnd => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
-                    Or | LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
-                    Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
+                    And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r).or_else(|| {
+                        eval_binary_integer_same_type!(left_aexpr, right_aexpr, |l, r| l & r)
+                    }),
+                    LogicalAnd => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
+                    Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r).or_else(|| {
+                        eval_binary_integer_same_type!(left_aexpr, right_aexpr, |l, r| l | r)
+                    }),
+                    LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
+                    Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r).or_else(|| {
+                        eval_binary_integer_same_type!(left_aexpr, right_aexpr, |l, r| l ^ r)
+                    }),
                     FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| {
                         if r.is_zero() {
                             // TODO: this should optimize to `null` once we can express "is dynamic int but actually contains null"
