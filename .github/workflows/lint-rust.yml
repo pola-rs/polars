@@ -48,6 +48,18 @@ jobs:
       - name: Set up Rust
         run: rustup component add clippy
 
+      # Add polars-iceberg to Cargo.lock so `--locked` passes. `--workspace` only touches workspace
+      # members; fail if any existing lock entry changed (i.e. anything other than an addition).
+      - name: Add polars-iceberg to Cargo.lock
+        run: |
+          cargo update --workspace
+          git diff --stat Cargo.lock
+          if git diff -U0 Cargo.lock | grep -q '^-[^-]'; then
+            git diff Cargo.lock
+            echo "::error::Updating Cargo.lock for polars-iceberg changed existing entries"
+            exit 1
+          fi
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
