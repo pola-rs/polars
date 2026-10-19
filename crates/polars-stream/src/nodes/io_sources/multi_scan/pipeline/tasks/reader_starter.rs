@@ -25,8 +25,8 @@ use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSl
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
-    ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReader,
-    StartedReaderState, UnorderedFiles,
+    ExtraOperations, ReadBytesLimit, StartReaderArgsConstant, StartReaderArgsPerFile,
+    StartedReader, StartedReaderState, UnorderedFiles,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -41,6 +41,7 @@ pub struct ReaderStarter {
     pub n_sources: usize,
     pub started_reader_tx: tokio::sync::mpsc::Sender<StartedReader>,
     pub max_concurrent_scans: usize,
+    pub read_bytes_limit: ReadBytesLimit,
     pub unordered_files: Option<UnorderedFiles>,
     pub skip_files_mask: Option<SkipFilesMask>,
     pub extra_ops: ExtraOperations,
@@ -64,6 +65,7 @@ impl ReaderStarter {
             n_sources,
             started_reader_tx,
             max_concurrent_scans,
+            read_bytes_limit,
             unordered_files,
             skip_files_mask,
             extra_ops,
@@ -348,6 +350,20 @@ impl ReaderStarter {
                 Some(u) => Some(u.reader_slots.clone().acquire_owned().await.unwrap()),
                 None => None,
             };
+            let read_bytes = match reader.local_read_size() {
+                Some(bytes) => {
+                    let permit = read_bytes_limit.acquire(bytes).await;
+                    if verbose {
+                        eprintln!(
+                            "[ReaderStarter]: acquired read bytes \
+                            (scan_source_idx: {scan_source_idx}, KiB: {})",
+                            permit.num_permits()
+                        )
+                    }
+                    Some(permit)
+                },
+                None => None,
+            };
 
             reader.prepare_read()?;
 
@@ -372,6 +388,7 @@ impl ReaderStarter {
                     handle: reader_start_task_handle,
                     wait_token: wait_group.token(),
                     slot,
+                    read_bytes,
                 })
                 .await
                 .is_err()

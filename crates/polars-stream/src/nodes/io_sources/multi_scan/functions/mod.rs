@@ -13,6 +13,22 @@ use polars_utils::slice_enum::Slice;
 pub mod resolve_projections;
 pub mod resolve_slice;
 
+/// Maximum number of bytes of local, uncompressed files that are read at the same time, see
+/// `FileReader::local_read_size`.
+pub fn calc_max_concurrent_scan_bytes(num_pipelines: usize) -> usize {
+    if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCAN_BYTES").map(|x| {
+        x.parse::<NonZeroUsize>()
+            .unwrap_or_else(|_| panic!("invalid value for POLARS_MAX_CONCURRENT_SCAN_BYTES: {x}"))
+            .get()
+    }) {
+        return v;
+    }
+
+    num_pipelines
+        .saturating_mul(8 * 1024 * 1024)
+        .max(256 * 1024 * 1024)
+}
+
 pub fn calc_n_readers_pre_init(
     num_pipelines: usize,
     num_sources: usize,
