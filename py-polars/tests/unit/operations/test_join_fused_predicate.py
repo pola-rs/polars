@@ -825,3 +825,31 @@ def test_fused_gathers_from_a_multi_chunk_payload() -> None:
         reference(left.lazy(), right.lazy(), predicate, on="k"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_fused_multiply_add_reads_both_sides_30034(engine: EngineType) -> None:
+    left = pl.LazyFrame({"k": [1, 2], "x": [0.5, 1.5], "y": [0.5, 2.5]})
+    right = pl.LazyFrame({"k": [1, 2], "x1": [1.0, 3.0], "s": [0.0, 1.0]})
+    predicate = pl.col("x") < pl.col("x1") + pl.col("y") * pl.col("s")
+    q = left.join(right, on="k").filter(predicate)
+
+    assert_fused(q)
+    assert_frame_equal(
+        q.collect(engine=engine),
+        reference(left, right, predicate, on="k"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_join_right_key_multiply_add(engine: EngineType) -> None:
+    left = pl.LazyFrame({"x": [2.0, 3.0, 4.0]})
+    right = pl.LazyFrame({"x1": [1.0, 2.0], "s": [1.0, 0.5]})
+    q = left.join(
+        right,
+        left_on=pl.col("x"),
+        right_on=pl.col("x1") + pl.col("s") * pl.col("x1"),
+    )
+    expected = pl.DataFrame({"x": [2.0, 3.0], "x1": [1.0, 2.0], "s": [1.0, 0.5]})
+    assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)

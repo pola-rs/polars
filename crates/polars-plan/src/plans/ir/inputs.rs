@@ -268,6 +268,23 @@ impl IR {
     pub(crate) fn get_input(&self) -> Option<Node> {
         self.inputs().next()
     }
+
+    /// The schema that the `idx`-th expression of [`Self::exprs`] resolves against.
+    pub fn expr_schema(&self, idx: usize) -> ExprSchema {
+        match self {
+            IR::Join { options, .. } => options.options.expr_schema(idx),
+            _ => ExprSchema::Input(0),
+        }
+    }
+}
+
+/// The schema an expression of an [`IR`] node resolves against.
+pub enum ExprSchema {
+    /// The schema of the input at this position in [`IR::inputs`]. For a node without inputs,
+    /// such as a scan, `Input(0)` is the schema it reads from.
+    Input(usize),
+    /// The output schema of the node itself.
+    Output,
 }
 
 pub enum Inputs<'a> {
