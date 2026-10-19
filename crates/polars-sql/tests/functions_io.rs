@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 #[cfg(any(feature = "csv", feature = "ipc", feature = "parquet"))]
 use polars_sql::*;
+#[cfg(feature = "csv")]
 use polars_utils::pl_path::PlRefPath;
 
 #[test]

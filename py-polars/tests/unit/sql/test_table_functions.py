@@ -739,6 +739,11 @@ def test_read_parquet_options_survive_plan_roundtrip(tmp_path: Path) -> None:
             SQLInterfaceError,
             r"option 'cast_options' is not supported in SQL$",
         ),
+        (
+            "use_pyarrow => true",
+            SQLInterfaceError,
+            r"option 'use_pyarrow' is not supported in SQL$",
+        ),
     ],
 )
 def test_read_parquet_option_errors(

@@ -597,6 +597,9 @@ const READ_PARQUET_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ("cache", ""),
     ("parallel", ""),
     ("use_statistics", ""),
+    ("use_pyarrow", ""),
+    ("pyarrow_options", ""),
+    ("memory_map", ""),
 ];
 
 impl PolarsTableFunctions {
