@@ -21,8 +21,6 @@ if TYPE_CHECKING:
     from polars._typing import JoinStrategy
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 N_ROW_GROUPS = 10
 ROWS_PER_GROUP = 100
 
