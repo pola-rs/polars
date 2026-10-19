@@ -24,6 +24,8 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     is_fallible: bool,
+    /// Inputs that are repeated to the length of the first non-scalar one among them.
+    broadcast_scalar_inputs: Vec<usize>,
 
     /// Output field of the expression excluding potential aggregation.
     output_field: Field,
@@ -61,6 +63,47 @@ impl ApplyExpr {
             check_lengths: options.check_lengths(),
             output_field: non_aggregated_output_field,
             is_fallible,
+            broadcast_scalar_inputs: Vec::new(),
+        }
+    }
+
+    pub(crate) fn with_broadcast_scalar_inputs(mut self, inputs: Vec<usize>) -> Self {
+        self.broadcast_scalar_inputs = inputs;
+        self
+    }
+
+    fn broadcast_target(&self) -> Option<usize> {
+        self.broadcast_scalar_inputs
+            .iter()
+            .copied()
+            .find(|&i| !self.inputs[i].is_scalar())
+    }
+
+    fn broadcast_scalar_columns(&self, inputs: &mut [Column]) {
+        let Some(target) = self.broadcast_target() else {
+            return;
+        };
+        let len = inputs[target].len();
+        for &i in &self.broadcast_scalar_inputs {
+            if self.inputs[i].is_scalar() && inputs[i].len() == 1 {
+                inputs[i] = inputs[i].new_from_index(0, len);
+            }
+        }
+    }
+
+    fn broadcast_scalar_groups(&self, acs: &mut [AggregationContext]) {
+        let Some(target) = self.broadcast_target() else {
+            return;
+        };
+        for &i in &self.broadcast_scalar_inputs {
+            if self.inputs[i].is_scalar() {
+                let [ac, target_ac] = acs.get_disjoint_mut([i, target]).unwrap();
+                ac.set_groups_for_undefined_agg_states();
+                target_ac.set_groups_for_undefined_agg_states();
+                if ac.broadcast_unit_groups_to(target_ac) {
+                    ac.normalize_values();
+                }
+            }
         }
     }
 
@@ -443,6 +486,7 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
+        self.broadcast_scalar_columns(&mut inputs);
 
         // If the function is elementwise and all columns are scalar
         // we can only evaluate once and then broadcast.
@@ -497,6 +541,7 @@ impl PhysicalExpr for ApplyExpr {
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
+            self.broadcast_scalar_groups(&mut acs);
 
             match self.flags.is_elementwise() {
                 false => self.apply_multiple_group_aware(acs, df),

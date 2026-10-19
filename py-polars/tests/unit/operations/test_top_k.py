@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import pytest
 from hypothesis import given
@@ -692,3 +692,47 @@ def test_top_k_decimal_single_row_row_group(descending: bool, tmp_path: Path) ->
             df.top_k(3, by="x", reverse=descending),
             check_row_order=False,
         )
+
+
+def test_top_k_by_scalar_inputs() -> None:
+    lf = pl.LazyFrame(
+        {"g": [0, 0, 1, 1, 1], "a": [3, 1, 2, 5, 4], "x": [1, 2, 3, 4, 5]}
+    )
+    a, x = pl.col("a"), pl.col("x")
+    grouped = lf.group_by("g", maintain_order=True)
+
+    def collect(q: pl.LazyFrame) -> list[Any]:
+        return q.collect(optimizations=pl.QueryOptFlags.none())["a"].to_list()
+
+    for value, expected in [(pl.lit(7), [7, 7]), (a.max(), [5, 5])]:
+        assert collect(lf.select(value.top_k_by(x, 2).alias("a"))) == expected
+    assert collect(grouped.agg(a.max().top_k_by(x, 2))) == [[3, 3], [5, 5]]
+    assert collect(grouped.agg(pl.lit(7).alias("a").top_k_by(x, 5))) == [
+        [7, 7],
+        [7, 7, 7],
+    ]
+
+    for key in [pl.lit(1), a.max()]:
+        # The non-scalar key breaks every tie.
+        assert sorted(collect(lf.select(a.top_k_by([key, x], 2)))) == [4, 5]
+        assert sorted(collect(lf.select(a.bottom_k_by([key, x], 2)))) == [1, 3]
+        q = lf.select(a.top_k_by([key, x], 2, reverse=[False, True]))
+        assert sorted(collect(q)) == [1, 3]
+        out = collect(grouped.agg(a.top_k_by([key, x], 2)))
+        assert [sorted(g) for g in out] == [[1, 3], [4, 5]]
+
+        # A scalar key alone ties every row, so any `k` rows may be kept.
+        out = collect(lf.select(a.top_k_by(key, 2)))
+        assert len(set(out)) == 2
+        assert set(out) <= {3, 1, 2, 5, 4}
+        out = collect(grouped.agg(a.bottom_k_by(key, 2)))
+        assert sorted(out[0]) == [1, 3]
+        assert len(set(out[1])) == 2
+        assert set(out[1]) <= {2, 5, 4}
+
+    # A unit-length group of a non-scalar key is not broadcast.
+    df = lf.collect()
+    with pytest.raises(ComputeError, match="same length"):
+        df.select(a.top_k_by(x.head(1), 2))
+    with pytest.raises(ComputeError, match="same length"):
+        df.group_by("g").agg(a.top_k_by(x.head(1), 2))

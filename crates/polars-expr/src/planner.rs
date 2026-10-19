@@ -666,19 +666,28 @@ fn create_physical_expr_inner(
             let udf = function_expr_to_udf(function.clone(), &input, expr_arena);
             let input = create_physical_expressions_from_irs(&input, expr_arena, schema, state)?;
             let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
+            // The value and keys of a top-k must have the same length; `k` stays a scalar.
+            let broadcast_scalar_inputs = match function {
+                #[cfg(feature = "top_k")]
+                IRFunctionExpr::TopKBy { .. } => (0..input.len()).filter(|&i| i != 1).collect(),
+                _ => Vec::new(),
+            };
 
-            Ok(Arc::new(ApplyExpr::new(
-                input,
-                udf,
-                function_expr_to_groups_udf(&function),
-                node_to_expr(expression, expr_arena),
-                options,
-                state.allow_threading,
-                schema.clone(),
-                output_field,
-                is_scalar,
-                is_fallible,
-            )))
+            Ok(Arc::new(
+                ApplyExpr::new(
+                    input,
+                    udf,
+                    function_expr_to_groups_udf(&function),
+                    node_to_expr(expression, expr_arena),
+                    options,
+                    state.allow_threading,
+                    schema.clone(),
+                    output_field,
+                    is_scalar,
+                    is_fallible,
+                )
+                .with_broadcast_scalar_inputs(broadcast_scalar_inputs),
+            ))
         },
 
         Slice {

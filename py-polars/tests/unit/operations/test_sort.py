@@ -1326,6 +1326,27 @@ def test_sort_by_scalar_key_29583_29760() -> None:
         lf.select(a.sort_by(pl.col("s").first() + 1)).collect()
 
 
+def test_sort_scalar_key() -> None:
+    lf = pl.LazyFrame({"a": [3, 1, 2], "x": [1, 2, 3]})
+    no_opt = pl.QueryOptFlags.none()
+
+    for key in [pl.lit(1, pl.Int64), pl.col("a").max()]:
+        out = lf.sort(key).collect(optimizations=no_opt)
+        assert sorted(out["a"]) == [1, 2, 3]
+        q = lf.sort(key, "x", descending=[False, True])
+        assert q.collect(optimizations=no_opt)["x"].to_list() == [3, 2, 1]
+        q = lf.top_k(2, by=[key, "x"])
+        assert sorted(q.collect(optimizations=no_opt)["x"]) == [2, 3]
+
+        # Every row ties, so any two rows may be kept.
+        out = lf.top_k(2, by=key).collect(optimizations=no_opt)
+        assert len(set(out.rows())) == 2
+        assert set(out.rows()) <= {(3, 1), (1, 2), (2, 3)}
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        lf.collect().sort(pl.col("x").head(1))
+
+
 def test_sort_by_reordered_input_29630() -> None:
     df = pl.DataFrame({"k": [0, 0, 1, 1], "a": [10, 11, 20, 21], "b": [2, 1, 4, 3]})
 

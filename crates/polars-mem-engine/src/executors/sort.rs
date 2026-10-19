@@ -33,6 +33,9 @@ impl SortExec {
                 if !matches!(e.as_expression(), Some(&Expr::Column(_))) {
                     s.rename(format_pl_smallstr!("_POLARS_SORT_BY_{i}"));
                 }
+                if s.len() == 1 && e.is_scalar() {
+                    s = s.new_from_index(0, height);
+                }
                 polars_ensure!(
                     s.len() == height,
                     ShapeMismatch: "sort expressions must have same \
