@@ -5,7 +5,6 @@ use polars_arrow::array::Array;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
-use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unitvec;
 
 use super::*;
@@ -13,11 +12,9 @@ use crate::hash_keys::HashKeys;
 
 #[derive(Default)]
 pub struct RowEncodedIdxTable {
-    // These AtomicU64s actually are IdxSizes, but we use the top bit of the
-    // first index in each to mark keys during probing.
-    idx_map: BinaryViewIndexMap<UnitVec<RelaxedCell<u64>>>,
+    idx_map: BinaryViewIndexMap<UnitVec<IdxSize>>,
     idx_offset: IdxSize,
-    null_keys: Vec<IdxSize>,
+    matched: MatchedRows,
 }
 
 impl RowEncodedIdxTable {
@@ -25,7 +22,7 @@ impl RowEncodedIdxTable {
         Self {
             idx_map: BinaryViewIndexMap::new(),
             idx_offset: 0,
-            null_keys: Vec::new(),
+            matched: MatchedRows::default(),
         }
     }
 }
@@ -42,19 +39,12 @@ impl RowEncodedIdxTable {
     ) -> bool {
         if let Some(idxs) = self.idx_map.get(hash, key) {
             for idx in &idxs[..] {
-                // Create matches, making sure to clear top bit.
-                table_match.push((idx.load() & !(1 << 63)) as IdxSize);
+                table_match.push(*idx);
                 probe_match.push(key_idx);
             }
 
-            // Mark if necessary. This action is idempotent so doesn't
-            // fetch_or to do it atomically.
             if MARK_MATCHES {
-                let first_idx = unsafe { idxs.get_unchecked(0) };
-                let first_idx_val = first_idx.load();
-                if first_idx_val >> 63 == 0 {
-                    first_idx.store(first_idx_val | (1 << 63));
-                }
+                self.matched.mark_rows(idxs);
             }
             true
         } else {
@@ -140,6 +130,9 @@ impl IdxTable for RowEncodedIdxTable {
             new_idx_offset < IdxSize::MAX as usize,
             "overly large index in RowEncodedIdxTable"
         );
+        if track_unmatchable {
+            self.matched.grow(new_idx_offset);
+        }
 
         for (i, (hash, key)) in hash_keys
             .hashes
@@ -151,14 +144,12 @@ impl IdxTable for RowEncodedIdxTable {
             if let Some(key) = key {
                 match self.idx_map.entry(*hash, key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(RelaxedCell::from(idx as u64));
+                        o.into_mut().push(idx);
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![RelaxedCell::from(idx as u64)]);
+                        v.insert(unitvec![idx]);
                     },
                 }
-            } else if track_unmatchable {
-                self.null_keys.push(idx);
             }
         }
 
@@ -181,6 +172,9 @@ impl IdxTable for RowEncodedIdxTable {
             new_idx_offset < IdxSize::MAX as usize,
             "overly large index in RowEncodedIdxTable"
         );
+        if track_unmatchable {
+            self.matched.grow(new_idx_offset);
+        }
 
         for (i, subset_idx) in subset.iter().enumerate_idx() {
             let hash = unsafe { hash_keys.hashes.value_unchecked(*subset_idx as usize) };
@@ -189,14 +183,12 @@ impl IdxTable for RowEncodedIdxTable {
             if let Some(key) = key {
                 match self.idx_map.entry(hash, key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(RelaxedCell::from(idx as u64));
+                        o.into_mut().push(idx);
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![RelaxedCell::from(idx as u64)]);
+                        v.insert(unitvec![idx]);
                     },
                 }
-            } else if track_unmatchable {
-                self.null_keys.push(idx);
             }
         }
 
@@ -300,47 +292,8 @@ impl IdxTable for RowEncodedIdxTable {
         }
     }
 
-    fn unmarked_keys(
-        &self,
-        out: &mut Vec<IdxSize>,
-        mut offset: IdxSize,
-        limit: IdxSize,
-    ) -> IdxSize {
-        out.clear();
-
-        let mut keys_processed = 0;
-        if (offset as usize) < self.null_keys.len() {
-            out.extend(
-                self.null_keys[offset as usize..]
-                    .iter()
-                    .copied()
-                    .take(limit as usize),
-            );
-            keys_processed += out.len() as IdxSize;
-            offset += out.len() as IdxSize;
-            if out.len() >= limit as usize {
-                return keys_processed;
-            }
-        }
-
-        offset -= self.null_keys.len() as IdxSize;
-
-        while let Some((_, _, idxs)) = self.idx_map.get_index(offset) {
-            let first_idx = unsafe { idxs.get_unchecked(0) };
-            let first_idx_val = first_idx.load();
-            if first_idx_val >> 63 == 0 {
-                for idx in &idxs[..] {
-                    out.push((idx.load() & !(1 << 63)) as IdxSize);
-                }
-            }
-
-            keys_processed += 1;
-            offset += 1;
-            if out.len() >= limit as usize {
-                break;
-            }
-        }
-
-        keys_processed
+    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize {
+        self.matched
+            .unmarked_rows(self.idx_offset, out, offset, limit)
     }
 }

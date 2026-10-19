@@ -19,7 +19,7 @@ use crate::SQLContext;
 use crate::context::SubqueryShape;
 use crate::functions::series_expr;
 use crate::sql_expr::parse_sql_expr;
-#[cfg(any(feature = "csv", feature = "json"))]
+#[cfg(any(feature = "csv", feature = "json", feature = "parquet"))]
 use crate::table_function_args::TableFunctionOptions;
 #[cfg(feature = "csv")]
 use crate::table_function_args::{DtypeOverrides, StringValues};
@@ -34,9 +34,10 @@ pub(crate) enum PolarsTableFunctions {
     /// ```
     #[cfg(feature = "csv")]
     ReadCsv,
-    /// SQL 'read_parquet' function.
+    /// SQL 'read_parquet' function, with optional named options as in Python's `scan_parquet`.
     /// ```sql
     /// SELECT * FROM read_parquet('path/to/file.parquet')
+    /// SELECT * FROM read_parquet('path/to/*.parquet', hive_partitioning => false)
     /// ```
     #[cfg(feature = "parquet")]
     ReadParquet,
@@ -298,16 +299,64 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "parquet")]
     fn read_parquet(&self, args: &[SQLFunctionArg]) -> PolarsResult<(String, LazyFrame)> {
-        use polars_lazy::prelude::ScanArgsParquet;
+        use std::sync::Arc;
 
-        polars_ensure!(args.len() == 1, SQLSyntax: "`read_parquet` expects one file path or a list of file paths; found {:?} arguments", args.len());
+        use polars_io::HiveOptions;
+        use polars_io::prelude::ParquetOptions;
+        use polars_plan::dsl::{
+            DslBuilder, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSources, UnifiedScanArgs,
+        };
 
-        let (name, paths) = self.get_file_paths_from_arg("read_parquet", &args[0])?;
-        let scan_args = ScanArgsParquet {
-            hive_options: hive_options(&args[0]),
+        let (path_arg, options) = TableFunctionOptions::parse(
+            "read_parquet",
+            args,
+            READ_PARQUET_OPTIONS,
+            READ_PARQUET_EXCLUDED_OPTIONS,
+        )?;
+        let (name, paths) = self.get_file_paths_from_arg("read_parquet", path_arg)?;
+
+        let parquet_options = ParquetOptions {
+            schema: options.schema("schema")?.map(Arc::new),
             ..Default::default()
         };
-        let lf = LazyFrame::scan_parquet_files(paths.into(), scan_args)?;
+        // `ScanArgsParquet` has no `extra_columns`, so the scan is built as in Python.
+        let scan_args = UnifiedScanArgs {
+            hive_options: HiveOptions {
+                // Unlike `scan_parquet`, SQL reads the hive partitions of one path unless told not
+                // to. A list of paths gets the automatic choice, as `hive_options` says.
+                enabled: options
+                    .bool("hive_partitioning")?
+                    .or(hive_options(path_arg).enabled),
+                hive_start_idx: 0,
+                schema: options.schema("hive_schema")?.map(Arc::new),
+                try_parse_dates: options.bool("try_parse_hive_dates")?.unwrap_or(true),
+            },
+            missing_columns_policy: options
+                .one_of(
+                    "missing_columns",
+                    &[
+                        ("insert", MissingColumnsPolicy::Insert),
+                        ("raise", MissingColumnsPolicy::Raise),
+                    ],
+                )?
+                .unwrap_or_default(),
+            extra_columns_policy: options
+                .one_of(
+                    "extra_columns",
+                    &[
+                        ("ignore", ExtraColumnsPolicy::Ignore),
+                        ("raise", ExtraColumnsPolicy::Raise),
+                    ],
+                )?
+                .unwrap_or_default(),
+            include_file_paths: options.string("include_file_paths")?.map(Into::into),
+            cache: true,
+            ..Default::default()
+        };
+        let sources = ScanSources::Paths(paths.into());
+        let lf: LazyFrame = DslBuilder::scan_parquet(sources, parquet_options, scan_args)?
+            .build()
+            .into();
         Ok((name, lf))
     }
 
@@ -507,6 +556,50 @@ const READ_NDJSON_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ("low_memory", ""),
     ("row_index_name", ""),
     ("row_index_offset", ""),
+];
+
+/// Named options of `read_parquet`: the options of Python's `scan_parquet` that SQL can express.
+#[cfg(feature = "parquet")]
+const READ_PARQUET_OPTIONS: &[&str] = &[
+    "schema",
+    "missing_columns",
+    "extra_columns",
+    "hive_partitioning",
+    "hive_schema",
+    "try_parse_hive_dates",
+    "include_file_paths",
+];
+
+/// Options of Python's `scan_parquet` and `read_parquet` that `read_parquet` does not accept, with
+/// what to do instead.
+#[cfg(feature = "parquet")]
+const READ_PARQUET_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
+    (
+        "credential_provider",
+        "cloud credentials are read from the environment",
+    ),
+    (
+        "storage_options",
+        "cloud credentials are read from the environment",
+    ),
+    ("n_rows", "use LIMIT, which is pushed down into the scan"),
+    (
+        "columns",
+        "select the columns in the SELECT list, which is pushed down into the scan",
+    ),
+    ("cast_options", ""),
+    ("decryption", ""),
+    ("hidden_file_prefix", ""),
+    ("row_index_name", ""),
+    ("row_index_offset", ""),
+    ("glob", ""),
+    ("low_memory", ""),
+    ("cache", ""),
+    ("parallel", ""),
+    ("use_statistics", ""),
+    ("use_pyarrow", ""),
+    ("pyarrow_options", ""),
+    ("memory_map", ""),
 ];
 
 impl PolarsTableFunctions {
