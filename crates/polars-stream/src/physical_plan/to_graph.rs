@@ -184,8 +184,8 @@ fn to_graph_rec<'a>(
 
         Reverse { input } => {
             let input_key = to_graph_rec(input.node, ctx)?;
-            ctx.graph.add_node(
-                nodes::reverse::ReverseNode::new(),
+            ctx.add_node_with_metrics(
+                |registry| nodes::reverse::ReverseNode::new(registry.task_metrics()),
                 [(input_key, input.port)],
             )
         },

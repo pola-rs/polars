@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
@@ -25,17 +27,11 @@ pub struct ReverseNode {
 }
 
 impl ReverseNode {
-    pub fn new() -> ReverseNode {
+    pub fn new(task_metrics: Option<Arc<TaskMetricAggregator>>) -> ReverseNode {
         ReverseNode {
             state: ReverseState::Buffering(Buffer::default()),
-            spill_ctx: LeastRecentSpillContext::new("reverse".into()),
+            spill_ctx: LeastRecentSpillContext::new("reverse".into(), task_metrics),
         }
-    }
-}
-
-impl Default for ReverseNode {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -44,11 +40,11 @@ impl ComputeNode for ReverseNode {
         "reverse"
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
+    fn memory_usage(&self) -> NodeMemoryUsage {
         match &self.state {
-            ReverseState::Buffering(..) => true,
-            ReverseState::Emitting { .. } => false,
-            ReverseState::Done => false,
+            ReverseState::Buffering(..) => NodeMemoryUsage::Accumulating,
+            ReverseState::Emitting { .. } => NodeMemoryUsage::Draining,
+            ReverseState::Done => NodeMemoryUsage::Bounded,
         }
     }
 
