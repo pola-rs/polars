@@ -3,6 +3,9 @@ use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;
 use polars_core::utils::{align_chunks_binary, try_get_supertype};
 
+use super::split::SplitStage;
+#[cfg(feature = "serde")]
+use super::split::{MergeGroupedReduction, SplitState, StateFinish};
 use super::*;
 
 fn out_dtype(dtype_x: &DataType, dtype_y: &DataType) -> DataType {
@@ -15,33 +18,107 @@ fn out_dtype(dtype_x: &DataType, dtype_y: &DataType) -> DataType {
     }
 }
 
+fn check_numeric(op: &str, dtype_x: &DataType, dtype_y: &DataType) -> PolarsResult<()> {
+    for dtype in [dtype_x, dtype_y] {
+        polars_ensure!(
+            dtype.is_primitive_numeric(),
+            InvalidOperation: "`{op}` operation not supported for dtype `{dtype}`"
+        );
+    }
+    Ok(())
+}
+
 pub fn new_cov_reduction(
     dtype_x: DataType,
     dtype_y: DataType,
     ddof: u8,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    polars_ensure!(
-        dtype_x.is_primitive_numeric(),
-        InvalidOperation: "`cov` operation not supported for dtype `{dtype_x}`"
-    );
-    polars_ensure!(
-        dtype_y.is_primitive_numeric(),
-        InvalidOperation: "`cov` operation not supported for dtype `{dtype_y}`"
-    );
-    let out_dtype = out_dtype(&dtype_x, &dtype_y);
-    Ok(Box::new(CovGroupedReduction {
-        values: Vec::new(),
-        evicted_values: Vec::new(),
+    cov_reduction(&dtype_x, &dtype_y, ddof, SplitStage::Whole)
+}
+
+/// Like [`new_cov_reduction`], but outputs the state of each group, to be merged by
+/// [`new_cov_merge_reduction`].
+#[cfg(feature = "serde")]
+pub fn new_cov_state_reduction(
+    dtype_x: DataType,
+    dtype_y: DataType,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // `ddof` only matters when finalizing.
+    cov_reduction(&dtype_x, &dtype_y, 0, SplitStage::State)
+}
+
+/// Merges the states of [`new_cov_state_reduction`] over values of `dtype_x` and `dtype_y`, and
+/// outputs what [`new_cov_reduction`] does.
+#[cfg(feature = "serde")]
+pub fn new_cov_merge_reduction(
+    dtype_x: DataType,
+    dtype_y: DataType,
+    ddof: u8,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    cov_reduction(&dtype_x, &dtype_y, ddof, SplitStage::Merge)
+}
+
+fn cov_reduction(
+    dtype_x: &DataType,
+    dtype_y: &DataType,
+    ddof: u8,
+    stage: SplitStage,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    check_numeric("cov", dtype_x, dtype_y)?;
+    let finish = CovFinish {
         ddof,
-        out_dtype,
-    }))
+        out_dtype: out_dtype(dtype_x, dtype_y),
+    };
+    Ok(match stage {
+        #[cfg(feature = "serde")]
+        SplitStage::Merge => Box::new(MergeGroupedReduction::new(finish)),
+        _ => Box::new(CovGroupedReduction {
+            values: Vec::new(),
+            evicted_values: Vec::new(),
+            finish,
+            stage,
+        }),
+    })
+}
+
+#[derive(Clone)]
+struct CovFinish {
+    ddof: u8,
+    out_dtype: DataType,
+}
+
+impl CovFinish {
+    fn finish_states(&self, v: Vec<CovState>) -> PolarsResult<Series> {
+        let ca: Float64Chunked = v
+            .into_iter()
+            .map(|s| s.finalize(self.ddof))
+            .collect_ca(PlSmallStr::EMPTY);
+        ca.into_series().cast(&self.out_dtype)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl StateFinish for CovFinish {
+    type State = CovState;
+
+    fn init(&self) -> CovState {
+        CovState::default()
+    }
+
+    fn combine(&self, a: &mut CovState, b: &CovState) {
+        a.combine(b)
+    }
+
+    fn finish(&self, states: Vec<CovState>) -> PolarsResult<Series> {
+        self.finish_states(states)
+    }
 }
 
 struct CovGroupedReduction {
     values: Vec<CovState>,
     evicted_values: Vec<CovState>,
-    ddof: u8,
-    out_dtype: DataType,
+    finish: CovFinish,
+    stage: SplitStage,
 }
 
 impl GroupedReduction for CovGroupedReduction {
@@ -49,8 +126,8 @@ impl GroupedReduction for CovGroupedReduction {
         Box::new(Self {
             values: Vec::new(),
             evicted_values: Vec::new(),
-            ddof: self.ddof,
-            out_dtype: self.out_dtype.clone(),
+            finish: self.finish.clone(),
+            stage: self.stage,
         })
     }
 
@@ -144,19 +221,20 @@ impl GroupedReduction for CovGroupedReduction {
         Box::new(Self {
             values: core::mem::take(&mut self.evicted_values),
             evicted_values: Vec::new(),
-            ddof: self.ddof,
-            out_dtype: self.out_dtype.clone(),
+            finish: self.finish.clone(),
+            stage: self.stage,
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
-        let ddof = self.ddof;
-        let ca: Float64Chunked = v
-            .into_iter()
-            .map(|s| s.finalize(ddof))
-            .collect_ca(PlSmallStr::EMPTY);
-        ca.into_series().cast(&self.out_dtype)
+        match self.stage {
+            SplitStage::Whole => self.finish.finish_states(v),
+            #[cfg(feature = "serde")]
+            SplitStage::State => CovState::encode(v),
+            #[cfg(feature = "serde")]
+            SplitStage::Merge => unreachable!(),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -168,26 +246,93 @@ pub fn new_pearson_corr_reduction(
     dtype_x: DataType,
     dtype_y: DataType,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    polars_ensure!(
-        dtype_x.is_primitive_numeric(),
-        InvalidOperation: "`corr` operation not supported for dtype `{dtype_x}`"
-    );
-    polars_ensure!(
-        dtype_y.is_primitive_numeric(),
-        InvalidOperation: "`corr` operation not supported for dtype `{dtype_y}`"
-    );
-    let out_dtype = out_dtype(&dtype_x, &dtype_y);
-    Ok(Box::new(PearsonCorrGroupedReduction {
-        values: Vec::new(),
-        evicted_values: Vec::new(),
-        out_dtype,
-    }))
+    pearson_corr_reduction(&dtype_x, &dtype_y, SplitStage::Whole)
+}
+
+/// Like [`new_pearson_corr_reduction`], but outputs the state of each group, to be merged by
+/// [`new_pearson_corr_merge_reduction`].
+#[cfg(feature = "serde")]
+pub fn new_pearson_corr_state_reduction(
+    dtype_x: DataType,
+    dtype_y: DataType,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    pearson_corr_reduction(&dtype_x, &dtype_y, SplitStage::State)
+}
+
+/// Merges the states of [`new_pearson_corr_state_reduction`] over values of `dtype_x` and
+/// `dtype_y`, and outputs what [`new_pearson_corr_reduction`] does.
+#[cfg(feature = "serde")]
+pub fn new_pearson_corr_merge_reduction(
+    dtype_x: DataType,
+    dtype_y: DataType,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    pearson_corr_reduction(&dtype_x, &dtype_y, SplitStage::Merge)
+}
+
+fn pearson_corr_reduction(
+    dtype_x: &DataType,
+    dtype_y: &DataType,
+    stage: SplitStage,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    check_numeric("corr", dtype_x, dtype_y)?;
+    let finish = PearsonFinish {
+        out_dtype: out_dtype(dtype_x, dtype_y),
+    };
+    Ok(match stage {
+        #[cfg(feature = "serde")]
+        SplitStage::Merge => Box::new(MergeGroupedReduction::new(finish)),
+        _ => Box::new(PearsonCorrGroupedReduction {
+            values: Vec::new(),
+            evicted_values: Vec::new(),
+            finish,
+            stage,
+        }),
+    })
+}
+
+#[derive(Clone)]
+struct PearsonFinish {
+    out_dtype: DataType,
+}
+
+impl PearsonFinish {
+    fn finish_states(&self, v: Vec<PearsonState>) -> PolarsResult<Series> {
+        let ca: Float64Chunked = v
+            .into_iter()
+            .map(|s| {
+                if s.weight() == 0.0 {
+                    None
+                } else {
+                    Some(s.finalize())
+                }
+            })
+            .collect_ca(PlSmallStr::EMPTY);
+        ca.into_series().cast(&self.out_dtype)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl StateFinish for PearsonFinish {
+    type State = PearsonState;
+
+    fn init(&self) -> PearsonState {
+        PearsonState::default()
+    }
+
+    fn combine(&self, a: &mut PearsonState, b: &PearsonState) {
+        a.combine(b)
+    }
+
+    fn finish(&self, states: Vec<PearsonState>) -> PolarsResult<Series> {
+        self.finish_states(states)
+    }
 }
 
 struct PearsonCorrGroupedReduction {
     values: Vec<PearsonState>,
     evicted_values: Vec<PearsonState>,
-    out_dtype: DataType,
+    finish: PearsonFinish,
+    stage: SplitStage,
 }
 
 impl GroupedReduction for PearsonCorrGroupedReduction {
@@ -195,7 +340,8 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         Box::new(Self {
             values: Vec::new(),
             evicted_values: Vec::new(),
-            out_dtype: self.out_dtype.clone(),
+            finish: self.finish.clone(),
+            stage: self.stage,
         })
     }
 
@@ -290,23 +436,20 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         Box::new(Self {
             values: core::mem::take(&mut self.evicted_values),
             evicted_values: Vec::new(),
-            out_dtype: self.out_dtype.clone(),
+            finish: self.finish.clone(),
+            stage: self.stage,
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
-        let ca: Float64Chunked = v
-            .into_iter()
-            .map(|s| {
-                if s.weight() == 0.0 {
-                    None
-                } else {
-                    Some(s.finalize())
-                }
-            })
-            .collect_ca(PlSmallStr::EMPTY);
-        ca.into_series().cast(&self.out_dtype)
+        match self.stage {
+            SplitStage::Whole => self.finish.finish_states(v),
+            #[cfg(feature = "serde")]
+            SplitStage::State => PearsonState::encode(v),
+            #[cfg(feature = "serde")]
+            SplitStage::Merge => unreachable!(),
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

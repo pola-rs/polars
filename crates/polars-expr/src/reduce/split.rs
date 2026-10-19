@@ -859,6 +859,63 @@ mod tests {
         assert_close(&out, &Series::new("".into(), [0.0]));
     }
 
+    #[cfg(feature = "cov")]
+    #[test]
+    fn cov_corr_split_matches_whole() {
+        use super::super::cov::*;
+
+        let x1 = Series::new(
+            "x".into(),
+            [Some(1.0), Some(2.0), None, Some(4.0), Some(-1.0)],
+        );
+        let y1 = Series::new(
+            "y".into(),
+            [Some(2.0), Some(3.5), Some(1.0), Some(9.0), None],
+        );
+        let x2 = Series::new("x".into(), [Some(3.0), Some(0.5), Some(6.0), Some(7.0)]);
+        let y2 = Series::new("y".into(), [Some(1.0), Some(4.0), Some(2.0), Some(7.5)]);
+        for (dx, dy) in [
+            (DataType::Float64, DataType::Float64),
+            (DataType::Int32, DataType::Float32),
+            (DataType::Float32, DataType::Float32),
+        ] {
+            let cast = |s: &Series, dtype: &DataType| s.cast(dtype).unwrap();
+            let partitions = [
+                partition(vec![cast(&x1, &dx), cast(&y1, &dy)], &[0, 1, 0, 0, 1]),
+                partition(vec![cast(&x2, &dx), cast(&y2, &dy)], &[1, 0, 1, 2]),
+            ];
+            let empty = [partition(
+                vec![cast(&x1, &dx).head(Some(0)), cast(&y1, &dy).head(Some(0))],
+                &[],
+            )];
+            let (x, y) = (|| dx.clone(), || dy.clone());
+            let families = [
+                Family {
+                    whole: new_cov_reduction(x(), y(), 1).unwrap(),
+                    state: new_cov_state_reduction(x(), y()).unwrap(),
+                    merge: new_cov_merge_reduction(x(), y(), 1).unwrap(),
+                },
+                Family {
+                    whole: new_pearson_corr_reduction(x(), y()).unwrap(),
+                    state: new_pearson_corr_state_reduction(x(), y()).unwrap(),
+                    merge: new_pearson_corr_merge_reduction(x(), y()).unwrap(),
+                },
+            ];
+            for f in families {
+                for partitions in [&partitions[..], &empty[..]] {
+                    let whole = run_whole(&*f.whole, partitions, 4).unwrap();
+                    let split = run_split(&*f.state, &*f.merge, partitions, 4).unwrap();
+                    assert_close(&split, &whole);
+                }
+                assert!(reduction_output_dtype(&*f.state).unwrap().is_struct());
+                assert_eq!(
+                    reduction_output_dtype(&*f.merge).unwrap(),
+                    reduction_output_dtype(&*f.whole).unwrap()
+                );
+            }
+        }
+    }
+
     #[cfg(feature = "approx_unique")]
     #[test]
     fn approx_n_unique_split_matches_whole() {
