@@ -2,7 +2,7 @@ use std::hash::{BuildHasher, Hash, Hasher};
 
 use IR::*;
 use polars_core::error::PolarsResult;
-use polars_utils::aliases::{PlFixedStateQuality, PlHashMap};
+use polars_utils::aliases::{PlFixedStateQuality, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
@@ -230,7 +230,7 @@ impl ScanGroups {
 
         // An unordered union looks up groups by chain key.
         let mut groups: Vec<UnitVec<usize>> = Vec::with_capacity(inputs.len());
-        let mut groups_by_key: PlHashMap<u64, UnitVec<usize>> = PlHashMap::default();
+        let mut groups_by_key: PlIndexMap<u64, UnitVec<usize>> = PlIndexMap::default();
         for (i, chain) in chains.iter().enumerate() {
             let Some(chain) = chain else {
                 groups.push(unitvec![i]);
