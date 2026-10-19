@@ -2,14 +2,11 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use polars_arrow::array::builder::{ShareStrategy, make_builder};
-use polars_arrow::array::{Array, ListArray};
-use polars_arrow::offset::Offsets;
+use polars_compute::gather::sublist::list::{sublist_gather, sublist_slice_var};
 
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
-use crate::utils::slice_offsets;
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
@@ -482,61 +479,21 @@ impl ListChunked {
         lengths: &[usize],
         lengths_stride: usize,
     ) -> Self {
-        let mut fast_explode = self.null_count() == 0;
+        let mut fast_explode = true;
         let mut row = 0;
         let chunks = self
             .downcast_iter()
             .map(|arr| {
-                let in_offsets = arr.offsets().as_slice();
-                let mut out_offsets = Vec::with_capacity(arr.len() + 1);
-                out_offsets.push(0i64);
-                // Ranges in `values` to copy, with adjacent ranges merged.
-                let mut ranges: Vec<(usize, usize)> = Vec::new();
-                let mut unchanged = true;
-                for i in 0..arr.len() {
-                    let list_start = in_offsets[i] as usize;
-                    let list_len = (in_offsets[i + 1] - in_offsets[i]) as usize;
-                    let (start, len) = if arr.is_null(i) {
-                        (list_start, 0)
-                    } else {
-                        let (start, len) = slice_offsets(
-                            offsets[row * offset_stride],
-                            lengths[row * lengths_stride],
-                            list_len,
-                        );
-                        fast_explode &= len > 0;
-                        (list_start + start, len)
-                    };
-                    row += 1;
-
-                    unchanged &= start == list_start && len == list_len;
-                    out_offsets.push(out_offsets.last().unwrap() + len as i64);
-                    match ranges.last_mut() {
-                        Some((s, l)) if *s + *l == start => *l += len,
-                        _ if len > 0 => ranges.push((start, len)),
-                        _ => {},
-                    }
-                }
-
-                if unchanged {
-                    return arr.clone().boxed();
-                }
-
-                let values = arr.values().as_ref();
-                let mut builder = make_builder(values.dtype());
-                builder.reserve(*out_offsets.last().unwrap() as usize);
-                for (start, len) in ranges {
-                    builder.subslice_extend(values, start, len, ShareStrategy::Always);
-                }
-                // SAFETY: the offsets are monotonically increasing by construction.
-                let out_offsets = unsafe { Offsets::new_unchecked(out_offsets) };
-                ListArray::new(
-                    arr.dtype().clone(),
-                    out_offsets.into(),
-                    builder.freeze_reset(),
-                    arr.validity().cloned(),
-                )
-                .boxed()
+                let (out, chunk_fast_explode) = sublist_slice_var(
+                    arr,
+                    &offsets[row * offset_stride..],
+                    offset_stride,
+                    &lengths[row * lengths_stride..],
+                    lengths_stride,
+                );
+                fast_explode &= chunk_fast_explode;
+                row += arr.len();
+                out.boxed()
             })
             .collect();
 
@@ -546,6 +503,37 @@ impl ListChunked {
             out.set_fast_explode();
         }
         out
+    }
+
+    /// Gather from list `i * list_stride` the elements at the indices in list
+    /// `i * idx_stride` of `idxs`, for `i` in `0..len`. `idxs` must have `i64`
+    /// values. Negative indices count from the end. Out-of-bounds indices give
+    /// null if `null_on_oob`, and an error otherwise.
+    pub fn lst_gather_var(
+        &self,
+        list_stride: usize,
+        idxs: &ListChunked,
+        idx_stride: usize,
+        len: usize,
+        null_on_oob: bool,
+    ) -> PolarsResult<Self> {
+        let lists = self.rechunk();
+        let idxs = idxs.rechunk();
+        let (arr, fast_explode) = sublist_gather(
+            lists.downcast_as_array(),
+            list_stride,
+            idxs.downcast_as_array(),
+            idx_stride,
+            len,
+            null_on_oob,
+        )?;
+
+        // SAFETY: the chunk has the same dtype as `self`.
+        let mut out = unsafe { self.copy_with_chunks(vec![arr.boxed()]) };
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        Ok(out)
     }
 }
 

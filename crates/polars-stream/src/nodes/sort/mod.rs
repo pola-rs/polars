@@ -16,13 +16,14 @@ use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
 use polars_core::series::{IntoSeries, Series};
-use polars_core::utils::{accumulate_dataframes_vertical_unchecked, slice_offsets};
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::PolarsResult;
 use polars_ooc::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame,
 };
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice::slice_offsets;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use self::flush::{Flush, PendingBucket};
