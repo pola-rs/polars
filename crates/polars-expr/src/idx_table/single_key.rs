@@ -30,6 +30,9 @@ pub struct SingleKeyIdxTable<T: PolarsDataType> {
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
     nulls_emitted: RelaxedCell<bool>,
+    /// A bit per build row, set once a probe key matched it. Only kept when
+    /// the unmatched rows are tracked.
+    matched: Vec<RelaxedCell<u64>>,
 }
 
 impl<T: PolarsDataType> SingleKeyIdxTable<T> {
@@ -41,6 +44,7 @@ impl<T: PolarsDataType> SingleKeyIdxTable<T> {
             idx_offset: 0,
             null_keys: Vec::new(),
             nulls_emitted: RelaxedCell::from(false),
+            matched: Vec::new(),
         }
     }
 }
@@ -67,6 +71,13 @@ where
     }
 
     #[inline(always)]
+    fn mark_row(&self, idx: IdxSize) {
+        if let Some(word) = self.matched.get(idx as usize / 64) {
+            word.fetch_or(1 << (idx % 64));
+        }
+    }
+
+    #[inline(always)]
     fn probe_one<const MARK_MATCHES: bool>(
         &self,
         key_idx: IdxSize,
@@ -86,6 +97,7 @@ where
             // atomic fetch_or to do it atomically.
             if MARK_MATCHES && first & MARKED == 0 {
                 slot.first.store(first | MARKED);
+                self.for_each_row(first, slot.last, |idx| self.mark_row(idx));
             }
             true
         } else {
@@ -143,6 +155,9 @@ where
                     }
                     if MARK_MATCHES && !self.nulls_emitted.load() {
                         self.nulls_emitted.store(true);
+                        for idx in &self.null_keys {
+                            self.mark_row(*idx);
+                        }
                     }
                     !self.null_keys.is_empty()
                 } else {
@@ -228,6 +243,11 @@ where
             .unwrap();
         // The top bit of each index is reserved for MARKED.
         assert!(new_idx_offset <= MARKED as usize, "{}", LENGTH_LIMIT_MSG);
+
+        if track_unmatchable {
+            self.matched
+                .resize_with(new_idx_offset.div_ceil(64), Default::default);
+        }
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
         let arr = keys.downcast_as_array();
@@ -323,48 +343,32 @@ where
         )
     }
 
-    fn unmarked_keys(
-        &self,
-        out: &mut Vec<IdxSize>,
-        mut offset: IdxSize,
-        limit: IdxSize,
-    ) -> IdxSize {
+    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize {
         out.clear();
 
-        let mut keys_processed = 0;
-        if !self.nulls_emitted.load() {
-            if (offset as usize) < self.null_keys.len() {
-                out.extend(
-                    self.null_keys[offset as usize..]
-                        .iter()
-                        .copied()
-                        .take(limit as usize),
-                );
-                keys_processed += out.len() as IdxSize;
-                offset += out.len() as IdxSize;
+        // The offset is a build row. The rows are emitted in order so their
+        // payload is gathered sequentially. Don't read past the bitset if not
+        // all rows were inserted while tracking.
+        let num_rows = (self.idx_offset as usize).min(self.matched.len() * 64);
+        let mut row = offset as usize;
+        'words: while row < num_rows {
+            let base = row & !63;
+            let word = unsafe { self.matched.get_unchecked(base / 64) }.load();
+            let mut unmatched = !word & (u64::MAX << (row - base));
+            if num_rows - base < 64 {
+                unmatched &= (1 << (num_rows - base)) - 1;
+            }
+            row = base + 64;
+            while unmatched != 0 {
+                let bit = unmatched.trailing_zeros() as usize;
                 if out.len() >= limit as usize {
-                    return keys_processed;
+                    row = base + bit;
+                    break 'words;
                 }
-            }
-            offset -= self.null_keys.len() as IdxSize;
-        }
-
-        // The offset is a bucket index, not all buckets hold a key.
-        while (offset as usize) < self.table.num_buckets() {
-            if let Some(slot) = self.table.get_bucket(offset as usize) {
-                let first = slot.first.load();
-                if first & MARKED == 0 {
-                    self.for_each_row(first, slot.last, |idx| out.push(idx));
-                }
-            }
-
-            keys_processed += 1;
-            offset += 1;
-            if out.len() >= limit as usize {
-                break;
+                out.push((base + bit) as IdxSize);
+                unmatched &= unmatched - 1;
             }
         }
-
-        keys_processed
+        row.min(num_rows).saturating_sub(offset as usize) as IdxSize
     }
 }
