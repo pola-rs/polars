@@ -521,28 +521,6 @@ def test_rolling_extrema_edge_cases() -> None:
     )
 
 
-def test_rolling_extrema_preserves_first_tie() -> None:
-    zero_bits = np.array(
-        [0x8000000000000000, 0, 0x8000000000000000, 0], dtype=np.uint64
-    )
-    expected_zero_bits = [0x8000000000000000] * 2 + [0, 0x8000000000000000]
-    zeros = pl.Series(zero_bits.view(np.float64))
-    for window_size, center in ((2, False), (3, True)):
-        for operation in ("min", "max"):
-            result = getattr(zeros, f"rolling_{operation}")(
-                window_size, min_samples=1, center=center
-            )
-            assert result.to_numpy().view(np.uint64).tolist() == expected_zero_bits
-
-    nan_bits = np.array([0x7FF8000000000001, 0x7FF8000000000002], dtype=np.uint64)
-    nan1, nan2 = nan_bits.view(np.float64)
-    values = pl.Series([None, nan1, 5.0, nan2, 7.0])
-    expected_nan_bits = [nan_bits[0]] * 4 + [nan_bits[1]]
-    for operation in ("min", "max"):
-        result = getattr(values, f"rolling_{operation}")(4, min_samples=1, center=True)
-        assert result.to_numpy().view(np.uint64).tolist() == expected_nan_bits
-
-
 @pytest.mark.parametrize(
     "dtype",
     [

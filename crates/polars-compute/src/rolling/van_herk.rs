@@ -14,16 +14,6 @@ where
     out
 }
 
-/// Stable combine: ties keep the earlier NaN payload or signed zero.
-#[inline(always)]
-fn combine<T: NativeType, P: MinMaxPolicy>(earlier: T, later: T) -> T {
-    if P::is_better(&later, &earlier) {
-        later
-    } else {
-        earlier
-    }
-}
-
 /// Recenter trailing output with a backward suffix scan.
 pub(super) fn recenter_trailing<const MASKED: bool, T, P>(
     out: &mut [T],
@@ -57,15 +47,15 @@ pub(super) fn recenter_trailing<const MASKED: bool, T, P>(
     if w < n + shift {
         let hi = n + shift - w + 1;
         for i in (hi..n).rev() {
-            acc = combine::<T, P>(get(i), acc);
+            acc = P::best(get(i), acc);
         }
         for p in (n.saturating_sub(w - 1)..hi).rev() {
-            acc = combine::<T, P>(get(p), acc);
+            acc = P::best(get(p), acc);
             out[p + w - 1 - shift] = acc;
         }
     } else {
         for i in (0..n).rev() {
-            acc = combine::<T, P>(get(i), acc);
+            acc = P::best(get(i), acc);
         }
     }
     for t in n.max(shift)..(n + shift).min(w) {
@@ -103,7 +93,7 @@ where
     if w >= n {
         let mut acc = id;
         for (i, o) in out.iter_mut().enumerate() {
-            acc = combine::<T, P>(acc, get(i));
+            acc = P::best(acc, get(i));
             o.write(acc);
         }
     } else {
@@ -121,14 +111,13 @@ where
             for j in 0..w - 1 {
                 let vf = get(base + j);
                 let vb = get(base + w - 1 - j);
-                prefix = combine::<T, P>(prefix, vf);
-                // Right-to-left keeps the leftmost tie or NaN.
-                suffix = combine::<T, P>(vb, suffix);
-                out_block[j].write(combine::<T, P>(b_old[j + 1], prefix));
+                prefix = P::best(prefix, vf);
+                suffix = P::best(vb, suffix);
+                out_block[j].write(P::best(b_old[j + 1], prefix));
                 b_new[w - 1 - j] = suffix;
             }
-            prefix = combine::<T, P>(prefix, get(base + w - 1));
-            suffix = combine::<T, P>(get(base), suffix);
+            prefix = P::best(prefix, get(base + w - 1));
+            suffix = P::best(get(base), suffix);
             out_block[w - 1].write(prefix);
             b_new[0] = suffix;
             std::mem::swap(&mut b_old, &mut b_new);
@@ -139,8 +128,8 @@ where
             let out_rest = &mut out[base..];
             let mut acc = id;
             for (i, (o, b)) in out_rest.iter_mut().zip(&b_old[1..]).enumerate() {
-                acc = combine::<T, P>(acc, get(base + i));
-                o.write(combine::<T, P>(*b, acc));
+                acc = P::best(acc, get(base + i));
+                o.write(P::best(*b, acc));
             }
         }
     }
