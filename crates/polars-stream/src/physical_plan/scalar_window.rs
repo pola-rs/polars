@@ -41,7 +41,9 @@ pub fn is_reducible_windows(
                     | IRAggExpr::Min { input, .. }
                     | IRAggExpr::Max { input, .. }
                     | IRAggExpr::Count { input, .. }
-                    | IRAggExpr::Mean(input),
+                    | IRAggExpr::Mean(input)
+                    | IRAggExpr::Var(input, _)
+                    | IRAggExpr::Std(input, _),
                 ) => is_numeric_column(*input),
                 _ => false,
             }
