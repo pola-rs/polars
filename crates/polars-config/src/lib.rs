@@ -59,6 +59,9 @@ const DEFAULT_VERBOSE_SENSITIVE: bool = false;
 const FORCE_ASYNC: &str = "POLARS_FORCE_ASYNC";
 const DEFAULT_FORCE_ASYNC: bool = false;
 
+const SCAN_CHUNK_STATISTICS: &str = "POLARS_SCAN_CHUNK_STATISTICS";
+const DEFAULT_SCAN_CHUNK_STATISTICS: bool = false;
+
 const IMPORT_INTERVAL_AS_STRUCT: &str = "POLARS_IMPORT_INTERVAL_AS_STRUCT";
 const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
 
@@ -196,6 +199,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     // Private.
     VERBOSE_SENSITIVE,
     FORCE_ASYNC,
+    SCAN_CHUNK_STATISTICS,
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
     OOC_SPILL_FORMAT,
@@ -243,6 +247,7 @@ pub struct Config {
     // Private.
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
+    scan_chunk_statistics: AtomicBool,
     import_interval_as_struct: AtomicBool,
     ooc_spill_format: AtomicU8,
     ooc_spill_compression_level: AtomicU64,
@@ -295,6 +300,7 @@ impl Config {
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
+            scan_chunk_statistics: AtomicBool::new(DEFAULT_SCAN_CHUNK_STATISTICS),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
             ooc_spill_compression_level: AtomicU64::new(DEFAULT_OOC_SPILL_COMPRESSION_LEVEL),
@@ -451,6 +457,11 @@ impl Config {
             FORCE_ASYNC => self.force_async.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_FORCE_ASYNC),
+                Ordering::Relaxed,
+            ),
+            SCAN_CHUNK_STATISTICS => self.scan_chunk_statistics.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_SCAN_CHUNK_STATISTICS),
                 Ordering::Relaxed,
             ),
             IMPORT_INTERVAL_AS_STRUCT => self.import_interval_as_struct.store(
@@ -692,6 +703,14 @@ impl Config {
     #[inline(always)]
     pub fn force_async(&self) -> bool {
         self.force_async.load(Ordering::Relaxed)
+    }
+
+    /// Whether a parquet scan, besides its per-column totals, keeps the min, max, null count and
+    /// sizes that each sampled row group records. Planners use these to estimate how a column's
+    /// values are distributed across the files, e.g. how many rows a filter keeps.
+    #[inline(always)]
+    pub fn scan_chunk_statistics(&self) -> bool {
+        self.scan_chunk_statistics.load(Ordering::Relaxed)
     }
 
     #[inline(always)]
