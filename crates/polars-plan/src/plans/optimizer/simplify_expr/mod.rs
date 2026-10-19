@@ -388,55 +388,100 @@ macro_rules! eval_binary_same_type {
 macro_rules! eval_binary_integer_same_type {
     ($lhs:expr, $rhs:expr, |$l: ident, $r: ident| $ret: expr) => {{
         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
-            match (lit_left, lit_right) {
-                (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
-                    match (l.as_any_value(), r.as_any_value()) {
-                        (AnyValue::Int8($l), AnyValue::Int8($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<i8>>::from($ret).into()))
-                        },
-                        (AnyValue::Int16($l), AnyValue::Int16($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<i16>>::from($ret).into()))
-                        },
-                        (AnyValue::Int32($l), AnyValue::Int32($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<i32>>::from($ret).into()))
-                        },
-                        (AnyValue::Int64($l), AnyValue::Int64($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<i64>>::from($ret).into()))
-                        },
-                        (AnyValue::Int128($l), AnyValue::Int128($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<i128>>::from($ret).into()))
-                        },
+            let left_mat = lit_left.clone().materialize();
+            let right_mat = lit_right.clone().materialize();
+            if let (LiteralValue::Scalar(s_left), LiteralValue::Scalar(s_right)) =
+                (&left_mat, &right_mat)
+            {
+                if s_left.dtype().is_integer() && s_right.dtype().is_integer() {
+                    let supertype =
+                        polars_core::utils::get_supertype(s_left.dtype(), s_right.dtype());
+                    if let Some(supertype) = supertype {
+                        if supertype.is_integer() {
+                            let s_left = s_left
+                                .clone()
+                                .cast_with_options(
+                                    &supertype,
+                                    polars_core::chunked_array::cast::CastOptions::NonStrict,
+                                )
+                                .ok();
+                            let s_right = s_right
+                                .clone()
+                                .cast_with_options(
+                                    &supertype,
+                                    polars_core::chunked_array::cast::CastOptions::NonStrict,
+                                )
+                                .ok();
+                            if let (Some(s_l), Some(s_r)) = (s_left, s_right) {
+                                match (s_l.as_any_value(), s_r.as_any_value()) {
+                                    (AnyValue::Int8($l), AnyValue::Int8($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::Int8($ret)).into(),
+                                        ))
+                                    },
+                                    (AnyValue::Int16($l), AnyValue::Int16($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::Int16($ret)).into(),
+                                        ))
+                                    },
+                                    (AnyValue::Int32($l), AnyValue::Int32($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::Int32($ret)).into(),
+                                        ))
+                                    },
+                                    (AnyValue::Int64($l), AnyValue::Int64($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::Int64($ret)).into(),
+                                        ))
+                                    },
+                                    (AnyValue::Int128($l), AnyValue::Int128($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::Int128($ret)).into(),
+                                        ))
+                                    },
 
-                        (AnyValue::UInt8($l), AnyValue::UInt8($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<u8>>::from($ret).into()))
-                        },
-                        (AnyValue::UInt16($l), AnyValue::UInt16($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<u16>>::from($ret).into()))
-                        },
-                        (AnyValue::UInt32($l), AnyValue::UInt32($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<u32>>::from($ret).into()))
-                        },
-                        (AnyValue::UInt64($l), AnyValue::UInt64($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<u64>>::from($ret).into()))
-                        },
-                        (AnyValue::UInt128($l), AnyValue::UInt128($r)) => {
-                            Some(AExpr::Literal(<Scalar as From<u128>>::from($ret).into()))
-                        },
+                                    (AnyValue::UInt8($l), AnyValue::UInt8($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::UInt8($ret)).into(),
+                                        ))
+                                    },
+                                    (AnyValue::UInt16($l), AnyValue::UInt16($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::UInt16($ret)).into(),
+                                        ))
+                                    },
+                                    (AnyValue::UInt32($l), AnyValue::UInt32($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::UInt32($ret)).into(),
+                                        ))
+                                    },
+                                    (AnyValue::UInt64($l), AnyValue::UInt64($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::UInt64($ret)).into(),
+                                        ))
+                                    },
+                                    (AnyValue::UInt128($l), AnyValue::UInt128($r)) => {
+                                        Some(AExpr::Literal(
+                                            Scalar::new(supertype, AnyValue::UInt128($ret)).into(),
+                                        ))
+                                    },
 
-                        _ => None,
+                                    _ => None,
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
                     }
-                },
-                (
-                    LiteralValue::Dyn(DynLiteralValue::Int($l)),
-                    LiteralValue::Dyn(DynLiteralValue::Int($r)),
-                ) => {
-                    let $l = *$l;
-                    let $r = *$r;
-                    Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(
-                        $ret,
-                    ))))
-                },
-                _ => None,
+                } else {
+                    None
+                }
+            } else {
+                None
             }
         } else {
             None

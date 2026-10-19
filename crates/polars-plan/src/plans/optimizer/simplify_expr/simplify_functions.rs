@@ -215,25 +215,47 @@ pub(super) fn optimize_functions(
                     ..
                 } => Some(expr_arena.get(input[0].node()).clone()),
                 // not(lit x) => !x
-                AExpr::Literal(lv) => match lv {
-                    LiteralValue::Scalar(s) => match s.as_any_value() {
-                        AnyValue::Boolean(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::Int8(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::Int16(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::Int32(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::Int64(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::Int128(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::UInt8(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::UInt16(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::UInt32(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::UInt64(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
-                        AnyValue::UInt128(v) => Some(AExpr::Literal(Scalar::from(!v).into())),
+                AExpr::Literal(lv) => {
+                    let lv = lv.clone().materialize();
+                    match lv {
+                        LiteralValue::Scalar(s) => match s.as_any_value() {
+                            AnyValue::Boolean(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::Boolean(!v)).into(),
+                            )),
+                            AnyValue::Int8(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::Int8(!v)).into(),
+                            )),
+                            AnyValue::Int16(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::Int16(!v)).into(),
+                            )),
+                            AnyValue::Int32(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::Int32(!v)).into(),
+                            )),
+                            AnyValue::Int64(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::Int64(!v)).into(),
+                            )),
+                            AnyValue::Int128(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::Int128(!v)).into(),
+                            )),
+                            AnyValue::UInt8(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::UInt8(!v)).into(),
+                            )),
+                            AnyValue::UInt16(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::UInt16(!v)).into(),
+                            )),
+                            AnyValue::UInt32(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::UInt32(!v)).into(),
+                            )),
+                            AnyValue::UInt64(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::UInt64(!v)).into(),
+                            )),
+                            AnyValue::UInt128(v) => Some(AExpr::Literal(
+                                Scalar::new(s.dtype().clone(), AnyValue::UInt128(!v)).into(),
+                            )),
+                            _ => None,
+                        },
                         _ => None,
-                    },
-                    LiteralValue::Dyn(DynLiteralValue::Int(v)) => {
-                        Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(!v))))
-                    },
-                    _ => None,
+                    }
                 },
                 // not(x.is_y) => x.is_not_y  and  not(x.is_not_y) => x.is_y
                 AExpr::Function {
