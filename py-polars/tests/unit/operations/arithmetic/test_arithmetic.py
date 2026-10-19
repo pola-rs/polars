@@ -4,6 +4,7 @@ import operator
 import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
+from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -1146,33 +1147,56 @@ def test_truediv_decimal_schema_28372() -> None:
 
 
 @pytest.mark.parametrize(
-    ("lhs", "rhs"),
+    "op",
     [
-        # Series.__truediv__
-        (pl.Series(["4"]), pl.Series([2.0], dtype=pl.Float32)),
-        (pl.Series([2.0], dtype=pl.Float32), pl.Series(["4"])),
-        (pl.Series([2.0], dtype=pl.Float32), "4"),
-        (pl.Series([2.0], dtype=pl.Float32), "t"),
-        # Series.__rtruediv__
-        ("4", pl.Series([2.0], dtype=pl.Float32)),
-        ("t", pl.Series([2.0], dtype=pl.Float32)),
-        (2.0, pl.Series(["4"])),
-        ("4", pl.Series(["4"])),
-    ],
-    ids=[
-        "str_series / float_series",
-        "float_series / str_series",
-        "float_series / str_scalar",
-        "float_series / non_numeric_str_scalar",
-        "str_scalar / float_series",
-        "non_numeric_str_scalar / float_series",
-        "float_scalar / str_series",
-        "str_scalar / str_series",
+        operator.add,
+        operator.sub,
+        operator.mul,
+        operator.truediv,
+        operator.floordiv,
+        operator.mod,
     ],
 )
-def test_eager_truediv_string_raises(lhs: Any, rhs: Any) -> None:
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="division with 'String' datatypes is not allowed",
-    ):
-        lhs / rhs
+@pytest.mark.parametrize(
+    ("lhs", "rhs"),
+    [
+        (pl.Series(["4"]), pl.Series([2], dtype=pl.Int64)),
+        (pl.Series([2], dtype=pl.UInt8), pl.Series(["4"])),
+        (pl.Series(["4"]), pl.Series([2.0], dtype=pl.Float32)),
+        (pl.Series([2.0], dtype=pl.Float32), pl.Series(["4"])),
+        (pl.Series(["4"]), pl.Series([PyDecimal("2.5")])),
+        (pl.Series([PyDecimal("2.5")]), pl.Series(["4"])),
+        (pl.Series([2], dtype=pl.Int64), "4"),
+        (pl.Series([2.0], dtype=pl.Float32), "4"),
+        (pl.Series([2.0], dtype=pl.Float32), "t"),
+        (pl.Series([PyDecimal("2.5")]), "4"),
+        ("4", pl.Series([2], dtype=pl.Int64)),
+        ("4", pl.Series([2.0], dtype=pl.Float32)),
+        ("t", pl.Series([2.0], dtype=pl.Float32)),
+        (pl.Series(["4"]), 2.0),
+        (2.0, pl.Series(["4"])),
+    ],
+)
+def test_string_numeric_arithmetic_raises(
+    op: Callable[[Any, Any], Any], lhs: Any, rhs: Any
+) -> None:
+    # `str % Series` is Python string formatting, which Polars cannot intercept.
+    if not (isinstance(lhs, str) and op is operator.mod):
+        with pytest.raises(InvalidOperationError):
+            op(lhs, rhs)
+    with pytest.raises(InvalidOperationError):
+        pl.select(op(pl.lit(lhs), pl.lit(rhs)))
+
+
+@pytest.mark.parametrize(
+    ("other", "expected"),
+    [
+        (pl.Series(["b"]), ["ab"]),
+        ("b", ["ab"]),
+        (pl.Series(["b"], dtype=pl.Categorical), ["ab"]),
+        (pl.Series([True]), ["atrue"]),
+    ],
+)
+def test_string_add_concatenates(other: Any, expected: list[str]) -> None:
+    s = pl.Series(["a"])
+    assert (s + other).to_list() == expected

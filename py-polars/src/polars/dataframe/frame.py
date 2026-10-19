@@ -11667,7 +11667,6 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        - Int8 + String = String
         - Float32 + Int64 = Float32
         - Float32 + Float64 = Float64
 
@@ -11712,7 +11711,7 @@ class DataFrame:
         ...         "c": [1.0, 2.0, 3.0],
         ...     }
         ... )
-        >>> df.fold(lambda s1, s2: s1 + s2)
+        >>> df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
         shape: (3,)
         Series: 'a' [str]
         [

@@ -899,7 +899,7 @@ def test_df_fold() -> None:
     )
 
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.fold(lambda s1, s2: s1 + s2)
+    out = df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
     assert_series_equal(out, pl.Series("a", ["foo11.0", "bar22.0", "233.0"]))
 
     df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
