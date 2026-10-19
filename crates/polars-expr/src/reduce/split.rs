@@ -95,33 +95,24 @@ mod tests {
     use super::*;
 
     type Reduction = Box<dyn GroupedReduction>;
+    /// The values of one partition and the group of each row.
+    type Partition = (Vec<Series>, Vec<IdxSize>);
 
-    /// Reduces `values[..][i]` into group `groups[i]` of `num_groups` and finalizes.
-    fn run(
-        r: &dyn GroupedReduction,
-        values: &[Series],
-        groups: &[IdxSize],
-        num_groups: IdxSize,
-    ) -> PolarsResult<Series> {
-        let mut r = r.new_empty();
-        r.resize(num_groups);
+    const NUM_GROUPS: IdxSize = 4;
+
+    /// Reduces `values[..][i]` into group `groups[i]`.
+    fn update(r: &mut dyn GroupedReduction, values: &[Series], groups: &[IdxSize]) {
         let cols: Vec<Column> = values.iter().cloned().map(Column::from).collect();
         let cols: Vec<&Column> = cols.iter().collect();
         let subset: Vec<IdxSize> = (0..groups.len() as IdxSize).collect();
-        unsafe { r.update_groups_subset(&cols, &subset, groups, 0)? };
-        r.finalize()
+        unsafe { r.update_groups_subset(&cols, &subset, groups, 0).unwrap() };
     }
 
-    struct Partition {
-        values: Vec<Series>,
-        groups: Vec<IdxSize>,
-    }
-
-    fn partition(values: Vec<Series>, groups: &[IdxSize]) -> Partition {
-        Partition {
-            values,
-            groups: groups.to_vec(),
-        }
+    fn run(r: &dyn GroupedReduction, values: &[Series], groups: &[IdxSize]) -> Series {
+        let mut r = r.new_empty();
+        r.resize(NUM_GROUPS);
+        update(&mut *r, values, groups);
+        r.finalize().unwrap()
     }
 
     /// Runs `state` on each partition and merges the states with `merge`.
@@ -129,35 +120,35 @@ mod tests {
         state: &dyn GroupedReduction,
         merge: &dyn GroupedReduction,
         partitions: &[Partition],
-        num_groups: IdxSize,
-    ) -> PolarsResult<Series> {
+    ) -> Series {
         let mut merge = merge.new_empty();
-        merge.resize(num_groups);
-        let all: Vec<IdxSize> = (0..num_groups).collect();
-        for p in partitions {
-            let states = Column::from(run(state, &p.values, &p.groups, num_groups)?);
-            assert_eq!(states.dtype(), &reduction_output_dtype(state)?);
-            unsafe { merge.update_groups_subset(&[&states], &all, &all, 0)? };
+        merge.resize(NUM_GROUPS);
+        let all: Vec<IdxSize> = (0..NUM_GROUPS).collect();
+        for (values, groups) in partitions {
+            let states = run(state, values, groups);
+            assert_eq!(states.dtype(), &reduction_output_dtype(state).unwrap());
+            update(&mut *merge, &[states], &all);
         }
-        merge.finalize()
+        merge.finalize().unwrap()
     }
 
     /// Runs `whole` on all partitions at once.
-    fn run_whole(
-        whole: &dyn GroupedReduction,
-        partitions: &[Partition],
-        num_groups: IdxSize,
-    ) -> PolarsResult<Series> {
-        let mut values = partitions[0].values.clone();
-        let mut groups = partitions[0].groups.clone();
-        for p in &partitions[1..] {
-            for (v, pv) in values.iter_mut().zip(&p.values) {
-                v.append(pv)?;
+    fn run_whole(whole: &dyn GroupedReduction, partitions: &[Partition]) -> Series {
+        let mut whole = whole.new_empty();
+        whole.resize(NUM_GROUPS);
+        if let Some(((values, groups), rest)) = partitions.split_first() {
+            let mut values = values.clone();
+            let mut groups = groups.clone();
+            for (more_values, more_groups) in rest {
+                for (v, more) in values.iter_mut().zip(more_values) {
+                    v.append(more).unwrap();
+                }
+                groups.extend_from_slice(more_groups);
             }
-            groups.extend_from_slice(&p.groups);
+            let values: Vec<Series> = values.iter().map(|v| v.rechunk()).collect();
+            update(&mut *whole, &values, &groups);
         }
-        let values: Vec<Series> = values.iter().map(|v| v.rechunk()).collect();
-        run(whole, &values, &groups, num_groups)
+        whole.finalize().unwrap()
     }
 
     /// Asserts equal up to floating-point rounding.
@@ -177,47 +168,38 @@ mod tests {
         assert_eq!(left.len(), right.len());
     }
 
-    /// The whole, state and merge reductions of one family.
+    /// The whole, state and merge reductions of one family, and its state dtype.
     struct Family {
         whole: Reduction,
         state: Reduction,
         merge: Reduction,
+        state_dtype: DataType,
     }
 
-    fn moment_families(dtype: &DataType) -> Vec<Family> {
-        let dt = || dtype.clone();
-        #[cfg_attr(not(feature = "moment"), allow(unused_mut))]
-        let mut out = vec![
-            Family {
-                whole: new_var_std_reduction(dt(), false, 1).unwrap(),
-                state: new_var_std_state_reduction(dt()).unwrap(),
-                merge: new_var_std_merge_reduction(dt(), false, 1).unwrap(),
-            },
-            Family {
-                whole: new_var_std_reduction(dt(), true, 0).unwrap(),
-                state: new_var_std_state_reduction(dt()).unwrap(),
-                merge: new_var_std_merge_reduction(dt(), true, 0).unwrap(),
-            },
-        ];
-        #[cfg(feature = "moment")]
-        if !dtype.is_bool() {
-            use super::super::skew_kurtosis::*;
-            out.push(Family {
-                whole: new_skew_reduction(dt(), false).unwrap(),
-                state: new_skew_state_reduction(dt()).unwrap(),
-                merge: new_skew_merge_reduction(dt(), false).unwrap(),
-            });
-            out.push(Family {
-                whole: new_kurtosis_reduction(dt(), true, false).unwrap(),
-                state: new_kurtosis_state_reduction(dt()).unwrap(),
-                merge: new_kurtosis_merge_reduction(dt(), true, false).unwrap(),
-            });
+    /// Asserts that merging the states of each partition matches reducing all of them at once.
+    fn check_family(f: &Family, cases: &[Vec<Partition>]) {
+        assert_eq!(reduction_output_dtype(&*f.state).unwrap(), f.state_dtype);
+        assert_eq!(
+            reduction_output_dtype(&*f.merge).unwrap(),
+            reduction_output_dtype(&*f.whole).unwrap()
+        );
+        for partitions in cases {
+            let whole = run_whole(&*f.whole, partitions);
+            let split = run_split(&*f.state, &*f.merge, partitions);
+            assert_close(&split, &whole);
         }
-        out
     }
 
-    /// Two partitions over four groups; group 3 gets no values and group 2 a single one.
-    fn moment_partitions(dtype: &DataType) -> Vec<Partition> {
+    /// `partitions`, one empty partition, and no partitions at all.
+    fn with_empty_cases(partitions: Vec<Partition>) -> Vec<Vec<Partition>> {
+        let empty = partitions[0].0.iter().map(|s| s.head(Some(0))).collect();
+        vec![partitions, vec![(empty, vec![])], vec![]]
+    }
+
+    #[test]
+    fn moment_split_matches_whole() {
+        use polars_compute::moment::VarState;
+
         let p1 = Series::new(
             "x".into(),
             [
@@ -230,66 +212,70 @@ mod tests {
             ],
         );
         let p2 = Series::new("x".into(), [Some(4.0), Some(0.5), Some(10.0), None]);
-        let cast = |s: Series| s.cast(dtype).unwrap();
-        vec![
-            partition(vec![cast(p1)], &[0, 1, 0, 1, 0, 1]),
-            partition(vec![cast(p2)], &[1, 0, 2, 3]),
-        ]
-    }
-
-    #[test]
-    fn moment_split_matches_whole() {
         for dtype in [
             DataType::Float64,
             DataType::Float32,
             DataType::Int32,
             DataType::Boolean,
+            DataType::Null,
         ] {
-            let partitions = moment_partitions(&dtype);
-            for f in moment_families(&dtype) {
-                let whole = run_whole(&*f.whole, &partitions, 4).unwrap();
-                let split = run_split(&*f.state, &*f.merge, &partitions, 4).unwrap();
-                assert_close(&split, &whole);
-                assert!(reduction_output_dtype(&*f.state).unwrap().is_struct());
-                assert_eq!(reduction_output_dtype(&*f.merge).unwrap(), *whole.dtype());
+            let cast = |s: &Series| s.cast(&dtype).unwrap();
+            // Group 3 gets no values and group 2 a single one.
+            let cases = with_empty_cases(vec![
+                (vec![cast(&p1)], vec![0, 1, 0, 1, 0, 1]),
+                (vec![cast(&p2)], vec![1, 0, 2, 3]),
+            ]);
+            let state_dtype = |numeric: DataType| match dtype {
+                DataType::Null => DataType::Null,
+                DataType::Boolean => BoolVarState::state_dtype(),
+                _ => numeric,
+            };
+            let dt = || dtype.clone();
+            #[cfg_attr(not(feature = "moment"), allow(unused_mut))]
+            let mut families = vec![
+                Family {
+                    whole: new_var_std_reduction(dt(), false, 1).unwrap(),
+                    state: new_var_std_state_reduction(dt()).unwrap(),
+                    merge: new_var_std_merge_reduction(dt(), false, 1).unwrap(),
+                    state_dtype: state_dtype(VarState::state_dtype()),
+                },
+                Family {
+                    whole: new_var_std_reduction(dt(), true, 0).unwrap(),
+                    state: new_var_std_state_reduction(dt()).unwrap(),
+                    merge: new_var_std_merge_reduction(dt(), true, 0).unwrap(),
+                    state_dtype: state_dtype(VarState::state_dtype()),
+                },
+            ];
+            #[cfg(feature = "moment")]
+            if !dtype.is_bool() {
+                use polars_compute::moment::{KurtosisState, SkewState};
+
+                use super::super::skew_kurtosis::*;
+
+                families.push(Family {
+                    whole: new_skew_reduction(dt(), false).unwrap(),
+                    state: new_skew_state_reduction(dt()).unwrap(),
+                    merge: new_skew_merge_reduction(dt(), false).unwrap(),
+                    state_dtype: state_dtype(SkewState::state_dtype()),
+                });
+                families.push(Family {
+                    whole: new_kurtosis_reduction(dt(), true, false).unwrap(),
+                    state: new_kurtosis_state_reduction(dt()).unwrap(),
+                    merge: new_kurtosis_merge_reduction(dt(), true, false).unwrap(),
+                    state_dtype: state_dtype(KurtosisState::state_dtype()),
+                });
+            }
+            for f in &families {
+                check_family(f, &cases);
             }
         }
     }
 
-    #[test]
-    fn moment_split_of_empty_groups_matches_whole() {
-        let dtype = DataType::Float64;
-        let empty = vec![partition(vec![Series::new_empty("x".into(), &dtype)], &[])];
-        for f in moment_families(&dtype) {
-            let whole = run_whole(&*f.whole, &empty, 2).unwrap();
-            let split = run_split(&*f.state, &*f.merge, &[], 2).unwrap();
-            assert_close(&split, &whole);
-            let split = run_split(&*f.state, &*f.merge, &empty, 2).unwrap();
-            assert_close(&split, &whole);
-        }
-    }
-
-    #[test]
-    fn moment_split_of_null_input() {
-        let dtype = DataType::Null;
-        let partitions = vec![partition(
-            vec![Series::full_null("x".into(), 3, &dtype)],
-            &[0, 1, 0],
-        )];
-        for f in moment_families(&dtype) {
-            assert_eq!(reduction_output_dtype(&*f.state).unwrap(), DataType::Null);
-            let whole = run_whole(&*f.whole, &partitions, 2).unwrap();
-            let split = run_split(&*f.state, &*f.merge, &partitions, 2).unwrap();
-            assert!(split.equals_missing(&whole));
-            assert_eq!(split.dtype(), &DataType::Null);
-        }
-    }
-
     /// A state column with one state per group of `values`.
-    fn var_states(values: &[f64], groups: &[IdxSize], num_groups: IdxSize) -> Column {
+    fn var_states(values: &[f64], groups: &[IdxSize]) -> Column {
         let state = new_var_std_state_reduction(DataType::Float64).unwrap();
         let values = Series::new("x".into(), values);
-        Column::from(run(&*state, &[values], groups, num_groups).unwrap())
+        Column::from(run(&*state, &[values], groups))
     }
 
     fn var_merge() -> Reduction {
@@ -298,7 +284,7 @@ mod tests {
 
     #[test]
     fn merge_reads_sparse_subset() {
-        let states = var_states(&[1.0, 2.0, 10.0, 20.0, 40.0, 5.0], &[0, 0, 1, 1, 1, 2], 3);
+        let states = var_states(&[1.0, 2.0, 10.0, 20.0, 40.0, 5.0], &[0, 0, 1, 1, 1, 2]);
         let mut merge = var_merge();
         merge.resize(2);
         unsafe {
@@ -312,7 +298,7 @@ mod tests {
 
     #[test]
     fn merge_evicts_on_null_state() {
-        let states = var_states(&[1.0, 2.0], &[0, 0], 1);
+        let states = var_states(&[1.0, 2.0], &[0, 0]).head(Some(1));
         let states = Column::from(
             states
                 .as_materialized_series()
@@ -338,7 +324,7 @@ mod tests {
 
     #[test]
     fn merge_combines_subset() {
-        let states = var_states(&[1.0, 2.0, 10.0, 20.0], &[0, 0, 1, 1], 2);
+        let states = var_states(&[1.0, 2.0, 10.0, 20.0], &[0, 0, 1, 1]);
         let mut a = var_merge();
         let mut b = var_merge();
         a.resize(2);
@@ -351,20 +337,14 @@ mod tests {
             a.combine_subset(&*b, &[1, 0], &[1, 1]).unwrap();
         }
         let out = a.finalize().unwrap();
-        let expected = var_states(&[1.0, 2.0, 1.0, 2.0, 10.0, 20.0], &[0, 0, 1, 1, 1, 1], 2);
-        let mut merge = var_merge();
-        merge.resize(2);
-        unsafe {
-            merge
-                .update_groups_subset(&[&expected], &[0, 1], &[0, 1], 0)
-                .unwrap()
-        };
-        assert_close(&out, &merge.finalize().unwrap());
+        assert_close(&out, &Series::new("".into(), [0.25, 58.1875]));
     }
 
     #[cfg(feature = "cov")]
     #[test]
     fn cov_corr_split_matches_whole() {
+        use polars_compute::moment::{CovState, PearsonState};
+
         use super::super::cov::*;
 
         let x1 = Series::new(
@@ -382,39 +362,28 @@ mod tests {
             (DataType::Int32, DataType::Float32),
             (DataType::Float32, DataType::Float32),
         ] {
-            let cast = |s: &Series, dtype: &DataType| s.cast(dtype).unwrap();
-            let partitions = [
-                partition(vec![cast(&x1, &dx), cast(&y1, &dy)], &[0, 1, 0, 0, 1]),
-                partition(vec![cast(&x2, &dx), cast(&y2, &dy)], &[1, 0, 1, 2]),
-            ];
-            let empty = [partition(
-                vec![cast(&x1, &dx).head(Some(0)), cast(&y1, &dy).head(Some(0))],
-                &[],
-            )];
+            let pair = |x: &Series, y: &Series| vec![x.cast(&dx).unwrap(), y.cast(&dy).unwrap()];
+            let cases = with_empty_cases(vec![
+                (pair(&x1, &y1), vec![0, 1, 0, 0, 1]),
+                (pair(&x2, &y2), vec![1, 0, 1, 2]),
+            ]);
             let (x, y) = (|| dx.clone(), || dy.clone());
             let families = [
                 Family {
                     whole: new_cov_reduction(x(), y(), 1).unwrap(),
                     state: new_cov_state_reduction(x(), y()).unwrap(),
                     merge: new_cov_merge_reduction(x(), y(), 1).unwrap(),
+                    state_dtype: CovState::state_dtype(),
                 },
                 Family {
                     whole: new_pearson_corr_reduction(x(), y()).unwrap(),
                     state: new_pearson_corr_state_reduction(x(), y()).unwrap(),
                     merge: new_pearson_corr_merge_reduction(x(), y()).unwrap(),
+                    state_dtype: PearsonState::state_dtype(),
                 },
             ];
-            for f in families {
-                for partitions in [&partitions[..], &empty[..]] {
-                    let whole = run_whole(&*f.whole, partitions, 4).unwrap();
-                    let split = run_split(&*f.state, &*f.merge, partitions, 4).unwrap();
-                    assert_close(&split, &whole);
-                }
-                assert!(reduction_output_dtype(&*f.state).unwrap().is_struct());
-                assert_eq!(
-                    reduction_output_dtype(&*f.merge).unwrap(),
-                    reduction_output_dtype(&*f.whole).unwrap()
-                );
+            for f in &families {
+                check_family(f, &cases);
             }
         }
     }
@@ -426,42 +395,38 @@ mod tests {
 
         use super::super::approx_n_unique::*;
 
-        let int = |v: &[Option<i32>]| Series::new("x".into(), v);
-        let null = |n: usize| Series::full_null("x".into(), n, &DataType::Null);
-        let cases = [
-            // Mixed.
-            vec![
-                partition(vec![int(&[Some(1), Some(2), None, Some(2)])], &[0, 1, 0, 1]),
-                partition(vec![int(&[Some(3), Some(1), Some(2)])], &[1, 0, 2]),
-            ],
-            // Empty.
-            vec![partition(vec![int(&[])], &[])],
-            // All null.
-            vec![
-                partition(vec![int(&[None, None])], &[0, 1]),
-                partition(vec![int(&[None])], &[0]),
-            ],
-            // `Null` dtype.
-            vec![
-                partition(vec![null(2)], &[0, 0]),
-                partition(vec![null(1)], &[1]),
-            ],
-            vec![partition(vec![null(0)], &[])],
-        ];
-        for partitions in cases {
-            let dtype = partitions[0].values[0].dtype().clone();
-            let whole = new_approx_n_unique_reduction(dtype.clone()).unwrap();
-            let state = new_approx_n_unique_state_reduction(dtype.clone()).unwrap();
-            let merge = new_approx_n_unique_merge_reduction(dtype.clone()).unwrap();
-            let state_dtype = match dtype {
-                DataType::Null => DataType::Null,
-                _ => CardinalitySketch::state_dtype(),
+        let int = |v: &[Option<i32>]| vec![Series::new("x".into(), v)];
+        let null = |n: usize| vec![Series::full_null("x".into(), n, &DataType::Null)];
+        let mut int_cases = with_empty_cases(vec![
+            (int(&[Some(1), Some(2), None, Some(2)]), vec![0, 1, 0, 1]),
+            (int(&[Some(3), Some(1), Some(2)]), vec![1, 0, 2]),
+        ]);
+        int_cases.push(vec![
+            (int(&[None, None]), vec![0, 1]),
+            (int(&[None]), vec![0]),
+        ]);
+        let null_cases = with_empty_cases(vec![(null(2), vec![0, 0]), (null(1), vec![1])]);
+        for (dtype, state_dtype, cases) in [
+            (
+                DataType::Int32,
+                CardinalitySketch::state_dtype(),
+                &int_cases,
+            ),
+            (DataType::Null, DataType::Null, &null_cases),
+        ] {
+            let f = Family {
+                whole: new_approx_n_unique_reduction(dtype.clone()).unwrap(),
+                state: new_approx_n_unique_state_reduction(dtype.clone()).unwrap(),
+                merge: new_approx_n_unique_merge_reduction(dtype).unwrap(),
+                state_dtype,
             };
-            assert_eq!(reduction_output_dtype(&*state).unwrap(), state_dtype);
-            let expected = run_whole(&*whole, &partitions, 4).unwrap();
-            let split = run_split(&*state, &*merge, &partitions, 4).unwrap();
-            assert!(split.equals_missing(&expected), "{split:?} != {expected:?}");
-            assert_eq!(reduction_output_dtype(&*merge).unwrap(), IDX_DTYPE);
+            check_family(&f, cases);
         }
+
+        // A `Null` input has one distinct value in every group, even an empty one.
+        let state = new_approx_n_unique_state_reduction(DataType::Null).unwrap();
+        let merge = new_approx_n_unique_merge_reduction(DataType::Null).unwrap();
+        let out = run_split(&*state, &*merge, &null_cases[0]);
+        assert!(out.equals(&Series::new("".into(), [1 as IdxSize; NUM_GROUPS as usize])));
     }
 }
