@@ -11,7 +11,9 @@ from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import (
     BooleanType,
     DateType,
+    DecimalType,
     DoubleType,
+    FloatType,
     LongType,
     NestedField,
     StringType,
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import pyiceberg.table
+    from pyiceberg.types import PrimitiveType
 
 SCHEMA = IcebergSchema(
     NestedField(1, "id", LongType(), required=True),
@@ -111,6 +114,10 @@ def read(table: pyiceberg.table.Table) -> pl.DataFrame:
         pl.col("f").is_nan(),
         ~pl.col("f").is_nan(),
         pl.col("f").is_in([1.5, -2.0]),
+        pl.col("f").is_null(),
+        pl.col("f").is_not_null(),
+        ~pl.col("f").is_not_null(),
+        (pl.col("f") < 2.0) | (pl.col("x") == 1),
         pl.lit(True),
         pytest.param(
             pl.lit(False),
@@ -140,6 +147,9 @@ def test_delete_iceberg(tmp_path: Path, predicate: pl.Expr) -> None:
         pl.col("f") == 0.0,
         pl.col("f").is_in([0.0]),
         pl.col("x").is_in([1, None], nulls_equal=True),
+        ~pl.col("x").is_in([1, 2], nulls_equal=True),
+        ~pl.col("x").is_in(pl.lit([], dtype=pl.List(pl.Int64))),
+        pl.col("x") == 1.5,
     ],
 )
 def test_delete_iceberg_inexact_predicate(tmp_path: Path, predicate: pl.Expr) -> None:
@@ -152,6 +162,48 @@ def test_delete_iceberg_inexact_predicate(tmp_path: Path, predicate: pl.Expr) ->
     table.refresh()
     assert table.metadata.current_snapshot_id == snapshot_id
     assert_frame_equal(read(table), DATA)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("field_type", "dtype", "values", "predicate", "exact"),
+    [
+        # Polars compares as `Float64`; PyIceberg rounds the literal to 1.2.
+        (DecimalType(10, 1), pl.Decimal(10, 1), [1.2, 1.3], pl.col("v") == 1.24, False),
+        # Polars casts the column to `Float64`.
+        (
+            FloatType(),
+            pl.Float32,
+            [0.1, 1.0],
+            pl.col("v") <= pl.lit(0.1, dtype=pl.Float64),
+            False,
+        ),
+        (FloatType(), pl.Float32, [0.1, 1.0], pl.col("v") <= 0.1, True),
+    ],
+)
+def test_delete_iceberg_type_coercion(
+    tmp_path: Path,
+    field_type: PrimitiveType,
+    dtype: pl.DataType,
+    values: list[float],
+    predicate: pl.Expr,
+    exact: bool,
+) -> None:
+    schema = IcebergSchema(NestedField(1, "v", field_type))
+    df = pl.DataFrame({"v": values}, schema={"v": dtype})
+    table, _ = new_iceberg_table(tmp_path, schema=schema)
+    table.append(df.to_arrow().cast(schema_to_pyarrow(schema)))
+
+    if exact:
+        pl.delete_iceberg(table, predicate)
+        expected = df.remove(predicate)
+    else:
+        with pytest.raises(InvalidOperationError, match="cannot convert predicate"):
+            pl.delete_iceberg(table, predicate)
+        expected = df
+
+    table.refresh()
+    assert_frame_equal(pl.scan_iceberg(table).collect(), expected)
 
 
 @pytest.mark.write_disk

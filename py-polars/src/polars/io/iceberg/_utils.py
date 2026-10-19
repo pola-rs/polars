@@ -1461,10 +1461,29 @@ def predicate_to_pyiceberg_delete_filter(
         msg = "unsupported expression"
         raise error(msg)
 
-    try:
-        expr = _ensure_boolean_expression(
-            _convert_predicate(_to_ast(pyarrow_predicate), iceberg_schema)
+    def is_bool_scalar(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "scalar"
+            and len(node.args) == 1
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, bool)
         )
+
+    tree = _to_ast(pyarrow_predicate)
+    # A boolean constant inside the predicate may stand for a column-dependent
+    # expression that is null for null rows (e.g. `is_in` with an empty
+    # haystack), which would be lost under negation.
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.UnaryOp, ast.BinOp)) and any(
+            is_bool_scalar(child) for child in ast.iter_child_nodes(node)
+        ):
+            msg = "constant boolean subexpression"
+            raise error(msg)
+
+    try:
+        expr = _ensure_boolean_expression(_convert_predicate(tree, iceberg_schema))
     except Exception as e:
         raise error(str(e)) from e
 
@@ -1502,10 +1521,18 @@ def predicate_to_pyiceberg_delete_filter(
             msg = f"field {name!r} is not of a primitive type"
             raise error(msg)
 
-        if isinstance(e, (IsNull, NotNull)):
-            return e
+        is_float = isinstance(field.field_type, (FloatType, DoubleType))
+        # When rewriting a file, PyIceberg also keeps the NaN rows of float
+        # columns that no `is_nan` / `not_nan` refers to, so every float atom
+        # refers to one. `not_nan` is two-valued (true for null).
+        not_nan = Or(IsNull(e.term), NotNaN(e.term))  # type: ignore[call-arg]
 
-        if isinstance(field.field_type, (FloatType, DoubleType)) and not (
+        if isinstance(e, IsNull):
+            return And(e, not_nan) if is_float else e
+        if isinstance(e, NotNull):
+            return And(e, Or(not_nan, IsNaN(e.term))) if is_float else e  # type: ignore[call-arg]
+
+        if is_float and not (
             isinstance(e, (IsNaN, NotNaN))
             or (
                 # Not satisfied by NaN in either Polars or Iceberg. Polars
@@ -1528,7 +1555,11 @@ def predicate_to_pyiceberg_delete_filter(
         # no `is_null` / `not_null` refers to. Polars always keeps them, so
         # make the filter two-valued: after `rewrite_not` it is monotone, and
         # each atom is true exactly where it is true and not null.
-        return And(e, NotNull(e.term))  # type: ignore[call-arg]
+        out = And(e, NotNull(e.term))  # type: ignore[call-arg]
+        # The atoms are false for NaN (see above).
+        if is_float and not isinstance(e, (IsNaN, NotNaN)):
+            out = And(out, not_nan)
+        return out
 
     out = visit(rewrite_not(expr))
 
