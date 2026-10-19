@@ -3608,6 +3608,7 @@ dependencies = [
  "regex",
  "schemars",
  "serde",
+ "serde_json",
  "simdutf8",
  "snap",
  "streaming-decompression",

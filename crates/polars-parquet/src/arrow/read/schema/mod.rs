@@ -14,6 +14,7 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet};
 use polars_utils::pl_str::PlSmallStr;
 
 use self::metadata::parse_key_value_metadata;
+use crate::arrow::geo::apply_geo_metadata;
 pub use crate::parquet::metadata::{FileMetadata, KeyValue, SchemaDescriptor};
 pub use crate::parquet::schema::types::ParquetType;
 
@@ -85,9 +86,10 @@ pub fn infer_schema_with_options(
 
     let mut metadata = parse_key_value_metadata(file_metadata.key_value_metadata());
 
-    let schema = read_schema_from_metadata(&mut metadata)?;
-    match schema {
-        Some(schema) => Ok(schema),
-        None => parquet_to_arrow_schema_with_options(fields, options),
-    }
+    let mut schema = match read_schema_from_metadata(&mut metadata)? {
+        Some(schema) => schema,
+        None => parquet_to_arrow_schema_with_options(fields, options)?,
+    };
+    apply_geo_metadata(&metadata, &mut schema);
+    Ok(schema)
 }
