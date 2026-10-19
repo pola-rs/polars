@@ -28,15 +28,15 @@ where
         0
     };
 
-    let validity_words = validity.filter(|v| v.unset_bits() > 0).map(bitmap_words);
-    let mut out = match validity_words.as_deref() {
-        Some(validity_words) => van_herk_kernel::<true, T, P>(values, validity_words, window_size),
+    let masked_validity = validity.filter(|v| v.unset_bits() > 0);
+    let mut out = match masked_validity {
+        Some(validity) => van_herk_kernel::<true, T, P>(values, validity, window_size),
         None => rolling_minmax_shifted::<T, P>(values, window_size, shift),
     };
     if shift > 0
-        && let Some(validity_words) = validity_words.as_deref()
+        && let Some(validity) = masked_validity
     {
-        shift_trailing::<true, T, P>(&mut out, values, validity_words, window_size, shift);
+        shift_trailing::<true, T, P>(&mut out, values, validity, window_size, shift);
     }
 
     // min_periods == 0 still leaves all-null windows invalid.

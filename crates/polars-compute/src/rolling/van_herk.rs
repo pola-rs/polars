@@ -7,9 +7,9 @@ where
     T: NativeType + IsFloat + Bounded,
     P: MinMaxPolicy,
 {
-    let mut out = van_herk_kernel::<false, T, P>(values, &[], w);
+    let mut out = van_herk_kernel::<false, T, P>(values, &Bitmap::new(), w);
     if shift > 0 {
-        shift_trailing::<false, T, P>(&mut out, values, &[], w, shift);
+        shift_trailing::<false, T, P>(&mut out, values, &Bitmap::new(), w, shift);
     }
     out
 }
@@ -18,7 +18,7 @@ where
 pub(super) fn shift_trailing<const MASKED: bool, T, P>(
     out: &mut [T],
     values: &[T],
-    validity_words: &[u64],
+    validity: &Bitmap,
     w: usize,
     shift: usize,
 ) where
@@ -30,12 +30,10 @@ pub(super) fn shift_trailing<const MASKED: bool, T, P>(
         out.copy_within(shift.., 0);
     }
     let id = P::identity();
-    assert!(!MASKED || validity_words.len() >= n.div_ceil(64));
     let get = |i: usize| {
         if MASKED {
-            // SAFETY: the assertion above and `i < n` cover this word.
-            let word = unsafe { *validity_words.get_unchecked(i / 64) };
-            if word >> (i % 64) & 1 == 0 {
+            // SAFETY: callers keep `i < n` and `validity` covers `values`.
+            if unsafe { !validity.get_bit_unchecked(i) } {
                 return id;
             }
         }
@@ -67,7 +65,7 @@ pub(super) fn shift_trailing<const MASKED: bool, T, P>(
 /// non-null input.
 pub(super) fn van_herk_kernel<const MASKED: bool, T, P>(
     values: &[T],
-    validity_words: &[u64],
+    validity: &Bitmap,
     w: usize,
 ) -> Vec<T>
 where
@@ -76,12 +74,10 @@ where
 {
     let id = P::identity();
     let n = values.len();
-    assert!(!MASKED || validity_words.len() >= n.div_ceil(64));
     let get = |i: usize| {
         if MASKED {
-            // SAFETY: the assertion above and `i < n` cover this word.
-            let word = unsafe { *validity_words.get_unchecked(i / 64) };
-            if word >> (i % 64) & 1 == 0 {
+            // SAFETY: callers keep `i < n` and `validity` covers `values`.
+            if unsafe { !validity.get_bit_unchecked(i) } {
                 return id;
             }
         }
