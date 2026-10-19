@@ -142,8 +142,54 @@ pub fn reduce(stats: &[&Option<Statistics>]) -> ParquetResult<Option<Statistics>
     use PhysicalType as T;
     let stats = match stats[0].physical_type() {
         T::Boolean => reduce_boolean(stats.iter().map(|x| x.expect_as_boolean())).into(),
-        T::Int32 => reduce_primitive::<i32, _>(stats.iter().map(|x| x.expect_as_int32())).into(),
-        T::Int64 => reduce_primitive(stats.iter().map(|x| x.expect_as_int64())).into(),
+        T::Int32 => {
+            let p_type = &stats[0].expect_as_int32().primitive_type;
+            match get_sort_order(
+                &p_type.logical_type,
+                &p_type.converted_type,
+                &p_type.physical_type,
+            ) {
+                SortOrder::Unsigned => {
+                    reduce_primitive_by(stats.iter().map(|x| x.expect_as_int32()), |x, y| {
+                        (*x as u32).cmp(&(*y as u32))
+                    })
+                    .into()
+                },
+                SortOrder::Signed => {
+                    reduce_primitive(stats.iter().map(|x| x.expect_as_int32())).into()
+                },
+                SortOrder::Undefined | SortOrder::IEEE754TotalOrder => {
+                    let mut s = reduce_primitive(stats.iter().map(|x| x.expect_as_int32()));
+                    s.min_value = None;
+                    s.max_value = None;
+                    s.into()
+                },
+            }
+        },
+        T::Int64 => {
+            let p_type = &stats[0].expect_as_int64().primitive_type;
+            match get_sort_order(
+                &p_type.logical_type,
+                &p_type.converted_type,
+                &p_type.physical_type,
+            ) {
+                SortOrder::Unsigned => {
+                    reduce_primitive_by(stats.iter().map(|x| x.expect_as_int64()), |x, y| {
+                        (*x as u64).cmp(&(*y as u64))
+                    })
+                    .into()
+                },
+                SortOrder::Signed => {
+                    reduce_primitive(stats.iter().map(|x| x.expect_as_int64())).into()
+                },
+                SortOrder::Undefined | SortOrder::IEEE754TotalOrder => {
+                    let mut s = reduce_primitive(stats.iter().map(|x| x.expect_as_int64()));
+                    s.min_value = None;
+                    s.max_value = None;
+                    s.into()
+                },
+            }
+        },
         T::Float => reduce_primitive(stats.iter().map(|x| x.expect_as_float())).into(),
         T::Double => reduce_primitive(stats.iter().map(|x| x.expect_as_double())).into(),
         T::ByteArray => {
@@ -209,25 +255,23 @@ fn reduce_boolean<'a, I: Iterator<Item = &'a BooleanStatistics>>(
     })
 }
 
-fn reduce_primitive<
+fn reduce_primitive_by<
     'a,
-    T: NativeType + std::cmp::PartialOrd,
+    T: NativeType,
     I: Iterator<Item = &'a PrimitiveStatistics<T>>,
+    F: Fn(&T, &T) -> Ordering,
 >(
     mut stats: I,
+    cmp: F,
 ) -> PrimitiveStatistics<T> {
     let initial = stats.next().unwrap().clone();
     let mut result = stats.fold(initial, |mut acc, new| {
-        acc.min_value = reduce_single(
-            acc.min_value,
-            new.min_value,
-            |x, y| if x > y { y } else { x },
-        );
-        acc.max_value = reduce_single(
-            acc.max_value,
-            new.max_value,
-            |x, y| if x > y { x } else { y },
-        );
+        acc.min_value = reduce_single(acc.min_value, new.min_value, |x, y| {
+            if cmp(&x, &y).is_gt() { y } else { x }
+        });
+        acc.max_value = reduce_single(acc.max_value, new.max_value, |x, y| {
+            if cmp(&x, &y).is_gt() { x } else { y }
+        });
         acc.null_count = reduce_single(acc.null_count, new.null_count, |x, y| x + y);
         acc.distinct_count = None;
         acc
@@ -235,6 +279,24 @@ fn reduce_primitive<
     result.min_value = result.min_value.map(|v| v.norm_min());
     result.max_value = result.max_value.map(|v| v.norm_max());
     result
+}
+
+fn reduce_primitive<
+    'a,
+    T: NativeType + std::cmp::PartialOrd,
+    I: Iterator<Item = &'a PrimitiveStatistics<T>>,
+>(
+    stats: I,
+) -> PrimitiveStatistics<T> {
+    reduce_primitive_by(stats, |x, y| {
+        if x > y {
+            Ordering::Greater
+        } else if x < y {
+            Ordering::Less
+        } else {
+            Ordering::Equal
+        }
+    })
 }
 
 #[cfg(test)]
@@ -425,6 +487,92 @@ mod tests {
         let min_val =
             reduce_vec8(Some(a.clone()), &Some(b), false, Some(BoundsOrder::Bytes)).unwrap();
         assert_eq!(min_val, a);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reduce_uint64_unsigned_ordering() -> ParquetResult<()> {
+        use crate::parquet::schema::Repetition;
+        use crate::parquet::schema::types::{IntegerType, PrimitiveLogicalType};
+
+        let p1 = PrimitiveStatistics {
+            null_count: Some(0),
+            distinct_count: None,
+            min_value: Some(0i64),
+            max_value: Some(97i64),
+            primitive_type: PrimitiveType {
+                field_info: crate::parquet::schema::types::FieldInfo {
+                    name: "c".into(),
+                    repetition: Repetition::Required,
+                    id: None,
+                },
+                logical_type: Some(PrimitiveLogicalType::Integer(IntegerType::UInt64)),
+                converted_type: None,
+                physical_type: PhysicalType::Int64,
+            },
+        };
+
+        let val_min = (1u64 << 63) + 5;
+        let val_max = (1u64 << 63) + 99;
+        let p2 = PrimitiveStatistics {
+            null_count: Some(0),
+            distinct_count: None,
+            min_value: Some(val_min as i64),
+            max_value: Some(val_max as i64),
+            primitive_type: p1.primitive_type.clone(),
+        };
+
+        let stat1: Option<Statistics> = Some(Statistics::Int64(p1));
+        let stat2: Option<Statistics> = Some(Statistics::Int64(p2));
+        let reduced = reduce(&[&stat1, &stat2])?.unwrap();
+        let reduced_p = reduced.expect_as_int64();
+
+        assert_eq!(reduced_p.min_value, Some(0i64));
+        assert_eq!(reduced_p.max_value, Some(val_max as i64));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reduce_uint32_unsigned_ordering() -> ParquetResult<()> {
+        use crate::parquet::schema::Repetition;
+        use crate::parquet::schema::types::{IntegerType, PrimitiveLogicalType};
+
+        let p1 = PrimitiveStatistics {
+            null_count: Some(0),
+            distinct_count: None,
+            min_value: Some(0i32),
+            max_value: Some(95i32),
+            primitive_type: PrimitiveType {
+                field_info: crate::parquet::schema::types::FieldInfo {
+                    name: "c".into(),
+                    repetition: Repetition::Required,
+                    id: None,
+                },
+                logical_type: Some(PrimitiveLogicalType::Integer(IntegerType::UInt32)),
+                converted_type: None,
+                physical_type: PhysicalType::Int32,
+            },
+        };
+
+        let val_min = (1u32 << 31) + 5;
+        let val_max = (1u32 << 31) + 99;
+        let p2 = PrimitiveStatistics {
+            null_count: Some(0),
+            distinct_count: None,
+            min_value: Some(val_min as i32),
+            max_value: Some(val_max as i32),
+            primitive_type: p1.primitive_type.clone(),
+        };
+
+        let stat1: Option<Statistics> = Some(Statistics::Int32(p1));
+        let stat2: Option<Statistics> = Some(Statistics::Int32(p2));
+        let reduced = reduce(&[&stat1, &stat2])?.unwrap();
+        let reduced_p = reduced.expect_as_int32();
+
+        assert_eq!(reduced_p.min_value, Some(0i32));
+        assert_eq!(reduced_p.max_value, Some(val_max as i32));
 
         Ok(())
     }
