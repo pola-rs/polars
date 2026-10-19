@@ -81,6 +81,9 @@ functions `read_xxx`.
 --8<-- "python/user-guide/sql/select.py:tablefunctions"
 ```
 
+The path can also be a glob, or a list of paths or globs, as in
+`read_parquet(['a.parquet', 'b.parquet'])`.
+
 `read_csv` also accepts named options after the path, with the same names and meaning as the options
 of `scan_csv`. Write them as `name => value` (or `name := value`):
 

@@ -423,7 +423,7 @@ def test_read_json_takes_only_a_path(tmp_path: Path) -> None:
     )
     with pytest.raises(
         SQLSyntaxError,
-        match=r"`read_json` expects a single file path; found 2 arguments \(for options, use `read_ndjson`\)",
+        match=r"`read_json` expects one file path or a list of file paths; found 2 arguments \(for options, use `read_ndjson`\)",
     ):
         _read_ndjson_sql(path, "ignore_errors => true", function="read_json")
 
@@ -510,3 +510,106 @@ def test_read_ndjson_option_errors(
     path.write_text(_NDJSON_ROWS)
     with pytest.raises(error, match=match):
         _read_ndjson_sql(path, options)
+
+
+@pytest.mark.parametrize(
+    ("function", "ext", "write", "scan"),
+    [
+        ("read_csv", "csv", pl.DataFrame.write_csv, pl.scan_csv),
+        ("read_parquet", "parquet", pl.DataFrame.write_parquet, pl.scan_parquet),
+        ("read_ipc", "ipc", pl.DataFrame.write_ipc, pl.scan_ipc),
+        ("read_ndjson", "ndjson", pl.DataFrame.write_ndjson, pl.scan_ndjson),
+        ("read_json", "ndjson", pl.DataFrame.write_ndjson, pl.scan_ndjson),
+    ],
+)
+def test_read_list_of_paths(
+    tmp_path: Path, function: str, ext: str, write: Any, scan: Any
+) -> None:
+    paths = [(tmp_path / f"{name}.{ext}").as_posix() for name in "abc"]
+    for i, path in enumerate(paths):
+        write(pl.DataFrame({"x": [i]}), path)
+    # a glob inside the list is expanded, as in Python
+    chosen = [paths[2], (tmp_path / f"a*.{ext}").as_posix()]
+
+    sql_list = ", ".join(f"'{p}'" for p in chosen)
+    result = pl.sql(f"SELECT * FROM {function}([{sql_list}])").collect()
+    assert_frame_equal(result, scan(chosen).collect())
+    assert result["x"].to_list() == [2, 0]
+
+    # a list names the relation after the function
+    result = pl.sql(f"SELECT {function}.x FROM {function}([{sql_list}])").collect()
+    assert result["x"].to_list() == [2, 0]
+
+
+def test_read_csv_list_of_paths_with_options(tmp_path: Path) -> None:
+    # rows narrower than the schema, in files read by list (#29969)
+    files = [tmp_path / f"{name}.csv" for name in "abc"]
+    for file, contents in zip(files, ["1\n", "2,x\n", "3,y,z\n"], strict=True):
+        file.write_text(contents)
+    paths = [file.as_posix() for file in files]
+    schema = {f"column_{i}": pl.String for i in range(3)}
+
+    sql_schema = ", ".join(f"'{name}': 'VARCHAR'" for name in schema)
+    result = pl.sql(
+        f"SELECT * FROM read_csv(['{paths[0]}', '{paths[1]}'], has_header => false, "
+        f"schema => {{{sql_schema}}}, missing_columns => 'insert', "
+        "include_file_paths => 'file')"
+    ).collect()
+    expected = pl.scan_csv(
+        paths[:2],
+        has_header=False,
+        schema=schema,
+        missing_columns="insert",
+        include_file_paths="file",
+    ).collect()
+    assert_frame_equal(result, expected)
+    assert result["file"].to_list() == paths[:2]
+
+
+@pytest.mark.parametrize(
+    ("args", "match"),
+    [
+        ("['a.csv', 1]", r"a list of them; found: \['a.csv', 1\]"),
+        ("1", r"a list of them; found: 1"),
+    ],
+)
+def test_read_csv_list_of_paths_errors(args: str, match: str) -> None:
+    with pytest.raises(SQLSyntaxError, match=match):
+        pl.sql(f"SELECT * FROM read_csv({args})").collect()
+
+
+def test_read_csv_empty_list_of_paths() -> None:
+    # as in Python: an empty list needs a schema
+    result = pl.sql("SELECT * FROM read_csv([], schema => {'x': 'INT'})").collect()
+    assert_frame_equal(result, pl.DataFrame(schema={"x": pl.Int32}))
+    with pytest.raises(ComputeError, match=r"empty input"):
+        pl.sql("SELECT * FROM read_csv([])").collect()
+
+
+@pytest.mark.parametrize(
+    ("function", "write"),
+    [
+        ("read_parquet", pl.DataFrame.write_parquet),
+        ("read_ipc", pl.DataFrame.write_ipc),
+    ],
+)
+def test_read_hive_partitions_list_of_paths(
+    tmp_path: Path, function: str, write: Any
+) -> None:
+    for part in (1, 2):
+        (tmp_path / f"p={part}").mkdir()
+        write(pl.DataFrame({"x": [part]}), tmp_path / f"p={part}" / "data")
+    files = [(tmp_path / f"p={part}" / "data").as_posix() for part in (1, 2)]
+
+    # as in Python: a list of files doesn't read the partitions, one path does
+    sql_list = ", ".join(f"'{f}'" for f in files)
+    result = pl.sql(f"SELECT * FROM {function}([{sql_list}])").collect()
+    assert result.columns == ["x"]
+    result = pl.sql(f"SELECT * FROM {function}('{files[0]}')").collect()
+    assert result.columns == ["x", "p"]
+
+    # a single directory in a list does
+    result = pl.sql(f"SELECT * FROM {function}(['{tmp_path.as_posix()}/'])").collect()
+    assert_frame_equal(
+        result, pl.DataFrame({"x": [1, 2], "p": [1, 2]}), check_row_order=False
+    )
