@@ -510,3 +510,70 @@ def test_read_ndjson_option_errors(
     path.write_text(_NDJSON_ROWS)
     with pytest.raises(error, match=match):
         _read_ndjson_sql(path, options)
+
+
+@pytest.mark.parametrize(
+    ("function", "ext", "write", "scan"),
+    [
+        ("read_csv", "csv", pl.DataFrame.write_csv, pl.scan_csv),
+        ("read_parquet", "parquet", pl.DataFrame.write_parquet, pl.scan_parquet),
+        ("read_ipc", "ipc", pl.DataFrame.write_ipc, pl.scan_ipc),
+        ("read_ndjson", "ndjson", pl.DataFrame.write_ndjson, pl.scan_ndjson),
+        ("read_json", "ndjson", pl.DataFrame.write_ndjson, pl.scan_ndjson),
+    ],
+)
+def test_read_list_of_paths(
+    tmp_path: Path, function: str, ext: str, write: Any, scan: Any
+) -> None:
+    paths = [(tmp_path / f"{name}.{ext}").as_posix() for name in "abc"]
+    for i, path in enumerate(paths):
+        write(pl.DataFrame({"x": [i]}), path)
+    # a glob inside the list is expanded, as in Python
+    chosen = [paths[2], (tmp_path / f"a*.{ext}").as_posix()]
+
+    sql_list = ", ".join(f"'{p}'" for p in chosen)
+    result = pl.sql(f"SELECT * FROM {function}([{sql_list}])").collect()
+    assert_frame_equal(result, scan(chosen).collect())
+    assert result["x"].to_list() == [2, 0]
+
+    # a list names the relation after the function
+    result = pl.sql(f"SELECT {function}.x FROM {function}([{sql_list}])").collect()
+    assert result["x"].to_list() == [2, 0]
+
+
+def test_read_csv_list_of_paths_with_options(tmp_path: Path) -> None:
+    # rows narrower than the schema, in files read by list (#29969)
+    files = [tmp_path / f"{name}.csv" for name in "abc"]
+    for file, contents in zip(files, ["1\n", "2,x\n", "3,y,z\n"], strict=True):
+        file.write_text(contents)
+    paths = [file.as_posix() for file in files]
+    schema = {f"column_{i}": pl.String for i in range(3)}
+
+    sql_schema = ", ".join(f"'{name}': 'VARCHAR'" for name in schema)
+    result = pl.sql(
+        f"SELECT * FROM read_csv(['{paths[0]}', '{paths[1]}'], has_header => false, "
+        f"schema => {{{sql_schema}}}, missing_columns => 'insert', "
+        "include_file_paths => 'file')"
+    ).collect()
+    expected = pl.scan_csv(
+        paths[:2],
+        has_header=False,
+        schema=schema,
+        missing_columns="insert",
+        include_file_paths="file",
+    ).collect()
+    assert_frame_equal(result, expected)
+    assert result["file"].to_list() == paths[:2]
+
+
+@pytest.mark.parametrize(
+    ("args", "match"),
+    [
+        ("[]", r"`read_csv` expects at least one file path; found an empty list"),
+        ("['a.csv', 1]", r"a list of them; found: \['a.csv', 1\]"),
+        ("1", r"a list of them; found: 1"),
+    ],
+)
+def test_read_csv_list_of_paths_errors(args: str, match: str) -> None:
+    with pytest.raises(SQLSyntaxError, match=match):
+        pl.sql(f"SELECT * FROM read_csv({args})").collect()
