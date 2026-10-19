@@ -1143,3 +1143,36 @@ def test_truediv_decimal_schema_28372() -> None:
     )
     assert_schema_equal(lf.collect_schema(), expected.collect_schema())
     assert_frame_equal(lf, expected)
+
+
+@pytest.mark.parametrize(
+    ("lhs", "rhs"),
+    [
+        # Series.__truediv__
+        (pl.Series(["4"]), pl.Series([2.0], dtype=pl.Float32)),
+        (pl.Series([2.0], dtype=pl.Float32), pl.Series(["4"])),
+        (pl.Series([2.0], dtype=pl.Float32), "4"),
+        (pl.Series([2.0], dtype=pl.Float32), "t"),
+        # Series.__rtruediv__
+        ("4", pl.Series([2.0], dtype=pl.Float32)),
+        ("t", pl.Series([2.0], dtype=pl.Float32)),
+        (2.0, pl.Series(["4"])),
+        ("4", pl.Series(["4"])),
+    ],
+    ids=[
+        "str_series / float_series",
+        "float_series / str_series",
+        "float_series / str_scalar",
+        "float_series / non_numeric_str_scalar",
+        "str_scalar / float_series",
+        "non_numeric_str_scalar / float_series",
+        "float_scalar / str_series",
+        "str_scalar / str_series",
+    ],
+)
+def test_eager_truediv_string_raises(lhs: Any, rhs: Any) -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="division with 'String' datatypes is not allowed",
+    ):
+        lhs / rhs

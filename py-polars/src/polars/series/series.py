@@ -1146,6 +1146,13 @@ class Series(metaclass=_Meta):
             self.dtype.is_decimal() or isinstance(self.dtype, Duration)
         ):
             return self.to_frame().select(F.col(self.name) / other).to_series()
+        if (
+            self.dtype == String
+            or isinstance(other, str)
+            or (isinstance(other, Series) and other.dtype == String)
+        ):
+            msg = "division with 'String' datatypes is not allowed"
+            raise InvalidOperationError(msg)
 
         self = (
             self
@@ -1243,6 +1250,9 @@ class Series(metaclass=_Meta):
         return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __rtruediv__(self, other: Any) -> Series:
+        if self.dtype == String or isinstance(other, str):
+            msg = "division with 'String' datatypes is not allowed"
+            raise InvalidOperationError(msg)
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
