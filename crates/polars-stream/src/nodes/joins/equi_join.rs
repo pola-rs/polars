@@ -1377,11 +1377,7 @@ impl EmitUnmatchedState {
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
-        let total_len: usize = self
-            .partitions
-            .iter()
-            .map(|p| p.hash_table.num_keys() as usize)
-            .sum();
+        let total_len: usize = self.partitions.iter().map(|p| p.payload.height()).sum();
         let morsel_size = emit_morsel_size(total_len, num_pipelines);
 
         let mut unmarked_idxs = Vec::new();
