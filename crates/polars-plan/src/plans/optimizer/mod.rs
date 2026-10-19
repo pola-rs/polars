@@ -30,6 +30,7 @@ mod extract_window;
 pub use expand_datasets::attach_dataset_scan_statistics;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
+pub use extract_window::is_scalar_window_reduction;
 mod collapse_sort;
 pub mod deep_copy;
 mod filter_constraint;

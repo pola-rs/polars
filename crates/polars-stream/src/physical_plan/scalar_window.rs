@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_error::PolarsResult;
 use polars_expr::reduce::into_reduction;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, IRAggExpr};
+use polars_plan::plans::{AExpr, is_scalar_window_reduction};
 use polars_plan::prelude::WindowMapping;
 use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
@@ -34,19 +34,7 @@ pub fn is_reducible_windows(
             else {
                 return false;
             };
-            match expr_arena.get(*function) {
-                AExpr::Len => true,
-                AExpr::Agg(
-                    IRAggExpr::Sum { input, .. }
-                    | IRAggExpr::Min { input, .. }
-                    | IRAggExpr::Max { input, .. }
-                    | IRAggExpr::Count { input, .. }
-                    | IRAggExpr::Mean(input)
-                    | IRAggExpr::Var(input, _)
-                    | IRAggExpr::Std(input, _),
-                ) => is_numeric_column(*input),
-                _ => false,
-            }
+            is_scalar_window_reduction(*function, expr_arena, is_numeric_column)
         })
 }
 

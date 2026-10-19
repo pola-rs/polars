@@ -64,7 +64,6 @@ struct ExtractedWindow {
     name: PlSmallStr,
     function: Node,
     id: CanonicalExprId,
-    spec: usize,
 }
 
 /// A window expression of an `IR::Window` node.
@@ -78,7 +77,8 @@ struct WindowPart {
 struct Extractor {
     canonical: CanonicalExprMap,
     specs: Vec<WindowSpec>,
-    windows: Vec<ExtractedWindow>,
+    /// The windows of each spec.
+    windows: Vec<Vec<ExtractedWindow>>,
     /// The column of each deterministic window function per spec.
     window_names: PlIndexMap<(CanonicalExprId, usize), PlSmallStr>,
     memo: PlIndexMap<Node, Node>,
@@ -138,11 +138,10 @@ impl Extractor {
         if deterministic {
             self.window_names.insert((id, spec), name.clone());
         }
-        self.windows.push(ExtractedWindow {
+        self.windows[spec].push(ExtractedWindow {
             name: name.clone(),
             function,
             id,
-            spec,
         });
         expr_arena.add(AExpr::Column(name))
     }
@@ -152,30 +151,24 @@ impl Extractor {
     fn spec_windows(
         &mut self,
         spec: usize,
+        windows: Vec<ExtractedWindow>,
         schema: &Schema,
         allow_split: bool,
         split_windows: &mut PlIndexMap<PlSmallStr, Node>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Vec<WindowPart> {
-        let windows = self
-            .windows
-            .iter()
-            .filter(|w| w.spec == spec)
-            .map(|w| (w.name.clone(), w.function, w.id))
-            .collect::<Vec<_>>();
-
         let split = allow_split
             && self.specs[spec].order_by.is_none()
-            && windows.iter().all(|(_, function, id)| {
-                !self.canonical.is_nondeterministic(*id)
-                    && is_reducible(*function, schema, expr_arena)
+            && windows.iter().all(|w| {
+                !self.canonical.is_nondeterministic(w.id)
+                    && is_reducible(w.function, schema, expr_arena)
             });
         if !split {
             let parts = windows
                 .into_iter()
-                .map(|(name, function, _)| WindowPart {
-                    name,
-                    function,
+                .map(|w| WindowPart {
+                    name: w.name,
+                    function: w.function,
                     input: None,
                 })
                 .collect();
@@ -184,23 +177,23 @@ impl Extractor {
 
         let mut parts = Vec::with_capacity(windows.len());
         let mut part_names = PlIndexMap::new();
-        // Reductions first, so that the split windows can reuse them.
-        for (name, function, _) in &windows {
-            if is_reduction(*function, schema, expr_arena) {
-                self.add_part(
-                    *function,
-                    Some(name.clone()),
+        for w in windows {
+            let node = if is_reduction(w.function, schema, expr_arena) {
+                let name = self.add_part(
+                    w.function,
+                    Some(w.name.clone()),
                     &mut parts,
                     &mut part_names,
                     expr_arena,
                 );
-            }
-        }
-        for (name, function, _) in windows {
-            if !is_reduction(function, schema, expr_arena) {
-                let node = self.split(function, &mut parts, &mut part_names, schema, expr_arena);
-                split_windows.insert(name, node);
-            }
+                if name == w.name {
+                    continue;
+                }
+                expr_arena.add(AExpr::Column(name))
+            } else {
+                self.split(w.function, &mut parts, &mut part_names, schema, expr_arena)
+            };
+            split_windows.insert(w.name, node);
         }
         parts
     }
@@ -308,17 +301,22 @@ impl Extractor {
             Some(idx) => idx,
             None => {
                 self.specs.push(spec);
+                self.windows.push(Vec::new());
                 self.specs.len() - 1
             },
         })
     }
 }
 
-/// Whether `node` is a reduction of a numeric, length preserving, elementwise expression that the
-/// streaming engine computes without keeping the groups.
-fn is_reduction(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
-    let input = match expr_arena.get(node) {
-        AExpr::Len => return true,
+/// Whether `node` is a reduction that the streaming engine computes without keeping the groups,
+/// given that `is_valid_input` holds for its input.
+pub fn is_scalar_window_reduction(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    is_valid_input: impl Fn(Node) -> bool,
+) -> bool {
+    match expr_arena.get(node) {
+        AExpr::Len => true,
         AExpr::Agg(
             IRAggExpr::Sum { input, .. }
             | IRAggExpr::Min { input, .. }
@@ -327,39 +325,47 @@ fn is_reduction(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool 
             | IRAggExpr::Mean(input)
             | IRAggExpr::Var(input, _)
             | IRAggExpr::Std(input, _),
-        ) => *input,
-        _ => return false,
-    };
-    is_elementwise_rec(input, expr_arena)
-        && is_length_preserving_ae(input, expr_arena)
-        && expr_arena
-            .get(input)
-            .to_dtype(&ToFieldContext::new(expr_arena, schema))
-            .is_ok_and(|dtype| dtype.is_primitive_numeric())
+        ) => is_valid_input(*input),
+        _ => false,
+    }
+}
+
+/// Whether `node` is a scalar window reduction of a numeric, length preserving, elementwise
+/// expression.
+fn is_reduction(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
+    is_scalar_window_reduction(node, expr_arena, |input| {
+        is_elementwise_rec(input, expr_arena)
+            && is_length_preserving_ae(input, expr_arena)
+            && expr_arena
+                .get(input)
+                .to_dtype(&ToFieldContext::new(expr_arena, schema))
+                .is_ok_and(|dtype| dtype.is_primitive_numeric())
+    })
 }
 
 /// Whether `node` is a reduction, or an elementwise expression of reductions and scalar literals
 /// with at least one reduction.
 fn is_reducible(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
+    /// Whether `node` has a reduction, or `None` if it has an input that is not reducible.
     #[recursive]
-    fn only_reductions(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
+    fn has_reduction(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> Option<bool> {
         if is_reduction(node, schema, expr_arena) {
-            return true;
+            return Some(true);
         }
         let ae = expr_arena.get(node);
         let mut inputs_rev = UnitVec::new();
         ae.inputs_rev(&mut inputs_rev);
-        !matches!(ae, AExpr::Eval { .. })
-            && is_splittable(ae, &inputs_rev, expr_arena)
-            && inputs_rev
-                .iter()
-                .all(|input| only_reductions(*input, schema, expr_arena))
+        if matches!(ae, AExpr::Eval { .. }) || !is_splittable(ae, &inputs_rev, expr_arena) {
+            return None;
+        }
+        let mut has = false;
+        for input in inputs_rev {
+            has |= has_reduction(input, schema, expr_arena)?;
+        }
+        Some(has)
     }
 
-    only_reductions(node, schema, expr_arena)
-        && expr_arena
-            .iter(node)
-            .any(|(node, _)| is_reduction(node, schema, expr_arena))
+    has_reduction(node, schema, expr_arena) == Some(true)
 }
 
 fn is_window(ae: &AExpr) -> bool {
@@ -409,7 +415,7 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         })
         .collect::<Vec<_>>();
 
-    if extractor.windows.is_empty() {
+    if extractor.specs.is_empty() {
         return;
     }
 
@@ -424,7 +430,11 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     let has_objects = input_schema
         .iter_values()
         .any(|dtype| dtype.contains_objects())
-        || extractor.windows.iter().any(|w| is_object(w.function))
+        || extractor
+            .windows
+            .iter()
+            .flatten()
+            .any(|w| is_object(w.function))
         || extractor.specs.iter().any(|s| {
             s.partition_by
                 .iter()
@@ -432,10 +442,13 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
                 .any(|id| is_object(extractor.canonical.representative(*id)))
         });
     let mut split_windows = PlIndexMap::new();
-    let spec_parts = (0..extractor.specs.len())
-        .map(|spec| {
+    let spec_parts = std::mem::take(&mut extractor.windows)
+        .into_iter()
+        .enumerate()
+        .map(|(spec, windows)| {
             extractor.spec_windows(
                 spec,
+                windows,
                 &input_schema,
                 !has_objects,
                 &mut split_windows,

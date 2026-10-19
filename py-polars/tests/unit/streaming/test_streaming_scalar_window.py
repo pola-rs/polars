@@ -258,10 +258,11 @@ def test_scalar_window_split_and_deduplicated() -> None:
     ],
 )
 def test_scalar_window_random_not_deduplicated(exprs: dict[str, pl.Expr]) -> None:
+    i = pl.int_range(200)
     q = (
-        _frame()
-        .lazy()
-        .with_columns(xs=pl.int_ranges(0, 1_000))
+        pl.LazyFrame()
+        .select(k=i % 4, x=i)
+        .with_columns(xs=pl.int_ranges(0, 100))
         .select(**exprs)
         .select((pl.col("a") != pl.col("b")).any())
     )
