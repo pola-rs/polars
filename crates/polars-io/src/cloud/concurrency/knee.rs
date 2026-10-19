@@ -4,20 +4,22 @@
 //! completed (at most `MAX_ROUND_TICKS`), so it sees the effect of the budget it started with.
 //! RampUp doubles the budget per round while it binds and the delivered bandwidth of the round
 //! grows by at least 25% over the best round so far. The knee is the smallest budget at which the
-//! delivered bandwidth reached its plateau, capped at `LITTLE_KNEE_GAIN` x the best sustained
-//! bandwidth x the shortest implied lifetime (Little's law). In Stable the target is `gain x knee`;
-//! a probe that delivers at least 10% more bandwidth while it binds keeps its x1.25 budget as the
-//! new knee. A brake steps the budget down when in-flight bytes rise without delivered bandwidth,
-//! or when delivered bandwidth collapses at unchanged in-flight. RampUp also stops when the implied
-//! request lifetime (bytes in use / delivered bandwidth) reaches `ramp_lifetime_ratio` times its
-//! minimum in this RampUp: bandwidth that grows for reasons other than the budget (scan warm-up)
-//! otherwise keeps the doubling going. Only rounds that use the budget and deliver bandwidth count
-//! (not scan start, not stalls), and a rise must hold for a second round. The knee comes from
-//! rounds where the budget bound; without one, RampUp holds. When RampUp ends because the budget
-//! stopped binding (another limit binds), that budget is a candidate too, with the best bandwidth
-//! of its last rounds. While the requests admitted by the HTTP rate limiter reach its rate in a
-//! tick, bandwidth follows the limiter, not the budget: RampUp and Probe hold without learning from
-//! the round, and the brake and `bw_max` skip it.
+//! delivered bandwidth reached its plateau. In Stable the target is `gain x knee`; a probe that
+//! delivers at least 10% more bandwidth while it binds keeps its x1.25 budget as the new knee. A
+//! brake steps the budget down when in-flight bytes rise without delivered bandwidth, or when
+//! delivered bandwidth collapses at unchanged in-flight. RampUp also stops when the implied request
+//! lifetime (bytes in use / delivered bandwidth) reaches `ramp_lifetime_ratio` times its minimum in
+//! this RampUp: bandwidth that grows for reasons other than the budget (scan warm-up) otherwise
+//! keeps the doubling going. Only rounds that use the budget and deliver bandwidth count (not scan
+//! start, not stalls), and a rise must hold for a second round. Bandwidth counts at completion, so
+//! requests that outlived earlier rounds and complete together show as a burst: a round delivering
+//! more than its bytes in use can at the shortest lifetime (`RAMP_BURST_RATIO`) is neither growth
+//! nor a knee sample, and counts as a round without growth. The knee comes from rounds where
+//! the budget bound; without one, RampUp holds. When RampUp ends because the budget stopped binding
+//! (another limit binds), that budget is a candidate too, with the best bandwidth of its last
+//! rounds. While the requests admitted by the HTTP rate limiter reach its rate in a tick, bandwidth
+//! follows the limiter, not the budget: RampUp and Probe hold without learning from the round, and
+//! the brake and `bw_max` skip it.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -44,11 +46,9 @@ pub struct KneeConfig {
 /// last `SUSTAINED_ROUNDS` rounds.
 const SUSTAINED_ROUNDS: usize = 3;
 
-/// Cap on the knee as a multiple of Little's knee (best sustained bandwidth x shortest implied
-/// lifetime). Little's knee is taken before the pipeline fills, so it can exceed what an ordered
-/// scan absorbs: it only lowers the knee. 1.5: the estimate reads 0.7-1.1x the optimum at the
-/// RampUp exit, and throughput falls steeply below the optimum.
-const LITTLE_KNEE_GAIN: f64 = 1.5;
+/// A RampUp round delivering more than this multiple of (mean bytes in use / shortest lifetime)
+/// is a burst. Rounds that grow with the budget measure 0.97-1.03; bursts 1.3-4.3.
+const RAMP_BURST_RATIO: f64 = 1.25;
 
 /// Maximum round length in ticks (1 s at a 100 ms tick), for stalls.
 const MAX_ROUND_TICKS: u32 = 10;
@@ -128,9 +128,6 @@ pub struct KneeController {
     no_growth_rounds: u32,
     not_binding_rounds: u32,
     ramp_hist: Vec<(u64, f64)>,
-    // Best sustained bandwidth and shortest implied lifetime of the run (Little's knee).
-    run_bw_max: f64,
-    run_life_min: f64,
 
     // Stable.
     knee: Option<u64>,
@@ -178,8 +175,6 @@ impl KneeController {
             no_growth_rounds: 0,
             not_binding_rounds: 0,
             ramp_hist: Vec::new(),
-            run_bw_max: 0.0,
-            run_life_min: f64::INFINITY,
             knee: None,
             bw_max: 0.0,
             last_bw_round: 0.0,
@@ -337,12 +332,6 @@ impl KneeController {
         // The round binds and uses at least half of the applied budget (not scan start).
         let lifetime_measured =
             binding && lifetime > 0.0 && mean_in_use >= 0.5 * self.round_applied_max as f64;
-        if self.recent_bw.len() == SUSTAINED_ROUNDS {
-            self.run_bw_max = self.run_bw_max.max(sustained_bw);
-        }
-        if lifetime_measured && bw_round >= 0.5 * self.run_bw_max {
-            self.run_life_min = self.run_life_min.min(lifetime);
-        }
 
         if !limiter_bound && self.brake_signal() {
             self.brake_hits += 1;
@@ -386,8 +375,12 @@ impl KneeController {
                 }
                 let lifetime_rose =
                     ratio > 0.0 && lifetime_valid && lifetime >= ratio * self.min_lifetime;
-                let grew = bw_round >= 1.25 * self.best_bw;
-                self.best_bw = self.best_bw.max(bw_round);
+                let burst = self.min_lifetime.is_finite()
+                    && bw_round * self.min_lifetime > RAMP_BURST_RATIO * mean_in_use;
+                let grew = !burst && bw_round >= 1.25 * self.best_bw;
+                if !burst {
+                    self.best_bw = self.best_bw.max(bw_round);
+                }
                 if lifetime_rose && self.lifetime_held {
                     // The knee comes from the rounds before the lifetime rose.
                     self.enter_stable(now);
@@ -398,7 +391,7 @@ impl KneeController {
                 } else {
                     self.lifetime_held = false;
                     // The knee comes from rounds that bind and use at least half of the budget.
-                    if lifetime_measured {
+                    if lifetime_measured && !burst {
                         self.ramp_hist.push((round_budget, bw_round));
                     }
                     let has_knee = !self.ramp_hist.is_empty();
@@ -507,17 +500,13 @@ impl KneeController {
     /// Fixes the knee from the RampUp history and enters Stable.
     fn enter_stable(&mut self, now: Instant) {
         let plateau = self.ramp_hist.iter().map(|&(_, bw)| bw).fold(0.0, f64::max);
-        let mut knee = self
+        let knee = self
             .ramp_hist
             .iter()
             .filter(|&&(_, bw)| bw >= 0.9 * plateau)
             .map(|&(budget, _)| budget)
             .min()
             .unwrap_or(self.budget);
-        if self.run_bw_max > 0.0 && self.run_life_min.is_finite() {
-            let little = (LITTLE_KNEE_GAIN * self.run_bw_max * self.run_life_min) as u64;
-            knee = knee.min(little.max(self.cfg.init_budget));
-        }
         self.knee = Some(knee);
         self.bw_max = plateau.max(1.0);
         self.phase = KneePhase::Stable;
@@ -590,17 +579,6 @@ mod tests {
         }
     }
 
-    /// Bytes in flight capped at 2000 (another limit): RampUp leaves the grid knee at 3200, a level
-    /// the scan cannot use; Little's knee (1.5 x 2000) lowers it.
-    #[test]
-    fn little_knee_caps_the_grid_knee() {
-        let mut c = KneeController::new(cfg());
-        run(&mut c, Instant::now(), 0, 2000, 60);
-        assert_eq!(c.phase(), KneePhase::Stable);
-        let knee = c.knee().unwrap();
-        assert!((2800..=3100).contains(&knee), "{knee}");
-    }
-
     #[test]
     fn ramps_to_the_knee_and_holds() {
         let mut c = KneeController::new(cfg());
@@ -629,6 +607,26 @@ mod tests {
         // Without the lifetime stop, RampUp would double to 12800.
         assert_eq!(c.phase(), KneePhase::Stable);
         assert!(c.knee().unwrap() <= 1600);
+    }
+
+    /// At 800, a quarter of the budget in use delivers 3x what it can at the one-tick lifetime
+    /// (requests that outlived earlier rounds completing together): no doubling, the knee stays at
+    /// a level that was measured.
+    #[test]
+    fn burst_is_not_growth() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        let mut i = 0;
+        while c.budget() < 800 {
+            let budget = c.budget();
+            tick(&mut c, t0, i, budget, budget, 1);
+            i += 1;
+        }
+        for i in i..i + 4 {
+            tick(&mut c, t0, i, 600, 200, 1);
+        }
+        assert_eq!(c.phase(), KneePhase::Stable);
+        assert!(c.knee().unwrap() <= 800);
     }
 
     /// Traffic that never fills the budget (metadata) does not fix a knee: RampUp holds until
