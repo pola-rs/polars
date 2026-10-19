@@ -193,6 +193,22 @@ fn decode_file_uri_path(path: &str, glob: bool) -> Option<String> {
     })
 }
 
+/// The local path of a plain path or `file://` URI, without accessing the file system.
+pub fn local_path(path: &PlRefPath) -> Option<Cow<'_, Path>> {
+    let scheme = path.scheme();
+    if scheme.is_some_and(|s| !s.is_file()) {
+        return None;
+    }
+    let ("", local_path) = path.strip_scheme_split_authority()? else {
+        return None;
+    };
+    Some(if scheme.is_some() {
+        Cow::Owned(decode_file_uri_path(local_path, false)?.into())
+    } else {
+        resolve_homedir(local_path)
+    })
+}
+
 /// `strip_scheme` leaves a Windows `file:///C:/x` URI as `/C:/x`; drop the leading slash before
 /// the drive letter so it is a valid local path (`C:/x`). The inverse of the extra slash
 /// `format_file_uri` adds on Windows. A no-op on other platforms (a leading `/` is the root).

@@ -15,7 +15,7 @@ import pyarrow.ipc
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import format_file_uri
 
@@ -222,6 +222,33 @@ def test_sink_to_file(tmp_path: Path, sink: Any, scan: Any) -> None:
             scan(f).collect(),
             df,
         )
+
+
+@pytest.mark.parametrize(("scan", "sink"), SINKS)
+@pytest.mark.write_disk
+def test_sink_to_scanned_file_7841(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sink: Any, scan: Any
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    path = tmp_path / "f"
+    sink(df.lazy(), path)
+
+    for scan_path, sink_path in [
+        (path, path),
+        (tmp_path / "*", path),
+        (f"{tmp_path}/./f", path),
+        ("f", path),
+        (format_file_uri(path), path),
+        (path, format_file_uri(path)),
+    ]:
+        with pytest.raises(InvalidOperationError, match="also reads from this file"):
+            sink(scan(scan_path), sink_path)
+
+    with pytest.raises(InvalidOperationError, match="also reads from this file"):
+        pl.collect_all([sink(df.lazy(), path, lazy=True), scan(path).select(pl.len())])
+
+    assert_frame_equal(scan(path).collect(), df)
 
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
