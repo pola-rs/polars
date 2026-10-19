@@ -23,6 +23,7 @@ use crate::utils::tokio_handle_ext;
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RowGroupData {
     pub(super) fetched_bytes: FetchedBytes,
+    pub(super) row_group_idx: usize,
     pub(super) row_offset: usize,
     pub(super) slice: Option<(usize, usize)>,
     pub(super) row_group_metadata: RowGroupMetadata,
@@ -139,7 +140,7 @@ impl RowGroupDataFetcher {
             && self
                 .runtime_range_skipper
                 .as_ref()
-                .is_some_and(|s| s.skips(&self.metadata.row_groups[row_group.idx]))
+                .is_some_and(|s| s.skips(row_group.idx))
         {
             self.row_groups.pop_front();
         }
@@ -273,6 +274,7 @@ impl RowGroupDataFetcher {
 
             PolarsResult::Ok(RowGroupData {
                 fetched_bytes,
+                row_group_idx: idx,
                 row_offset: current_row_offset,
                 slice,
                 // @TODO: Remove clone

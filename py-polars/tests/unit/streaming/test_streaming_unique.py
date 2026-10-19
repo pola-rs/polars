@@ -17,8 +17,6 @@ if TYPE_CHECKING:
     from polars._typing import UniqueKeepStrategy
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 @pytest.mark.write_disk
 @pytest.mark.slow

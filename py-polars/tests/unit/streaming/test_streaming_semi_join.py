@@ -17,8 +17,6 @@ if TYPE_CHECKING:
     from polars._typing import JoinBuildSide
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 BUILD_SIDES: list[JoinBuildSide] = [
     "auto",
     "force_left",

@@ -1,10 +1,14 @@
-use polars_arrow::array::{Array, ArrayRef, ListArray};
+use polars_arrow::array::builder::{ShareStrategy, make_builder};
+use polars_arrow::array::{Array, ArrayRef, ListArray, PrimitiveArray, StaticArray};
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_arrow::datatypes::IdxArr;
 use polars_arrow::legacy::index::IndexToUsize;
 use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_arrow::legacy::utils::CustomIterTools;
 use polars_arrow::offset::{Offsets, OffsetsBuffer};
+use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::IdxSize;
+use polars_utils::slice::slice_offsets;
 
 use crate::gather::take_unchecked;
 
@@ -121,6 +125,140 @@ pub fn index_is_oob(arr: &ListArray<i64>, index: i64) -> bool {
                 }
             })
     }
+}
+
+/// Slice list `i` of `arr` with offset `offsets[i * offset_stride]` and length
+/// `lengths[i * lengths_stride]`.
+///
+/// Also returns whether all output lists are valid and non-empty.
+pub fn sublist_slice_var(
+    arr: &ListArray<i64>,
+    offsets: &[i64],
+    offset_stride: usize,
+    lengths: &[usize],
+    lengths_stride: usize,
+) -> (ListArray<i64>, bool) {
+    let mut fast_explode = arr.null_count() == 0;
+    let in_offsets = arr.offsets().as_slice();
+    let mut out_offsets = Vec::with_capacity(arr.len() + 1);
+    out_offsets.push(0i64);
+    // Ranges in `values` to copy, with adjacent ranges merged.
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut unchanged = true;
+    for i in 0..arr.len() {
+        let list_start = in_offsets[i] as usize;
+        let list_len = (in_offsets[i + 1] - in_offsets[i]) as usize;
+        let (start, len) = if arr.is_null(i) {
+            (list_start, 0)
+        } else {
+            let (start, len) = slice_offsets(
+                offsets[i * offset_stride],
+                lengths[i * lengths_stride],
+                list_len,
+            );
+            fast_explode &= len > 0;
+            (list_start + start, len)
+        };
+
+        unchanged &= start == list_start && len == list_len;
+        out_offsets.push(out_offsets.last().unwrap() + len as i64);
+        match ranges.last_mut() {
+            Some((s, l)) if *s + *l == start => *l += len,
+            _ if len > 0 => ranges.push((start, len)),
+            _ => {},
+        }
+    }
+
+    if unchanged {
+        return (arr.clone(), fast_explode);
+    }
+
+    let values = arr.values().as_ref();
+    let mut builder = make_builder(values.dtype());
+    builder.reserve(*out_offsets.last().unwrap() as usize);
+    for (start, len) in ranges {
+        builder.subslice_extend(values, start, len, ShareStrategy::Always);
+    }
+    // SAFETY: the offsets are monotonically increasing by construction.
+    let out_offsets = unsafe { Offsets::new_unchecked(out_offsets) };
+    let out = ListArray::new(
+        arr.dtype().clone(),
+        out_offsets.into(),
+        builder.freeze_reset(),
+        arr.validity().cloned(),
+    );
+    (out, fast_explode)
+}
+
+/// Gather from list `i * list_stride` of `lists` the elements at the indices in
+/// list `i * idx_stride` of `idxs`, for `i` in `0..len`. `idxs` must have `i64`
+/// values. Negative indices count from the end. Out-of-bounds indices give null
+/// if `null_on_oob`, and an error otherwise.
+///
+/// Also returns whether all output lists are valid and non-empty.
+pub fn sublist_gather(
+    lists: &ListArray<i64>,
+    list_stride: usize,
+    idxs: &ListArray<i64>,
+    idx_stride: usize,
+    len: usize,
+    null_on_oob: bool,
+) -> PolarsResult<(ListArray<i64>, bool)> {
+    let list_offsets = lists.offsets().as_slice();
+    let idx_offsets = idxs.offsets().as_slice();
+    let idx_values: &PrimitiveArray<i64> = idxs.values().as_any().downcast_ref().unwrap();
+    let mut out_offsets = Vec::with_capacity(len + 1);
+    out_offsets.push(0i64);
+    let mut validity = BitmapBuilder::with_capacity(len);
+    // Indices into `lists.values()`.
+    let mut take_idxs: Vec<IdxSize> = Vec::new();
+    let mut take_validity = BitmapBuilder::new();
+    let mut fast_explode = true;
+    for row in 0..len {
+        let l = row * list_stride;
+        let i = row * idx_stride;
+        let valid = lists.is_valid(l) && idxs.is_valid(i);
+        validity.push(valid);
+        let (idx_start, idx_end) = if valid {
+            (idx_offsets[i] as usize, idx_offsets[i + 1] as usize)
+        } else {
+            (0, 0)
+        };
+        fast_explode &= idx_start < idx_end;
+
+        let list_start = list_offsets[l];
+        let list_len = list_offsets[l + 1] - list_start;
+        for j in idx_start..idx_end {
+            let pos = match idx_values.get(j) {
+                None => None,
+                Some(v) => {
+                    let v = if v < 0 { v + list_len } else { v };
+                    let pos = (0..list_len).contains(&v).then_some(v);
+                    polars_ensure!(
+                        pos.is_some() || null_on_oob,
+                        OutOfBounds: "gather indices are out of bounds"
+                    );
+                    pos
+                },
+            };
+            take_idxs.push(pos.map_or(0, |p| (list_start + p) as IdxSize));
+            take_validity.push(pos.is_some());
+        }
+        out_offsets.push(take_idxs.len() as i64);
+    }
+
+    let take_idxs = IdxArr::from_vec(take_idxs).with_validity(take_validity.into_opt_validity());
+    // SAFETY: the valid indices are in bounds of `lists.values()`.
+    let values = unsafe { take_unchecked(lists.values().as_ref(), &take_idxs) };
+    // SAFETY: the offsets are monotonically increasing by construction.
+    let out_offsets = unsafe { Offsets::new_unchecked(out_offsets) };
+    let out = ListArray::new(
+        lists.dtype().clone(),
+        out_offsets.into(),
+        values,
+        validity.into_opt_validity(),
+    );
+    Ok((out, fast_explode))
 }
 
 /// Convert a list `[1, 2, 3]` to a list type of `[[1], [2], [3]]`

@@ -81,6 +81,9 @@ functions `read_xxx`.
 --8<-- "python/user-guide/sql/select.py:tablefunctions"
 ```
 
+The path can also be a glob, or a list of paths or globs, as in
+`read_parquet(['a.parquet', 'b.parquet'])`.
+
 `read_csv` also accepts named options after the path, with the same names and meaning as the options
 of `scan_csv`. Write them as `name => value` (or `name := value`):
 
@@ -132,3 +135,24 @@ and `include_file_paths`.
 - A nested object read as `'VARCHAR'` keeps its JSON text.
 - `read_json` reads the same files, but takes only the path. For a JSON array or a pretty-printed
   JSON document, use `pl.read_json` instead.
+
+`read_parquet` accepts the options of `scan_parquet` in the same way: `schema`, `missing_columns`,
+`extra_columns`, `hive_partitioning`, `hive_schema`, `try_parse_hive_dates` and
+`include_file_paths`.
+
+{{code_block('user-guide/sql/select','tablefunctionparquet',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionparquet"
+```
+
+- Unlike `scan_parquet`, `read_parquet` reads hive partitions by default when given one path, for a
+  glob or a single file too: a path such as `data/k=1/part.parquet` adds a column `k`. Every
+  `key=value` folder in such a path counts, so an absolute path can also pick up columns from its
+  parent folders. A list of paths reads them only when it is a single directory, as in
+  `scan_parquet`. Set `hive_partitioning` to `true` or `false` to choose either way.
+- When reading several files, the first one defines the columns, unless `schema` is given. Use
+  `missing_columns => 'insert'` and `extra_columns => 'ignore'` for files that differ from it.
+- As for `read_csv`, options marked unstable in the
+  [`scan_parquet`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
+  API reference are unstable in `read_parquet` too.

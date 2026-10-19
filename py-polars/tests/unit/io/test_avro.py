@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -105,3 +106,50 @@ def test_from_to_buffer_multiple_chunks_29568(compression: AvroCompression) -> N
 
     read_df = pl.read_avro(buf)
     assert_frame_equal(df, read_df)
+
+
+@pytest.mark.parametrize(("offset", "length"), [(0, 5), (1, 4), (2, 3), (3, 2)])
+def test_write_list_sliced_and_empty_27090(offset: int, length: int) -> None:
+    df = pl.DataFrame(
+        {
+            "f": [0.0, 1.0, 2.0, 3.0, 4.0],
+            "lst": [["a", "b"], [], None, ["c"], ["d", "e"]],
+            "lst_lst": [[[1], []], [], None, [[2, 3]], [[4]]],
+            "lst_struct": [
+                [{"a": 1, "b": "x"}],
+                [],
+                None,
+                [{"a": 2, "b": None}, {"a": 3, "b": "y"}],
+                [{"a": 4, "b": "z"}],
+            ],
+        },
+        schema={
+            "f": pl.Float64,
+            "lst": pl.List(pl.String),
+            "lst_lst": pl.List(pl.List(pl.Int64)),
+            "lst_struct": pl.List(pl.Struct({"a": pl.Int64, "b": pl.String})),
+        },
+    )
+    chunk = df.slice(offset, length)
+    buf = io.BytesIO()
+    chunk.write_avro(buf)
+    buf.seek(0)
+    assert_frame_equal(pl.read_avro(buf), chunk)
+
+
+def test_write_list_null_row_with_values_27090() -> None:
+    # The null row still covers the child values "x" and "y".
+    lst = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 4, 5], pa.int64()),
+        pa.array(["a", "b", "x", "y", "c"], pa.large_string()),
+        mask=pa.array([False, True, False]),
+    )
+    df = pl.DataFrame({"lst": pl.from_arrow(lst), "f": [1.0, 2.0, 3.0]})
+    buf = io.BytesIO()
+    df.write_avro(buf)
+    buf.seek(0)
+    expected = pl.DataFrame(
+        {"lst": [["a", "b"], None, ["c"]], "f": [1.0, 2.0, 3.0]},
+        schema={"lst": pl.List(pl.String), "f": pl.Float64},
+    )
+    assert_frame_equal(pl.read_avro(buf), expected)

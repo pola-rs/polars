@@ -115,9 +115,8 @@ pub fn resolve_homedir<'a, S: AsRef<Path> + ?Sized>(path: &'a S) -> Cow<'a, Path
 
     fn inner(path: &Path) -> Cow<'_, Path> {
         if path.starts_with("~") {
-            // home crate does not compile on wasm https://github.com/rust-lang/cargo/issues/12297
             #[cfg(not(target_family = "wasm"))]
-            if let Some(homedir) = home::home_dir() {
+            if let Some(homedir) = std::env::home_dir() {
                 return Cow::Owned(homedir.join(path.strip_prefix("~").unwrap()));
             }
         }
