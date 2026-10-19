@@ -46,7 +46,6 @@ fn var_std_reduction(
     Ok(match dtype {
         Boolean => split_reduction(dtype, BoolVarStdReducer { is_std, ddof }, stage),
         // `finish` ignores the input type, so one reducer merges the states of every numeric input.
-        #[cfg(feature = "serde")]
         _ if matches!(stage, SplitStage::Merge)
             && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
         {

@@ -37,7 +37,6 @@ fn skew_reduction(
     use DataType::*;
     Ok(match dtype {
         // `finish` ignores the input type, so one reducer merges the states of every numeric input.
-        #[cfg(feature = "serde")]
         _ if matches!(stage, SplitStage::Merge)
             && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
         {
@@ -115,7 +114,6 @@ fn kurtosis_reduction(
     use DataType::*;
     Ok(match dtype {
         // `finish` ignores the input type, so one reducer merges the states of every numeric input.
-        #[cfg(feature = "serde")]
         _ if matches!(stage, SplitStage::Merge)
             && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
         {

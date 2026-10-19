@@ -232,8 +232,7 @@ impl GroupedReduction for CovGroupedReduction {
             SplitStage::Whole => self.finish.finish_states(v),
             #[cfg(feature = "serde")]
             SplitStage::State => CovState::encode(v),
-            #[cfg(feature = "serde")]
-            SplitStage::Merge => unreachable!(),
+            _ => unreachable!(),
         }
     }
 
@@ -447,8 +446,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
             SplitStage::Whole => self.finish.finish_states(v),
             #[cfg(feature = "serde")]
             SplitStage::State => PearsonState::encode(v),
-            #[cfg(feature = "serde")]
-            SplitStage::Merge => unreachable!(),
+            _ => unreachable!(),
         }
     }
 

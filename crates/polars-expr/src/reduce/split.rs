@@ -1,334 +1,28 @@
 //! Reductions split into a stage that outputs per-group states and one that merges them.
 
-#[cfg(feature = "approx_quantile")]
-use polars_arrow::array::BinaryViewArray;
 #[cfg(feature = "serde")]
-use polars_arrow::array::{FixedSizeListArray, StructArray};
-#[cfg(feature = "approx_quantile")]
-use polars_compute::approx_quantile::Sketch;
+mod stages;
+
 #[cfg(feature = "serde")]
-use polars_compute::moment::{CovState, KurtosisState, PearsonState, SkewState, VarState};
+#[cfg_attr(not(feature = "cov"), allow(unused_imports))]
+pub(super) use stages::{MergeGroupedReduction, SplitState, StateFinish};
 #[cfg(feature = "serde")]
-use polars_utils::cardinality_sketch::CardinalitySketch;
-#[cfg(feature = "approx_quantile")]
-use polars_utils::pl_serialize;
+use stages::{ReducerFinish, StateReducer};
 
 use super::*;
 
+// Only the constructors behind `serde` request the `State` and `Merge` stages.
 #[derive(Clone, Copy)]
+#[cfg_attr(not(feature = "serde"), allow(dead_code))]
 pub(super) enum SplitStage {
     Whole,
-    #[cfg(feature = "serde")]
     State,
     /// Merges states and finalizes them as `Whole` would.
-    #[cfg(feature = "serde")]
     Merge,
 }
 
-/// A per-group state that travels between the stages as a column of `state_dtype()`.
-#[cfg(feature = "serde")]
-pub(super) trait SplitState: Sized {
-    type Decoder<'a>: StateDecoder<Self>
-    where
-        Self: 'a;
-    fn state_dtype() -> DataType;
-    fn encode(states: Vec<Self>) -> PolarsResult<Series>;
-    /// Errors if `s` is not a single chunk of `state_dtype()`.
-    fn decoder(s: &Series) -> PolarsResult<Self::Decoder<'_>>;
-}
-#[cfg(not(feature = "serde"))]
-pub(super) trait SplitState {}
-#[cfg(not(feature = "serde"))]
-impl<T> SplitState for T {}
-
-/// Reads single states of a state column, which comes from another process, so malformed states
-/// error rather than panic.
-#[cfg(feature = "serde")]
-pub(super) trait StateDecoder<S> {
-    /// `None` for a null state.
-    fn get(&self, row: usize) -> PolarsResult<Option<S>>;
-}
-
-#[cfg(feature = "serde")]
-fn check_state_column(s: &Series, dtype: &DataType) -> PolarsResult<()> {
-    polars_ensure!(
-        s.dtype() == dtype,
-        SchemaMismatch: "expected a state column of dtype `{dtype}`, got `{}`", s.dtype()
-    );
-    polars_ensure!(
-        s.n_chunks() == 1,
-        ComputeError: "expected a state column with one chunk, got {}", s.n_chunks()
-    );
-    Ok(())
-}
-
-/// A state stored as a `Struct` of `N` numeric fields.
-#[cfg(feature = "serde")]
-pub(super) trait StructState<const N: usize>: Sized {
-    type Field: PolarsNumericType;
-    const FIELD_NAMES: [&'static str; N];
-    fn to_parts(&self) -> [<Self::Field as PolarsNumericType>::Native; N];
-    fn from_parts(parts: [<Self::Field as PolarsNumericType>::Native; N]) -> Self;
-}
-
-#[cfg(feature = "serde")]
-fn struct_state_dtype<S: StructState<N>, const N: usize>() -> DataType {
-    DataType::Struct(
-        S::FIELD_NAMES
-            .iter()
-            .map(|name| Field::new((*name).into(), S::Field::get_static_dtype()))
-            .collect(),
-    )
-}
-
-#[cfg(feature = "serde")]
-fn encode_struct_states<S: StructState<N>, const N: usize>(states: Vec<S>) -> PolarsResult<Series> {
-    let mut parts: [Vec<_>; N] = std::array::from_fn(|_| Vec::with_capacity(states.len()));
-    for state in &states {
-        for (field, part) in parts.iter_mut().zip(state.to_parts()) {
-            field.push(part);
-        }
-    }
-    let fields: Vec<Series> = parts
-        .into_iter()
-        .zip(S::FIELD_NAMES)
-        .map(|(values, name)| ChunkedArray::<S::Field>::from_vec(name.into(), values).into_series())
-        .collect();
-    Ok(StructChunked::from_series(PlSmallStr::EMPTY, states.len(), fields.iter())?.into_series())
-}
-
-#[cfg(feature = "serde")]
-pub(super) struct StructDecoder<'a, S: StructState<N>, const N: usize> {
-    arr: &'a StructArray,
-    fields: [&'a PrimitiveArray<<S::Field as PolarsNumericType>::Native>; N],
-    has_null_fields: bool,
-}
-
-#[cfg(feature = "serde")]
-impl<'a, S: StructState<N>, const N: usize> StructDecoder<'a, S, N> {
-    fn new(s: &'a Series) -> PolarsResult<Self> {
-        check_state_column(s, &struct_state_dtype::<S, N>())?;
-        let arr = s.struct_()?.downcast_as_array();
-        let fields: [&PrimitiveArray<_>; N] = std::array::from_fn(|i| {
-            arr.values()[i]
-                .as_any()
-                .downcast_ref::<PrimitiveArray<_>>()
-                .unwrap()
-        });
-        let has_null_fields = fields.iter().any(|f| f.has_nulls());
-        Ok(Self {
-            arr,
-            fields,
-            has_null_fields,
-        })
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<S: StructState<N>, const N: usize> StateDecoder<S> for StructDecoder<'_, S, N> {
-    fn get(&self, row: usize) -> PolarsResult<Option<S>> {
-        if self.arr.is_null(row) {
-            return Ok(None);
-        }
-        polars_ensure!(
-            !self.has_null_fields || self.fields.iter().all(|f| f.is_valid(row)),
-            ComputeError: "invalid state: a valid row has a null field"
-        );
-        Ok(Some(S::from_parts(std::array::from_fn(|i| {
-            self.fields[i].value(row)
-        }))))
-    }
-}
-
-#[cfg(feature = "serde")]
-macro_rules! impl_struct_split_state {
-    ($ty:ty, $n:literal) => {
-        impl SplitState for $ty {
-            type Decoder<'a> = StructDecoder<'a, Self, $n>;
-
-            fn state_dtype() -> DataType {
-                struct_state_dtype::<Self, $n>()
-            }
-
-            fn encode(states: Vec<Self>) -> PolarsResult<Series> {
-                encode_struct_states::<Self, $n>(states)
-            }
-
-            fn decoder(s: &Series) -> PolarsResult<Self::Decoder<'_>> {
-                StructDecoder::new(s)
-            }
-        }
-    };
-}
-
-#[cfg(feature = "serde")]
-macro_rules! impl_moment_split_state {
-    ($ty:ident, $n:literal) => {
-        impl StructState<$n> for $ty {
-            type Field = Float64Type;
-            const FIELD_NAMES: [&'static str; $n] = $ty::FIELD_NAMES;
-
-            fn to_parts(&self) -> [f64; $n] {
-                $ty::to_parts(self)
-            }
-
-            fn from_parts(parts: [f64; $n]) -> Self {
-                $ty::from_parts(parts)
-            }
-        }
-
-        impl_struct_split_state!($ty, $n);
-    };
-}
-
-#[cfg(feature = "serde")]
-impl_moment_split_state!(VarState, 3);
-#[cfg(feature = "serde")]
-impl_moment_split_state!(SkewState, 4);
-#[cfg(feature = "serde")]
-impl_moment_split_state!(KurtosisState, 5);
-#[cfg(feature = "serde")]
-impl_moment_split_state!(CovState, 4);
-#[cfg(feature = "serde")]
-impl_moment_split_state!(PearsonState, 6);
-
-/// The `(true_count, count)` state of the boolean variance.
-#[cfg(feature = "serde")]
-impl StructState<2> for (usize, usize) {
-    type Field = UInt64Type;
-    const FIELD_NAMES: [&'static str; 2] = ["true_count", "count"];
-
-    fn to_parts(&self) -> [u64; 2] {
-        [self.0 as u64, self.1 as u64]
-    }
-
-    fn from_parts([true_count, count]: [u64; 2]) -> Self {
-        (true_count as usize, count as usize)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl_struct_split_state!((usize, usize), 2);
-
-#[cfg(feature = "serde")]
-const CARDINALITY_BUCKETS: usize = 256;
-
-#[cfg(feature = "serde")]
-impl SplitState for CardinalitySketch {
-    type Decoder<'a> = CardinalityDecoder<'a>;
-
-    fn state_dtype() -> DataType {
-        DataType::Array(Box::new(DataType::UInt8), CARDINALITY_BUCKETS)
-    }
-
-    fn encode(states: Vec<Self>) -> PolarsResult<Series> {
-        let len = states.len();
-        let mut buckets = Vec::with_capacity(len * CARDINALITY_BUCKETS);
-        for sketch in states {
-            buckets.extend_from_slice(&sketch.into_state());
-        }
-        let ca = ArrayChunked::from_aligned_values(
-            PlSmallStr::EMPTY,
-            &DataType::UInt8,
-            CARDINALITY_BUCKETS,
-            vec![PrimitiveArray::from_vec(buckets).boxed()],
-            len,
-        );
-        Ok(ca.into_series())
-    }
-
-    fn decoder(s: &Series) -> PolarsResult<Self::Decoder<'_>> {
-        check_state_column(s, &Self::state_dtype())?;
-        let arr = s.array()?.downcast_as_array();
-        let buckets = arr
-            .values()
-            .as_any()
-            .downcast_ref::<PrimitiveArray<u8>>()
-            .unwrap();
-        Ok(CardinalityDecoder { arr, buckets })
-    }
-}
-
-#[cfg(feature = "serde")]
-pub(super) struct CardinalityDecoder<'a> {
-    arr: &'a FixedSizeListArray,
-    buckets: &'a PrimitiveArray<u8>,
-}
-
-#[cfg(feature = "serde")]
-impl StateDecoder<CardinalitySketch> for CardinalityDecoder<'_> {
-    fn get(&self, row: usize) -> PolarsResult<Option<CardinalitySketch>> {
-        if self.arr.is_null(row) {
-            return Ok(None);
-        }
-        let start = row * CARDINALITY_BUCKETS;
-        polars_ensure!(
-            self.buckets
-                .validity()
-                .is_none_or(|v| v.null_count_range(start, CARDINALITY_BUCKETS) == 0),
-            ComputeError: "invalid state: a valid row has a null bucket"
-        );
-        let buckets = &self.buckets.values()[start..start + CARDINALITY_BUCKETS];
-        Ok(Some(CardinalitySketch::from_state(
-            buckets.try_into().unwrap(),
-        )))
-    }
-}
-
-/// Sketches vary in size, so they travel serialized.
-#[cfg(feature = "approx_quantile")]
-impl<I> SplitState for Sketch<I>
-where
-    I: std::fmt::Debug
-        + Clone
-        + polars_utils::total_ord::TotalOrd
-        + serde::Serialize
-        + serde::de::DeserializeOwned
-        + 'static,
-{
-    type Decoder<'a> = BinaryStateDecoder<'a, Self>;
-
-    fn state_dtype() -> DataType {
-        DataType::Binary
-    }
-
-    fn encode(states: Vec<Self>) -> PolarsResult<Series> {
-        let mut builder = BinaryChunkedBuilder::new(PlSmallStr::EMPTY, states.len());
-        let mut blob = Vec::new();
-        for state in &states {
-            blob.clear();
-            pl_serialize::serialize_into_writer::<_, _, false>(&mut blob, state)?;
-            builder.append_value(&blob);
-        }
-        Ok(builder.finish().into_series())
-    }
-
-    fn decoder(s: &Series) -> PolarsResult<Self::Decoder<'_>> {
-        check_state_column(s, &Self::state_dtype())?;
-        Ok(BinaryStateDecoder {
-            arr: s.binary()?.downcast_as_array(),
-            _state: PhantomData,
-        })
-    }
-}
-
-#[cfg(feature = "approx_quantile")]
-pub(super) struct BinaryStateDecoder<'a, S> {
-    arr: &'a BinaryViewArray,
-    _state: PhantomData<S>,
-}
-
-#[cfg(feature = "approx_quantile")]
-impl<S: serde::de::DeserializeOwned> StateDecoder<S> for BinaryStateDecoder<'_, S> {
-    fn get(&self, row: usize) -> PolarsResult<Option<S>> {
-        self.arr
-            .get(row)
-            .map(pl_serialize::deserialize_from_reader::<S, _, false>)
-            .transpose()
-    }
-}
-
 /// Builds `stage` of `reducer`'s reduction over values of `dtype`.
+#[cfg(feature = "serde")]
 pub(super) fn split_reduction<R>(
     dtype: DataType,
     reducer: R,
@@ -340,9 +34,7 @@ where
 {
     match stage {
         SplitStage::Whole => Box::new(VecGroupedReduction::new(dtype, reducer)),
-        #[cfg(feature = "serde")]
         SplitStage::State => Box::new(VecGroupedReduction::new(dtype, StateReducer(reducer))),
-        #[cfg(feature = "serde")]
         SplitStage::Merge => Box::new(MergeGroupedReduction::new(ReducerFinish {
             inner: reducer,
             values_dtype: dtype,
@@ -350,212 +42,16 @@ where
     }
 }
 
-/// Reduces as `R` does, but outputs the encoded states.
-#[cfg(feature = "serde")]
-#[derive(Clone)]
-struct StateReducer<R>(R);
-
-#[cfg(feature = "serde")]
-impl<R> Reducer for StateReducer<R>
-where
-    R: Reducer,
-    R::Value: SplitState,
-{
-    type Dtype = R::Dtype;
-    type Value = R::Value;
-    const ORDER_INDEPENDENT: bool = R::ORDER_INDEPENDENT;
-
-    fn init(&self) -> Self::Value {
-        self.0.init()
-    }
-
-    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
-        self.0.cast_series(s)
-    }
-
-    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        self.0.combine(a, b)
-    }
-
-    #[inline(always)]
-    fn reduce_one(
-        &self,
-        a: &mut Self::Value,
-        b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
-        seq_id: u64,
-    ) {
-        self.0.reduce_one(a, b, seq_id)
-    }
-
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {
-        self.0.reduce_ca(v, ca, seq_id)
-    }
-
-    fn finish(
-        &self,
-        v: Vec<Self::Value>,
-        m: Option<Bitmap>,
-        _dtype: &DataType,
-    ) -> PolarsResult<Series> {
-        assert!(m.is_none());
-        R::Value::encode(v)
-    }
-}
-
-/// Merges states and finalizes them.
-#[cfg(feature = "serde")]
-pub(super) trait StateFinish: Clone + Send + Sync + 'static {
-    type State: SplitState + Clone + Send + Sync + 'static;
-    fn init(&self) -> Self::State;
-    fn combine(&self, a: &mut Self::State, b: &Self::State);
-    fn finish(&self, states: Vec<Self::State>) -> PolarsResult<Series>;
-}
-
-/// Finalizes the states of `R` as `R` does for `values_dtype`.
-#[cfg(feature = "serde")]
-#[derive(Clone)]
-struct ReducerFinish<R> {
-    inner: R,
-    values_dtype: DataType,
-}
-
-#[cfg(feature = "serde")]
-impl<R> StateFinish for ReducerFinish<R>
-where
-    R: Reducer,
-    R::Value: SplitState,
-{
-    type State = R::Value;
-
-    fn init(&self) -> Self::State {
-        self.inner.init()
-    }
-
-    fn combine(&self, a: &mut Self::State, b: &Self::State) {
-        self.inner.combine(a, b)
-    }
-
-    fn finish(&self, states: Vec<Self::State>) -> PolarsResult<Series> {
-        self.inner.finish(states, None, &self.values_dtype)
-    }
-}
-
-/// Merges a column of encoded states per group and finalizes them with `F`.
-#[cfg(feature = "serde")]
-pub(super) struct MergeGroupedReduction<F: StateFinish> {
-    values: Vec<F::State>,
-    evicted_values: Vec<F::State>,
-    finish: F,
-}
-
-#[cfg(feature = "serde")]
-impl<F: StateFinish> MergeGroupedReduction<F> {
-    pub(super) fn new(finish: F) -> Self {
-        Self {
-            values: Vec::new(),
-            evicted_values: Vec::new(),
-            finish,
-        }
-    }
-}
-
-#[cfg(feature = "serde")]
-fn state_column<'a>(values: &[&'a Column]) -> PolarsResult<&'a Series> {
-    let &[values] = values else {
-        polars_bail!(ComputeError: "expected one state column, got {}", values.len())
+#[cfg(not(feature = "serde"))]
+pub(super) fn split_reduction<R: Reducer>(
+    dtype: DataType,
+    reducer: R,
+    stage: SplitStage,
+) -> Box<dyn GroupedReduction> {
+    let SplitStage::Whole = stage else {
+        unreachable!()
     };
-    Ok(values.as_materialized_series())
-}
-
-#[cfg(feature = "serde")]
-impl<F: StateFinish> GroupedReduction for MergeGroupedReduction<F> {
-    fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self::new(self.finish.clone()))
-    }
-
-    fn reserve(&mut self, additional: usize) {
-        self.values.reserve(additional);
-    }
-
-    fn resize(&mut self, num_groups: IdxSize) {
-        self.values.resize(num_groups as usize, self.finish.init());
-    }
-
-    fn update_group(
-        &mut self,
-        values: &[&Column],
-        group_idx: IdxSize,
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        let states = state_column(values)?.rechunk();
-        let decoder = F::State::decoder(&states)?;
-        let grp = &mut self.values[group_idx as usize];
-        for row in 0..states.len() {
-            if let Some(state) = decoder.get(row)? {
-                self.finish.combine(grp, &state);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn update_groups_while_evicting(
-        &mut self,
-        values: &[&Column],
-        subset: &[IdxSize],
-        group_idxs: &[EvictIdx],
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        assert!(subset.len() == group_idxs.len());
-        let decoder = F::State::decoder(state_column(values)?)?;
-        for (i, g) in subset.iter().zip(group_idxs) {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            let grp = unsafe { self.values.get_unchecked_mut(g.idx()) };
-            if g.should_evict() {
-                let old = core::mem::replace(grp, self.finish.init());
-                self.evicted_values.push(old);
-            }
-            if let Some(state) = decoder.get(*i as usize)? {
-                self.finish.combine(grp, &state);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn combine_subset(
-        &mut self,
-        other: &dyn GroupedReduction,
-        subset: &[IdxSize],
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(subset.len() == group_idxs.len());
-        for (i, g) in subset.iter().zip(group_idxs) {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            unsafe {
-                let v = other.values.get_unchecked(*i as usize);
-                let grp = self.values.get_unchecked_mut(*g as usize);
-                self.finish.combine(grp, v);
-            }
-        }
-        Ok(())
-    }
-
-    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            values: core::mem::take(&mut self.evicted_values),
-            evicted_values: Vec::new(),
-            finish: self.finish.clone(),
-        })
-    }
-
-    fn finalize(&mut self) -> PolarsResult<Series> {
-        let v = core::mem::take(&mut self.values);
-        self.finish.finish(v)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+    Box::new(VecGroupedReduction::new(dtype, reducer))
 }
 
 // The state and merge stages have no Python entry point, so they are tested here.
@@ -832,36 +328,6 @@ mod tests {
         assert_close(&out, &merge.finalize().unwrap());
     }
 
-    /// Merges `states` into one group.
-    fn merge_one(merge: &dyn GroupedReduction, states: Series) -> PolarsResult<Series> {
-        let groups = vec![0; states.len()];
-        run(merge, &[states], &groups, 1)
-    }
-
-    #[test]
-    fn merge_rejects_bad_states() {
-        // Wrong dtype.
-        let floats = Series::new("".into(), [1.0, 2.0]);
-        assert!(merge_one(&*var_merge(), floats).is_err());
-
-        // A valid row with a null field.
-        let field = |name: &str, v: [Option<f64>; 2]| Series::new(name.into(), v);
-        let fields = [
-            field("weight", [Some(1.0), Some(1.0)]),
-            field("mean", [Some(1.0), None]),
-            field("dp", [Some(0.0), Some(0.0)]),
-        ];
-        let states = StructChunked::from_series("".into(), 2, fields.iter()).unwrap();
-        let err = merge_one(&*var_merge(), states.clone().into_series()).unwrap_err();
-        assert!(err.to_string().contains("null field"), "{err}");
-
-        // The same null field under an outer-null row is skipped.
-        let outer = Bitmap::from_iter([true, false]);
-        let states = states.with_outer_validity(Some(outer)).into_series();
-        let out = merge_one(&*var_merge(), states).unwrap();
-        assert_close(&out, &Series::new("".into(), [0.0]));
-    }
-
     #[cfg(feature = "cov")]
     #[test]
     fn cov_corr_split_matches_whole() {
@@ -922,6 +388,8 @@ mod tests {
     #[cfg(feature = "approx_unique")]
     #[test]
     fn approx_n_unique_split_matches_whole() {
+        use polars_utils::cardinality_sketch::CardinalitySketch;
+
         use super::super::approx_n_unique::*;
 
         let int = |v: &[Option<i32>]| Series::new("x".into(), v);
@@ -960,42 +428,5 @@ mod tests {
             assert!(split.equals_missing(&expected), "{split:?} != {expected:?}");
         }
         assert_eq!(reduction_output_dtype(&*merge).unwrap(), IDX_DTYPE);
-    }
-
-    #[cfg(feature = "approx_unique")]
-    #[test]
-    fn approx_n_unique_merge_rejects_null_bucket() {
-        use super::super::approx_n_unique::*;
-
-        let mut buckets = vec![Some(0u8); 2 * CARDINALITY_BUCKETS];
-        buckets[3] = None;
-        let states = |validity: Option<Bitmap>| {
-            let ca = ArrayChunked::from_aligned_values(
-                "".into(),
-                &DataType::UInt8,
-                CARDINALITY_BUCKETS,
-                vec![PrimitiveArray::from_iter(buckets.iter().copied()).boxed()],
-                2,
-            );
-            ca.with_validity(validity).into_series()
-        };
-        let merge = new_approx_n_unique_merge_reduction();
-        let err = merge_one(&*merge, states(None)).unwrap_err();
-        assert!(err.to_string().contains("null bucket"), "{err}");
-
-        let out = merge_one(&*merge, states(Some(Bitmap::from_iter([false, true])))).unwrap();
-        assert!(out.equals_missing(&Series::new("".into(), [0 as IdxSize])));
-    }
-
-    #[cfg(feature = "approx_quantile")]
-    #[test]
-    fn approx_quantile_merge_rejects_bad_blob() {
-        use polars_compute::approx_quantile::ApproxQuantileMethod;
-
-        use super::super::approx_quantile::new_approx_quantile_merge_reduction;
-        let method = ApproxQuantileMethod::KLL;
-        let merge = new_approx_quantile_merge_reduction(DataType::Float64, method, 0.01).unwrap();
-        let blobs = Series::new("".into(), [&[0xffu8, 0xff, 0xff][..]]);
-        assert!(merge_one(&*merge, blobs).is_err());
     }
 }
