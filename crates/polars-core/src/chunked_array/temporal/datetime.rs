@@ -115,42 +115,12 @@ impl DatetimeChunked {
         let mut out = self.clone();
         out.set_time_unit(tu);
 
-        use crate::datatypes::time_unit::TimeUnit::*;
-        match (current_unit, tu) {
-            (Nanoseconds, Microseconds) => {
-                let ca = (&self.phys).wrapping_floor_div_scalar(1_000);
-                out.phys = ca;
-                out
-            },
-            (Nanoseconds, Milliseconds) => {
-                let ca = (&self.phys).wrapping_floor_div_scalar(1_000_000);
-                out.phys = ca;
-                out
-            },
-            (Microseconds, Nanoseconds) => {
-                let ca = &self.phys * 1_000;
-                out.phys = ca;
-                out
-            },
-            (Microseconds, Milliseconds) => {
-                let ca = (&self.phys).wrapping_floor_div_scalar(1_000);
-                out.phys = ca;
-                out
-            },
-            (Milliseconds, Nanoseconds) => {
-                let ca = &self.phys * 1_000_000;
-                out.phys = ca;
-                out
-            },
-            (Milliseconds, Microseconds) => {
-                let ca = &self.phys * 1_000;
-                out.phys = ca;
-                out
-            },
-            (Nanoseconds, Nanoseconds)
-            | (Microseconds, Microseconds)
-            | (Milliseconds, Milliseconds) => out,
+        match current_unit.rescale_to(tu) {
+            TimeUnitRescale::Unchanged => {},
+            TimeUnitRescale::Multiply(k) => out.phys = &self.phys * k,
+            TimeUnitRescale::Divide(k) => out.phys = (&self.phys).wrapping_floor_div_scalar(k),
         }
+        out
     }
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.
