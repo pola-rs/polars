@@ -1017,3 +1017,14 @@ def test_streaming_join_unmatched_build_rows_single_key(
         q.collect(engine="in-memory"),
         check_row_order=maintain_order != "none",
     )
+
+
+def test_streaming_join_unmatched_repeated_key_morsels() -> None:
+    # One key with many unmatched rows is not split into a morsel per row.
+    left = pl.LazyFrame({"k": [1] * 3000, "v": range(3000)})
+    right = pl.LazyFrame({"k": [2], "w": [0]})
+    q = left.join(right, on="k", how="left", build_side="force_left")
+    out = q.collect(engine="streaming")
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+    # At most a morsel per pipeline, there is one pipeline per thread.
+    assert out.n_chunks() <= pl.thread_pool_size()
