@@ -7,7 +7,7 @@ use polars_core::with_match_physical_numeric_polars_type;
 use polars_ops::series::sketches_to_series;
 use polars_utils::total_ord::TotalOrd;
 
-use super::split::{SplitStage, split_reduction};
+use super::split::{SplitStage, merge_reduction, split_reduction};
 use super::*;
 
 /// Runs `$body` with `$T` the physical type reduced for `$dtype` and `$B` the
@@ -78,7 +78,10 @@ fn sketch_reduction(
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     Ok(with_match_sketch_item!(&dtype, |T, B| {
         let reducer = SketchReducer::<T, B>::new(method, error);
-        split_reduction(dtype.clone(), reducer, stage)
+        match stage {
+            SplitStage::Merge => merge_reduction(dtype.clone(), reducer),
+            _ => split_reduction(dtype.clone(), reducer, stage),
+        }
     }))
 }
 

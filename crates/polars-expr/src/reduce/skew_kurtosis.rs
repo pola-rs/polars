@@ -4,7 +4,7 @@ use num_traits::AsPrimitive;
 use polars_compute::moment::{KurtosisState, SkewState};
 use polars_core::with_match_physical_numeric_polars_type;
 
-use super::split::{SplitStage, split_reduction};
+use super::split::{SplitStage, merge_reduction, split_reduction};
 use super::*;
 
 pub fn new_skew_reduction(dtype: DataType, bias: bool) -> PolarsResult<Box<dyn GroupedReduction>> {
@@ -36,18 +36,18 @@ fn skew_reduction(
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
     Ok(match dtype {
-        // `finish` ignores the input type, so one reducer merges the states of every numeric input.
+        // `finish` depends only on `values_dtype`, so one reducer merges the states of every
+        // numeric input.
         _ if matches!(stage, SplitStage::Merge)
             && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
         {
-            split_reduction(
+            merge_reduction(
                 dtype,
                 SkewReducer::<Float64Type> {
                     bias,
                     needs_cast: false,
                     _phantom: PhantomData,
                 },
-                stage,
             )
         },
         _ if dtype.is_primitive_numeric() => {
@@ -113,11 +113,12 @@ fn kurtosis_reduction(
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     use DataType::*;
     Ok(match dtype {
-        // `finish` ignores the input type, so one reducer merges the states of every numeric input.
+        // `finish` depends only on `values_dtype`, so one reducer merges the states of every
+        // numeric input.
         _ if matches!(stage, SplitStage::Merge)
             && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
         {
-            split_reduction(
+            merge_reduction(
                 dtype,
                 KurtosisReducer::<Float64Type> {
                     fisher,
@@ -125,7 +126,6 @@ fn kurtosis_reduction(
                     needs_cast: false,
                     _phantom: PhantomData,
                 },
-                stage,
             )
         },
         _ if dtype.is_primitive_numeric() => {

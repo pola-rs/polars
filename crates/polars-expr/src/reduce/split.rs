@@ -35,11 +35,21 @@ where
     match stage {
         SplitStage::Whole => Box::new(VecGroupedReduction::new(dtype, reducer)),
         SplitStage::State => Box::new(VecGroupedReduction::new(dtype, StateReducer(reducer))),
-        SplitStage::Merge => Box::new(MergeGroupedReduction::new(ReducerFinish {
-            inner: reducer,
-            values_dtype: dtype,
-        })),
+        SplitStage::Merge => unreachable!("built by `merge_reduction`"),
     }
+}
+
+/// Merges the states of `reducer`'s reduction over values of `values_dtype` and finalizes them.
+#[cfg(feature = "serde")]
+pub(super) fn merge_reduction<R>(values_dtype: DataType, reducer: R) -> Box<dyn GroupedReduction>
+where
+    R: Reducer,
+    R::Value: SplitState,
+{
+    Box::new(MergeGroupedReduction::new(ReducerFinish {
+        inner: reducer,
+        values_dtype,
+    }))
 }
 
 #[cfg(not(feature = "serde"))]
@@ -52,6 +62,11 @@ pub(super) fn split_reduction<R: Reducer>(
         unreachable!()
     };
     Box::new(VecGroupedReduction::new(dtype, reducer))
+}
+
+#[cfg(not(feature = "serde"))]
+pub(super) fn merge_reduction<R: Reducer>(_: DataType, _: R) -> Box<dyn GroupedReduction> {
+    unreachable!()
 }
 
 // The state and merge stages have no Python entry point, so they are tested here.

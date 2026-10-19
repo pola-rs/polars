@@ -4,7 +4,7 @@ use num_traits::AsPrimitive;
 use polars_compute::moment::VarState;
 use polars_core::with_match_physical_numeric_polars_type;
 
-use super::split::{SplitStage, split_reduction};
+use super::split::{SplitStage, merge_reduction, split_reduction};
 use super::*;
 
 pub fn new_var_std_reduction(
@@ -43,23 +43,21 @@ fn var_std_reduction(
     // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     let op_name = if is_std { "std" } else { "var" };
+    let is_merge = matches!(stage, SplitStage::Merge);
     Ok(match dtype {
+        Boolean if is_merge => merge_reduction(dtype, BoolVarStdReducer { is_std, ddof }),
         Boolean => split_reduction(dtype, BoolVarStdReducer { is_std, ddof }, stage),
-        // `finish` ignores the input type, so one reducer merges the states of every numeric input.
-        _ if matches!(stage, SplitStage::Merge)
-            && (dtype.is_primitive_numeric() || dtype.is_decimal()) =>
-        {
-            split_reduction(
-                dtype,
-                VarStdReducer::<Float64Type> {
-                    is_std,
-                    ddof,
-                    needs_cast: false,
-                    _phantom: PhantomData,
-                },
-                stage,
-            )
-        },
+        // `finish` depends only on `values_dtype`, so one reducer merges the states of every
+        // numeric input.
+        _ if is_merge && (dtype.is_primitive_numeric() || dtype.is_decimal()) => merge_reduction(
+            dtype,
+            VarStdReducer::<Float64Type> {
+                is_std,
+                ddof,
+                needs_cast: false,
+                _phantom: PhantomData,
+            },
+        ),
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 split_reduction(dtype, VarStdReducer::<$T> {

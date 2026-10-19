@@ -6,7 +6,7 @@ use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
 
 #[cfg(feature = "serde")]
 use super::split::SplitState;
-use super::split::{SplitStage, split_reduction};
+use super::split::{SplitStage, merge_reduction, split_reduction};
 use super::*;
 
 pub fn new_approx_n_unique_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
@@ -26,11 +26,10 @@ pub fn new_approx_n_unique_state_reduction(
 /// outputs what [`new_approx_n_unique_reduction`] does.
 #[cfg(feature = "serde")]
 pub fn new_approx_n_unique_merge_reduction() -> Box<dyn GroupedReduction> {
-    // `finish` ignores the input type, so one reducer merges the states of every input.
-    split_reduction(
+    // The sketches hold hashes, so one reducer merges the states of every input.
+    merge_reduction(
         DataType::UInt32,
         ApproxNUniqueReducer::<UInt32Type>::default(),
-        SplitStage::Merge,
     )
 }
 
