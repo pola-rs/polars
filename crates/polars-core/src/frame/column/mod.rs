@@ -9,6 +9,7 @@ use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::broadcast::{BroadcastLength, broadcast_len};
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice::slice_offsets;
 pub use scalar::ScalarColumn;
 
 use self::compare_inner::TotalOrdInner;
@@ -19,7 +20,7 @@ use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted};
-use crate::utils::{Container, slice_offsets};
+use crate::utils::Container;
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 mod arithmetic;

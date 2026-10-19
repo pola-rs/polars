@@ -4,12 +4,12 @@ use std::cell::Cell;
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_arrow::compute::concatenate::concatenate_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
+use polars_utils::slice::slice_offsets;
 
 use super::*;
 use crate::chunked_array::flags::StatisticsFlags;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
-use crate::utils::slice_offsets;
 
 pub(crate) fn split_at(
     chunks: &[ArrayRef],

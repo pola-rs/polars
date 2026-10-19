@@ -16,7 +16,7 @@ use crate::prelude::gather::check_bounds_ca;
 use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
-use crate::utils::{Container, NoNull, slice_offsets, try_get_supertype};
+use crate::utils::{Container, NoNull, try_get_supertype};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 #[cfg(feature = "dataframe_arithmetic")]
@@ -45,6 +45,7 @@ pub(crate) mod validation;
 
 use polars_arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice::slice_offsets;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
