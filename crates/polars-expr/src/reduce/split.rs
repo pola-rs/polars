@@ -3,9 +3,10 @@
 #[cfg(feature = "serde")]
 mod stages;
 
+#[cfg(all(feature = "serde", feature = "cov"))]
+pub(super) use stages::Encode;
 #[cfg(feature = "serde")]
-#[cfg_attr(not(feature = "cov"), allow(unused_imports))]
-pub(super) use stages::{MergeGroupedReduction, SplitState, StateFinish};
+pub(super) use stages::{MergeGroupedReduction, SplitState};
 #[cfg(feature = "serde")]
 use stages::{ReducerFinish, StateReducer};
 
@@ -19,6 +20,15 @@ pub(super) enum SplitStage {
     State,
     /// Merges states and finalizes them as `Whole` would.
     Merge,
+}
+
+/// Combines states and finalizes them.
+#[cfg_attr(not(any(feature = "serde", feature = "cov")), allow(dead_code))]
+pub(super) trait StateFinish: Clone + Send + Sync + 'static {
+    type State: Clone + Send + Sync + 'static;
+    fn init(&self) -> Self::State;
+    fn combine(&self, a: &mut Self::State, b: &Self::State);
+    fn finish(&self, states: Vec<Self::State>) -> PolarsResult<Series>;
 }
 
 /// Builds `stage` of `reducer`'s reduction over values of `dtype`.

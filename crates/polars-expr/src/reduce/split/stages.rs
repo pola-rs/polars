@@ -302,12 +302,29 @@ where
     }
 }
 
-/// Merges states and finalizes them.
-pub(crate) trait StateFinish: Clone + Send + Sync + 'static {
-    type State: SplitState + Clone + Send + Sync + 'static;
-    fn init(&self) -> Self::State;
-    fn combine(&self, a: &mut Self::State, b: &Self::State);
-    fn finish(&self, states: Vec<Self::State>) -> PolarsResult<Series>;
+/// Combines states as `F` does, but outputs them encoded.
+#[cfg(feature = "cov")]
+#[derive(Clone)]
+pub(crate) struct Encode<F>(pub F);
+
+#[cfg(feature = "cov")]
+impl<F> StateFinish for Encode<F>
+where
+    F: StateFinish<State: SplitState>,
+{
+    type State = F::State;
+
+    fn init(&self) -> Self::State {
+        self.0.init()
+    }
+
+    fn combine(&self, a: &mut Self::State, b: &Self::State) {
+        self.0.combine(a, b)
+    }
+
+    fn finish(&self, states: Vec<Self::State>) -> PolarsResult<Series> {
+        F::State::encode(states)
+    }
 }
 
 /// Finalizes the states of `R` as `R` does for `values_dtype`.
@@ -317,11 +334,7 @@ pub(crate) struct ReducerFinish<R> {
     pub values_dtype: DataType,
 }
 
-impl<R> StateFinish for ReducerFinish<R>
-where
-    R: Reducer,
-    R::Value: SplitState,
-{
+impl<R: Reducer> StateFinish for ReducerFinish<R> {
     type State = R::Value;
 
     fn init(&self) -> Self::State {
@@ -354,7 +367,10 @@ impl<F: StateFinish> MergeGroupedReduction<F> {
     }
 }
 
-impl<F: StateFinish> GroupedReduction for MergeGroupedReduction<F> {
+impl<F> GroupedReduction for MergeGroupedReduction<F>
+where
+    F: StateFinish<State: SplitState>,
+{
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
         Box::new(Self::new(self.finish.clone()))
     }

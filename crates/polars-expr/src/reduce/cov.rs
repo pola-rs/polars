@@ -3,9 +3,9 @@ use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;
 use polars_core::utils::{align_chunks_binary, try_get_supertype};
 
-use super::split::SplitStage;
 #[cfg(feature = "serde")]
-use super::split::{MergeGroupedReduction, SplitState, StateFinish};
+use super::split::{Encode, MergeGroupedReduction, SplitState};
+use super::split::{SplitStage, StateFinish};
 use super::*;
 
 fn out_dtype(dtype_x: &DataType, dtype_y: &DataType) -> DataType {
@@ -69,176 +69,7 @@ fn cov_reduction(
         ddof,
         out_dtype: out_dtype(dtype_x, dtype_y),
     };
-    Ok(match stage {
-        #[cfg(feature = "serde")]
-        SplitStage::Merge => Box::new(MergeGroupedReduction::new(finish)),
-        _ => Box::new(CovGroupedReduction {
-            values: Vec::new(),
-            evicted_values: Vec::new(),
-            finish,
-            stage,
-        }),
-    })
-}
-
-#[derive(Clone)]
-struct CovFinish {
-    ddof: u8,
-    out_dtype: DataType,
-}
-
-impl CovFinish {
-    fn finish_states(&self, v: Vec<CovState>) -> PolarsResult<Series> {
-        let ca: Float64Chunked = v
-            .into_iter()
-            .map(|s| s.finalize(self.ddof))
-            .collect_ca(PlSmallStr::EMPTY);
-        ca.into_series().cast(&self.out_dtype)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl StateFinish for CovFinish {
-    type State = CovState;
-
-    fn init(&self) -> CovState {
-        CovState::default()
-    }
-
-    fn combine(&self, a: &mut CovState, b: &CovState) {
-        a.combine(b)
-    }
-
-    fn finish(&self, states: Vec<CovState>) -> PolarsResult<Series> {
-        self.finish_states(states)
-    }
-}
-
-struct CovGroupedReduction {
-    values: Vec<CovState>,
-    evicted_values: Vec<CovState>,
-    finish: CovFinish,
-    stage: SplitStage,
-}
-
-impl GroupedReduction for CovGroupedReduction {
-    fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            values: Vec::new(),
-            evicted_values: Vec::new(),
-            finish: self.finish.clone(),
-            stage: self.stage,
-        })
-    }
-
-    fn reserve(&mut self, additional: usize) {
-        self.values.reserve(additional);
-    }
-
-    fn resize(&mut self, num_groups: IdxSize) {
-        self.values.resize(num_groups as usize, CovState::default());
-    }
-
-    fn update_group(
-        &mut self,
-        values: &[&Column],
-        group_idx: IdxSize,
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        assert!(values.len() == 2);
-        let sx = values[0].cast(&DataType::Float64)?;
-        let sy = values[1].cast(&DataType::Float64)?;
-        let cx = sx.f64().unwrap();
-        let cy = sy.f64().unwrap();
-        let (cx, cy) = align_chunks_binary(cx, cy);
-        let state = &mut self.values[group_idx as usize];
-        for (ax, ay) in cx.downcast_iter().zip(cy.downcast_iter()) {
-            state.combine(&polars_compute::moment::cov(ax, ay));
-        }
-        Ok(())
-    }
-
-    unsafe fn update_groups_while_evicting(
-        &mut self,
-        values: &[&Column],
-        subset: &[IdxSize],
-        group_idxs: &[EvictIdx],
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        assert!(values.len() == 2);
-        assert!(subset.len() == group_idxs.len());
-        let sx = values[0]
-            .take_slice_unchecked(subset)
-            .cast(&DataType::Float64)?;
-        let sy = values[1]
-            .take_slice_unchecked(subset)
-            .cast(&DataType::Float64)?;
-        let cx = sx.f64().unwrap();
-        let cy = sy.f64().unwrap();
-        let ax = cx.downcast_as_array();
-        let ay = cy.downcast_as_array();
-        if ax.has_nulls() || ay.has_nulls() {
-            for ((ox, oy), g) in ax.iter().zip(ay.iter()).zip(group_idxs) {
-                let grp = self.values.get_unchecked_mut(g.idx());
-                if g.should_evict() {
-                    let old = core::mem::take(grp);
-                    self.evicted_values.push(old);
-                }
-                if let (Some(x), Some(y)) = (ox, oy) {
-                    grp.insert_one(*x, *y);
-                }
-            }
-        } else {
-            for ((x, y), g) in ax.values().iter().zip(ay.values().iter()).zip(group_idxs) {
-                let grp = self.values.get_unchecked_mut(g.idx());
-                if g.should_evict() {
-                    let old = core::mem::take(grp);
-                    self.evicted_values.push(old);
-                }
-                grp.insert_one(*x, *y);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn combine_subset(
-        &mut self,
-        other: &dyn GroupedReduction,
-        subset: &[IdxSize],
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(subset.len() == group_idxs.len());
-        for (i, g) in subset.iter().zip(group_idxs) {
-            let v = other.values.get_unchecked(*i as usize);
-            let grp = self.values.get_unchecked_mut(*g as usize);
-            grp.combine(v);
-        }
-        Ok(())
-    }
-
-    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            values: core::mem::take(&mut self.evicted_values),
-            evicted_values: Vec::new(),
-            finish: self.finish.clone(),
-            stage: self.stage,
-        })
-    }
-
-    fn finalize(&mut self) -> PolarsResult<Series> {
-        let v = core::mem::take(&mut self.values);
-        match self.stage {
-            SplitStage::Whole => self.finish.finish_states(v),
-            #[cfg(feature = "serde")]
-            SplitStage::State => CovState::encode(v),
-            _ => unreachable!(),
-        }
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+    Ok(bivariate_reduction(finish, stage))
 }
 
 pub fn new_pearson_corr_reduction(
@@ -277,16 +108,56 @@ fn pearson_corr_reduction(
     let finish = PearsonFinish {
         out_dtype: out_dtype(dtype_x, dtype_y),
     };
-    Ok(match stage {
-        #[cfg(feature = "serde")]
+    Ok(bivariate_reduction(finish, stage))
+}
+
+#[cfg(feature = "serde")]
+fn bivariate_reduction<F>(finish: F, stage: SplitStage) -> Box<dyn GroupedReduction>
+where
+    F: StateFinish<State: BivariateState + SplitState>,
+{
+    match stage {
+        SplitStage::Whole => Box::new(BivariateGroupedReduction::new(finish)),
+        SplitStage::State => Box::new(BivariateGroupedReduction::new(Encode(finish))),
         SplitStage::Merge => Box::new(MergeGroupedReduction::new(finish)),
-        _ => Box::new(PearsonCorrGroupedReduction {
-            values: Vec::new(),
-            evicted_values: Vec::new(),
-            finish,
-            stage,
-        }),
-    })
+    }
+}
+
+#[cfg(not(feature = "serde"))]
+fn bivariate_reduction<F>(finish: F, stage: SplitStage) -> Box<dyn GroupedReduction>
+where
+    F: StateFinish<State: BivariateState>,
+{
+    let SplitStage::Whole = stage else {
+        unreachable!()
+    };
+    Box::new(BivariateGroupedReduction::new(finish))
+}
+
+#[derive(Clone)]
+struct CovFinish {
+    ddof: u8,
+    out_dtype: DataType,
+}
+
+impl StateFinish for CovFinish {
+    type State = CovState;
+
+    fn init(&self) -> CovState {
+        CovState::default()
+    }
+
+    fn combine(&self, a: &mut CovState, b: &CovState) {
+        a.combine(b)
+    }
+
+    fn finish(&self, states: Vec<CovState>) -> PolarsResult<Series> {
+        let ca: Float64Chunked = states
+            .into_iter()
+            .map(|s| s.finalize(self.ddof))
+            .collect_ca(PlSmallStr::EMPTY);
+        ca.into_series().cast(&self.out_dtype)
+    }
 }
 
 #[derive(Clone)]
@@ -294,23 +165,6 @@ struct PearsonFinish {
     out_dtype: DataType,
 }
 
-impl PearsonFinish {
-    fn finish_states(&self, v: Vec<PearsonState>) -> PolarsResult<Series> {
-        let ca: Float64Chunked = v
-            .into_iter()
-            .map(|s| {
-                if s.weight() == 0.0 {
-                    None
-                } else {
-                    Some(s.finalize())
-                }
-            })
-            .collect_ca(PlSmallStr::EMPTY);
-        ca.into_series().cast(&self.out_dtype)
-    }
-}
-
-#[cfg(feature = "serde")]
 impl StateFinish for PearsonFinish {
     type State = PearsonState;
 
@@ -323,25 +177,60 @@ impl StateFinish for PearsonFinish {
     }
 
     fn finish(&self, states: Vec<PearsonState>) -> PolarsResult<Series> {
-        self.finish_states(states)
+        let ca: Float64Chunked = states
+            .into_iter()
+            .map(|s| (s.weight() != 0.0).then(|| s.finalize()))
+            .collect_ca(PlSmallStr::EMPTY);
+        ca.into_series().cast(&self.out_dtype)
     }
 }
 
-struct PearsonCorrGroupedReduction {
-    values: Vec<PearsonState>,
-    evicted_values: Vec<PearsonState>,
-    finish: PearsonFinish,
-    stage: SplitStage,
+/// A state over pairs of values.
+trait BivariateState {
+    fn from_arrays(x: &PrimitiveArray<f64>, y: &PrimitiveArray<f64>) -> Self;
+    fn insert_one(&mut self, x: f64, y: f64);
 }
 
-impl GroupedReduction for PearsonCorrGroupedReduction {
-    fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
+impl BivariateState for CovState {
+    fn from_arrays(x: &PrimitiveArray<f64>, y: &PrimitiveArray<f64>) -> Self {
+        polars_compute::moment::cov(x, y)
+    }
+
+    fn insert_one(&mut self, x: f64, y: f64) {
+        CovState::insert_one(self, x, y)
+    }
+}
+
+impl BivariateState for PearsonState {
+    fn from_arrays(x: &PrimitiveArray<f64>, y: &PrimitiveArray<f64>) -> Self {
+        polars_compute::moment::pearson_corr(x, y)
+    }
+
+    fn insert_one(&mut self, x: f64, y: f64) {
+        PearsonState::insert_one(self, x, y)
+    }
+}
+
+/// Reduces pairs of values into states and finalizes them with `F`.
+struct BivariateGroupedReduction<F: StateFinish> {
+    values: Vec<F::State>,
+    evicted_values: Vec<F::State>,
+    finish: F,
+}
+
+impl<F: StateFinish> BivariateGroupedReduction<F> {
+    fn new(finish: F) -> Self {
+        Self {
             values: Vec::new(),
             evicted_values: Vec::new(),
-            finish: self.finish.clone(),
-            stage: self.stage,
-        })
+            finish,
+        }
+    }
+}
+
+impl<F: StateFinish<State: BivariateState>> GroupedReduction for BivariateGroupedReduction<F> {
+    fn new_empty(&self) -> Box<dyn GroupedReduction> {
+        Box::new(Self::new(self.finish.clone()))
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -349,8 +238,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
     }
 
     fn resize(&mut self, num_groups: IdxSize) {
-        self.values
-            .resize(num_groups as usize, PearsonState::default());
+        self.values.resize(num_groups as usize, self.finish.init());
     }
 
     fn update_group(
@@ -367,7 +255,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         let (cx, cy) = align_chunks_binary(cx, cy);
         let state = &mut self.values[group_idx as usize];
         for (ax, ay) in cx.downcast_iter().zip(cy.downcast_iter()) {
-            state.combine(&polars_compute::moment::pearson_corr(ax, ay));
+            self.finish.combine(state, &F::State::from_arrays(ax, ay));
         }
         Ok(())
     }
@@ -395,7 +283,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
             for ((ox, oy), g) in ax.iter().zip(ay.iter()).zip(group_idxs) {
                 let grp = self.values.get_unchecked_mut(g.idx());
                 if g.should_evict() {
-                    let old = core::mem::take(grp);
+                    let old = core::mem::replace(grp, self.finish.init());
                     self.evicted_values.push(old);
                 }
                 if let (Some(x), Some(y)) = (ox, oy) {
@@ -406,7 +294,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
             for ((x, y), g) in ax.values().iter().zip(ay.values().iter()).zip(group_idxs) {
                 let grp = self.values.get_unchecked_mut(g.idx());
                 if g.should_evict() {
-                    let old = core::mem::take(grp);
+                    let old = core::mem::replace(grp, self.finish.init());
                     self.evicted_values.push(old);
                 }
                 grp.insert_one(*x, *y);
@@ -426,7 +314,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         for (i, g) in subset.iter().zip(group_idxs) {
             let v = other.values.get_unchecked(*i as usize);
             let grp = self.values.get_unchecked_mut(*g as usize);
-            grp.combine(v);
+            self.finish.combine(grp, v);
         }
         Ok(())
     }
@@ -436,18 +324,12 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
             values: core::mem::take(&mut self.evicted_values),
             evicted_values: Vec::new(),
             finish: self.finish.clone(),
-            stage: self.stage,
         })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
-        match self.stage {
-            SplitStage::Whole => self.finish.finish_states(v),
-            #[cfg(feature = "serde")]
-            SplitStage::State => PearsonState::encode(v),
-            _ => unreachable!(),
-        }
+        self.finish.finish(v)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
