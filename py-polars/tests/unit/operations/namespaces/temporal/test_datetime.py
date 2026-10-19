@@ -585,6 +585,18 @@ def test_cast_time_units(
     assert dates.dt.cast_time_unit(time_unit).cast(int).to_list() == date_in_that_unit
 
 
+def test_cast_time_unit_overflow_22878() -> None:
+    s = pl.Series([datetime(9999, 12, 31)], dtype=pl.Datetime("us", "UTC"))
+    with pytest.raises(InvalidOperationError):
+        s.dt.cast_time_unit("ns")
+    assert s.dt.cast_time_unit("ms").dtype == pl.Datetime("ms", "UTC")
+
+    d = pl.Series([timedelta(days=200_000)], dtype=pl.Duration("us"))
+    with pytest.raises(InvalidOperationError):
+        d.dt.cast_time_unit("ns")
+    assert d.dt.cast_time_unit("ms").to_list() == [timedelta(days=200_000)]
+
+
 def test_epoch_matches_timestamp() -> None:
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 
