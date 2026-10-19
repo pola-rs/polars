@@ -1,5 +1,5 @@
 use polars_io::local_path;
-use polars_utils::aliases::{PlHashMap, PlHashSet};
+use polars_utils::aliases::{PlIndexMap, PlIndexSet};
 
 use super::*;
 
@@ -12,7 +12,7 @@ pub(super) fn ensure_sinks_not_scanned(root: Node, lp_arena: &Arena<IR>) -> Pola
         _ => std::slice::from_ref(&root),
     };
     // Sinks keyed by file name, so scanned paths are only canonicalized on a name match.
-    let mut sinks: PlHashMap<_, Vec<_>> = PlHashMap::default();
+    let mut sinks: PlIndexMap<_, Vec<_>> = PlIndexMap::default();
     for &node in sink_nodes {
         let IR::Sink {
             payload:
@@ -44,7 +44,7 @@ pub(super) fn ensure_sinks_not_scanned(root: Node, lp_arena: &Arena<IR>) -> Pola
     }
 
     let mut stack = vec![root];
-    let mut visited = PlHashSet::default();
+    let mut visited = PlIndexSet::default();
     while let Some(node) = stack.pop() {
         if !visited.insert(node) {
             continue;
