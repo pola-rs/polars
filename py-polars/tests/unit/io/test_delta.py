@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 import pytest
 from deltalake import DeltaTable, WriterProperties, write_deltalake
-from deltalake.exceptions import DeltaError, TableNotFoundError
+from deltalake.exceptions import DeltaError, DeltaProtocolError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
@@ -1814,3 +1814,27 @@ def test_scan_delta_runtime_join_filter_with_partition_predicate(
     assert_frame_equal(
         out, pl.DataFrame({"x": [150, 160], "e": [0, 1]}), check_row_order=False
     )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_partition_values_from_log(tmp_path: Path) -> None:
+    root = tmp_path / "version=1"
+    pl.DataFrame({"x": [0, 1], "p": [0, 1]}).write_delta(
+        root, delta_write_options={"partition_by": "p"}
+    )
+
+    assert_frame_equal(
+        pl.scan_delta(root).filter(pl.col("p") == 1).collect(),
+        pl.DataFrame({"x": [1], "p": [1]}),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_delta_column_mapping_raises(tmp_path: Path) -> None:
+    pl.DataFrame({"x": [1]}).write_delta(
+        tmp_path,
+        delta_write_options={"configuration": {"delta.columnMapping.mode": "name"}},
+    )
+
+    with pytest.raises(DeltaProtocolError, match="minimum reader version is 2"):
+        pl.scan_delta(tmp_path).collect()

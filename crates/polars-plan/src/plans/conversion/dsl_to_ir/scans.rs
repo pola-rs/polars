@@ -141,7 +141,9 @@ pub(super) async fn dsl_to_ir(
             unified_scan_args.hive_options.enabled = Some(false);
         }
 
-        let hive_parts = if unified_scan_args.hive_options.enabled.unwrap()
+        let hive_parts = if let Some(hive_partitions) = unified_scan_args.hive_partitions.take() {
+            Some(HivePartitionsDf::try_new(&hive_partitions, sources.len())?)
+        } else if unified_scan_args.hive_options.enabled.unwrap()
             && let Some(file_schema) = file_info.reader_schema.as_ref()
         {
             let paths = sources

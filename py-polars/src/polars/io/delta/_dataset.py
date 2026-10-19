@@ -207,15 +207,29 @@ class DeltaDataset:
         best_effort_statistics_columns = [
             c for c in statistics_columns or [] if c not in (filter_columns or [])
         ]
+        load_statistics = filter_columns is not None or bool(
+            best_effort_statistics_columns
+        )
+        add_actions = (
+            pl.DataFrame(table.get_add_actions())
+            if load_statistics or partition_columns
+            else None
+        )
         table_statistics = (
             _extract_table_statistics_from_delta_add_actions(
-                pl.DataFrame(table.get_add_actions()),
+                add_actions,
                 filter_columns=filter_columns or [],
                 best_effort_columns=best_effort_statistics_columns,
                 schema=schema,
                 verbose=verbose,
             )
-            if filter_columns is not None or best_effort_statistics_columns
+            if add_actions is not None and load_statistics
+            else None
+        )
+        # The log holds the partition values, paths need not be hive-style.
+        hive_partitions = (
+            add_actions.select(pl.col("partition").struct.field(*hive_schema))
+            if add_actions is not None and partition_columns
             else None
         )
 
@@ -268,6 +282,7 @@ class DeltaDataset:
             storage_options=self.storage_options,
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             _table_statistics=table_statistics,
+            _hive_partitions=hive_partitions,
             _deletion_files=deletion_files,
             _source_sizes=source_sizes,
         ), version_key
@@ -290,7 +305,6 @@ class DeltaDataset:
             from deltalake.exceptions import DeltaProtocolError
             from deltalake.table import (
                 MAX_SUPPORTED_READER_VERSION,
-                NOT_SUPPORTED_READER_VERSION,
                 SUPPORTED_READER_FEATURES,
             )
 
@@ -324,9 +338,10 @@ class DeltaDataset:
 
             table_protocol = table.protocol()
 
+            # Reader version 2 is column mapping.
             if (
                 table_protocol.min_reader_version > MAX_SUPPORTED_READER_VERSION
-                or table_protocol.min_reader_version == NOT_SUPPORTED_READER_VERSION
+                or table_protocol.min_reader_version == 2
             ):
                 msg = (
                     f"The table's minimum reader version is {table_protocol.min_reader_version} "
