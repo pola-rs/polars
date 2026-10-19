@@ -146,11 +146,11 @@ and `include_file_paths`.
 --8<-- "python/user-guide/sql/select.py:tablefunctionparquet"
 ```
 
-- Unlike `scan_parquet`, `read_parquet` reads hive partitions by default
-  (`hive_partitioning => true`), for a glob or a single file too: a path such as
-  `data/k=1/part.parquet` adds a column `k`. Every `key=value` folder in such a path counts, so an
-  absolute path can also pick up columns from its parent folders. Use `hive_partitioning => false`
-  to leave them out.
+- Unlike `scan_parquet`, `read_parquet` reads hive partitions by default when given one path, for a
+  glob or a single file too: a path such as `data/k=1/part.parquet` adds a column `k`. Every
+  `key=value` folder in such a path counts, so an absolute path can also pick up columns from its
+  parent folders. A list of paths reads them only when it is a single directory, as in
+  `scan_parquet`. Set `hive_partitioning` to `true` or `false` to choose either way.
 - When reading several files, the first one defines the columns, unless `schema` is given. Use
   `missing_columns => 'insert'` and `extra_columns => 'ignore'` for files that differ from it.
 - As for `read_csv`, options marked unstable in the

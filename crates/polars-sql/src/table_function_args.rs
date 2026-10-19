@@ -3,6 +3,7 @@
 
 #[cfg(any(feature = "csv", feature = "json"))]
 use std::num::NonZeroUsize;
+#[cfg(any(feature = "csv", feature = "json"))]
 use std::str::FromStr;
 
 use polars_core::prelude::*;
@@ -156,6 +157,7 @@ impl<'a> TableFunctionOptions<'a> {
         self.expect_number(name, expr, "a non-negative integer")
     }
 
+    #[cfg(any(feature = "csv", feature = "json"))]
     fn expect_number<T: FromStr>(
         &self,
         name: &str,

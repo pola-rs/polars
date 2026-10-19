@@ -664,6 +664,38 @@ def test_read_parquet_hive_column_of_a_single_file(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("options", "kwargs"),
     [
+        # as scan_parquet: a list of files doesn't read the partitions by default
+        ("", {}),
+        ("hive_partitioning => true", {"hive_partitioning": True}),
+        (
+            "hive_partitioning => true, hive_schema => {'d': 'VARCHAR'}, "
+            "include_file_paths => 'file'",
+            {
+                "hive_partitioning": True,
+                "hive_schema": {"d": pl.String},
+                "include_file_paths": "file",
+            },
+        ),
+    ],
+)
+def test_read_parquet_list_of_paths_with_options(
+    tmp_path: Path, options: str, kwargs: dict[str, Any]
+) -> None:
+    _write_hive_parquet(tmp_path)
+    files = [
+        (tmp_path / f"d={d}" / "data.parquet").as_posix()
+        for d in ("2026-01-01", "2026-01-02")
+    ]
+    sql_list = ", ".join(f"'{f}'" for f in files)
+    args = f"[{sql_list}]" + (f", {options}" if options else "")
+    result = pl.sql(f"SELECT * FROM read_parquet({args})").collect()
+    assert_frame_equal(result, pl.scan_parquet(files, **kwargs).collect())
+    assert ("d" in result.columns) == ("hive_partitioning" in kwargs)
+
+
+@pytest.mark.parametrize(
+    ("options", "kwargs"),
+    [
         # the first file defines the columns; later files lack one, or have another
         (
             "missing_columns => 'insert', extra_columns => 'ignore'",
