@@ -1,3 +1,5 @@
+use polars_buffer::Buffer;
+
 use super::CowBuffer;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::{Encoding, get_length};
@@ -174,6 +176,17 @@ pub struct DataPage {
     pub descriptor: Descriptor,
     pub num_rows: Option<usize>,
     pub num_nulls: Option<usize>,
+    /// The allocation size of `buffer`, if it is owned by this page alone, so decoders may keep it
+    /// alive.
+    pub(super) shared_capacity: Option<usize>,
+}
+
+/// The buffer of a [`DataPage`] that decoders may keep alive in their output.
+#[derive(Debug, Clone, Copy)]
+pub struct SharedPageBuffer<'a> {
+    pub buffer: &'a Buffer<u8>,
+    /// The size of the allocation that `buffer` keeps alive.
+    pub capacity: usize,
 }
 
 impl DataPage {
@@ -192,6 +205,7 @@ impl DataPage {
             descriptor,
             num_rows: Some(num_rows),
             num_nulls: Some(num_nulls),
+            shared_capacity: None,
         }
     }
 
@@ -207,6 +221,7 @@ impl DataPage {
             descriptor,
             num_rows: None,
             num_nulls: None,
+            shared_capacity: None,
         }
     }
 
@@ -218,6 +233,35 @@ impl DataPage {
     #[inline]
     pub fn buffer(&self) -> &[u8] {
         &self.buffer
+    }
+
+    /// Turns an owned buffer into a [`Buffer`] that decoders may keep alive in their output.
+    pub fn share_buffer(&mut self) {
+        if let CowBuffer::Owned(buffer) = &mut self.buffer {
+            self.shared_capacity = Some(buffer.capacity());
+            self.buffer = CowBuffer::Borrowed(Buffer::from_vec(std::mem::take(buffer)));
+        }
+    }
+
+    /// The page buffer, if decoders may keep it alive in their output.
+    pub fn shared_buffer(&self) -> Option<SharedPageBuffer<'_>> {
+        match (&self.buffer, self.shared_capacity) {
+            (CowBuffer::Borrowed(buffer), Some(capacity)) => {
+                Some(SharedPageBuffer { buffer, capacity })
+            },
+            _ => None,
+        }
+    }
+
+    /// The page buffer as a `Vec`, if no one else holds it.
+    pub fn into_owned_buffer(self) -> Option<Vec<u8>> {
+        match self.buffer {
+            CowBuffer::Borrowed(buffer) if self.shared_capacity.is_some() => {
+                buffer.into_mut().right()
+            },
+            CowBuffer::Borrowed(_) => None,
+            CowBuffer::Owned(buffer) => Some(buffer),
+        }
     }
 
     /// Returns a mutable reference to the internal buffer.

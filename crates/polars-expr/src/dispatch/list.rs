@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use polars_arrow::compute::utils::combine_validities_and;
-use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure};
+use polars_core::chunked_array::cast::CastOptions;
+use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::{
-    Column, DataType, IDX_DTYPE, Int64Chunked, IntoColumn, ListChunked, SortOptions,
+    ChunkCast, Column, DataType, IDX_DTYPE, Int64Chunked, IntoColumn, ListChunked, SortOptions,
 };
 use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
@@ -258,8 +259,28 @@ pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column>
         // make sure we return a list
         out.reshape_list(&[ReshapeDimension::Infer, ReshapeDimension::new_dimension(1)])
     } else {
-        ca.lst_gather(idx.as_materialized_series(), null_on_oob)
-            .map(Column::from)
+        let idx_ca = idx.list()?;
+        polars_ensure!(
+            idx_ca.inner_dtype().is_integer(),
+            ComputeError: "cannot use dtype `{}` as an index", idx_ca.inner_dtype()
+        );
+        let (len, list_stride, idx_stride) = match (ca.len(), idx_ca.len()) {
+            (a, b) if a == b => (a, 1, 1),
+            (1, b) => (b, 0, 1),
+            (a, 1) => (a, 1, 0),
+            (a, b) => polars_bail!(length_mismatch = "list.gather", a, b),
+        };
+        // Indices outside the `i64` range are out of bounds.
+        let options = if null_on_oob {
+            CastOptions::NonStrict
+        } else {
+            CastOptions::Strict
+        };
+        let idx_ca = idx_ca
+            .cast_with_options(&DataType::List(Box::new(DataType::Int64)), options)
+            .map_err(|_| polars_err!(OutOfBounds: "gather indices are out of bounds"))?;
+        ca.lst_gather_var(list_stride, idx_ca.list()?, idx_stride, len, null_on_oob)
+            .map(IntoColumn::into_column)
     }
 }
 

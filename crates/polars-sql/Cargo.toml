@@ -31,7 +31,6 @@ sqlparser = { workspace = true }
 polars-core = { workspace = true, features = ["fmt"] }
 # required for local runs of the 'iss_23134' test
 polars-lazy = { workspace = true, features = ["streaming"] }
-tempfile = "3"
 
 [features]
 default = []
@@ -44,8 +43,17 @@ bitwise = ["polars-lazy/bitwise"]
 csv = ["polars-lazy/csv", "polars-io/csv", "polars-io/temporal"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
 dtype-decimal = ["polars-lazy/dtype-decimal"]
+# Opt-in: `dtype-map` also makes Arrow `MAP` columns import as `Map` instead of `List(Struct)`, program-wide.
+dtype-map = ["polars-lazy/dtype-map", "polars-io/dtype-map", "polars-ops/dtype-map"]
 ipc = ["polars-lazy/ipc"]
-json = ["polars-lazy/json", "polars-plan/json", "polars-lazy/extract_jsonpath", "polars-plan/extract_jsonpath"]
+# `read_ndjson` schemas can name temporal types, which the NDJSON reader needs enabled.
+json = [
+  "polars-lazy/json",
+  "polars-plan/json",
+  "polars-lazy/extract_jsonpath",
+  "polars-plan/extract_jsonpath",
+  "polars-io/temporal",
+]
 list_eval = ["polars-lazy/list_eval"]
 parquet = ["polars-lazy/parquet"]
 rank = ["polars-lazy/rank"]

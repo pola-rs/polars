@@ -18,7 +18,10 @@ use crate::plans::aexpr::builder::IntoAExprBuilder;
 use crate::plans::expr_ir::ExprIR;
 #[cfg(feature = "is_in")]
 use crate::plans::predicates::try_extract_is_in_haystack;
-use crate::plans::{AExprBuilder, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
+use crate::plans::{
+    AExprBuilder, OrderKeeping, aexpr_to_leaf_names_iter, is_scalar_ae, order_keeping_column,
+    rename_columns,
+};
 
 /// A resolved reference to a (possibly nested) statistics target: a top-level column,
 /// optionally followed by a struct-field path.
@@ -34,6 +37,9 @@ struct StatTarget {
     /// Field path into a struct column, outermost first. Empty for a whole column.
     #[cfg_attr(not(feature = "dtype-struct"), allow(dead_code))]
     path: Vec<PlSmallStr>,
+    /// An order-keeping expression of `col` to take the statistics of instead, and whether it is
+    /// increasing.
+    order_keeping: Option<(Node, bool)>,
 }
 
 impl StatTarget {
@@ -53,10 +59,21 @@ impl StatTarget {
     }
 
     fn min(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
-        self.stat("min", arena)
+        self.min_or_max(true, arena)
     }
     fn max(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
-        self.stat("max", arena)
+        self.min_or_max(false, arena)
+    }
+    fn min_or_max(&self, min: bool, arena: &mut Arena<AExpr>) -> AExprBuilder {
+        let Some((expr, increasing)) = self.order_keeping else {
+            return self.stat(if min { "min" } else { "max" }, arena);
+        };
+        let suffix = if min == increasing { "min" } else { "max" };
+        let stat_names = PlIndexMap::from_iter([(
+            self.col.clone(),
+            format_pl_smallstr!("{}_{suffix}", self.col),
+        )]);
+        AExprBuilder::new_from_node(rename_columns(expr, arena, &stat_names))
     }
     fn null_count(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
         self.stat("nc", arena)
@@ -72,13 +89,14 @@ fn struct_field(base: AExprBuilder, name: PlSmallStr, arena: &mut Arena<AExpr>) 
     )
 }
 
-/// Resolve a `col(..)` or chained `col(..).struct.field(..)` expression to a [`StatTarget`].
-/// Returns `None` for anything else (literals, computed expressions, ...).
-fn resolve_stat_target(e: Node, arena: &Arena<AExpr>) -> Option<StatTarget> {
+/// Resolve a `col(..)`, chained `col(..).struct.field(..)` or order-keeping expression of a
+/// column to a [`StatTarget`]. Returns `None` for anything else.
+fn resolve_stat_target(e: Node, arena: &Arena<AExpr>, schema: &Schema) -> Option<StatTarget> {
     match arena.get(e) {
         AExpr::Column(c) => Some(StatTarget {
             col: c.clone(),
             path: Vec::new(),
+            order_keeping: None,
         }),
         #[cfg(feature = "dtype-struct")]
         AExpr::Function {
@@ -86,11 +104,18 @@ fn resolve_stat_target(e: Node, arena: &Arena<AExpr>) -> Option<StatTarget> {
             function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)),
             ..
         } if input.len() == 1 => {
-            let mut inner = resolve_stat_target(input[0].node(), arena)?;
+            let mut inner = resolve_stat_target(input[0].node(), arena, schema)?;
             inner.path.push(name.clone());
             Some(inner)
         },
-        _ => None,
+        _ => {
+            let OrderKeeping { column, increasing } = order_keeping_column(e, arena, schema)?;
+            Some(StatTarget {
+                col: column,
+                path: Vec::new(),
+                order_keeping: Some((e, increasing)),
+            })
+        },
     }
 }
 
@@ -139,8 +164,8 @@ fn get_binary_expr_target_and_lv<'a>(
     schema: &Schema,
 ) -> Option<((StatTarget, Node), (Option<Cow<'a, LiteralValue>>, Node))> {
     match (
-        resolve_stat_target(left, arena),
-        resolve_stat_target(right, arena),
+        resolve_stat_target(left, arena, schema),
+        resolve_stat_target(right, arena, schema),
         constant_evaluate(left, arena, schema, 0),
         constant_evaluate(right, arena, schema, 0),
     ) {
@@ -506,10 +531,10 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
-                            resolve_stat_target(input[0].node(), arena),
+                            resolve_stat_target(input[0].node(), arena, schema),
                             constant_evaluate(lv_node, arena, schema, 0),
                         ) {
-                            (Some(target), Some(_)) => {
+                            (Some(target), Some(_)) if target.order_keeping.is_none() => {
                                 use polars_core::prelude::ExplodeOptions;
 
                                 let dtype = target_leaf_dtype(&target, schema)?;
@@ -629,7 +654,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         }
                     },
                     IRBooleanFunction::Not => {
-                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena, schema)?;
                         let dtype = target_leaf_dtype(&target, schema)?;
                         if !matches!(dtype, DataType::Boolean) {
                             return None;
@@ -649,7 +674,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         Some(all_null.or(min, arena).node())
                     },
                     IRBooleanFunction::IsNull => {
-                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena, schema)?;
 
                         // col(A).is_null() -> null_count(A) == 0
                         //
@@ -684,7 +709,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         Some(col_nc.eq(idx_zero, arena).node())
                     },
                     IRBooleanFunction::IsNotNull => {
-                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena, schema)?;
 
                         // A struct row with null *fields* is still a non-null *struct*, and the
                         // struct's row-level null count is unrecoverable from per-field counts, so
@@ -705,7 +730,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     },
                     #[cfg(feature = "is_between")]
                     IRBooleanFunction::IsBetween { closed } => {
-                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena, schema)?;
                         let dtype = target_leaf_dtype(&target, schema)?;
 
                         // col(A).is_between(X, Y) ->
@@ -761,7 +786,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     _ => None,
                 },
                 IRFunctionExpr::DynamicPred { pred, .. } => {
-                    let target = resolve_stat_target(input[0].node(), arena)?;
+                    let target = resolve_stat_target(input[0].node(), arena, schema)?;
                     let dtype = target_leaf_dtype(&target, schema)?;
                     if !supports_runtime_range(dtype) {
                         return None;
