@@ -29,8 +29,6 @@ if TYPE_CHECKING:
     )
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 def test_streaming_full_outer_joins() -> None:
     n = 100

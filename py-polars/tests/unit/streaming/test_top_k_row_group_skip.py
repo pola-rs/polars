@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 N_ROW_GROUPS = 200
 ROWS_PER_GROUP = 10
 

@@ -16,8 +16,6 @@ if TYPE_CHECKING:
 
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 @pytest.mark.slow
 def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:

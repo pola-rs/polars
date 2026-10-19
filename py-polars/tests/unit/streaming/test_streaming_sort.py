@@ -16,8 +16,6 @@ if TYPE_CHECKING:
 
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 def assert_df_sorted_by(
     df: pl.DataFrame,

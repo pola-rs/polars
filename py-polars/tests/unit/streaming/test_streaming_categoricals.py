@@ -1,8 +1,4 @@
-import pytest
-
 import polars as pl
-
-pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_nested_categorical() -> None:

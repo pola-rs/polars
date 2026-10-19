@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 @pytest.fixture(autouse=True)
 def small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
