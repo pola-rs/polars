@@ -70,6 +70,15 @@ where
         avro_schema::write::write_metadata(&mut self.writer, record.clone(), self.compression)
             .map_err(to_compute_err)?;
 
+        // Slicing list children to their offsets avoids converting and serializing unused values.
+        let df = DataFrame::new(
+            df.height(),
+            df.apply_columns(|c| {
+                c.trim_lists_to_normalized_offsets()
+                    .unwrap_or_else(|| c.clone())
+            }),
+        )?;
+
         let mut data = vec![];
         let mut compressed_block = avro_schema::file::CompressedBlock::default();
         for chunk in df.iter_chunks(CompatLevel::oldest(), true) {
