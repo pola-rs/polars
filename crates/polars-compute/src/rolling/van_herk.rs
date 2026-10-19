@@ -14,17 +14,6 @@ where
     out
 }
 
-/// Fold identity, including infinities for floating-point inputs.
-#[inline]
-fn identity<T: NativeType + IsFloat + Bounded, P: MinMaxPolicy>() -> T {
-    let (lo, hi) = if T::is_float() {
-        (T::neg_inf_value(), T::pos_inf_value())
-    } else {
-        (T::min_value(), T::max_value())
-    };
-    if P::is_better(&lo, &hi) { hi } else { lo }
-}
-
 /// Stable combine: ties keep the earlier NaN payload or signed zero.
 #[inline(always)]
 fn combine<T: NativeType, P: MinMaxPolicy>(earlier: T, later: T) -> T {
@@ -50,7 +39,7 @@ pub(super) fn recenter_trailing<const MASKED: bool, T, P>(
     if shift < n {
         out.copy_within(shift.., 0);
     }
-    let id = identity::<T, P>();
+    let id = P::identity();
     assert!(!MASKED || validity_words.len() >= n.div_ceil(64));
     let get = |i: usize| {
         if MASKED {
@@ -95,7 +84,7 @@ where
     T: NativeType + IsFloat + Bounded,
     P: MinMaxPolicy,
 {
-    let id = identity::<T, P>();
+    let id = P::identity();
     let n = values.len();
     assert!(!MASKED || validity_words.len() >= n.div_ceil(64));
     let get = |i: usize| {
