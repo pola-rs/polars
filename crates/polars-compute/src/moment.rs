@@ -67,7 +67,7 @@ pub struct PearsonState {
     dp_yy: f64,
 }
 
-/// Converts a state to and from its fields, which are trusted as they are.
+/// Converts a state to and from its fields.
 macro_rules! impl_parts {
     ($ty:ident, $n:literal, $($field:ident),+) => {
         impl $ty {

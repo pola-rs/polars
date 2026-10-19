@@ -10,6 +10,7 @@ use polars_utils::cardinality_sketch::CardinalitySketch;
 #[cfg(feature = "approx_quantile")]
 use polars_utils::pl_serialize;
 
+use super::super::var_std::BoolVarState;
 use super::*;
 
 /// A per-group state that travels between the stages as a column of `state_dtype()`.
@@ -88,7 +89,20 @@ impl<S: StructState<N>, const N: usize> StateDecoder<S> for StructDecoder<'_, S,
 }
 
 macro_rules! impl_struct_split_state {
-    ($ty:ty, $n:literal) => {
+    ($ty:ident, $field:ty, $n:literal) => {
+        impl StructState<$n> for $ty {
+            type Field = $field;
+            const FIELD_NAMES: [&'static str; $n] = $ty::FIELD_NAMES;
+
+            fn to_parts(&self) -> [<$field as PolarsNumericType>::Native; $n] {
+                $ty::to_parts(self)
+            }
+
+            fn from_parts(parts: [<$field as PolarsNumericType>::Native; $n]) -> Self {
+                $ty::from_parts(parts)
+            }
+        }
+
         impl SplitState for $ty {
             type Decoder<'a> = StructDecoder<'a, Self, $n>;
 
@@ -107,48 +121,29 @@ macro_rules! impl_struct_split_state {
     };
 }
 
-macro_rules! impl_moment_split_state {
-    ($ty:ident, $n:literal) => {
-        impl StructState<$n> for $ty {
-            type Field = Float64Type;
-            const FIELD_NAMES: [&'static str; $n] = $ty::FIELD_NAMES;
+impl_struct_split_state!(VarState, Float64Type, 3);
+impl_struct_split_state!(SkewState, Float64Type, 4);
+impl_struct_split_state!(KurtosisState, Float64Type, 5);
+impl_struct_split_state!(CovState, Float64Type, 4);
+impl_struct_split_state!(PearsonState, Float64Type, 6);
+impl_struct_split_state!(BoolVarState, UInt64Type, 2);
 
-            fn to_parts(&self) -> [f64; $n] {
-                $ty::to_parts(self)
-            }
-
-            fn from_parts(parts: [f64; $n]) -> Self {
-                $ty::from_parts(parts)
-            }
-        }
-
-        impl_struct_split_state!($ty, $n);
-    };
-}
-
-impl_moment_split_state!(VarState, 3);
-impl_moment_split_state!(SkewState, 4);
-impl_moment_split_state!(KurtosisState, 5);
-impl_moment_split_state!(CovState, 4);
-impl_moment_split_state!(PearsonState, 6);
-
-/// The `(true_count, count)` state of the boolean variance.
-impl StructState<2> for (usize, usize) {
-    type Field = UInt64Type;
+impl BoolVarState {
     const FIELD_NAMES: [&'static str; 2] = ["true_count", "count"];
 
     fn to_parts(&self) -> [u64; 2] {
-        [self.0 as u64, self.1 as u64]
+        [self.true_count as u64, self.count as u64]
     }
 
     fn from_parts([true_count, count]: [u64; 2]) -> Self {
-        (true_count as usize, count as usize)
+        Self {
+            true_count: true_count as usize,
+            count: count as usize,
+        }
     }
 }
 
-impl_struct_split_state!((usize, usize), 2);
-
-pub(crate) const CARDINALITY_BUCKETS: usize = 256;
+const CARDINALITY_BUCKETS: usize = 256;
 
 impl SplitState for CardinalitySketch {
     type Decoder<'a> = CardinalityDecoder<'a>;
@@ -218,14 +213,7 @@ where
     }
 
     fn encode(states: Vec<Self>) -> PolarsResult<Series> {
-        let mut builder = BinaryChunkedBuilder::new(PlSmallStr::EMPTY, states.len());
-        let mut blob = Vec::new();
-        for state in &states {
-            blob.clear();
-            pl_serialize::serialize_into_writer::<_, _, false>(&mut blob, state)?;
-            builder.append_value(&blob);
-        }
-        Ok(builder.finish().into_series())
+        polars_ops::series::sketches_to_series(&states)
     }
 
     fn decoder(s: &Series) -> Self::Decoder<'_> {

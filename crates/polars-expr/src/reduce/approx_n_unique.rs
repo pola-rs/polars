@@ -4,9 +4,7 @@ use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
 
-#[cfg(feature = "serde")]
-use super::split::SplitState;
-use super::split::{SplitStage, merge_reduction, split_reduction};
+use super::split::{SplitStage, merge_reduction, null_reduction, split_reduction};
 use super::*;
 
 pub fn new_approx_n_unique_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
@@ -22,15 +20,13 @@ pub fn new_approx_n_unique_state_reduction(
     approx_n_unique_reduction(dtype, SplitStage::State)
 }
 
-/// Merges the states of [`new_approx_n_unique_state_reduction`] over values of any dtype, and
+/// Merges the states of [`new_approx_n_unique_state_reduction`] over values of `values_dtype`, and
 /// outputs what [`new_approx_n_unique_reduction`] does.
 #[cfg(feature = "serde")]
-pub fn new_approx_n_unique_merge_reduction() -> Box<dyn GroupedReduction> {
-    // The sketches hold hashes, so one reducer merges the states of every input.
-    merge_reduction(
-        DataType::UInt32,
-        ApproxNUniqueReducer::<UInt32Type>::default(),
-    )
+pub fn new_approx_n_unique_merge_reduction(
+    values_dtype: DataType,
+) -> PolarsResult<Box<dyn GroupedReduction>> {
+    approx_n_unique_reduction(values_dtype, SplitStage::Merge)
 }
 
 fn approx_n_unique_reduction(
@@ -41,6 +37,11 @@ fn approx_n_unique_reduction(
     use ApproxNUniqueReducer as R;
     use DataType::*;
     Ok(match dtype {
+        Null => null_reduction(stage, Scalar::new_idxsize(1)),
+        // The sketches hold hashes, so one reducer merges the states of every input.
+        _ if matches!(stage, SplitStage::Merge) => {
+            merge_reduction(dtype, R::<UInt32Type>::default())
+        },
         Boolean => split_reduction(dtype, R::<BooleanType>::default(), stage),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
@@ -57,28 +58,10 @@ fn approx_n_unique_reduction(
             CategoricalPhysical::U16 => split_reduction(dtype, R::<UInt16Type>::default(), stage),
             CategoricalPhysical::U32 => split_reduction(dtype, R::<UInt32Type>::default(), stage),
         },
-        Null => match stage {
-            #[cfg(feature = "serde")]
-            SplitStage::State => Box::new(super::NullGroupedReduction::new(null_input_state()?)),
-            _ => Box::new(super::NullGroupedReduction::new(Scalar::new_idxsize(1))),
-        },
         _ => {
             polars_bail!(InvalidOperation: "`approx_n_unique` operation not supported for dtype `{dtype}`")
         },
     })
-}
-
-/// The state of every group of a `Null` input: a sketch of one null, which estimates the `1`
-/// that `Whole` returns, even for an empty group.
-#[cfg(feature = "serde")]
-fn null_input_state() -> PolarsResult<Scalar> {
-    let mut sketch = CardinalitySketch::new();
-    sketch.insert(PlFixedStateQuality::default().tot_hash_one(None::<bool>));
-    let states = CardinalitySketch::encode(vec![sketch])?;
-    Ok(Scalar::new(
-        states.dtype().clone(),
-        states.get(0)?.into_static(),
-    ))
 }
 
 struct ApproxNUniqueReducer<T> {

@@ -4,14 +4,14 @@ use num_traits::AsPrimitive;
 use polars_compute::moment::{KurtosisState, SkewState};
 use polars_core::with_match_physical_numeric_polars_type;
 
-use super::split::{SplitStage, merge_reduction, split_reduction};
+use super::split::{SplitStage, merge_reduction, null_reduction, split_reduction};
 use super::*;
 
 pub fn new_skew_reduction(dtype: DataType, bias: bool) -> PolarsResult<Box<dyn GroupedReduction>> {
     skew_reduction(dtype, bias, SplitStage::Whole)
 }
 
-/// Like [`new_skew_reduction`], but outputs the serialized state of each group, to be merged by
+/// Like [`new_skew_reduction`], but outputs the state of each group, to be merged by
 /// [`new_skew_merge_reduction`].
 #[cfg(feature = "serde")]
 pub fn new_skew_state_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
@@ -69,9 +69,7 @@ fn skew_reduction(
             },
             stage,
         ),
-        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
-            DataType::Null,
-        ))),
+        Null => null_reduction(stage, Scalar::null(Null)),
         _ => {
             polars_bail!(InvalidOperation: "`skew` operation not supported for dtype `{dtype}`")
         },
@@ -86,7 +84,7 @@ pub fn new_kurtosis_reduction(
     kurtosis_reduction(dtype, fisher, bias, SplitStage::Whole)
 }
 
-/// Like [`new_kurtosis_reduction`], but outputs the serialized state of each group, to be merged
+/// Like [`new_kurtosis_reduction`], but outputs the state of each group, to be merged
 /// by [`new_kurtosis_merge_reduction`].
 #[cfg(feature = "serde")]
 pub fn new_kurtosis_state_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
@@ -149,9 +147,7 @@ fn kurtosis_reduction(
             },
             stage,
         ),
-        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
-            DataType::Null,
-        ))),
+        Null => null_reduction(stage, Scalar::null(Null)),
         _ => {
             polars_bail!(InvalidOperation: "`kurtosis` operation not supported for dtype `{dtype}`")
         },

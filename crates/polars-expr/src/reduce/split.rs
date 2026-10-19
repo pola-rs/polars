@@ -31,6 +31,15 @@ pub(super) trait StateFinish: Clone + Send + Sync + 'static {
     fn finish(&self, states: Vec<Self::State>) -> PolarsResult<Series>;
 }
 
+/// Builds `stage` of a reduction over a `Null` input, which outputs `whole` and has null states.
+pub(super) fn null_reduction(stage: SplitStage, whole: Scalar) -> Box<dyn GroupedReduction> {
+    let output = match stage {
+        SplitStage::State => Scalar::null(DataType::Null),
+        SplitStage::Whole | SplitStage::Merge => whole,
+    };
+    Box::new(NullGroupedReduction::new(output))
+}
+
 /// Builds `stage` of `reducer`'s reduction over values of `dtype`.
 #[cfg(feature = "serde")]
 pub(super) fn split_reduction<R>(
@@ -439,19 +448,20 @@ mod tests {
             ],
             vec![partition(vec![null(0)], &[])],
         ];
-        let merge = new_approx_n_unique_merge_reduction();
         for partitions in cases {
             let dtype = partitions[0].values[0].dtype().clone();
             let whole = new_approx_n_unique_reduction(dtype.clone()).unwrap();
-            let state = new_approx_n_unique_state_reduction(dtype).unwrap();
-            assert_eq!(
-                reduction_output_dtype(&*state).unwrap(),
-                CardinalitySketch::state_dtype()
-            );
+            let state = new_approx_n_unique_state_reduction(dtype.clone()).unwrap();
+            let merge = new_approx_n_unique_merge_reduction(dtype.clone()).unwrap();
+            let state_dtype = match dtype {
+                DataType::Null => DataType::Null,
+                _ => CardinalitySketch::state_dtype(),
+            };
+            assert_eq!(reduction_output_dtype(&*state).unwrap(), state_dtype);
             let expected = run_whole(&*whole, &partitions, 4).unwrap();
             let split = run_split(&*state, &*merge, &partitions, 4).unwrap();
             assert!(split.equals_missing(&expected), "{split:?} != {expected:?}");
+            assert_eq!(reduction_output_dtype(&*merge).unwrap(), IDX_DTYPE);
         }
-        assert_eq!(reduction_output_dtype(&*merge).unwrap(), IDX_DTYPE);
     }
 }

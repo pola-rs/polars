@@ -4,7 +4,7 @@ use num_traits::AsPrimitive;
 use polars_compute::moment::VarState;
 use polars_core::with_match_physical_numeric_polars_type;
 
-use super::split::{SplitStage, merge_reduction, split_reduction};
+use super::split::{SplitStage, merge_reduction, null_reduction, split_reduction};
 use super::*;
 
 pub fn new_var_std_reduction(
@@ -15,7 +15,7 @@ pub fn new_var_std_reduction(
     var_std_reduction(dtype, is_std, ddof, SplitStage::Whole)
 }
 
-/// Like [`new_var_std_reduction`], but outputs the serialized state of each group, to be merged
+/// Like [`new_var_std_reduction`], but outputs the state of each group, to be merged
 /// by [`new_var_std_merge_reduction`].
 #[cfg(feature = "serde")]
 pub fn new_var_std_state_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
@@ -79,9 +79,7 @@ fn var_std_reduction(
             },
             stage,
         ),
-        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
-            DataType::Null,
-        ))),
+        Null => null_reduction(stage, Scalar::null(Null)),
         _ => {
             polars_bail!(InvalidOperation: "`{op_name}` operation not supported for dtype `{dtype}`")
         },
@@ -190,28 +188,34 @@ struct BoolVarStdReducer {
     ddof: u8,
 }
 
+#[derive(Clone, Default)]
+pub(super) struct BoolVarState {
+    pub(super) true_count: usize,
+    pub(super) count: usize,
+}
+
 impl Reducer for BoolVarStdReducer {
     type Dtype = BooleanType;
-    type Value = (usize, usize);
+    type Value = BoolVarState;
 
     fn init(&self) -> Self::Value {
-        (0, 0)
+        BoolVarState::default()
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        a.0 += b.0;
-        a.1 += b.1;
+        a.true_count += b.true_count;
+        a.count += b.count;
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>, _seq_id: u64) {
-        a.0 += b.unwrap_or(false) as usize;
-        a.1 += b.is_some() as usize;
+        a.true_count += b.unwrap_or(false) as usize;
+        a.count += b.is_some() as usize;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        v.0 += ca.sum().unwrap_or(0) as usize;
-        v.1 += ca.len() - ca.null_count();
+        v.true_count += ca.sum().unwrap_or(0) as usize;
+        v.count += ca.len() - ca.null_count();
     }
 
     fn finish(
@@ -224,12 +228,12 @@ impl Reducer for BoolVarStdReducer {
         let ca: Float64Chunked = v
             .into_iter()
             .map(|v| {
-                if v.1 <= self.ddof as usize {
+                if v.count <= self.ddof as usize {
                     return None;
                 }
 
-                let sum = v.0 as f64; // Both the sum and sum-of-squares, letting us simplify.
-                let n = v.1;
+                let sum = v.true_count as f64; // Both the sum and sum-of-squares, letting us simplify.
+                let n = v.count;
                 let var = sum * (1.0 - sum / n as f64) / ((n - self.ddof as usize) as f64);
                 if self.is_std {
                     Some(var.sqrt())
