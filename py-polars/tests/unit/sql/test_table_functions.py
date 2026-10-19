@@ -423,7 +423,7 @@ def test_read_json_takes_only_a_path(tmp_path: Path) -> None:
     )
     with pytest.raises(
         SQLSyntaxError,
-        match=r"`read_json` expects a single file path; found 2 arguments \(for options, use `read_ndjson`\)",
+        match=r"`read_json` expects one file path or a list of file paths; found 2 arguments \(for options, use `read_ndjson`\)",
     ):
         _read_ndjson_sql(path, "ignore_errors => true", function="read_json")
 
@@ -569,7 +569,6 @@ def test_read_csv_list_of_paths_with_options(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("args", "match"),
     [
-        ("[]", r"`read_csv` expects at least one file path; found an empty list"),
         ("['a.csv', 1]", r"a list of them; found: \['a.csv', 1\]"),
         ("1", r"a list of them; found: 1"),
     ],
@@ -577,3 +576,40 @@ def test_read_csv_list_of_paths_with_options(tmp_path: Path) -> None:
 def test_read_csv_list_of_paths_errors(args: str, match: str) -> None:
     with pytest.raises(SQLSyntaxError, match=match):
         pl.sql(f"SELECT * FROM read_csv({args})").collect()
+
+
+def test_read_csv_empty_list_of_paths() -> None:
+    # as in Python: an empty list needs a schema
+    result = pl.sql("SELECT * FROM read_csv([], schema => {'x': 'INT'})").collect()
+    assert_frame_equal(result, pl.DataFrame(schema={"x": pl.Int32}))
+    with pytest.raises(ComputeError, match=r"empty input"):
+        pl.sql("SELECT * FROM read_csv([])").collect()
+
+
+@pytest.mark.parametrize(
+    ("function", "write"),
+    [
+        ("read_parquet", pl.DataFrame.write_parquet),
+        ("read_ipc", pl.DataFrame.write_ipc),
+    ],
+)
+def test_read_hive_partitions_list_of_paths(
+    tmp_path: Path, function: str, write: Any
+) -> None:
+    for part in (1, 2):
+        (tmp_path / f"p={part}").mkdir()
+        write(pl.DataFrame({"x": [part]}), tmp_path / f"p={part}" / "data")
+    files = [(tmp_path / f"p={part}" / "data").as_posix() for part in (1, 2)]
+
+    # as in Python: a list of files doesn't read the partitions, one path does
+    sql_list = ", ".join(f"'{f}'" for f in files)
+    result = pl.sql(f"SELECT * FROM {function}([{sql_list}])").collect()
+    assert result.columns == ["x"]
+    result = pl.sql(f"SELECT * FROM {function}('{files[0]}')").collect()
+    assert result.columns == ["x", "p"]
+
+    # a single directory in a list does
+    result = pl.sql(f"SELECT * FROM {function}(['{tmp_path.as_posix()}/'])").collect()
+    assert_frame_equal(
+        result, pl.DataFrame({"x": [1, 2], "p": [1, 2]}), check_row_order=False
+    )

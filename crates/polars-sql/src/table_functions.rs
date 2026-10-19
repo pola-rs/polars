@@ -298,24 +298,34 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "parquet")]
     fn read_parquet(&self, args: &[SQLFunctionArg]) -> PolarsResult<(String, LazyFrame)> {
-        polars_ensure!(args.len() == 1, SQLSyntax: "`read_parquet` expects a single file path; found {:?} arguments", args.len());
+        use polars_lazy::prelude::ScanArgsParquet;
+
+        polars_ensure!(args.len() == 1, SQLSyntax: "`read_parquet` expects one file path or a list of file paths; found {:?} arguments", args.len());
 
         let (name, paths) = self.get_file_paths_from_arg("read_parquet", &args[0])?;
-        let lf = LazyFrame::scan_parquet_files(paths.into(), Default::default())?;
+        let scan_args = ScanArgsParquet {
+            hive_options: hive_options(&args[0]),
+            ..Default::default()
+        };
+        let lf = LazyFrame::scan_parquet_files(paths.into(), scan_args)?;
         Ok((name, lf))
     }
 
     #[cfg(feature = "ipc")]
     fn read_ipc(&self, args: &[SQLFunctionArg]) -> PolarsResult<(String, LazyFrame)> {
-        use polars_plan::dsl::ScanSources;
+        use polars_plan::dsl::{ScanSources, UnifiedScanArgs};
 
-        polars_ensure!(args.len() == 1, SQLSyntax: "`read_ipc` expects a single file path; found {:?} arguments", args.len());
+        polars_ensure!(args.len() == 1, SQLSyntax: "`read_ipc` expects one file path or a list of file paths; found {:?} arguments", args.len());
 
         let (name, paths) = self.get_file_paths_from_arg("read_ipc", &args[0])?;
+        let scan_args = UnifiedScanArgs {
+            hive_options: hive_options(&args[0]),
+            ..Default::default()
+        };
         let lf = LazyFrame::scan_ipc_sources(
             ScanSources::Paths(paths.into()),
             Default::default(),
-            Default::default(),
+            scan_args,
         )?;
         Ok((name, lf))
     }
@@ -326,7 +336,7 @@ impl PolarsTableFunctions {
 
         polars_ensure!(
             args.len() == 1,
-            SQLSyntax: "`read_json` expects a single file path; found {} arguments{}",
+            SQLSyntax: "`read_json` expects one file path or a list of file paths; found {} arguments{}",
             args.len(),
             if args.len() > 1 { " (for options, use `read_ndjson`)" } else { "" }
         );
@@ -392,12 +402,7 @@ impl PolarsTableFunctions {
             return Ok((path.to_string(), vec![path]));
         }
         if let SQLExpr::Array(SQLArray { elem, .. }) = expr {
-            let paths = elem.iter().map(path).collect::<Option<Vec<_>>>();
-            if let Some(paths) = paths {
-                polars_ensure!(
-                    !paths.is_empty(),
-                    SQLSyntax: "`{}` expects at least one file path; found an empty list", function
-                );
+            if let Some(paths) = elem.iter().map(path).collect::<Option<Vec<_>>>() {
                 return Ok((function.to_string(), paths));
             }
         }
@@ -405,6 +410,20 @@ impl PolarsTableFunctions {
             SQLSyntax:
             "expected a valid file path as a single-quoted string, or a list of them; found: {}", arg,
         )
+    }
+}
+
+/// As in Python: a list of paths only reads Hive partitions when it is a single directory. One path
+/// always reads them.
+#[cfg(any(feature = "parquet", feature = "ipc"))]
+fn hive_options(path_arg: &SQLFunctionArg) -> polars_io::HiveOptions {
+    let is_list = matches!(
+        path_arg,
+        SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(SQLExpr::Array(_)))
+    );
+    polars_io::HiveOptions {
+        enabled: if is_list { None } else { Some(true) },
+        ..Default::default()
     }
 }
 
