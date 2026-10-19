@@ -264,15 +264,9 @@ pub(super) fn convert_time_zone(s: &Column, time_zone: &TimeZone) -> PolarsResul
 }
 pub(super) fn cast_time_unit(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {
     match s.dtype() {
-        DataType::Datetime(_, _) => {
-            let ca = s.datetime()?;
-            Ok(ca.cast_time_unit(tu).into_column())
-        },
+        DataType::Datetime(_, tz) => s.strict_cast(&DataType::Datetime(tu, tz.clone())),
         #[cfg(feature = "dtype-duration")]
-        DataType::Duration(_) => {
-            let ca = s.as_materialized_series().duration()?;
-            Ok(ca.cast_time_unit(tu).into_column())
-        },
+        DataType::Duration(_) => s.strict_cast(&DataType::Duration(tu)),
         dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
     }
 }
