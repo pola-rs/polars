@@ -19,7 +19,12 @@ use crate::SQLContext;
 use crate::context::SubqueryShape;
 use crate::functions::series_expr;
 use crate::sql_expr::parse_sql_expr;
-#[cfg(any(feature = "csv", feature = "json", feature = "parquet"))]
+#[cfg(any(
+    feature = "csv",
+    feature = "json",
+    feature = "parquet",
+    feature = "ipc"
+))]
 use crate::table_function_args::TableFunctionOptions;
 #[cfg(feature = "csv")]
 use crate::table_function_args::{DtypeOverrides, StringValues};
@@ -41,9 +46,10 @@ pub(crate) enum PolarsTableFunctions {
     /// ```
     #[cfg(feature = "parquet")]
     ReadParquet,
-    /// SQL 'read_ipc' function.
+    /// SQL 'read_ipc' function, with optional named options as in Python's `scan_ipc`.
     /// ```sql
     /// SELECT * FROM read_ipc('path/to/file.ipc')
+    /// SELECT * FROM read_ipc('path/to/*.ipc', hive_partitioning => false)
     /// ```
     #[cfg(feature = "ipc")]
     ReadIpc,
@@ -362,13 +368,31 @@ impl PolarsTableFunctions {
 
     #[cfg(feature = "ipc")]
     fn read_ipc(&self, args: &[SQLFunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        use std::sync::Arc;
+
+        use polars_io::HiveOptions;
         use polars_plan::dsl::{ScanSources, UnifiedScanArgs};
 
-        polars_ensure!(args.len() == 1, SQLSyntax: "`read_ipc` expects one file path or a list of file paths; found {:?} arguments", args.len());
+        let (path_arg, options) = TableFunctionOptions::parse(
+            "read_ipc",
+            args,
+            READ_IPC_OPTIONS,
+            READ_IPC_EXCLUDED_OPTIONS,
+        )?;
+        let (name, paths) = self.get_file_paths_from_arg("read_ipc", path_arg)?;
 
-        let (name, paths) = self.get_file_paths_from_arg("read_ipc", &args[0])?;
         let scan_args = UnifiedScanArgs {
-            hive_options: hive_options(&args[0]),
+            hive_options: HiveOptions {
+                // Unlike `scan_ipc`, SQL reads the hive partitions of one path unless told not to.
+                // A list of paths gets the automatic choice, as `hive_options` says.
+                enabled: options
+                    .bool("hive_partitioning")?
+                    .or(hive_options(path_arg).enabled),
+                hive_start_idx: 0,
+                schema: options.schema("hive_schema")?.map(Arc::new),
+                try_parse_dates: options.bool("try_parse_hive_dates")?.unwrap_or(true),
+            },
+            include_file_paths: options.string("include_file_paths")?.map(Into::into),
             ..Default::default()
         };
         let lf = LazyFrame::scan_ipc_sources(
@@ -600,6 +624,38 @@ const READ_PARQUET_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
     ("use_pyarrow", ""),
     ("pyarrow_options", ""),
     ("memory_map", ""),
+];
+
+/// Named options of `read_ipc`: the options of Python's `scan_ipc` that SQL can express.
+#[cfg(feature = "ipc")]
+const READ_IPC_OPTIONS: &[&str] = &[
+    "hive_partitioning",
+    "hive_schema",
+    "try_parse_hive_dates",
+    "include_file_paths",
+];
+
+/// Options of Python's `scan_ipc` and `read_ipc` that `read_ipc` does not accept, with what to do
+/// instead.
+#[cfg(feature = "ipc")]
+const READ_IPC_EXCLUDED_OPTIONS: &[(&str, &str)] = &[
+    (
+        "credential_provider",
+        "cloud credentials are read from the environment",
+    ),
+    (
+        "storage_options",
+        "cloud credentials are read from the environment",
+    ),
+    ("n_rows", "use LIMIT, which is pushed down into the scan"),
+    (
+        "columns",
+        "select the columns in the SELECT list, which is pushed down into the scan",
+    ),
+    ("row_index_name", ""),
+    ("row_index_offset", ""),
+    ("glob", ""),
+    ("use_pyarrow", ""),
 ];
 
 impl PolarsTableFunctions {
