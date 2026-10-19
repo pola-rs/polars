@@ -3,4 +3,6 @@ pub mod chunk_data_fetch;
 #[cfg(any(feature = "csv", feature = "json", feature = "scan_lines"))]
 pub mod file_init;
 #[cfg(any(feature = "parquet", feature = "ipc"))]
+pub mod morsels;
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 pub mod pipeline_budget;
