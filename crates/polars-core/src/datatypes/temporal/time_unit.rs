@@ -78,6 +78,55 @@ impl TimeUnit {
             TimeUnit::Milliseconds => ns / 1_000_000,
         }
     }
+
+    /// How integer values in this unit are rescaled to `to`.
+    pub const fn rescale_to(self, to: TimeUnit) -> TimeUnitRescale {
+        use TimeUnit::*;
+        match (self, to) {
+            (Nanoseconds, Microseconds) | (Microseconds, Milliseconds) => {
+                TimeUnitRescale::Divide(1_000)
+            },
+            (Nanoseconds, Milliseconds) => TimeUnitRescale::Divide(1_000_000),
+            (Microseconds, Nanoseconds) | (Milliseconds, Microseconds) => {
+                TimeUnitRescale::Multiply(1_000)
+            },
+            (Milliseconds, Nanoseconds) => TimeUnitRescale::Multiply(1_000_000),
+            (Nanoseconds, Nanoseconds)
+            | (Microseconds, Microseconds)
+            | (Milliseconds, Milliseconds) => TimeUnitRescale::Unchanged,
+        }
+    }
+}
+
+/// How integer values in one [`TimeUnit`] are rescaled to another.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TimeUnitRescale {
+    Unchanged,
+    Multiply(i64),
+    Divide(i64),
+}
+
+impl TimeUnitRescale {
+    /// Rescales a datetime timestamp, rounding down.
+    #[inline]
+    pub fn datetime_value(self, v: i64) -> i64 {
+        use polars_utils::floor_divmod::FloorDivMod;
+        match self {
+            TimeUnitRescale::Unchanged => v,
+            TimeUnitRescale::Multiply(k) => v.wrapping_mul(k),
+            TimeUnitRescale::Divide(k) => v.wrapping_floor_div_mod(k).0,
+        }
+    }
+
+    /// Rescales a duration, rounding towards zero.
+    #[inline]
+    pub fn duration_value(self, v: i64) -> i64 {
+        match self {
+            TimeUnitRescale::Unchanged => v,
+            TimeUnitRescale::Multiply(k) => v.wrapping_mul(k),
+            TimeUnitRescale::Divide(k) => v.wrapping_div(k),
+        }
+    }
 }
 
 #[cfg(feature = "temporal")]
