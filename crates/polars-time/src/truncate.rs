@@ -38,25 +38,29 @@ impl PolarsTruncate for DatetimeChunked {
                 if every_parsed.negative {
                     polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
                 }
-                if (time_zone.is_none() || time_zone.as_ref() == Some(&TimeZone::UTC))
-                    && (every_parsed.months() == 0 && every_parsed.weeks() == 0)
-                {
+                // Offset changes can make truncated local times go backwards, so sortedness is
+                // only kept without a time zone or in UTC.
+                let naive_or_utc =
+                    time_zone.is_none() || time_zone.as_ref() == Some(&TimeZone::UTC);
+                if naive_or_utc && (every_parsed.months() == 0 && every_parsed.weeks() == 0) {
                     // ... yes we can! Weeks, months, and time zones require extra logic.
                     // But in this simple case, it's just simple integer arithmetic.
                     let every = every_parsed.duration(self.time_unit());
                     if every == 0 {
                         return Ok(self.clone());
                     }
-                    return Ok(self
-                        .physical()
-                        .apply_values(|t| fast_truncate(t, every))
-                        .into_datetime(self.time_unit(), time_zone.clone()));
+                    let mut out = self.physical().apply_values(|t| fast_truncate(t, every));
+                    out.set_sorted_flag(self.physical().is_sorted_flag());
+                    return Ok(out.into_datetime(self.time_unit(), time_zone.clone()));
                 } else {
                     let w = Window::new(every_parsed, every_parsed, offset);
-                    let out = self
-                        .physical()
-                        .try_apply_nonnull_values_generic(|t| w.truncate(self.time_unit(), t, tz));
-                    return Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()));
+                    let mut out = self.physical().try_apply_nonnull_values_generic(|t| {
+                        w.truncate(self.time_unit(), t, tz)
+                    })?;
+                    if naive_or_utc {
+                        out.set_sorted_flag(self.physical().is_sorted_flag());
+                    }
+                    return Ok(out.into_datetime(self.time_unit(), self.time_zone().clone()));
                 }
             } else {
                 return Ok(Int64Chunked::full_null(self.name().clone(), self.len())
@@ -107,13 +111,17 @@ impl PolarsTruncate for DateChunked {
                         polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
                     }
                     let w = Window::new(every, every, offset);
-                    self.physical().try_apply_nonnull_values_generic(|t| {
-                        Ok((w.truncate(
-                            TimeUnit::Milliseconds,
-                            MILLISECONDS_IN_DAY * t as i64,
-                            None,
-                        )? / MILLISECONDS_IN_DAY) as i32)
-                    })
+                    let mut out = self.physical().try_apply_nonnull_values_generic(
+                        |t| -> PolarsResult<i32> {
+                            Ok((w.truncate(
+                                TimeUnit::Milliseconds,
+                                MILLISECONDS_IN_DAY * t as i64,
+                                None,
+                            )? / MILLISECONDS_IN_DAY) as i32)
+                        },
+                    )?;
+                    out.set_sorted_flag(self.physical().is_sorted_flag());
+                    Ok(out)
                 } else {
                     Ok(Int32Chunked::full_null(self.name().clone(), self.len()))
                 }
