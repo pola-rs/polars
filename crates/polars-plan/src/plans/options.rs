@@ -17,7 +17,7 @@ use strum_macros::IntoStaticStr;
 use crate::dsl::{GroupbyOptions, JoinOptions};
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
-use crate::plans::ir::inputs::{Exprs, ExprsMut};
+use crate::plans::ir::inputs::{ExprSchema, Exprs, ExprsMut};
 use crate::plans::{DynamicPred, ExprIR, ExpressionComparator, PlSmallStr};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -786,6 +786,18 @@ impl JoinTypeOptionsIR {
             } => ExprsMut::double_slice(left_on, right_on),
             Self::CrossAndFilter { predicate } => ExprsMut::single(predicate),
             _ => ExprsMut::Empty,
+        }
+    }
+
+    /// The schema that the `idx`-th expression of [`Self::exprs`] resolves against.
+    pub fn expr_schema(&self, idx: usize) -> ExprSchema {
+        let n_left = self.left_on_len();
+        if idx < n_left {
+            ExprSchema::Input(0)
+        } else if idx < n_left + self.right_on_len() {
+            ExprSchema::Input(1)
+        } else {
+            ExprSchema::Output
         }
     }
 
