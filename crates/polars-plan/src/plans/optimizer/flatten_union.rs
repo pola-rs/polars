@@ -5,12 +5,13 @@ use polars_core::error::PolarsResult;
 use polars_utils::aliases::{PlFixedStateQuality, PlHashMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::unitvec;
 
 use super::OptimizationRule;
 use crate::dsl::{FileScanIR, PredicateFileSkip, ScanSources, UnifiedScanArgs};
 use crate::plans::{
-    AExpr, ArenaExprIter, ExprIR, FileInfo, IRFunctionExpr, ScanStats, is_elementwise_rec,
-    is_scalar_ae,
+    AExpr, ArenaExprIter, ExprIR, ExpressionComparator, FileInfo, IRFunctionExpr, ScanStats,
+    is_elementwise_rec, is_scalar_ae,
 };
 use crate::prelude::IR;
 
@@ -35,7 +36,7 @@ impl OptimizationRule for FlattenUnionRule {
             _ => false,
         });
 
-        let inputs = if flatten {
+        let flattened = flatten.then(|| {
             let mut new_inputs = Vec::with_capacity(inputs.len() * 2);
             for node in inputs {
                 match lp_arena.get(*node) {
@@ -45,22 +46,26 @@ impl OptimizationRule for FlattenUnionRule {
                     _ => new_inputs.push(*node),
                 }
             }
-            options.flattened_by_opt = true;
             new_inputs
-        } else {
-            inputs.clone()
-        };
+        });
 
-        let inputs = match merge_scans(
-            &inputs,
+        let groups = ScanGroups::find(
+            flattened.as_deref().unwrap_or(inputs),
             options.maintain_order,
-            options.rechunk,
             lp_arena,
             expr_arena,
-        ) {
-            Some(merged) => merged,
-            None if flatten => inputs,
-            None => return Ok(None),
+        );
+        if flattened.is_none() && groups.is_none() {
+            return Ok(None);
+        }
+        options.flattened_by_opt |= flatten;
+
+        let inputs = flattened.unwrap_or_else(|| inputs.clone());
+        let inputs = match groups {
+            Some(groups) => {
+                groups.merge(&inputs, options.maintain_order, options.rechunk, lp_arena)
+            },
+            None => inputs,
         };
 
         if let [input] = inputs.as_slice()
@@ -75,7 +80,7 @@ impl OptimizationRule for FlattenUnionRule {
 
 /// A scan with the row-wise nodes on top of it, top first.
 struct ScanChain {
-    row_wise: Vec<Node>,
+    row_wise: UnitVec<Node>,
     scan: Node,
     /// Equal for chains that can be merged, so only chains with the same key are compared.
     key: u64,
@@ -96,9 +101,22 @@ fn is_row_wise(node: Node, expr_arena: &Arena<AExpr>) -> bool {
         })
 }
 
+/// Compares expressions by value.
+struct ExprEq<'a>(&'a Arena<AExpr>);
+
+impl ExpressionComparator for ExprEq<'_> {
+    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool {
+        lhs.output_name_inner() == rhs.output_name_inner()
+            && self
+                .0
+                .get(lhs.node())
+                .is_expr_equal_to(self.0.get(rhs.node()), self.0)
+    }
+}
+
 fn hash_exprs(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mut impl Hasher) {
     for e in exprs {
-        e.output_name().hash(state);
+        e.output_name_inner().hash(state);
         for (_, ae) in expr_arena.iter(e.node()) {
             ae.hash(state);
         }
@@ -107,7 +125,7 @@ fn hash_exprs(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mut impl Hash
 
 impl ScanChain {
     fn new(mut node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<Self> {
-        let mut row_wise = Vec::new();
+        let mut row_wise = UnitVec::new();
         let mut state = PlFixedStateQuality::default().build_hasher();
         loop {
             let ir = lp_arena.get(node);
@@ -173,8 +191,11 @@ impl ScanChain {
             && self
                 .row_wise
                 .iter()
-                .zip(&other.row_wise)
-                .all(|(l, r)| same_row_wise_node(lp_arena.get(*l), lp_arena.get(*r), expr_arena))
+                .zip(other.row_wise.iter())
+                .all(|(l, r)| {
+                    let (l, r) = (lp_arena.get(*l), lp_arena.get(*r));
+                    same_schema(l, r) && l.is_ir_equal_shallow(r, &ExprEq(expr_arena))
+                })
             && can_concat_scans(
                 lp_arena.get(self.scan),
                 lp_arena.get(other.scan),
@@ -183,129 +204,104 @@ impl ScanChain {
     }
 }
 
-/// Merges inputs that are the same row-wise nodes over scans that can be read as one scan.
-/// An ordered union only merges neighbouring inputs. Returns `None` if nothing was merged.
-fn merge_scans(
-    inputs: &[Node],
-    maintain_order: bool,
-    rechunk: bool,
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-) -> Option<Vec<Node>> {
-    let chains: Vec<_> = inputs
-        .iter()
-        .map(|node| ScanChain::new(*node, lp_arena, expr_arena))
-        .collect();
-    if chains.iter().filter(|c| c.is_some()).count() < 2 {
-        return None;
-    }
+/// Union inputs grouped by whether they can be merged. Each group holds indices into the inputs.
+struct ScanGroups {
+    chains: Vec<Option<ScanChain>>,
+    groups: Vec<UnitVec<usize>>,
+}
 
-    // Each group holds indices into `inputs`. An unordered union looks up groups by chain key.
-    let mut groups: Vec<Vec<usize>> = Vec::with_capacity(inputs.len());
-    let mut groups_by_key: PlHashMap<u64, UnitVec<usize>> = PlHashMap::default();
-    for (i, chain) in chains.iter().enumerate() {
-        let Some(chain) = chain else {
-            groups.push(vec![i]);
-            continue;
-        };
-        let fits = |g: usize| {
-            chains[groups[g][0]]
-                .as_ref()
-                .is_some_and(|l| l.can_concat(chain, lp_arena, expr_arena))
-        };
-        let group = if maintain_order {
-            groups.len().checked_sub(1).filter(|g| fits(*g))
-        } else {
-            groups_by_key
-                .get(&chain.key)
-                .and_then(|gs| gs.iter().copied().find(|g| fits(*g)))
-        };
-        match group {
-            Some(g) => groups[g].push(i),
-            None => {
-                if !maintain_order {
-                    groups_by_key
-                        .entry(chain.key)
-                        .or_default()
-                        .push(groups.len());
-                }
-                groups.push(vec![i]);
-            },
+impl ScanGroups {
+    /// Groups inputs that are the same row-wise nodes over scans that can be read as one scan.
+    /// An ordered union only groups neighbouring inputs. Returns `None` if no group has more than
+    /// one input.
+    fn find(
+        inputs: &[Node],
+        maintain_order: bool,
+        lp_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+    ) -> Option<Self> {
+        let chains: Vec<_> = inputs
+            .iter()
+            .map(|node| ScanChain::new(*node, lp_arena, expr_arena))
+            .collect();
+        if chains.iter().filter(|c| c.is_some()).count() < 2 {
+            return None;
         }
+
+        // An unordered union looks up groups by chain key.
+        let mut groups: Vec<UnitVec<usize>> = Vec::with_capacity(inputs.len());
+        let mut groups_by_key: PlHashMap<u64, UnitVec<usize>> = PlHashMap::default();
+        for (i, chain) in chains.iter().enumerate() {
+            let Some(chain) = chain else {
+                groups.push(unitvec![i]);
+                continue;
+            };
+            let fits = |g: usize| {
+                chains[groups[g][0]]
+                    .as_ref()
+                    .is_some_and(|l| l.can_concat(chain, lp_arena, expr_arena))
+            };
+            let group = if maintain_order {
+                groups.len().checked_sub(1).filter(|g| fits(*g))
+            } else {
+                groups_by_key
+                    .get(&chain.key)
+                    .and_then(|gs| gs.iter().copied().find(|g| fits(*g)))
+            };
+            match group {
+                Some(g) => groups[g].push(i),
+                None => {
+                    if !maintain_order {
+                        groups_by_key
+                            .entry(chain.key)
+                            .or_default()
+                            .push(groups.len());
+                    }
+                    groups.push(unitvec![i]);
+                },
+            }
+        }
+
+        (groups.len() < inputs.len()).then_some(Self { chains, groups })
     }
 
-    if groups.len() == inputs.len() {
-        return None;
-    }
-
-    Some(
+    /// Replaces each group of `inputs` with one merged scan and the row-wise nodes of the group's
+    /// first input on top of it.
+    fn merge(
+        self,
+        inputs: &[Node],
+        maintain_order: bool,
+        rechunk: bool,
+        lp_arena: &mut Arena<IR>,
+    ) -> Vec<Node> {
+        let Self { chains, groups } = self;
         groups
             .into_iter()
             .map(|group| {
                 if let [i] = group.as_slice() {
                     return inputs[*i];
                 }
-                let scans: Vec<_> = group
+                let scans: UnitVec<_> = group
                     .iter()
                     .map(|i| chains[*i].as_ref().unwrap().scan)
                     .collect();
                 let scan = concat_scans(&scans, maintain_order, rechunk, lp_arena);
                 let mut node = lp_arena.add(scan);
-                // Rebuild the row-wise nodes of the first input on top of the merged scan.
                 for row_wise in chains[group[0]].as_ref().unwrap().row_wise.iter().rev() {
                     let ir = lp_arena.get(*row_wise).clone().with_inputs([node]);
                     node = lp_arena.add(ir);
                 }
                 node
             })
-            .collect(),
-    )
+            .collect()
+    }
 }
 
-fn same_row_wise_node(l: &IR, r: &IR, expr_arena: &Arena<AExpr>) -> bool {
-    let same_exprs = |l: &[ExprIR], r: &[ExprIR]| {
-        l.len() == r.len()
-            && l.iter().zip(r).all(|(l, r)| {
-                l.output_name() == r.output_name()
-                    && expr_arena
-                        .get(l.node())
-                        .is_expr_equal_to(expr_arena.get(r.node()), expr_arena)
-            })
-    };
+fn same_schema(l: &IR, r: &IR) -> bool {
     match (l, r) {
-        (SimpleProjection { columns: l, .. }, SimpleProjection { columns: r, .. }) => l == r,
-        (Filter { predicate: l, .. }, Filter { predicate: r, .. }) => {
-            same_exprs(std::slice::from_ref(l), std::slice::from_ref(r))
-        },
-        (
-            Select {
-                expr: l_expr,
-                schema: l_schema,
-                options: l_options,
-                ..
-            },
-            Select {
-                expr: r_expr,
-                schema: r_schema,
-                options: r_options,
-                ..
-            },
-        )
-        | (
-            HStack {
-                exprs: l_expr,
-                schema: l_schema,
-                options: l_options,
-                ..
-            },
-            HStack {
-                exprs: r_expr,
-                schema: r_schema,
-                options: r_options,
-                ..
-            },
-        ) => l_options == r_options && l_schema == r_schema && same_exprs(l_expr, r_expr),
-        _ => false,
+        (Select { schema: l, .. }, Select { schema: r, .. })
+        | (HStack { schema: l, .. }, HStack { schema: r, .. }) => l == r,
+        _ => true,
     }
 }
 

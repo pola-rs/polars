@@ -205,7 +205,7 @@ impl ScanStats {
 
     /// Statistics of one scan that reads the sources of `parts` one after another. A column
     /// keeps statistics only if every part has them.
-    pub fn concat(parts: &[&Self]) -> Self {
+    pub(crate) fn concat(parts: &[&Self]) -> Self {
         let rows = parts
             .iter()
             .map(|s| s.rows)

@@ -405,7 +405,7 @@ impl FileScanIR {
     }
 
     /// Whether scans of `self` and `other` can be read as one scan over the sources of both.
-    pub fn can_concat_sources(&self, other: &Self) -> bool {
+    pub(crate) fn can_concat_sources(&self, other: &Self) -> bool {
         match (self, other) {
             #[cfg(feature = "csv")]
             (Self::Csv { options: l }, Self::Csv { options: r }) => l == r,
@@ -420,7 +420,7 @@ impl FileScanIR {
     }
 
     /// Hashes what [`Self::can_concat_sources`] compares.
-    pub fn hash_concat_key<H: Hasher>(&self, state: &mut H) {
+    pub(crate) fn hash_concat_key<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "csv")]
@@ -436,8 +436,9 @@ impl FileScanIR {
     }
 
     /// The scan type for the sources of `parts` read one after another. Each part holds a scan
-    /// type and its number of sources. All parts must pass [`Self::can_concat_sources`].
-    pub fn concat_sources(parts: &[(&Self, usize)]) -> Self {
+    /// type and its number of sources. `parts` must not be empty, and all parts must pass
+    /// [`Self::can_concat_sources`].
+    pub(crate) fn concat_sources(parts: &[(&Self, usize)]) -> Self {
         let (first, _) = parts[0];
         match first {
             #[cfg(feature = "parquet")]
@@ -729,7 +730,7 @@ impl UnifiedScanArgs {
     /// Whether these arguments hold state that only applies to this scan, so the scan can never
     /// be read as part of a scan over more sources. A row index and a slice restart for every
     /// scan, and deletion files, table statistics and default values are indexed by source.
-    pub fn has_per_scan_state(&self) -> bool {
+    pub(crate) fn has_per_scan_state(&self) -> bool {
         self.row_index.is_some()
             || self.pre_slice.is_some()
             || self.deletion_files.is_some()
@@ -738,14 +739,14 @@ impl UnifiedScanArgs {
     }
 
     /// Whether scans with `self` and `other` can be read as one scan over the sources of both.
-    pub fn can_concat_sources(&self, other: &Self) -> bool {
+    pub(crate) fn can_concat_sources(&self, other: &Self) -> bool {
         !self.has_per_scan_state()
             && !other.has_per_scan_state()
             && self.concat_key() == other.concat_key()
     }
 
     /// Hashes what [`Self::can_concat_sources`] compares.
-    pub fn hash_concat_key<H: Hasher>(&self, state: &mut H) {
+    pub(crate) fn hash_concat_key<H: Hasher>(&self, state: &mut H) {
         self.concat_key().hash(state)
     }
 
@@ -799,9 +800,9 @@ impl UnifiedScanArgs {
         )
     }
 
-    /// The arguments for the sources of `parts` read one after another. All parts must pass
-    /// [`Self::can_concat_sources`].
-    pub fn concat_sources(parts: &[&Self]) -> Self {
+    /// The arguments for the sources of `parts` read one after another. `parts` must not be
+    /// empty, and all parts must pass [`Self::can_concat_sources`].
+    pub(crate) fn concat_sources(parts: &[&Self]) -> Self {
         let mut out = parts[0].clone();
         out.row_count = parts
             .iter()
@@ -811,9 +812,13 @@ impl UnifiedScanArgs {
             });
         out.source_sizes = parts
             .iter()
-            .map(|args| args.source_sizes.as_ref())
-            .collect::<Option<Vec<_>>>()
-            .map(|sizes| sizes.into_iter().flat_map(|s| s.iter().copied()).collect());
+            .all(|args| args.source_sizes.is_some())
+            .then(|| {
+                parts
+                    .iter()
+                    .flat_map(|args| args.source_sizes.as_deref().unwrap().iter().copied())
+                    .collect()
+            });
         out
     }
 }

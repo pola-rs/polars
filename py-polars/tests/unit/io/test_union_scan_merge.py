@@ -116,27 +116,6 @@ def test_union_scans_merged_row_wise(tmp_path: Path) -> None:
     assert n_scans(lf) == 1
     assert_frame_equal(lf.collect(), q(df.lazy()).collect())
 
-    # Not row-wise: these give a different result per file.
-    not_row_wise: list[Callable[[pl.LazyFrame], pl.LazyFrame]] = [
-        lambda lf: lf.select(pl.col("a").sum()),
-        lambda lf: lf.select(pl.col("a").head(1)),
-        lambda lf: lf.with_columns(pl.col("a").cum_sum()),
-        lambda lf: lf.filter(pl.col("a") > pl.col("a").mean()),
-        lambda lf: lf.select(pl.lit([7, 8]).explode()),
-        lambda lf: lf.select(pl.lit(7).filter(pl.lit(True))),
-        lambda lf: lf.select(pl.lit(1).is_in(pl.Series([[1], [2], [3], [4]]))),
-        lambda lf: lf.select(
-            pl.col("a").filter(pl.col("a") % 2 == 0)
-            + pl.col("a").filter(pl.col("a") % 2 == 1)
-        ),
-    ]
-    for f in not_row_wise:
-        lf = pl.concat([f(pl.scan_csv(p)) for p in paths])
-        assert n_scans(lf) == 3
-        assert_frame_equal(
-            lf.collect(), pl.concat([f(pl.scan_csv(p)).collect() for p in paths])
-        )
-
     # A sorted flag only holds for each file.
     lf = pl.concat(
         [pl.scan_csv(p).select(pl.col("a").set_sorted()) for p in paths[::-1]]
@@ -152,6 +131,45 @@ def test_union_scans_merged_row_wise(tmp_path: Path) -> None:
         ]
     )
     assert n_scans(lf) == 2
+
+
+# Not row-wise: these give a different result per file.
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "f",
+    [
+        lambda lf: lf.select(pl.col("a").sum()),
+        lambda lf: lf.select(pl.col("a").head(1)),
+        lambda lf: lf.with_columns(pl.col("a").cum_sum()),
+        lambda lf: lf.filter(pl.col("a") > pl.col("a").mean()),
+        lambda lf: lf.select(pl.lit([7, 8]).explode()),
+        lambda lf: lf.select(pl.lit(7).filter(pl.lit(True))),
+        lambda lf: lf.select(pl.lit(1).is_in(pl.Series([[1], [2], [3], [4]]))),
+        lambda lf: lf.select(
+            pl.col("a").filter(pl.col("a") % 2 == 0)
+            + pl.col("a").filter(pl.col("a") % 2 == 1)
+        ),
+    ],
+    ids=[
+        "sum",
+        "head",
+        "cum_sum",
+        "filter_by_mean",
+        "explode_literal",
+        "filter_literal",
+        "is_in_per_row_sets",
+        "filtered_operands",
+    ],
+)
+def test_union_scans_not_row_wise_not_merged(
+    tmp_path: Path, f: Callable[[pl.LazyFrame], pl.LazyFrame]
+) -> None:
+    paths, _ = write_parts(tmp_path, pl.DataFrame.write_csv)
+    lf = pl.concat([f(pl.scan_csv(p)) for p in paths])
+    assert n_scans(lf) == 3
+    assert_frame_equal(
+        lf.collect(), pl.concat([f(pl.scan_csv(p)).collect() for p in paths])
+    )
 
 
 @pytest.mark.write_disk
