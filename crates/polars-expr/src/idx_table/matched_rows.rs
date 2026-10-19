@@ -1,6 +1,9 @@
 use polars_utils::IdxSize;
 use polars_utils::relaxed_cell::RelaxedCell;
 
+/// Set on the first row index of a key once a probe key matched it.
+pub const MARKED: IdxSize = 1 << (IdxSize::BITS - 1);
+
 /// A bit per build row of an [`IdxTable`](super::IdxTable), set once a probe
 /// key matched the row. Empty if the unmatched rows are not tracked.
 #[derive(Default)]
@@ -16,26 +19,24 @@ impl MatchedRows {
     }
 
     #[inline(always)]
-    pub fn is_marked(&self, row: IdxSize) -> bool {
-        self.words
-            .get(row as usize / 64)
-            .is_some_and(|word| word.load() & (1 << (row % 64)) != 0)
-    }
-
-    #[inline(always)]
     pub fn mark(&self, row: IdxSize) {
         if let Some(word) = self.words.get(row as usize / 64) {
             word.fetch_or(1 << (row % 64));
         }
     }
 
-    /// Marks the rows of a key. They are always marked together, so they are
-    /// skipped if the first one is marked already.
+    /// Marks the rows of a key, unless its first row has the MARKED flag.
+    ///
+    /// # Safety
+    /// `rows` must not be empty.
     #[inline(always)]
-    pub fn mark_rows(&self, rows: &[IdxSize]) {
-        if rows.first().is_some_and(|first| !self.is_marked(*first)) {
+    pub unsafe fn mark_rows(&self, rows: &[RelaxedCell<IdxSize>]) {
+        let first = unsafe { rows.get_unchecked(0) };
+        let first_idx = first.load();
+        if first_idx & MARKED == 0 {
+            first.store(first_idx | MARKED);
             for row in rows {
-                self.mark(*row);
+                self.mark(row.load() & !MARKED);
             }
         }
     }

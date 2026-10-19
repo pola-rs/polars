@@ -5,6 +5,7 @@ use hashbrown::hash_table::{Entry, HashTable};
 use polars_arrow::array::Array;
 use polars_arrow::bitmap::Bitmap;
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 
 use super::*;
@@ -12,7 +13,8 @@ use crate::hash_keys::{BLOCK_SIZE, HashKeys, MIN_PREFETCH_BUCKETS};
 
 struct Slot<K> {
     key: K,
-    first: IdxSize,
+    /// The first build row with this key, combined with the MARKED flag.
+    first: RelaxedCell<IdxSize>,
     last: IdxSize,
 }
 
@@ -24,6 +26,7 @@ pub struct SingleKeyIdxTable<T: PolarsDataType> {
     random_state: PlRandomState,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
+    nulls_marked: RelaxedCell<bool>,
     matched: MatchedRows,
 }
 
@@ -35,6 +38,7 @@ impl<T: PolarsDataType> SingleKeyIdxTable<T> {
             random_state: PlRandomState::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
+            nulls_marked: RelaxedCell::from(false),
             matched: MatchedRows::default(),
         }
     }
@@ -53,7 +57,7 @@ where
     /// Calls `f` on each build row of a slot, in insertion order.
     #[inline(always)]
     fn for_each_row(&self, first: IdxSize, last: IdxSize, mut f: impl FnMut(IdxSize)) {
-        let mut idx = first;
+        let mut idx = first & !MARKED;
         while idx != last {
             f(idx);
             idx = unsafe { *self.next.get_unchecked(idx as usize) };
@@ -71,13 +75,15 @@ where
         probe_match: &mut Vec<IdxSize>,
     ) -> bool {
         if let Some(slot) = self.table.find(hash, |s| s.key.tot_eq(key)) {
-            self.for_each_row(slot.first, slot.last, |idx| {
+            let first = slot.first.load();
+            self.for_each_row(first, slot.last, |idx| {
                 table_match.push(idx);
                 probe_match.push(key_idx);
             });
 
-            if MARK_MATCHES && !self.matched.is_marked(slot.first) {
-                self.for_each_row(slot.first, slot.last, |idx| self.matched.mark(idx));
+            if MARK_MATCHES && first & MARKED == 0 {
+                slot.first.store(first | MARKED);
+                self.for_each_row(first, slot.last, |idx| self.matched.mark(idx));
             }
             true
         } else {
@@ -133,8 +139,11 @@ where
                         table_match.push(*idx);
                         probe_match.push(key_idx);
                     }
-                    if MARK_MATCHES {
-                        self.matched.mark_rows(&self.null_keys);
+                    if MARK_MATCHES && !self.nulls_marked.load() {
+                        self.nulls_marked.store(true);
+                        for idx in &self.null_keys {
+                            self.matched.mark(*idx);
+                        }
                     }
                     !self.null_keys.is_empty()
                 } else {
@@ -218,12 +227,8 @@ where
         let new_idx_offset = (self.idx_offset as usize)
             .checked_add(subset.len())
             .unwrap();
-        // IdxSize::MAX marks a probe key without a match.
-        assert!(
-            new_idx_offset < IdxSize::MAX as usize,
-            "{}",
-            LENGTH_LIMIT_MSG
-        );
+        // The top bit of each index is reserved for MARKED.
+        assert!(new_idx_offset <= MARKED as usize, "{}", LENGTH_LIMIT_MSG);
 
         if track_unmatchable {
             self.matched.grow(new_idx_offset);
@@ -267,7 +272,7 @@ where
                         Entry::Vacant(v) => {
                             v.insert(Slot {
                                 key,
-                                first: idx,
+                                first: RelaxedCell::from(idx),
                                 last: idx,
                             });
                         },

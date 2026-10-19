@@ -2,6 +2,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unitvec;
 
 use super::*;
@@ -11,7 +12,7 @@ use crate::key_rows::{KeyRowIndexMap, KeyRowKeys, KeyRowLayout};
 const PROBE_CHUNK_SIZE: usize = 1024;
 
 pub struct KeyRowIdxTable {
-    idx_map: KeyRowIndexMap<UnitVec<IdxSize>>,
+    idx_map: KeyRowIndexMap<UnitVec<RelaxedCell<IdxSize>>>,
     idx_offset: IdxSize,
     matched: MatchedRows,
 }
@@ -52,7 +53,7 @@ impl KeyRowIdxTable {
 
         let new_idx_offset = (self.idx_offset as usize).checked_add(num_keys).unwrap();
         assert!(
-            new_idx_offset < IdxSize::MAX as usize,
+            new_idx_offset <= MARKED as usize,
             "overly large index in KeyRowIdxTable"
         );
         if track_unmatchable {
@@ -67,13 +68,15 @@ impl KeyRowIdxTable {
             &valid_idxs,
             |r| {
                 inserted[r] = true;
-                unitvec![idx_offset + valid_pos[r]]
+                unitvec![RelaxedCell::from(idx_offset + valid_pos[r])]
             },
             &mut groups,
         );
         for ((g, pos), inserted) in groups.iter().zip(&valid_pos).zip(&inserted) {
             if !inserted {
-                self.idx_map.value_unchecked_mut(*g).push(idx_offset + pos);
+                self.idx_map
+                    .value_unchecked_mut(*g)
+                    .push(RelaxedCell::from(idx_offset + pos));
             }
         }
 
@@ -97,12 +100,12 @@ impl KeyRowIdxTable {
                 if *g != IdxSize::MAX {
                     let idxs = self.idx_map.value_unchecked(*g);
                     for idx in &idxs[..] {
-                        table_match.push(*idx);
+                        table_match.push(idx.load() & !MARKED);
                         probe_match.push(*key_idx);
                     }
 
                     if MARK_MATCHES {
-                        self.matched.mark_rows(idxs);
+                        unsafe { self.matched.mark_rows(idxs) };
                     }
                 } else if EMIT_UNMATCHED {
                     table_match.push(IdxSize::MAX);
