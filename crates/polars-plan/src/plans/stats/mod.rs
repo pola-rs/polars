@@ -81,6 +81,28 @@ impl Card {
         self.demote(DEFAULT_REL_ERR)
     }
 
+    fn rel_err(self) -> f32 {
+        match self {
+            Card::Unknown => f32::INFINITY,
+            Card::Exact(_) => 0.0,
+            Card::Approx { rel_err, .. } => rel_err,
+        }
+    }
+
+    /// Combine two counts with `f`, keeping the lower confidence.
+    fn combine(self, other: Self, f: impl FnOnce(u64, u64) -> u64) -> Self {
+        match (self, other) {
+            (Card::Exact(l), Card::Exact(r)) => Card::Exact(f(l, r)),
+            (l, r) => match (l.value(), r.value()) {
+                (Some(lv), Some(rv)) => Card::Approx {
+                    value: f(lv, rv),
+                    rel_err: l.rel_err().max(r.rel_err()),
+                },
+                _ => Card::Unknown,
+            },
+        }
+    }
+
     /// Apply `f` to the value, keeping the confidence.
     pub fn map(self, f: impl FnOnce(u64) -> u64) -> Self {
         match self {
@@ -179,6 +201,57 @@ impl ScanStats {
 
     pub fn column(&self, name: &str) -> Option<&ScanColumnStats> {
         self.columns.as_ref()?.get(name)
+    }
+
+    /// Statistics of one scan that reads the sources of `parts` one after another. A column
+    /// keeps statistics only if every part has them.
+    pub fn concat(parts: &[&Self]) -> Self {
+        let rows = parts
+            .iter()
+            .map(|s| s.rows)
+            .reduce(|l, r| l.combine(r, u64::saturating_add))
+            .unwrap_or_default();
+
+        let Some(maps) = parts
+            .iter()
+            .map(|s| s.columns.as_deref())
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Self::new(rows);
+        };
+
+        let columns =
+            maps[0]
+                .iter()
+                .filter_map(|(name, first)| {
+                    let mut out = first.clone();
+                    let mut width_rows = parts[0].rows.value().unwrap_or(0) as f64;
+                    for (map, part) in maps.iter().zip(parts).skip(1) {
+                        let col = map.get(name)?;
+                        let part_rows = part.rows.value().unwrap_or(0) as f64;
+                        out.distinct = out.distinct.combine(col.distinct, u64::max);
+                        out.null_count =
+                            out.null_count.combine(col.null_count, u64::saturating_add);
+                        out.avg_byte_width =
+                            out.avg_byte_width.zip(col.avg_byte_width).map(|(l, r)| {
+                                let total = width_rows + part_rows;
+                                if total == 0.0 {
+                                    (l + r) / 2.0
+                                } else {
+                                    ((l as f64 * width_rows + r as f64 * part_rows) / total) as f32
+                                }
+                            });
+                        out.int_range = out.int_range.zip(col.int_range).map(
+                            |((l_min, l_max), (r_min, r_max))| (l_min.min(r_min), l_max.max(r_max)),
+                        );
+                        out.int_range_partial |= col.int_range_partial;
+                        width_rows += part_rows;
+                    }
+                    Some((name.clone(), out))
+                })
+                .collect();
+
+        Self::new(rows).with_columns(columns)
     }
 }
 

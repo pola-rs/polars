@@ -364,6 +364,34 @@ impl ScanSources {
             Self::Files(_) => return None,
         })
     }
+
+    /// The sources of `parts` one after another. Returns `None` if the parts are not all
+    /// `::Paths` or all `::Buffers`.
+    pub fn concat(parts: &[&Self]) -> Option<Self> {
+        Some(match parts.first()? {
+            Self::Paths(_) => Self::Paths(
+                parts
+                    .iter()
+                    .map(|s| s.as_paths())
+                    .collect::<Option<Vec<_>>>()?
+                    .into_iter()
+                    .flatten()
+                    .cloned()
+                    .collect(),
+            ),
+            Self::Buffers(_) => {
+                let mut out = Vec::with_capacity(parts.iter().map(|s| s.len()).sum());
+                for s in parts {
+                    let Self::Buffers(buffers) = s else {
+                        return None;
+                    };
+                    out.extend(buffers.iter().cloned());
+                }
+                Self::Buffers(out.into())
+            },
+            Self::Files(_) => return None,
+        })
+    }
 }
 
 impl ScanSourceRef<'_> {
