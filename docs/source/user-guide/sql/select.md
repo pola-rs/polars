@@ -156,3 +156,18 @@ and `include_file_paths`.
 - As for `read_csv`, options marked unstable in the
   [`scan_parquet`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
   API reference are unstable in `read_parquet` too.
+
+`read_ipc` accepts the options of `scan_ipc` in the same way: `hive_partitioning`, `hive_schema`,
+`try_parse_hive_dates` and `include_file_paths`.
+
+{{code_block('user-guide/sql/select','tablefunctionipc',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionipc"
+```
+
+- Hive partitions are read as for `read_parquet`: by default for one path, and for a list only when
+  it is a single directory.
+- As for `read_parquet`, options marked unstable in the
+  [`scan_ipc`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ipc.html) API
+  reference are unstable in `read_ipc` too.

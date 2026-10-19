@@ -45,7 +45,8 @@ diagonal_concat = ["polars-lazy/diagonal_concat"]
 dtype-decimal = ["polars-lazy/dtype-decimal"]
 # Opt-in: `dtype-map` also makes Arrow `MAP` columns import as `Map` instead of `List(Struct)`, program-wide.
 dtype-map = ["polars-lazy/dtype-map", "polars-io/dtype-map", "polars-ops/dtype-map"]
-ipc = ["polars-lazy/ipc"]
+# `read_ipc` infers hive values with date parsing, which needs the temporal dtypes.
+ipc = ["polars-lazy/ipc", "polars-plan/ipc", "polars-io/ipc", "polars-io/temporal"]
 # `read_ndjson` schemas can name temporal types, which the NDJSON reader needs enabled.
 json = [
   "polars-lazy/json",
