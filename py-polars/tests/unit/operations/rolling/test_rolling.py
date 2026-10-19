@@ -2681,10 +2681,10 @@ def test_rolling_agg_arg_min_max_bool(
 @pytest.mark.parametrize(
     ("ts", "period", "offset", "tz", "closed", "expected"),
     [
-        ([(3, 1), (3, 31), (4, 1)], "28d", "-1mo", None, "right", [0, 1, 0]),
-        ([(2, 1), (2, 28), (3, 1)], "1mo", "-28d", None, "left", [1, 2, 2]),
+        ([(3, 1, 0), (3, 31, 0), (4, 1, 0)], "28d", "-1mo", None, "right", [0, 1, 0]),
+        ([(2, 1, 0), (2, 28, 0), (3, 1, 0)], "1mo", "-28d", None, "left", [1, 2, 2]),
         (
-            [(3, 31), (4, 1), (4, 1, 1)],
+            [(3, 31, 0), (4, 1, 0), (4, 1, 1)],
             "24h",
             "-1d",
             "Europe/Amsterdam",
@@ -2694,7 +2694,7 @@ def test_rolling_agg_arg_min_max_bool(
     ],
 )
 def test_rolling_offset_not_negated_period_29199(
-    ts: list[tuple[int, ...]],
+    ts: list[tuple[int, int, int]],
     period: str,
     offset: str,
     tz: str | None,
