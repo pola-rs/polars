@@ -242,7 +242,7 @@ def test_qualified_table_name(query: str, eager_path: bool) -> None:
     lf = pl.LazyFrame({"k": [1, 2]})
     with pl.SQLContext({"tpch.lineitem": lf}) as ctx:
         res = _execute(ctx, query, eager_path=eager_path)
-        assert res.to_series().to_list() == [1, 2]
+        assert sorted(res.to_series().to_list()) == [1, 2]
 
 
 @pytest.mark.parametrize("eager_path", [False, True])
@@ -302,6 +302,42 @@ def test_qualified_table_name_hidden_by_alias() -> None:
         ),
     ):
         ctx.execute("SELECT lineitem.k FROM tpch.lineitem AS li", eager=True)
+
+
+def test_create_table_if_not_exists() -> None:
+    # an existing table (matched ignoring case, as in FROM) is left as it is
+    with pl.SQLContext() as ctx:
+        ctx.execute("CREATE TABLE IF NOT EXISTS frame AS SELECT 1 AS x")
+        ctx.execute("CREATE TABLE IF NOT EXISTS frame AS SELECT 2 AS x")
+        ctx.execute("CREATE TABLE IF NOT EXISTS FRAME AS SELECT 3 AS x")
+        assert ctx.tables() == ["frame"]
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+
+def test_quoted_dotted_name_is_one_part() -> None:
+    # `"tpch.lineitem"` finds the registered table, but as a qualifier it is one part
+    frames = {
+        "tpch.lineitem": pl.LazyFrame({"k": [1]}),
+        "t": pl.LazyFrame({"k": [2]}),
+        "u": pl.LazyFrame({"k": [3]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        for query, expected in [
+            ('SELECT "tpch.lineitem".k FROM "tpch.lineitem"', 1),
+            ("SELECT lineitem.k FROM tpch.lineitem", 1),
+            ('SELECT "a.b".k FROM t AS "a.b"', 2),
+            ('SELECT x.k FROM t AS x CROSS JOIN u AS "a.x"', 2),
+        ]:
+            assert ctx.execute(query, eager=True).item() == expected
+
+        for query, root in [
+            ('SELECT lineitem.k FROM "tpch.lineitem"', "lineitem"),
+            ('SELECT b.k FROM t AS "a.b"', "b"),
+        ]:
+            with pytest.raises(
+                SQLInterfaceError, match=rf"no table or struct column named '{root}'"
+            ):
+                ctx.execute(query, eager=True)
 
 
 def test_qualified_table_name_ddl() -> None:

@@ -26,7 +26,8 @@ use sqlparser::ast::{
 };
 
 use crate::context::{
-    CORRELATED_COL_PREFIX, FilterMode, combine_conditions, get_table_name, match_qualifier,
+    CORRELATED_COL_PREFIX, FilterMode, RelationName, combine_conditions, get_table_name,
+    match_qualifier, relation_name,
 };
 use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
 use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
@@ -277,7 +278,7 @@ impl SQLContext {
         lf: &LazyFrame,
         inner_lf: LazyFrame,
         selection: &SQLExpr,
-        inner_names: &PlHashSet<String>,
+        inner_names: &[RelationName],
         inner_schema: &Schema,
         outer_schema: &Schema,
         outer: &SQLContext,
@@ -475,7 +476,7 @@ impl SQLContext {
     fn resolve_subquery_from(
         &mut self,
         select: &Select,
-    ) -> PolarsResult<Option<(PlHashSet<String>, LazyFrame, SchemaRef)>> {
+    ) -> PolarsResult<Option<(Vec<RelationName>, LazyFrame, SchemaRef)>> {
         let from = select.from.as_slice();
         let Some(inner_names) = from
             .iter()
@@ -483,8 +484,8 @@ impl SQLContext {
                 std::iter::once(&tbl_expr.relation)
                     .chain(tbl_expr.joins.iter().map(|j| &j.relation))
             })
-            .map(get_table_name)
-            .collect::<Option<PlHashSet<_>>>()
+            .map(relation_name)
+            .collect::<Option<Vec<_>>>()
         else {
             return Ok(None);
         };
@@ -520,7 +521,7 @@ impl SQLContext {
     fn split_subquery_conjuncts(
         &mut self,
         selection: &SQLExpr,
-        inner_names: &PlHashSet<String>,
+        inner_names: &[RelationName],
         inner_schema: &Schema,
         outer_schema: &Schema,
         outer: &SQLContext,
@@ -574,7 +575,7 @@ impl SQLContext {
     fn split_correlation_conjuncts(
         &mut self,
         selection: &SQLExpr,
-        inner_names: &PlHashSet<String>,
+        inner_names: &[RelationName],
         inner_schema: &Schema,
         outer_schema: &Schema,
         outer: &SQLContext,
@@ -626,7 +627,7 @@ impl SQLContext {
     fn try_parse_inner_only_expr(
         &mut self,
         sql_expr: &SQLExpr,
-        inner_names: &PlHashSet<String>,
+        inner_names: &[RelationName],
         inner_schema: &Schema,
     ) -> PolarsResult<Option<Expr>> {
         if !binds_to_inner_relation(sql_expr, inner_names, inner_schema) {
@@ -1579,7 +1580,7 @@ fn correlation_key_pair(
 // schema wins over the outer one.
 fn binds_to_inner_relation(
     expr: &SQLExpr,
-    inner_names: &PlHashSet<String>,
+    inner_names: &[RelationName],
     inner_schema: &Schema,
 ) -> bool {
     visit_expressions(expr, |e| {
@@ -1587,10 +1588,8 @@ fn binds_to_inner_relation(
             // A nested subquery is its own scope, which this cannot resolve against.
             _ if is_subquery_expr(e) => false,
             SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),
-            SQLExpr::CompoundIdentifier(parts) => {
-                match_qualifier(parts, inner_names.iter().map(String::as_str))
-                    .is_some_and(|(_, len)| inner_schema.contains(&parts[len].value))
-            },
+            SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, inner_names.iter())
+                .is_some_and(|(_, len)| inner_schema.contains(&parts[len].value)),
             _ => true,
         };
         if resolves {
@@ -1639,13 +1638,13 @@ fn classify_correlation_column(
     // A joined relation's column may be stored under another name.
     Ok(match qualifier {
         Some((CorrelationSide::Inner, q)) => {
-            let name = inner.resolve_name(&q, name)?;
+            let name = inner.resolve_name(&q, name);
             inner_schema
                 .contains(name.as_str())
                 .then(|| (CorrelationSide::Inner, name.into()))
         },
         Some((CorrelationSide::Outer, q)) => {
-            let name = outer.resolve_name(&q, name)?;
+            let name = outer.resolve_name(&q, name);
             outer_schema
                 .contains(name.as_str())
                 .then(|| (CorrelationSide::Outer, name.into()))
@@ -1768,15 +1767,13 @@ pub(crate) enum SubqueryKind {
 /// correlates it with the query around it.
 pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
     #[derive(Default)]
-    struct Declared(PlHashSet<String>);
+    struct Declared(Vec<RelationName>);
 
     impl Visitor for Declared {
         type Break = ();
 
         fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
-            if let Some(name) = get_table_name(factor) {
-                self.0.insert(name);
-            }
+            self.0.extend(relation_name(factor));
             ControlFlow::Continue(())
         }
     }
@@ -1784,7 +1781,7 @@ pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
     let mut declared = Declared::default();
     let _ = query.visit(&mut declared);
 
-    struct Foreign<'a>(&'a PlHashSet<String>);
+    struct Foreign<'a>(&'a [RelationName]);
 
     impl Visitor for Foreign<'_> {
         type Break = ();
@@ -1792,7 +1789,7 @@ pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
         fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
             match expr {
                 SQLExpr::CompoundIdentifier(parts)
-                    if match_qualifier(parts, self.0.iter().map(String::as_str)).is_none() =>
+                    if match_qualifier(parts, self.0.iter()).is_none() =>
                 {
                     ControlFlow::Break(())
                 },

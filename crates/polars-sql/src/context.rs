@@ -231,7 +231,7 @@ pub struct SQLContext {
     table_aliases: PlHashMap<String, String>,
     /// Relations the current `FROM` declares (once per occurrence), which are the
     /// only ones a qualified column may name.
-    active_relations: Vec<String>,
+    active_relations: Vec<RelationName>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     join_base: Option<JoinBase>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
@@ -567,11 +567,10 @@ impl SQLContext {
             }
             return Ok(None);
         }
-        let relations = self.active_relations.iter().map(String::as_str);
-        match match_qualifier(idents, relations) {
+        match match_qualifier(idents, self.active_relations.iter()) {
             None => Ok(None),
             Some((matches, len)) => match matches.as_slice() {
-                [relation] => Ok(Some((relation.to_string(), len))),
+                [relation] => Ok(Some((relation.key(), len))),
                 _ => Err(ambiguous_relation_err(
                     &join_idents(&idents[..len]),
                     &matches,
@@ -588,7 +587,8 @@ impl SQLContext {
     /// Hint for a qualifier that names no relation in scope because an alias hides it.
     pub(crate) fn hidden_by_alias_hint(&self, qualifier: &str) -> Option<String> {
         self.active_relations.iter().find_map(|alias| {
-            let table = self.table_aliases.get(alias)?;
+            let alias = alias.key();
+            let table = self.table_aliases.get(&alias)?;
             qualifier_names(table, qualifier)
                 .then(|| format!("; table \"{qualifier}\" is hidden by alias \"{alias}\""))
         })
@@ -822,13 +822,14 @@ impl SQLContext {
         Ok(())
     }
 
-    pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> PolarsResult<String> {
-        if let Some(aliases) = get_ignoring_case(&self.joined_aliases, tbl_name)? {
+    /// The joined-frame name of a column of `tbl_name`, as `resolve_qualifier` returned it.
+    pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
+        if let Some(aliases) = self.joined_aliases.get(tbl_name) {
             if let Some(name) = aliases.get(column_name) {
-                return Ok(name.to_string());
+                return name.to_string();
             }
         }
-        Ok(column_name.to_string())
+        column_name.to_string()
     }
 
     /// Clone `query` with `order_by` cleared, for passing to the operands of a set operation.
@@ -1403,9 +1404,21 @@ impl SQLContext {
         &mut self,
         tbl_expr: &TableWithJoins,
     ) -> PolarsResult<LazyFrame> {
+        // Joins narrow the scope for their conditions; the caller's scope is restored after.
+        let scope = self.active_relations.clone();
+        let lf = self.execute_joins(tbl_expr);
+        self.active_relations = scope;
+        lf
+    }
+
+    fn execute_joins(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
+        let factors =
+            std::iter::once(&tbl_expr.relation).chain(tbl_expr.joins.iter().map(|j| &j.relation));
         if !tbl_expr.joins.is_empty() {
-            for join in &tbl_expr.joins {
+            for (i, join) in tbl_expr.joins.iter().enumerate() {
+                // A join condition only sees the relations joined so far.
+                self.active_relations = factor_relations(factors.clone().take(i + 2));
                 // Handle "CROSS JOIN UNNEST(col)" as a lateral join op
                 if let (
                     JoinOperator::CrossJoin(JoinConstraint::None),
@@ -2820,7 +2833,7 @@ impl SQLContext {
                 SQLExpr::CompoundIdentifier(idents) => match self.resolve_qualifier(idents) {
                     Ok(Some((name, _))) => {
                         let is_right = name == tbl_right.name.as_str()
-                            || (!self.active_relations.contains(&name)
+                            || (!self.active_relations.iter().any(|r| r.key() == name)
                                 && name.eq_ignore_ascii_case(&tbl_right.name));
                         Some(!is_right)
                     },
@@ -3050,7 +3063,12 @@ impl SQLContext {
             // Relations each pending entry brings into scope.
             let pending_relations: Vec<Vec<String>> = pending
                 .iter()
-                .map(|(tbl_expr, ..)| declared_relations(std::slice::from_ref(*tbl_expr)))
+                .map(|(tbl_expr, ..)| {
+                    declared_relations(std::slice::from_ref(*tbl_expr))
+                        .iter()
+                        .map(RelationName::key)
+                        .collect()
+                })
                 .collect();
             let deferred_tables = |skip: usize| -> Vec<String> {
                 pending_relations
@@ -3200,8 +3218,9 @@ impl SQLContext {
 
             let tbl_name = object_name_to_string(name);
             let existing = self.registered_table_key(&tbl_name)?;
-            if *if_not_exists && existing.is_some() {
-                polars_bail!(SQLInterface: "relation '{}' already exists", tbl_name);
+            if *if_not_exists && let Some(existing) = &existing {
+                // `IF NOT EXISTS` leaves the existing table as it is.
+                return Ok(df! { "Response" => [format!("CREATE TABLE {existing}")] }?.lazy());
             }
             // A table matching ignoring case is replaced under its existing name.
             let tbl_name = existing.unwrap_or(tbl_name);
@@ -4388,7 +4407,7 @@ pub(crate) fn join_idents(idents: &[Ident]) -> String {
 
 /// Whether `qualifier` names `relation`: the whole name or a trailing run of its dot-separated
 /// parts (`lineitem` and `tpch.lineitem` both name `tpch.lineitem`), ignoring case.
-pub(crate) fn qualifier_names(relation: &str, qualifier: &str) -> bool {
+fn qualifier_names(relation: &str, qualifier: &str) -> bool {
     let Some(start) = relation.len().checked_sub(qualifier.len()) else {
         return false;
     };
@@ -4398,22 +4417,48 @@ pub(crate) fn qualifier_names(relation: &str, qualifier: &str) -> bool {
             .is_some_and(|tail| tail.eq_ignore_ascii_case(qualifier))
 }
 
+/// A relation's name in scope, in the parts `FROM` wrote: an alias or a quoted `"a.b"` is one
+/// part, `tpch.lineitem` two.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct RelationName(Vec<String>);
+
+impl RelationName {
+    /// The dotted name, which looks the relation up and identifies it.
+    pub(crate) fn key(&self) -> String {
+        self.0.join(".")
+    }
+
+    /// Whether `qualifier` equals the trailing parts of this name, ignoring case unless `exact`.
+    fn named_by(&self, qualifier: &[Ident], exact: bool) -> bool {
+        let Some(start) = self.0.len().checked_sub(qualifier.len()) else {
+            return false;
+        };
+        self.0[start..].iter().zip(qualifier).all(|(part, ident)| {
+            if exact {
+                *part == ident.value
+            } else {
+                part.eq_ignore_ascii_case(&ident.value)
+            }
+        })
+    }
+}
+
 /// The relations that the longest leading run of `idents` (leaving at least one part) names,
 /// with the run's length. Exact-case matches win over those equal only ignoring case.
 pub(crate) fn match_qualifier<'a>(
     idents: &[Ident],
-    relations: impl Iterator<Item = &'a str> + Clone,
-) -> Option<(Vec<&'a str>, usize)> {
+    relations: impl Iterator<Item = &'a RelationName> + Clone,
+) -> Option<(Vec<&'a RelationName>, usize)> {
     (1..idents.len()).rev().find_map(|len| {
-        let qualifier = join_idents(&idents[..len]);
-        let matches: Vec<&str> = relations
+        let qualifier = &idents[..len];
+        let matches: Vec<&RelationName> = relations
             .clone()
-            .filter(|relation| qualifier_names(relation, &qualifier))
+            .filter(|relation| relation.named_by(qualifier, false))
             .collect();
-        let exact: Vec<&str> = matches
+        let exact: Vec<&RelationName> = matches
             .iter()
             .copied()
-            .filter(|relation| relation.ends_with(qualifier.as_str()))
+            .filter(|relation| relation.named_by(qualifier, true))
             .collect();
         match (exact.is_empty(), matches.is_empty()) {
             (false, _) => Some((exact, len)),
@@ -4424,15 +4469,15 @@ pub(crate) fn match_qualifier<'a>(
 }
 
 /// Error for a qualifier naming several relations in scope.
-fn ambiguous_relation_err(qualifier: &str, relations: &[&str]) -> PolarsError {
-    let distinct: PlIndexSet<&str> = relations.iter().copied().collect();
+fn ambiguous_relation_err(qualifier: &str, relations: &[&RelationName]) -> PolarsError {
+    let distinct: PlIndexSet<String> = relations.iter().map(|r| r.key()).collect();
     if distinct.len() < relations.len() {
         polars_err!(
             SQLInterface: "ambiguous reference to table \"{}\" (it appears more than once in FROM; give each an alias)",
             qualifier
         )
     } else {
-        let names: Vec<&str> = distinct.into_iter().collect();
+        let names: Vec<String> = distinct.into_iter().collect();
         let (last, init) = names.split_last().unwrap();
         polars_err!(
             SQLInterface: "ambiguous reference to table \"{}\" (use: {} or {})",
@@ -4561,41 +4606,60 @@ pub(crate) fn is_correlated_result_col(name: &str) -> bool {
     name.starts_with(CORRELATED_COL_PREFIX)
 }
 
-/// Extract the table name (or alias) from a TableFactor.
-/// A nested join is flattened rather than bound to its alias, so its own
-/// relations are declared too.
-fn declared_relations(from: &[TableWithJoins]) -> Vec<String> {
-    fn walk(tbl: &TableWithJoins, names: &mut Vec<String>) {
-        let factors = std::iter::once(&tbl.relation).chain(tbl.joins.iter().map(|j| &j.relation));
-        for factor in factors {
-            names.extend(get_table_name(factor));
-            if let TableFactor::NestedJoin {
-                table_with_joins, ..
-            } = factor
-            {
-                walk(table_with_joins, names);
-            }
-        }
-    }
+/// The relations of a `FROM` (see `factor_relations`).
+fn declared_relations(from: &[TableWithJoins]) -> Vec<RelationName> {
+    from.iter()
+        .flat_map(|tbl| {
+            factor_relations(
+                std::iter::once(&tbl.relation).chain(tbl.joins.iter().map(|j| &j.relation)),
+            )
+        })
+        .collect()
+}
 
+/// The relations that table factors bring into scope. A nested join is flattened rather than
+/// bound to its alias, so its own relations are declared too.
+fn factor_relations<'a>(factors: impl Iterator<Item = &'a TableFactor>) -> Vec<RelationName> {
     let mut names = Vec::new();
-    for tbl in from {
-        walk(tbl, &mut names);
+    for factor in factors {
+        let name = relation_name(factor);
+        names.extend(name.clone());
+        if let TableFactor::NestedJoin {
+            table_with_joins, ..
+        } = factor
+        {
+            // A child named like the join's alias is hidden by it, not a second occurrence.
+            let children = declared_relations(std::slice::from_ref(table_with_joins));
+            names.extend(
+                children
+                    .into_iter()
+                    .filter(|child| Some(child) != name.as_ref()),
+            );
+        }
     }
     names
 }
 
 /// The name a relation is known by: its alias, else its full (possibly qualified) name.
 pub(crate) fn get_table_name(factor: &TableFactor) -> Option<String> {
+    relation_name(factor).map(|name| name.key())
+}
+
+/// The name a relation is known by, in parts (see `RelationName`).
+pub(crate) fn relation_name(factor: &TableFactor) -> Option<RelationName> {
+    let alias = |alias: &Option<TableAlias>| {
+        alias
+            .as_ref()
+            .map(|a| RelationName(vec![a.name.value.clone()]))
+    };
     match factor {
-        TableFactor::Table { name, alias, .. } => Some(
-            alias
-                .as_ref()
-                .map_or_else(|| object_name_to_string(name), |a| a.name.value.clone()),
-        ),
-        TableFactor::Derived { alias, .. }
-        | TableFactor::NestedJoin { alias, .. }
-        | TableFactor::TableFunction { alias, .. } => alias.as_ref().map(|a| a.name.value.clone()),
+        TableFactor::Table { name, alias: a, .. } => alias(a).or_else(|| {
+            let parts = name.0.iter().filter_map(|p| p.as_ident());
+            Some(RelationName(parts.map(|i| i.value.clone()).collect()))
+        }),
+        TableFactor::Derived { alias: a, .. }
+        | TableFactor::NestedJoin { alias: a, .. }
+        | TableFactor::TableFunction { alias: a, .. } => alias(a),
         _ => None,
     }
 }
@@ -5119,7 +5183,7 @@ fn is_join_comparison(
     left_tables: &[String],
     right_table: &str,
     deferred_tables: &[String],
-    relations: &[String],
+    relations: &[RelationName],
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> bool {
@@ -5176,7 +5240,7 @@ fn extract_join_predicates(
     left_tables: &[String],
     right_table: &str,
     deferred_tables: &[String],
-    relations: &[String],
+    relations: &[RelationName],
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> (Option<SQLExpr>, Option<SQLExpr>) {

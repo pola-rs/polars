@@ -2126,7 +2126,7 @@ fn resolve_column<'a>(
     name: &'a str,
     dtype: &'a DataType,
 ) -> PolarsResult<(Expr, Option<&'a DataType>)> {
-    let resolved = ctx.resolve_name(relation, name)?;
+    let resolved = ctx.resolve_name(relation, name);
     let resolved = resolved.as_str();
     Ok((
         if name != resolved {

@@ -1720,6 +1720,66 @@ def test_self_join_without_aliases() -> None:
             ctx.execute(f"{cte} SELECT {select} FROM t CROSS JOIN t", eager=True)
 
 
+def test_aliased_nested_join_qualifier_scope() -> None:
+    # inside the aliased nested join `a.s.k` is struct field `s.k` of `a`, not
+    # column `k` of the registered (but out of scope) table `a.s`
+    frames = {
+        "a.s": pl.LazyFrame({"z": [0]}),
+        "a": pl.LazyFrame({"k": [9, 9], "s": [{"k": 1}, {"k": 2}]}),
+        "b": pl.LazyFrame({"k": [1, 2]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(
+            'SELECT * FROM "a.s" CROSS JOIN (a JOIN b ON a.s.k = b.k) AS j',
+            eager=True,
+        )
+        assert res.sort(res.columns[-1]).rows() == [
+            (0, 9, {"k": 1}, 1),
+            (0, 9, {"k": 2}, 2),
+        ]
+
+
+def test_join_condition_sees_relations_joined_so_far() -> None:
+    # `a.s.k` in the ON clause is field `s.k` of `a`; relation `a.s` joins later
+    frames = {
+        "a": pl.LazyFrame({"k": [9, 9], "s": [{"k": 1}, {"k": 2}]}),
+        "b": pl.LazyFrame({"k": [1, 2]}),
+        "a.s": pl.LazyFrame({"k": [1]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(
+            "SELECT a.k FROM a JOIN b ON a.s.k = b.k CROSS JOIN a.s", eager=True
+        )
+        assert res.rows() == [(9,), (9,)]
+
+
+def test_qualifier_exact_alias_with_case_variant_joins() -> None:
+    # `ab` names the base relation exactly; `aB` and `Ab` matching it ignoring case
+    # don't make the column lookup ambiguous
+    frames = {
+        "d": pl.LazyFrame({"k": [1], "x": [10]}),
+        "b": pl.LazyFrame({"k": [1], "y": [20]}),
+        "c": pl.LazyFrame({"k": [1], "w": [30]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(
+            "SELECT ab.x, aB.y, Ab.w "
+            "FROM d AS ab JOIN b AS aB USING (k) JOIN c AS Ab USING (k)",
+            eager=True,
+        )
+        assert res.rows() == [(10, 20, 30)]
+
+
+def test_nested_join_alias_named_like_child() -> None:
+    # the alias `a` hides the nested `a`; they are one relation, not two
+    frames = {"a": pl.LazyFrame({"k": [1, 2]}), "b": pl.LazyFrame({"k": [1, 2]})}
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(
+            "SELECT a.k FROM (a JOIN b USING (k)) AS a ORDER BY a.k", eager=True
+        )
+        assert res.rows() == [(1,), (2,)]
+
+
 @pytest.mark.parametrize(
     "where_clause",
     [
