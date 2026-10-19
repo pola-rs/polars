@@ -214,7 +214,7 @@ def test_union_scans_not_merged(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_union_scans_merged_hive_not_merged(tmp_path: Path) -> None:
+def test_union_scans_hive_not_merged(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2], "p": [1, 2]})
     df.write_parquet(tmp_path, partition_by="p")
     lfs = [
