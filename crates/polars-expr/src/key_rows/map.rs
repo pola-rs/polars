@@ -471,6 +471,7 @@ impl<V> KeyRowIndexMap<V> {
         self.values.get_unchecked_mut(idx as usize)
     }
 
+    #[cfg(test)]
     pub(crate) fn get_value(&self, idx: IdxSize) -> Option<&V> {
         self.values.get(idx as usize)
     }
