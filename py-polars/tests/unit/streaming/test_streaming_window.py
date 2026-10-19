@@ -11,8 +11,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 ENGINES = ["in-memory", "streaming"]
 
 
