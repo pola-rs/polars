@@ -251,3 +251,9 @@ def test_no_copy_of_fallible_keys_below_cross_join() -> None:
 def test_no_copy_for_nondeterministic_keys() -> None:
     key = pl.concat_list("f_val", "f_id").list.sample(1).list.first()
     assert_no_copy(left_join().sort(key).head(10))
+
+
+def test_copy_takes_dynamic_predicate() -> None:
+    plan = left_join().sort("f_val").head(10).explain(optimizations=ON)
+    sorts = [line for line in plan.splitlines() if "SORT BY [slice: " in line]
+    assert ["dynamic_pred: " in line for line in sorts] == [False, True]

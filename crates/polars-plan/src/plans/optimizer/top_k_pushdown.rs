@@ -10,11 +10,13 @@ use polars_core::prelude::{IdxSize, PlIndexSet};
 use polars_defs::join::JoinValidation;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::unique_id::UniqueId;
 
 use crate::plans::schema::join_right_output_names;
 use crate::plans::{
-    AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprPushdownGroup, IR, JoinTypeOptionsIR,
-    aexpr_to_leaf_names_iter, is_elementwise_rec, is_inherently_nondeterministic,
+    AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprPushdownGroup, IR, IRFunctionExpr,
+    JoinTypeOptionsIR, aexpr_to_leaf_names_iter, is_elementwise_rec,
+    is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 
@@ -33,7 +35,7 @@ pub(super) fn push_down_top_k(
         .map(|(node, _)| node)
         .collect();
     for sort in sorts {
-        copy_top_k(sort, ir_arena, expr_arena, maintain_errors);
+        copy_top_k(sort, root, ir_arena, expr_arena, maintain_errors);
     }
 }
 
@@ -54,6 +56,7 @@ impl Side {
 
 fn copy_top_k(
     sort: Node,
+    root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
     maintain_errors: bool,
@@ -61,7 +64,7 @@ fn copy_top_k(
     let IR::Sort {
         input,
         by_column,
-        slice: Some((offset, len, _)),
+        slice: Some((offset, len, dyn_pred)),
         sort_options,
     } = ir_arena.get(sort)
     else {
@@ -107,6 +110,10 @@ fn copy_top_k(
         return;
     };
 
+    let move_dyn_pred = dyn_pred
+        .as_ref()
+        .is_some_and(|pred| is_read_only_below(pred.id(), input, root, ir_arena, expr_arena));
+
     let copy = ir_arena.add(IR::Sort {
         input,
         by_column: by_column.clone(),
@@ -123,6 +130,64 @@ fn copy_top_k(
         unreachable!()
     };
     *side.take(input_left, input_right) = copy;
+
+    if move_dyn_pred {
+        swap_dyn_preds(sort, copy, ir_arena);
+    }
+}
+
+/// Swap the dynamic predicates of n1 and n2.
+fn swap_dyn_preds(n1: Node, n2: Node, ir_arena: &mut Arena<IR>) {
+    let [
+        IR::Sort {
+            slice: Some((_, _, dp1)),
+            ..
+        },
+        IR::Sort {
+            slice: Some((_, _, dp2)),
+            ..
+        },
+    ] = ir_arena.get_disjoint_mut([n1, n2])
+    else {
+        unreachable!()
+    };
+    std::mem::swap(dp1, dp2);
+}
+
+/// Whether every node of the plan at `root` that reads the dynamic predicate `id` lies below
+/// `node`, without a `Cache` in between.
+fn is_read_only_below(
+    id: &UniqueId,
+    node: Node,
+    root: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let mut below = PlIndexSet::default();
+    let mut stack = vec![node];
+    while let Some(node) = stack.pop() {
+        let ir = ir_arena.get(node);
+        if below.insert(node) && !matches!(ir, IR::Cache { .. }) {
+            stack.extend(ir.inputs());
+        }
+    }
+    let reads_dyn_pred = |ir: &IR| {
+        ir.exprs().any(|e| {
+            expr_arena.iter(e.node()).any(|(_, ae)| {
+                matches!(
+                    ae,
+                    AExpr::Function {
+                        function: IRFunctionExpr::DynamicPred { pred }
+                            | IRFunctionExpr::DynamicSkipBatch { pred },
+                        ..
+                    } if pred.id().as_ref() == Some(id)
+                )
+            })
+        })
+    };
+    ir_arena
+        .iter(root)
+        .all(|(node, ir)| below.contains(&node) || !reads_dyn_pred(ir))
 }
 
 /// Walk down from `node` through row-wise projections and joins that preserve `key_columns`,
