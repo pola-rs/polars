@@ -1043,8 +1043,11 @@ def test_streaming_join_unmatched_build_rows(
 @pytest.mark.parametrize(
     "key_type", ["int", "str", "int, int", "struct", "struct, int"]
 )
-def test_streaming_join_unmatched_repeated_key_morsels(key_type: str) -> None:
+def test_streaming_join_unmatched_repeated_key_morsels(
+    key_type: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
     # One key with many unmatched rows is not split into a morsel per row.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100000")
     keys = _join_keys(pl.lit(1, pl.Int64), key_type)
     left = pl.select([e.alias(n) for n, e in keys.items()], v=pl.int_range(3000))
     keys = _join_keys(pl.lit(2, pl.Int64), key_type)
