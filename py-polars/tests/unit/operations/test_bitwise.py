@@ -411,3 +411,188 @@ def test_bitwise_in_group_by() -> None:
             bwxor=pl.col.a.bitwise_xor(),
         ),
     )
+
+
+def test_integer_bitwise_constant_folding() -> None:
+    # Dynamic literals
+    q_dyn = pl.LazyFrame({"a": [10, 20]}).select(
+        and_dyn=pl.lit(5) & pl.lit(3),
+        or_dyn=pl.lit(5) | pl.lit(2),
+        xor_dyn=pl.lit(5) ^ pl.lit(3),
+    )
+    plan_dyn = q_dyn.explain()
+    assert " & " not in plan_dyn
+    assert " | " not in plan_dyn
+    assert " ^ " not in plan_dyn
+
+    res_dyn = q_dyn.collect()
+    assert res_dyn.schema["and_dyn"] == pl.Int32
+    assert res_dyn.schema["or_dyn"] == pl.Int32
+    assert res_dyn.schema["xor_dyn"] == pl.Int32
+    assert res_dyn.to_dict(as_series=False) == {
+        "and_dyn": [1],
+        "or_dyn": [7],
+        "xor_dyn": [6],
+    }
+
+    # Typed literals across various dtypes
+    q_typed = pl.LazyFrame({"a": [10, 20]}).select(
+        and_i8=pl.lit(5, dtype=pl.Int8) & pl.lit(3, dtype=pl.Int8),
+        or_i16=pl.lit(5, dtype=pl.Int16) | pl.lit(2, dtype=pl.Int16),
+        and_i32=pl.lit(5, dtype=pl.Int32) & pl.lit(3, dtype=pl.Int32),
+        or_i64=pl.lit(5, dtype=pl.Int64) | pl.lit(2, dtype=pl.Int64),
+        xor_u8=pl.lit(5, dtype=pl.UInt8) ^ pl.lit(3, dtype=pl.UInt8),
+        xor_u16=pl.lit(5, dtype=pl.UInt16) ^ pl.lit(3, dtype=pl.UInt16),
+        xor_u32=pl.lit(5, dtype=pl.UInt32) ^ pl.lit(3, dtype=pl.UInt32),
+        xor_u64=pl.lit(5, dtype=pl.UInt64) ^ pl.lit(3, dtype=pl.UInt64),
+    )
+    plan_typed = q_typed.explain()
+    assert " & " not in plan_typed
+    assert " | " not in plan_typed
+    assert " ^ " not in plan_typed
+
+    res_typed = q_typed.collect()
+    assert res_typed.schema["and_i8"] == pl.Int8
+    assert res_typed.schema["or_i16"] == pl.Int16
+    assert res_typed.schema["and_i32"] == pl.Int32
+    assert res_typed.schema["or_i64"] == pl.Int64
+    assert res_typed.schema["xor_u8"] == pl.UInt8
+    assert res_typed.schema["xor_u16"] == pl.UInt16
+    assert res_typed.schema["xor_u32"] == pl.UInt32
+    assert res_typed.schema["xor_u64"] == pl.UInt64
+    assert res_typed.to_dict(as_series=False) == {
+        "and_i8": [1],
+        "or_i16": [7],
+        "and_i32": [1],
+        "or_i64": [7],
+        "xor_u8": [6],
+        "xor_u16": [6],
+        "xor_u32": [6],
+        "xor_u64": [6],
+    }
+
+    # Combined with pl.col expressions
+    df = pl.DataFrame({"a": [7, 12]})
+    res_col = df.lazy().select(
+        and_col=pl.col("a") & (pl.lit(5) & pl.lit(3)),
+        or_col=pl.col("a") | (pl.lit(5) | pl.lit(2)),
+        xor_col=pl.col("a") ^ (pl.lit(5) ^ pl.lit(3)),
+    )
+    plan_col = res_col.explain()
+    assert "5 & 3" not in plan_col
+    assert "5 | 2" not in plan_col
+    assert "5 ^ 3" not in plan_col
+    assert res_col.collect().to_dict(as_series=False) == {
+        "and_col": [7 & 1, 12 & 1],
+        "or_col": [7 | 7, 12 | 7],
+        "xor_col": [7 ^ 6, 12 ^ 6],
+    }
+
+
+def test_integer_bitwise_not_constant_folding() -> None:
+    # Regression 1: Unary NOT strictly preserves literal's materialized
+    # dtype and bit-width
+    u64_max = 18446744073709551615  # 2**64 - 1
+    q = pl.LazyFrame({"a": [1]}).select(
+        not_dyn=~pl.lit(5),
+        not_i8=~pl.lit(5, dtype=pl.Int8),
+        not_i16=~pl.lit(5, dtype=pl.Int16),
+        not_i32=~pl.lit(5, dtype=pl.Int32),
+        not_i64=~pl.lit(5, dtype=pl.Int64),
+        not_u8=~pl.lit(5, dtype=pl.UInt8),
+        not_u16=~pl.lit(5, dtype=pl.UInt16),
+        not_u32=~pl.lit(5, dtype=pl.UInt32),
+        not_u64=~pl.lit(5, dtype=pl.UInt64),
+        not_u64_max_dyn=~pl.lit(u64_max),
+        not_u64_max_typed=~pl.lit(u64_max, dtype=pl.UInt64),
+    )
+    plan = q.explain()
+    assert ".not()" not in plan
+
+    res = q.collect()
+    assert res.schema["not_dyn"] == pl.Int32
+    assert res.schema["not_i8"] == pl.Int8
+    assert res.schema["not_i16"] == pl.Int16
+    assert res.schema["not_i32"] == pl.Int32
+    assert res.schema["not_i64"] == pl.Int64
+    assert res.schema["not_u8"] == pl.UInt8
+    assert res.schema["not_u16"] == pl.UInt16
+    assert res.schema["not_u32"] == pl.UInt32
+    assert res.schema["not_u64"] == pl.UInt64
+    assert res.schema["not_u64_max_dyn"] == pl.UInt64
+    assert res.schema["not_u64_max_typed"] == pl.UInt64
+
+    assert res.to_dict(as_series=False) == {
+        "not_dyn": [-6],
+        "not_i8": [-6],
+        "not_i16": [-6],
+        "not_i32": [-6],
+        "not_i64": [-6],
+        "not_u8": [250],
+        "not_u16": [65530],
+        "not_u32": [4294967290],
+        "not_u64": [18446744073709551610],
+        "not_u64_max_dyn": [0],
+        "not_u64_max_typed": [0],
+    }
+
+    # Combined with pl.col
+    df = pl.DataFrame({"a": [15, 30]})
+    res_col = df.lazy().select(
+        col_and_not_dyn=pl.col("a") & ~pl.lit(5),
+        col_and_not_typed=pl.col("a") & ~pl.lit(5, dtype=pl.Int32),
+    )
+    assert "~" not in res_col.explain()
+    assert res_col.collect().to_dict(as_series=False) == {
+        "col_and_not_dyn": [15 & -6, 30 & -6],
+        "col_and_not_typed": [15 & -6, 30 & -6],
+    }
+
+
+def test_integer_bitwise_constant_folding_coercion() -> None:
+    # Regression 2: Dynamic binary bitwise folding preserves original coercion
+    # semantics and output dtypes
+    u64_max = 18446744073709551615
+    q = pl.LazyFrame({"a": [1]}).select(
+        # When 0 & 100_000_000_000 = 0, output dtype must remain Int64,
+        # not collapse to Int32
+        and_i64_dyn=pl.lit(0) & pl.lit(100_000_000_000),
+        and_i64_typed=pl.lit(0, dtype=pl.Int32)
+        & pl.lit(100_000_000_000, dtype=pl.Int64),
+        # When u64_max ^ u64_max = 0, output dtype must remain UInt64,
+        # not collapse to Int32
+        xor_u64_dyn=pl.lit(u64_max) ^ pl.lit(u64_max),
+        xor_u64_typed=pl.lit(u64_max, dtype=pl.UInt64)
+        ^ pl.lit(u64_max, dtype=pl.UInt64),
+        # Mixed dynamic and scalar
+        or_mixed_left=pl.lit(5, dtype=pl.Int64) | pl.lit(2),
+        or_mixed_right=pl.lit(2) | pl.lit(5, dtype=pl.Int64),
+    )
+    plan = q.explain()
+    assert " & " not in plan
+    assert " | " not in plan
+    assert " ^ " not in plan
+
+    res = q.collect()
+    assert res.schema["and_i64_dyn"] == pl.Int64
+    assert res.schema["and_i64_typed"] == pl.Int64
+    assert res.schema["xor_u64_dyn"] == pl.UInt64
+    assert res.schema["xor_u64_typed"] == pl.UInt64
+    assert res.schema["or_mixed_left"] == pl.Int64
+    assert res.schema["or_mixed_right"] == pl.Int64
+
+    assert res.to_dict(as_series=False) == {
+        "and_i64_dyn": [0],
+        "and_i64_typed": [0],
+        "xor_u64_dyn": [0],
+        "xor_u64_typed": [0],
+        "or_mixed_left": [7],
+        "or_mixed_right": [7],
+    }
+
+    # Verify downstream operations don't suffer type changes
+    df = pl.DataFrame({"x": [0]}, schema={"x": pl.Int64})
+    matched = (
+        df.lazy().filter(pl.col("x") == (pl.lit(0) & pl.lit(100_000_000_000))).collect()
+    )
+    assert len(matched) == 1
