@@ -107,7 +107,6 @@ def test_is_aws_cloud() -> None:
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_storage_options_retry_config(
     plmonkeypatch: PlMonkeyPatch,
@@ -846,3 +845,22 @@ assert lf.collect().height == 2_000_000
         f"POLARS_{format.upper()}_CHUNK_PREFETCH_LIMIT": "1",
     }
     subprocess.run([sys.executable, "-c", code], env=env, check=True, timeout=60)
+
+
+@pytest.mark.slow
+def test_scan_parquet_empty_row_groups_29995(s3: CountingS3) -> None:
+    import pyarrow.parquet as pq
+
+    # pyarrow writes no pages for the columns of an empty row group.
+    df = pl.DataFrame({"a": [1, 2], "b": [True, False], "c": [None, True]})
+    f = io.BytesIO()
+    with pq.ParquetWriter(f, df.to_arrow().schema) as writer:
+        writer.write_table(df.clear().to_arrow())
+        writer.write_table(df.to_arrow())
+
+    key = f"{uuid4()}.parquet"
+    s3.client.put_object(Bucket="bucket", Key=key, Body=f.getvalue())
+
+    lf = pl.scan_parquet(f"s3://bucket/{key}", storage_options=s3.storage_options)
+    assert_frame_equal(lf.collect(), df)
+    assert_frame_equal(lf.select("b", "c").collect(), df.select("b", "c"))

@@ -33,6 +33,14 @@ def test_col_as_attribute_edge_cases() -> None:
         ]
 
 
+def test_col_unwrap_28316() -> None:
+    import inspect
+
+    # IPython/Jupyter autocomplete calls `inspect.unwrap` on `pl.col`
+    assert not hasattr(pl.col, "__wrapped__")
+    assert inspect.unwrap(pl.col) is pl.col
+
+
 def test_col_as_attribute_class_mangling_25129() -> None:
     # note: we have to run this test in a subprocess to prevent pytest
     # itself from managing to inject "_pytestfixturefunction" as the

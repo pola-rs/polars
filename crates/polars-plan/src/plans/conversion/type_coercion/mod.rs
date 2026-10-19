@@ -548,6 +548,7 @@ impl OptimizationRule for TypeCoercionRule {
                 })
             },
             // shift and fill should only cast left and fill value to super type.
+            // @3.0: Raise a type error instead of upcasting the input.
             AExpr::Function {
                 function: IRFunctionExpr::ShiftAndFill,
                 ref input,

@@ -114,3 +114,24 @@ result = ctx.execute(
 )
 print(result)
 # --8<-- [end:tablefunctionoptions]
+
+# --8<-- [start:tablefunctionndjson]
+result = ctx.execute(
+    """
+        SELECT *
+        FROM read_ndjson('docs/assets/data/orders.ndjson', schema_overrides => {'date': 'DATE'})
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionndjson]
+
+# --8<-- [start:tablefunctionparquet]
+result = ctx.execute(
+    """
+        SELECT id, bool_col, path
+        FROM read_parquet('docs/assets/data/alltypes_plain.parquet', include_file_paths => 'path')
+        LIMIT 3
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionparquet]

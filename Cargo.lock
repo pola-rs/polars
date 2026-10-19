@@ -174,6 +174,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-ffi"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39cd9de47399986d5b216c6bef9434dfff1689ab61ba8d1e2720dc5fe5c84083"
+
+[[package]]
 name = "async-stream"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1979,15 +1985,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "home"
-version = "0.5.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
-dependencies = [
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "http"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3388,7 +3385,6 @@ dependencies = [
  "futures",
  "glob",
  "hashbrown 0.17.1",
- "home",
  "itoa",
  "libc",
  "memchr",
@@ -3423,6 +3419,13 @@ dependencies = [
  "tokio",
  "zmij",
  "zstd",
+]
+
+[[package]]
+name = "polars-io-ext-ffi"
+version = "0.1.0"
+dependencies = [
+ "async-ffi",
 ]
 
 [[package]]
@@ -3605,6 +3608,7 @@ dependencies = [
  "regex",
  "schemars",
  "serde",
+ "serde_json",
  "simdutf8",
  "snap",
  "streaming-decompression",
@@ -3690,6 +3694,7 @@ dependencies = [
  "ndarray",
  "num-traits",
  "numpy",
+ "object_store",
  "parking_lot",
  "polars",
  "polars-arrow",
@@ -3704,6 +3709,7 @@ dependencies = [
  "polars-expr",
  "polars-ffi",
  "polars-io",
+ "polars-io-ext-ffi",
  "polars-lazy",
  "polars-mem-engine",
  "polars-observer",
@@ -3723,6 +3729,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slotmap",
+ "tokio",
  "uuid",
  "version_check",
 ]
@@ -3806,7 +3813,6 @@ dependencies = [
  "regex",
  "serde",
  "sqlparser",
- "tempfile",
 ]
 
 [[package]]
@@ -3845,6 +3851,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-row",
  "polars-time",
  "polars-utils",
  "pyo3",
@@ -4573,9 +4580,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",

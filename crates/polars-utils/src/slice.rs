@@ -94,3 +94,20 @@ pub fn load_padded_le_u64(bytes: &[u8]) -> u64 {
     let hi = (bytes[len - 1] as u64) << (8 * (len - 1));
     lo | mid | hi
 }
+
+/// Resolves a slice with a possibly negative `offset` against an array of length
+/// `array_len`, returning the clamped start index and length.
+#[inline]
+pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
+    let n: i64 = array_len
+        .try_into()
+        .expect("array length larger than i64::MAX");
+    // Resolve a negative offset relative to the end. This cannot overflow.
+    let s = offset + (n & (offset >> 63));
+    let start = s.max(0).min(n);
+    // The part of the slice before index 0. Wraps if `s > n`, but then the
+    // slice is empty anyway.
+    let before = usize::try_from(start.wrapping_sub(s) as u64).unwrap_or(usize::MAX);
+    let len = length.saturating_sub(before).min((n - start) as usize);
+    (start as usize, len)
+}

@@ -8,6 +8,7 @@ pub(super) mod utils;
 pub(crate) use dynamic::new_dynamic_pred;
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
 use polars_buffer::Buffer;
+use polars_io::predicates::ReadOrder;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
 use polars_utils::with_drop::WithDrop;
@@ -112,14 +113,16 @@ impl PredicatePushDown {
             };
 
             let maintain_errors = self.maintain_errors;
-            let (eligibility, alias_rename_map) = pushdown_eligibility(
+            let (eligibility, projection_map) = pushdown_eligibility(
                 &lp.exprs().cloned().collect::<Vec<_>>(),
+                matches!(lp, IR::Select { .. } | IR::HStack { .. }),
                 &[],
                 &acc_predicates,
                 expr_arena,
                 self.nodes_scratch.get(),
                 maintain_errors,
-                lp_arena.get(input),
+                input,
+                lp_arena,
             )?;
 
             let local_predicates = match eligibility {
@@ -136,9 +139,10 @@ impl PredicatePushDown {
                 },
             };
 
-            if !alias_rename_map.is_empty() {
+            if !projection_map.renames.is_empty() || !projection_map.order_keeping_exprs.is_empty()
+            {
                 for (_, expr_ir) in acc_predicates.iter_mut() {
-                    map_column_references(expr_ir, expr_arena, &alias_rename_map);
+                    projection_map.map_to_input(expr_ir, expr_arena);
                 }
             }
 
@@ -281,12 +285,14 @@ impl PredicatePushDown {
 
                 let local_predicates = match pushdown_eligibility(
                     &[],
+                    false,
                     &[(&tmp_key, predicate.clone())],
                     &acc_predicates,
                     expr_arena,
                     self.nodes_scratch.get(),
                     maintain_errors,
-                    lp_arena.get(input),
+                    input,
+                    lp_arena,
                 )?
                 .0
                 {
@@ -616,11 +622,17 @@ impl PredicatePushDown {
                 }
 
                 if let Some((offset, len, None)) = slice
-                    && by_column.len() == 1
+                    && !by_column.is_empty()
                 {
                     let n = by_column[0].node();
                     if let AExpr::Column(_) = expr_arena.get(n) {
-                        let (dyn_pred_node, pred) = new_dynamic_pred(n, expr_arena);
+                        let read_order = if sort_options.descending.first() == Some(&true) {
+                            ReadOrder::HighFirst
+                        } else {
+                            ReadOrder::LowFirst
+                        };
+                        let (dyn_pred_node, pred) =
+                            new_dynamic_pred(n, expr_arena, Some(read_order));
                         slice = Some((offset, len, Some(pred)));
 
                         let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);

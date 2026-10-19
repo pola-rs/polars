@@ -236,8 +236,8 @@ def test_dataset_provider_predicate_eq_missing(df: pl.DataFrame) -> None:
 def test_dataset_provider_predicate_xor(df: pl.DataFrame) -> None:
     # PyArrow expressions have no `^` operator.
     assert lowered_predicate(df, (pl.col("id") > 3) ^ (pl.col("val") > 1.0)) == (
-        "(((pa.compute.field('id') > 3) | (pa.compute.field('val') > 1))"
-        " & ~((pa.compute.field('id') > 3) & (pa.compute.field('val') > 1)))"
+        "(((pa.compute.field('id') > 3) | (pa.compute.field('val') > 1.0))"
+        " & ~((pa.compute.field('id') > 3) & (pa.compute.field('val') > 1.0)))"
     )
     # `^` on integers is a bitwise operation, which the rewrite does not hold for.
     assert lowered_predicate(df, (pl.col("id") ^ 1) > 2) is None
@@ -268,17 +268,17 @@ def test_dataset_provider_predicate_arithmetic(df: pl.DataFrame) -> None:
     # integer overflow where Polars wraps.
     assert (
         lowered_predicate(df, pl.col("val") * 2 > 1.0)
-        == "((pa.compute.field('val') * 2) > 1)"
+        == "((pa.compute.field('val') * 2.0) > 1.0)"
     )
     assert (
         lowered_predicate(df, pl.col("val") + 1.0 <= 1.5)
-        == "((pa.compute.field('val') + 1) <= 1.5)"
+        == "((pa.compute.field('val') + 1.0) <= 1.5)"
     )
     # PyArrow expressions have no reflected arithmetic, so a literal on the left
     # has to become an expression of its own.
     assert (
         lowered_predicate(df, 2.0 - pl.col("val") > 1.0)
-        == "((pa.compute.scalar(2) - pa.compute.field('val')) > 1)"
+        == "((pa.compute.scalar(2.0) - pa.compute.field('val')) > 1.0)"
     )
 
 

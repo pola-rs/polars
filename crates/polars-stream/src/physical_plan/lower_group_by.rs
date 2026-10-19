@@ -586,8 +586,17 @@ fn try_lower_elementwise_scalar_agg_expr(
                     ..
                 } => Some(replace_agg_uniq!(expr)),
                 IRAggExpr::NUnique(uniq_input) => {
+                    // `drop_nulls().n_unique()` is the count of the non-null unique values.
+                    let (uniq_input, include_nulls) = match expr_arena.get(*uniq_input) {
+                        AExpr::Function {
+                            input,
+                            function: IRFunctionExpr::DropNulls,
+                            ..
+                        } => (input[0].node(), false),
+                        _ => (*uniq_input, true),
+                    };
                     let function = IRFunctionExpr::Unique(false);
-                    let uniq_input_expr = ExprIR::from_node(*uniq_input, expr_arena);
+                    let uniq_input_expr = ExprIR::from_node(uniq_input, expr_arena);
                     let uniq_node = expr_arena.add(AExpr::Function {
                         input: vec![uniq_input_expr],
                         options: function.function_options(),
@@ -596,7 +605,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
                     let count = IRAggExpr::Count {
                         input: uniq_node,
-                        include_nulls: true,
+                        include_nulls,
                     };
                     let count_node = expr_arena.add(AExpr::Agg(count));
                     Some(replace_agg_uniq!(count_node))
