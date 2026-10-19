@@ -613,3 +613,175 @@ def test_read_hive_partitions_list_of_paths(
     assert_frame_equal(
         result, pl.DataFrame({"x": [1, 2], "p": [1, 2]}), check_row_order=False
     )
+
+
+def _read_parquet_sql(path: Path, options: str) -> pl.DataFrame:
+    args = f"'{path.as_posix()}'" + (f", {options}" if options else "")
+    with pl.SQLContext() as ctx:
+        return ctx.execute(f"SELECT * FROM read_parquet({args})", eager=True)
+
+
+def _write_hive_parquet(root: Path) -> Path:
+    # two hive partitions with date-like values; returns a glob over them
+    for d in ("2026-01-01", "2026-01-02"):
+        (root / f"d={d}").mkdir()
+        pl.DataFrame({"a": [1, 2]}).write_parquet(root / f"d={d}" / "data.parquet")
+    return root / "*" / "data.parquet"
+
+
+@pytest.mark.parametrize(
+    ("options", "kwargs"),
+    [
+        # unlike scan_parquet, hive partitions are read by default, for a glob too
+        ("", {}),
+        ("hive_partitioning => false", {"hive_partitioning": False}),
+        ("try_parse_hive_dates => false", {"try_parse_hive_dates": False}),
+        ("hive_schema => {'d': 'VARCHAR'}", {"hive_schema": {"d": pl.String}}),
+        ("include_file_paths => 'file'", {"include_file_paths": "file"}),
+    ],
+)
+def test_read_parquet_hive_options_match_scan_parquet(
+    tmp_path: Path, options: str, kwargs: dict[str, Any]
+) -> None:
+    glob = _write_hive_parquet(tmp_path)
+    scan_kwargs: dict[str, Any] = {"hive_partitioning": True, **kwargs}
+    expected = pl.scan_parquet(glob.as_posix(), **scan_kwargs).collect()
+    assert_frame_equal(_read_parquet_sql(glob, options), expected)
+
+
+def test_read_parquet_hive_column_of_a_single_file(tmp_path: Path) -> None:
+    # unlike scan_parquet's automatic choice, a single file in a hive folder gets it too
+    path = tmp_path / "d=2026-01-01" / "data.parquet"
+    path.parent.mkdir()
+    pl.DataFrame({"a": [1]}).write_parquet(path)
+
+    assert _read_parquet_sql(path, "").schema == {"a": pl.Int64, "d": pl.Date}
+    assert _read_parquet_sql(path, "hive_partitioning => false").schema == {
+        "a": pl.Int64
+    }
+
+
+@pytest.mark.parametrize(
+    ("options", "kwargs"),
+    [
+        # as scan_parquet: a list of files doesn't read the partitions by default
+        ("", {}),
+        ("hive_partitioning => true", {"hive_partitioning": True}),
+        (
+            "hive_partitioning => true, hive_schema => {'d': 'VARCHAR'}, "
+            "include_file_paths => 'file'",
+            {
+                "hive_partitioning": True,
+                "hive_schema": {"d": pl.String},
+                "include_file_paths": "file",
+            },
+        ),
+    ],
+)
+def test_read_parquet_list_of_paths_with_options(
+    tmp_path: Path, options: str, kwargs: dict[str, Any]
+) -> None:
+    _write_hive_parquet(tmp_path)
+    files = [
+        (tmp_path / f"d={d}" / "data.parquet").as_posix()
+        for d in ("2026-01-01", "2026-01-02")
+    ]
+    sql_list = ", ".join(f"'{f}'" for f in files)
+    args = f"[{sql_list}]" + (f", {options}" if options else "")
+    result = pl.sql(f"SELECT * FROM read_parquet({args})").collect()
+    assert_frame_equal(result, pl.scan_parquet(files, **kwargs).collect())
+    assert ("d" in result.columns) == ("hive_partitioning" in kwargs)
+
+
+@pytest.mark.parametrize(
+    ("options", "kwargs"),
+    [
+        # the first file defines the columns; later files lack one, or have another
+        (
+            "missing_columns => 'insert', extra_columns => 'ignore'",
+            {"missing_columns": "insert", "extra_columns": "ignore"},
+        ),
+        # the union of the columns, from a schema; values are case-insensitive
+        (
+            "schema => {'a': 'BIGINT', 'b': 'VARCHAR', 'c': 'DOUBLE'}, "
+            "missing_columns => 'INSERT'",
+            {
+                "schema": {"a": pl.Int64, "b": pl.String, "c": pl.Float64},
+                "missing_columns": "insert",
+            },
+        ),
+    ],
+)
+def test_read_parquet_column_options_match_scan_parquet(
+    tmp_path: Path, options: str, kwargs: dict[str, Any]
+) -> None:
+    pl.DataFrame({"a": [1], "b": ["x"]}).write_parquet(tmp_path / "part_1.parquet")
+    pl.DataFrame({"a": [2]}).write_parquet(tmp_path / "part_2.parquet")
+    pl.DataFrame({"a": [3], "b": ["z"], "c": [1.5]}).write_parquet(
+        tmp_path / "part_3.parquet"
+    )
+    glob = tmp_path / "part_*.parquet"
+
+    scan_kwargs: dict[str, Any] = {"hive_partitioning": True, **kwargs}
+    expected = pl.scan_parquet(glob.as_posix(), **scan_kwargs).collect()
+    assert_frame_equal(_read_parquet_sql(glob, options), expected)
+
+
+def test_read_parquet_options_survive_plan_roundtrip(tmp_path: Path) -> None:
+    glob = _write_hive_parquet(tmp_path)
+    q = pl.sql(
+        f"SELECT * FROM read_parquet('{glob.as_posix()}', hive_partitioning => false) "
+        "WHERE a > 1"
+    )
+    roundtripped = pl.LazyFrame.deserialize(q.serialize())
+    assert_frame_equal(roundtripped.collect(), pl.DataFrame({"a": [2, 2]}))
+
+
+@pytest.mark.parametrize(
+    ("options", "error", "match"),
+    [
+        # true or false only: NULL would not mean scan_parquet's automatic choice
+        (
+            "hive_partitioning => NULL",
+            SQLSyntaxError,
+            r"option 'hive_partitioning' expects a boolean; found: NULL",
+        ),
+        (
+            "missing_columns => 'fill'",
+            SQLSyntaxError,
+            r"option 'missing_columns' expects 'insert' or 'raise'; found: 'fill'",
+        ),
+        (
+            "header => true",
+            SQLInterfaceError,
+            r"unknown `read_parquet` option 'header'; valid options are: schema, ",
+        ),
+        (
+            "n_rows => 5",
+            SQLInterfaceError,
+            r"option 'n_rows' is not supported in SQL: use LIMIT",
+        ),
+        (
+            "columns => ['a']",
+            SQLInterfaceError,
+            r"option 'columns' is not supported in SQL: select the columns in the SELECT",
+        ),
+        (
+            "cast_options => NULL",
+            SQLInterfaceError,
+            r"option 'cast_options' is not supported in SQL$",
+        ),
+        (
+            "use_pyarrow => true",
+            SQLInterfaceError,
+            r"option 'use_pyarrow' is not supported in SQL$",
+        ),
+    ],
+)
+def test_read_parquet_option_errors(
+    tmp_path: Path, options: str, error: type[Exception], match: str
+) -> None:
+    path = tmp_path / "data.parquet"
+    pl.DataFrame({"a": [1]}).write_parquet(path)
+    with pytest.raises(error, match=match):
+        _read_parquet_sql(path, options)
