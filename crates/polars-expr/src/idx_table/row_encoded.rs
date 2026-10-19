@@ -5,6 +5,7 @@ use polars_arrow::array::Array;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unitvec;
 
 use super::*;
@@ -12,7 +13,7 @@ use crate::hash_keys::HashKeys;
 
 #[derive(Default)]
 pub struct RowEncodedIdxTable {
-    idx_map: BinaryViewIndexMap<UnitVec<IdxSize>>,
+    idx_map: BinaryViewIndexMap<UnitVec<RelaxedCell<IdxSize>>>,
     idx_offset: IdxSize,
     matched: MatchedRows,
 }
@@ -39,12 +40,12 @@ impl RowEncodedIdxTable {
     ) -> bool {
         if let Some(idxs) = self.idx_map.get(hash, key) {
             for idx in &idxs[..] {
-                table_match.push(*idx);
+                table_match.push(idx.load() & !MARKED);
                 probe_match.push(key_idx);
             }
 
             if MARK_MATCHES {
-                self.matched.mark_rows(idxs);
+                unsafe { self.matched.mark_rows(idxs) };
             }
             true
         } else {
@@ -127,7 +128,7 @@ impl IdxTable for RowEncodedIdxTable {
             .checked_add(hash_keys.keys.len())
             .unwrap();
         assert!(
-            new_idx_offset < IdxSize::MAX as usize,
+            new_idx_offset <= MARKED as usize,
             "overly large index in RowEncodedIdxTable"
         );
         if track_unmatchable {
@@ -144,10 +145,10 @@ impl IdxTable for RowEncodedIdxTable {
             if let Some(key) = key {
                 match self.idx_map.entry(*hash, key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(idx);
+                        o.into_mut().push(RelaxedCell::from(idx));
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![idx]);
+                        v.insert(unitvec![RelaxedCell::from(idx)]);
                     },
                 }
             }
@@ -169,7 +170,7 @@ impl IdxTable for RowEncodedIdxTable {
             .checked_add(subset.len())
             .unwrap();
         assert!(
-            new_idx_offset < IdxSize::MAX as usize,
+            new_idx_offset <= MARKED as usize,
             "overly large index in RowEncodedIdxTable"
         );
         if track_unmatchable {
@@ -183,10 +184,10 @@ impl IdxTable for RowEncodedIdxTable {
             if let Some(key) = key {
                 match self.idx_map.entry(hash, key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(idx);
+                        o.into_mut().push(RelaxedCell::from(idx));
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![idx]);
+                        v.insert(unitvec![RelaxedCell::from(idx)]);
                     },
                 }
             }
