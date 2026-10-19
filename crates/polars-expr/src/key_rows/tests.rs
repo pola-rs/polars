@@ -140,7 +140,7 @@ fn colliding_new_keys_get_indices_in_order() {
         map.get_or_insert_batch(&ks, &[1, 2, 3], |r| r as IdxSize, &mut groups);
     }
     assert_eq!(groups, [0, 1, 2, 1]);
-    let values: Vec<IdxSize> = (0..3).map(|g| *map.get_value(g).unwrap()).collect();
+    let values: Vec<IdxSize> = (0..3).map(|g| unsafe { *map.value_unchecked(g) }).collect();
     assert_eq!(values, [0, 0, 1]);
     assert!(map.keys_frame(df.schema()).equals(&df.slice(0, 3)));
 }

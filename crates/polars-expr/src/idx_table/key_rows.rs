@@ -2,7 +2,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unitvec;
 
 use super::*;
@@ -12,11 +11,9 @@ use crate::key_rows::{KeyRowIndexMap, KeyRowKeys, KeyRowLayout};
 const PROBE_CHUNK_SIZE: usize = 1024;
 
 pub struct KeyRowIdxTable {
-    // These AtomicU64s actually are IdxSizes, but we use the top bit of the
-    // first index in each to mark keys during probing.
-    idx_map: KeyRowIndexMap<UnitVec<RelaxedCell<u64>>>,
+    idx_map: KeyRowIndexMap<UnitVec<IdxSize>>,
     idx_offset: IdxSize,
-    null_keys: Vec<IdxSize>,
+    matched: MatchedRows,
 }
 
 impl KeyRowIdxTable {
@@ -24,7 +21,7 @@ impl KeyRowIdxTable {
         Self {
             idx_map: KeyRowIndexMap::new(layout),
             idx_offset: 0,
-            null_keys: Vec::new(),
+            matched: MatchedRows::default(),
         }
     }
 
@@ -50,8 +47,6 @@ impl KeyRowIdxTable {
             {
                 valid_idxs.push(key_idx);
                 valid_pos.push(p as IdxSize);
-            } else if track_unmatchable {
-                self.null_keys.push(self.idx_offset + p as IdxSize);
             }
         }
 
@@ -60,6 +55,9 @@ impl KeyRowIdxTable {
             new_idx_offset < IdxSize::MAX as usize,
             "overly large index in KeyRowIdxTable"
         );
+        if track_unmatchable {
+            self.matched.grow(new_idx_offset);
+        }
 
         let idx_offset = self.idx_offset;
         let mut inserted = vec![false; valid_idxs.len()];
@@ -69,15 +67,13 @@ impl KeyRowIdxTable {
             &valid_idxs,
             |r| {
                 inserted[r] = true;
-                unitvec![RelaxedCell::from((idx_offset + valid_pos[r]) as u64)]
+                unitvec![idx_offset + valid_pos[r]]
             },
             &mut groups,
         );
         for ((g, pos), inserted) in groups.iter().zip(&valid_pos).zip(&inserted) {
             if !inserted {
-                self.idx_map
-                    .value_unchecked_mut(*g)
-                    .push(RelaxedCell::from((idx_offset + pos) as u64));
+                self.idx_map.value_unchecked_mut(*g).push(idx_offset + pos);
             }
         }
 
@@ -101,19 +97,12 @@ impl KeyRowIdxTable {
                 if *g != IdxSize::MAX {
                     let idxs = self.idx_map.value_unchecked(*g);
                     for idx in &idxs[..] {
-                        // Create matches, making sure to clear top bit.
-                        table_match.push((idx.load() & !(1 << 63)) as IdxSize);
+                        table_match.push(*idx);
                         probe_match.push(*key_idx);
                     }
 
-                    // Mark if necessary. This action is idempotent so doesn't
-                    // fetch_or to do it atomically.
                     if MARK_MATCHES {
-                        let first_idx = idxs.get_unchecked(0);
-                        let first_idx_val = first_idx.load();
-                        if first_idx_val >> 63 == 0 {
-                            first_idx.store(first_idx_val | (1 << 63));
-                        }
+                        self.matched.mark_rows(idxs);
                     }
                 } else if EMIT_UNMATCHED {
                     table_match.push(IdxSize::MAX);
@@ -239,47 +228,8 @@ impl IdxTable for KeyRowIdxTable {
         )
     }
 
-    fn unmarked_keys(
-        &self,
-        out: &mut Vec<IdxSize>,
-        mut offset: IdxSize,
-        limit: IdxSize,
-    ) -> IdxSize {
-        out.clear();
-
-        let mut keys_processed = 0;
-        if (offset as usize) < self.null_keys.len() {
-            out.extend(
-                self.null_keys[offset as usize..]
-                    .iter()
-                    .copied()
-                    .take(limit as usize),
-            );
-            keys_processed += out.len() as IdxSize;
-            offset += out.len() as IdxSize;
-            if out.len() >= limit as usize {
-                return keys_processed;
-            }
-        }
-
-        offset -= self.null_keys.len() as IdxSize;
-
-        while let Some(idxs) = self.idx_map.get_value(offset) {
-            let first_idx = unsafe { idxs.get_unchecked(0) };
-            let first_idx_val = first_idx.load();
-            if first_idx_val >> 63 == 0 {
-                for idx in &idxs[..] {
-                    out.push((idx.load() & !(1 << 63)) as IdxSize);
-                }
-            }
-
-            keys_processed += 1;
-            offset += 1;
-            if out.len() >= limit as usize {
-                break;
-            }
-        }
-
-        keys_processed
+    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize {
+        self.matched
+            .unmarked_rows(self.idx_offset, out, offset, limit)
     }
 }
