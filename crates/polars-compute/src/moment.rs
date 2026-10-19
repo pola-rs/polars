@@ -67,6 +67,29 @@ pub struct PearsonState {
     dp_yy: f64,
 }
 
+/// Converts a state to and from its fields, which are trusted as they are.
+macro_rules! impl_parts {
+    ($ty:ident, $n:literal, $($field:ident),+) => {
+        impl $ty {
+            pub const FIELD_NAMES: [&'static str; $n] = [$(stringify!($field)),+];
+
+            pub fn to_parts(&self) -> [f64; $n] {
+                [$(self.$field),+]
+            }
+
+            pub fn from_parts([$($field),+]: [f64; $n]) -> Self {
+                Self { $($field),+ }
+            }
+        }
+    };
+}
+
+impl_parts!(VarState, 3, weight, mean, dp);
+impl_parts!(CovState, 4, weight, mean_x, mean_y, dp_xy);
+impl_parts!(PearsonState, 6, weight, mean_x, mean_y, dp_xx, dp_xy, dp_yy);
+impl_parts!(SkewState, 4, weight, mean, m2, m3);
+impl_parts!(KurtosisState, 5, weight, mean, m2, m3, m4);
+
 impl VarState {
     fn new(x: &[f64]) -> Self {
         if x.is_empty() {

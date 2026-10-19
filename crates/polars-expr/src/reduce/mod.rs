@@ -235,6 +235,11 @@ pub trait GroupedReduction: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
 }
 
+/// The dtype `r` finalizes to.
+pub fn reduction_output_dtype(r: &dyn GroupedReduction) -> PolarsResult<DataType> {
+    Ok(r.new_empty().finalize()?.dtype().clone())
+}
+
 // Helper traits used in the VecGroupedReduction and VecMaskGroupedReduction to
 // reduce code duplication.
 pub trait Reducer: Send + Sync + Clone + 'static {

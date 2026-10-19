@@ -118,7 +118,14 @@ impl<T, B> Reducer for SketchReducer<T, B>
 where
     T: PolarsPhysicalType,
     B: ToOwned + ?Sized + 'static,
-    B::Owned: fmt::Debug + Clone + TotalOrd + Send + Sync + serde::Serialize + 'static,
+    B::Owned: fmt::Debug
+        + Clone
+        + TotalOrd
+        + Send
+        + Sync
+        + serde::Serialize
+        + serde::de::DeserializeOwned
+        + 'static,
     for<'a> T::Physical<'a>: Borrow<B>,
 {
     type Dtype = T;
