@@ -238,3 +238,16 @@ def test_copy_below_left_join(
     q = lf.sort(by, **options).slice(offset, length)
     assert top_k_copies(q.explain(optimizations=ON)) == [[("LEFT", "left")]]
     assert_correct_top_k(lf, q, by)
+
+
+def test_no_copy_of_fallible_keys_below_cross_join() -> None:
+    empty = pl.LazyFrame(schema={"b": pl.Int64})
+    lf = pl.LazyFrame({"a": ["bad", "1"]}).join(empty, how="cross")
+    q = lf.sort(pl.col("a").cast(pl.Int64)).head(1)
+    assert_no_copy(q)
+    assert q.collect().is_empty()
+
+
+def test_no_copy_for_nondeterministic_keys() -> None:
+    key = pl.concat_list("f_val", "f_id").list.sample(1).list.first()
+    assert_no_copy(left_join().sort(key).head(10))

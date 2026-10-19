@@ -13,8 +13,8 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::plans::schema::join_right_output_names;
 use crate::plans::{
-    AExpr, ArenaLpIter, ExprIR, ExprPushdownGroup, IR, JoinTypeOptionsIR, aexpr_to_leaf_names_iter,
-    is_elementwise_rec,
+    AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprPushdownGroup, IR, JoinTypeOptionsIR,
+    aexpr_to_leaf_names_iter, is_elementwise_rec, is_inherently_nondeterministic,
 };
 use crate::prelude::{JoinType, MaintainOrderJoin};
 
@@ -75,14 +75,19 @@ fn copy_top_k(
     else {
         return;
     };
-    // The copy evaluates the keys on the preserved side, whose rows are the output's without
-    // duplicates.
-    if !by_column
-        .iter()
-        .all(|key| is_elementwise_rec(key.node(), expr_arena))
-    {
+    // The copy evaluates the keys again, on the preserved side, whose rows are the output's
+    // without duplicates.
+    if !by_column.iter().all(|key| {
+        is_elementwise_rec(key.node(), expr_arena)
+            && !is_inherently_nondeterministic(key.node(), expr_arena)
+    }) {
         return;
     }
+    let are_key_exprs_fallible = by_column.iter().any(|key| {
+        expr_arena
+            .iter(key.node())
+            .any(|(_, ae)| ae.is_fallible_top_level(expr_arena))
+    });
     let key_columns: PlIndexSet<PlSmallStr> = by_column
         .iter()
         .flat_map(|key| aexpr_to_leaf_names_iter(key.node(), expr_arena).cloned())
@@ -94,6 +99,7 @@ fn copy_top_k(
         *input,
         &key_columns,
         sort_options.maintain_order,
+        are_key_exprs_fallible,
         ir_arena,
         expr_arena,
         maintain_errors,
@@ -125,6 +131,7 @@ fn lowest_preserving_join(
     mut node: Node,
     key_columns: &PlIndexSet<PlSmallStr>,
     is_stable: bool,
+    are_key_exprs_fallible: bool,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
     maintain_errors: bool,
@@ -159,6 +166,7 @@ fn lowest_preserving_join(
                     join,
                     key_columns,
                     is_stable,
+                    are_key_exprs_fallible,
                     ir_arena,
                     expr_arena,
                     maintain_errors,
@@ -204,6 +212,7 @@ fn preserved_side(
     join: &IR,
     key_columns: &PlIndexSet<PlSmallStr>,
     is_stable: bool,
+    are_key_exprs_fallible: bool,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
     maintain_errors: bool,
@@ -250,6 +259,9 @@ fn preserved_side(
     let side = match args.how {
         JoinType::Left if key_is_from_left() => Side::Left,
         JoinType::Right if key_is_from_right() => Side::Right,
+        // An empty other side drops every row, so the copy could raise an error that the original
+        // does not.
+        JoinType::Cross if are_key_exprs_fallible => return None,
         JoinType::Cross if key_is_from_left() => Side::Left,
         JoinType::Cross if key_is_from_right() => Side::Right,
         _ => return None,
