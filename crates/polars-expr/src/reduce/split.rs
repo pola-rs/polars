@@ -1,7 +1,9 @@
 //! Reductions split into a stage that outputs per-group states and one that merges them.
 
+#[cfg(feature = "approx_quantile")]
+use polars_arrow::array::BinaryViewArray;
 #[cfg(feature = "serde")]
-use polars_arrow::array::{BinaryViewArray, FixedSizeListArray, StructArray};
+use polars_arrow::array::{FixedSizeListArray, StructArray};
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::Sketch;
 #[cfg(feature = "serde")]
@@ -39,8 +41,8 @@ pub(super) trait SplitState {}
 #[cfg(not(feature = "serde"))]
 impl<T> SplitState for T {}
 
-/// Reads single states of a state column. States come from other processes, so a malformed one
-/// errors rather than panics.
+/// Reads single states of a state column, which comes from another process, so malformed states
+/// error rather than panic.
 #[cfg(feature = "serde")]
 pub(super) trait StateDecoder<S> {
     /// `None` for a null state.
@@ -654,6 +656,7 @@ mod tests {
 
     fn moment_families(dtype: &DataType) -> Vec<Family> {
         let dt = || dtype.clone();
+        #[cfg_attr(not(feature = "moment"), allow(unused_mut))]
         let mut out = vec![
             Family {
                 whole: new_var_std_reduction(dt(), false, 1).unwrap(),
