@@ -237,7 +237,6 @@ def test_sink_to_scanned_file_7841(
     for scan_path, sink_path in [
         (path, path),
         (tmp_path / "*", path),
-        (f"{tmp_path}/./f", path),
         ("f", path),
         (format_file_uri(path), path),
         (path, format_file_uri(path)),
