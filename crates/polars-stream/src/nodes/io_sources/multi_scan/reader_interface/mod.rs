@@ -36,8 +36,7 @@ pub trait FileReader: Send + Sync {
     }
 
     /// Size in bytes of a local, uncompressed file that this reader splits over all pipelines.
-    /// The multi-file scan limits how many of these bytes are read at the same time, as one large
-    /// file already keeps every pipeline busy.
+    /// The multi-file scan limits how many of these bytes are read at the same time.
     ///
     /// This FileReader must be initialized before calling this.
     fn local_read_size(&self) -> Option<usize> {
