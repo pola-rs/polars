@@ -80,7 +80,7 @@ struct Extractor {
     specs: Vec<WindowSpec>,
     windows: Vec<ExtractedWindow>,
     /// The column of each deterministic window function per spec.
-    window_names: PlHashMap<(CanonicalExprId, usize), PlSmallStr>,
+    window_names: PlIndexMap<(CanonicalExprId, usize), PlSmallStr>,
     memo: PlIndexMap<Node, Node>,
 }
 
@@ -154,7 +154,7 @@ impl Extractor {
         spec: usize,
         schema: &Schema,
         allow_split: bool,
-        split_windows: &mut PlHashMap<PlSmallStr, Node>,
+        split_windows: &mut PlIndexMap<PlSmallStr, Node>,
         expr_arena: &mut Arena<AExpr>,
     ) -> Vec<WindowPart> {
         let windows = self
@@ -183,7 +183,7 @@ impl Extractor {
         }
 
         let mut parts = Vec::with_capacity(windows.len());
-        let mut part_names = PlHashMap::new();
+        let mut part_names = PlIndexMap::new();
         // Reductions first, so that the split windows can reuse them.
         for (name, function, _) in &windows {
             if is_reduction(*function, schema, expr_arena) {
@@ -212,7 +212,7 @@ impl Extractor {
         function: Node,
         name: Option<PlSmallStr>,
         parts: &mut Vec<WindowPart>,
-        part_names: &mut PlHashMap<CanonicalExprId, PlSmallStr>,
+        part_names: &mut PlIndexMap<CanonicalExprId, PlSmallStr>,
         expr_arena: &Arena<AExpr>,
     ) -> PlSmallStr {
         let id = self.canonical.resolve(function, expr_arena);
@@ -244,7 +244,7 @@ impl Extractor {
         &mut self,
         node: Node,
         parts: &mut Vec<WindowPart>,
-        part_names: &mut PlHashMap<CanonicalExprId, PlSmallStr>,
+        part_names: &mut PlIndexMap<CanonicalExprId, PlSmallStr>,
         schema: &Schema,
         expr_arena: &mut Arena<AExpr>,
     ) -> Node {
@@ -431,7 +431,7 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
                 .chain(s.order_by.as_ref().map(|(id, _)| id))
                 .any(|id| is_object(extractor.canonical.representative(*id)))
         });
-    let mut split_windows = PlHashMap::new();
+    let mut split_windows = PlIndexMap::new();
     let spec_parts = (0..extractor.specs.len())
         .map(|spec| {
             extractor.spec_windows(
@@ -446,7 +446,7 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     let new_exprs = if split_windows.is_empty() {
         new_exprs
     } else {
-        let mut memo = PlHashMap::new();
+        let mut memo = PlIndexMap::new();
         new_exprs
             .into_iter()
             .map(|e| {
@@ -580,8 +580,8 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
 #[recursive]
 fn inline_columns(
     node: Node,
-    exprs: &PlHashMap<PlSmallStr, Node>,
-    memo: &mut PlHashMap<Node, Node>,
+    exprs: &PlIndexMap<PlSmallStr, Node>,
+    memo: &mut PlIndexMap<Node, Node>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Node {
     if let Some(new_node) = memo.get(&node) {
