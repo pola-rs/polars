@@ -4,7 +4,9 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
 
-use crate::dispatch::{function_expr_to_groups_udf, function_expr_to_udf};
+use crate::dispatch::{
+    function_expr_broadcast_scalar_inputs, function_expr_to_groups_udf, function_expr_to_udf,
+};
 use crate::expressions as phys_expr;
 use crate::expressions::*;
 use crate::reduce::GroupedReduction;
@@ -666,12 +668,8 @@ fn create_physical_expr_inner(
             let udf = function_expr_to_udf(function.clone(), &input, expr_arena);
             let input = create_physical_expressions_from_irs(&input, expr_arena, schema, state)?;
             let is_fallible = expr_arena.get(expression).is_fallible_top_level(expr_arena);
-            // The value and keys of a top-k must have the same length; `k` stays a scalar.
-            let broadcast_scalar_inputs = match function {
-                #[cfg(feature = "top_k")]
-                IRFunctionExpr::TopKBy { .. } => (0..input.len()).filter(|&i| i != 1).collect(),
-                _ => Vec::new(),
-            };
+            let broadcast_scalar_inputs =
+                function_expr_broadcast_scalar_inputs(&function, input.len());
 
             Ok(Arc::new(
                 ApplyExpr::new(

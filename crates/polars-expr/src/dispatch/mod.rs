@@ -585,6 +585,20 @@ pub trait GroupsUdf: Send + Sync + 'static {
     ) -> PolarsResult<AggregationContext<'a>>;
 }
 
+/// Inputs that are repeated to the length of the others when they are statically scalar.
+#[cfg_attr(not(feature = "top_k"), allow(unused_variables))]
+pub fn function_expr_broadcast_scalar_inputs(
+    func: &IRFunctionExpr,
+    num_inputs: usize,
+) -> Vec<usize> {
+    match func {
+        // The value and keys must have the same length; `k` stays a scalar.
+        #[cfg(feature = "top_k")]
+        IRFunctionExpr::TopKBy { .. } => (0..num_inputs).filter(|&i| i != 1).collect(),
+        _ => Vec::new(),
+    }
+}
+
 pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Arc<dyn GroupsUdf>>> {
     macro_rules! wrap_groups {
         ($f:expr$(, ($arg:expr, $n:ident:$ty:ty))*) => {{
