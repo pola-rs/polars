@@ -2,20 +2,20 @@ use polars_utils::min_max::MinMaxPolicy;
 
 use super::*;
 
-pub(super) fn rolling_minmax_centered<T, P>(values: &[T], w: usize, shift: usize) -> Vec<T>
+pub(super) fn rolling_minmax_shifted<T, P>(values: &[T], w: usize, shift: usize) -> Vec<T>
 where
     T: NativeType + IsFloat + Bounded,
     P: MinMaxPolicy,
 {
     let mut out = van_herk_kernel::<false, T, P>(values, &[], w);
     if shift > 0 {
-        recenter_trailing::<false, T, P>(&mut out, values, &[], w, shift);
+        shift_trailing::<false, T, P>(&mut out, values, &[], w, shift);
     }
     out
 }
 
-/// Recenter trailing output with a backward suffix scan.
-pub(super) fn recenter_trailing<const MASKED: bool, T, P>(
+/// Shift trailing output with a backward suffix scan.
+pub(super) fn shift_trailing<const MASKED: bool, T, P>(
     out: &mut [T],
     values: &[T],
     validity_words: &[u64],

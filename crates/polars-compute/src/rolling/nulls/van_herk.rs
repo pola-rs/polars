@@ -1,6 +1,6 @@
 use polars_utils::min_max::MinMaxPolicy;
 
-use super::super::van_herk::{recenter_trailing, rolling_minmax_centered, van_herk_kernel};
+use super::super::van_herk::{rolling_minmax_shifted, shift_trailing, van_herk_kernel};
 use super::*;
 
 pub(super) fn rolling_minmax_van_herk_nulls<T, P>(
@@ -31,12 +31,12 @@ where
     let validity_words = validity.filter(|v| v.unset_bits() > 0).map(bitmap_words);
     let mut out = match validity_words.as_deref() {
         Some(validity_words) => van_herk_kernel::<true, T, P>(values, validity_words, window_size),
-        None => rolling_minmax_centered::<T, P>(values, window_size, shift),
+        None => rolling_minmax_shifted::<T, P>(values, window_size, shift),
     };
     if shift > 0
         && let Some(validity_words) = validity_words.as_deref()
     {
-        recenter_trailing::<true, T, P>(&mut out, values, validity_words, window_size, shift);
+        shift_trailing::<true, T, P>(&mut out, values, validity_words, window_size, shift);
     }
 
     // min_periods == 0 still leaves all-null windows invalid.

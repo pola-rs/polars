@@ -88,7 +88,7 @@ where
     } else {
         0
     };
-    let out = van_herk::rolling_minmax_centered::<T, P>(values, window_size, shift);
+    let out = van_herk::rolling_minmax_shifted::<T, P>(values, window_size, shift);
 
     let offset_fn = match center {
         true => det_offsets_center,
