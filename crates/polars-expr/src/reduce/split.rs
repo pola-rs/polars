@@ -859,6 +859,74 @@ mod tests {
         assert_close(&out, &Series::new("".into(), [0.0]));
     }
 
+    #[cfg(feature = "approx_unique")]
+    #[test]
+    fn approx_n_unique_split_matches_whole() {
+        use super::super::approx_n_unique::*;
+
+        let int = |v: &[Option<i32>]| Series::new("x".into(), v);
+        let null = |n: usize| Series::full_null("x".into(), n, &DataType::Null);
+        let cases = [
+            // Mixed.
+            vec![
+                partition(vec![int(&[Some(1), Some(2), None, Some(2)])], &[0, 1, 0, 1]),
+                partition(vec![int(&[Some(3), Some(1), Some(2)])], &[1, 0, 2]),
+            ],
+            // Empty.
+            vec![partition(vec![int(&[])], &[])],
+            // All null.
+            vec![
+                partition(vec![int(&[None, None])], &[0, 1]),
+                partition(vec![int(&[None])], &[0]),
+            ],
+            // `Null` dtype.
+            vec![
+                partition(vec![null(2)], &[0, 0]),
+                partition(vec![null(1)], &[1]),
+            ],
+            vec![partition(vec![null(0)], &[])],
+        ];
+        let merge = new_approx_n_unique_merge_reduction();
+        for partitions in cases {
+            let dtype = partitions[0].values[0].dtype().clone();
+            let whole = new_approx_n_unique_reduction(dtype.clone()).unwrap();
+            let state = new_approx_n_unique_state_reduction(dtype).unwrap();
+            assert_eq!(
+                reduction_output_dtype(&*state).unwrap(),
+                CardinalitySketch::state_dtype()
+            );
+            let expected = run_whole(&*whole, &partitions, 4).unwrap();
+            let split = run_split(&*state, &*merge, &partitions, 4).unwrap();
+            assert!(split.equals_missing(&expected), "{split:?} != {expected:?}");
+        }
+        assert_eq!(reduction_output_dtype(&*merge).unwrap(), IDX_DTYPE);
+    }
+
+    #[cfg(feature = "approx_unique")]
+    #[test]
+    fn approx_n_unique_merge_rejects_null_bucket() {
+        use super::super::approx_n_unique::*;
+
+        let mut buckets = vec![Some(0u8); 2 * CARDINALITY_BUCKETS];
+        buckets[3] = None;
+        let states = |validity: Option<Bitmap>| {
+            let ca = ArrayChunked::from_aligned_values(
+                "".into(),
+                &DataType::UInt8,
+                CARDINALITY_BUCKETS,
+                vec![PrimitiveArray::from_iter(buckets.iter().copied()).boxed()],
+                2,
+            );
+            ca.with_validity(validity).into_series()
+        };
+        let merge = new_approx_n_unique_merge_reduction();
+        let err = merge_one(&*merge, states(None)).unwrap_err();
+        assert!(err.to_string().contains("null bucket"), "{err}");
+
+        let out = merge_one(&*merge, states(Some(Bitmap::from_iter([false, true])))).unwrap();
+        assert!(out.equals_missing(&Series::new("".into(), [0 as IdxSize])));
+    }
+
     #[cfg(feature = "approx_quantile")]
     #[test]
     fn approx_quantile_merge_rejects_bad_blob() {
