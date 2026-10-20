@@ -22,6 +22,7 @@ pub struct IcebergSinkState {
     pub mode: IcebergCommitMode,
     pub schema_mode: Option<IcebergSchemaMode>,
     pub create_if_not_exists: bool,
+    pub create_namespace_if_not_exists: bool,
     pub snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub iceberg_storage_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub compression: PlSmallStr,

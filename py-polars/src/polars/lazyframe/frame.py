@@ -3026,6 +3026,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mode: Literal["append", "overwrite"],
         schema_mode: Literal["merge", "overwrite"] | None = None,
         create_if_not_exists: bool = False,
+        create_namespace_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
@@ -3080,6 +3081,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             The table is created before the query runs, so it remains (empty)
             if the query fails.
+        create_namespace_if_not_exists
+            Create the table's namespace, and any missing parent namespaces, if
+            they do not exist when the table is created. Requires
+            `create_if_not_exists=True`.
         snapshot_properties
             Custom properties to add to the Iceberg snapshot summary.
         catalog
@@ -3137,6 +3142,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             mode=mode,
             schema_mode=schema_mode,
             create_if_not_exists=create_if_not_exists,
+            create_namespace_if_not_exists=create_namespace_if_not_exists,
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
