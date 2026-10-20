@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::hash::{BuildHasher, Hash, Hasher};
 
 use IR::*;
@@ -36,18 +37,7 @@ impl OptimizationRule for FlattenUnionRule {
             _ => false,
         });
 
-        let flattened = flatten.then(|| {
-            let mut new_inputs = Vec::with_capacity(inputs.len() * 2);
-            for node in inputs {
-                match lp_arena.get(*node) {
-                    IR::Union {
-                        inputs, options, ..
-                    } if options.slice.is_none() => new_inputs.extend_from_slice(inputs),
-                    _ => new_inputs.push(*node),
-                }
-            }
-            new_inputs
-        });
+        let flattened = flatten.then(|| flatten_inputs(inputs, lp_arena));
 
         let groups = ScanGroups::find(
             flattened.as_deref().unwrap_or(inputs),
@@ -61,6 +51,7 @@ impl OptimizationRule for FlattenUnionRule {
         options.flattened_by_opt |= flatten;
 
         let inputs = flattened.unwrap_or_else(|| inputs.clone());
+        let merged = groups.is_some();
         let inputs = match groups {
             Some(groups) => {
                 groups.merge(&inputs, options.maintain_order, options.rechunk, lp_arena)
@@ -71,10 +62,58 @@ impl OptimizationRule for FlattenUnionRule {
         if let [input] = inputs.as_slice()
             && options.slice.is_none()
         {
-            return Ok(Some(lp_arena.get(*input).clone()));
+            // A single input left after a merge is the new merged scan.
+            return Ok(Some(if merged {
+                lp_arena.take(*input)
+            } else {
+                lp_arena.get(*input).clone()
+            }));
         }
 
         Ok(Some(Union { inputs, options }))
+    }
+}
+
+/// The inputs of `inputs` with all nested unions without a slice replaced by their inputs.
+fn flatten_inputs(inputs: &[Node], lp_arena: &Arena<IR>) -> Vec<Node> {
+    let mut new_inputs = Vec::with_capacity(inputs.len() * 2);
+    let mut stack = vec![inputs.iter()];
+    while let Some(iter) = stack.last_mut() {
+        let Some(node) = iter.next() else {
+            stack.pop();
+            continue;
+        };
+        match lp_arena.get(*node) {
+            Union { inputs, options } if options.slice.is_none() => stack.push(inputs.iter()),
+            _ => new_inputs.push(*node),
+        }
+    }
+    new_inputs
+}
+
+/// The scan under the row-wise nodes on top of `node`, if that scan can be merged with others.
+/// Doesn't look at the expressions of the nodes on top.
+fn mergeable_scan(mut node: Node, lp_arena: &Arena<IR>) -> Option<Node> {
+    loop {
+        match lp_arena.get(node) {
+            // Hive columns come from each scan's own paths.
+            Scan {
+                sources: ScanSources::Paths(_) | ScanSources::Buffers(_),
+                scan_type,
+                hive_parts: None,
+                unified_scan_args,
+                ..
+            } => {
+                return (scan_type.supports_concat_sources()
+                    && !unified_scan_args.has_per_scan_state())
+                .then_some(node);
+            },
+            SimpleProjection { input, .. }
+            | Filter { input, .. }
+            | Select { input, .. }
+            | HStack { input, .. } => node = *input,
+            _ => return None,
+        }
     }
 }
 
@@ -86,32 +125,29 @@ struct ScanChain {
     key: u64,
 }
 
-/// Whether `node` gives the same rows when it runs once over the merged scan as when it runs on
-/// each scan. Only elementwise expressions do. A sorted flag only holds for each scan, and a
-/// literal with more than one value (e.g. the sets of `is_in`) lines up with each scan's rows.
-fn is_row_wise(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    is_elementwise_rec(node, expr_arena)
-        && !expr_arena.iter(node).any(|(_, ae)| match ae {
-            AExpr::Function {
-                function: IRFunctionExpr::SetSortedFlag(_),
-                ..
-            } => true,
-            AExpr::Literal(lv) => !lv.is_scalar(),
-            _ => false,
-        })
-}
-
-/// Compares expressions by value.
-struct ExprEq<'a>(&'a Arena<AExpr>);
-
-impl ExpressionComparator for ExprEq<'_> {
-    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool {
-        lhs.output_name_inner() == rhs.output_name_inner()
-            && self
-                .0
-                .get(lhs.node())
-                .is_expr_equal_to(self.0.get(rhs.node()), self.0)
-    }
+/// Hashes `exprs`, and returns whether they give the same rows when they run once over the
+/// merged scan as when they run on each scan. Only elementwise expressions do. A sorted flag
+/// only holds for each scan, and a literal with more than one value (e.g. the sets of `is_in`)
+/// lines up with each scan's rows.
+fn hash_row_wise_exprs(
+    exprs: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+    state: &mut impl Hasher,
+) -> bool {
+    exprs.iter().all(|e| {
+        e.output_name_inner().hash(state);
+        is_elementwise_rec(e.node(), expr_arena)
+            && expr_arena.iter(e.node()).all(|(_, ae)| {
+                ae.hash(state);
+                !matches!(
+                    ae,
+                    AExpr::Function {
+                        function: IRFunctionExpr::SetSortedFlag(_),
+                        ..
+                    }
+                ) && !matches!(ae, AExpr::Literal(lv) if !lv.is_scalar())
+            })
+    })
 }
 
 fn hash_exprs(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mut impl Hasher) {
@@ -123,69 +159,99 @@ fn hash_exprs(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mut impl Hash
     }
 }
 
+/// Compares expressions by value.
+struct ExprEq<'a> {
+    expr_arena: &'a Arena<AExpr>,
+    stacks: RefCell<(Vec<Node>, Vec<Node>)>,
+}
+
+impl<'a> ExprEq<'a> {
+    fn new(expr_arena: &'a Arena<AExpr>) -> Self {
+        Self {
+            expr_arena,
+            stacks: RefCell::default(),
+        }
+    }
+
+    fn nodes_equal(&self, l: Node, r: Node) -> bool {
+        let (l_stack, r_stack) = &mut *self.stacks.borrow_mut();
+        self.expr_arena.get(l).is_expr_equal_to_amortized(
+            self.expr_arena.get(r),
+            self.expr_arena,
+            l_stack,
+            r_stack,
+        )
+    }
+}
+
+impl ExpressionComparator for ExprEq<'_> {
+    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool {
+        lhs.output_name_inner() == rhs.output_name_inner()
+            && self.nodes_equal(lhs.node(), rhs.node())
+    }
+}
+
 impl ScanChain {
     fn new(mut node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<Self> {
+        let scan = mergeable_scan(node, lp_arena)?;
         let mut row_wise = UnitVec::new();
         let mut state = PlFixedStateQuality::default().build_hasher();
-        loop {
+        while node != scan {
             let ir = lp_arena.get(node);
             std::mem::discriminant(ir).hash(&mut state);
             let input = match ir {
-                Scan {
-                    scan_type,
-                    predicate,
-                    hive_parts,
-                    unified_scan_args,
-                    ..
-                } => {
-                    if hive_parts.is_some() || unified_scan_args.has_per_scan_state() {
-                        return None;
-                    }
-                    scan_type.hash_concat_key(&mut state);
-                    unified_scan_args.hash_concat_key(&mut state);
-                    hash_exprs(predicate.as_slice(), expr_arena, &mut state);
-                    return Some(Self {
-                        row_wise,
-                        scan: node,
-                        key: state.finish(),
-                    });
-                },
                 SimpleProjection { input, columns } => {
                     columns.len().hash(&mut state);
                     *input
                 },
                 Filter { input, predicate } => {
-                    if !is_row_wise(predicate.node(), expr_arena) {
+                    if !hash_row_wise_exprs(std::slice::from_ref(predicate), expr_arena, &mut state)
+                    {
                         return None;
                     }
-                    hash_exprs(std::slice::from_ref(predicate), expr_arena, &mut state);
                     *input
                 },
                 // A select of only scalars outputs one row, not one row per input row.
                 Select { input, expr, .. } => {
-                    if !expr.iter().all(|e| is_row_wise(e.node(), expr_arena))
+                    if !hash_row_wise_exprs(expr, expr_arena, &mut state)
                         || expr.iter().all(|e| is_scalar_ae(e.node(), expr_arena))
                     {
                         return None;
                     }
-                    hash_exprs(expr, expr_arena, &mut state);
                     *input
                 },
                 HStack { input, exprs, .. } => {
-                    if !exprs.iter().all(|e| is_row_wise(e.node(), expr_arena)) {
+                    if !hash_row_wise_exprs(exprs, expr_arena, &mut state) {
                         return None;
                     }
-                    hash_exprs(exprs, expr_arena, &mut state);
                     *input
                 },
-                _ => return None,
+                _ => unreachable!(),
             };
             row_wise.push(node);
             node = input;
         }
+
+        let Scan {
+            scan_type,
+            predicate,
+            unified_scan_args,
+            ..
+        } = lp_arena.get(scan)
+        else {
+            unreachable!()
+        };
+        scan_type.hash_concat_key(&mut state);
+        unified_scan_args.hash_concat_key(&mut state);
+        hash_exprs(predicate.as_slice(), expr_arena, &mut state);
+        Some(Self {
+            row_wise,
+            scan,
+            key: state.finish(),
+        })
     }
 
-    fn can_concat(&self, other: &Self, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> bool {
+    fn can_concat(&self, other: &Self, lp_arena: &Arena<IR>, expr_eq: &ExprEq) -> bool {
         self.key == other.key
             && self.row_wise.len() == other.row_wise.len()
             && self
@@ -194,13 +260,9 @@ impl ScanChain {
                 .zip(other.row_wise.iter())
                 .all(|(l, r)| {
                     let (l, r) = (lp_arena.get(*l), lp_arena.get(*r));
-                    same_schema(l, r) && l.is_ir_equal_shallow(r, &ExprEq(expr_arena))
+                    same_schema(l, r) && l.is_ir_equal_shallow(r, expr_eq)
                 })
-            && can_concat_scans(
-                lp_arena.get(self.scan),
-                lp_arena.get(other.scan),
-                expr_arena,
-            )
+            && can_concat_scans(lp_arena.get(self.scan), lp_arena.get(other.scan), expr_eq)
     }
 }
 
@@ -220,13 +282,20 @@ impl ScanGroups {
         lp_arena: &Arena<IR>,
         expr_arena: &Arena<AExpr>,
     ) -> Option<Self> {
+        let n_mergeable = inputs
+            .iter()
+            .filter(|node| mergeable_scan(**node, lp_arena).is_some())
+            .take(2)
+            .count();
+        if n_mergeable < 2 {
+            return None;
+        }
+
         let chains: Vec<_> = inputs
             .iter()
             .map(|node| ScanChain::new(*node, lp_arena, expr_arena))
             .collect();
-        if chains.iter().filter(|c| c.is_some()).count() < 2 {
-            return None;
-        }
+        let expr_eq = ExprEq::new(expr_arena);
 
         // An unordered union looks up groups by chain key.
         let mut groups: Vec<UnitVec<usize>> = Vec::with_capacity(inputs.len());
@@ -239,7 +308,7 @@ impl ScanGroups {
             let fits = |g: usize| {
                 chains[groups[g][0]]
                     .as_ref()
-                    .is_some_and(|l| l.can_concat(chain, lp_arena, expr_arena))
+                    .is_some_and(|l| l.can_concat(chain, lp_arena, &expr_eq))
             };
             let group = if maintain_order {
                 groups.len().checked_sub(1).filter(|g| fits(*g))
@@ -305,12 +374,13 @@ fn same_schema(l: &IR, r: &IR) -> bool {
     }
 }
 
-fn can_concat_scans(l: &IR, r: &IR, expr_arena: &Arena<AExpr>) -> bool {
+/// Whether two scans from `mergeable_scan` can be read as one scan.
+fn can_concat_scans(l: &IR, r: &IR, expr_eq: &ExprEq) -> bool {
     let (
         Scan {
             sources: l_sources,
             file_info: l_file_info,
-            hive_parts: l_hive_parts,
+            hive_parts: _,
             predicate: l_predicate,
             predicate_file_skip_applied: l_file_skip,
             output_schema: l_output_schema,
@@ -321,7 +391,7 @@ fn can_concat_scans(l: &IR, r: &IR, expr_arena: &Arena<AExpr>) -> bool {
         Scan {
             sources: r_sources,
             file_info: r_file_info,
-            hive_parts: r_hive_parts,
+            hive_parts: _,
             predicate: r_predicate,
             predicate_file_skip_applied: r_file_skip,
             output_schema: r_output_schema,
@@ -334,23 +404,7 @@ fn can_concat_scans(l: &IR, r: &IR, expr_arena: &Arena<AExpr>) -> bool {
         return false;
     };
 
-    let same_source_kind = matches!(
-        (l_sources, r_sources),
-        (ScanSources::Paths(_), ScanSources::Paths(_))
-            | (ScanSources::Buffers(_), ScanSources::Buffers(_))
-    );
-    let same_predicate = match (l_predicate, r_predicate) {
-        (None, None) => true,
-        (Some(l), Some(r)) => expr_arena
-            .get(l.node())
-            .is_expr_equal_to(expr_arena.get(r.node()), expr_arena),
-        _ => false,
-    };
-
-    // Hive columns come from each scan's own paths.
-    same_source_kind
-        && l_hive_parts.is_none()
-        && r_hive_parts.is_none()
+    std::mem::discriminant(l_sources) == std::mem::discriminant(r_sources)
         && l_scan_type.can_concat_sources(r_scan_type)
         && l_args.can_concat_sources(r_args)
         && l_file_info.schema == r_file_info.schema
@@ -358,7 +412,11 @@ fn can_concat_scans(l: &IR, r: &IR, expr_arena: &Arena<AExpr>) -> bool {
         && l_output_schema == r_output_schema
         && l_file_skip.map(|s| s.no_residual_predicate)
             == r_file_skip.map(|s| s.no_residual_predicate)
-        && same_predicate
+        && match (l_predicate, r_predicate) {
+            (None, None) => true,
+            (Some(l), Some(r)) => expr_eq.nodes_equal(l.node(), r.node()),
+            _ => false,
+        }
 }
 
 /// One scan over the sources of `group`. All scans in `group` must pass `can_concat_scans`.

@@ -404,6 +404,21 @@ impl FileScanIR {
         }
     }
 
+    /// Whether scans of this type can ever be read as one scan with other scans.
+    pub(crate) fn supports_concat_sources(&self) -> bool {
+        match self {
+            #[cfg(feature = "csv")]
+            Self::Csv { .. } => true,
+            #[cfg(feature = "json")]
+            Self::NDJson { .. } => true,
+            #[cfg(feature = "parquet")]
+            Self::Parquet { .. } => true,
+            #[cfg(feature = "ipc")]
+            Self::Ipc { .. } => true,
+            _ => false,
+        }
+    }
+
     /// Whether scans of `self` and `other` can be read as one scan over the sources of both.
     pub(crate) fn can_concat_sources(&self, other: &Self) -> bool {
         match (self, other) {
