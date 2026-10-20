@@ -1805,6 +1805,73 @@ def test_sink_iceberg_parquet_writer_options(tmp_path: Path) -> None:
             ],
             id="year-timestamptz-utc-boundary",
         ),
+        pytest.param(
+            LongType(),
+            BucketTransform(4),
+            [34, -1, 0, 10, 35, -100, 2**63 - 1, -(2**63)],
+            id="bucket-long",
+        ),
+        pytest.param(
+            IntegerType(),
+            BucketTransform(3),
+            pl.Series([34, -1, 0, 2**31 - 1, -(2**31)], dtype=pl.Int32),
+            id="bucket-integer",
+        ),
+        pytest.param(
+            StringType(),
+            BucketTransform(4),
+            ["iceberg", "a", "", "😁", "aa"],
+            id="bucket-string",
+        ),
+        pytest.param(
+            BinaryType(),
+            BucketTransform(4),
+            [b"\x00\x01\x02\x03", b"", b"\xff", b"abcde"],
+            id="bucket-binary",
+        ),
+        pytest.param(
+            DecimalType(9, 2),
+            BucketTransform(4),
+            pl.Series(
+                [
+                    D("14.20"),
+                    D("0"),
+                    D("-0.01"),
+                    D("1.28"),
+                    D("-1.29"),
+                    D("9999999.99"),
+                ],
+                dtype=pl.Decimal(9, 2),
+            ),
+            id="bucket-decimal",
+        ),
+        pytest.param(
+            DateType(),
+            BucketTransform(4),
+            [date(2017, 11, 16), date(1969, 12, 31), date(1970, 1, 1)],
+            id="bucket-date",
+        ),
+        pytest.param(
+            TimeType(),
+            BucketTransform(4),
+            [time(22, 31, 8), time(0), time(23, 59, 59, 999999)],
+            id="bucket-time",
+        ),
+        pytest.param(
+            TimestampType(),
+            BucketTransform(4),
+            [datetime(2017, 11, 16, 22, 31, 8), datetime(1969, 12, 31, 23, 59, 59)],
+            id="bucket-timestamp",
+        ),
+        pytest.param(
+            TimestamptzType(),
+            BucketTransform(4),
+            [
+                datetime(2017, 11, 16, 22, 31, 8, tzinfo=zoneinfo.ZoneInfo("UTC")),
+                datetime(1969, 12, 31, 23, 59, tzinfo=zoneinfo.ZoneInfo("UTC")),
+            ],
+            id="bucket-timestamptz",
+        ),
     ],
 )
 @pytest.mark.write_disk
@@ -1812,7 +1879,7 @@ def test_sink_iceberg_partitioned_transforms(
     tmp_path: Path,
     iceberg_type: Any,
     transform: Any,
-    values: list[Any],
+    values: list[Any] | pl.Series,
 ) -> None:
     tbl, _ = new_iceberg_table(
         tmp_path,
@@ -1832,6 +1899,129 @@ def test_sink_iceberg_partitioned_transforms(
     expected_partitions = {transform.transform(iceberg_type)(value) for value in values}
     actual_partitions = {task.file.partition[0] for task in tbl.scan().plan_files()}
     assert actual_partitions == expected_partitions
+
+
+@pytest.mark.parametrize(
+    ("iceberg_type", "values"),
+    [
+        pytest.param(UUIDType(), [uuid.UUID(int=i).bytes for i in range(8)], id="uuid"),
+        pytest.param(FixedType(3), [bytes([i, i, i]) for i in range(8)], id="fixed"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_bucket_fixed_binary(
+    tmp_path: Path, iceberg_type: Any, values: list[bytes]
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "partition_col", iceberg_type),
+            NestedField(2, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, BucketTransform(4), "partition_col_bucket")
+        ),
+    )
+    pl.DataFrame(
+        {"partition_col": values, "value": range(len(values))},
+        schema={"partition_col": pl.Binary, "value": pl.Int64},
+    ).lazy().sink_iceberg(tbl, mode="append")
+
+    bucket = BucketTransform(4).transform(iceberg_type)
+    for task in tbl.scan().plan_files():
+        with tbl.io.new_input(task.file.file_path).open() as file:
+            partition_col = pq.read_table(file).column("partition_col").to_pylist()
+        assert {bucket(v) for v in partition_col} == {task.file.partition[0]}
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_bucket(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "nested", StructType(NestedField(3, "id", LongType()))),
+            NestedField(2, "s", StringType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(3, 1000, BucketTransform(8), "id_bucket"),
+            PartitionField(2, 1001, BucketTransform(3), "s_bucket"),
+        ),
+    )
+    n = 1000
+    df = pl.DataFrame(
+        {
+            "nested": pl.int_range(n, eager=True).to_frame("id").to_struct(),
+            "s": pl.int_range(n, eager=True).cast(pl.String),
+        }
+    ).with_columns(pl.col("nested").struct.with_fields(pl.field("id") * 7919 - 9))
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df, check_row_order=False)
+
+    id_bucket = BucketTransform(8).transform(LongType())
+    s_bucket = BucketTransform(3).transform(StringType())
+    tasks = list(tbl.scan().plan_files())
+    assert len(tasks) == 24
+    for task in tasks:
+        with tbl.io.new_input(task.file.file_path).open() as file:
+            file_df = pl.from_arrow(pq.read_table(file))
+        assert isinstance(file_df, pl.DataFrame)
+        assert {
+            (id_bucket(row["nested"]["id"]), s_bucket(row["s"]))
+            for row in file_df.iter_rows(named=True)
+        } == {(task.file.partition[0], task.file.partition[1])}
+
+    # PyIceberg prunes files by their bucket.
+    some_id = df["nested"].struct.field("id")[123]
+    tasks = list(tbl.scan(row_filter=f"nested.id == {some_id}").plan_files())
+    assert len(tasks) == 3
+    assert {task.file.partition[0] for task in tasks} == {id_bucket(some_id)}
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="pyiceberg")
+        .filter(pl.col("nested").struct.field("id") == some_id)
+        .collect(),
+        df[123],
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_bucket_schema_merge(tmp_path: Path) -> None:
+    # The partition keys are of the data as written, with the merged schema.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "c", DecimalType(9, 2))),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, BucketTransform(4), "c_bucket")
+        ),
+    )
+    values = [D("1.235"), D("-1.235")]
+    pl.LazyFrame({"c": pl.Series(values, dtype=pl.Decimal(10, 3))}).sink_iceberg(
+        tbl, mode="append", schema_mode="merge"
+    )
+
+    tbl.refresh()
+    bucket = BucketTransform(4).transform(tbl.schema().find_field(1).field_type)
+    assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {
+        bucket(v) for v in values
+    }
+
+
+def test_sink_iceberg_bucket_timestamp_ns() -> None:
+    from pyiceberg.types import TimestamptzNanoType
+
+    from polars.io.iceberg._sink import _bucket_transform_expr
+
+    nanos = [0, 1, 999, 1000, -1, -999, -1000, -1001, 1510871468123456789]
+    for iceberg_type, time_zone in [
+        (TimestampNanoType(), None),
+        (TimestamptzNanoType(), "UTC"),
+    ]:
+        bucket = BucketTransform(16).transform(iceberg_type)
+        s = pl.Series("a", nanos).cast(pl.Datetime("ns", time_zone))
+        assert s.to_frame().select(
+            _bucket_transform_expr(pl.col("a"), iceberg_type, 16)
+        ).to_series().to_list() == [bucket(v) for v in nanos]
 
 
 @pytest.mark.write_disk
@@ -2132,7 +2322,6 @@ def test_sink_iceberg_partitioned_nested_source_overwrite(tmp_path: Path) -> Non
 @pytest.mark.parametrize(
     ("iceberg_type", "transform", "values"),
     [
-        pytest.param(LongType(), BucketTransform(16), [1, 2], id="bucket"),
         pytest.param(LongType(), VoidTransform(), [1, 2], id="void"),
         pytest.param(
             DecimalType(10, 2),
