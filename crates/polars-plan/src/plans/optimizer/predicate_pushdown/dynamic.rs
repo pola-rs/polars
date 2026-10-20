@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{RwLock, Weak};
 
-use polars_io::predicates::{DynamicPredicateSource, RuntimeRange};
+use polars_io::predicates::{DynamicPredicateSource, ReadOrder, RuntimeRange};
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,8 @@ struct Inner {
     #[cfg_attr(feature = "ir_serde", serde(skip))]
     is_set: AtomicBool,
     id: UniqueId,
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    read_order: Option<ReadOrder>,
 }
 
 #[derive(Clone)]
@@ -115,12 +117,13 @@ impl Hash for DynamicPred {
 }
 
 impl DynamicPred {
-    fn new() -> Self {
+    fn new(read_order: Option<ReadOrder>) -> Self {
         Self {
             inner: Arc::new(Inner {
                 pred: Default::default(),
                 is_set: Default::default(),
                 id: UniqueId::new(),
+                read_order,
             }),
         }
     }
@@ -201,6 +204,10 @@ impl DynamicPredicateSource for DynamicPredWeakRef {
         guard.as_ref().unwrap().runtime_range()
     }
 
+    fn read_order(&self) -> Option<ReadOrder> {
+        self.inner.upgrade()?.read_order
+    }
+
     fn filters_rows(&self) -> bool {
         self.with_set(|pred| pred.filters_rows())
     }
@@ -229,9 +236,13 @@ fn all_of(name: PlSmallStr, len: usize, value: bool) -> Column {
 }
 
 /// A predicate over `node` whose value a producer sets at run time, evaluated
-/// per row wherever it lands.
-pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
-    let pred = DynamicPred::new();
+/// per row wherever it lands. A reader reads in `read_order` when it can.
+pub fn new_dynamic_pred(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    read_order: Option<ReadOrder>,
+) -> (Node, DynamicPred) {
+    let pred = DynamicPred::new(read_order);
     let function = IRFunctionExpr::DynamicPred {
         pred: pred.downgrade(),
     };

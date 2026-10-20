@@ -912,6 +912,33 @@ def test_cast_temporals_overflow_16039(
         s.cast(to)
 
 
+@pytest.mark.parametrize(
+    ("s", "to"),
+    [
+        (pl.Series("x", [datetime(9999, 12, 31)]), pl.Datetime("ns")),
+        (
+            pl.Series("x", [datetime(9999, 12, 31)], dtype=pl.Datetime("us", "UTC")),
+            pl.Datetime("ns", "UTC"),
+        ),
+        (
+            pl.Series("x", [datetime(9999, 12, 31)], dtype=pl.Datetime("ms")),
+            pl.Datetime("ns"),
+        ),
+        (
+            pl.Series("x", [timedelta(days=200_000)], dtype=pl.Duration("us")),
+            pl.Duration("ns"),
+        ),
+    ],
+)
+def test_cast_time_unit_overflow_expr_22878(s: pl.Series, to: pl.DataType) -> None:
+    df = s.to_frame()
+    with pytest.raises(InvalidOperationError, match="conversion from"):
+        df.select(pl.col("x").cast(to))
+
+    expected = pl.Series("x", [None], dtype=to).to_frame()
+    assert_frame_equal(df.select(pl.col("x").cast(to, strict=False)), expected)
+
+
 @pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
 def test_prune_superfluous_cast(dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": dtype})

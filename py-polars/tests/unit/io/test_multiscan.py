@@ -1722,3 +1722,57 @@ def test_multiscan_unordered_files_local_stays_ordered(
     out, capture = _collect_verbose(q, plmonkeypatch, capfd)
     _assert_files_order(capture, "unordered_files: false (reason: not remote)")
     assert out.item() == df["a"].sum()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+@pytest.mark.parametrize("max_bytes", ["1", "100", "1000000"])
+def test_multiscan_max_concurrent_scan_bytes(
+    scan: Any,
+    write: Any,
+    max_bytes: str,
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_CONCURRENT_SCAN_BYTES", max_bytes)
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+
+    dfs = [pl.DataFrame({"a": range(10 * i, 10 * i + 10)}) for i in range(5)]
+    paths = [tmp_path / f"{i}.data" for i in range(5)]
+    for df, path in zip(dfs, paths, strict=True):
+        write(df, path)
+    df = pl.concat(dfs)
+
+    lf = scan(paths)
+    assert_frame_equal(
+        lf.with_row_index().filter(pl.col("a") % 3 == 0).collect(engine="streaming"),
+        df.with_row_index().filter(pl.col("a") % 3 == 0),
+    )
+    assert_frame_equal(lf.slice(15, 20).collect(engine="streaming"), df.slice(15, 20))
+    assert lf.select(pl.len()).collect(engine="streaming").item() == 50
+
+    capfd.readouterr()
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    assert_frame_equal(lf.collect(engine="streaming"), df)
+    log = capfd.readouterr().err.splitlines()
+
+    # Each file takes its bytes before it starts and gives them back once it is done.
+    acquired = [line for line in log if "acquired read bytes" in line]
+    assert len(acquired) == 5
+    assert len([line for line in log if "releasing read bytes" in line]) == 5
+    if max_bytes == "1":
+        # A limit below one file reads the files one at a time.
+        active = 0
+        for line in log:
+            if "acquired read bytes" in line:
+                active += 1
+                assert active == 1
+            elif "releasing read bytes" in line:
+                active -= 1

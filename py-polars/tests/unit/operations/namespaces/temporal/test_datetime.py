@@ -133,12 +133,45 @@ def test_local_date_sortedness(time_zone: str | None) -> None:
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"]
 
-    # 2 elements
+    # 2 elements - the flag is only kept when local dates are known to be monotonic
     ser = (
         pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.date()
-    assert result.flags["SORTED_ASC"]
+    assert result.flags["SORTED_ASC"] == (time_zone != "Asia/Kathmandu")
+
+
+def test_local_date_truncate_sortedness_28560() -> None:
+    utc = (
+        pl.Series([datetime(2010, 3, 4, 13) + timedelta(hours=h) for h in range(4)])
+        .dt.replace_time_zone("UTC")
+        .sort()
+    )
+    assert utc.dt.date().flags["SORTED_ASC"]
+    assert utc.dt.truncate("1h").flags["SORTED_ASC"]
+    assert utc.dt.truncate("1mo").flags["SORTED_ASC"]
+
+    # Antarctica/Casey moved from +11 to +08 at 2010-03-04 15:00 UTC.
+    casey = utc.dt.convert_time_zone("Antarctica/Casey")
+
+    d = casey.dt.date()
+    assert not d.flags["SORTED_ASC"]
+    assert d.min() == date(2010, 3, 4)
+    assert d.sort().to_list() == [
+        date(2010, 3, 4),
+        date(2010, 3, 5),
+        date(2010, 3, 5),
+        date(2010, 3, 5),
+    ]
+
+    t = casey.dt.truncate("1d")
+    assert not t.flags["SORTED_ASC"]
+    assert t.sort().dt.replace_time_zone(None).to_list() == [
+        datetime(2010, 3, 4),
+        datetime(2010, 3, 5),
+        datetime(2010, 3, 5),
+        datetime(2010, 3, 5),
+    ]
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
@@ -583,6 +616,18 @@ def test_cast_time_units(
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
 
     assert dates.dt.cast_time_unit(time_unit).cast(int).to_list() == date_in_that_unit
+
+
+def test_cast_time_unit_overflow_22878() -> None:
+    s = pl.Series([datetime(9999, 12, 31)], dtype=pl.Datetime("us", "UTC"))
+    with pytest.raises(InvalidOperationError):
+        s.dt.cast_time_unit("ns")
+    assert s.dt.cast_time_unit("ms").dtype == pl.Datetime("ms", "UTC")
+
+    d = pl.Series([timedelta(days=200_000)], dtype=pl.Duration("us"))
+    with pytest.raises(InvalidOperationError):
+        d.dt.cast_time_unit("ns")
+    assert d.dt.cast_time_unit("ms").to_list() == [timedelta(days=200_000)]
 
 
 def test_epoch_matches_timestamp() -> None:

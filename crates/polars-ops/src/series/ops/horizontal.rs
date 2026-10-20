@@ -339,19 +339,28 @@ pub fn mean_horizontal(
 }
 
 pub fn coalesce_columns(s: &[Column]) -> PolarsResult<Column> {
-    // TODO! this can be faster if we have more than two inputs.
+    // Each iteration recomputes the null mask and allocates a new `out`; a single
+    // pass over all inputs would be faster for many inputs with many nulls.
     polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
+    let len = broadcast_len(s)?;
     let mut out = s[0].clone();
-    for s in s {
-        if !out.null_count() == 0 {
-            return Ok(out);
-        } else {
-            let mask = out.is_not_null();
-            out = out
-                .as_materialized_series()
-                .zip_with_same_type(&mask, s.as_materialized_series())?
-                .into();
+    for next in &s[1..] {
+        if !out.has_nulls() {
+            break;
         }
+        if out.null_count() == out.len() {
+            out = next.clone().with_name(out.name().clone());
+            continue;
+        }
+        let mask = out.is_not_null();
+        out = out
+            .as_materialized_series()
+            .zip_with_same_type(&mask, next.as_materialized_series())?
+            .into();
+    }
+    // The early exits skip the broadcast `zip_with` would have done.
+    if out.len() != len {
+        out = out.new_from_index(0, len);
     }
     Ok(out)
 }

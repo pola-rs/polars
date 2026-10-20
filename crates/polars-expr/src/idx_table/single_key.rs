@@ -11,9 +11,6 @@ use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 use super::*;
 use crate::hash_keys::{BLOCK_SIZE, HashKeys, MIN_PREFETCH_BUCKETS};
 
-/// Set in `Slot::first` once a probe key matched the slot.
-const MARKED: IdxSize = 1 << (IdxSize::BITS - 1);
-
 struct Slot<K> {
     key: K,
     /// The first build row with this key, combined with the MARKED flag.
@@ -29,7 +26,8 @@ pub struct SingleKeyIdxTable<T: PolarsDataType> {
     random_state: PlRandomState,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
-    nulls_emitted: RelaxedCell<bool>,
+    nulls_marked: RelaxedCell<bool>,
+    matched: MatchedRows,
 }
 
 impl<T: PolarsDataType> SingleKeyIdxTable<T> {
@@ -40,7 +38,8 @@ impl<T: PolarsDataType> SingleKeyIdxTable<T> {
             random_state: PlRandomState::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
-            nulls_emitted: RelaxedCell::from(false),
+            nulls_marked: RelaxedCell::from(false),
+            matched: MatchedRows::default(),
         }
     }
 }
@@ -82,10 +81,9 @@ where
                 probe_match.push(key_idx);
             });
 
-            // Mark if necessary. This action is idempotent so doesn't need
-            // atomic fetch_or to do it atomically.
             if MARK_MATCHES && first & MARKED == 0 {
                 slot.first.store(first | MARKED);
+                self.for_each_row(first, slot.last, |idx| self.matched.mark(idx));
             }
             true
         } else {
@@ -141,8 +139,11 @@ where
                         table_match.push(*idx);
                         probe_match.push(key_idx);
                     }
-                    if MARK_MATCHES && !self.nulls_emitted.load() {
-                        self.nulls_emitted.store(true);
+                    if MARK_MATCHES && !self.nulls_marked.load() {
+                        self.nulls_marked.store(true);
+                        for idx in &self.null_keys {
+                            self.matched.mark(*idx);
+                        }
                     }
                     !self.null_keys.is_empty()
                 } else {
@@ -228,6 +229,10 @@ where
             .unwrap();
         // The top bit of each index is reserved for MARKED.
         assert!(new_idx_offset <= MARKED as usize, "{}", LENGTH_LIMIT_MSG);
+
+        if track_unmatchable {
+            self.matched.grow(new_idx_offset);
+        }
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
         let arr = keys.downcast_as_array();
@@ -323,48 +328,8 @@ where
         )
     }
 
-    fn unmarked_keys(
-        &self,
-        out: &mut Vec<IdxSize>,
-        mut offset: IdxSize,
-        limit: IdxSize,
-    ) -> IdxSize {
-        out.clear();
-
-        let mut keys_processed = 0;
-        if !self.nulls_emitted.load() {
-            if (offset as usize) < self.null_keys.len() {
-                out.extend(
-                    self.null_keys[offset as usize..]
-                        .iter()
-                        .copied()
-                        .take(limit as usize),
-                );
-                keys_processed += out.len() as IdxSize;
-                offset += out.len() as IdxSize;
-                if out.len() >= limit as usize {
-                    return keys_processed;
-                }
-            }
-            offset -= self.null_keys.len() as IdxSize;
-        }
-
-        // The offset is a bucket index, not all buckets hold a key.
-        while (offset as usize) < self.table.num_buckets() {
-            if let Some(slot) = self.table.get_bucket(offset as usize) {
-                let first = slot.first.load();
-                if first & MARKED == 0 {
-                    self.for_each_row(first, slot.last, |idx| out.push(idx));
-                }
-            }
-
-            keys_processed += 1;
-            offset += 1;
-            if out.len() >= limit as usize {
-                break;
-            }
-        }
-
-        keys_processed
+    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize {
+        self.matched
+            .unmarked_rows(self.idx_offset, out, offset, limit)
     }
 }

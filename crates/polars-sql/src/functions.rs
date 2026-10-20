@@ -1,5 +1,3 @@
-use std::ops::Sub;
-
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
     DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
@@ -2781,7 +2779,7 @@ impl SQLFunctionVisitor<'_> {
 
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
-        let distinct_count = |e: Expr| e.clone().n_unique().sub(e.null_count().gt(lit(0)));
+        let distinct_count = |e: Expr| e.drop_nulls().n_unique();
         let count_expr = match (is_distinct, args.as_slice()) {
             // COUNT(*), COUNT()
             (false, [FunctionArgExpr::Wildcard] | []) => self.rows_read(),

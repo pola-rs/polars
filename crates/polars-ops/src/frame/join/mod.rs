@@ -38,13 +38,13 @@ use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 pub(super) use polars_core::series::IsSorted;
-use polars_core::utils::slice_offsets;
 #[allow(unused_imports)]
 use polars_core::utils::slice_slice;
 use polars_defs::join::{
     JoinArgs, JoinCoalesce, JoinType, JoinTypeOptions, JoinValidation, MaintainOrderJoin,
 };
 use polars_utils::hashing::BytesHash;
+use polars_utils::slice::slice_offsets;
 use rayon::prelude::*;
 
 use self::cross_join::fused_cross_filter;

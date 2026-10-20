@@ -988,6 +988,35 @@ impl CountLines {
     }
 }
 
+/// Returns the length of the longest prefix of `bytes` that only holds complete rows, i.e. up to
+/// and including the last `eol_char` outside of a quoted field. Like `skip_lines` itself, the
+/// first `skip_lines` lines are split without regard to quoting. Like the CSV reader, a UTF-8 BOM
+/// after them is skipped, so that a comment prefix on the next line is found.
+pub fn complete_rows_len(
+    bytes: &[u8],
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    skip_lines: usize,
+) -> usize {
+    let mut start = 0;
+    for _ in 0..skip_lines {
+        match memchr::memchr(eol_char, &bytes[start..]) {
+            Some(pos) => start += pos + 1,
+            None => return start,
+        }
+    }
+
+    const UTF8_BOM_MARKER: &[u8] = b"\xef\xbb\xbf";
+    if bytes[start..].starts_with(UTF8_BOM_MARKER) {
+        start += UTF8_BOM_MARKER.len();
+    }
+
+    let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
+    let (_, offset) = count.count_rows(&bytes[start..], false);
+    start + offset
+}
+
 fn ends_in_unterminated_row(
     bytes: &[u8],
     eol_char: u8,

@@ -667,13 +667,27 @@ fn lower_ir_inner(
 
             // See if we can insert a top k.
             let mut limit = u64::MAX;
-            if let Some((0, l, _)) = slice {
-                limit = limit.min(l as u64);
+            let mut is_from_end = false;
+            match slice {
+                Some((offset, len, _)) if offset >= 0 => {
+                    limit = (offset as u64).saturating_add(len as u64);
+                },
+                // The limit applies before the slice, so it does not commute with keeping the tail.
+                Some((offset, _, _)) if sort_options.limit.is_none() => {
+                    limit = offset.unsigned_abs();
+                    is_from_end = true;
+                },
+                _ => {},
             }
             #[allow(clippy::unnecessary_cast)]
             if let Some(l) = sort_options.limit {
                 limit = limit.min(l as u64);
             };
+            // Such a top k keeps every row, e.g. for open-ended slices.
+            #[allow(clippy::unnecessary_cast)]
+            if limit >= IdxSize::MAX as u64 {
+                limit = u64::MAX;
+            }
 
             let mut stream = phys_input;
 
@@ -713,10 +727,15 @@ fn lower_ir_inner(
             };
 
             if limit < u64::MAX {
+                let mut top_k_options = sort_options.clone();
+                if is_from_end {
+                    top_k_options = top_k_options.with_order_reversed();
+                    top_k_options.nulls_last.iter_mut().for_each(|x| *x = !*x);
+                }
                 stream = build_top_k_stream(
                     stream,
                     trans_by_column.clone(),
-                    &sort_options,
+                    &top_k_options,
                     limit,
                     slice.as_ref().and_then(|t| t.2.clone()),
                     expr_arena,
