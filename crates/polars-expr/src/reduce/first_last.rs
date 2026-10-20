@@ -2,6 +2,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
+use polars_core::datatypes::ArrayFromIter;
 use polars_core::frame::row::AnyValueBufferTrusted;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -42,7 +43,11 @@ fn new_reduction_with_policy<P: Policy + 'static>(
         },
         String | Binary => Box::new(VecGroupedReduction::new(
             dtype,
-            BinaryFirstLastReducer(policy),
+            BinaryFirstLastReducer::<_, BinaryType>(policy, PhantomData),
+        )),
+        BinaryOffset => Box::new(VecGroupedReduction::new(
+            dtype,
+            BinaryFirstLastReducer::<_, BinaryOffsetType>(policy, PhantomData),
         )),
         _ => Box::new(GenericFirstLastGroupedReduction::new(dtype, policy)),
     }
@@ -208,11 +213,11 @@ where
     }
 }
 
-struct BinaryFirstLastReducer<P>(P);
+struct BinaryFirstLastReducer<P, T>(P, PhantomData<T>);
 
-impl<P: Policy> Clone for BinaryFirstLastReducer<P> {
+impl<P: Policy, T> Clone for BinaryFirstLastReducer<P, T> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        Self(self.0, PhantomData)
     }
 }
 
@@ -226,11 +231,13 @@ pub fn replace_opt_bytes(l: &mut Option<Vec<u8>>, r: Option<&[u8]>) {
     }
 }
 
-impl<P> Reducer for BinaryFirstLastReducer<P>
+impl<P, T> Reducer for BinaryFirstLastReducer<P, T>
 where
     P: Policy,
+    T: PolarsPhysicalType + for<'a> PolarsDataType<Physical<'a> = &'a [u8]>,
+    T::Array: ArrayFromIter<Option<Vec<u8>>>,
 {
-    type Dtype = BinaryType;
+    type Dtype = T;
     type Value = Value<Vec<u8>, P::Count>;
 
     fn init(&self) -> Self::Value {
@@ -238,7 +245,7 @@ where
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
-        Cow::Owned(s.cast(&DataType::Binary).unwrap())
+        Cow::Owned(s.cast(&T::get_static_dtype()).unwrap())
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
@@ -275,7 +282,7 @@ where
         if let Some(allow_empty) = self.0.item_policy() {
             check_item_count_is_one::<_, P>(&v, allow_empty)?;
         }
-        let ca: BinaryChunked = v
+        let ca: ChunkedArray<T> = v
             .into_iter()
             .map(|Value { value, .. }| value)
             .collect_ca(PlSmallStr::EMPTY);
