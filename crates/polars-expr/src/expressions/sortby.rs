@@ -389,8 +389,8 @@ impl PhysicalExpr for SortByExpr {
                         sort_by_groups_multiple_by(
                             indicator,
                             &sort_by_s,
-                            &descending,
-                            &nulls_last,
+                            descending,
+                            nulls_last,
                             self.sort_options.multithreaded,
                             self.sort_options.maintain_order,
                             self.sort_options.limit,
