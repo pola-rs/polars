@@ -592,17 +592,71 @@ where
     std::str::from_utf8(&buf[..len]).unwrap().parse().unwrap()
 }
 
-/// Converts a f64 to a Decimal128 with the given precision and scale, returning
-/// None if the value doesn't fit.
+/// Returns round(n / 2^k) for 1 <= k, rounding to nearest even. `sticky` says
+/// whether there are non-zero bits below the lowest bit of n.
+#[inline(always)]
+fn shr_round_even(n: u128, k: u32, sticky: bool) -> u128 {
+    if k >= 128 {
+        // n / 2^k < 1, and it is only above 1/2 if k == 128 and n > 2^127.
+        return (k == 128 && (n > 1 << 127 || (n == 1 << 127 && sticky))) as u128;
+    }
+    let q = n >> k;
+    let rem = n & ((1 << k) - 1);
+    let half = 1 << (k - 1);
+    q + (rem > half || (rem == half && (sticky || q & 1 == 1))) as u128
+}
+
+/// Converts a f64 to a Decimal128 with the given precision and scale, rounding
+/// the exact value of x to nearest even. Returns None if the value doesn't fit.
 #[inline]
 pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
-    // TODO: correctly rounded result. This rounds multiple times.
+    const TWO_POW_127: f64 = (1u128 << 127) as f64;
     #[allow(clippy::neg_cmp_op_on_partial_ord)]
-    if !(x.abs() < POW10_F64[p]) {
+    if !(x.abs() < TWO_POW_127) {
         // Comparison will fail for NaN, making us return None.
         return None;
     }
-    unsafe { Some((x * POW10_F64[s]).round_ties_even().to_int_unchecked()) }
+
+    // |x| = m * 2^e exactly.
+    let bits = x.to_bits();
+    let biased_exp = ((bits >> 52) & 0x7FF) as i32;
+    let frac = bits & ((1 << 52) - 1);
+    let (m, e) = if biased_exp == 0 {
+        (frac, -1074)
+    } else {
+        (frac | (1 << 52), biased_exp - 1075)
+    };
+
+    let pow = POW10_I128[s] as u128;
+    let mag = if e >= 0 {
+        // x is an integer below 2^127.
+        ((m as u128) << e).checked_mul(pow)?
+    } else if s <= 22 {
+        // m * 10^s < 2^53 * 2^74.
+        shr_round_even(m as u128 * pow, (-e) as u32, false)
+    } else {
+        let (lo, hi) = widening_mul_128(m as u128, pow);
+        let k = (-e) as u32;
+        if hi == 0 {
+            shr_round_even(lo, k, false)
+        } else {
+            // Drop the d lowest bits so the rest fits in a u128. If k <= d the
+            // result is at least 2^127, which never fits.
+            let d = 128 - hi.leading_zeros();
+            if k <= d {
+                return None;
+            }
+            let n = (hi << (128 - d)) | (lo >> d);
+            let sticky = lo & ((1 << d) - 1) != 0;
+            shr_round_even(n, k - d, sticky)
+        }
+    };
+
+    if mag >= POW10_I128[p] as u128 {
+        return None;
+    }
+    let r = mag as i128;
+    Some(if x.is_sign_negative() { -r } else { r })
 }
 
 /// Converts between two Decimal128s, with a new precision and scale, returning
@@ -1504,6 +1558,59 @@ mod test {
             dec128_to_f32(1_000_000_059_604_644_775_390_625_000_001, 30),
             1.0 + f32::EPSILON
         );
+    }
+
+    fn f64_to_dec128_oracle(x: f64, p: usize, s: usize) -> Option<i128> {
+        if !x.is_finite() {
+            return None;
+        }
+        let (m, e, sign) = num_traits::Float::integer_decode(x);
+        let n = BigInt::from(m) * pow10_big(s) * sign;
+        let r = if e >= 0 {
+            n << e
+        } else {
+            round_half_even_div(&n, &(BigInt::from(1u8) << -e))
+        };
+        (r.abs() < BigInt::from(POW10_I128[p])).then(|| r.try_into().unwrap())
+    }
+
+    #[test]
+    fn test_f64_to_dec128_is_correctly_rounded() {
+        let mut r = SmallRng::seed_from_u64(42);
+        let mut base: Vec<f64> = vec![0.0, 5e-324, f64::MIN_POSITIVE, 0.5, 1.5, 2.5, 0.1];
+        base.extend((0..=DEC128_MAX_PREC).map(|e| POW10_F64[e]));
+        base.extend((0..=DEC128_MAX_PREC).map(|e| 0.5 / POW10_F64[e]));
+        base.extend((0..64).map(|_| r.random_range(-1_000_000_000i64..1_000_000_000) as f64 / 1e5));
+        base.extend((0..64).map(|_| r.random::<f64>()));
+        base.extend((0..256).map(|_| f64::from_bits(r.random::<u64>())));
+        base.extend(base.clone().into_iter().map(|x| -x));
+        base.extend([f64::NAN, f64::INFINITY, f64::NEG_INFINITY]);
+        for &x in &base {
+            for s in 0..=DEC128_MAX_PREC {
+                for p in [s.max(1), 18, DEC128_MAX_PREC] {
+                    if p < s {
+                        continue;
+                    }
+                    assert_eq!(
+                        f64_to_dec128(x, p, s),
+                        f64_to_dec128_oracle(x, p, s),
+                        "{x:?} p={p} s={s}"
+                    );
+                }
+            }
+        }
+        // The double 71.47265 is a bit above the midpoint, but x * 10^4 rounds to it.
+        assert_eq!(f64_to_dec128(71.47265, 18, 4), Some(714727));
+        assert_eq!(f64_to_dec128(300.65625, 18, 4), Some(3006562));
+        // 2^-76 * 10^22 is below 1/2 and shifts by exactly 128 bits.
+        assert_eq!(f64_to_dec128(2f64.powi(-76), 38, 22), Some(0));
+        assert_eq!(shr_round_even(1 << 127, 128, false), 0);
+        assert_eq!(shr_round_even(1 << 127, 128, true), 1);
+        assert_eq!(shr_round_even((1 << 127) - 1, 128, true), 0);
+        assert_eq!(shr_round_even(u128::MAX, 129, true), 0);
+        assert_eq!(shr_round_even(3 << 126, 127, false), 2);
+        assert_eq!(shr_round_even(1 << 126, 127, false), 0);
+        assert_eq!(shr_round_even(1 << 126, 127, true), 1);
     }
 
     #[test]
