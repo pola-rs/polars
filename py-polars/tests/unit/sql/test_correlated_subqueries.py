@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.exceptions import SQLInterfaceError
 from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
@@ -1083,3 +1084,67 @@ def test_correlated_avg_over_repeated_outer_rows() -> None:
         expected={"ok": [1, 1, 1], "v": [0.1, 0.1, 0.1]},
         engines=ENGINES,
     )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT id FROM o WHERE EXISTS (SELECT 1 FROM i WHERE s.f = i.k)",
+            {"id": [1, 2]},
+        ),
+        (
+            "SELECT id FROM o WHERE NOT EXISTS (SELECT 1 FROM i WHERE s.f = i.k)",
+            {"id": []},
+        ),
+        (
+            "SELECT id FROM o WHERE id IN (SELECT k FROM i WHERE s.f = i.k)",
+            {"id": [1]},
+        ),
+        (
+            "SELECT id, (SELECT COUNT(*) FROM i WHERE s.f = i.k) AS c FROM o",
+            {"id": [1, 2], "c": [1, 1]},
+        ),
+        (
+            "SELECT id FROM o WHERE EXISTS (SELECT 1 FROM i WHERE i.k = o.id AND s.f = 1)",
+            {"id": [1]},
+        ),
+    ],
+)
+def test_subquery_struct_field_is_not_outer_column(
+    query: str, expected: dict[str, Any]
+) -> None:
+    # `s.f` is a field of the inner struct `s`, not the outer column `f`.
+    frames = {
+        "o": pl.DataFrame({"id": [1, 2], "f": [10, 20]}),
+        "i": pl.DataFrame({"k": [1, 2], "s": [{"f": 1}, {"f": 5}]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with=None,
+        check_row_order=False,
+        expected=expected,
+        engines=ENGINES,
+    )
+
+
+def test_subquery_outer_relation_wins_over_struct_column() -> None:
+    # The outer alias `s` takes precedence over the inner struct column `s`.
+    frames = {
+        "o": pl.DataFrame({"id": [1, 2], "f": [10, 20]}),
+        "i": pl.DataFrame({"k": [10, 20], "s": [{"f": 50}, {"f": 1}]}),
+    }
+    query = "SELECT id FROM o AS s WHERE EXISTS (SELECT 1 FROM i WHERE {})"
+    assert_sql_matches(
+        frames=frames,
+        query=query.format("i.k = s.f"),
+        compare_with=None,
+        check_row_order=False,
+        expected={"id": [1, 2]},
+        engines=ENGINES,
+    )
+
+    # An outer-only filter can't be lowered, but must not read `s.f` as the struct.
+    with pytest.raises(SQLInterfaceError, match="EXISTS subquery is not currently"):
+        pl.SQLContext(frames).execute(query.format("i.k = s.f AND s.f > 15")).collect()

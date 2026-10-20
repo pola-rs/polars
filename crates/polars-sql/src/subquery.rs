@@ -294,7 +294,7 @@ impl SQLContext {
             )? {
                 corr_preds.push(pred);
             } else if let Some(filter) =
-                self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
+                self.try_parse_inner_only_expr(conj, inner_names, inner_schema, outer)?
             {
                 local_filters.push(filter);
             } else {
@@ -393,7 +393,8 @@ impl SQLContext {
         };
         // The membership key must be a plain expression over the inner relation;
         // any alias it carries is cosmetic and not allowed in a join key.
-        let Some(right_key) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
+        let Some(right_key) =
+            ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema, self)?
         else {
             return Ok(None);
         };
@@ -537,7 +538,8 @@ impl SQLContext {
                 right_on.push(col(inner_key));
                 continue;
             }
-            let Some(filter) = self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
+            let Some(filter) =
+                self.try_parse_inner_only_expr(conj, inner_names, inner_schema, outer)?
             else {
                 return Ok(None);
             };
@@ -596,7 +598,7 @@ impl SQLContext {
                     corr_preds.push(pred);
                 }
             } else if let Some(filter) =
-                self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
+                self.try_parse_inner_only_expr(conj, inner_names, inner_schema, outer)?
             {
                 local_filters.push(filter);
             } else {
@@ -634,8 +636,9 @@ impl SQLContext {
         sql_expr: &SQLExpr,
         inner_names: &PlHashSet<String>,
         inner_schema: &Schema,
+        outer: &SQLContext,
     ) -> PolarsResult<Option<Expr>> {
-        if !binds_to_inner_relation(sql_expr, inner_names, inner_schema) {
+        if !binds_to_inner_relation(sql_expr, inner_names, inner_schema, outer) {
             return Ok(None);
         }
         Ok(Some(parse_sql_expr(sql_expr, self, Some(inner_schema))?))
@@ -790,7 +793,8 @@ impl SQLContext {
         };
 
         // The projection must be a scalar aggregate over the inner relation.
-        let Some(agg_expr) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
+        let Some(agg_expr) =
+            ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema, self)?
         else {
             return Ok(None);
         };
@@ -953,7 +957,8 @@ impl SQLContext {
         let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
-        let Some(value) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)? else {
+        let Some(value) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema, self)?
+        else {
             return Ok(None);
         };
         let value = value.meta().undo_aliases();
@@ -1588,11 +1593,13 @@ fn binds_to_inner_relation(
     expr: &SQLExpr,
     inner_names: &PlHashSet<String>,
     inner_schema: &Schema,
+    outer: &SQLContext,
 ) -> bool {
     visit_expressions(expr, |e| {
         let resolves = match e {
             // A nested subquery is its own scope, which this cannot resolve against.
             _ if is_subquery_expr(e) => false,
+            _ if inner_struct_root(e, inner_names, inner_schema, outer).is_some() => true,
             SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) => qualifier_and_name(e)
                 .is_some_and(|(qualifier, name)| {
                     qualifier.is_none_or(|q| inner_names.contains(q)) && inner_schema.contains(name)
@@ -1622,9 +1629,25 @@ fn qualifier_and_name(expr: &SQLExpr) -> Option<(Option<&str>, &str)> {
     }
 }
 
+// The root of `s.f` when `s` is an inner struct column rather than a relation in
+// either scope (a relation wins over a struct column of the same name).
+fn inner_struct_root<'a>(
+    expr: &'a SQLExpr,
+    inner_names: &PlHashSet<String>,
+    inner_schema: &Schema,
+    outer: &SQLContext,
+) -> Option<&'a str> {
+    let SQLExpr::CompoundIdentifier(parts) = expr else {
+        return None;
+    };
+    let root = parts.first()?.value.as_str();
+    (!inner_names.contains(root) && !outer.relation_in_scope(root) && inner_schema.contains(root))
+        .then_some(root)
+}
+
 // Classify a correlation operand as an inner- or outer-query column and return
-// its column name in that frame. `None` for non-identifiers or names in neither
-// schema.
+// its column name in that frame. `None` for non-identifiers, names in neither
+// schema, and struct field paths (not usable as join keys).
 fn classify_correlation_column(
     expr: &SQLExpr,
     inner_names: &PlHashSet<String>,
@@ -1633,6 +1656,9 @@ fn classify_correlation_column(
     inner: &SQLContext,
     outer: &SQLContext,
 ) -> PolarsResult<Option<(CorrelationSide, PlSmallStr)>> {
+    if inner_struct_root(expr, inner_names, inner_schema, outer).is_some() {
+        return Ok(None);
+    }
     let Some((qualifier, name)) = qualifier_and_name(expr) else {
         return Ok(None);
     };
