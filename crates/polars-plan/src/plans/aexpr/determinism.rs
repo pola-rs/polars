@@ -155,6 +155,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "repeat_by")]
         F::RepeatBy => false,
         F::ArgUnique => false,
+        F::UniqueId { .. } => false,
         F::ArgMin | F::ArgMax => false,
         F::ArgSort { .. } => false,
         F::MinBy { .. } | F::MaxBy { .. } => false,

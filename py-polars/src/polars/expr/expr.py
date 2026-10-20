@@ -4152,6 +4152,52 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.arg_unique())
 
+    def unique_id(self, *, maintain_order: bool = False) -> Expr:
+        """
+        Assign a unique ID to each unique value in the expression.
+
+        Equal values always get the same ID and distinct values always get
+        distinct IDs, in the range ``0..n_unique``. This is more efficient than
+        ``rank(method="dense")`` as it does not require sorting and can be
+        computed in a streaming fashion.
+
+        Parameters
+        ----------
+        maintain_order
+            If True, IDs are assigned in order of first occurrence (starting
+            from 0). If False (the default), the specific IDs are arbitrary
+            (but still unique and consistent), which enables parallelism.
+
+        Returns
+        -------
+        Expr
+            Expression containing the unique ID for each row.
+
+        See Also
+        --------
+        rank : Assign ranks with various tie-breaking methods.
+        rle_id : Assign IDs to runs of identical consecutive values.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": ["A", "B", "A", "C", "C", "B"]})
+        >>> df.with_columns(uid=pl.col("x").unique_id(maintain_order=True))
+        shape: (6, 2)
+        ┌─────┬─────┐
+        │ x   ┆ uid │
+        │ --- ┆ --- │
+        │ str ┆ u32 │
+        ╞═════╪═════╡
+        │ A   ┆ 0   │
+        │ B   ┆ 1   │
+        │ A   ┆ 0   │
+        │ C   ┆ 2   │
+        │ C   ┆ 2   │
+        │ B   ┆ 1   │
+        └─────┴─────┘
+        """
+        return wrap_expr(self._pyexpr.unique_id(maintain_order))
+
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
         Get unique values of this expression.

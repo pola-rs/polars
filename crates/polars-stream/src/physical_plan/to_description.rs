@@ -405,6 +405,9 @@ pub fn phys_props(
         ),
         PhysNodeKind::Rle(input, ..) => (PhysicalPropsDescription::Rle, vec![input.node]),
         PhysNodeKind::RleId(input, ..) => (PhysicalPropsDescription::RleId, vec![input.node]),
+        PhysNodeKind::UniqueId { input, .. } => {
+            (PhysicalPropsDescription::UniqueId, vec![input.node])
+        },
         PhysNodeKind::SortedUnique { input, keys, .. } => (
             PhysicalPropsDescription::SortedUnique {
                 keys: keys.iter().map(ToString::to_string).collect(),

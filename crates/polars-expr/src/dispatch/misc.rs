@@ -277,6 +277,47 @@ pub(super) fn arg_unique(s: &Column) -> PolarsResult<Column> {
         .map(|ok| ok.into_column())
 }
 
+pub(super) fn unique_id(s: &Column, maintain_order: bool) -> PolarsResult<Column> {
+    use polars_core::frame::group_by::GroupsType;
+
+    let s = s.as_materialized_series();
+    let len = s.len();
+
+    if len == 0 {
+        return Ok(IdxCa::new_vec(s.name().clone(), vec![]).into_column());
+    }
+
+    // Use group_tuples for proper ID assignment. Hashing values directly does not
+    // work: distinct values can collide (and `u64 as IdxSize` truncates), so it
+    // does not guarantee uniqueness. The group index is always a dense,
+    // collision-free unique ID in the range `0..n_unique`; `maintain_order`
+    // controls whether those IDs follow first-occurrence order.
+    let groups = s.group_tuples(true, maintain_order)?;
+
+    let mut out = vec![IdxSize::MAX; len];
+
+    match groups {
+        GroupsType::Idx(groups) => {
+            for (group_id, (_, indices)) in groups.iter().enumerate() {
+                let group_id = group_id as IdxSize;
+                for idx in indices.iter() {
+                    out[*idx as usize] = group_id;
+                }
+            }
+        },
+        GroupsType::Slice { groups, .. } => {
+            for (group_id, [offset, group_len]) in groups.iter().enumerate() {
+                let group_id = group_id as IdxSize;
+                for idx in *offset..(*offset + *group_len) {
+                    out[idx as usize] = group_id;
+                }
+            }
+        },
+    }
+
+    Ok(IdxCa::new_vec(s.name().clone(), out).into_column())
+}
+
 pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {
     // @scalar-opt
     Ok(s.as_materialized_series()
