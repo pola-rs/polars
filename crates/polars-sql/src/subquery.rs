@@ -1644,8 +1644,10 @@ fn classify_correlation_column(
                 .contains(name.as_str())
                 .then(|| (CorrelationSide::Inner, name.into()))
         },
-        // Any other qualifier is taken as outer (so same-named columns like
-        // `o.id = c.id` resolve).
+        Some(q) if !outer.relation_in_scope(q) => {
+            polars_bail!(SQLInterface: "no table or struct column named '{q}' found")
+        },
+        // An outer qualifier (so same-named columns like `o.id = c.id` resolve).
         Some(q) => {
             let name = outer.resolve_name(q, name);
             outer_schema

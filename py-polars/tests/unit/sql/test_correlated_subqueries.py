@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.exceptions import SQLInterfaceError
 from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
@@ -1083,3 +1084,22 @@ def test_correlated_avg_over_repeated_outer_rows() -> None:
         expected={"ok": [1, 1, 1], "v": [0.1, 0.1, 0.1]},
         engines=ENGINES,
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id FROM o AS x WHERE EXISTS (SELECT 1 FROM i WHERE i.k = nope.id)",
+        "SELECT id FROM o AS x WHERE NOT EXISTS (SELECT 1 FROM i WHERE i.k = nope.id)",
+        "SELECT id FROM o AS x WHERE EXISTS (SELECT 1 FROM i WHERE i.k < nope.id)",
+        "SELECT id FROM o AS x WHERE EXISTS (SELECT 1 FROM i WHERE nope.k = x.id)",
+        "SELECT id FROM o AS x WHERE id IN (SELECT k FROM i WHERE i.k = nope.id)",
+        "SELECT id, (SELECT COUNT(*) FROM i WHERE i.k = nope.id) FROM o AS x",
+        # the alias hides the table name
+        "SELECT id FROM o AS x WHERE EXISTS (SELECT 1 FROM i WHERE i.k = o.id)",
+    ],
+)
+def test_correlated_subquery_unknown_qualifier(query: str) -> None:
+    frames = {"o": pl.DataFrame({"id": [1, 2]}), "i": pl.DataFrame({"k": [1]})}
+    with pytest.raises(SQLInterfaceError, match="no table or struct column named"):
+        pl.SQLContext(frames).execute(query).collect()
