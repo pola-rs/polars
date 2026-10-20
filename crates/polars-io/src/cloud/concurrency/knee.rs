@@ -3,7 +3,8 @@
 //! Delivered bandwidth counts response body bytes as they arrive. A round lasts `round_ticks`
 //! ticks; its bandwidth is measured over the ticks after the first, once a budget change has
 //! settled. RampUp doubles the budget per round while it binds and the delivered bandwidth of the
-//! round grows by at least 25% over the best round so far. The knee is the smallest budget at which
+//! round grows by at least 25% over the best round so far; a round whose second tick already shows
+//! that growth ends there. The knee is the smallest budget at which
 //! the delivered bandwidth reached its plateau. In Stable the target is `gain x knee`; a probe that
 //! delivers at least 10% more bandwidth while it binds keeps its x1.25 budget as the new knee. A
 //! brake steps the budget down when in-flight bytes rise without delivered bandwidth, or when
@@ -255,7 +256,12 @@ impl KneeController {
         {
             self.round_limiter_bound = true;
         }
-        if self.round_ticks >= self.cfg.round_ticks {
+        let grew_early = self.phase == KneePhase::RampUp
+            && self.round_ticks == 2
+            && !self.round_limiter_bound
+            && (self.round_parked > 0 || self.round_sat_max >= 0.9)
+            && self.round_settled_bytes as f64 >= 1.25 * self.best_bw * self.round_settled_secs;
+        if self.round_ticks >= self.cfg.round_ticks || grew_early {
             self.end_round(t.now);
         }
         self.budget
@@ -595,6 +601,16 @@ mod tests {
         assert_eq!(c.budget(), knee);
     }
 
+    /// Bandwidth follows the budget: each RampUp round grows at its second tick and ends there.
+    #[test]
+    fn growing_ramp_rounds_end_after_two_ticks() {
+        let mut c = KneeController::new(cfg());
+        // Init (3 ticks), then 100 -> 200 -> 400 -> 800 -> 1600 -> 3200 in 2 ticks each.
+        run(&mut c, Instant::now(), 0, 1600, 11);
+        assert_eq!(c.phase(), KneePhase::RampUp);
+        assert_eq!(c.budget(), 3200);
+    }
+
     /// Delivered bandwidth grows 30% per round regardless of the budget (warm-up) while the whole
     /// budget stays in use.
     #[test]
@@ -634,7 +650,7 @@ mod tests {
             step(&mut c, 400, in_use);
         }
         assert_eq!(c.budget(), 400);
-        for _ in 0..6 {
+        for _ in 0..9 {
             step(&mut c, 400, 400);
         }
         assert_eq!(c.phase(), KneePhase::Stable);
