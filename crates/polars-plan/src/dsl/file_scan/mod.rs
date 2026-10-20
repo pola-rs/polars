@@ -1,4 +1,4 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 
@@ -434,22 +434,6 @@ impl FileScanIR {
         }
     }
 
-    /// Hashes what [`Self::can_concat_sources`] compares.
-    pub(crate) fn hash_concat_key<H: Hasher>(&self, state: &mut H) {
-        std::mem::discriminant(self).hash(state);
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { options } => options.hash(state),
-            #[cfg(feature = "json")]
-            Self::NDJson { options } => options.hash(state),
-            #[cfg(feature = "parquet")]
-            Self::Parquet { options, .. } => options.hash(state),
-            #[cfg(feature = "ipc")]
-            Self::Ipc { options, .. } => options.hash(state),
-            _ => {},
-        }
-    }
-
     /// The scan type for the sources of `parts` read one after another. Each part holds a scan
     /// type and its number of sources. `parts` must not be empty, and all parts must pass
     /// [`Self::can_concat_sources`].
@@ -760,13 +744,8 @@ impl UnifiedScanArgs {
             && self.concat_key() == other.concat_key()
     }
 
-    /// Hashes what [`Self::can_concat_sources`] compares.
-    pub(crate) fn hash_concat_key<H: Hasher>(&self, state: &mut H) {
-        self.concat_key().hash(state)
-    }
-
     /// The fields that must be equal for scans to be read as one scan.
-    fn concat_key(&self) -> impl PartialEq + Hash + '_ {
+    fn concat_key(&self) -> impl PartialEq + '_ {
         let Self {
             schema,
             cloud_options,

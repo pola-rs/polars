@@ -1,9 +1,7 @@
 use std::cell::RefCell;
-use std::hash::{BuildHasher, Hash, Hasher};
 
 use IR::*;
 use polars_core::error::PolarsResult;
-use polars_utils::aliases::{PlFixedStateQuality, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
@@ -121,24 +119,15 @@ fn mergeable_scan(mut node: Node, lp_arena: &Arena<IR>) -> Option<Node> {
 struct ScanChain {
     row_wise: UnitVec<Node>,
     scan: Node,
-    /// Equal for chains that can be merged, so only chains with the same key are compared.
-    key: u64,
 }
 
-/// Hashes `exprs`, and returns whether they give the same rows when they run once over the
-/// merged scan as when they run on each scan. Only elementwise expressions do. A sorted flag
-/// only holds for each scan, and a literal with more than one value (e.g. the sets of `is_in`)
-/// lines up with each scan's rows.
-fn hash_row_wise_exprs(
-    exprs: &[ExprIR],
-    expr_arena: &Arena<AExpr>,
-    state: &mut impl Hasher,
-) -> bool {
+/// Whether `exprs` give the same rows when they run once over the merged scan as when they run
+/// on each scan. Only elementwise expressions do. A sorted flag only holds for each scan, and a
+/// literal with more than one value (e.g. the sets of `is_in`) lines up with each scan's rows.
+fn is_row_wise(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
     exprs.iter().all(|e| {
-        e.output_name_inner().hash(state);
         is_elementwise_rec(e.node(), expr_arena)
             && expr_arena.iter(e.node()).all(|(_, ae)| {
-                ae.hash(state);
                 !matches!(
                     ae,
                     AExpr::Function {
@@ -148,15 +137,6 @@ fn hash_row_wise_exprs(
                 ) && !matches!(ae, AExpr::Literal(lv) if !lv.is_scalar())
             })
     })
-}
-
-fn hash_exprs(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mut impl Hasher) {
-    for e in exprs {
-        e.output_name_inner().hash(state);
-        for (_, ae) in expr_arena.iter(e.node()) {
-            ae.hash(state);
-        }
-    }
 }
 
 /// Compares expressions by value.
@@ -195,25 +175,18 @@ impl ScanChain {
     fn new(mut node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<Self> {
         let scan = mergeable_scan(node, lp_arena)?;
         let mut row_wise = UnitVec::new();
-        let mut state = PlFixedStateQuality::default().build_hasher();
         while node != scan {
-            let ir = lp_arena.get(node);
-            std::mem::discriminant(ir).hash(&mut state);
-            let input = match ir {
-                SimpleProjection { input, columns } => {
-                    columns.len().hash(&mut state);
-                    *input
-                },
+            let input = match lp_arena.get(node) {
+                SimpleProjection { input, .. } => *input,
                 Filter { input, predicate } => {
-                    if !hash_row_wise_exprs(std::slice::from_ref(predicate), expr_arena, &mut state)
-                    {
+                    if !is_row_wise(std::slice::from_ref(predicate), expr_arena) {
                         return None;
                     }
                     *input
                 },
                 // A select of only scalars outputs one row, not one row per input row.
                 Select { input, expr, .. } => {
-                    if !hash_row_wise_exprs(expr, expr_arena, &mut state)
+                    if !is_row_wise(expr, expr_arena)
                         || expr.iter().all(|e| is_scalar_ae(e.node(), expr_arena))
                     {
                         return None;
@@ -221,7 +194,7 @@ impl ScanChain {
                     *input
                 },
                 HStack { input, exprs, .. } => {
-                    if !hash_row_wise_exprs(exprs, expr_arena, &mut state) {
+                    if !is_row_wise(exprs, expr_arena) {
                         return None;
                     }
                     *input
@@ -231,29 +204,11 @@ impl ScanChain {
             row_wise.push(node);
             node = input;
         }
-
-        let Scan {
-            scan_type,
-            predicate,
-            unified_scan_args,
-            ..
-        } = lp_arena.get(scan)
-        else {
-            unreachable!()
-        };
-        scan_type.hash_concat_key(&mut state);
-        unified_scan_args.hash_concat_key(&mut state);
-        hash_exprs(predicate.as_slice(), expr_arena, &mut state);
-        Some(Self {
-            row_wise,
-            scan,
-            key: state.finish(),
-        })
+        Some(Self { row_wise, scan })
     }
 
     fn can_concat(&self, other: &Self, lp_arena: &Arena<IR>, expr_eq: &ExprEq) -> bool {
-        self.key == other.key
-            && self.row_wise.len() == other.row_wise.len()
+        self.row_wise.len() == other.row_wise.len()
             && self
                 .row_wise
                 .iter()
@@ -295,36 +250,34 @@ impl ScanGroups {
             .iter()
             .map(|node| ScanChain::new(*node, lp_arena, expr_arena))
             .collect();
+        if chains.iter().flatten().take(2).count() < 2 {
+            return None;
+        }
         let expr_eq = ExprEq::new(expr_arena);
 
-        // An unordered union looks up groups by chain key.
         let mut groups: Vec<UnitVec<usize>> = Vec::with_capacity(inputs.len());
-        let mut groups_by_key: PlIndexMap<u64, UnitVec<usize>> = PlIndexMap::default();
+        // Groups that start with a chain, the only ones other chains can join.
+        let mut chain_groups: Vec<usize> = Vec::new();
         for (i, chain) in chains.iter().enumerate() {
             let Some(chain) = chain else {
                 groups.push(unitvec![i]);
                 continue;
             };
-            let fits = |g: usize| {
-                chains[groups[g][0]]
+            let fits = |g: &usize| {
+                chains[groups[*g][0]]
                     .as_ref()
                     .is_some_and(|l| l.can_concat(chain, lp_arena, &expr_eq))
             };
             let group = if maintain_order {
-                groups.len().checked_sub(1).filter(|g| fits(*g))
+                groups.len().checked_sub(1).filter(fits)
             } else {
-                groups_by_key
-                    .get(&chain.key)
-                    .and_then(|gs| gs.iter().copied().find(|g| fits(*g)))
+                chain_groups.iter().copied().find(fits)
             };
             match group {
                 Some(g) => groups[g].push(i),
                 None => {
                     if !maintain_order {
-                        groups_by_key
-                            .entry(chain.key)
-                            .or_default()
-                            .push(groups.len());
+                        chain_groups.push(groups.len());
                     }
                     groups.push(unitvec![i]);
                 },
