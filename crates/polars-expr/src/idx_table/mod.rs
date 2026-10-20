@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use matched_rows::MatchedRows;
+use matched_rows::{MARKED, MatchedRows};
 use polars_core::prelude::*;
 use polars_utils::IdxSize;
 

@@ -135,3 +135,16 @@ result = ctx.execute(
 )
 print(result)
 # --8<-- [end:tablefunctionparquet]
+
+# --8<-- [start:tablefunctionipc]
+pl.read_csv("docs/assets/data/iris.csv").write_ipc("docs/assets/data/iris.feather")
+
+result = ctx.execute(
+    """
+        SELECT species, sepal_length, path
+        FROM read_ipc('docs/assets/data/iris.feather', include_file_paths => 'path')
+        LIMIT 3
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionipc]

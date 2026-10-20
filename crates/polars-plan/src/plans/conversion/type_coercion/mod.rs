@@ -146,8 +146,9 @@ impl OptimizationRule for TypeCoercionRule {
                             float_downcast: true,
                             datetime_nanoseconds_downcast: true,
                             datetime_microseconds_downcast: true,
-                            datetime_milliseconds_upcast: true,
-                            datetime_microseconds_upcast: true,
+                            // Increasing the time unit precision can overflow.
+                            datetime_milliseconds_upcast: false,
+                            datetime_microseconds_upcast: false,
                             datetime_convert_timezone: true,
                             null_upcast: true,
                             categorical_to_string: true,
