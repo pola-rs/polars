@@ -23,7 +23,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import ParallelStrategy
+    from polars._typing import EngineType, ParallelStrategy
     from tests.conftest import PlMonkeyPatch
 
 
@@ -2164,3 +2164,18 @@ def test_scan_parquet_set_sorted_expr_keeps_order(tmp_path: Path) -> None:
 
     assert_frame_equal(q_group_by.collect(engine="streaming"), expected_group_by)
     assert_frame_equal(q_join.collect(engine="streaming"), expected_join)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_scan_parquet_predicate_on_truncated_statistics_29447(
+    tmp_path: Path, engine: EngineType
+) -> None:
+    # String statistics are truncated, so `min` is not a value of the row group.
+    path = tmp_path / "t.parquet"
+    df = pl.DataFrame({"s": ["5", "5", "x" * 70 + "1", "x" * 70 + "2"]})
+    df.write_parquet(path, row_group_size=2)
+    expr = pl.col("s").str.slice(-1).cast(pl.Int64) == 1
+    assert_frame_equal(
+        pl.scan_parquet(path).filter(expr).collect(engine=engine), df[2:3]
+    )
