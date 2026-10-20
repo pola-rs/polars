@@ -221,6 +221,8 @@ impl ScanChain {
     }
 }
 
+const MAX_GROUPS_SEARCHED: usize = 8;
+
 /// Union inputs grouped by whether they can be merged. Each group holds indices into the inputs.
 struct ScanGroups {
     chains: Vec<Option<ScanChain>>,
@@ -229,8 +231,8 @@ struct ScanGroups {
 
 impl ScanGroups {
     /// Groups inputs that are the same row-wise nodes over scans that can be read as one scan.
-    /// An ordered union only groups neighbouring inputs. Returns `None` if no group has more than
-    /// one input.
+    /// An ordered union only groups neighbouring inputs, an unordered union only looks at the
+    /// last [`MAX_GROUPS_SEARCHED`] groups. Returns `None` if no group has more than one input.
     fn find(
         inputs: &[Node],
         maintain_order: bool,
@@ -271,7 +273,12 @@ impl ScanGroups {
             let group = if maintain_order {
                 groups.len().checked_sub(1).filter(fits)
             } else {
-                chain_groups.iter().copied().find(fits)
+                chain_groups
+                    .iter()
+                    .rev()
+                    .take(MAX_GROUPS_SEARCHED)
+                    .copied()
+                    .find(fits)
             };
             match group {
                 Some(g) => groups[g].push(i),
