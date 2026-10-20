@@ -1571,3 +1571,15 @@ def test_having_alias_types_in_comparisons() -> None:
         "SELECT g, MIN(s) AS m FROM t GROUP BY g HAVING m = 1", eager=True
     )
     assert out.rows() == [(1, "1")]
+
+
+def test_group_by_keys_computed_from_other_keys() -> None:
+    df = pl.DataFrame({"ip": [5, 7, 5, None, 5, 7]})
+    q = pl.SQLContext(hits=df).execute(
+        """
+        SELECT ip, ip - 1, ip - 2, COUNT(*) AS c FROM hits
+        GROUP BY ip, ip - 1, ip - 2 ORDER BY c DESC
+        """
+    )
+    assert 'BY [col("ip")]' in q.explain()
+    assert q.collect().rows() == [(5, 4, 3, 3), (7, 6, 5, 2), (None, None, None, 1)]
