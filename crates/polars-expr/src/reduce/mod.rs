@@ -42,6 +42,8 @@ pub use cov::{
     new_cov_merge_reduction, new_cov_state_reduction, new_pearson_corr_merge_reduction,
     new_pearson_corr_state_reduction,
 };
+#[cfg(feature = "serde")]
+pub use mean::{new_mean_merge_reduction, new_mean_state_reduction};
 pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_arrow::array::{Array, PrimitiveArray, StaticArray};
 use polars_arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};

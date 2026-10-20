@@ -189,17 +189,17 @@ struct BoolVarStdReducer {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct BoolVarState {
+pub(super) struct BoolCountState {
     pub(super) true_count: usize,
     pub(super) count: usize,
 }
 
 impl Reducer for BoolVarStdReducer {
     type Dtype = BooleanType;
-    type Value = BoolVarState;
+    type Value = BoolCountState;
 
     fn init(&self) -> Self::Value {
-        BoolVarState::default()
+        BoolCountState::default()
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {

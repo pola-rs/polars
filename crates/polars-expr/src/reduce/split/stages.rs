@@ -10,7 +10,10 @@ use polars_utils::cardinality_sketch::CardinalitySketch;
 #[cfg(feature = "approx_quantile")]
 use polars_utils::pl_serialize;
 
-use super::super::var_std::BoolVarState;
+#[cfg(feature = "dtype-decimal")]
+use super::super::mean::DecimalMeanState;
+use super::super::mean::MeanState;
+use super::super::var_std::BoolCountState;
 use super::*;
 
 /// A per-group state that travels between the stages as a column of `state_dtype()`.
@@ -126,22 +129,72 @@ impl_struct_split_state!(SkewState, Float64Type, 4);
 impl_struct_split_state!(KurtosisState, Float64Type, 5);
 impl_struct_split_state!(CovState, Float64Type, 4);
 impl_struct_split_state!(PearsonState, Float64Type, 6);
-impl_struct_split_state!(BoolVarState, UInt64Type, 2);
-
-impl BoolVarState {
-    const FIELD_NAMES: [&'static str; 2] = ["true_count", "count"];
-
-    fn to_parts(&self) -> [u64; 2] {
-        [self.true_count as u64, self.count as u64]
-    }
-
-    fn from_parts([true_count, count]: [u64; 2]) -> Self {
-        Self {
-            true_count: true_count as usize,
-            count: count as usize,
-        }
-    }
+pub(crate) struct FieldsDecoder<'a, F> {
+    arr: &'a StructArray,
+    fields: F,
 }
+
+/// Implements [`SplitState`] for a struct of numeric fields of different types.
+macro_rules! impl_fields_split_state {
+    ($ty:ident { $($idx:tt $field:ident: $pt:ty),+ $(,)? }) => {
+        impl SplitState for $ty {
+            type Decoder<'a> =
+                FieldsDecoder<'a, ($(&'a PrimitiveArray<<$pt as PolarsNumericType>::Native>,)+)>;
+
+            fn state_dtype() -> DataType {
+                DataType::Struct(vec![
+                    $(Field::new(stringify!($field).into(), <$pt>::get_static_dtype())),+
+                ])
+            }
+
+            fn encode(states: Vec<Self>) -> PolarsResult<Series> {
+                let fields = [$(
+                    ChunkedArray::<$pt>::from_vec(
+                        stringify!($field).into(),
+                        states
+                            .iter()
+                            .map(|s| s.$field as <$pt as PolarsNumericType>::Native)
+                            .collect(),
+                    )
+                    .into_series()
+                ),+];
+                Ok(StructChunked::from_series(PlSmallStr::EMPTY, states.len(), fields.iter())?
+                    .into_series())
+            }
+
+            fn decoder(s: &Series) -> Self::Decoder<'_> {
+                assert_eq!(s.dtype(), &Self::state_dtype());
+                let arr = s.struct_().unwrap().downcast_as_array();
+                let fields = ($(
+                    arr.values()[$idx]
+                        .as_any()
+                        .downcast_ref::<PrimitiveArray<<$pt as PolarsNumericType>::Native>>()
+                        .unwrap(),
+                )+);
+                FieldsDecoder { arr, fields }
+            }
+        }
+
+        impl<'a> StateDecoder<$ty>
+            for FieldsDecoder<'a, ($(&'a PrimitiveArray<<$pt as PolarsNumericType>::Native>,)+)>
+        {
+            fn get(&self, row: usize) -> Option<$ty> {
+                self.arr.is_valid(row).then(|| $ty {
+                    $($field: self.fields.$idx.value(row) as _),+
+                })
+            }
+        }
+    };
+}
+
+impl_fields_split_state!(BoolCountState { 0 true_count: UInt64Type, 1 count: UInt64Type });
+impl_fields_split_state!(MeanState { 0 sum: Float64Type, 1 count: UInt64Type });
+#[cfg(feature = "dtype-decimal")]
+impl_fields_split_state!(DecimalMeanState {
+    0 sum: Int128Type,
+    1 spilled: Float64Type,
+    2 count: UInt64Type,
+});
 
 const CARDINALITY_BUCKETS: usize = 256;
 

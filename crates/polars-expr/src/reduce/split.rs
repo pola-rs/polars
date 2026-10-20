@@ -91,6 +91,7 @@ pub(super) fn merge_reduction<R: Reducer>(_: DataType, _: R) -> Box<dyn GroupedR
 // The state and merge stages have no Python entry point, so they are tested here.
 #[cfg(all(test, feature = "serde"))]
 mod tests {
+    use super::super::mean::*;
     use super::super::var_std::*;
     use super::*;
 
@@ -227,12 +228,18 @@ mod tests {
             ]);
             let state_dtype = |numeric: DataType| match dtype {
                 DataType::Null => DataType::Null,
-                DataType::Boolean => BoolVarState::state_dtype(),
+                DataType::Boolean => BoolCountState::state_dtype(),
                 _ => numeric,
             };
             let dt = || dtype.clone();
             #[cfg_attr(not(feature = "moment"), allow(unused_mut))]
             let mut families = vec![
+                Family {
+                    whole: new_mean_reduction(dt()).unwrap(),
+                    state: new_mean_state_reduction(dt()).unwrap(),
+                    merge: new_mean_merge_reduction(dt()).unwrap(),
+                    state_dtype: state_dtype(MeanState::state_dtype()),
+                },
                 Family {
                     whole: new_var_std_reduction(dt(), false, 1).unwrap(),
                     state: new_var_std_state_reduction(dt()).unwrap(),
@@ -268,6 +275,42 @@ mod tests {
             for f in &families {
                 check_family(f, &cases);
             }
+        }
+    }
+
+    #[test]
+    fn mean_split_matches_whole() {
+        use super::super::mean::DecimalMeanState;
+
+        let p1 = Series::new(
+            "x".into(),
+            [Some(1i64), Some(20), None, Some(-3), Some(7), Some(0)],
+        );
+        let p2 = Series::new("x".into(), [Some(4i64), Some(5), Some(10), None]);
+        for (dtype, state_dtype) in [
+            (
+                DataType::Datetime(TimeUnit::Microseconds, None),
+                MeanState::state_dtype(),
+            ),
+            (DataType::Date, MeanState::state_dtype()),
+            (
+                DataType::Duration(TimeUnit::Milliseconds),
+                MeanState::state_dtype(),
+            ),
+            (DataType::Decimal(10, 2), DecimalMeanState::state_dtype()),
+        ] {
+            let cast = |s: &Series| s.cast(&dtype).unwrap();
+            let cases = with_empty_cases(vec![
+                (vec![cast(&p1)], vec![0, 1, 0, 1, 0, 1]),
+                (vec![cast(&p2)], vec![1, 0, 2, 3]),
+            ]);
+            let f = Family {
+                whole: new_mean_reduction(dtype.clone()).unwrap(),
+                state: new_mean_state_reduction(dtype.clone()).unwrap(),
+                merge: new_mean_merge_reduction(dtype).unwrap(),
+                state_dtype,
+            };
+            check_family(&f, &cases);
         }
     }
 

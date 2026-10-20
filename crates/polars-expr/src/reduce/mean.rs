@@ -4,29 +4,62 @@ use num_traits::{AsPrimitive, Zero};
 use polars_arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_core::with_match_physical_numeric_polars_type;
 
+use super::split::{SplitStage, merge_reduction, null_reduction, split_reduction};
+use super::var_std::BoolCountState;
 use super::*;
 
 pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    mean_reduction(dtype, SplitStage::Whole)
+}
+
+/// Like [`new_mean_reduction`], but outputs the state of each group, to be merged by
+/// [`new_mean_merge_reduction`].
+#[cfg(feature = "serde")]
+pub fn new_mean_state_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    mean_reduction(dtype, SplitStage::State)
+}
+
+/// Merges the states of [`new_mean_state_reduction`] over values of `values_dtype`, and outputs
+/// what [`new_mean_reduction`] does.
+#[cfg(feature = "serde")]
+pub fn new_mean_merge_reduction(values_dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    mean_reduction(values_dtype, SplitStage::Merge)
+}
+
+fn mean_reduction(dtype: DataType, stage: SplitStage) -> PolarsResult<Box<dyn GroupedReduction>> {
     // TODO: Move the error checks up and make this function infallible
     use DataType::*;
-    use VecGroupedReduction as VGR;
+    let is_merge = matches!(stage, SplitStage::Merge);
     Ok(match dtype {
-        Boolean => Box::new(VGR::new(dtype, BoolMeanReducer)),
+        Boolean if is_merge => merge_reduction(dtype, BoolMeanReducer),
+        Boolean => split_reduction(dtype, BoolMeanReducer, stage),
+        // `finish` depends only on `values_dtype`, so one reducer merges the states of every
+        // numeric input.
+        _ if is_merge && (dtype.is_primitive_numeric() || dtype.is_temporal()) => {
+            merge_reduction(dtype, NumMeanReducer::<Float64Type>(PhantomData))
+        },
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, NumMeanReducer::<$T>(PhantomData)))
+                split_reduction(dtype, NumMeanReducer::<$T>(PhantomData), stage)
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, DecimalMeanReducer)),
-        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
-            DataType::Null,
-        ))),
+        Decimal(_, _) if is_merge => merge_reduction(dtype, DecimalMeanReducer),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_, _) => split_reduction(dtype, DecimalMeanReducer, stage),
+        Null => null_reduction(stage, Scalar::null(Null)),
         _ => polars_bail!(InvalidOperation: "`mean` operation not supported for dtype `{dtype}`"),
     })
 }
 
-fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
+#[derive(Clone, Default)]
+pub(super) struct MeanState {
+    pub(super) sum: f64,
+    pub(super) count: usize,
+}
+
+fn finish_output(values: Vec<MeanState>, dtype: &DataType) -> Series {
+    let values = values.into_iter().map(|s| (s.sum, s.count));
     match dtype {
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
@@ -83,12 +116,12 @@ where
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     type Dtype = T;
-    type Value = (f64, usize);
+    type Value = MeanState;
     const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
-        (0.0, 0)
+        MeanState::default()
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -97,19 +130,19 @@ where
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        a.0 += b.0;
-        a.1 += b.1;
+        a.sum += b.sum;
+        a.count += b.count;
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, _seq_id: u64) {
-        a.0 += b.unwrap_or(T::Native::zero()).as_();
-        a.1 += b.is_some() as usize;
+        a.sum += b.unwrap_or(T::Native::zero()).as_();
+        a.count += b.is_some() as usize;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        v.0 += ChunkAgg::_sum_as_f64(ca);
-        v.1 += ca.len() - ca.null_count();
+        v.sum += ChunkAgg::_sum_as_f64(ca);
+        v.count += ca.len() - ca.null_count();
     }
 
     fn finish(
@@ -130,13 +163,21 @@ where
 struct DecimalMeanReducer;
 
 #[cfg(feature = "dtype-decimal")]
+#[derive(Clone, Default)]
+pub(super) struct DecimalMeanState {
+    pub(super) sum: i128,
+    pub(super) spilled: f64,
+    pub(super) count: usize,
+}
+
+#[cfg(feature = "dtype-decimal")]
 #[inline(always)]
-fn add_to_sum(a: &mut (i128, f64, usize), x: i128) {
-    match a.0.checked_add(x) {
-        Some(v) => a.0 = v,
+fn add_to_sum(a: &mut DecimalMeanState, x: i128) {
+    match a.sum.checked_add(x) {
+        Some(v) => a.sum = v,
         None => {
-            a.1 += a.0 as f64;
-            a.0 = x;
+            a.spilled += a.sum as f64;
+            a.sum = x;
         },
     }
 }
@@ -144,12 +185,12 @@ fn add_to_sum(a: &mut (i128, f64, usize), x: i128) {
 #[cfg(feature = "dtype-decimal")]
 impl Reducer for DecimalMeanReducer {
     type Dtype = Int128Type;
-    type Value = (i128, f64, usize);
+    type Value = DecimalMeanState;
     const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
-        (0, 0.0, 0)
+        DecimalMeanState::default()
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -158,15 +199,15 @@ impl Reducer for DecimalMeanReducer {
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        add_to_sum(a, b.0);
-        a.1 += b.1;
-        a.2 += b.2;
+        add_to_sum(a, b.sum);
+        a.spilled += b.spilled;
+        a.count += b.count;
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
         add_to_sum(a, b.unwrap_or(0));
-        a.2 += b.is_some() as usize;
+        a.count += b.is_some() as usize;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
@@ -188,8 +229,8 @@ impl Reducer for DecimalMeanReducer {
         let scale_factor = 10u128.pow(*scale as u32) as f64;
         let ca: Float64Chunked = v
             .into_iter()
-            .map(|(acc, spilled, c)| {
-                (c != 0).then(|| (spilled + acc as f64) / c as f64 / scale_factor)
+            .map(|s| {
+                (s.count != 0).then(|| (s.spilled + s.sum as f64) / s.count as f64 / scale_factor)
             })
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
@@ -201,28 +242,28 @@ struct BoolMeanReducer;
 
 impl Reducer for BoolMeanReducer {
     type Dtype = BooleanType;
-    type Value = (usize, usize);
+    type Value = BoolCountState;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
-        (0, 0)
+        BoolCountState::default()
     }
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        a.0 += b.0;
-        a.1 += b.1;
+        a.true_count += b.true_count;
+        a.count += b.count;
     }
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>, _seq_id: u64) {
-        a.0 += b.unwrap_or(false) as usize;
-        a.1 += b.is_some() as usize;
+        a.true_count += b.unwrap_or(false) as usize;
+        a.count += b.is_some() as usize;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        v.0 += ca.sum().unwrap_or(0) as usize;
-        v.1 += ca.len() - ca.null_count();
+        v.true_count += ca.sum().unwrap_or(0) as usize;
+        v.count += ca.len() - ca.null_count();
     }
 
     fn finish(
@@ -235,7 +276,7 @@ impl Reducer for BoolMeanReducer {
         assert!(dtype == &DataType::Boolean);
         let ca: Float64Chunked = v
             .into_iter()
-            .map(|(s, c)| (c != 0).then(|| s as f64 / c as f64))
+            .map(|s| (s.count != 0).then(|| s.true_count as f64 / s.count as f64))
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }
