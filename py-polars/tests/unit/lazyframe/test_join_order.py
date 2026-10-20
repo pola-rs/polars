@@ -491,12 +491,13 @@ def test_sort_leaf_is_estimated(tmp_path: Path) -> None:
 def test_union_leaf_is_estimated(tmp_path: Path) -> None:
     # A union holds every row of every input, so it is the sum of them. The two
     # inputs must be different files, or common-subplan elimination caches them
-    # into one scan.
+    # into one scan. Other scan options keep them from being merged into one scan.
     frames = star_frames(tmp_path)
-    more = write_scans(
+    write_scans(
         tmp_path,
         dim_a_more=pl.DataFrame({"a_key": list(range(50, 60)), "a_flag": [False] * 10}),
-    )["dim_a_more"]
+    )
+    more = pl.scan_parquet(tmp_path / "dim_a_more.parquet", low_memory=True)
     lf = star_query({**frames, "dim_a": pl.concat([frames["dim_a"], more])})
 
     assert_reordered(

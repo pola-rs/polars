@@ -1900,8 +1900,9 @@ def test_cspe_nested_cache_does_not_block_pushable_filters() -> None:
     # Currently, with POLARS_ALLOW_NESTED_CSPE=1, we only cache the unfiltered scan,
     # which is why this is disabled by default (DEFAULT_ALLOW_NESTED_CSPE == false).
     plan = q.explain()
-    assert plan.count('SELECTION: col("a") > 90') == 2, plan
-    assert plan.count('SELECTION: col("a") < 5') == 2, plan
+    assert "FILTER" not in plan, plan
+    assert plan.count('SELECTION: col("a") > 90') == 1, plan
+    assert plan.count('SELECTION: col("a") < 5') == 1, plan
 
     assert_frame_equal(
         q.collect(),

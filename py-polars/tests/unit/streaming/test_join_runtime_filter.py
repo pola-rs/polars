@@ -311,7 +311,9 @@ def test_union_scans_choose_per_row_filtering_each(
     # not against the ten of the second: only the first probes the bloom filter.
     n = N_ROW_GROUPS * ROWS_PER_GROUP
     wide = fact_part(tmp_path, "wide", pl.Series(range(n)).shuffle(seed=1))
-    narrow = fact_part(tmp_path, "narrow", [i % 10 for i in range(n)])
+    fact_part(tmp_path, "narrow", [i % 10 for i in range(n)])
+    # Other scan options keep the inputs from being merged into one scan.
+    narrow = pl.scan_parquet(tmp_path / "narrow.parquet", low_memory=True)
     q = pl.concat([wide, narrow]).join(tiny(0, 1, 2, 3, 4), on="k")
     out, choices, err = union_bloom_log(q, plmonkeypatch, capfd)
     assert choices == ["false", "true"]
@@ -329,7 +331,9 @@ def test_union_scan_with_unknown_distinct_keys_keeps_the_bloom(
     n = N_ROW_GROUPS * ROWS_PER_GROUP
     keys = pl.Series(range(n)).shuffle(seed=1)
     known = fact_part(tmp_path, "known", keys)
-    unknown = fact_part(tmp_path, "unknown", keys, statistics=False)
+    fact_part(tmp_path, "unknown", keys, statistics=False)
+    # Other scan options keep the inputs from being merged into one scan.
+    unknown = pl.scan_parquet(tmp_path / "unknown.parquet", low_memory=True)
     q = pl.concat([known, unknown]).join(tiny(220, 240), on="k")
     out, choices, err = union_bloom_log(q, plmonkeypatch, capfd)
     assert "None distinct probe keys, bloom: true" in err

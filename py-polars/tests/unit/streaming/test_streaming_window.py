@@ -319,17 +319,12 @@ def test_window_unordered_shape_error(expr: pl.Expr) -> None:
             q.collect(engine=engine)  # type: ignore[call-overload]
 
 
-def test_window_scalar_order_key_shape_error() -> None:
-    q = (
-        _keyed_frame()
-        .lazy()
-        .with_columns(w=pl.col("x").cum_sum().over("g", order_by=pl.col("t").sum()))
-    )
-    assert _window_headers(q) == []
-    errors = (pl.exceptions.ShapeError, pl.exceptions.InvalidOperationError)
+def test_window_scalar_order_key() -> None:
+    lf = _keyed_frame().lazy()
+    q = lf.with_columns(w=pl.col("x").cum_sum().over("g", order_by=pl.col("t").sum()))
+    expected = lf.with_columns(w=pl.col("x").cum_sum().over("g")).collect()
     for engine in ENGINES:
-        with pytest.raises(errors):
-            q.collect(engine=engine)  # type: ignore[call-overload]
+        assert_frame_equal(q.collect(engine=engine), expected)  # type: ignore[call-overload]
 
 
 def test_window_repeated_partition_keys() -> None:
