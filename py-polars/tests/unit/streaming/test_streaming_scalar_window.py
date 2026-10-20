@@ -247,6 +247,37 @@ def test_scalar_window_split_and_deduplicated() -> None:
     _assert_same(q)
 
 
+def test_scalar_window_not_split_for_string_result() -> None:
+    padded = pl.col("x").max().cast(pl.String).str.pad_start(5, "0")
+    q = _frame().lazy().select(w=padded.over("g"))
+    plan = q.explain(engine="streaming")
+    assert "pad_start" in plan.split("WINDOW[")[1]
+    _assert_same(q)
+
+
+def test_scalar_window_split_computed_once() -> None:
+    x = pl.col("x")
+    spread = (x.max() - x.min()).over("g")
+    q = _frame().lazy().select(a=spread, b=spread, c=spread + 1)
+    plan = q.explain(engine="streaming")
+    assert plan.count(" - ") == 1
+    _assert_same(q)
+
+
+def test_scalar_window_split_columns_dropped_before_next_window() -> None:
+    x = pl.col("x")
+    q = (
+        _frame()
+        .lazy()
+        .select(a=(x.max() - x.min()).over("g"), b=(x.max() - x.min()).over("h"))
+    )
+    plan = q.explain(engine="streaming")
+    between_windows = plan.split("WINDOW[")[1]
+    assert "WITH_COLUMNS" in between_windows
+    assert "simple π" in between_windows
+    _assert_same(q)
+
+
 @pytest.mark.parametrize(
     "exprs",
     [
