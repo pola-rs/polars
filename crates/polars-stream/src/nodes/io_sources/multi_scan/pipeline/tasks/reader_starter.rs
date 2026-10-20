@@ -350,7 +350,7 @@ impl ReaderStarter {
                 Some(u) => Some(u.reader_slots.clone().acquire_owned().await.unwrap()),
                 None => None,
             };
-            let read_bytes = match reader.local_read_size() {
+            let (read_bytes, max_concurrent_scans_this_file) = match reader.local_read_size() {
                 Some(bytes) => {
                     let permit = read_bytes_limit.acquire(bytes).await;
                     if verbose {
@@ -360,9 +360,10 @@ impl ReaderStarter {
                             permit.num_permits()
                         )
                     }
-                    Some(permit)
+                    let max_files = read_bytes_limit.max_files(bytes);
+                    (Some(permit), max_concurrent_scans.min(max_files))
                 },
-                None => None,
+                None => (None, max_concurrent_scans),
             };
 
             reader.prepare_read()?;
@@ -375,6 +376,7 @@ impl ReaderStarter {
                 extra_ops_this_file,
                 callbacks,
                 external_filter_mask: external_filter_mask.clone(),
+                max_concurrent_scans: max_concurrent_scans_this_file,
             };
 
             let reader_start_task_handle = AbortOnDropHandle::new(executor::spawn(
@@ -465,7 +467,6 @@ async fn start_reader_impl(
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
-        max_concurrent_scans,
         disable_morsel_split,
         maintain_order,
         last_morsel_pipelines,
@@ -481,6 +482,7 @@ async fn start_reader_impl(
         extra_ops_this_file,
         mut callbacks,
         external_filter_mask,
+        max_concurrent_scans,
     } = args_this_file;
 
     let file_iceberg_schema: Option<IcebergSchema> = if let ProjectionBuilder::Iceberg {
