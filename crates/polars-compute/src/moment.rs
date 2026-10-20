@@ -40,55 +40,32 @@ const CHUNK_SIZE: usize = 128;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct VarState {
-    weight: f64,
-    mean: f64,
-    dp: f64,
+    pub weight: f64,
+    pub mean: f64,
+    pub dp: f64,
 }
 
 #[derive(Default, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct CovState {
-    weight: f64,
-    mean_x: f64,
-    mean_y: f64,
-    dp_xy: f64,
+    pub weight: f64,
+    pub mean_x: f64,
+    pub mean_y: f64,
+    pub dp_xy: f64,
 }
 
 #[derive(Default, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct PearsonState {
-    weight: f64,
-    mean_x: f64,
-    mean_y: f64,
-    dp_xx: f64,
-    dp_xy: f64,
-    dp_yy: f64,
+    pub weight: f64,
+    pub mean_x: f64,
+    pub mean_y: f64,
+    pub dp_xx: f64,
+    pub dp_xy: f64,
+    pub dp_yy: f64,
 }
-
-/// Converts a state to and from its fields.
-macro_rules! impl_parts {
-    ($ty:ident, $n:literal, $($field:ident),+) => {
-        impl $ty {
-            pub const FIELD_NAMES: [&'static str; $n] = [$(stringify!($field)),+];
-
-            pub fn to_parts(&self) -> [f64; $n] {
-                [$(self.$field),+]
-            }
-
-            pub fn from_parts([$($field),+]: [f64; $n]) -> Self {
-                Self { $($field),+ }
-            }
-        }
-    };
-}
-
-impl_parts!(VarState, 3, weight, mean, dp);
-impl_parts!(CovState, 4, weight, mean_x, mean_y, dp_xy);
-impl_parts!(PearsonState, 6, weight, mean_x, mean_y, dp_xx, dp_xy, dp_yy);
-impl_parts!(SkewState, 4, weight, mean, m2, m3);
-impl_parts!(KurtosisState, 5, weight, mean, m2, m3, m4);
 
 impl VarState {
     fn new(x: &[f64]) -> Self {
@@ -307,10 +284,10 @@ impl PearsonState {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct SkewState {
-    weight: f64,
-    mean: f64,
-    m2: f64,
-    m3: f64,
+    pub weight: f64,
+    pub mean: f64,
+    pub m2: f64,
+    pub m3: f64,
 }
 
 impl SkewState {
@@ -444,11 +421,11 @@ impl SkewState {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)] // For serialization, don't change struct member order.
 pub struct KurtosisState {
-    weight: f64,
-    mean: f64,
-    m2: f64,
-    m3: f64,
-    m4: f64,
+    pub weight: f64,
+    pub mean: f64,
+    pub m2: f64,
+    pub m3: f64,
+    pub m4: f64,
 }
 
 impl KurtosisState {

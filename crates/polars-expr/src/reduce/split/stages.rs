@@ -32,109 +32,12 @@ pub(crate) trait StateDecoder<S> {
     fn get(&self, row: usize) -> Option<S>;
 }
 
-/// A state stored as a `Struct` of `N` numeric fields.
-pub(crate) trait StructState<const N: usize>: Sized {
-    type Field: PolarsNumericType;
-    const FIELD_NAMES: [&'static str; N];
-    fn to_parts(&self) -> [<Self::Field as PolarsNumericType>::Native; N];
-    fn from_parts(parts: [<Self::Field as PolarsNumericType>::Native; N]) -> Self;
-}
-
-fn struct_state_dtype<S: StructState<N>, const N: usize>() -> DataType {
-    DataType::Struct(
-        S::FIELD_NAMES
-            .iter()
-            .map(|name| Field::new((*name).into(), S::Field::get_static_dtype()))
-            .collect(),
-    )
-}
-
-fn encode_struct_states<S: StructState<N>, const N: usize>(states: Vec<S>) -> PolarsResult<Series> {
-    let mut parts: [Vec<_>; N] = std::array::from_fn(|_| Vec::with_capacity(states.len()));
-    for state in &states {
-        for (field, part) in parts.iter_mut().zip(state.to_parts()) {
-            field.push(part);
-        }
-    }
-    let fields: Vec<Series> = parts
-        .into_iter()
-        .zip(S::FIELD_NAMES)
-        .map(|(values, name)| ChunkedArray::<S::Field>::from_vec(name.into(), values).into_series())
-        .collect();
-    Ok(StructChunked::from_series(PlSmallStr::EMPTY, states.len(), fields.iter())?.into_series())
-}
-
-pub(crate) struct StructDecoder<'a, S: StructState<N>, const N: usize> {
-    arr: &'a StructArray,
-    fields: [&'a PrimitiveArray<<S::Field as PolarsNumericType>::Native>; N],
-}
-
-impl<'a, S: StructState<N>, const N: usize> StructDecoder<'a, S, N> {
-    fn new(s: &'a Series) -> Self {
-        assert_eq!(s.dtype(), &struct_state_dtype::<S, N>());
-        let arr = s.struct_().unwrap().downcast_as_array();
-        let fields = std::array::from_fn(|i| {
-            arr.values()[i]
-                .as_any()
-                .downcast_ref::<PrimitiveArray<_>>()
-                .unwrap()
-        });
-        Self { arr, fields }
-    }
-}
-
-impl<S: StructState<N>, const N: usize> StateDecoder<S> for StructDecoder<'_, S, N> {
-    fn get(&self, row: usize) -> Option<S> {
-        self.arr
-            .is_valid(row)
-            .then(|| S::from_parts(std::array::from_fn(|i| self.fields[i].value(row))))
-    }
-}
-
-macro_rules! impl_struct_split_state {
-    ($ty:ident, $field:ty, $n:literal) => {
-        impl StructState<$n> for $ty {
-            type Field = $field;
-            const FIELD_NAMES: [&'static str; $n] = $ty::FIELD_NAMES;
-
-            fn to_parts(&self) -> [<$field as PolarsNumericType>::Native; $n] {
-                $ty::to_parts(self)
-            }
-
-            fn from_parts(parts: [<$field as PolarsNumericType>::Native; $n]) -> Self {
-                $ty::from_parts(parts)
-            }
-        }
-
-        impl SplitState for $ty {
-            type Decoder<'a> = StructDecoder<'a, Self, $n>;
-
-            fn state_dtype() -> DataType {
-                struct_state_dtype::<Self, $n>()
-            }
-
-            fn encode(states: Vec<Self>) -> PolarsResult<Series> {
-                encode_struct_states::<Self, $n>(states)
-            }
-
-            fn decoder(s: &Series) -> Self::Decoder<'_> {
-                StructDecoder::new(s)
-            }
-        }
-    };
-}
-
-impl_struct_split_state!(VarState, Float64Type, 3);
-impl_struct_split_state!(SkewState, Float64Type, 4);
-impl_struct_split_state!(KurtosisState, Float64Type, 5);
-impl_struct_split_state!(CovState, Float64Type, 4);
-impl_struct_split_state!(PearsonState, Float64Type, 6);
 pub(crate) struct FieldsDecoder<'a, F> {
     arr: &'a StructArray,
     fields: F,
 }
 
-/// Implements [`SplitState`] for a struct of numeric fields of different types.
+/// Implements [`SplitState`] for a struct of numeric fields, as a `Struct` column of them.
 macro_rules! impl_fields_split_state {
     ($ty:ident { $($idx:tt $field:ident: $pt:ty),+ $(,)? }) => {
         impl SplitState for $ty {
@@ -187,6 +90,34 @@ macro_rules! impl_fields_split_state {
     };
 }
 
+impl_fields_split_state!(VarState { 0 weight: Float64Type, 1 mean: Float64Type, 2 dp: Float64Type });
+impl_fields_split_state!(SkewState {
+    0 weight: Float64Type,
+    1 mean: Float64Type,
+    2 m2: Float64Type,
+    3 m3: Float64Type,
+});
+impl_fields_split_state!(KurtosisState {
+    0 weight: Float64Type,
+    1 mean: Float64Type,
+    2 m2: Float64Type,
+    3 m3: Float64Type,
+    4 m4: Float64Type,
+});
+impl_fields_split_state!(CovState {
+    0 weight: Float64Type,
+    1 mean_x: Float64Type,
+    2 mean_y: Float64Type,
+    3 dp_xy: Float64Type,
+});
+impl_fields_split_state!(PearsonState {
+    0 weight: Float64Type,
+    1 mean_x: Float64Type,
+    2 mean_y: Float64Type,
+    3 dp_xx: Float64Type,
+    4 dp_xy: Float64Type,
+    5 dp_yy: Float64Type,
+});
 impl_fields_split_state!(BoolCountState { 0 true_count: UInt64Type, 1 count: UInt64Type });
 impl_fields_split_state!(MeanState { 0 sum: Float64Type, 1 count: UInt64Type });
 #[cfg(feature = "dtype-decimal")]
