@@ -11,7 +11,6 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use uuid::Uuid;
 
-const POLARS_CLOUD_PACKAGE_NAME: &str = "polars_cloud";
 const POLARS_CLOUD_OBSERVER_CLASS_NAME: &str = "QueryCloudObserver";
 
 /// Class provided by polars_cloud which allows for query status reporting.
@@ -149,7 +148,12 @@ pub fn set_query_monitoring(
         return Ok(());
     }
 
-    let module = py.import(POLARS_CLOUD_PACKAGE_NAME).map_err(|e| {
+    let package_name: String = py
+        .import("polars._dependencies")?
+        .getattr("polars_cloud")?
+        .getattr("__name__")?
+        .extract()?;
+    let module = py.import(package_name.as_str()).map_err(|e| {
         PyRuntimeError::new_err(format!(
             "query monitoring requires the `polars_cloud>=0.13.0` package, which could not be imported. \
              Install it into this environment (e.g. `pip install 'polars-cloud>=0.13.0'`). ({e})",
