@@ -51,7 +51,7 @@ pub(super) use unpack;
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
-fn modify_supertype(
+pub(crate) fn modify_supertype(
     mut st: DataType,
     left: &AExpr,
     right: &AExpr,
