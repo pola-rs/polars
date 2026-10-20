@@ -235,8 +235,7 @@ pub(super) fn to_aexpr_impl(
                 .into_iter()
                 .map(|e| Ok(recurse!(e)?.0))
                 .collect::<PolarsResult<_>>()?;
-            super::utils::expand_sort_flags(&mut sort_options.descending, by.len(), "descending")?;
-            super::utils::expand_sort_flags(&mut sort_options.nulls_last, by.len(), "nulls_last")?;
+            sort_options.expand_flags(by.len())?;
 
             (
                 AExpr::SortBy {
