@@ -1,6 +1,6 @@
 use super::*;
 
-pub fn join<T: PartialOrd + Copy + Debug>(
+pub fn join<T: TotalOrd + Copy + Debug>(
     left: &[T],
     right: &[T],
     left_offset: IdxSize,
@@ -19,13 +19,13 @@ pub fn join<T: PartialOrd + Copy + Debug>(
     // left: [-1, 0, 1, 2],
     // right: [1, 2, 3]
     let first_right = right[0];
-    let mut left_idx = left.partition_point(|v| v < &first_right) as IdxSize;
+    let mut left_idx = left.partition_point(|v| v.tot_lt(&first_right)) as IdxSize;
 
     #[allow(clippy::explicit_counter_loop)]
     for &val_l in &left[left_idx as usize..] {
         while let Some(&val_r) = right.get(right_idx as usize) {
             // matching join key
-            if val_l == val_r {
+            if val_l.tot_eq(&val_r) {
                 out_lhs.push(left_idx + left_offset);
                 out_rhs.push(right_idx);
                 let current_idx = right_idx;
@@ -39,7 +39,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                             right_idx = current_idx;
                             break;
                         },
-                        Some(&val_r) if val_l == val_r => {
+                        Some(&val_r) if val_l.tot_eq(&val_r) => {
                             out_lhs.push(left_idx + left_offset);
                             out_rhs.push(right_idx);
                         },
@@ -53,7 +53,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
             }
 
             // right is larger than left.
-            if val_r > val_l {
+            if val_r.tot_gt(&val_l) {
                 break;
             }
             // continue looping the right side
@@ -90,5 +90,20 @@ mod test {
             &r_idx,
             &[4, 5, 6, 4, 5, 6, 4, 5, 6, 4, 5, 6, 7, 7, 8, 9, 8, 9, 8, 9]
         );
+    }
+
+    #[test]
+    fn test_inner_join_float_nan() {
+        let (l_idx, r_idx) = join(&[1.0, 2.0, f64::NAN], &[2.0, f64::NAN], 0);
+        assert_eq!(&l_idx, &[1, 2]);
+        assert_eq!(&r_idx, &[0, 1]);
+
+        let (l_idx, r_idx) = join(&[1.0, f64::NAN], &[f64::NAN, f64::NAN], 0);
+        assert_eq!(&l_idx, &[1, 1]);
+        assert_eq!(&r_idx, &[0, 1]);
+
+        let (l_idx, r_idx) = join(&[-0.0, 0.0, 1.0, -f64::NAN], &[0.0, f64::NAN], 0);
+        assert_eq!(&l_idx, &[0, 1, 3]);
+        assert_eq!(&r_idx, &[0, 0, 1]);
     }
 }

@@ -140,6 +140,24 @@ def test_sorted_merge_joins(reverse: bool) -> None:
             )
 
 
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+@pytest.mark.parametrize("how", ["inner", "left"])
+@pytest.mark.parametrize("sort_right", [False, True])
+def test_sorted_merge_join_nan(
+    dtype: PolarsDataType, how: JoinStrategy, sort_right: bool
+) -> None:
+    nan = float("nan")
+    left = pl.DataFrame({"k": [1.0, 2.0, nan], "id": [1, 2, 3]}).cast({"k": dtype})
+    right = pl.DataFrame({"k": [nan, 2.0], "rid": [10, 11]}).cast({"k": dtype})
+
+    expected = left.join(right, on="k", how=how)
+    assert expected["rid"].null_count() == (1 if how == "left" else 0)
+
+    right_sorted = right.sort("k") if sort_right else right
+    out = left.sort("k").join(right_sorted, on="k", how=how)
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
 def test_join_negative_integers() -> None:
     expected = pl.DataFrame({"a": [-6, -1, 0], "b": [-6, -1, 0]})
     df1 = pl.DataFrame(
