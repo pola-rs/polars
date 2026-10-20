@@ -1,20 +1,19 @@
 //! Knee-based in-flight byte budget: the default model (`POLARS_INFLIGHT_BYTE_BUDGET_MODEL`).
 //!
-//! A round lasts at least `round_ticks` ticks and until a request admitted after its start has
-//! completed (at most `MAX_ROUND_TICKS`), so it sees the effect of the budget it started with.
-//! RampUp doubles the budget per round while it binds and the delivered bandwidth of the round
-//! grows by at least 25% over the best round so far. The knee is the smallest budget at which the
-//! delivered bandwidth reached its plateau. In Stable the target is `gain x knee`; a probe that
+//! Delivered bandwidth counts response body bytes as they arrive. A round lasts `round_ticks`
+//! ticks; its bandwidth is measured over the ticks after the first, once a budget change has
+//! settled. RampUp doubles the budget per round while it binds and the delivered bandwidth of the
+//! round grows by at least 25% over the best round so far. The knee is the smallest budget at which
+//! the delivered bandwidth reached its plateau. In Stable the target is `gain x knee`; a probe that
 //! delivers at least 10% more bandwidth while it binds keeps its x1.25 budget as the new knee. A
 //! brake steps the budget down when in-flight bytes rise without delivered bandwidth, or when
 //! delivered bandwidth collapses at unchanged in-flight. RampUp also stops when the implied request
 //! lifetime (bytes in use / delivered bandwidth) reaches `ramp_lifetime_ratio` times its minimum in
 //! this RampUp: bandwidth that grows for reasons other than the budget (scan warm-up) otherwise
 //! keeps the doubling going. Only rounds that use the budget and deliver bandwidth count (not scan
-//! start, not stalls), and a rise must hold for a second round. Bandwidth counts at completion, so
-//! requests that outlived earlier rounds and complete together show as a burst: a round delivering
-//! more than its bytes in use can at the shortest lifetime (`RAMP_BURST_RATIO`) is neither growth
-//! nor a knee sample, and counts as a round without growth. The knee comes from rounds where
+//! start, not stalls), and a rise must hold for a second round. A round is a knee sample once its
+//! bytes in use reached half the budget after the first tick (ordered scans drain and refill within
+//! a round); the lifetime uses the mean over those ticks. The knee comes from rounds where
 //! the budget bound; without one, RampUp holds. When RampUp ends because the budget stopped binding
 //! (another limit binds), that budget is a candidate too, with the best bandwidth of its last
 //! rounds. While the requests admitted by the HTTP rate limiter reach its rate in a tick, bandwidth
@@ -29,7 +28,7 @@ pub struct KneeConfig {
     pub init_budget: u64,
     pub max_budget: u64,
     pub gain: f64,
-    /// Minimum round length in ticks.
+    /// Round length in ticks.
     pub round_ticks: u32,
     /// Control tick length.
     pub tick: Duration,
@@ -46,18 +45,11 @@ pub struct KneeConfig {
 /// last `SUSTAINED_ROUNDS` rounds.
 const SUSTAINED_ROUNDS: usize = 3;
 
-/// A RampUp round delivering more than this multiple of (mean bytes in use / shortest lifetime)
-/// is a burst. Rounds that grow with the budget measure 0.97-1.03; bursts 1.3-4.3.
-const RAMP_BURST_RATIO: f64 = 1.25;
-
-/// Maximum round length in ticks (1 s at a 100 ms tick), for stalls.
-const MAX_ROUND_TICKS: u32 = 10;
-
 #[derive(Clone, Copy, Debug)]
 pub struct KneeTick {
     pub now: Instant,
-    /// Bytes of requests completed in this tick.
-    pub bytes_done: u64,
+    /// Response body bytes of data requests that arrived in this tick.
+    pub bytes_arrived: u64,
     pub bytes_in_use: u64,
     /// Acquires that waited on the byte budget in this tick.
     pub bytes_parked: u64,
@@ -70,10 +62,6 @@ pub struct KneeTick {
     pub limiter_rate: Option<f64>,
     /// Requests admitted by the HTTP rate limiter in this tick (data, metadata and retries).
     pub limiter_admitted: u64,
-    /// Number of the last admission to the in-flight budget.
-    pub admitted_seq: u64,
-    /// Highest admission number whose request completed.
-    pub completed_seq: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -107,6 +95,11 @@ pub struct KneeController {
     // Current round.
     round_ticks: u32,
     round_bytes: u64,
+    // Arrived bytes, seconds, and bytes in use (sum and max) of the round's ticks after the first.
+    round_settled_bytes: u64,
+    round_settled_secs: f64,
+    round_settled_in_use: u64,
+    round_settled_in_use_max: u64,
     round_parked: u64,
     round_sat_max: f64,
     round_budget: u64,
@@ -117,9 +110,6 @@ pub struct KneeController {
     last_tick: Option<Instant>,
     last_round_end: Option<Instant>,
     last_round_secs: f64,
-    // Last admission number before the round started, and at the last tick.
-    round_start_seq: u64,
-    last_admitted_seq: u64,
 
     // RampUp.
     best_bw: f64,
@@ -158,6 +148,10 @@ impl KneeController {
             budget,
             round_ticks: 0,
             round_bytes: 0,
+            round_settled_bytes: 0,
+            round_settled_secs: 0.0,
+            round_settled_in_use: 0,
+            round_settled_in_use_max: 0,
             round_parked: 0,
             round_sat_max: 0.0,
             round_budget: budget,
@@ -167,8 +161,6 @@ impl KneeController {
             last_tick: None,
             last_round_end: None,
             last_round_secs: 0.0,
-            round_start_seq: 0,
-            last_admitted_seq: 0,
             best_bw: 0.0,
             min_lifetime: f64::INFINITY,
             lifetime_held: false,
@@ -218,7 +210,7 @@ impl KneeController {
 
     /// Advances one control tick and returns the byte budget to apply.
     pub fn step(&mut self, t: KneeTick) -> u64 {
-        if t.bytes_done > 0 || t.bytes_in_use > 0 {
+        if t.bytes_arrived > 0 || t.bytes_in_use > 0 {
             if self.idle_since.take().is_some() {
                 self.resume_stable(t.now);
             }
@@ -242,7 +234,7 @@ impl KneeController {
         self.push_brake_window(t);
 
         self.round_ticks += 1;
-        self.round_bytes += t.bytes_done;
+        self.round_bytes += t.bytes_arrived;
         self.round_parked += t.bytes_parked + t.bytes_waiting;
         self.round_sat_max = self.round_sat_max.max(t.bytes_sat);
         self.round_in_use += t.bytes_in_use;
@@ -252,15 +244,18 @@ impl KneeController {
             |last| t.now.duration_since(last).as_secs_f64(),
         );
         self.last_tick = Some(t.now);
+        if self.round_ticks > 1 {
+            self.round_settled_bytes += t.bytes_arrived;
+            self.round_settled_secs += tick_secs;
+            self.round_settled_in_use += t.bytes_in_use;
+            self.round_settled_in_use_max = self.round_settled_in_use_max.max(t.bytes_in_use);
+        }
         if let Some(rate) = t.limiter_rate
             && t.limiter_admitted as f64 >= 0.9 * rate * tick_secs
         {
             self.round_limiter_bound = true;
         }
-        self.last_admitted_seq = t.admitted_seq;
-        if self.round_ticks >= MAX_ROUND_TICKS
-            || (self.round_ticks >= self.cfg.round_ticks && t.completed_seq > self.round_start_seq)
-        {
+        if self.round_ticks >= self.cfg.round_ticks {
             self.end_round(t.now);
         }
         self.budget
@@ -272,7 +267,7 @@ impl KneeController {
             self.bytes_hist.pop_front();
         }
         self.in_use_hist.push_back(t.bytes_in_use);
-        self.bytes_hist.push_back(t.bytes_done);
+        self.bytes_hist.push_back(t.bytes_arrived);
     }
 
     /// Over the last 1 s vs the 1 s before: in-flight bytes up >= 25% while delivered bytes are
@@ -306,14 +301,18 @@ impl KneeController {
         );
         self.last_round_end = Some(now);
         self.last_round_secs = secs;
-        let bw_round = self.round_bytes as f64 / secs;
+        let bw_round = if self.round_settled_secs > 0.0 {
+            self.round_settled_bytes as f64 / self.round_settled_secs
+        } else {
+            self.round_bytes as f64 / secs
+        };
         let binding = self.round_parked > 0 || self.round_sat_max >= 0.9;
         // Admitted requests reached the HTTP rate limiter's rate: bandwidth follows the limiter.
         let limiter_bound = self.round_limiter_bound;
         let round_budget = self.round_budget;
         self.last_bw_round = bw_round;
         let mean_in_use = self.round_in_use as f64 / self.round_ticks as f64;
-        let lifetime = if self.round_bytes > 0 {
+        let lifetime = if self.round_bytes > 0 && bw_round > 0.0 {
             mean_in_use / bw_round
         } else {
             0.0
@@ -329,9 +328,19 @@ impl KneeController {
             0.0
         };
 
-        // The round binds and uses at least half of the applied budget (not scan start).
-        let lifetime_measured =
-            binding && lifetime > 0.0 && mean_in_use >= 0.5 * self.round_applied_max as f64;
+        // The round binds and uses at least half of the applied budget after its first tick (not
+        // scan start): on the mean for the lifetime, at a tick for a knee sample.
+        let half_budget = 0.5 * self.round_applied_max as f64;
+        let (settled_in_use, settled_in_use_max) = if self.round_ticks > 1 {
+            (
+                self.round_settled_in_use as f64 / (self.round_ticks - 1) as f64,
+                self.round_settled_in_use_max as f64,
+            )
+        } else {
+            (mean_in_use, mean_in_use)
+        };
+        let lifetime_measured = binding && lifetime > 0.0 && settled_in_use >= half_budget;
+        let knee_sample = binding && bw_round > 0.0 && settled_in_use_max >= half_budget;
 
         if !limiter_bound && self.brake_signal() {
             self.brake_hits += 1;
@@ -375,12 +384,8 @@ impl KneeController {
                 }
                 let lifetime_rose =
                     ratio > 0.0 && lifetime_valid && lifetime >= ratio * self.min_lifetime;
-                let burst = self.min_lifetime.is_finite()
-                    && bw_round * self.min_lifetime > RAMP_BURST_RATIO * mean_in_use;
-                let grew = !burst && bw_round >= 1.25 * self.best_bw;
-                if !burst {
-                    self.best_bw = self.best_bw.max(bw_round);
-                }
+                let grew = bw_round >= 1.25 * self.best_bw;
+                self.best_bw = self.best_bw.max(bw_round);
                 if lifetime_rose && self.lifetime_held {
                     // The knee comes from the rounds before the lifetime rose.
                     self.enter_stable(now);
@@ -391,7 +396,7 @@ impl KneeController {
                 } else {
                     self.lifetime_held = false;
                     // The knee comes from rounds that bind and use at least half of the budget.
-                    if lifetime_measured && !burst {
+                    if knee_sample {
                         self.ramp_hist.push((round_budget, bw_round));
                     }
                     let has_knee = !self.ramp_hist.is_empty();
@@ -463,13 +468,16 @@ impl KneeController {
     fn reset_round(&mut self) {
         self.round_ticks = 0;
         self.round_bytes = 0;
+        self.round_settled_bytes = 0;
+        self.round_settled_secs = 0.0;
+        self.round_settled_in_use = 0;
+        self.round_settled_in_use_max = 0;
         self.round_parked = 0;
         self.round_sat_max = 0.0;
         self.round_in_use = 0;
         self.round_applied_max = 0;
         self.round_limiter_bound = false;
         self.round_budget = self.budget;
-        self.round_start_seq = self.last_admitted_seq;
     }
 
     /// Nothing completed or in flight for `idle_grace` (between queries, or a scan stalled
@@ -534,7 +542,7 @@ mod tests {
             init_budget: 100,
             max_budget: u64::MAX,
             gain: 1.0,
-            round_ticks: 2,
+            round_ticks: 3,
             tick: Duration::from_millis(100),
             probe_interval: Duration::from_secs(3),
             idle_grace: Duration::from_secs(5),
@@ -548,14 +556,14 @@ mod tests {
         c: &mut KneeController,
         t0: Instant,
         i: u64,
-        bytes_done: u64,
+        bytes_arrived: u64,
         in_use: u64,
         parked: u64,
     ) {
         let budget = c.budget();
         c.step(KneeTick {
             now: t0 + Duration::from_millis(100 * (i + 1)),
-            bytes_done,
+            bytes_arrived,
             bytes_in_use: in_use,
             bytes_parked: parked,
             bytes_waiting: 0,
@@ -563,9 +571,6 @@ mod tests {
             bytes_budget: budget,
             limiter_rate: None,
             limiter_admitted: 0,
-            // One request admitted and one completed per tick: 2-tick rounds.
-            admitted_seq: i + 1,
-            completed_seq: i + 1,
         });
     }
 
@@ -597,8 +602,8 @@ mod tests {
         let mut c = KneeController::new(cfg());
         let t0 = Instant::now();
         let mut bytes_per_tick = 100.0;
-        for i in 0..16 {
-            if i > 0 && i % 2 == 0 {
+        for i in 0..24 {
+            if i > 0 && i % 3 == 0 {
                 bytes_per_tick *= 1.3;
             }
             let budget = c.budget();
@@ -609,24 +614,31 @@ mod tests {
         assert!(c.knee().unwrap() <= 1600);
     }
 
-    /// At 800, a quarter of the budget in use delivers 3x what it can at the one-tick lifetime
-    /// (requests that outlived earlier rounds completing together): no doubling, the knee stays at
-    /// a level that was measured.
+    /// Ordered scans drain and refill within a round: at 200, bytes in use 200 / 180 / 5 per tick
+    /// (below half the budget on the mean of the ticks after the first) at the plateau bandwidth.
+    /// The round is a knee sample: the knee is 200, not the next level.
     #[test]
-    fn burst_is_not_growth() {
+    fn draining_round_is_a_knee_sample() {
         let mut c = KneeController::new(cfg());
         let t0 = Instant::now();
         let mut i = 0;
-        while c.budget() < 800 {
-            let budget = c.budget();
-            tick(&mut c, t0, i, budget, budget, 1);
+        let mut step = |c: &mut KneeController, arrived: u64, in_use: u64| {
+            tick(c, t0, i, arrived, in_use, 1);
             i += 1;
+        };
+        for _ in 0..3 {
+            step(&mut c, 100, 100);
         }
-        for i in i..i + 4 {
-            tick(&mut c, t0, i, 600, 200, 1);
+        assert_eq!(c.budget(), 200);
+        for in_use in [200, 180, 5] {
+            step(&mut c, 400, in_use);
+        }
+        assert_eq!(c.budget(), 400);
+        for _ in 0..6 {
+            step(&mut c, 400, 400);
         }
         assert_eq!(c.phase(), KneePhase::Stable);
-        assert!(c.knee().unwrap() <= 800);
+        assert_eq!(c.knee(), Some(200));
     }
 
     /// Traffic that never fills the budget (metadata) does not fix a knee: RampUp holds until
@@ -674,12 +686,12 @@ mod tests {
     fn ramp_up_holds_while_the_limiter_binds() {
         let mut c = KneeController::new(cfg());
         let t0 = Instant::now();
-        let mut step = |i: u64, bytes_done: u64, demand: u64, rate: f64, admitted: u64| {
+        let mut step = |i: u64, bytes_arrived: u64, demand: u64, rate: f64, admitted: u64| {
             let budget = c.budget();
             let in_use = budget.min(demand);
             c.step(KneeTick {
                 now: t0 + Duration::from_millis(100 * (i + 1)),
-                bytes_done,
+                bytes_arrived,
                 bytes_in_use: in_use,
                 bytes_parked: u64::from(budget <= demand),
                 bytes_waiting: 0,
@@ -687,22 +699,21 @@ mod tests {
                 bytes_budget: budget,
                 limiter_rate: Some(rate),
                 limiter_admitted: admitted,
-                admitted_seq: i + 1,
-                completed_seq: i + 1,
             });
             c.budget()
         };
-        step(0, 1, u64::MAX, 100.0, 1);
-        step(1, 1, u64::MAX, 100.0, 1);
+        for i in 0..3 {
+            step(i, 1, u64::MAX, 100.0, 1);
+        }
         let mut rate = 100.0;
-        for i in 2..22 {
-            if i % 2 == 0 {
+        for i in 3..24 {
+            if i % 3 == 0 {
                 rate *= 2.0;
             }
             let admitted = (rate * 0.1) as u64;
             step(i, 10 * (admitted / 2), u64::MAX, rate, admitted);
         }
-        for i in 22..42 {
+        for i in 24..45 {
             step(i, 5000, 150, 1e6, 50);
         }
         assert_eq!(c.phase(), KneePhase::RampUp);
@@ -720,14 +731,14 @@ mod tests {
         let mut i = 0;
         let mut step = |c: &mut KneeController, capped: bool| {
             let budget = c.budget();
-            let (bytes_done, rate, admitted) = if capped {
+            let (bytes_arrived, rate, admitted) = if capped {
                 ((0.85 * budget as f64 / 2.0) as u64, 1000.0, 100)
             } else {
                 (budget / 2, 1e9, 0)
             };
             c.step(KneeTick {
                 now: t0 + Duration::from_millis(100 * (i + 1)),
-                bytes_done,
+                bytes_arrived,
                 bytes_in_use: budget,
                 bytes_parked: 1,
                 bytes_waiting: 0,
@@ -735,8 +746,6 @@ mod tests {
                 bytes_budget: budget,
                 limiter_rate: Some(rate),
                 limiter_admitted: admitted,
-                admitted_seq: i + 1,
-                completed_seq: i + 1,
             });
             i += 1;
         };
@@ -765,7 +774,7 @@ mod tests {
             let in_use = if budget >= 400 { 300 } else { budget };
             c.step(KneeTick {
                 now: t0 + Duration::from_millis(100 * (i + 1)),
-                bytes_done: in_use / 2,
+                bytes_arrived: in_use / 2,
                 bytes_in_use: in_use,
                 bytes_parked: u64::from(in_use == budget),
                 bytes_waiting: 0,
@@ -773,8 +782,6 @@ mod tests {
                 bytes_budget: budget,
                 limiter_rate: None,
                 limiter_admitted: 0,
-                admitted_seq: i + 1,
-                completed_seq: i + 1,
             });
         }
         assert_eq!(c.phase(), KneePhase::Stable);
@@ -788,9 +795,9 @@ mod tests {
     fn no_knee_from_rounds_without_delivery() {
         let mut c = KneeController::new(cfg());
         let t0 = Instant::now();
-        let full = |c: &mut KneeController, i: u64, bytes_done: u64| {
+        let full = |c: &mut KneeController, i: u64, bytes_arrived: u64| {
             let budget = c.budget();
-            tick(c, t0, i, bytes_done, budget, 1);
+            tick(c, t0, i, bytes_arrived, budget, 1);
         };
         full(&mut c, 0, 1);
         full(&mut c, 1, 1);

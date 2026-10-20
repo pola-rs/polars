@@ -20,7 +20,7 @@ mod knee;
 mod model;
 mod regime;
 
-use std::num::NonZeroU64;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
@@ -120,7 +120,7 @@ impl Default for ControllerConfig {
                 Ok(v) => panic!("invalid value for POLARS_INFLIGHT_BYTE_BUDGET_MODEL: {v}"),
             },
             knee_gain: 1.0,
-            knee_round_ticks: 2,
+            knee_round_ticks: get_knee_round_ticks(),
             knee_ramp_lifetime_ratio: 2.0,
             knee_max_bytes: get_knee_max_byte_budget(
                 init_byte_budget,
@@ -128,6 +128,15 @@ impl Default for ControllerConfig {
             ),
         }
     }
+}
+
+/// Knee round length in control ticks.
+fn get_knee_round_ticks() -> u32 {
+    std::env::var("POLARS_INFLIGHT_KNEE_ROUND_TICKS").map_or(3, |x| {
+        x.parse::<NonZeroU32>()
+            .unwrap_or_else(|_| panic!("invalid value for POLARS_INFLIGHT_KNEE_ROUND_TICKS: {x}"))
+            .get()
+    })
 }
 
 /// Ceiling for the knee's in-flight byte budget: total memory / 16 (cgroup-aware), at most what the
@@ -274,9 +283,9 @@ pub struct ConcurrencyController {
     config: ControllerConfig,
     sample_queue: Arc<ArrayQueue<IoSample>>,
     samples_dropped: Arc<RelaxedCell<u64>>,
-    // Bytes of completed data requests, counted outside the sample queue (which drops when
-    // full). Knee model only.
-    completed_bytes: Option<Arc<RelaxedCell<u64>>>,
+    // Response body bytes of data requests as they arrive, counted outside the sample queue
+    // (which drops when full). Knee model only.
+    arrived_bytes: Option<Arc<RelaxedCell<u64>>>,
     head_rtt: Arc<HeadRttChannel>,
     inflight_budget: Arc<InFlightBudget>,
     _control_task: tokio::task::JoinHandle<()>,
@@ -286,7 +295,7 @@ impl ConcurrencyController {
     pub fn new(config: ControllerConfig, pacing_budget: Option<PacingBudget>) -> Self {
         let sample_queue = Arc::new(ArrayQueue::new(SAMPLE_QUEUE_CAPACITY));
         let samples_dropped = Arc::new(RelaxedCell::new_u64(0));
-        let completed_bytes =
+        let arrived_bytes =
             (config.bdp_model != BdpModel::Ttfb).then(|| Arc::new(RelaxedCell::new_u64(0)));
         let head_rtt = Arc::new(HeadRttChannel::new());
 
@@ -300,7 +309,7 @@ impl ConcurrencyController {
         let control_task = Self::spawn_control_loop(
             sample_queue.clone(),
             samples_dropped.clone(),
-            completed_bytes.clone(),
+            arrived_bytes.clone(),
             head_rtt.clone(),
             inflight_budget.clone(),
             config.clone(),
@@ -311,7 +320,7 @@ impl ConcurrencyController {
             config,
             sample_queue,
             samples_dropped,
-            completed_bytes,
+            arrived_bytes,
             head_rtt,
             inflight_budget,
             _control_task: control_task,
@@ -324,12 +333,16 @@ impl ConcurrencyController {
 
     /// Record IO for a completed data request. Hot path.
     pub fn record_io(&self, sample: IoSample) {
-        if let Some(completed_bytes) = &self.completed_bytes {
-            completed_bytes.fetch_add(sample.n_bytes);
-        }
         if self.sample_queue.push(sample).is_err() {
             // Queue full: drop. Samples are statistics is considered acceptable.
             self.samples_dropped.fetch_add(1);
+        }
+    }
+
+    /// Record response body bytes of a data request as they arrive. Hot path.
+    pub fn record_arrived(&self, n_bytes: u64) {
+        if let Some(arrived_bytes) = &self.arrived_bytes {
+            arrived_bytes.fetch_add(n_bytes);
         }
     }
 
@@ -349,7 +362,7 @@ impl ConcurrencyController {
     fn spawn_control_loop(
         sample_queue: Arc<ArrayQueue<IoSample>>,
         samples_dropped: Arc<RelaxedCell<u64>>,
-        completed_bytes: Option<Arc<RelaxedCell<u64>>>,
+        arrived_bytes: Option<Arc<RelaxedCell<u64>>>,
         head_rtt: Arc<HeadRttChannel>,
         admission: Arc<InFlightBudget>,
         config: ControllerConfig,
@@ -412,7 +425,7 @@ impl ConcurrencyController {
                     (state, signal, dropped, bw_hwm_held)
                 };
 
-                let bytes_done = completed_bytes.as_ref().map_or(0, |c| c.swap(0));
+                let bytes_arrived = arrived_bytes.as_ref().map_or(0, |c| c.swap(0));
                 let limiter = pacing_budget.as_ref().map(|p| {
                     let admitted = p.admitted();
                     let delta = admitted.wrapping_sub(limiter_admitted);
@@ -424,7 +437,7 @@ impl ConcurrencyController {
                 let knee_budget = knee.as_mut().map(|k| {
                     k.step(KneeTick {
                         now,
-                        bytes_done,
+                        bytes_arrived,
                         bytes_in_use: stats.bytes_in_use,
                         bytes_parked,
                         bytes_waiting: stats.bytes_waiting,
@@ -432,8 +445,6 @@ impl ConcurrencyController {
                         bytes_budget: admission.current_byte_budget(),
                         limiter_rate: limiter.map(|(rate, _)| rate),
                         limiter_admitted: limiter.map_or(0, |(_, admitted)| admitted),
-                        admitted_seq: admission.admitted_seq(),
-                        completed_seq: admission.completed_seq(),
                     })
                 });
 
