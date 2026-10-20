@@ -954,3 +954,78 @@ def test_sort_by_drops_scalar_keys() -> None:
         lf.select(a.sort_by(pl.col("s").first() + 1)).collect()
     q = lf.select(a.sort_by(pl.col("s").first().cast(pl.Int64)))
     assert sorted(q.collect()["a"]) == [1, 3]
+
+
+def test_top_k_by_drops_scalar_keys() -> None:
+    lf = pl.LazyFrame(
+        {"g": [0, 0, 1, 1, 1], "a": [3, 1, 2, 5, 4], "x": [1, 2, 3, 4, 5]}
+    )
+    a, x = pl.col("a"), pl.col("x")
+
+    # With only scalar keys every row ties, so any `k` rows may be kept.
+    for q in [
+        lf.select(a.top_k_by(pl.lit(1), 2)),
+        lf.select(a.bottom_k_by(a.max(), 2)),
+    ]:
+        assert "top_k_by" not in q.explain()
+        out = q.collect()["a"].to_list()
+        assert len(set(out)) == 2
+        assert set(out) <= {3, 1, 2, 5, 4}
+    q = lf.group_by("g").agg(a.top_k_by([pl.lit(1), a.max()], 2))
+    assert "top_k_by" not in q.explain()
+    out = q.sort("g").collect()["a"].to_list()
+    assert sorted(out[0]) == [1, 3]
+    assert len(set(out[1])) == 2
+    assert set(out[1]) <= {2, 5, 4}
+
+    q = lf.select(a.top_k_by([a.max(), x], 2, reverse=[True, False]))
+    assert 'top_k_by([dyn int: 2, col("x")])' in q.explain()
+    assert sorted(q.collect()["a"]) == [4, 5]
+    q = lf.select(a.bottom_k_by([pl.lit(1), x], 2, reverse=[False, True]))
+    assert sorted(q.collect()["a"]) == [4, 5]
+
+    # `k` is still validated unless it is a valid literal.
+    for k in [
+        pl.lit(None, pl.Int64),
+        pl.lit(-1),
+        pl.lit(pl.Series([], dtype=pl.Int64)),
+    ]:
+        q = lf.select(a.top_k_by(pl.lit(1), k))
+        assert "top_k_by" in q.explain()
+        with pytest.raises(pl.exceptions.PolarsError):
+            q.collect()
+    for k in [pl.lit(2.0), x.max()]:
+        assert "top_k_by" in lf.select(a.top_k_by(pl.lit(1), k)).explain()
+
+
+def test_window_drops_scalar_order_by() -> None:
+    lf = pl.LazyFrame({"g": [0, 0, 1, 1, 1], "a": [3, 1, 2, 5, 4]})
+    a = pl.col("a")
+
+    q = lf.select(a.cum_sum().over("g", order_by=a.max()))
+    assert "order_by" not in q.explain()
+    assert q.collect()["a"].to_list() == [3, 4, 2, 7, 11]
+    q = lf.select(a.cum_sum().over(order_by=pl.lit(1)))
+    assert "order_by" not in q.explain()
+    assert q.collect()["a"].to_list() == [3, 4, 6, 11, 15]
+
+
+def test_sort_drops_scalar_keys() -> None:
+    lf = pl.LazyFrame({"a": [3, 1, 2], "x": [1, 2, 3]})
+    rows = {(3, 1), (1, 2), (2, 3)}
+
+    for q in [lf.sort(pl.lit(1)), lf.sort(pl.col("a").max(), maintain_order=True)]:
+        assert "SORT" not in q.explain()
+        assert set(q.collect().rows()) == rows
+    assert "SORT" not in pl.explain_all([lf.sort(pl.lit(1)), lf.select("a")])
+
+    q = lf.sort(pl.lit(1), "x", descending=[False, True], nulls_last=[False, True])
+    plan = q.explain()
+    assert 'SORT BY [descending: [true], nulls_last: [true]] [col("x")]' in plan
+    assert q.collect()["x"].to_list() == [3, 2, 1]
+
+    q = lf.top_k(2, by=pl.lit(1))
+    assert "SLICE[offset: 0, len: 2]" in q.explain()
+    out = q.collect().rows()
+    assert len(set(out)) == 2
+    assert set(out) <= rows
