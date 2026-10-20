@@ -776,6 +776,7 @@ impl SQLContext {
                 &self.joined_aliases,
                 &base.table_name,
                 &base.using_cols,
+                &self.active_relations,
             ),
             None => Ok(()),
         }
@@ -816,6 +817,7 @@ impl SQLContext {
                 &self.joined_aliases,
                 &base.table_name,
                 &base.using_cols,
+                &self.active_relations,
             )
         };
         for item in &select_stmt.projection {
@@ -3303,9 +3305,10 @@ impl SQLContext {
                 if let Some(args) = args {
                     return self.execute_table_function(name, alias, &args.args);
                 }
-                // A qualified name (`schema.table`) is looked up as a whole.
+                // A qualified name (`schema.table`) is looked up as a whole, among CTEs and
+                // registered tables: the alias of another FROM item is not a table.
                 let tbl_name = object_name_to_string(name);
-                if let Some(lf) = self.get_table_from_current_scope(&tbl_name)? {
+                if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
                     match alias {
                         Some(alias) => {
                             self.table_aliases
@@ -4437,6 +4440,10 @@ impl RelationName {
     /// The dotted name, which looks the relation up and identifies it.
     pub(crate) fn key(&self) -> String {
         self.0.join(".")
+    }
+
+    pub(crate) fn parts(&self) -> &[String] {
+        &self.0
     }
 
     /// Whether `qualifier` equals the trailing parts of this name, ignoring case unless `exact`.

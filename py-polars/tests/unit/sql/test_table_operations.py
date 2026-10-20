@@ -474,3 +474,29 @@ def test_correlated_qualifier_naming_two_inner_relations() -> None:
         ),
     ):
         ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize("eager_path", [False, True])
+def test_from_table_name_is_not_an_earlier_alias(eager_path: bool) -> None:
+    # a table name in FROM is a CTE or registered table, never another FROM item's alias
+    frames = {
+        "u": pl.LazyFrame({"k": [2]}),
+        "t": pl.LazyFrame({"k": [1]}),
+        "s.t": pl.LazyFrame({"k": [1]}),
+    }
+    with pl.SQLContext(frames) as ctx:
+        for query in (
+            "SELECT actual.k FROM u AS t CROSS JOIN t AS actual",
+            'SELECT actual.k FROM u AS "s.t" CROSS JOIN s.t AS actual',
+        ):
+            res = _execute(ctx, query, eager_path=eager_path)
+            assert res.to_series().to_list() == [1]
+
+
+def test_ambiguous_column_hint_quotes_dotted_alias() -> None:
+    frames = {"u": pl.LazyFrame({"k": [1]}), "v": pl.LazyFrame({"k": [2]})}
+    with (
+        pl.SQLContext(frames) as ctx,
+        pytest.raises(SQLInterfaceError, match=r'use one of: "a\.b"\.k, z\.k'),
+    ):
+        ctx.execute('SELECT k FROM u AS "a.b" CROSS JOIN v AS z', eager=True)

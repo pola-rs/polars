@@ -183,6 +183,7 @@ struct AmbiguousColumnVisitor<'a> {
     joined_aliases: &'a PlHashMap<String, PlHashMap<String, String>>,
     base_table_name: &'a str,
     using_cols: &'a [(String, String)],
+    relations: &'a [RelationName],
     subquery_depth: usize,
 }
 
@@ -209,6 +210,7 @@ impl SQLVisitor for AmbiguousColumnVisitor<'_> {
                 self.joined_aliases,
                 self.base_table_name,
                 self.using_cols,
+                self.relations,
             ) {
                 return ControlFlow::Break(err);
             }
@@ -225,6 +227,7 @@ pub(crate) fn check_ambiguous_column(
     joined_aliases: &PlHashMap<String, PlHashMap<String, String>>,
     base_table_name: &str,
     using_cols: &[(String, String)],
+    relations: &[RelationName],
 ) -> PolarsResult<()> {
     let mut tables: Vec<_> = joined_aliases
         .iter()
@@ -244,9 +247,20 @@ pub(crate) fn check_ambiguous_column(
             );
         }
         let col_hint = maybe_quote(col, false);
+        // Quote each part of a relation's name, so `"a.b"` keeps its quotes and `s.t` has none.
         let hints = tables.iter().map(|t| {
-            let parts: Vec<String> = t.split('.').map(|p| maybe_quote(p, false)).collect();
-            format!("{}.{}", parts.join("."), col_hint)
+            let qualifier = match relations.iter().find(|r| r.key() == *t) {
+                Some(relation) => {
+                    let parts: Vec<String> = relation
+                        .parts()
+                        .iter()
+                        .map(|p| maybe_quote(p, false))
+                        .collect();
+                    parts.join(".")
+                },
+                None => maybe_quote(t, false),
+            };
+            format!("{qualifier}.{col_hint}")
         });
         polars_bail!(
             SQLInterface: "ambiguous reference to column {} (use one of: {})",
@@ -263,11 +277,13 @@ pub(crate) fn check_for_ambiguous_column_refs(
     joined_aliases: &PlHashMap<String, PlHashMap<String, String>>,
     base_table_name: &str,
     using_cols: &[(String, String)],
+    relations: &[RelationName],
 ) -> PolarsResult<()> {
     match expr.visit(&mut AmbiguousColumnVisitor {
         joined_aliases,
         base_table_name,
         using_cols,
+        relations,
         subquery_depth: 0,
     }) {
         ControlFlow::Break(err) => Err(err),
