@@ -307,8 +307,8 @@ impl Extractor {
         })
     }
 
-    /// Whether `node` has a reduction, or `None` if it is not a reduction or a numeric, boolean or
-    /// null elementwise expression of reductions, columns and scalar literals.
+    /// Whether `node` has a reduction, or `None` if it is not a reduction or a numeric or boolean
+    /// elementwise expression of reductions, columns and scalar literals.
     #[recursive]
     fn has_reduction(
         &mut self,
@@ -327,7 +327,9 @@ impl Extractor {
             && ae
                 .to_dtype(&ToFieldContext::new(expr_arena, schema))
                 .is_ok_and(|dtype| {
-                    dtype.is_primitive_numeric() || dtype.is_bool() || dtype.is_null()
+                    dtype.is_primitive_numeric()
+                        || dtype.is_bool()
+                        || (dtype.is_null() && matches!(ae, AExpr::Literal(_)))
                 });
         if !is_valid {
             return None;

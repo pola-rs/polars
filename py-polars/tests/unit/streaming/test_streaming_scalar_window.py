@@ -263,6 +263,12 @@ def test_scalar_window_split_with_null_literal() -> None:
     _assert_same(q)
 
 
+def test_scalar_window_not_split_with_null_result() -> None:
+    clipped = pl.col("x").max().cast(pl.Null, strict=False).clip(0, 1)
+    q = pl.LazyFrame(schema={"g": pl.Int64, "x": pl.Int64}).select(w=clipped.over("g"))
+    assert q.collect(engine="streaming").schema == {"w": pl.Null}
+
+
 def test_scalar_window_split_computed_once() -> None:
     x = pl.col("x")
     spread = (x.max() - x.min()).over("g")
