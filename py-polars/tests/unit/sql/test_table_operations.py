@@ -44,6 +44,19 @@ def test_create_table() -> None:
     assert_frame_equal(df_expected, df)
 
 
+def test_create_table_if_not_exists() -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute("CREATE TABLE IF NOT EXISTS frame AS SELECT 1 AS x")
+
+        # table already exists; should be a no-op that keeps the original data
+        ctx.execute("CREATE TABLE IF NOT EXISTS frame AS SELECT 2 AS x")
+        assert ctx.execute("SELECT x FROM frame", eager=True)["x"].to_list() == [1]
+
+        # table does not exist yet; should be created
+        ctx.execute("CREATE TABLE IF NOT EXISTS other AS SELECT 3 AS x")
+        assert ctx.execute("SELECT x FROM other", eager=True)["x"].to_list() == [3]
+
+
 def test_create_table_from_file_io(io_files_path: Path) -> None:
     foods_csv = io_files_path / "foods*.csv"
     with pl.SQLContext() as ctx:

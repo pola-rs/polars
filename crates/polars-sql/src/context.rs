@@ -3132,8 +3132,10 @@ impl SQLContext {
             } = create_table;
 
             let tbl_name = name.0.first().unwrap().as_ident().unwrap().value.as_str();
+            let df_created = df! { "Response" => [format!("CREATE TABLE {}", tbl_name)] };
             if *if_not_exists && self.table_map.read().unwrap().contains_key(tbl_name) {
-                polars_bail!(SQLInterface: "relation '{}' already exists", tbl_name);
+                // table already exists; nothing to do
+                return Ok(df_created.unwrap().lazy());
             }
             let lf = match (query, columns.is_empty(), like) {
                 (Some(query), true, None) => {
@@ -3191,8 +3193,6 @@ impl SQLContext {
                 },
             };
             self.register(tbl_name, lf);
-
-            let df_created = df! { "Response" => [format!("CREATE TABLE {}", name.0.first().unwrap().as_ident().unwrap().value)] };
             Ok(df_created.unwrap().lazy())
         } else {
             unreachable!()
