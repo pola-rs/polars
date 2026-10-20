@@ -38,6 +38,7 @@ mod ir_traversal;
 mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod repeated_keys;
 mod simplify_expr;
 pub mod simplify_ordering;
 mod slice_pushdown_expr;
@@ -286,6 +287,7 @@ pub fn optimize(
         rules.push(Box::new(SimplifyBooleanRule {
             maintain_errors: pushdown_maintain_errors,
         }));
+        rules.push(Box::new(repeated_keys::RemoveRepeatedKeys {}));
     }
 
     if !opt_flags.eager() {
