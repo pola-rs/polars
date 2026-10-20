@@ -255,6 +255,14 @@ def test_scalar_window_not_split_for_string_result() -> None:
     _assert_same(q)
 
 
+def test_scalar_window_split_with_null_literal() -> None:
+    x = pl.col("x")
+    spread = pl.when(x.max() > 500).then(x.max() - x.min()).otherwise(None)
+    q = _frame().lazy().select(sd=x.std().over("g"), spread=spread.over("g"))
+    assert _scalar_flags(q) == [True]
+    _assert_same(q)
+
+
 def test_scalar_window_split_computed_once() -> None:
     x = pl.col("x")
     spread = (x.max() - x.min()).over("g")
