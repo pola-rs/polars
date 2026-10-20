@@ -246,8 +246,8 @@ def _temporal_transform_expr(
 
 def _bucket_transform_expr(
     expr: pl.Expr, source_type: IcebergType, num_buckets: int
-) -> pl.Expr:
-    """Iceberg `bucket[num_buckets]` transform, natively in Polars."""
+) -> pl.Expr | None:
+    """Iceberg `bucket[num_buckets]` transform, or None for an unsupported type."""
     from pyiceberg.types import (
         BinaryType,
         DateType,
@@ -282,8 +282,7 @@ def _bucket_transform_expr(
         "TimestamptzNanoType",
     }:
         # Timestamps of any time unit are hashed as microseconds since the epoch.
-        msg = f"Iceberg 'bucket[{num_buckets}]' transform on '{source_type}'"
-        raise NotImplementedError(msg)
+        return None
 
     return (expr._mm3_hash() & 0x7FFFFFFF) % num_buckets
 
@@ -481,7 +480,14 @@ def _partition_key_exprs(
                 )
                 raise NotImplementedError(msg)
         elif isinstance(transform, BucketTransform):
-            expr = _bucket_transform_expr(expr, source_type, transform.num_buckets)
+            bucket = _bucket_transform_expr(expr, source_type, transform.num_buckets)
+            if bucket is None:
+                msg = (
+                    "sink to Iceberg table with "
+                    f"'{transform}' partition transform on '{source_type}'"
+                )
+                raise NotImplementedError(msg)
+            expr = bucket
         else:
             msg = f"sink to Iceberg table with '{transform}' partition transform"
             raise NotImplementedError(msg)
@@ -690,7 +696,11 @@ def _sort_key_exprs(
                 msg = f"Iceberg sort transform '{transform}' on '{source_type}'"
                 raise NotImplementedError(msg)
         elif isinstance(transform, BucketTransform):
-            expr = _bucket_transform_expr(expr, source_type, transform.num_buckets)
+            bucket = _bucket_transform_expr(expr, source_type, transform.num_buckets)
+            if bucket is None:
+                msg = f"Iceberg sort transform '{transform}' on '{source_type}'"
+                raise NotImplementedError(msg)
+            expr = bucket
         elif isinstance(transform, VoidTransform):
             continue
         else:

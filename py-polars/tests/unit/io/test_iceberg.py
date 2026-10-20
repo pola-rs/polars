@@ -1896,9 +1896,15 @@ def test_sink_iceberg_partitioned_transforms(
     df.lazy().sink_iceberg(tbl, mode="append")
 
     assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
-    expected_partitions = {transform.transform(iceberg_type)(value) for value in values}
-    actual_partitions = {task.file.partition[0] for task in tbl.scan().plan_files()}
-    assert actual_partitions == expected_partitions
+    partition_of = transform.transform(iceberg_type)
+    expected_partitions = [partition_of(value) for value in values]
+    tasks = list(tbl.scan().plan_files())
+    assert {task.file.partition[0] for task in tasks} == set(expected_partitions)
+    # Every row is in the file of its partition.
+    for task in tasks:
+        with tbl.io.new_input(task.file.file_path).open() as file:
+            rows = pq.read_table(file).column("value").to_pylist()
+        assert {expected_partitions[i] for i in rows} == {task.file.partition[0]}
 
 
 @pytest.mark.parametrize(
@@ -1922,16 +1928,22 @@ def test_sink_iceberg_partitioned_bucket_fixed_binary(
             PartitionField(1, 1000, BucketTransform(4), "partition_col_bucket")
         ),
     )
-    pl.DataFrame(
+    df = pl.DataFrame(
         {"partition_col": values, "value": range(len(values))},
         schema={"partition_col": pl.Binary, "value": pl.Int64},
-    ).lazy().sink_iceberg(tbl, mode="append")
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
 
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
     bucket = BucketTransform(4).transform(iceberg_type)
-    for task in tbl.scan().plan_files():
+    expected_partitions = [bucket(v) for v in values]
+    tasks = list(tbl.scan().plan_files())
+    assert {task.file.partition[0] for task in tasks} == set(expected_partitions)
+    assert len(tasks) > 1
+    for task in tasks:
         with tbl.io.new_input(task.file.file_path).open() as file:
-            partition_col = pq.read_table(file).column("partition_col").to_pylist()
-        assert {bucket(v) for v in partition_col} == {task.file.partition[0]}
+            rows = pq.read_table(file).column("value").to_pylist()
+        assert {expected_partitions[i] for i in rows} == {task.file.partition[0]}
 
 
 @pytest.mark.write_disk
@@ -1995,13 +2007,19 @@ def test_sink_iceberg_partitioned_bucket_schema_merge(tmp_path: Path) -> None:
             PartitionField(1, 1000, BucketTransform(4), "c_bucket")
         ),
     )
-    values = [D("1.235"), D("-1.235")]
-    pl.LazyFrame({"c": pl.Series(values, dtype=pl.Decimal(10, 3))}).sink_iceberg(
+    # Values that only fit the widened decimal(18, 2).
+    values = [D("1234567890.12"), D("-1234567890.12"), D("1.23")]
+    pl.LazyFrame({"c": pl.Series(values, dtype=pl.Decimal(18, 2))}).sink_iceberg(
         tbl, mode="append", schema_mode="merge"
     )
 
     tbl.refresh()
-    bucket = BucketTransform(4).transform(tbl.schema().find_field(1).field_type)
+    assert tbl.schema().find_field(1).field_type == DecimalType(18, 2)
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("c"),
+        pl.DataFrame({"c": pl.Series(values, dtype=pl.Decimal(18, 2))}).sort("c"),
+    )
+    bucket = BucketTransform(4).transform(DecimalType(18, 2))
     assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {
         bucket(v) for v in values
     }
@@ -2019,9 +2037,11 @@ def test_sink_iceberg_bucket_timestamp_ns() -> None:
     ]:
         bucket = BucketTransform(16).transform(iceberg_type)
         s = pl.Series("a", nanos).cast(pl.Datetime("ns", time_zone))
-        assert s.to_frame().select(
-            _bucket_transform_expr(pl.col("a"), iceberg_type, 16)
-        ).to_series().to_list() == [bucket(v) for v in nanos]
+        expr = _bucket_transform_expr(pl.col("a"), iceberg_type, 16)
+        assert expr is not None
+        assert s.to_frame().select(expr).to_series().to_list() == [
+            bucket(v) for v in nanos
+        ]
 
 
 @pytest.mark.write_disk
@@ -2323,6 +2343,7 @@ def test_sink_iceberg_partitioned_nested_source_overwrite(tmp_path: Path) -> Non
     ("iceberg_type", "transform", "values"),
     [
         pytest.param(LongType(), VoidTransform(), [1, 2], id="void"),
+        pytest.param(DoubleType(), BucketTransform(4), [1.0, 2.0], id="bucket-double"),
         pytest.param(
             DecimalType(10, 2),
             TruncateTransform(10),
