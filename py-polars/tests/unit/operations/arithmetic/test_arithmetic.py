@@ -1027,6 +1027,18 @@ def test_float_truediv_output_type() -> None:
     )
 
 
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize("swap", [False, True])
+def test_truediv_float_string_raises(dtype: pl.DataType, swap: bool) -> None:
+    lf = pl.LazyFrame(schema={"f": dtype, "s": pl.String})
+    a, b = ("s", "f") if swap else ("f", "s")
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="division with 'String' datatypes is not allowed",
+    ):
+        lf.select(pl.col(a) / pl.col(b)).collect_schema()
+
+
 @pytest.mark.parametrize(
     "dtype",
     [
