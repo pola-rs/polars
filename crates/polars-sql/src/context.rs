@@ -570,7 +570,17 @@ impl SQLContext {
         match match_qualifier(idents, self.active_relations.iter()) {
             None => Ok(None),
             Some((matches, len)) => match matches.as_slice() {
-                [relation] => Ok(Some((relation.key(), len))),
+                [relation] => {
+                    let key = relation.key();
+                    // Relations are looked up by their dotted name, which `s.t` and an alias
+                    // `"s.t"` share.
+                    polars_ensure!(
+                        !self.active_relations.iter().any(|r| r.key() == key && r != *relation),
+                        SQLInterface: "ambiguous reference to table \"{}\" (another relation in FROM has the same dotted name; use a different alias)",
+                        key
+                    );
+                    Ok(Some((key, len)))
+                },
                 _ => Err(ambiguous_relation_err(
                     &join_idents(&idents[..len]),
                     &matches,
@@ -1235,6 +1245,7 @@ impl SQLContext {
             if !tbl_expr.joins.is_empty() {
                 polars_bail!(SQLInterface: "DELETE does not support table JOINs")
             }
+            self.set_active_relations(from_tables);
             let (_, lf) = self.get_table(&tbl_expr.relation)?;
             if selection.is_none() {
                 // no WHERE clause; equivalent to TRUNCATE (drop all rows)

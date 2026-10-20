@@ -314,6 +314,30 @@ def test_create_table_if_not_exists() -> None:
         assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
 
 
+def test_qualified_table_name_delete() -> None:
+    # the WHERE of a DELETE qualifies by a trailing part, as in SELECT
+    lf = pl.LazyFrame({"k": [1, 2]})
+    for where in ["t.k = 1", "s.t.k = 1", "k = 1"]:
+        with pl.SQLContext({"s.t": lf}) as ctx:
+            res = ctx.execute(f"DELETE FROM s.t WHERE {where}", eager=True)
+            assert res.to_series().to_list() == [2]
+
+
+def test_dotted_name_shared_with_quoted_alias() -> None:
+    # `s.t` and an alias `"s.t"` share a dotted name; a reference to either is ambiguous
+    frames = {"s.t": pl.LazyFrame({"k": [1]}), "u": pl.LazyFrame({"k": [2]})}
+    from_clause = 'FROM s.t CROSS JOIN u AS "s.t"'
+    with pl.SQLContext(frames) as ctx:
+        assert ctx.execute(f"SELECT * {from_clause}", eager=True).rows() == [(1, 2)]
+        for query in [
+            f"SELECT s.t.k {from_clause}",
+            f'SELECT "s.t".k {from_clause}',
+            'SELECT * FROM s.t JOIN u AS "s.t" ON s.t.k < "s.t".k',
+        ]:
+            with pytest.raises(SQLInterfaceError, match="same dotted name"):
+                ctx.execute(query, eager=True)
+
+
 def test_quoted_dotted_name_is_one_part() -> None:
     # `"tpch.lineitem"` finds the registered table, but as a qualifier it is one part
     frames = {
