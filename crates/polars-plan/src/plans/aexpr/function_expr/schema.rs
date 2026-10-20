@@ -45,6 +45,18 @@ impl IRFunctionExpr {
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
             Hash(..) => mapper.with_dtype(DataType::UInt64),
+            Mm3Hash => mapper
+                .ensure_satisfies(
+                    |_, dt| {
+                        dt.is_null()
+                            || dt.is_integer()
+                            || dt.is_decimal()
+                            || (dt.is_temporal() && !dt.is_duration())
+                            || matches!(dt, DataType::String | DataType::Binary)
+                    },
+                    "mm3_hash",
+                )?
+                .with_dtype(DataType::Int32),
             #[cfg(feature = "arg_where")]
             ArgWhere => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "index_of")]

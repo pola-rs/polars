@@ -17,7 +17,7 @@ import uuid
 import warnings
 import zoneinfo
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
@@ -62,6 +62,7 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
     TimestamptzType,
     TimeType,
@@ -799,8 +800,6 @@ class _TableDataAllTypes:
 
     @staticmethod
     def new(*, exclude_uuid: bool = False) -> _TableDataAllTypes:
-        from datetime import time
-
         include_decimal_and_fixed = parse_version(pyiceberg.__version__) >= (0, 10, 0)
         next_field_id = partial(next, itertools.count(1))
 
@@ -8311,3 +8310,87 @@ def test_scan_iceberg_reader_pyiceberg_negated_predicates_keep_nulls(
             df.filter(predicate),
             check_row_order=False,
         )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "iceberg_type", "values"),
+    [
+        (pl.Int8, IntegerType(), [0, 1, -1, 127, -128]),
+        (pl.Int32, IntegerType(), [0, 34, -1, 2**31 - 1, -(2**31)]),
+        (pl.Int64, LongType(), [0, 34, -1, 2**63 - 1, -(2**63)]),
+        (pl.UInt32, LongType(), [0, 34, 2**32 - 1]),
+        (pl.UInt64, LongType(), [0, 34, 2**63 - 1]),
+        (pl.Date, DateType(), [date(2017, 11, 16), date(1969, 12, 31), date(1, 1, 1)]),
+        (pl.Time, TimeType(), [time(22, 31, 8), time(0), time(23, 59, 59, 999999)]),
+        *[
+            (
+                dtype,
+                TimestampType(),
+                [datetime(2017, 11, 16, 22, 31, 8), datetime(1969, 12, 31, 23, 59)],
+            )
+            for dtype in [pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")]
+        ],
+        (
+            pl.Datetime("us", "UTC"),
+            TimestamptzType(),
+            [datetime(2017, 11, 16, 22, 31, 8, tzinfo=zoneinfo.ZoneInfo("UTC"))],
+        ),
+        (
+            pl.Decimal(38, 2),
+            DecimalType(38, 2),
+            [
+                D("14.20"),
+                D("0"),
+                D("-0.01"),
+                D("1.27"),
+                D("1.28"),
+                D("-1.28"),
+                D("-1.29"),
+                D("999999999999999999999999999999999999.99"),
+                D("-999999999999999999999999999999999999.99"),
+            ],
+        ),
+        (pl.String, StringType(), ["iceberg", "", "a", "😁", "abcd", "abcde"]),
+        (pl.Binary, BinaryType(), [b"\x00\x01\x02\x03", b"", b"\xff", b"abcdefg"]),
+    ],
+)
+def test_mm3_hash_matches_iceberg_bucket_hash(
+    dtype: pl.DataType, iceberg_type: Any, values: list[Any]
+) -> None:
+    hash_func = BucketTransform(16).transform(iceberg_type, bucket=False)
+
+    s = pl.Series("a", [*values, None], dtype=dtype)
+    expected = pl.Series("a", [*map(hash_func, values), None], dtype=pl.Int32)
+
+    assert_series_equal(
+        s.to_frame().select(pl.col("a")._mm3_hash()).to_series(), expected
+    )
+    assert_series_equal(
+        s.to_frame().lazy().select(pl.col("a")._mm3_hash()).collect().to_series(),
+        expected,
+    )
+
+
+def test_mm3_hash_timestamp_ns_truncates_to_micros() -> None:
+    hash_func = BucketTransform(16).transform(TimestampNanoType(), bucket=False)
+    nanos = [0, 1, 999, 1000, -1, -999, -1000, -1001, 1510871468123456789]
+
+    s = pl.Series("a", nanos, dtype=pl.Int64).cast(pl.Datetime("ns"))
+    expected = pl.Series("a", [hash_func(v) for v in nanos], dtype=pl.Int32)
+
+    assert_series_equal(
+        s.to_frame().select(pl.col("a")._mm3_hash()).to_series(), expected
+    )
+
+
+def test_mm3_hash_null_and_unsupported() -> None:
+    assert_series_equal(
+        pl.select(pl.lit(None)._mm3_hash()).to_series(),
+        pl.Series("literal", [None], dtype=pl.Int32),
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(pl.lit(1.0)._mm3_hash())
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.LazyFrame({"a": [1.0]}).select(pl.col("a")._mm3_hash()).collect_schema()

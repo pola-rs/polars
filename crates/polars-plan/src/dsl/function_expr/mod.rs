@@ -172,6 +172,8 @@ pub enum FunctionExpr {
     Pow(PowFunction),
     #[cfg(feature = "row_hash")]
     Hash(u64),
+    /// 32-bit MurmurHash3 as defined by the Iceberg specification.
+    Mm3Hash,
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "index_of")]
@@ -606,6 +608,7 @@ impl Hash for FunctionExpr {
             Sign => {},
             #[cfg(feature = "row_hash")]
             Hash(seed) => seed.hash(state),
+            Mm3Hash => {},
             FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -844,6 +847,7 @@ impl Display for FunctionExpr {
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
             Hash(_) => "hash",
+            Mm3Hash => "mm3_hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]

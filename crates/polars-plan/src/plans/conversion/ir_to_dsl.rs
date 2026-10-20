@@ -804,6 +804,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "row_hash")]
         IF::Hash(seed) => F::Hash(seed),
+        IF::Mm3Hash => F::Mm3Hash,
         #[cfg(feature = "arg_where")]
         IF::ArgWhere => F::ArgWhere,
         #[cfg(feature = "index_of")]
