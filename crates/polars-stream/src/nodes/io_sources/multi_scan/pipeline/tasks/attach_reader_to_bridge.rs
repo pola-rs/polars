@@ -51,6 +51,7 @@ impl AttachReaderToBridge {
             handle,
             wait_token,
             slot: _,
+            read_bytes,
         }) = started_reader_rx.recv().await
         {
             n_readers_received = n_readers_received.saturating_add(1);
@@ -73,6 +74,10 @@ impl AttachReaderToBridge {
 
             drop(wait_token);
             join_reader(reader_handle, post_apply_pipeline_handle).await?;
+            if verbose && read_bytes.is_some() {
+                eprintln!("[AttachReaderToBridge]: releasing read bytes");
+            }
+            drop(read_bytes);
         }
 
         // Unblock the starter's send before waiting for it.
@@ -124,7 +129,13 @@ async fn run_unordered(
 
             v = started_reader_rx.recv() => {
                 // The attach token only matters with a single concurrent scan, which is never unordered.
-                let Some(StartedReader { handle, wait_token: _, slot }) = v else {
+                let Some(StartedReader {
+                    handle,
+                    wait_token: _,
+                    slot,
+                    read_bytes,
+                }) = v
+                else {
                     break;
                 };
 
@@ -160,6 +171,7 @@ async fn run_unordered(
 
                     join_reader(reader_handle, post_apply_pipeline_handle).await?;
                     drop(slot);
+                    drop(read_bytes);
                     PolarsResult::Ok(())
                 });
                 active.push(AbortOnDropHandle::new(forward_handle));
