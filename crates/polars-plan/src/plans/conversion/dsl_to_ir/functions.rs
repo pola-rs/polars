@@ -910,7 +910,15 @@ pub(super) fn convert_functions(
         #[cfg(feature = "top_k")]
         F::TopK { descending } => I::TopK { descending },
         #[cfg(feature = "top_k")]
-        F::TopKBy { descending } => I::TopKBy { descending },
+        F::TopKBy { mut descending } => {
+            // The inputs are the values, `k` and then the keys.
+            super::utils::expand_sort_flags(
+                &mut descending,
+                e.len().saturating_sub(2),
+                "descending",
+            )?;
+            I::TopKBy { descending }
+        },
         #[cfg(feature = "cum_agg")]
         F::CumCount { reverse } => I::CumCount { reverse },
         #[cfg(feature = "cum_agg")]

@@ -25,7 +25,8 @@ impl OptimizationRule for RemoveRepeatedKeys {
                 sort_options,
                 ..
             } => first_expr_occurrences(by_column.iter().map(|e| e.node()), expr_arena)
-                .is_some_and(|keep| retain_sort_keys(by_column, sort_options, &keep)),
+                .map(|keep| retain_sort_keys(by_column, sort_options, &keep))
+                .is_some(),
             IR::Distinct { options, .. } => {
                 if let Some(subset) = &mut options.subset
                     && let Some(keep) = first_occurrences(subset.iter().map(Some))
@@ -68,7 +69,8 @@ impl OptimizationRule for RemoveRepeatedKeys {
             AExpr::SortBy {
                 by, sort_options, ..
             } => first_expr_occurrences(by.iter().copied(), expr_arena)
-                .is_some_and(|keep| retain_sort_keys(by, sort_options, &keep)),
+                .map(|keep| retain_sort_keys(by, sort_options, &keep))
+                .is_some(),
             #[cfg(feature = "top_k")]
             AExpr::Function {
                 input,
@@ -79,9 +81,8 @@ impl OptimizationRule for RemoveRepeatedKeys {
                 let keys = input.split_off(2.min(input.len()));
                 if let Some(keep) =
                     first_expr_occurrences(keys.iter().map(|e| e.node()), expr_arena)
-                    && let Some(new_descending) = retain_flags(descending, keys.len(), &keep)
                 {
-                    *descending = new_descending;
+                    *descending = gather(descending, &keep);
                     input.extend(gather(&keys, &keep));
                     true
                 } else {
@@ -159,30 +160,10 @@ fn retain_row_encode_keys(
     Some((expr_arena.add(encode), options))
 }
 
-fn retain_sort_keys<T: Clone>(
-    by: &mut Vec<T>,
-    options: &mut SortMultipleOptions,
-    keep: &[usize],
-) -> bool {
-    let (Some(descending), Some(nulls_last)) = (
-        retain_flags(&options.descending, by.len(), keep),
-        retain_flags(&options.nulls_last, by.len(), keep),
-    ) else {
-        return false;
-    };
+fn retain_sort_keys<T: Clone>(by: &mut Vec<T>, options: &mut SortMultipleOptions, keep: &[usize]) {
     *by = gather(by, keep);
-    options.descending = descending;
-    options.nulls_last = nulls_last;
-    true
-}
-
-/// Selects the flags of the kept keys from either one flag per key or a single flag for all keys.
-fn retain_flags(flags: &[bool], num_keys: usize, keep: &[usize]) -> Option<Vec<bool>> {
-    match flags.len() {
-        n if n == num_keys => Some(gather(flags, keep)),
-        0 | 1 => Some(flags.to_vec()),
-        _ => None,
-    }
+    options.descending = gather(&options.descending, keep);
+    options.nulls_last = gather(&options.nulls_last, keep);
 }
 
 /// Like [`first_occurrences`] for expressions. Non-deterministic expressions are never repeats.

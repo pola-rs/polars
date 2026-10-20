@@ -228,13 +228,15 @@ pub(super) fn to_aexpr_impl(
         Expr::SortBy {
             expr,
             by,
-            sort_options,
+            mut sort_options,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
-            let by = by
+            let by: Vec<Node> = by
                 .into_iter()
                 .map(|e| Ok(recurse!(e)?.0))
                 .collect::<PolarsResult<_>>()?;
+            super::utils::expand_sort_flags(&mut sort_options.descending, by.len(), "descending")?;
+            super::utils::expand_sort_flags(&mut sort_options.nulls_last, by.len(), "nulls_last")?;
 
             (
                 AExpr::SortBy {

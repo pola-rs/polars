@@ -28,6 +28,22 @@ pub(super) fn expand_expressions(
     )
 }
 
+/// Expands sort flags given as one flag for all keys to one flag per key.
+pub(super) fn expand_sort_flags(
+    flags: &mut Vec<bool>,
+    num_keys: usize,
+    name: &str,
+) -> PolarsResult<()> {
+    if flags.len() == 1 {
+        *flags = vec![flags[0]; num_keys];
+    }
+    polars_ensure!(
+        flags.len() == num_keys,
+        ComputeError: "the length of `{}` ({}) does not match the length of `by` ({})", name, flags.len(), num_keys
+    );
+    Ok(())
+}
+
 pub(super) fn empty_df() -> IR {
     IR::DataFrameScan {
         df: Arc::new(Default::default()),
