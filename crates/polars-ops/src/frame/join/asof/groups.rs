@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use num_traits::Zero;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -359,8 +358,7 @@ fn dispatch_join_strategy_numeric<T: PolarsNumericType>(
     let right_ca = left_asof.unpack_series_matching_type(right_asof)?;
 
     if let Some(tol) = tolerance {
-        let native_tolerance: T::Native = tol.try_extract()?;
-        let abs_tolerance = native_tolerance.abs_diff(T::Native::zero());
+        let abs_tolerance = abs_tolerance::<T::Native>(&tol)?;
         let filter = |a: T::Native, b: T::Native| a.abs_diff(b) <= abs_tolerance;
         match strategy {
             AsofStrategy::Backward => dispatch_join_by_type::<T, AsofJoinBackwardState, _>(

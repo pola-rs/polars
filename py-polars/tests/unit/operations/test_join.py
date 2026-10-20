@@ -3837,9 +3837,10 @@ def test_join_filter_pushdown_asof_join() -> None:
     assert 'col("a") >= 2' in extract[2]
     assert 'col("b") >= 3' in extract[2]
 
+    # `a >= 2` on the left key also bounds the right key: `b >= 2 - 99`.
     assert extract[3:] == [
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER col("a") >= 3',
+        'FILTER (col("a") >= 3) & (col("b") >= -97)',
     ]
 
     assert_frame_equal(q.collect(), expect)
