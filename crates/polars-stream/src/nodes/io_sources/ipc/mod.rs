@@ -312,7 +312,9 @@ impl FileReader for IpcFileReader {
 
         // Ordered scans hold completed fetches behind the head of line.
         if maintain_order {
-            self.record_batch_prefetch_sync.pipeline_budget.set_ordered();
+            self.record_batch_prefetch_sync
+                .pipeline_budget
+                .set_ordered();
         }
         self.record_batch_prefetch_sync
             .pipeline_budget

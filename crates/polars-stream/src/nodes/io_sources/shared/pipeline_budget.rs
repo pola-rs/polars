@@ -18,9 +18,6 @@ const ORDERED_COUNT_LIMIT: usize = 8192;
 /// Reorder headroom of an ordered scan's window, as time at the store's delivered bandwidth.
 const ORDERED_SLACK: Duration = Duration::from_millis(250);
 
-/// Floor of a scan's share of the default count limit.
-const MIN_SHARE_COUNT_LIMIT: usize = 16;
-
 /// Scan nodes with a pipeline budget that are running, process-wide.
 static ACTIVE_SCANS: AtomicUsize = AtomicUsize::new(0);
 
@@ -38,14 +35,13 @@ pub(crate) fn env_nonzero_usize(env_var: &str) -> Option<usize> {
     })
 }
 
-/// Default prefetch count limit for a scan pipeline: at least the in-flight request budget, split
-/// between `scans` running scans.
-fn default_prefetch_limit(num_pipelines: usize, scans: usize) -> usize {
-    let limit = num_pipelines
+/// Default prefetch count limit for a scan pipeline: at least the in-flight request budget, the
+/// same for every running scan (only the kilobyte limit is split between them).
+fn default_prefetch_limit(num_pipelines: usize) -> usize {
+    num_pipelines
         .saturating_mul(2)
         .max(get_inflight_request_budget() as usize)
-        .clamp(MIN_SHARE_COUNT_LIMIT, PipelineBudget::MAX_DEFAULT_COUNT_LIMIT);
-    (limit / scans).max(MIN_SHARE_COUNT_LIMIT)
+        .clamp(16, PipelineBudget::MAX_DEFAULT_COUNT_LIMIT)
 }
 
 /// Default prefetch kilobyte limit for a scan pipeline, split between `scans` running scans, at
@@ -152,18 +148,17 @@ impl PipelineBudget {
     /// Upper bound of the default count limit.
     pub(crate) const MAX_DEFAULT_COUNT_LIMIT: usize = 2048;
 
-    /// Registers the scan as running and takes its share of the default limits; a limit set by an
-    /// env var is used as is and never grows.
+    /// Registers the scan as running and takes its share of the default kilobyte limit; a limit set
+    /// by an env var is used as is and never grows.
     pub fn new(
         count_limit_env: Option<usize>,
         kbytes_limit_env: Option<usize>,
         num_pipelines: usize,
     ) -> Self {
         let (registration, scans) = ScanRegistration::register();
-        let count_limit =
-            count_limit_env.unwrap_or_else(|| default_prefetch_limit(num_pipelines, scans));
-        let kbytes_limit = kbytes_limit_env
-            .unwrap_or_else(|| default_prefetch_kbytes_limit(num_pipelines, scans));
+        let count_limit = count_limit_env.unwrap_or_else(|| default_prefetch_limit(num_pipelines));
+        let kbytes_limit =
+            kbytes_limit_env.unwrap_or_else(|| default_prefetch_kbytes_limit(num_pipelines, scans));
 
         Self {
             count: Arc::new(Semaphore::new(count_limit)),
