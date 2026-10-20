@@ -15,8 +15,19 @@ static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
 /// and queue slots for fetches smaller than the window / this limit.
 const ORDERED_COUNT_LIMIT: usize = 8192;
 
-/// Reorder headroom of an ordered scan's window, as time at the store's delivered bandwidth.
-const ORDERED_SLACK: Duration = Duration::from_millis(250);
+const DEFAULT_ORDERED_SLACK_MS: u64 = 100;
+
+/// Reorder headroom of an ordered scan's window, as time at the store's delivered bandwidth
+/// (`POLARS_CLOUD_PREFETCH_ORDERED_SLACK_MS`).
+static ORDERED_SLACK: LazyLock<Duration> = LazyLock::new(|| {
+    let env_var = "POLARS_CLOUD_PREFETCH_ORDERED_SLACK_MS";
+    Duration::from_millis(
+        std::env::var(env_var).map_or(DEFAULT_ORDERED_SLACK_MS, |x| {
+            x.parse::<u64>()
+                .unwrap_or_else(|_| panic!("invalid value for {env_var}: {x}"))
+        }),
+    )
+});
 
 /// Scan nodes with a pipeline budget that are running, process-wide.
 static ACTIVE_SCANS: AtomicUsize = AtomicUsize::new(0);
