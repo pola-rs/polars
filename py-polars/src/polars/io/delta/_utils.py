@@ -30,6 +30,8 @@ def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> st
 
     return resolved_uri
 
+_DELTA_TABLE_CACHE = {}
+
 
 def _get_delta_lake_table(
     table_path: str | Path | DeltaTable,
@@ -37,18 +39,9 @@ def _get_delta_lake_table(
     storage_options: StorageOptionsDict | None = None,
     delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
-    """
-    Initialize a Delta lake table for use in read and scan operations.
-
-    Notes
-    -----
-    Make sure to install deltalake>=0.8.0. Read the documentation
-    `here <https://delta-io.github.io/delta-rs/usage/installation/>`_.
-    """
     _check_if_delta_available()
 
     if storage_options is not None:
-        # Don't pass these to delta as it errors on non-string type values.
         storage_options = {
             k: v
             for k, v in storage_options.items()
@@ -56,23 +49,17 @@ def _get_delta_lake_table(
         }
 
     if isinstance(table_path, deltalake.DeltaTable):
-        if any(
-            [
-                version is not None,
-                storage_options is not None,
-                delta_table_options is not None,
-            ]
-        ):
-            warnings.warn(
-                """When supplying a DeltaTable directly, `version`, `storage_options`, and `delta_table_options` are ignored.
-                To silence this warning, don't supply those parameters.""",
-                RuntimeWarning,
-                stacklevel=1,
-            )
         return table_path
+
     if delta_table_options is None:
         delta_table_options = {}
+
     resolved_uri = _resolve_delta_lake_uri(table_path)
+    cache_key = (str(resolved_uri), version)
+
+    if cache_key in _DELTA_TABLE_CACHE:
+        return _DELTA_TABLE_CACHE[cache_key]
+
     if not isinstance(version, (str, datetime)):
         dl_tbl = deltalake.DeltaTable(
             resolved_uri,
@@ -82,15 +69,14 @@ def _get_delta_lake_table(
         )
     else:
         dl_tbl = deltalake.DeltaTable(
-            table_path,
+            resolved_uri,
             storage_options=storage_options,
             **delta_table_options,
         )
         dl_tbl.load_as_version(version)
 
+    _DELTA_TABLE_CACHE[cache_key] = dl_tbl
     return dl_tbl
-
-
 def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
         msg = "deltalake is not installed\n\nPlease run: pip install deltalake"
