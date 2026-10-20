@@ -3,10 +3,10 @@ use polars_utils::aliases::{PlIndexMap, PlIndexSet};
 
 use super::*;
 
-/// Raise an error if a file sink at `root` (a sink or multiple sinks) writes to a
-/// local file that the query also scans, as the sink would overwrite the file while
-/// it is being read.
-pub(super) fn ensure_sinks_not_scanned(root: Node, lp_arena: &Arena<IR>) -> PolarsResult<()> {
+/// Raise an error if a sink is used as the input of another operation, or if a file sink at
+/// `root` (a sink or multiple sinks) writes to a local file that the query also scans, as the
+/// sink would overwrite the file while it is being read.
+pub(super) fn validate_sinks(root: Node, lp_arena: &Arena<IR>) -> PolarsResult<()> {
     let sink_nodes = match lp_arena.get(root) {
         IR::SinkMultiple { inputs } => inputs.as_slice(),
         _ => std::slice::from_ref(&root),
@@ -39,9 +39,6 @@ pub(super) fn ensure_sinks_not_scanned(root: Node, lp_arena: &Arena<IR>) -> Pola
             .or_default()
             .push((canonical, sink_path));
     }
-    if sinks.is_empty() {
-        return Ok(());
-    }
 
     let mut stack = vec![root];
     let mut visited = PlIndexSet::default();
@@ -50,7 +47,23 @@ pub(super) fn ensure_sinks_not_scanned(root: Node, lp_arena: &Arena<IR>) -> Pola
             continue;
         }
         let ir = lp_arena.get(node);
-        ir.copy_inputs(&mut stack);
+        let is_sink_multiple = matches!(ir, IR::SinkMultiple { .. });
+        for input in ir.inputs() {
+            let is_valid_input = match lp_arena.get(input) {
+                IR::Sink { .. } => is_sink_multiple,
+                IR::SinkMultiple { .. } => false,
+                _ => true,
+            };
+            polars_ensure!(
+                is_valid_input,
+                InvalidOperation: "a sink cannot be used as the input of another operation"
+            );
+            stack.push(input);
+        }
+
+        if sinks.is_empty() {
+            continue;
+        }
         let IR::Scan {
             sources: ScanSources::Paths(paths),
             ..

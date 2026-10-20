@@ -43,7 +43,7 @@ pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
 pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
-use sinks::ensure_sinks_not_scanned;
+use sinks::validate_sinks;
 use utils::DslConversionContext;
 
 macro_rules! failed_here {
@@ -80,7 +80,7 @@ pub fn to_alp(
 
     match to_alp_impl(lp, &mut ctxt) {
         Ok(root) => {
-            ensure_sinks_not_scanned(root, ctxt.lp_arena)?;
+            validate_sinks(root, ctxt.lp_arena)?;
             Ok(root)
         },
         Err(err) => {
