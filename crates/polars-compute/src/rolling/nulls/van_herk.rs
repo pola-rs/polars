@@ -59,15 +59,6 @@ where
     ))
 }
 
-fn bitmap_words(bitmap: &Bitmap) -> Vec<u64> {
-    let mut chunks = bitmap.fast_iter_u64();
-    let mut words = Vec::with_capacity(bitmap.len().div_ceil(64));
-    words.extend(&mut chunks);
-    let (remainder, remainder_len) = chunks.remainder();
-    words.extend_from_slice(&remainder[..remainder_len.div_ceil(64)]);
-    words
-}
-
 fn sliding_count_validity(
     validity: &Bitmap,
     n: usize,
@@ -139,48 +130,45 @@ fn sliding_count_validity(
 fn dilate(bitmap: &Bitmap, w: usize, out_len: usize) -> Bitmap {
     assert!(out_len >= bitmap.len());
     let num_words = out_len.div_ceil(64);
-    let mut words = bitmap_words(bitmap);
-    words.resize(num_words, 0);
+    let mut bytes = vec![0u8; num_words * 8];
+    let mut chunks = bitmap.fast_iter_u64();
+    let mut i = 0;
+    for word in &mut chunks {
+        bytes[i * 8..i * 8 + 8].copy_from_slice(&word.to_le_bytes());
+        i += 1;
+    }
+    let (remainder, remainder_len) = chunks.remainder();
+    for word in &remainder[..remainder_len.div_ceil(64)] {
+        bytes[i * 8..i * 8 + 8].copy_from_slice(&word.to_le_bytes());
+        i += 1;
+    }
 
-    // Double the covered range each round, in place: only pre-round values are read.
+    // Double the covered range each round, in place: walking backward, every
+    // source position is still at its pre-round value when read.
     let mut covered = 1usize;
     while covered < w {
         let shift = covered.min(w - covered);
         covered += shift;
         let (word_shift, bit_shift) = (shift / 64, (shift % 64) as u32);
-        if word_shift == 0 {
-            let inverse_shift = 64 - bit_shift;
-            let mut previous_word = 0u64;
-            for word in &mut words {
-                let current_word = *word;
-                *word |= previous_word >> inverse_shift | current_word << bit_shift;
-                previous_word = current_word;
+        let inverse_shift = 64 - bit_shift;
+        for i in (word_shift..num_words).rev() {
+            let dst = u64::from_le_bytes(bytes[i * 8..i * 8 + 8].try_into().unwrap());
+            let hi = u64::from_le_bytes(
+                bytes[(i - word_shift) * 8..(i - word_shift) * 8 + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            let mut smeared = hi << bit_shift;
+            if bit_shift > 0 && i > word_shift {
+                let lo = u64::from_le_bytes(
+                    bytes[(i - word_shift - 1) * 8..(i - word_shift) * 8]
+                        .try_into()
+                        .unwrap(),
+                );
+                smeared |= lo >> inverse_shift;
             }
-        } else {
-            let previous = words.clone();
-            if bit_shift == 0 {
-                for (dst, &src) in words.iter_mut().skip(word_shift).zip(&previous) {
-                    *dst |= src;
-                }
-            } else {
-                let inverse_shift = 64 - bit_shift;
-                for (dst, src) in words
-                    .iter_mut()
-                    .skip(word_shift + 1)
-                    .zip(previous.array_windows::<2>())
-                {
-                    *dst |= src[0] >> inverse_shift | src[1] << bit_shift;
-                }
-                if word_shift < words.len() {
-                    words[word_shift] |= words[0] << bit_shift;
-                }
-            }
+            bytes[i * 8..i * 8 + 8].copy_from_slice(&(dst | smeared).to_le_bytes());
         }
     }
-
-    // No-op on little-endian targets; the buffer is read as little-endian bytes.
-    for word in &mut words {
-        *word = word.to_le();
-    }
-    Bitmap::from_u8_vec(bytemuck::cast_slice(&words).to_vec(), out_len)
+    Bitmap::from_u8_vec(bytes, out_len)
 }
