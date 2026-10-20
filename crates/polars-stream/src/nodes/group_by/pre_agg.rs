@@ -66,13 +66,9 @@ impl SplitPreAggs {
 
     /// Drops the pre-aggregates in parallel.
     pub fn free(self, state: &StreamingExecutionState) -> PolarsResult<()> {
-        for_each_parallel(
-            self.0.into_iter(),
-            state.task_metrics(),
-            &|pre_agg| async move {
-                drop(pre_agg);
-                Ok(())
-            },
-        )
+        for_each_parallel(self.0, state.task_metrics(), &|pre_agg| async move {
+            drop(pre_agg);
+            Ok(())
+        })
     }
 }

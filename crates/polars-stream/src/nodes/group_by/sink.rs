@@ -495,6 +495,7 @@ impl GroupBySink {
     /// in its builders and turns its evictions and hot tables into pre-aggregates. Returns the
     /// statistics, the cold frames, and the pre-aggregates pipeline by pipeline in creation
     /// order.
+    #[allow(clippy::type_complexity)]
     pub fn finish_input(
         self,
         params: &GroupByParams,

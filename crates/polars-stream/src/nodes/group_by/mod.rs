@@ -147,7 +147,7 @@ impl InputPayload {
 
 enum GroupByState {
     Sink(GroupBySink),
-    Flush(Flush),
+    Flush(Box<Flush>),
     Done,
 }
 
@@ -420,7 +420,7 @@ impl ComputeNode for GroupByNode {
                 else {
                     unreachable!()
                 };
-                self.state = GroupByState::Flush(self.start_flush(sink, state)?);
+                self.state = GroupByState::Flush(Box::new(self.start_flush(sink, state)?));
             },
             GroupByState::Flush(flush) if flush.is_finished() => {
                 self.state = GroupByState::Done;

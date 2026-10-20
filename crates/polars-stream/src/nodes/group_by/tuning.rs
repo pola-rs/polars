@@ -40,12 +40,12 @@ impl InputStats {
 
     /// The estimated memory of one group of the result, in bytes.
     fn group_bytes(&self) -> u64 {
-        if self.cold_rows > 0 {
-            self.cold_bytes / self.cold_rows
-        } else {
-            self.pre_agg_key_bytes / self.pre_agg_groups.max(1)
-                + REDUCTION_STATE_BYTES * self.num_reductions
-        }
+        self.cold_bytes
+            .checked_div(self.cold_rows)
+            .unwrap_or_else(|| {
+                self.pre_agg_key_bytes / self.pre_agg_groups.max(1)
+                    + REDUCTION_STATE_BYTES * self.num_reductions
+            })
     }
 }
 
