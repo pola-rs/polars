@@ -86,10 +86,10 @@ are case-sensitive. A column can be qualified by any trailing part of the table'
 
 With a default catalog, a table name that is neither a CTE nor a registered table goes to the
 catalog, so a misspelled name is looked up there too. A catalog table that does not exist raises
-`NoSuchTableError` when it loads, which for a lazy query is at `collect()` rather than at
-`execute()`. A name that no catalog can resolve raises "relation ... was not found" instead: for
-example `lineitem` when the default catalog has no `default_namespace`, or `tpch.lineitem` when an
-attached catalog named `tpch` takes precedence over that namespace. Writing the full name, such as
+`NoSuchTableError` when it loads, which can be as late as `collect()`. A name that no catalog can
+resolve raises "relation ... was not found" instead: for example `lineitem` when the default catalog
+has no `default_namespace`, or `tpch.lineitem` when an attached catalog named `tpch` without a
+`default_namespace` takes precedence over that namespace. Writing the full name, such as
 `lake.tpch.lineitem`, makes the catalog explicit.
 
 Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables

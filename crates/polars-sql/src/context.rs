@@ -1441,17 +1441,20 @@ impl SQLContext {
             }
 
             let mut table_map = self.table_map.write().unwrap();
+            // Resolve every name before dropping any, so an error drops nothing.
+            let mut keys = Vec::with_capacity(names.len());
             for name in names {
                 let tbl = object_name_to_string(name);
                 // `DROP TABLE IF EXISTS <tbl>` is a no-op on a missing table;
                 // otherwise dropping a table that doesn't exist is an error.
                 match key_ignoring_case(&table_map, &tbl)?.cloned() {
-                    Some(key) => {
-                        table_map.remove(&key);
-                    },
+                    Some(key) => keys.push(key),
                     None if *if_exists => {},
                     None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
                 }
+            }
+            for key in keys {
+                table_map.remove(&key);
             }
             Ok(DataFrame::empty().lazy())
         } else {

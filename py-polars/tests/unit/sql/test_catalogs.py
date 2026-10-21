@@ -311,6 +311,12 @@ def test_if_exists_without_catalog_name_acts_on_registered_tables(
     assert lake.loads == []
     assert ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item() == 2
 
+    # a name that fails leaves the other names of the statement in place
+    ctx.register_many(Foo=pl.LazyFrame({"x": [1]}), FOO=pl.LazyFrame({"x": [1]}))
+    with pytest.raises(SQLInterfaceError, match="more than one table ignoring case"):
+        ctx.execute("DROP TABLE IF EXISTS staged, foo")
+    assert sorted(ctx.tables()) == ["FOO", "Foo", "staged"]
+
 
 @pytest.mark.write_disk
 def test_catalogs_attached_in_scope_are_detached(lake: CountingCatalog) -> None:
