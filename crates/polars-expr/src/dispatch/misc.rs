@@ -766,6 +766,7 @@ fn trunc_arith_series(
     rhs: &Series,
     op: polars_plan::dsl::TruncArithOp,
 ) -> PolarsResult<Series> {
+    use polars_compute::arithmetic::DivRounding;
     use polars_plan::dsl::TruncArithOp;
 
     Ok(if lhs.dtype().is_decimal() || rhs.dtype().is_decimal() {
@@ -774,8 +775,8 @@ fn trunc_arith_series(
             let (l, r) = polars_core::series::arithmetic::coerce_lhs_rhs_numeric_op(lhs, rhs)?;
             let (l, r) = (l.decimal()?, r.decimal()?);
             match op {
-                TruncArithOp::Rem => l.rem_with(r, false)?,
-                TruncArithOp::IntDiv => l.int_div_with_scale(r, 0, false)?,
+                TruncArithOp::Rem => l.rem_with(r, DivRounding::Trunc)?,
+                TruncArithOp::IntDiv => l.int_div_with_scale(r, 0, DivRounding::Trunc)?,
             }
             .into_series()
         }

@@ -58,6 +58,10 @@ impl NumericListOp {
         Self(NumericOp::FloorDiv)
     }
 
+    pub fn trunc_div() -> Self {
+        Self(NumericOp::TruncDiv)
+    }
+
     pub fn try_get_leaf_supertype(
         &self,
         prim_dtype_lhs: &DataType,

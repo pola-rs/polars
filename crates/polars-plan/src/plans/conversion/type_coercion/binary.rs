@@ -95,6 +95,7 @@ fn process_list_numeric_arithmetic(
         Operator::Multiply => NumericListOp::mul(),
         Operator::TrueDivide | Operator::RustDivide => NumericListOp::div(),
         Operator::FloorDivide => NumericListOp::floor_div(),
+        Operator::TruncDivide => NumericListOp::trunc_div(),
         Operator::Modulus => NumericListOp::rem(),
         _ => return Ok(None),
     };
@@ -287,6 +288,7 @@ fn process_decimal_binary(
                 | Operator::TrueDivide
                 | Operator::RustDivide
                 | Operator::FloorDivide
+                | Operator::TruncDivide
                 | Operator::Modulus
         );
     let is_int =
