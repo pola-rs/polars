@@ -84,6 +84,20 @@ first needed. The name after the catalog is passed to the catalog as written, so
 are case-sensitive. A column can be qualified by any trailing part of the table's full name:
 `lineitem.k`, `tpch.lineitem.k` or `lake.tpch.lineitem.k`.
 
+With a default catalog, a table name that is neither a CTE nor a registered table goes to the
+catalog, so a misspelled name is looked up there too. A catalog table that does not exist raises
+`NoSuchTableError` when it loads, which can be as late as `collect()`. A name that no catalog can
+resolve raises "relation ... was not found" instead: for example `lineitem` when the default catalog
+has no `default_namespace`, or `tpch.lineitem` when an attached catalog named `tpch` without a
+`default_namespace` takes precedence over that namespace. Writing the full name, such as
+`lake.tpch.lineitem`, makes the catalog explicit.
+
+Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
+registered there. If that detaches the default catalog, the default catalog on entry is restored.
+`CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet.
+`DROP TABLE IF EXISTS` and `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
+catalog only act on a registered table.
+
 !!! warning "Serialized plans"
 
     A serialized plan over catalog tables can contain the catalog's properties and storage
