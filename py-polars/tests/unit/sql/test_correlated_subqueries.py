@@ -1275,6 +1275,61 @@ def test_correlated_membership_in_join_on(query: str) -> None:
     )
 
 
+def _first_row_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"id": [1, 2, 3, 4, 5], "k": [1, 2, 3, None, 1]}),
+        "b": pl.DataFrame({"v": [10, 20, 30, None, 40], "w": [1, 2, 3, 4, 5]}),
+        "c": pl.DataFrame(
+            {
+                "k": [1, 1, 1, 2, 2, None, 3],
+                "x": [10, 30, 20, 40, None, 50, 30],
+                "y": [3, None, 1, 2, 5, 1, None],
+            }
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y DESC LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y NULLS FIRST LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y DESC, c.x LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY 1 DESC NULLS LAST LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x AS xx FROM c WHERE c.k = a.k ORDER BY xx LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.y FROM c WHERE c.k = a.k ORDER BY c.x * 2 - c.y DESC NULLS LAST LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.x FETCH FIRST 1 ROW ONLY) AS r FROM a",
+        "SELECT a.id, (SELECT c.x FROM c WHERE c.k > a.k ORDER BY c.x DESC NULLS LAST LIMIT 1) AS r FROM a",
+        "SELECT a.id, (SELECT DISTINCT c.x FROM c WHERE c.k = a.k ORDER BY c.x DESC NULLS LAST LIMIT 1) AS r FROM a",
+        # An aggregate has one row, which `LIMIT 1` keeps.
+        "SELECT a.id, (SELECT COUNT(*) FROM c WHERE c.k = a.k LIMIT 1) AS r FROM a",
+        "SELECT a.id FROM a WHERE a.id * 10 = (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.x LIMIT 1)",
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON b.v = (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y NULLS FIRST LIMIT 1)",
+    ],
+)
+def test_correlated_scalar_subquery_first_row(query: str) -> None:
+    assert_sql_matches(
+        frames=_first_row_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_correlated_scalar_subquery_first_row_unordered(engine: EngineType) -> None:
+    # Without `ORDER BY`, any row of the outer row's group is right.
+    frames = _first_row_frames()
+    query = "SELECT a.id, a.k, (SELECT c.x FROM c WHERE c.k = a.k LIMIT 1) AS r FROM a"
+    res = pl.SQLContext(frames).execute(query).collect(engine=engine)
+    c_rows = frames["c"].select("k", "x").rows()
+    for id, k, r in res.rows():
+        values = [x for ck, x in c_rows if k is not None and ck == k]
+        assert (r in values) if values else r is None, (id, r)
+
+
 def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
     # Key 2 and the NULL key have two rows each, but no outer row asks for them.
     assert_sql_matches(
@@ -1310,6 +1365,10 @@ def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
         # The relations inside an aliased nested join are not resolved by name.
         "SELECT a.id FROM a JOIN (b JOIN d ON b.id = d.x) AS r ON a.id = (SELECT c.id FROM c WHERE c.b_id = b.id)",
         "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        # Only `LIMIT 1` is supported, with an order read from the inner row.
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 2) FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 1 OFFSET 1) FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id * a.v LIMIT 1) FROM a",
         # A correlated `ANY` is not supported, also not in parentheses.
         "SELECT a.id, a.id > ANY (((SELECT c.id FROM c WHERE c.b_id = a.id))) FROM a",
     ],
