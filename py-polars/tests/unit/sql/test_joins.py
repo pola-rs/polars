@@ -129,6 +129,20 @@ def test_join_semi_anti_drops_relation(query: str, relation: str) -> None:
         pl.SQLContext(frames).execute(query, eager=True)
 
 
+def test_join_right_semi_in_implicit_join() -> None:
+    frames = {
+        "m": pl.DataFrame({"k": [1]}),
+        "l": pl.DataFrame({"k": [2]}),
+        "r": pl.DataFrame({"k": [2]}),
+    }
+    res = pl.SQLContext(frames).execute(
+        "SELECT r.k AS rk, m.k AS mk FROM m, l RIGHT SEMI JOIN r ON l.k = r.k "
+        "WHERE m.k + 1 = r.k",
+        eager=True,
+    )
+    assert res.rows() == [(2, 1)]
+
+
 def test_join_cross() -> None:
     frames = {
         "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),

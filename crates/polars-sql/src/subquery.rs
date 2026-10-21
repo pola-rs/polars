@@ -22,8 +22,8 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
     Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
-    UnaryOperator as SQLUnaryOperator, Value as SQLValue, Visit, VisitMut, Visitor, VisitorMut,
-    visit_expressions, visit_expressions_mut,
+    UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
+    visit_expressions_mut,
 };
 
 use crate::catalog::CatalogSpellings;
@@ -239,6 +239,10 @@ impl SQLContext {
         let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
+        // An aggregating subquery is left to `try_decorrelate_exists_subquery`.
+        if exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) != Some(false) {
+            return Ok(None);
+        }
         if let Some(conjuncts) = ctx.split_subquery_conjuncts(
             &selection,
             &inner_names,
@@ -1189,6 +1193,17 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}exists");
+        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
+            None => return Ok(None),
+            // An aggregate without GROUP BY returns one row, even over no rows.
+            Some(true) => {
+                return Ok(Some((
+                    lf.with_column(lit(true).alias(flag_name.clone())),
+                    flag_name,
+                )));
+            },
+            Some(false) => {},
+        }
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
         if corr_preds.is_empty() {
@@ -1774,6 +1789,99 @@ fn classify_correlation_column(
     })
 }
 
+/// How many rows an `EXISTS` subquery that passed `eligible_subquery_select` returns because
+/// of its aggregates: `Some(true)` if it aggregates its own rows and so returns exactly one,
+/// `Some(false)` if it does not aggregate, and `None` for shapes left unsupported (an
+/// aggregate over outer columns only, which belongs to the outer query, or `UNNEST`).
+fn exists_aggregates(
+    ctx: &SQLContext,
+    query: &Query,
+    select: &Select,
+    inner_names: &[RelationName],
+    inner_schema: &Schema,
+) -> Option<bool> {
+    struct Aggregates<'a> {
+        ctx: &'a SQLContext,
+        inner_names: &'a [RelationName],
+        inner_schema: &'a Schema,
+        query_depth: usize,
+        local: bool,
+        outer: bool,
+        unsupported: bool,
+    }
+
+    impl Aggregates<'_> {
+        fn is_inner_column(&self, expr: &SQLExpr) -> Option<bool> {
+            match expr {
+                SQLExpr::Identifier(ident) => Some(self.inner_schema.contains(&ident.value)),
+                SQLExpr::CompoundIdentifier(parts) => Some(
+                    match_qualifier(parts, self.inner_names.iter()).is_some()
+                        || self.inner_schema.contains(&parts[0].value),
+                ),
+                _ => None,
+            }
+        }
+    }
+
+    impl Visitor for Aggregates<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            let SQLExpr::Function(function) = expr else {
+                return ControlFlow::Continue(());
+            };
+            if self.query_depth > 0 {
+                return ControlFlow::Continue(());
+            }
+            match PolarsSQLFunctions::try_from_sql(function, self.ctx) {
+                Ok(PolarsSQLFunctions::Explode) => self.unsupported = true,
+                Ok(f) if f.is_builtin_aggregate() && function.over.is_none() => {
+                    // An aggregate belongs to the outer query if it reads only outer columns.
+                    let (mut inner, mut outer) = (false, false);
+                    let _ = visit_expressions(&function.args, |e: &SQLExpr| {
+                        match self.is_inner_column(e) {
+                            Some(true) => inner = true,
+                            Some(false) => outer = true,
+                            None => {},
+                        }
+                        ControlFlow::<()>::Continue(())
+                    });
+                    if inner || !outer {
+                        self.local = true;
+                    } else {
+                        self.outer = true;
+                    }
+                },
+                _ => {},
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut aggregates = Aggregates {
+        ctx,
+        inner_names,
+        inner_schema,
+        query_depth: 0,
+        local: false,
+        outer: false,
+        unsupported: false,
+    };
+    let _ = select.projection.visit(&mut aggregates);
+    let _ = query.order_by.visit(&mut aggregates);
+    (!aggregates.unsupported && !aggregates.outer).then_some(aggregates.local)
+}
+
 // Shared eligibility gate for the rewrites: bail on any clause that changes
 // which rows the subquery yields. Exhaustive destructuring (no `..`) is on
 // purpose: a new sqlparser clause must not compile until it gets an explicit
@@ -2081,93 +2189,8 @@ impl VisitorMut for DesugarQuantified {
     }
 }
 
-/// Rewrite `EXISTS (subquery)` to `TRUE` and `NOT EXISTS (subquery)` to `FALSE` when the
-/// subquery aggregates without `GROUP BY`, as it then returns exactly one row.
-struct FoldExistsOverAggregates<'a>(&'a SQLContext);
-
-impl VisitorMut for FoldExistsOverAggregates<'_> {
-    type Break = ();
-
-    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
-        if let SQLExpr::Exists { subquery, negated } = &*expr
-            && returns_one_row(subquery, self.0)
-        {
-            *expr = SQLExpr::value(SQLValue::Boolean(!*negated));
-        }
-        ControlFlow::Continue(())
-    }
-}
-
-/// Whether `query` aggregates without `GROUP BY` and keeps its single row.
-fn returns_one_row(query: &Query, ctx: &SQLContext) -> bool {
-    let SetExpr::Select(select) = query.body.as_ref() else {
-        return false;
-    };
-    let no_group_by = matches!(
-        &select.group_by,
-        GroupByExpr::Expressions(e, m) if e.is_empty() && m.is_empty()
-    );
-    if !no_group_by
-        || select.having.is_some()
-        || select.qualify.is_some()
-        || select.top.is_some()
-        || query.limit_clause.is_some()
-        || query.fetch.is_some()
-        || !query.pipe_operators.is_empty()
-    {
-        return false;
-    }
-
-    // Finds an aggregate call outside of windows and subqueries.
-    struct Aggregates<'a> {
-        ctx: &'a SQLContext,
-        query_depth: usize,
-    }
-
-    impl Visitor for Aggregates<'_> {
-        type Break = ();
-
-        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
-            self.query_depth += 1;
-            ControlFlow::Continue(())
-        }
-
-        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
-            self.query_depth -= 1;
-            ControlFlow::Continue(())
-        }
-
-        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
-            match expr {
-                SQLExpr::Function(function)
-                    if self.query_depth == 0
-                        && function.over.is_none()
-                        && PolarsSQLFunctions::is_builtin_aggregate_call(function, self.ctx) =>
-                {
-                    ControlFlow::Break(())
-                },
-                _ => ControlFlow::Continue(()),
-            }
-        }
-    }
-
-    select.projection.iter().any(|item| {
-        let expr = match item {
-            SelectItem::UnnamedExpr(expr) | SelectItem::ExprWithAlias { expr, .. } => expr,
-            _ => return false,
-        };
-        expr.visit(&mut Aggregates {
-            ctx,
-            query_depth: 0,
-        })
-        .is_break()
-    })
-}
-
-/// Rewrites applied to a statement before it is planned.
-pub(crate) fn desugar_subqueries(stmt: &mut Statement, ctx: &SQLContext) {
+pub(crate) fn desugar_quantified_subqueries(stmt: &mut Statement) {
     let _ = VisitMut::visit(stmt, &mut DesugarQuantified);
-    let _ = VisitMut::visit(stmt, &mut FoldExistsOverAggregates(ctx));
 }
 
 /// Which correlated-subquery node kinds a lowering pass should claim.

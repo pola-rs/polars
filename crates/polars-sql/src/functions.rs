@@ -1067,7 +1067,10 @@ impl PolarsSQLFunctions {
 }
 
 impl PolarsSQLFunctions {
-    fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
+    pub(crate) fn try_from_sql(
+        function: &'_ SQLFunction,
+        ctx: &'_ SQLContext,
+    ) -> PolarsResult<Self> {
         let function_name = function.name.0[0].as_ident().unwrap().value.to_lowercase();
         Ok(match function_name.as_str() {
             // ----
@@ -1276,13 +1279,8 @@ impl PolarsSQLFunctions {
         })
     }
 
-    /// Whether `function`, called without OVER, is a SQL aggregate.
-    pub(crate) fn is_builtin_aggregate_call(function: &SQLFunction, ctx: &SQLContext) -> bool {
-        Self::try_from_sql(function, ctx).is_ok_and(|f| f.is_builtin_aggregate())
-    }
-
     /// Whether this is a SQL aggregate function when called without OVER.
-    fn is_builtin_aggregate(&self) -> bool {
+    pub(crate) fn is_builtin_aggregate(&self) -> bool {
         use PolarsSQLFunctions::*;
         match self {
             #[cfg(feature = "approx_quantile")]

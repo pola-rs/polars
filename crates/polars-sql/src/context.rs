@@ -53,7 +53,7 @@ use crate::sql_visitors::{
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
 };
-use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_subqueries};
+use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 use crate::unique_column_name;
@@ -508,7 +508,7 @@ impl SQLContext {
         }
 
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
-        desugar_subqueries(&mut stmt, self);
+        desugar_quantified_subqueries(&mut stmt);
         self.catalog_spellings = catalog_spellings;
         let res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
@@ -570,7 +570,7 @@ impl SQLContext {
             })
             .collect();
 
-        desugar_subqueries(&mut stmt, self);
+        desugar_quantified_subqueries(&mut stmt);
         DslPlan::SQL {
             query: Arc::new(query.to_owned()),
             relations,
@@ -599,7 +599,7 @@ impl SQLContext {
                     Some(stmt) => stmt.clone(),
                     None => {
                         let mut stmt = parse_single_statement(query)?;
-                        desugar_subqueries(&mut stmt, self);
+                        desugar_quantified_subqueries(&mut stmt);
                         stmt
                     },
                 };
@@ -3577,7 +3577,11 @@ impl SQLContext {
         let mut pending = Vec::with_capacity(from.len() - 1);
         for tbl_expr in from.iter().skip(1) {
             let mut rf = self.execute_from_statement(tbl_expr)?;
-            let r_name = get_table_name(&tbl_expr.relation).unwrap_or_default();
+            let r_name = kept_factors(tbl_expr)
+                .into_iter()
+                .next()
+                .and_then(get_table_name)
+                .unwrap_or_default();
             polars_ensure!(
                 !r_name.is_empty(),
                 SQLInterface: "implicit joins require named tables; please provide an alias"
