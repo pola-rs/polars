@@ -33,7 +33,7 @@ use crate::context::{
 };
 use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
-use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
+use crate::sql_expr::{parse_sql_expr, reduced_subquery, sql_in_membership, sql_is_in};
 use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_subquery_expr};
 use crate::{SQLContext, unique_column_name};
 
@@ -1154,30 +1154,10 @@ impl SQLContext {
         Ok(Some((joined, set_name)))
     }
 
-    /// Whether the uncorrelated `subquery` aggregates without `GROUP BY`, and so returns
-    /// exactly one row.
-    pub(crate) fn exists_over_aggregate(&mut self, subquery: &Query) -> PolarsResult<bool> {
-        let Some(select) = eligible_subquery_select(subquery) else {
-            return Ok(false);
-        };
-        let mut ctx = self.isolated();
-        let Some((inner_names, _, inner_schema)) = ctx.resolve_subquery_from(select)? else {
-            return Ok(false);
-        };
-        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
-            Some(one_row) => Ok(one_row),
-            None => polars_bail!(
-                SQLInterface:
-                "EXISTS subquery is not currently supported in this position: {:?}", subquery
-            ),
-        }
-    }
-
     // Attempt the decorrelation of a single `EXISTS` subquery into a boolean flag
     // column holding `count(*) > 0` over the correlated match set. An uncorrelated
-    // subquery yields a single constant boolean broadcast onto every outer row
-    // instead, no join being needed to know whether a fixed relation is non-empty.
-    // Returns `None` for shapes that can't be soundly classified.
+    // subquery is one value instead, kept in `exists_values` for `visit_exists`, and
+    // `None` is returned. Also `None` for shapes that can't be soundly classified.
     fn try_decorrelate_exists_subquery(
         &mut self,
         lf: LazyFrame,
@@ -1212,8 +1192,23 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}exists");
-        // An uncorrelated subquery is evaluated once, as a scalar.
-        if !is_correlated_subquery(subquery, self.catalog_spellings()) {
+        // An uncorrelated subquery is one value, which `visit_exists` takes.
+        if corr_preds.is_empty() && !is_correlated_subquery(subquery, self.catalog_spellings()) {
+            let exists =
+                match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
+                    None => return Ok(None),
+                    Some(true) => lit(true),
+                    Some(false) => {
+                        let inner = local_filters
+                            .into_iter()
+                            .fold(inner_lf, LazyFrame::filter)
+                            .limit(1)
+                            .select([len().gt(lit(0))]);
+                        inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+                        reduced_subquery(inner, first().as_expr().item(true))
+                    },
+                };
+            self.exists_values.push((subquery.clone(), exists));
             return Ok(None);
         }
         match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {

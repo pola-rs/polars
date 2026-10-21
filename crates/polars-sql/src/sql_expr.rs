@@ -112,7 +112,7 @@ pub(crate) fn sql_is_in(needle: Expr, set: Expr) -> Expr {
 }
 
 /// `reduce_expr`, which must give one row, over the column of the subquery `lf`.
-fn reduced_subquery(lf: LazyFrame, reduce_expr: Expr) -> Expr {
+pub(crate) fn reduced_subquery(lf: LazyFrame, reduce_expr: Expr) -> Expr {
     let new_name = unique_column_name();
     Expr::SubPlan(
         SpecialEq::new(Arc::new(lf.logical_plan)),
@@ -626,17 +626,30 @@ impl SQLExprVisitor<'_> {
     /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed. An
     /// uncorrelated subquery becomes one value, a correlated one is not supported here.
     fn visit_exists(&mut self, subquery: &Subquery, negated: bool) -> PolarsResult<Expr> {
+        let exists = match self
+            .ctx
+            .exists_values
+            .iter()
+            .position(|(query, _)| query == subquery)
+        {
+            Some(i) => self.ctx.exists_values.swap_remove(i).1,
+            None => self.evaluate_exists(subquery)?,
+        };
+        Ok(if negated { exists.not() } else { exists })
+    }
+
+    /// The value of an uncorrelated `EXISTS (subquery)` that lowering did not plan.
+    fn evaluate_exists(&mut self, subquery: &Subquery) -> PolarsResult<Expr> {
         let unsupported = || {
             polars_err!(
                 SQLInterface:
                 "EXISTS subquery is not currently supported in this position: {:?}", subquery
             )
         };
-        if is_correlated_subquery(subquery, self.ctx.catalog_spellings()) {
+        if is_correlated_subquery(subquery, self.ctx.catalog_spellings())
+            || self.has_unnest(subquery)
+        {
             return Err(unsupported());
-        }
-        if self.ctx.exists_over_aggregate(subquery)? {
-            return Ok(lit(!negated));
         }
         let lf = match self.execute_subquery(subquery) {
             Ok(lf) => lf,
@@ -645,8 +658,7 @@ impl SQLExprVisitor<'_> {
             Err(e) => return Err(e),
         };
         let lf = lf.limit(1).select([len().gt(lit(0))]);
-        let exists = reduced_subquery(lf, first().as_expr().item(true));
-        Ok(if negated { exists.not() } else { exists })
+        Ok(reduced_subquery(lf, first().as_expr().item(true)))
     }
 
     /// Whether `subquery` names a column of the outer query without a qualifier.
@@ -656,6 +668,22 @@ impl SQLExprVisitor<'_> {
         };
         visit_expressions(subquery, |e: &SQLExpr| match e {
             SQLExpr::Identifier(ident) if schema.contains(&ident.value) => ControlFlow::Break(()),
+            _ => ControlFlow::Continue(()),
+        })
+        .is_break()
+    }
+
+    /// Whether `subquery` calls `UNNEST`, which can return no rows for an aggregate.
+    fn has_unnest(&self, subquery: &Subquery) -> bool {
+        visit_expressions(subquery, |e: &SQLExpr| match e {
+            SQLExpr::Function(function)
+                if matches!(
+                    PolarsSQLFunctions::try_from_sql(function, self.ctx),
+                    Ok(PolarsSQLFunctions::Explode)
+                ) =>
+            {
+                ControlFlow::Break(())
+            },
             _ => ControlFlow::Continue(()),
         })
         .is_break()

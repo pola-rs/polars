@@ -152,11 +152,39 @@ def test_uncorrelated_exists_in_aggregate_query(query: str) -> None:
     assert_sql_matches(frames=_frames(), query=query, compare_with="duckdb")
 
 
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT CAST('bad' AS INT) FROM t2",
+        "SELECT w, w FROM t2",
+    ],
+)
+def test_uncorrelated_exists_ignores_projection(subquery: str) -> None:
+    res = pl.SQLContext(_frames()).execute(
+        f"SELECT a, EXISTS ({subquery}) AS e FROM t1 ORDER BY a", eager=True
+    )
+    assert res["e"].to_list() == [True, True, True]
+
+
 def test_uncorrelated_exists_missing_column() -> None:
     with pytest.raises(ColumnNotFoundError, match="missing"):
         pl.SQLContext(_frames()).execute(
-            "SELECT a FROM t1 WHERE EXISTS (SELECT missing FROM t2)", eager=True
+            "SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE missing = 1)",
+            eager=True,
         )
+
+
+def test_correlated_exists_unqualified_outer_column() -> None:
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2, 3]}),
+        "r": pl.DataFrame({"v": [2, None]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT k, EXISTS (SELECT 1 FROM r WHERE v = k) AS e FROM l ORDER BY k",
+        compare_with="duckdb",
+        expected={"k": [1, 2, 3], "e": [False, True, False]},
+    )
 
 
 def test_exists_empty_inner_result() -> None:
