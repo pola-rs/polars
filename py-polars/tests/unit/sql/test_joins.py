@@ -568,7 +568,7 @@ def test_non_equi_right_and_full_join(join_type: str, condition: str) -> None:
 
 
 @pytest.mark.parametrize("join_type", ["LEFT SEMI", "LEFT ANTI"])
-def test_non_equi_outer_joins_unsupported(join_type: str) -> None:
+def test_non_equi_semi_anti_joins_unsupported(join_type: str) -> None:
     # A non-equi ON clause routes through `join_where`, which has no semi or anti join.
     ctx = pl.SQLContext(
         v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),

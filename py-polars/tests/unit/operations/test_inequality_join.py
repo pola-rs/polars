@@ -517,6 +517,7 @@ def _outer_join_where_reference(
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize("empty", [None, "left", "right"])
 @pytest.mark.parametrize(
     "predicate",
     [
@@ -530,32 +531,38 @@ def _outer_join_where_reference(
     ],
 )
 def test_outer_join_where_matches_reference(
-    engine: EngineType, how: Literal["left", "right", "full"], predicate: pl.Expr
+    engine: EngineType,
+    how: Literal["left", "right", "full"],
+    empty: str | None,
+    predicate: pl.Expr,
 ) -> None:
     left = pl.DataFrame({"a": [1, 2, 3, None, 5, 2], "b": [10, 20, None, 40, 50, 25]})
     right = pl.DataFrame({"c": [2, 3, 7, None, 1], "d": [15, None, 45, 5, 30]})
-    for lhs, rhs in [(left, right), (left.clear(), right), (left, right.clear())]:
-        got = (
-            lhs.lazy().join_where(rhs.lazy(), predicate, how=how).collect(engine=engine)
-        )
-        expected = _outer_join_where_reference(lhs, rhs, predicate, how)
-        assert_frame_equal(got, expected, check_row_order=False)
+    if empty == "left":
+        left = left.clear()
+    elif empty == "right":
+        right = right.clear()
+    got = (
+        left.lazy().join_where(right.lazy(), predicate, how=how).collect(engine=engine)
+    )
+    expected = _outer_join_where_reference(left, right, predicate, how)
+    assert_frame_equal(got, expected, check_row_order=False)
 
 
-def test_full_join_where_slice() -> None:
+@pytest.mark.parametrize(("offset", "length"), [(0, 2), (2, 3), (4, 10)])
+def test_full_join_where_slice(offset: int, length: int) -> None:
     left = pl.DataFrame({"a": [1, 2, 3, None], "b": [10, 20, 30, 40]})
     right = pl.DataFrame({"c": [2, 3, 7], "d": [15, 5, 45]})
     predicate = (pl.col("a") < pl.col("c")) & (pl.col("b") > pl.col("d"))
     expected = _outer_join_where_reference(left, right, predicate, "full")
-    for offset, length in [(0, 2), (2, 3), (4, 10)]:
-        got = (
-            left.lazy()
-            .join_where(right.lazy(), predicate, how="full")
-            .slice(offset, length)
-            .collect()
-        )
-        assert got.height == expected.slice(offset, length).height
-        assert set(got.iter_rows()) <= set(expected.iter_rows())
+    got = (
+        left.lazy()
+        .join_where(right.lazy(), predicate, how="full")
+        .slice(offset, length)
+        .collect()
+    )
+    assert got.height == expected.slice(offset, length).height
+    assert set(got.iter_rows()) <= set(expected.iter_rows())
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -585,6 +592,42 @@ def test_full_join_where_downgraded_by_filter(
         query.collect(engine=engine, optimizations=disabled),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("predicate", "non_null", "plan"),
+    [
+        (
+            (pl.col("a") == pl.col("c")) & (pl.col("a") + pl.col("c") >= 0),
+            pl.col("a").is_not_null() & pl.col("c").is_not_null(),
+            ["INNER JOIN", 'LEFT PLAN ON: [col("a")]'],
+        ),
+        (
+            (pl.col("a") <= pl.col("c")) & (pl.col("a") + 1 > pl.col("c")),
+            pl.col("a").is_not_null() & pl.col("c").is_not_null(),
+            ["RANGE JOIN"],
+        ),
+        # A left join pushes `c < 10` into the right input.
+        (
+            (pl.col("a") == pl.col("c")) & (pl.col("c") < 10),
+            pl.col("a").is_not_null(),
+            ["LEFT JOIN", 'LEFT PLAN ON: [col("a")]', "< dyn int: 10"],
+        ),
+    ],
+)
+def test_full_join_where_downgrade_picks_join_algorithm(
+    engine: EngineType, predicate: pl.Expr, non_null: pl.Expr, plan: list[str]
+) -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3, None], "b": [10, 20, 30, 40]})
+    right = pl.LazyFrame({"c": [0, 2, 3, 20, None], "d": [1, 2, 3, 4, 5]})
+    query = left.join_where(right, predicate, how="full").filter(non_null)
+    explain = query.explain(engine="streaming")
+    assert all(part in explain for part in plan)
+    expected = _outer_join_where_reference(
+        left.collect(), right.collect(), predicate, "full"
+    ).filter(non_null)
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

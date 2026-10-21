@@ -47,6 +47,14 @@ pub(super) fn process_join(
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
+    try_downgrade_non_equi_join(
+        &schema_left,
+        &schema_right,
+        &mut options,
+        &acc_predicates,
+        expr_arena,
+    );
+
     push_down_join_condition(
         &mut input_left,
         &mut input_right,
@@ -689,7 +697,8 @@ fn downgradable_outer_join_below(
         let schema_left = lp_arena.get(*input_left).schema(lp_arena);
         let schema_right = lp_arena.get(*input_right).schema(lp_arena);
         let origin = non_null_side_for_column(&name, &schema_left, &schema_right, options);
-        if join_type_rewritable(options, expr_arena) && downgraded_join_type(how, origin).is_some()
+        if join_condition_allows_downgrade(options, expr_arena)
+            && downgraded_join_type(how, origin).is_some()
         {
             return Ok(true);
         }

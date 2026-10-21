@@ -142,7 +142,6 @@ pub(super) fn fused_cross_filter(
     suffix: Option<PlSmallStr>,
     cross_join_options: &CrossJoinOptions,
     maintain_order: MaintainOrderJoin,
-    // A `how=cross`, or an inner or outer join in `join_where`.
     how: &JoinType,
 ) -> PolarsResult<DataFrame> {
     let emit_unmatched_left = how.emits_unmatched_left();
@@ -220,9 +219,9 @@ pub(super) fn fused_cross_filter(
                         None => mask_arr.values().clone(),
                     };
 
-                    // Emit each left row's matches, or a single null-extended row when it has
-                    // none, so that unmatched rows keep their position in the left input's
-                    // order instead of being appended after the matched ones.
+                    // Emit each left row's matches. With `emit_unmatched_left`, a left row
+                    // without a match gives a single null-extended row in its place in the
+                    // left input's order, instead of being appended after the matched ones.
                     let capacity = match_bits.set_bits() + len_left;
                     let mut left_idx: Vec<IdxSize> = Vec::with_capacity(capacity);
                     let mut right_idx: Vec<NullableIdxSize> = Vec::with_capacity(capacity);
@@ -271,11 +270,14 @@ pub(super) fn fused_cross_filter(
             .map(|j| j as IdxSize)
             .collect();
         if !unmatched.is_empty() {
-            let left_idx = vec![NullableIdxSize::null(); unmatched.len()];
-            let mut out =
-                unsafe { IdxCa::with_nullable_idx(&left_idx, |idx| left.take_unchecked(idx)) };
-            let idx = unsafe { IdxCa::mmap_slice(PlSmallStr::EMPTY, &unmatched) };
-            let mut right_columns = unsafe { right.take_unchecked(&idx) }.into_columns();
+            let mut out = DataFrame::full_null(left.schema(), unmatched.len());
+            let mut right_columns = if unmatched.len() == len_right {
+                right.clone()
+            } else {
+                let idx = unsafe { IdxCa::mmap_slice(PlSmallStr::EMPTY, &unmatched) };
+                unsafe { right.take_unchecked(&idx) }
+            }
+            .into_columns();
             for (c, name) in right_columns.iter_mut().zip(rename_names) {
                 c.rename((*name).clone());
             }

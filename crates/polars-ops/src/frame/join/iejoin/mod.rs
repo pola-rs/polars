@@ -494,25 +494,16 @@ pub(super) fn iejoin_par(
         });
     }
 
-    let (mut left_idx, mut right_idx) = iejoin_par_indices(selected_left, selected_right, options)?;
-
-    if emit_unmatched == EmitUnmatched::Both {
-        let (taken_left, taken_right) =
-            take_unmatched_both(left, right, &left_idx, &right_idx, slice)?;
-        return _finish_join(taken_left, taken_right, suffix);
-    }
-    if emit_unmatched == EmitUnmatched::Left {
-        let (taken_left, taken_right) =
-            take_unmatched_left(left, right, &left_idx, &right_idx, left.height(), slice)?;
-        return _finish_join(taken_left, taken_right, suffix);
-    }
-
-    if let Some((offset, end)) = slice {
-        left_idx = left_idx.slice(offset, end);
-        right_idx = right_idx.slice(offset, end);
-    }
-
-    unsafe { materialize_join(left, right, &left_idx, &right_idx, suffix) }
+    let (left_idx, right_idx) = iejoin_par_indices(selected_left, selected_right, options)?;
+    finish_ie_join(
+        left,
+        right,
+        left_idx,
+        right_idx,
+        emit_unmatched,
+        suffix,
+        slice,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -535,32 +526,50 @@ pub(super) fn iejoin(
 
     // Internal slice-based pruning would cause matched rows to be misreported as
     // unmatched; the final slice is applied after unmatched rows are appended instead.
-    let match_slice = if matches!(emit_unmatched, EmitUnmatched::Left | EmitUnmatched::Both) {
-        None
+    let (match_slice, final_slice) = if emit_unmatched == EmitUnmatched::None {
+        (slice, None)
     } else {
-        slice
+        (None, slice)
     };
     let (left_row_idx, right_row_idx) =
         compute_ie_join_indices(selected_left, selected_right, options, match_slice)?;
+    finish_ie_join(
+        left,
+        right,
+        left_row_idx,
+        right_row_idx,
+        emit_unmatched,
+        suffix,
+        final_slice,
+    )
+}
 
-    if emit_unmatched == EmitUnmatched::Both {
-        let (taken_left, taken_right) =
-            take_unmatched_both(left, right, &left_row_idx, &right_row_idx, slice)?;
-        return _finish_join(taken_left, taken_right, suffix);
-    }
-    if emit_unmatched == EmitUnmatched::Left {
-        let (taken_left, taken_right) = take_unmatched_left(
-            left,
-            right,
-            &left_row_idx,
-            &right_row_idx,
-            left.height(),
-            slice,
-        )?;
-        return _finish_join(taken_left, taken_right, suffix);
-    }
-
-    unsafe { materialize_join(left, right, &left_row_idx, &right_row_idx, suffix) }
+/// Takes the matched rows, adds the unmatched rows `emit_unmatched` asks for and applies
+/// `slice` to the result. [`EmitUnmatched::Right`] is handled by flipping the inputs.
+fn finish_ie_join(
+    left: &DataFrame,
+    right: &DataFrame,
+    mut left_idx: IdxCa,
+    mut right_idx: IdxCa,
+    emit_unmatched: EmitUnmatched,
+    suffix: Option<PlSmallStr>,
+    slice: Option<(i64, usize)>,
+) -> PolarsResult<DataFrame> {
+    let (taken_left, taken_right) = match emit_unmatched {
+        EmitUnmatched::None => {
+            if let Some((offset, len)) = slice {
+                left_idx = left_idx.slice(offset, len);
+                right_idx = right_idx.slice(offset, len);
+            }
+            return unsafe { materialize_join(left, right, &left_idx, &right_idx, suffix) };
+        },
+        EmitUnmatched::Left => {
+            take_unmatched_left(left, right, &left_idx, &right_idx, left.height(), slice)?
+        },
+        EmitUnmatched::Both => take_unmatched_both(left, right, &left_idx, &right_idx, slice)?,
+        EmitUnmatched::Right => unreachable!(),
+    };
+    _finish_join(taken_left, taken_right, suffix)
 }
 
 fn compute_ie_join_indices(
