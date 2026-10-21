@@ -1743,12 +1743,17 @@ fn classify_correlation_column(
         SQLExpr::Identifier(ident) => (None, ident.value.as_str()),
         SQLExpr::CompoundIdentifier(parts) => {
             // A relation of the outer query is outer (so same-named columns like
-            // `o.id = c.id` resolve). Any other qualifier, or one that may be a struct
-            // column of the subquery, is not an outer column.
+            // `o.id = c.id` resolve). Any other qualifier, or a struct column of the
+            // subquery, is not an outer column.
             let (side, q, len) = match inner.resolve_qualifier(parts)? {
                 Some((q, len)) => (CorrelationSide::Inner, q, len),
                 None => match outer.resolve_qualifier(parts)? {
-                    Some((q, len)) if !inner_schema.contains(&parts[0].value) => {
+                    Some((q, len))
+                        if !matches!(
+                            inner_schema.get(&parts[0].value),
+                            Some(DataType::Struct(_))
+                        ) =>
+                    {
                         (CorrelationSide::Outer, q, len)
                     },
                     _ => return Ok(None),
