@@ -167,6 +167,18 @@ pub fn reinterpret(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
             reinterpret_chunked_array::<_, Int64Type>(s.f64().unwrap()).into_series()
         },
 
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Int128, DataType::Decimal(precision, scale)) => s
+            .i128()
+            .unwrap()
+            .clone()
+            .into_decimal(*precision, *scale)?
+            .into_series(),
+        #[cfg(feature = "dtype-decimal")]
+        (DataType::Decimal(_, _), DataType::Int128) => {
+            s.decimal().unwrap().physical().clone().into_series()
+        },
+
         (source_dtype, target_dtype) => polars_bail!(
             ComputeError:
             "cannot reinterpret from {source_dtype:?} to {target_dtype:?}"
