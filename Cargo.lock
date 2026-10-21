@@ -3432,26 +3432,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars-io-ext"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "flate2",
- "futures",
- "hex",
- "polars-arrow",
- "polars-error",
- "polars-io-ext-ffi",
- "polars-utils",
- "pyo3",
- "serde",
- "serde_json",
- "snap",
- "tokio",
- "zstd",
-]
-
-[[package]]
 name = "polars-io-ext-ffi"
 version = "0.1.0"
 dependencies = [
