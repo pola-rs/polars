@@ -1447,11 +1447,11 @@ def test_read_database_duckdb_uses_arrow(monkeypatch: pytest.MonkeyPatch) -> Non
 
         # the query runs in `read_database`, not when the batches are read
         conn.execute("CREATE TABLE t AS SELECT 1 AS x")
-        batches = pl.read_database(
+        batch_iter = pl.read_database(
             "SELECT * FROM t", conn, iter_batches=True, batch_size=10
         )
         conn.execute("INSERT INTO t VALUES (2)")
-        assert pl.concat(batches)["x"].to_list() == [1]
+        assert pl.concat(batch_iter)["x"].to_list() == [1]
 
         with pytest.raises(duckdb.ConversionException):
             pl.read_database(
