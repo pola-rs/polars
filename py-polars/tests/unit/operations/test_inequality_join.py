@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal
@@ -562,7 +563,7 @@ def test_full_join_where_slice(offset: int, length: int) -> None:
         .collect()
     )
     assert got.height == expected.slice(offset, length).height
-    assert set(got.iter_rows()) <= set(expected.iter_rows())
+    assert Counter(got.iter_rows()) <= Counter(expected.iter_rows())
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
@@ -596,34 +597,43 @@ def test_full_join_where_downgraded_by_filter(
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize(
-    ("predicate", "non_null", "plan"),
+    ("predicate", "non_null", "join"),
     [
         (
             (pl.col("a") == pl.col("c")) & (pl.col("a") + pl.col("c") >= 0),
             pl.col("a").is_not_null() & pl.col("c").is_not_null(),
-            ["INNER JOIN", 'LEFT PLAN ON: [col("a")]'],
+            {"in-memory": "INNER JOIN", "streaming": "INNER JOIN"},
         ),
         (
             (pl.col("a") <= pl.col("c")) & (pl.col("a") + 1 > pl.col("c")),
             pl.col("a").is_not_null() & pl.col("c").is_not_null(),
-            ["RANGE JOIN"],
+            {"in-memory": "IEJOIN JOIN", "streaming": "RANGE JOIN"},
         ),
         # A left join pushes `c < 10` into the right input.
         (
             (pl.col("a") == pl.col("c")) & (pl.col("c") < 10),
             pl.col("a").is_not_null(),
-            ["LEFT JOIN", 'LEFT PLAN ON: [col("a")]', "< dyn int: 10"],
+            {"in-memory": "LEFT JOIN", "streaming": "LEFT JOIN"},
         ),
     ],
 )
 def test_full_join_where_downgrade_picks_join_algorithm(
-    engine: EngineType, predicate: pl.Expr, non_null: pl.Expr, plan: list[str]
+    engine: Literal["in-memory", "streaming"],
+    predicate: pl.Expr,
+    non_null: pl.Expr,
+    join: dict[str, str],
 ) -> None:
     left = pl.LazyFrame({"a": [1, 2, 3, None], "b": [10, 20, 30, 40]})
     right = pl.LazyFrame({"c": [0, 2, 3, 20, None], "d": [1, 2, 3, 4, 5]})
     query = left.join_where(right, predicate, how="full").filter(non_null)
-    explain = query.explain(engine="streaming")
-    assert all(part in explain for part in plan)
+    plan = query.explain(engine=engine)
+    assert plan.startswith(f"{join[engine]}:")
+    if join[engine] in ("INNER JOIN", "LEFT JOIN"):
+        assert 'LEFT PLAN ON: [col("a")]' in plan
+    if join[engine] == "LEFT JOIN":
+        right_plan = plan.split("RIGHT PLAN")[1]
+        assert "FILTER" in right_plan
+        assert "10" in right_plan
     expected = _outer_join_where_reference(
         left.collect(), right.collect(), predicate, "full"
     ).filter(non_null)

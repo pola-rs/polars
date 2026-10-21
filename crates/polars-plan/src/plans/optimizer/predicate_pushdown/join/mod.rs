@@ -655,7 +655,7 @@ fn key_non_null_predicates(
 }
 
 /// Whether `predicate`, `name.is_not_null()` for one column, pushed into `node` reaches an
-/// outer join that `try_rewrite_join_type` makes stricter because of it.
+/// outer join that becomes stricter because of it.
 fn downgradable_outer_join_below(
     opt: &mut PredicatePushDown,
     mut node: Node,
