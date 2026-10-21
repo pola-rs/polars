@@ -9,7 +9,7 @@ use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
 use polars_defs::join::{AsOfOptions, AsofStrategy, JoinArgs, JoinType};
-use polars_ooc::{RandomSpillContext, SpillFrame};
+use polars_ooc::RandomSpillContext;
 use polars_ops::frame::is_sorted::DataFrameIsSorted;
 use polars_ops::frame::{_check_asof_columns, _finish_join, _join_asof_dispatch};
 use polars_ops::series::{rle_lengths, rle_lengths_helper_ca};
@@ -303,7 +303,9 @@ async fn distribute_work_task(
             for sf in stop_and_take_pipe_contents(recv_left.as_mut()).await {
                 left_buffer.push_back(sf.into_df().await);
             }
-            stop_and_buffer_right(right_buffer, recv_right.as_mut(), params).await?;
+            right_buffer
+                .stop_and_buffer_from_pipe(recv_right.as_mut())
+                .await;
             return Ok(());
         }
 
@@ -315,7 +317,9 @@ async fn distribute_work_task(
             let (sf, _, st, _) = m.into_inner();
             (sf.into_df().await, st)
         } else {
-            stop_and_buffer_right(right_buffer, recv_right.as_mut(), params).await?;
+            right_buffer
+                .stop_and_buffer_from_pipe(recv_right.as_mut())
+                .await;
             return Ok(());
         };
 
@@ -323,7 +327,7 @@ async fn distribute_work_task(
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
             {
-                push_right(right_buffer, morsel_right.into_sf(), params).await?;
+                right_buffer.push_sf(morsel_right.into_sf()).await;
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
@@ -362,40 +366,6 @@ async fn distribute_work_task(
         )
         .await?;
     }
-}
-
-/// Right rows with a null key never match. Dropping them keeps the key column free of nulls,
-/// which the binary searches over the right buffer rely on.
-async fn push_right(
-    right_buffer: &mut SpillFrameSearchBuffer,
-    sf: SpillFrame,
-    params: &AsOfJoinParams,
-) -> PolarsResult<()> {
-    let key_col = params.right.key_col();
-    let has_nulls = sf.get().await.column(key_col)?.has_nulls();
-    let sf = if has_nulls {
-        let df = sf.into_df().await;
-        let df = df.filter(&df.column(key_col)?.is_not_null())?;
-        if df.height() == 0 {
-            return Ok(());
-        }
-        SpillFrame::new_unregistered(df)
-    } else {
-        sf
-    };
-    right_buffer.push_sf(sf).await;
-    Ok(())
-}
-
-async fn stop_and_buffer_right(
-    right_buffer: &mut SpillFrameSearchBuffer,
-    recv_right: Option<&mut PortReceiver>,
-    params: &AsOfJoinParams,
-) -> PolarsResult<()> {
-    for sf in stop_and_take_pipe_contents(recv_right).await {
-        push_right(right_buffer, sf, params).await?;
-    }
-    Ok(())
 }
 
 /// Check that the first row of the DataFrame is in order with respect to the value in prev_row.
