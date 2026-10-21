@@ -34,12 +34,10 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
     int_div_series(a, b, true)
 }
 
-/// Divides with the quotient rounded toward zero, the counterpart of [`floor_div_series`].
 pub fn trunc_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
     int_div_series(a, b, false)
 }
 
-/// The integer quotient, rounded down if `floor`, else toward zero.
 fn int_div_series(a: &Series, b: &Series, floor: bool) -> PolarsResult<Series> {
     match (a.dtype(), b.dtype()) {
         #[cfg(feature = "dtype-struct")]
