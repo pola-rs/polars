@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import ColumnNotFoundError, SQLInterfaceError
 from tests.unit.sql import assert_sql_matches
 
 
@@ -135,6 +135,27 @@ def test_exists_over_aggregate_unsupported(subquery: str) -> None:
     with pytest.raises(SQLInterfaceError, match="EXISTS subquery is not currently"):
         pl.SQLContext(_frames()).execute(
             f"SELECT a, EXISTS ({subquery}) AS e FROM t1", eager=True
+        )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT COUNT(*) AS n, EXISTS (SELECT 1 FROM t2 WHERE w > 2) AS e FROM t1",
+        "SELECT COUNT(*) AS n, NOT EXISTS (SELECT 1 FROM t2 WHERE w > 5) AS e FROM t1",
+        "SELECT COUNT(*) AS n, EXISTS (SELECT COUNT(*) FROM t2 WHERE FALSE) AS e FROM t1",
+        "SELECT COUNT(*) AS n FROM t1 WHERE FALSE HAVING EXISTS (SELECT 1 FROM t2)",
+        "SELECT COUNT(*) + CASE WHEN EXISTS (SELECT 1 FROM t2) THEN 1 END AS n FROM t1",
+    ],
+)
+def test_uncorrelated_exists_in_aggregate_query(query: str) -> None:
+    assert_sql_matches(frames=_frames(), query=query, compare_with="duckdb")
+
+
+def test_uncorrelated_exists_missing_column() -> None:
+    with pytest.raises(ColumnNotFoundError, match="missing"):
+        pl.SQLContext(_frames()).execute(
+            "SELECT a FROM t1 WHERE EXISTS (SELECT missing FROM t2)", eager=True
         )
 
 

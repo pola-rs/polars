@@ -1154,6 +1154,25 @@ impl SQLContext {
         Ok(Some((joined, set_name)))
     }
 
+    /// Whether the uncorrelated `subquery` aggregates without `GROUP BY`, and so returns
+    /// exactly one row.
+    pub(crate) fn exists_over_aggregate(&mut self, subquery: &Query) -> PolarsResult<bool> {
+        let Some(select) = eligible_subquery_select(subquery) else {
+            return Ok(false);
+        };
+        let mut ctx = self.isolated();
+        let Some((inner_names, _, inner_schema)) = ctx.resolve_subquery_from(select)? else {
+            return Ok(false);
+        };
+        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
+            Some(one_row) => Ok(one_row),
+            None => polars_bail!(
+                SQLInterface:
+                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+            ),
+        }
+    }
+
     // Attempt the decorrelation of a single `EXISTS` subquery into a boolean flag
     // column holding `count(*) > 0` over the correlated match set. An uncorrelated
     // subquery yields a single constant boolean broadcast onto every outer row
@@ -1193,6 +1212,10 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}exists");
+        // An uncorrelated subquery is evaluated once, as a scalar.
+        if !is_correlated_subquery(subquery, self.catalog_spellings()) {
+            return Ok(None);
+        }
         match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
             None => return Ok(None),
             // An aggregate without GROUP BY returns one row, even over no rows.
@@ -1207,8 +1230,8 @@ impl SQLContext {
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
         if corr_preds.is_empty() {
-            // Uncorrelated: the inner relation doesn't depend on the outer row, so
-            // its existence is a single constant boolean broadcast onto every row.
+            // Outer columns are only in the projection, which EXISTS ignores, so the
+            // existence is a single constant boolean broadcast onto every row.
             let inner_flag = inner_filtered.select([len().gt(lit(0)).alias(flag_name.clone())]);
             inner_flag.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
             let joined = concat_lf_horizontal(

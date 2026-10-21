@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 use std::fmt::Display;
-use std::ops::Div;
+use std::ops::{ControlFlow, Div};
 
 use polars_compute::cast::temporal::{
     MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY,
@@ -30,7 +30,7 @@ use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, OrderByOptions,
     Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
-    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
+    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan, visit_expressions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords;
@@ -623,13 +623,42 @@ impl SQLExprVisitor<'_> {
         self.ctx.execute_isolated(|ctx| ctx.execute_query(subquery))
     }
 
-    /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed,
-    /// which is to say one in a position that doesn't support it.
-    fn visit_exists(&mut self, subquery: &Subquery, _negated: bool) -> PolarsResult<Expr> {
-        polars_bail!(
-            SQLInterface:
-            "EXISTS subquery is not currently supported in this position: {:?}", subquery
-        )
+    /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed. An
+    /// uncorrelated subquery becomes one value, a correlated one is not supported here.
+    fn visit_exists(&mut self, subquery: &Subquery, negated: bool) -> PolarsResult<Expr> {
+        let unsupported = || {
+            polars_err!(
+                SQLInterface:
+                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+            )
+        };
+        if is_correlated_subquery(subquery, self.ctx.catalog_spellings()) {
+            return Err(unsupported());
+        }
+        if self.ctx.exists_over_aggregate(subquery)? {
+            return Ok(lit(!negated));
+        }
+        let lf = match self.execute_subquery(subquery) {
+            Ok(lf) => lf,
+            // An unqualified outer column makes the subquery correlated.
+            Err(_) if self.reads_outer_column(subquery) => return Err(unsupported()),
+            Err(e) => return Err(e),
+        };
+        let lf = lf.limit(1).select([len().gt(lit(0))]);
+        let exists = reduced_subquery(lf, first().as_expr().item(true));
+        Ok(if negated { exists.not() } else { exists })
+    }
+
+    /// Whether `subquery` names a column of the outer query without a qualifier.
+    fn reads_outer_column(&self, subquery: &Subquery) -> bool {
+        let Some(schema) = self.active_schema else {
+            return false;
+        };
+        visit_expressions(subquery, |e: &SQLExpr| match e {
+            SQLExpr::Identifier(ident) if schema.contains(&ident.value) => ControlFlow::Break(()),
+            _ => ControlFlow::Continue(()),
+        })
+        .is_break()
     }
 
     /// Visit a single SQL identifier.

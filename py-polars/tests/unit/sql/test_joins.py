@@ -1384,6 +1384,8 @@ def join_subquery_frames() -> dict[str, pl.DataFrame]:
         "RIGHT JOIN b ON a.id = b.id AND b.v IN (SELECT x FROM c)",
         "FULL JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c) AND b.v IN (SELECT x FROM c)",
         "FULL JOIN b ON a.v IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE x > 20)",
+        "LEFT JOIN b ON a.id = b.id AND NOT EXISTS (SELECT 1 FROM c WHERE x > 20)",
         # the left input holds two relations
         "JOIN b AS d ON a.id = d.id LEFT JOIN b ON b.id = d.id AND d.v IN (SELECT x FROM c)",
     ],
@@ -1459,7 +1461,10 @@ def test_join_on_subquery_reading_struct_field() -> None:
         # reads both tables
         ("a.v + b.v > (SELECT MAX(x) FROM c)", "not currently supported in the JOIN"),
         ("v IN (SELECT x FROM c)", "not currently supported in the JOIN"),
-        ("EXISTS (SELECT 1 FROM c)", "EXISTS subquery is not currently supported"),
+        (
+            "EXISTS (SELECT 1 FROM c WHERE c.x = a.v)",
+            "EXISTS subquery is not currently supported",
+        ),
         # more than one row
         ("a.v = (SELECT x FROM c)", "expected no or a single value"),
     ],
