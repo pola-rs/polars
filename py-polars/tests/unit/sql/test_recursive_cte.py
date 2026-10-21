@@ -346,6 +346,24 @@ def test_recursive_shared_cte_computed_once() -> None:
             ) ORDER BY n
             """,
         ),
+        # A CTE that the step reads twice, with different filters.
+        (
+            False,
+            """
+            WITH RECURSIVE
+              b AS (SELECT x FROM src),
+              t AS (
+                SELECT 0 AS n, CAST(0 AS BIGINT) AS x
+                UNION ALL
+                SELECT n + 1, b1.x
+                FROM t
+                CROSS JOIN (SELECT x FROM b WHERE x > 0) b1
+                CROSS JOIN (SELECT x FROM b WHERE x < 100) b2
+                WHERE n < 2
+              )
+            SELECT * FROM t ORDER BY n
+            """,
+        ),
     ],
 )
 def test_recursive_step_input_computed_once(user_cache: bool, query: str) -> None:

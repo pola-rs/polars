@@ -38,6 +38,7 @@ mod ir_traversal;
 mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod recursive_caches;
 mod repeated_keys;
 mod simplify_expr;
 pub mod simplify_ordering;
