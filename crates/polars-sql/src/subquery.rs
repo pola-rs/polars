@@ -9,9 +9,10 @@ use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_defs::join::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
+use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::plans::{
     ExprPushdownGroup, ExprToIRContext, NodeStats, attach_dataset_scan_statistics,
-    is_inherently_nondeterministic, node_stats, to_expr_ir,
+    is_elementwise_rec, is_inherently_nondeterministic, node_stats, to_expr_ir,
 };
 use polars_plan::prelude::{AggExpr, DslPlan, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
@@ -833,12 +834,13 @@ impl SQLContext {
                 .all(|name| outer_schema.contains(&name))
             {
                 let outer = lf.cache();
+                let aggregate = ScalarAggregate::new(agg_expr, &result_name, &prefix, outer_schema);
                 let joined = equality_correlated_aggregate(
                     outer.clone(),
                     outer,
                     keys.clone(),
                     keys,
-                    agg_expr.alias(result_name.clone()),
+                    &aggregate,
                     false,
                 )?;
                 return Ok(Some((joined, result_name)));
@@ -862,12 +864,15 @@ impl SQLContext {
         };
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
-        let agg_expr = agg_expr.map_expr(|e| match e {
-            Expr::Column(name) if inner_schema.contains(name.as_str()) => {
-                col(prefixed_inner(&prefix, &name))
-            },
-            other => other,
-        });
+        let aggregate = ScalarAggregate::new(agg_expr, &result_name, &prefix, &inner_schema)
+            .map_inputs(|e| {
+                e.map_expr(|e| match e {
+                    Expr::Column(name) if inner_schema.contains(name.as_str()) => {
+                        col(prefixed_inner(&prefix, &name))
+                    },
+                    other => other,
+                })
+            });
 
         if equality_only {
             let outer_on: Vec<Expr> = corr_preds.iter().map(|p| col(p.outer.clone())).collect();
@@ -880,7 +885,7 @@ impl SQLContext {
                 inner_renamed,
                 outer_on,
                 inner_on,
-                agg_expr.alias(result_name.clone()),
+                &aggregate,
                 restrict,
             )?;
             return Ok(Some((joined, result_name)));
@@ -896,21 +901,21 @@ impl SQLContext {
             .with(inner_renamed)
             .how(JoinType::Inner)
             .join_where(join_preds);
-        let agg = agg_expr.alias(result_name.clone());
-        let count_like = count_like(&agg);
-        let grouped = matched.group_by([col(idx_name.clone())]).agg([agg]);
+        let grouped = matched
+            .group_by([col(idx_name.clone())])
+            .agg(aggregate.aggs.clone());
 
-        let joined = left_join_aggregate(
-            outer_indexed,
-            grouped,
-            vec![col(idx_name.clone())],
-            vec![col(idx_name.clone())],
-            count_like,
-        )?
-        .drop(Selector::ByName {
-            names: Arc::from([idx_name]),
-            strict: true,
-        });
+        let joined = aggregate
+            .finish(left_join_aggregate(
+                outer_indexed,
+                grouped,
+                vec![col(idx_name.clone())],
+                vec![col(idx_name.clone())],
+            )?)
+            .drop(Selector::ByName {
+                names: Arc::from([idx_name]),
+                strict: true,
+            });
         Ok(Some((joined, result_name)))
     }
 
@@ -997,7 +1002,7 @@ impl SQLContext {
             let grouped = inner_renamed
                 .group_by(inner_on.clone())
                 .agg([value.alias(set_name.clone())]);
-            left_join_aggregate(lf, grouped, outer_on, inner_on, None)?
+            left_join_aggregate(lf, grouped, outer_on, inner_on)?
         } else {
             let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
             let idx_name = format_pl_smallstr!("{prefix}idx");
@@ -1016,7 +1021,6 @@ impl SQLContext {
                 grouped,
                 vec![col(idx_name.clone())],
                 vec![col(idx_name.clone())],
-                None,
             )?
             .drop(Selector::ByName {
                 names: Arc::from([idx_name]),
@@ -2243,7 +2247,7 @@ fn equality_correlated_aggregate(
     inner: LazyFrame,
     outer_on: Vec<Expr>,
     inner_on: Vec<Expr>,
-    agg: Expr,
+    aggregate: &ScalarAggregate,
     restrict: bool,
 ) -> PolarsResult<LazyFrame> {
     let (outer, inner) = if restrict {
@@ -2251,9 +2255,8 @@ fn equality_correlated_aggregate(
     } else {
         (outer, inner)
     };
-    let count_like = count_like(&agg);
-    let grouped = inner.group_by(inner_on.clone()).agg([agg]);
-    left_join_aggregate(outer, grouped, outer_on, inner_on, count_like)
+    let grouped = inner.group_by(inner_on.clone()).agg(aggregate.aggs.clone());
+    Ok(aggregate.finish(left_join_aggregate(outer, grouped, outer_on, inner_on)?))
 }
 
 // Restrict the inner frame to the rows whose keys occur in the outer frame by a
@@ -2307,38 +2310,167 @@ fn group_local_aggregate(agg: &Expr) -> bool {
     })
 }
 
-// Left-join a per-group aggregate onto the outer frame, filling an unmatched
-// `COUNT` result with 0 (every other aggregate stays NULL for unmatched rows).
+// Left-join a per-group aggregate onto the outer frame. Outer rows without a
+// group get NULL.
 fn left_join_aggregate(
     outer: LazyFrame,
     grouped: LazyFrame,
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
-    count_like: Option<PlSmallStr>,
 ) -> PolarsResult<LazyFrame> {
-    let joined = outer
+    outer
         .join_builder()
         .with(grouped)
         .left_on(left_on)
         .right_on(right_on)
         .how(JoinType::Left)
         .coalesce(JoinCoalesce::CoalesceColumns)
-        .finish()?;
-    Ok(match count_like {
-        Some(result_name) => joined.with_columns([col(result_name).fill_null(lit(0))]),
-        None => joined,
-    })
+        .finish()
 }
 
-// The output name of an aggregate whose value over no rows is 0 rather than
-// NULL: a (possibly aliased or cast) `COUNT`.
-fn count_like(agg: &Expr) -> Option<PlSmallStr> {
+// The projection of a correlated scalar aggregate subquery, as the aggregates
+// computed per group plus what turns them into the result after the left join.
+//
+// An outer row without inner rows must get the projection's value over no
+// rows. The left join gives NULL there. That is right for most projections,
+// but not for `COUNT(*)`, `COUNT(*) + 1` or `COALESCE(MAX(x), 0)`. For those,
+// each aggregate gets its value over no rows, and a projection that combines
+// several aggregates is evaluated per outer row after the join. It then only
+// runs on outer rows that exist, so it can't fail on a value no row needs.
+struct ScalarAggregate {
+    // Computed per group.
+    aggs: Vec<Expr>,
+    // Columns of `aggs` and the value they take for an outer row without inner
+    // rows, where that is not NULL.
+    fill: Vec<(PlSmallStr, Expr)>,
+    // The result over the `aggs` columns, and those columns to drop after.
+    combine: Option<(Expr, Vec<PlSmallStr>)>,
+}
+
+impl ScalarAggregate {
+    // `schema` is the frame `agg` reads.
+    fn new(agg: Expr, result_name: &PlSmallStr, prefix: &str, schema: &Schema) -> Self {
+        let whole = |fill: Vec<(PlSmallStr, Expr)>| Self {
+            aggs: vec![agg.clone().alias(result_name.clone())],
+            fill,
+            combine: None,
+        };
+        match agg_output_root(&agg) {
+            e if zero_over_no_rows(e) => return whole(vec![(result_name.clone(), lit(0))]),
+            Expr::Agg(_) => return whole(vec![]),
+            _ => {},
+        }
+
+        let mut aggs = Vec::new();
+        let combine = split_aggregates(agg.clone(), prefix, &mut aggs);
+        let Ok(fields) = aggs
+            .iter()
+            .map(|e| e.to_field(schema))
+            .collect::<PolarsResult<Vec<_>>>()
+        else {
+            return whole(vec![]);
+        };
+        let agg_schema = Schema::from_iter(fields);
+        let fill: Vec<(PlSmallStr, Expr)> = aggs
+            .iter()
+            .zip(agg_schema.iter())
+            .filter(|(e, _)| zero_over_no_rows(agg_output_root(e)))
+            .map(|(_, (name, dtype))| (name.clone(), lit(0).cast(dtype.clone())))
+            .collect();
+        if null_over_no_rows(&combine, &agg_schema, &fill)
+            || !is_elementwise_over(&combine, &agg_schema)
+        {
+            return whole(vec![]);
+        }
+        let names = agg_schema.iter_names().cloned().collect();
+        Self {
+            aggs,
+            fill,
+            combine: Some((combine.alias(result_name.clone()), names)),
+        }
+    }
+
+    // Apply `f` to every per-group aggregate.
+    fn map_inputs(mut self, f: impl Fn(Expr) -> Expr) -> Self {
+        self.aggs = self.aggs.into_iter().map(f).collect();
+        self
+    }
+
+    // Turn the left-joined aggregate columns into the result column.
+    fn finish(&self, joined: LazyFrame) -> LazyFrame {
+        let joined = if self.fill.is_empty() {
+            joined
+        } else {
+            joined.with_columns(
+                self.fill
+                    .iter()
+                    .map(|(name, value)| col(name.clone()).fill_null(value.clone()))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        match &self.combine {
+            Some((combine, names)) => joined.with_column(combine.clone()).drop(Selector::ByName {
+                names: Arc::from(names.as_slice()),
+                strict: true,
+            }),
+            None => joined,
+        }
+    }
+}
+
+// Whether an aggregate is 0 over no rows rather than NULL. A bare `sum` is: SQL
+// `SUM` puts its NULL over no rows around it.
+fn zero_over_no_rows(agg: &Expr) -> bool {
     matches!(
-        agg_output_root(agg),
-        Expr::Len | Expr::Agg(AggExpr::Count { .. })
+        agg,
+        Expr::Len | Expr::Agg(AggExpr::Count { .. } | AggExpr::NUnique(_) | AggExpr::Sum(_))
     )
-    .then(|| agg.clone().meta().output_name().ok())
-    .flatten()
+}
+
+// Replace every aggregate in `expr` with a column named after it, pushing the
+// aliased aggregate onto `aggs`.
+fn split_aggregates(expr: Expr, prefix: &str, aggs: &mut Vec<Expr>) -> Expr {
+    match expr {
+        Expr::Len | Expr::Agg(_) => {
+            let name = format_pl_smallstr!("{prefix}agg{}", aggs.len());
+            aggs.push(expr.alias(name.clone()));
+            col(name)
+        },
+        e => e
+            .map_children(&mut |c, _| Ok(split_aggregates(c, prefix, aggs)), &mut ())
+            .unwrap(),
+    }
+}
+
+// Whether `combine` is NULL when its aggregates hold their values over no rows:
+// `fill`, else NULL. An error counts as not NULL.
+fn null_over_no_rows(combine: &Expr, agg_schema: &Schema, fill: &[(PlSmallStr, Expr)]) -> bool {
+    let columns = agg_schema
+        .iter()
+        .map(|(name, dtype)| {
+            let value = fill
+                .iter()
+                .find(|(n, _)| n == name)
+                .map_or(lit(LiteralValue::untyped_null()), |(_, v)| v.clone());
+            value.cast(dtype.clone()).alias(name.clone())
+        })
+        .collect::<Vec<_>>();
+    DataFrame::empty()
+        .lazy()
+        .select(columns)
+        .select([combine.clone()])
+        .collect()
+        .is_ok_and(|df| df.height() == 1 && df.columns()[0].null_count() == 1)
+}
+
+// Whether `combine`, over the columns of `agg_schema`, gives one value per row.
+fn is_elementwise_over(combine: &Expr, agg_schema: &Schema) -> bool {
+    let mut arena = Arena::new();
+    let mut ctx = ExprToIRContext::new(&mut arena, agg_schema);
+    let Ok(combine) = to_expr_ir(combine.clone(), &mut ctx) else {
+        return false;
+    };
+    is_elementwise_rec(combine.node(), &arena)
 }
 
 // Peel the alias/cast wrappers SQL puts around an aggregate to reach the
