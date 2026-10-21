@@ -529,6 +529,40 @@ def test_correlated_aggregate_fallible_expression_only_over_outer_rows() -> None
         pl.SQLContext(o=pl.DataFrame({"k": [1, 3]}), i=inner).execute(query, eager=True)
 
 
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [
+        # a matched group whose cast gives NULL keeps it
+        ("TRY_CAST(COUNT(*) AS TINYINT)", [None, 0]),
+        # the 0 is cast like any other count
+        ("CAST(CAST(COUNT(*) AS DECIMAL(10, 2)) AS VARCHAR)", ["128.00", "0.00"]),
+    ],
+)
+def test_correlated_aggregate_cast_count_over_no_match(
+    agg: str, expected: list[Any]
+) -> None:
+    assert_sql_matches(
+        frames={"o": pl.DataFrame({"k": [1, 2]}), "i": pl.DataFrame({"k": [1] * 128})},
+        query=f"SELECT k, (SELECT {agg} FROM i WHERE i.k = o.k) AS r FROM o ORDER BY k",
+        compare_with="duckdb",
+        expected={"k": [1, 2], "r": expected},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("agg", ["COUNT(*) OVER ()", "COUNT(*) OVER () + 1"])
+def test_correlated_window_is_not_an_aggregate(agg: str) -> None:
+    # A window gives a value per inner row, so this is not lowered as an
+    # aggregate, which would hide that a key has more than one row.
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(
+            o=pl.DataFrame({"k": [1, 2]}), i=pl.DataFrame({"k": [1, 1]})
+        ).execute(
+            f"SELECT k, (SELECT {agg} FROM i WHERE i.k = o.k) AS r FROM o",
+            eager=True,
+        )
+
+
 def test_correlated_aggregate_strict_cast_only_over_matched_rows() -> None:
     # The inner group no outer row asks for holds a value the aggregate can't
     # cast; the subquery is never evaluated for that group.

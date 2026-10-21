@@ -31,7 +31,7 @@ use crate::context::{
     match_qualifier, relation_name,
 };
 use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
-use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
+use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_subquery_expr};
 use crate::{SQLContext, unique_column_name};
 
 impl SQLContext {
@@ -785,7 +785,11 @@ impl SQLContext {
             return Ok(None);
         };
 
-        // The projection must be a scalar aggregate over the inner relation.
+        // The projection must be a scalar aggregate over the inner relation. A
+        // window gives one value per inner row, not one per group.
+        if expr_has_window_functions(proj) {
+            return Ok(None);
+        }
         let Some(agg_expr) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
         else {
             return Ok(None);
@@ -2356,8 +2360,11 @@ impl ScalarAggregate {
             combine: None,
         };
         match agg_output_root(&agg) {
-            e if zero_over_no_rows(e) => return whole(vec![(result_name.clone(), lit(0))]),
-            Expr::Agg(_) => return whole(vec![]),
+            e if zero_over_no_rows(e) && widening_integer_casts(&agg, schema) => {
+                return whole(vec![(result_name.clone(), lit(0))]);
+            },
+            // A cast of NULL is NULL.
+            e @ Expr::Agg(_) if !zero_over_no_rows(e) => return whole(vec![]),
             _ => {},
         }
 
@@ -2377,9 +2384,12 @@ impl ScalarAggregate {
             .filter(|(e, _)| zero_over_no_rows(agg_output_root(e)))
             .map(|(_, (name, dtype))| (name.clone(), lit(0).cast(dtype.clone())))
             .collect();
-        if null_over_no_rows(&combine, &agg_schema, &fill)
-            || !is_elementwise_over(&combine, &agg_schema)
-        {
+        let Some(deterministic) = elementwise_over(&combine, &agg_schema) else {
+            return whole(vec![]);
+        };
+        // Only a deterministic expression is evaluated here, as it can't run a
+        // user function.
+        if deterministic && null_over_no_rows(&combine, &agg_schema, &fill) {
             return whole(vec![]);
         }
         let names = agg_schema.iter_names().cloned().collect();
@@ -2463,14 +2473,36 @@ fn null_over_no_rows(combine: &Expr, agg_schema: &Schema, fill: &[(PlSmallStr, E
         .is_ok_and(|df| df.height() == 1 && df.columns()[0].null_count() == 1)
 }
 
-// Whether `combine`, over the columns of `agg_schema`, gives one value per row.
-fn is_elementwise_over(combine: &Expr, agg_schema: &Schema) -> bool {
+// If `combine`, over the columns of `agg_schema`, gives one value per row:
+// whether it is deterministic.
+fn elementwise_over(combine: &Expr, agg_schema: &Schema) -> Option<bool> {
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, agg_schema);
-    let Ok(combine) = to_expr_ir(combine.clone(), &mut ctx) else {
-        return false;
-    };
+    let combine = to_expr_ir(combine.clone(), &mut ctx).ok()?;
     is_elementwise_rec(combine.node(), &arena)
+        .then(|| !is_inherently_nondeterministic(combine.node(), &arena))
+}
+
+// Whether every cast around the aggregate in `expr` turns an integer into an
+// integer type that holds all its values. Filling in 0 after such casts is the
+// same as before them.
+fn widening_integer_casts(expr: &Expr, schema: &Schema) -> bool {
+    match expr {
+        Expr::Alias(inner, _) => widening_integer_casts(inner, schema),
+        Expr::Cast {
+            expr: inner, dtype, ..
+        } => {
+            let Some(to) = dtype.as_literal() else {
+                return false;
+            };
+            inner.to_field(schema).is_ok_and(|from| {
+                from.dtype.is_integer()
+                    && to.is_integer()
+                    && try_get_supertype(&from.dtype, to).is_ok_and(|st| &st == to)
+            }) && widening_integer_casts(inner, schema)
+        },
+        _ => true,
+    }
 }
 
 // Peel the alias/cast wrappers SQL puts around an aggregate to reach the
