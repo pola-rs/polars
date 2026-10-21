@@ -12,7 +12,7 @@ from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import TimeUnit, WindowMappingStrategy
+    from polars._typing import EngineType, TimeUnit, WindowMappingStrategy
 
 
 def test_over_args() -> None:
@@ -1052,7 +1052,8 @@ def test_explode_over_group_length_mismatch(sorted: bool) -> None:
     lf = pl.LazyFrame({"k": [0, 0, 1, 1], "a": [[1, 2], [3], [4], []]})
     if sorted:
         lf = lf.set_sorted("k")
-    for engine in ["in-memory", "streaming"]:
+    engines: list[EngineType] = ["in-memory", "streaming"]
+    for engine in engines:
         with pytest.raises(ShapeError, match="group"):
             lf.select(pl.col("a").explode().over("k")).collect(engine=engine)
     out = lf.select(pl.col("a").explode().over("k", mapping_strategy="explode"))
