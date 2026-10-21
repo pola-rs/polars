@@ -2848,7 +2848,7 @@ impl SQLContext {
             .collect())
     }
 
-    fn process_where(
+    pub(crate) fn process_where(
         &mut self,
         mut lf: LazyFrame,
         expr: Option<&SQLExpr>,

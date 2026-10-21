@@ -185,6 +185,17 @@ def test_uncorrelated_exists_over_aggregate_in_like(op: str) -> None:
     assert res["x"].to_list() == [True]
 
 
+@pytest.mark.parametrize(
+    "where",
+    ["(SELECT FALSE)", "g IN (SELECT g FROM t2)", "NOT EXISTS (SELECT 1 FROM t2)"],
+)
+def test_exists_over_aggregate_without_from(where: str) -> None:
+    res = pl.SQLContext(_frames()).execute(
+        f"SELECT EXISTS (SELECT COUNT(*) FROM t2 WHERE {where}) AS x", eager=True
+    )
+    assert res["x"].to_list() == [True]
+
+
 def test_uncorrelated_exists_missing_column() -> None:
     with pytest.raises(ColumnNotFoundError, match="missing"):
         pl.SQLContext(_frames()).execute(

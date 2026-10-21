@@ -1168,8 +1168,13 @@ impl SQLContext {
             Some(true) => {
                 // The rows are not read, but WHERE must still be valid.
                 if let Some(selection) = &select.selection {
-                    let predicate = parse_sql_expr(selection, &mut ctx, Some(&inner_schema))?;
-                    ctx.get_frame_schema(&mut inner_lf.filter(predicate))?;
+                    let mut filtered = ctx.process_where(
+                        inner_lf,
+                        Some(selection),
+                        FilterMode::KeepTrue,
+                        Some(inner_schema),
+                    )?;
+                    ctx.get_frame_schema(&mut filtered)?;
                 }
                 Ok(true)
             },
