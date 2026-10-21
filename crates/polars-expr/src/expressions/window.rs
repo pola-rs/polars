@@ -192,6 +192,8 @@ impl WindowExpr {
                 );
             };
         }
+        // Equal totals can still hide a per-group mismatch.
+        ac.groups().as_ref().check_lengths(gb.get_groups())?;
 
         let idx = if state.cache_window() {
             if let Some(idx) = state.window_cache.get_map(&cache_key) {
@@ -330,6 +332,10 @@ impl WindowExpr {
                 if self.is_simple_column_expr() {
                     Ok(MapStrategy::Nothing)
                 } else {
+                    if let GroupsType::Slice { .. } = gb.get_groups().as_ref() {
+                        // The groups may have changed, e.g. by an explode.
+                        ac.groups().as_ref().check_lengths(gb.get_groups())?;
+                    }
                     Ok(MapStrategy::Map)
                 }
             },
