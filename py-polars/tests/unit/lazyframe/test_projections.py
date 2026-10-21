@@ -1007,6 +1007,16 @@ def test_projection_pushdown_union_len_pushdown_28657(
         q.collect()
 
 
+@pytest.mark.parametrize("union_fn", [pl.concat, pl.union])
+def test_projection_pushdown_sliced_union_len(
+    union_fn: Callable[..., pl.LazyFrame],
+) -> None:
+    empty = pl.LazyFrame({"a": pl.Series([], dtype=pl.Int64)})
+    one = pl.LazyFrame({"a": [1]})
+    assert union_fn([empty, one, one]).head(2).select(pl.len()).collect().item() == 2
+    assert union_fn([empty, one]).select(pl.len() > 0).collect().item()
+
+
 @pytest.mark.parametrize(
     ("sink", "scan"),
     [
