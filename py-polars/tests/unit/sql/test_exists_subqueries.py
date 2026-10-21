@@ -166,6 +166,15 @@ def test_uncorrelated_exists_ignores_projection(subquery: str) -> None:
     assert res["e"].to_list() == [True, True, True]
 
 
+def test_uncorrelated_exists_simple_case_operand() -> None:
+    res = pl.SQLContext(_frames()).execute(
+        "SELECT CASE EXISTS (SELECT w, w FROM t2) WHEN TRUE THEN 1 WHEN FALSE THEN 0 "
+        "END AS x FROM t1",
+        eager=True,
+    )
+    assert res["x"].to_list() == [1, 1, 1]
+
+
 def test_uncorrelated_exists_missing_column() -> None:
     with pytest.raises(ColumnNotFoundError, match="missing"):
         pl.SQLContext(_frames()).execute(

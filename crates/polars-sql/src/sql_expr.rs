@@ -1859,25 +1859,27 @@ impl SQLExprVisitor<'_> {
                 None => lit(LiteralValue::untyped_null()), // ELSE clause is optional; when omitted, it is implicitly NULL
             };
             if let Some(operand_expr) = operand {
-                let first_operand_expr = self.visit_expr(operand_expr)?;
+                let operand_expr = self.visit_expr(operand_expr)?;
 
                 let first = first.unwrap();
-                let first_cond = first_operand_expr.eq(self.visit_expr(&first.condition)?);
+                let first_cond = operand_expr.clone().eq(self.visit_expr(&first.condition)?);
                 let first_then = self.visit_expr(&first.result)?;
                 let expr = when(first_cond).then(first_then);
                 let next = when_thens.next();
 
                 let mut when_then = if let Some(case_when) = next {
-                    let second_operand_expr = self.visit_expr(operand_expr)?;
-                    let cond = second_operand_expr.eq(self.visit_expr(&case_when.condition)?);
+                    let cond = operand_expr
+                        .clone()
+                        .eq(self.visit_expr(&case_when.condition)?);
                     let res = self.visit_expr(&case_when.result)?;
                     expr.when(cond).then(res)
                 } else {
                     return Ok(expr.otherwise(else_res));
                 };
                 for case_when in when_thens {
-                    let new_operand_expr = self.visit_expr(operand_expr)?;
-                    let cond = new_operand_expr.eq(self.visit_expr(&case_when.condition)?);
+                    let cond = operand_expr
+                        .clone()
+                        .eq(self.visit_expr(&case_when.condition)?);
                     let res = self.visit_expr(&case_when.result)?;
                     when_then = when_then.when(cond).then(res);
                 }
