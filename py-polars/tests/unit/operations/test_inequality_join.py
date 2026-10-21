@@ -587,6 +587,21 @@ def test_full_join_where_downgraded_by_filter(
     )
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("how", ["left", "full"])
+def test_outer_join_where_aggregate_condition_keeps_filter_above(
+    engine: EngineType, how: Literal["left", "full"]
+) -> None:
+    # A filter on the input would change the mean, so the join must not become stricter.
+    left = pl.LazyFrame({"a": [1, 2, 3, 4]})
+    right = pl.LazyFrame({"b": [0, 1, 2, 3]})
+    query = left.join_where(right, pl.col("a") > pl.col("b").mean(), how=how).filter(
+        pl.col("b") > 1
+    )
+    expected = pl.DataFrame({"a": [2, 2, 3, 3, 4, 4], "b": [2, 3, 2, 3, 2, 3]})
+    assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
 @pytest.mark.parametrize("how", ["semi", "anti", "cross"])
 def test_join_where_how_unsupported(how: str) -> None:
     left = pl.LazyFrame({"a": [1, 2, 3]})

@@ -510,9 +510,24 @@ pub(super) fn non_null_side_for_column(
 
 /// Whether `try_rewrite_join_type` may change the type of this join. With a non-equality
 /// component, `left_on`/`right_on` are not equality keys, so the coalesced key columns
-/// can't be mapped to the new join type.
-pub(super) fn join_type_rewritable(options: &JoinOptionsIR) -> bool {
-    options.is_pure_equi() || !options.args.should_coalesce()
+/// can't be mapped to the new join type. A stricter join lets filters reach its inputs, so
+/// the match condition must also give the same result on filtered inputs.
+pub(super) fn join_type_rewritable(options: &JoinOptionsIR, expr_arena: &Arena<AExpr>) -> bool {
+    if options.is_pure_equi() {
+        return true;
+    }
+    if options.args.should_coalesce() || options.options.has_fused_predicate() {
+        return false;
+    }
+    match &options.options {
+        JoinTypeOptionsIR::CrossAndFilter { predicate } => {
+            commutes_with_filter(predicate, expr_arena)
+        },
+        condition => condition
+            .left_on()
+            .chain(condition.right_on())
+            .all(|e| commutes_with_filter(e, expr_arena)),
+    }
 }
 
 /// The stricter join an outer join becomes when a filter above it drops rows that are null
@@ -825,7 +840,7 @@ pub fn try_rewrite_join_type(
         Ok(())
     })()?;
 
-    if !join_type_rewritable(options) {
+    if !join_type_rewritable(options, expr_arena) {
         return Ok(None);
     }
     if options.is_pure_equi() {
