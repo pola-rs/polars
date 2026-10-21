@@ -513,8 +513,14 @@ fn for_each_line_from_reader_from_compressed_reader(
             return Ok(prev_leftover);
         }
 
-        if read_size < CompressedReader::ideal_read_size() && fixed_read_size.is_none() {
-            read_size *= 4;
+        if fixed_read_size.is_none() {
+            if read_size < CompressedReader::ideal_read_size() {
+                read_size *= 4;
+            }
+            // Unless zero-copy, `read_next_slice` copies `prev_leftover` into a new buffer and
+            // kept lines pin the buffer they were found in. Grow geometrically so that both stay
+            // linear in the leftover size, which matters for wide rows.
+            read_size = read_size.max(prev_leftover.len());
         }
     }
 }
@@ -646,10 +652,14 @@ fn for_each_line_from_reader(
             return Ok(prev_leftover);
         }
 
-        if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size()
-            && fixed_read_size.is_none()
-        {
-            read_size *= 4;
+        if fixed_read_size.is_none() {
+            if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size() {
+                read_size *= 4;
+            }
+            // Unless zero-copy, `read_next_slice` copies `prev_leftover` into a new buffer and
+            // kept lines pin the buffer they were found in. Grow geometrically so that both stay
+            // linear in the leftover size, which matters for wide rows.
+            read_size = read_size.max(prev_leftover.len());
         }
     }
 }

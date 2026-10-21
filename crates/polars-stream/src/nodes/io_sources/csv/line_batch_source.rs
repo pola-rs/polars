@@ -18,6 +18,16 @@ use super::{NO_SLICE, SLICE_ENDED};
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext;
 
+/// Every morsel has a fixed memory and compute cost per column (~700 bytes). For wide rows a batch
+/// has to span at least this many bytes per projected column to amortize it, otherwise each morsel
+/// only holds a few rows. Small in debug mode so that narrow tests keep exercising the boundaries.
+const MIN_BATCH_BYTES_PER_COLUMN: usize = if cfg!(debug_assertions) { 16 } else { 1024 };
+
+/// Minimum size of a line batch given the number of projected columns.
+fn min_batch_size(num_projected_columns: usize) -> usize {
+    num_projected_columns.saturating_mul(MIN_BATCH_BYTES_PER_COLUMN)
+}
+
 pub(super) struct LineBatch {
     // Safety: All receivers (LineBatchProcessors) hold a Buffer ref to this.
     pub(super) mem_slice: Buffer<u8>,
@@ -36,6 +46,7 @@ pub(super) struct LineBatchSource {
     pub(super) pre_slice: Option<Slice>,
     pub(super) needs_full_row_count: bool,
     pub(super) num_pipelines: usize,
+    pub(super) num_projected_columns: usize,
     pub(super) task_metrics: Option<Arc<TaskMetricAggregator>>,
     pub(super) verbose: bool,
 }
@@ -72,6 +83,7 @@ impl LineBatchSource {
             pre_slice,
             needs_full_row_count,
             num_pipelines,
+            num_projected_columns,
             task_metrics,
             verbose: _,
         } = self;
@@ -89,6 +101,7 @@ impl LineBatchSource {
                     usize::MAX,
                 )
             };
+        let max_batch_size = max_batch_size.max(min_batch_size(num_projected_columns));
 
         // Task: Read segments. This may block, so it runs on tokio's elastic blocking pool.
         let (segment_tx, mut segment_rx) = tokio::sync::mpsc::channel::<Buffer<u8>>(1);
@@ -257,6 +270,7 @@ impl LineBatchSource {
                     self.pre_slice,
                     self.needs_full_row_count,
                     use_l2_prefetch,
+                    min_batch_size(self.num_projected_columns),
                 );
 
                 while let Some(batch) = producer.next_batch()? {
@@ -388,6 +402,7 @@ struct LineBatchProducer {
     slicer: BatchSlicer,
     use_prefetch_l2: bool,
     read_size: usize,
+    max_read_size: usize,
     finished: bool,
 }
 
@@ -399,6 +414,7 @@ impl LineBatchProducer {
         pre_slice: Option<Slice>,
         needs_full_row_count: bool,
         use_prefetch_l2: bool,
+        min_batch_size: usize,
     ) -> Self {
         Self {
             reader,
@@ -407,6 +423,7 @@ impl LineBatchProducer {
             slicer: BatchSlicer::new(pre_slice, needs_full_row_count),
             use_prefetch_l2,
             read_size: ByteSourceReader::<ReaderSource>::initial_read_size(),
+            max_read_size: ByteSourceReader::<ReaderSource>::ideal_read_size().max(min_batch_size),
             finished: false,
         }
     }
@@ -458,8 +475,8 @@ impl LineBatchProducer {
                 self.finished = true;
             }
 
-            if self.read_size < ByteSourceReader::<ReaderSource>::ideal_read_size() {
-                self.read_size *= 4;
+            if self.read_size < self.max_read_size {
+                self.read_size = (self.read_size * 4).min(self.max_read_size);
             }
 
             return Ok(Some(batch));
