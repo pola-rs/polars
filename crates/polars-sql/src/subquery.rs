@@ -2384,12 +2384,12 @@ impl ScalarAggregate {
             .filter(|(e, _)| zero_over_no_rows(agg_output_root(e)))
             .map(|(_, (name, dtype))| (name.clone(), lit(0).cast(dtype.clone())))
             .collect();
-        let Some(deterministic) = elementwise_over(&combine, &agg_schema) else {
+        if !is_elementwise_over(&combine, &agg_schema) {
             return whole(vec![]);
-        };
-        // Only a deterministic expression is evaluated here, as it can't run a
-        // user function.
-        if deterministic && null_over_no_rows(&combine, &agg_schema, &fill) {
+        }
+        // Only a cheap expression is evaluated here. Any other one is split,
+        // which is right whatever its value over no rows is.
+        if is_cheap(&combine) && null_over_no_rows(&combine, &agg_schema, &fill) {
             return whole(vec![]);
         }
         let names = agg_schema.iter_names().cloned().collect();
@@ -2473,14 +2473,38 @@ fn null_over_no_rows(combine: &Expr, agg_schema: &Schema, fill: &[(PlSmallStr, E
         .is_ok_and(|df| df.height() == 1 && df.columns()[0].null_count() == 1)
 }
 
-// If `combine`, over the columns of `agg_schema`, gives one value per row:
-// whether it is deterministic.
-fn elementwise_over(combine: &Expr, agg_schema: &Schema) -> Option<bool> {
+// Whether `combine`, over the columns of `agg_schema`, gives one value per row.
+fn is_elementwise_over(combine: &Expr, agg_schema: &Schema) -> bool {
     let mut arena = Arena::new();
     let mut ctx = ExprToIRContext::new(&mut arena, agg_schema);
-    let combine = to_expr_ir(combine.clone(), &mut ctx).ok()?;
+    let Ok(combine) = to_expr_ir(combine.clone(), &mut ctx) else {
+        return false;
+    };
     is_elementwise_rec(combine.node(), &arena)
-        .then(|| !is_inherently_nondeterministic(combine.node(), &arena))
+}
+
+// Whether `expr` is built from operations that are cheap on one row and run no
+// user code: arithmetic, comparisons, casts, `CASE` and `COALESCE`.
+fn is_cheap(expr: &Expr) -> bool {
+    match expr {
+        Expr::Column(_) | Expr::Literal(_) => true,
+        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => is_cheap(inner),
+        Expr::BinaryExpr { left, op: _, right } => is_cheap(left) && is_cheap(right),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => is_cheap(predicate) && is_cheap(truthy) && is_cheap(falsy),
+        Expr::Function {
+            input,
+            function:
+                FunctionExpr::Sql(_)
+                | FunctionExpr::Coalesce
+                | FunctionExpr::FillNull
+                | FunctionExpr::Boolean(BooleanFunction::IsNull | BooleanFunction::IsNotNull),
+        } => input.iter().all(is_cheap),
+        _ => false,
+    }
 }
 
 // Whether every cast around the aggregate in `expr` turns an integer into an
