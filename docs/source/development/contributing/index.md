@@ -144,11 +144,12 @@ make pre-commit
 !!! note
 
     `make pre-commit` compiles the Rust crates with all features enabled.
-    This requires [autoconf](https://www.gnu.org/software/autoconf/), [automake](https://www.gnu.
-org/software/automake/) and [libtool](https://www.gnu.org/software/libtool/).
-    On a Debian-based linux distro, you can install them with `sudo apt install autoconf automake libtool`.
+    This requires [autoconf](https://www.gnu.org/software/autoconf/),
+    [automake](https://www.gnu.org/software/automake/),
+    and [libtool](https://www.gnu.org/software/libtool/).
+    On a Debian-based linux distro, you can install them with
+    `sudo apt install autoconf automake libtool`.
     On macOS, you can use `brew install autoconf automake libtool`.
-
 
 Note that we do not actually use the [pre-commit](https://pre-commit.com/) tool. We use the Makefile
 to conveniently run the following formatting and linting tools:
