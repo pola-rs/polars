@@ -1665,9 +1665,14 @@ impl SQLContext {
                 let relation_keys = |names: Vec<RelationName>| -> Vec<String> {
                     names.iter().map(RelationName::key).collect()
                 };
-                let left_relations = relation_keys(factor_relations(factors.clone().take(i + 1)));
-                let right_relations =
-                    relation_keys(factor_relations(std::iter::once(&join.relation)));
+                let left_relations = relation_keys(factor_relations(
+                    factors.clone().take(i + 1),
+                    &self.catalog_spellings,
+                ));
+                let right_relations = relation_keys(factor_relations(
+                    std::iter::once(&join.relation),
+                    &self.catalog_spellings,
+                ));
 
                 lf = match &join.join_operator {
                     op @ (JoinOperator::Join(constraint)  // note: bare "join" is inner
