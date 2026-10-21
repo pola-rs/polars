@@ -2246,7 +2246,7 @@ pub(crate) fn resolve_compound_identifier(
     // inference priority: table > struct > column; the longest qualifier naming a table wins
     let ident_root = &idents[0];
     let (relation, mut lf, qualifier_len) = match ctx.resolve_qualifier(idents)? {
-        Some((name, len)) => match ctx.get_table_from_current_scope(&name)? {
+        Some((name, len)) => match ctx.get_relation_frame(&name)? {
             Some(lf) => (Some(name), Some(lf), len),
             None => (None, None, 1),
         },
