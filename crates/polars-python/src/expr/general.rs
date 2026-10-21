@@ -1120,6 +1120,9 @@ impl PyExpr {
     fn hash(&self, seed: u64) -> Self {
         self.inner.clone().hash(seed).into()
     }
+    fn mm3_hash(&self) -> Self {
+        self.inner.clone().mm3_hash().into()
+    }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()
             .with_desc(Some(descending))

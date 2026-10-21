@@ -30,6 +30,10 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
+use crate::catalog::{
+    CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName, name_parts, name_position,
+    rewrite_catalog_names,
+};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
@@ -236,6 +240,16 @@ pub struct SQLContext {
     join_base: Option<JoinBase>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
     pub(crate) group_scope: GroupScope,
+    /// The attached catalogs.
+    catalogs: CatalogRegistry,
+    /// Scans of the catalog tables the current statement reads, by full name. Looked up after
+    /// CTEs and registered tables.
+    catalog_tables: PlHashMap<String, LazyFrame>,
+    /// The catalog table names of a deferred statement, as written and in full; used to rewrite
+    /// the statement again when it is parsed from its text.
+    catalog_names: Vec<RewrittenName>,
+    /// The names the current statement wrote for its catalog tables, by position.
+    catalog_spellings: CatalogSpellings,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -293,6 +307,10 @@ impl Default for SQLContext {
             group_scope: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
+            catalogs: Default::default(),
+            catalog_tables: Default::default(),
+            catalog_names: Default::default(),
+            catalog_spellings: Default::default(),
         }
     }
 }
@@ -340,6 +358,120 @@ impl SQLContext {
         self.table_map.write().unwrap().remove(&name.to_owned());
     }
 
+    /// Attach a catalog under `name`. A table name starting with `name` refers to a table of
+    /// this catalog; with `default`, so does a table name that starts with no attached catalog.
+    /// A table name without namespace parts gets `default_namespace`. Registered tables and
+    /// CTEs take precedence. The same name replaces the catalog; a name that differs from an
+    /// attached one only in case is an error.
+    ///
+    /// The catalog only resolves names: the scans of its tables are passed to
+    /// [`SQLContext::execute_with_catalog_tables`] (see [`SQLContext::catalog_tables`]).
+    pub fn register_catalog(
+        &mut self,
+        name: &str,
+        default_namespace: Option<Vec<String>>,
+        default: bool,
+    ) -> PolarsResult<()> {
+        self.catalogs.register(name, default_namespace, default)
+    }
+
+    /// Detach a catalog (exact name, else ignoring case), returning the name it had.
+    pub fn unregister_catalog(&mut self, name: &str) -> Option<String> {
+        self.catalogs.unregister(name)
+    }
+
+    /// The catalog tables that `query` reads, once each.
+    pub fn catalog_tables(&self, query: &str) -> PolarsResult<Vec<CatalogTable>> {
+        let mut stmt = parse_single_statement(query)?;
+        let mut tables = Vec::new();
+        for (_, full_name) in self.rewrite_catalog_names(&mut stmt)?.0 {
+            let table = CatalogTable {
+                catalog: full_name[0].clone(),
+                identifier: full_name[1..].to_vec(),
+            };
+            if !tables.contains(&table) {
+                tables.push(table);
+            }
+        }
+        Ok(tables)
+    }
+
+    /// Execute `query` with the scans of the catalog tables it reads, by full name (see
+    /// [`SQLContext::catalog_tables`]).
+    pub fn execute_with_catalog_tables(
+        &mut self,
+        query: &str,
+        tables: Vec<(Vec<String>, LazyFrame)>,
+    ) -> PolarsResult<LazyFrame> {
+        self.catalog_tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name.join("."), lf))
+            .collect();
+        let res = self.execute(query);
+        self.catalog_tables.clear();
+        self.catalog_names.clear();
+        self.catalog_spellings.clear();
+        res
+    }
+
+    /// Rewrite the catalog table names of `stmt` to their full names (see
+    /// [`rewrite_catalog_names`]): by the attached catalogs, else by the names a deferred
+    /// statement recorded.
+    fn rewrite_catalog_names(
+        &self,
+        stmt: &mut Statement,
+    ) -> PolarsResult<(Vec<RewrittenName>, CatalogSpellings)> {
+        if self.catalogs.is_empty() && self.catalog_names.is_empty() {
+            return Ok(Default::default());
+        }
+        let table_map = self.table_map.read().unwrap();
+        // A name matching several tables ignoring case is left for the lookup to report.
+        let is_local = |name: &str| !matches!(key_ignoring_case(&table_map, name), Ok(None));
+        if self.catalogs.is_empty() {
+            let recorded = |parts: &[String]| {
+                let (_, full) = self.catalog_names.iter().find(|(w, _)| w == parts)?;
+                Some(full.clone())
+            };
+            rewrite_catalog_names(stmt, recorded, is_local)
+        } else {
+            let resolve = |parts: &[String]| self.catalogs.resolve(parts).map(|t| t.full_name());
+            rewrite_catalog_names(stmt, resolve, is_local)
+        }
+    }
+
+    /// Error for a statement changing a table of an attached catalog, which SQL can't do yet.
+    /// With `local_first`, the name resolves as in a read: a registered table with the whole
+    /// name is changed instead, else a table of the default catalog is also an error.
+    fn ensure_not_catalog_table(
+        &self,
+        name: &ObjectName,
+        statement: &str,
+        local_first: bool,
+    ) -> PolarsResult<()> {
+        let catalog = match name_parts(name) {
+            Some(parts) if local_first => self.catalogs.resolve(&parts).map(|t| t.catalog),
+            Some(parts) => match parts.as_slice() {
+                [first, _, ..] => self.catalogs.catalog_name(first).map(str::to_string),
+                _ => None,
+            },
+            None => None,
+        };
+        let Some(catalog) = catalog else {
+            return Ok(());
+        };
+        if local_first
+            && self
+                .registered_table_key(&object_name_to_string(name))?
+                .is_some()
+        {
+            return Ok(());
+        }
+        polars_bail!(
+            SQLInterface: "{} on a table of attached catalog '{}' is not supported",
+            statement, catalog
+        )
+    }
+
     /// Execute a SQL query, returning a [`LazyFrame`].
     /// ```rust
     /// # use polars_sql::SQLContext;
@@ -362,10 +494,22 @@ impl SQLContext {
         let mut stmt = parse_single_statement(query)?;
 
         if self.can_defer(&stmt) {
-            return Ok(LazyFrame::from(self.defer_query(query, stmt)));
+            // The plan keeps the statement as written: translating it rewrites the names of its
+            // catalog tables again, also where it was written each.
+            let catalog_names = match self.catalogs.is_empty() {
+                true => Vec::new(),
+                false => self.rewrite_catalog_names(&mut stmt.clone())?.0,
+            };
+            return Ok(LazyFrame::from(self.defer_query(
+                query,
+                stmt,
+                &catalog_names,
+            )));
         }
 
+        let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
         desugar_quantified_subqueries(&mut stmt);
+        self.catalog_spellings = catalog_spellings;
         let res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
         })?;
@@ -393,17 +537,22 @@ impl SQLContext {
     /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
     ///
     /// `stmt` is kept alongside so that resolving does not parse `query` again.
-    fn defer_query(&self, query: &str, mut stmt: Statement) -> DslPlan {
+    fn defer_query(
+        &self,
+        query: &str,
+        mut stmt: Statement,
+        catalog_names: &[RewrittenName],
+    ) -> DslPlan {
+        // Only registered tables: catalog tables travel separately, with their full names.
+        let table_map = self.table_map.read().unwrap();
         let relations = statement_table_identifiers(&stmt, true, true)
             .into_iter()
             .flat_map(|name| {
-                if let Ok(Some(lf)) = self.get_table_from_current_scope(&name) {
-                    return vec![(PlSmallStr::from_string(name), lf.logical_plan)];
+                if let Ok(Some(lf)) = get_ignoring_case(&table_map, &name) {
+                    return vec![(PlSmallStr::from_string(name), lf.logical_plan.clone())];
                 }
                 // Tables matching only ignoring case are all kept, so resolving reports them.
-                self.table_map
-                    .read()
-                    .unwrap()
+                table_map
                     .iter()
                     .filter(|(key, _)| key.eq_ignore_ascii_case(&name))
                     .map(|(key, lf)| (PlSmallStr::from_str(key), lf.logical_plan.clone()))
@@ -411,10 +560,21 @@ impl SQLContext {
             })
             .collect();
 
+        // Catalog tables keep their full names, so parsing `query` again can rewrite it.
+        let to_parts = |parts: &[String]| parts.iter().map(|p| PlSmallStr::from_str(p)).collect();
+        let catalog_tables = catalog_names
+            .iter()
+            .filter_map(|(written, full)| {
+                let lf = self.catalog_tables.get(&full.join("."))?;
+                Some((to_parts(written), to_parts(full), lf.logical_plan.clone()))
+            })
+            .collect();
+
         desugar_quantified_subqueries(&mut stmt);
         DslPlan::SQL {
             query: Arc::new(query.to_owned()),
             relations,
+            catalog_tables,
             cached_stmt: CachedSqlStatement::new(Arc::new(stmt)),
         }
     }
@@ -431,14 +591,21 @@ impl SQLContext {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<DslPlan> {
-        let parsed;
+        let rewritten;
         let stmt = match cached {
-            Some(stmt) => stmt,
-            None => {
-                let mut stmt = parse_single_statement(query)?;
-                desugar_quantified_subqueries(&mut stmt);
-                parsed = stmt;
-                &parsed
+            Some(stmt) if self.catalog_names.is_empty() => stmt,
+            cached => {
+                let mut stmt = match cached {
+                    Some(stmt) => stmt.clone(),
+                    None => {
+                        let mut stmt = parse_single_statement(query)?;
+                        desugar_quantified_subqueries(&mut stmt);
+                        stmt
+                    },
+                };
+                self.catalog_spellings = self.rewrite_catalog_names(&mut stmt)?.1;
+                rewritten = stmt;
+                &rewritten
             },
         };
 
@@ -454,6 +621,9 @@ impl SQLContext {
 
     fn clear_statement_state(&mut self) {
         self.cte_map.clear();
+        self.catalog_tables.clear();
+        self.catalog_names.clear();
+        self.catalog_spellings.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
         self.join_base = None;
@@ -492,6 +662,10 @@ impl SQLContext {
             // (Note: shared by Arc, no need to deep-copy)
             function_registry: self.function_registry.clone(),
             custom_function_registry: self.custom_function_registry,
+            catalogs: self.catalogs.clone(),
+            catalog_tables: self.catalog_tables.clone(),
+            catalog_names: self.catalog_names.clone(),
+            catalog_spellings: self.catalog_spellings.clone(),
 
             ..Default::default()
         }
@@ -591,7 +765,12 @@ impl SQLContext {
 
     /// Make the relations of `from` the ones a qualified column may name.
     pub(crate) fn set_active_relations(&mut self, from: &[TableWithJoins]) {
-        self.active_relations = declared_relations(from);
+        self.active_relations = declared_relations(from, &self.catalog_spellings);
+    }
+
+    /// The names the current statement wrote for its catalog tables, by position.
+    pub(crate) fn catalog_spellings(&self) -> &CatalogSpellings {
+        &self.catalog_spellings
     }
 
     /// Hint for a qualifier that names no relation in scope because an alias hides it.
@@ -622,7 +801,21 @@ impl SQLContext {
         if let Some(lf) = get_ignoring_case(&self.cte_map, name)? {
             return Ok(Some(lf.clone()));
         }
-        Ok(get_ignoring_case(&self.table_map.read().unwrap(), name)?.cloned())
+        if let Some(lf) = get_ignoring_case(&self.table_map.read().unwrap(), name)? {
+            return Ok(Some(lf.clone()));
+        }
+        Ok(get_ignoring_case(&self.catalog_tables, name)?.cloned())
+    }
+
+    /// Restore the catalog tables of a deferred statement: (name as written, full name, plan).
+    pub(crate) fn restore_catalog_tables(&mut self, tables: Vec<SqlCatalogTable>) {
+        let to_strings = |parts: &[PlSmallStr]| parts.iter().map(|p| p.to_string()).collect();
+        for (written, full, plan) in tables {
+            let full: Vec<String> = to_strings(&full);
+            self.catalog_tables
+                .insert(full.join("."), LazyFrame::from(plan));
+            self.catalog_names.push((to_strings(&written), full));
+        }
     }
 
     /// The registered table `name` refers to (ignoring case, as in `FROM`).
@@ -1183,6 +1376,9 @@ impl SQLContext {
             polars_ensure!(!restrict, SQLInterface: "`DROP ... RESTRICT` is not supported");
             polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
             polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
+            for name in names {
+                self.ensure_not_catalog_table(name, "DROP TABLE", true)?;
+            }
 
             let mut table_map = self.table_map.write().unwrap();
             for name in names {
@@ -1248,6 +1444,9 @@ impl SQLContext {
                 polars_bail!(SQLInterface: "DELETE does not support table JOINs")
             }
             self.set_active_relations(from_tables);
+            if let TableFactor::Table { name, .. } = &tbl_expr.relation {
+                self.ensure_not_catalog_table(name, "DELETE", true)?;
+            }
             let (_, lf) = self.get_table(&tbl_expr.relation)?;
             if selection.is_none() {
                 // no WHERE clause; equivalent to TRUNCATE (drop all rows)
@@ -1287,6 +1486,7 @@ impl SQLContext {
                     if table_names.len() != 1 {
                         polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
                     }
+                    self.ensure_not_catalog_table(&table_names[0].name, "TRUNCATE", true)?;
                     let tbl = object_name_to_string(&table_names[0].name);
                     let mut table_map = self.table_map.write().unwrap();
                     match key_ignoring_case(&table_map, &tbl)?.cloned() {
@@ -1431,7 +1631,8 @@ impl SQLContext {
         if !tbl_expr.joins.is_empty() {
             for (i, join) in tbl_expr.joins.iter().enumerate() {
                 // A join condition only sees the relations joined so far.
-                self.active_relations = factor_relations(factors.clone().take(i + 2));
+                self.active_relations =
+                    factor_relations(factors.clone().take(i + 2), &self.catalog_spellings);
                 // Handle "CROSS JOIN UNNEST(col)" as a lateral join op
                 if let (
                     JoinOperator::CrossJoin(JoinConstraint::None),
@@ -1945,7 +2146,7 @@ impl SQLContext {
             let first = from.first().unwrap();
             // Set before the relations are resolved, so a join constraint
             // resolves against them.
-            self.active_relations = declared_relations(from);
+            self.active_relations = declared_relations(from, &self.catalog_spellings);
             let mut lf = self.execute_from_statement(first)?;
             if from.len() > 1 {
                 implicit_join_filter =
@@ -3077,7 +3278,7 @@ impl SQLContext {
             let pending_relations: Vec<Vec<String>> = pending
                 .iter()
                 .map(|(tbl_expr, ..)| {
-                    declared_relations(std::slice::from_ref(*tbl_expr))
+                    declared_relations(std::slice::from_ref(*tbl_expr), &self.catalog_spellings)
                         .iter()
                         .map(RelationName::key)
                         .collect()
@@ -3229,6 +3430,7 @@ impl SQLContext {
                 ..
             } = create_table;
 
+            self.ensure_not_catalog_table(name, "CREATE TABLE", false)?;
             let tbl_name = object_name_to_string(name);
             let existing = self.registered_table_key(&tbl_name)?;
             if *if_not_exists && let Some(existing) = &existing {
@@ -3305,8 +3507,8 @@ impl SQLContext {
                 if let Some(args) = args {
                     return self.execute_table_function(name, alias, &args.args);
                 }
-                // A qualified name (`schema.table`) is looked up as a whole, among CTEs and
-                // registered tables: the alias of another FROM item is not a table.
+                // A qualified name (`schema.table`) is looked up as a whole, among CTEs,
+                // registered and catalog tables: the alias of another FROM item is not a table.
                 let tbl_name = object_name_to_string(name);
                 if let Some(lf) = self.get_table_unaliased(&tbl_name)? {
                     match alias {
@@ -3318,7 +3520,10 @@ impl SQLContext {
                         None => Ok((tbl_name, lf)),
                     }
                 } else {
-                    polars_bail!(SQLInterface: "relation '{}' was not found", tbl_name);
+                    let hint = name_parts(name)
+                        .and_then(|parts| self.catalogs.unresolved_hint(&parts))
+                        .unwrap_or_default();
+                    polars_bail!(SQLInterface: "relation '{}' was not found{}", tbl_name, hint);
                 }
             },
             TableFactor::Derived {
@@ -4432,32 +4637,60 @@ fn qualifier_names(relation: &str, qualifier: &str) -> bool {
 }
 
 /// A relation's name in scope, in the parts `FROM` wrote: an alias or a quoted `"a.b"` is one
-/// part, `tpch.lineitem` two.
+/// part, `tpch.lineitem` two. A catalog table, whose name is rewritten to its full name, is also
+/// known by the name written for it at that place.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RelationName(Vec<String>);
+pub(crate) struct RelationName {
+    parts: Vec<String>,
+    written: Option<Vec<String>>,
+}
 
 impl RelationName {
-    /// The dotted name, which looks the relation up and identifies it.
-    pub(crate) fn key(&self) -> String {
-        self.0.join(".")
+    fn new(parts: Vec<String>) -> Self {
+        Self {
+            parts,
+            written: None,
+        }
     }
 
     pub(crate) fn parts(&self) -> &[String] {
-        &self.0
+        &self.parts
     }
 
-    /// Whether `qualifier` equals the trailing parts of this name, ignoring case unless `exact`.
+    /// The dotted name, which looks the relation up and identifies it.
+    pub(crate) fn key(&self) -> String {
+        self.parts.join(".")
+    }
+
+    /// Add the name the statement wrote at `factor` for this catalog table.
+    pub(crate) fn spelled(mut self, factor: &TableFactor, spellings: &CatalogSpellings) -> Self {
+        if let TableFactor::Table {
+            name, alias: None, ..
+        } = factor
+            && let Some(written) = name_position(name).and_then(|at| spellings.get(&at))
+            && *written != self.parts
+        {
+            self.written = Some(written.clone());
+        }
+        self
+    }
+
+    /// Whether `qualifier` equals the trailing parts of one of the names, ignoring case unless
+    /// `exact`.
     fn named_by(&self, qualifier: &[Ident], exact: bool) -> bool {
-        let Some(start) = self.0.len().checked_sub(qualifier.len()) else {
-            return false;
+        let ends_with = |name: &[String]| {
+            let Some(start) = name.len().checked_sub(qualifier.len()) else {
+                return false;
+            };
+            name[start..].iter().zip(qualifier).all(|(part, ident)| {
+                if exact {
+                    *part == ident.value
+                } else {
+                    part.eq_ignore_ascii_case(&ident.value)
+                }
+            })
         };
-        self.0[start..].iter().zip(qualifier).all(|(part, ident)| {
-            if exact {
-                *part == ident.value
-            } else {
-                part.eq_ignore_ascii_case(&ident.value)
-            }
-        })
+        ends_with(&self.parts) || self.written.as_deref().is_some_and(ends_with)
     }
 }
 
@@ -4625,29 +4858,32 @@ pub(crate) fn is_correlated_result_col(name: &str) -> bool {
 }
 
 /// The relations of a `FROM` (see `factor_relations`).
-fn declared_relations(from: &[TableWithJoins]) -> Vec<RelationName> {
+fn declared_relations(from: &[TableWithJoins], spellings: &CatalogSpellings) -> Vec<RelationName> {
     from.iter()
         .flat_map(|tbl| {
-            factor_relations(
-                std::iter::once(&tbl.relation).chain(tbl.joins.iter().map(|j| &j.relation)),
-            )
+            let factors =
+                std::iter::once(&tbl.relation).chain(tbl.joins.iter().map(|j| &j.relation));
+            factor_relations(factors, spellings)
         })
         .collect()
 }
 
 /// The relations that table factors bring into scope. A nested join is flattened rather than
 /// bound to its alias, so its own relations are declared too.
-fn factor_relations<'a>(factors: impl Iterator<Item = &'a TableFactor>) -> Vec<RelationName> {
+fn factor_relations<'a>(
+    factors: impl Iterator<Item = &'a TableFactor>,
+    spellings: &CatalogSpellings,
+) -> Vec<RelationName> {
     let mut names = Vec::new();
     for factor in factors {
-        let name = relation_name(factor);
+        let name = relation_name(factor).map(|name| name.spelled(factor, spellings));
         names.extend(name.clone());
         if let TableFactor::NestedJoin {
             table_with_joins, ..
         } = factor
         {
             // A child named like the join's alias is hidden by it, not a second occurrence.
-            let children = declared_relations(std::slice::from_ref(table_with_joins));
+            let children = declared_relations(std::slice::from_ref(table_with_joins), spellings);
             names.extend(
                 children
                     .into_iter()
@@ -4668,12 +4904,12 @@ pub(crate) fn relation_name(factor: &TableFactor) -> Option<RelationName> {
     let alias = |alias: &Option<TableAlias>| {
         alias
             .as_ref()
-            .map(|a| RelationName(vec![a.name.value.clone()]))
+            .map(|a| RelationName::new(vec![a.name.value.clone()]))
     };
     match factor {
         TableFactor::Table { name, alias: a, .. } => alias(a).or_else(|| {
             let parts = name.0.iter().filter_map(|p| p.as_ident());
-            Some(RelationName(parts.map(|i| i.value.clone()).collect()))
+            Some(RelationName::new(parts.map(|i| i.value.clone()).collect()))
         }),
         TableFactor::Derived { alias: a, .. }
         | TableFactor::NestedJoin { alias: a, .. }

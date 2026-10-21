@@ -891,6 +891,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::SQL {
             query,
             relations,
+            catalog_tables,
             cached_stmt,
         } => {
             let resolver = crate::dsl::get_sql_resolver().ok_or_else(|| {
@@ -903,6 +904,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let resolved = resolver.resolve(
                 &query,
                 relations,
+                catalog_tables,
                 cached_stmt.get(),
                 ctxt.lp_arena,
                 ctxt.expr_arena,

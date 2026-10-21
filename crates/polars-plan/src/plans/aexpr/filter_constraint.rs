@@ -1271,7 +1271,7 @@ fn collect_column_comparisons<'a>(
 }
 
 // Builds a `col op value` node.
-fn comparison_node(
+pub(crate) fn comparison_node(
     name: &PlSmallStr,
     op: Operator,
     value: Scalar,

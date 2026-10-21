@@ -1635,6 +1635,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRPowFunction::Cbrt => ("cbrt",).into_py_any(py),
                 },
                 IRFunctionExpr::Hash(seed) => ("hash", seed).into_py_any(py),
+                IRFunctionExpr::Mm3Hash => ("mm3_hash",).into_py_any(py),
                 IRFunctionExpr::ArgWhere => ("argwhere",).into_py_any(py),
                 #[cfg(feature = "index_of")]
                 IRFunctionExpr::IndexOf => ("index_of",).into_py_any(py),
