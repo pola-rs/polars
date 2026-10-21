@@ -238,6 +238,9 @@ pub struct SQLContext {
     /// only ones a qualified column may name.
     active_relations: Vec<RelationName>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
+    /// The aliased parenthesized joins of the current statement, by alias. Only qualified
+    /// columns look them up, so the alias doesn't hide a table of the same name.
+    aliased_joins: PlHashMap<String, LazyFrame>,
     join_base: Option<JoinBase>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
     pub(crate) group_scope: GroupScope,
@@ -306,6 +309,7 @@ impl Default for SQLContext {
             table_aliases: Default::default(),
             active_relations: Default::default(),
             joined_aliases: Default::default(),
+            aliased_joins: Default::default(),
             join_base: None,
             named_windows: Default::default(),
             group_scope: Default::default(),
@@ -633,6 +637,7 @@ impl SQLContext {
         self.catalog_spellings.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
+        self.aliased_joins.clear();
         self.join_base = None;
         self.named_windows.clear();
     }
@@ -672,6 +677,7 @@ impl SQLContext {
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
+            aliased_joins: self.aliased_joins.clone(),
 
             // Context-level; needs to remain visible in nested scopes.
             // (Note: shared by Arc, no need to deep-copy)
@@ -805,6 +811,9 @@ impl SQLContext {
         &self,
         name: &str,
     ) -> PolarsResult<Option<LazyFrame>> {
+        if let Some(lf) = get_ignoring_case(&self.aliased_joins, name)? {
+            return Ok(Some(lf.clone()));
+        }
         if let Some(aliased) = get_ignoring_case(&self.table_aliases, name)? {
             if let Some(lf) = self.get_table_unaliased(aliased)? {
                 return Ok(Some(lf));
@@ -3874,6 +3883,12 @@ impl SQLContext {
     }
 
     fn get_table(&mut self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
+        if !self.aliased_joins.is_empty() {
+            if let Some(name) = get_table_name(relation) {
+                self.aliased_joins
+                    .retain(|key, _| !key.eq_ignore_ascii_case(&name));
+            }
+        }
         match relation {
             TableFactor::Table {
                 name, alias, args, ..
@@ -3913,9 +3928,20 @@ impl SQLContext {
                 // Execute the subquery in isolation so that outer join state
                 // doesn't leak into it and cause spurious ambiguous-column errors
                 let lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
-                match alias {
-                    Some(alias) => self.register_aliased_relation(lf, alias),
-                    None => Ok(("".to_string(), lf)),
+                if let Some(alias) = alias {
+                    let lf = self.rename_columns_from_table_alias(lf, alias)?;
+                    let name = alias.name.value.clone();
+                    {
+                        let mut table_map = self.table_map.write().unwrap();
+                        if !table_map.keys().any(|key| key.eq_ignore_ascii_case(&name)) {
+                            table_map.insert(name.clone(), lf.clone());
+                        }
+                    }
+                    // Shadows a registered table of the same name in this statement only.
+                    self.register_cte(&name, lf.clone());
+                    Ok((name, lf))
+                } else {
+                    Ok(("".to_string(), lf))
                 }
             },
             TableFactor::UNNEST {
@@ -3993,7 +4019,10 @@ impl SQLContext {
                     Some(alias) => {
                         let lf = self
                             .execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?;
-                        self.register_aliased_relation(lf, alias)
+                        let lf = self.rename_columns_from_table_alias(lf, alias)?;
+                        let name = alias.name.value.clone();
+                        self.aliased_joins.insert(name.clone(), lf.clone());
+                        Ok((name, lf))
                     },
                     None => Ok((
                         String::new(),
@@ -4910,25 +4939,6 @@ impl SQLContext {
             }
         }
         Ok(named_exprs.into_iter().map(|(_, expr)| expr).collect())
-    }
-
-    /// Make `lf` the relation that `alias` names in the current statement.
-    fn register_aliased_relation(
-        &mut self,
-        lf: LazyFrame,
-        alias: &TableAlias,
-    ) -> PolarsResult<(String, LazyFrame)> {
-        let lf = self.rename_columns_from_table_alias(lf, alias)?;
-        let name = alias.name.value.clone();
-        {
-            let mut table_map = self.table_map.write().unwrap();
-            if !table_map.keys().any(|key| key.eq_ignore_ascii_case(&name)) {
-                table_map.insert(name.clone(), lf.clone());
-            }
-        }
-        // Shadows a registered table of the same name in this statement only.
-        self.register_cte(&name, lf.clone());
-        Ok((name, lf))
     }
 
     fn rename_columns_from_table_alias(

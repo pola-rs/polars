@@ -748,6 +748,20 @@ def test_aliased_nested_join_as_relation(alias: str) -> None:
     )
 
 
+def test_aliased_nested_join_does_not_hide_table() -> None:
+    frames = {"l": pl.LazyFrame({"k": [1]}), "m": pl.LazyFrame({"k": [1]})}
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(
+            "WITH x AS (SELECT 99 AS k) "
+            "SELECT x.k AS a, y.k AS b FROM (l NATURAL JOIN m) AS x, x AS y",
+            eager=True,
+        )
+        assert res.rows() == [(1, 99)]
+
+        ctx.execute("CREATE TABLE made AS SELECT * FROM (l NATURAL JOIN m) AS x")
+        assert sorted(ctx.tables()) == ["l", "m", "made"]
+
+
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
