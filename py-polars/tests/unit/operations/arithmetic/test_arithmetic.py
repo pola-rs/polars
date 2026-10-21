@@ -32,7 +32,7 @@ from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import EngineType, PolarsIntegerType
+    from polars._typing import EngineType, PolarsDataType, PolarsIntegerType
 
 
 @pytest.mark.parametrize(
@@ -1301,3 +1301,17 @@ def test_string_numeric_arithmetic_raises(
 def test_string_add_concatenates(other: Any, expected: list[str]) -> None:
     s = pl.Series(["a"])
     assert (s + other).to_list() == expected
+
+
+@pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32])
+def test_truediv_int_literal_float_schema(float_dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"f": [4.0]}, schema={"f": float_dtype}).select(
+        f_lit=pl.col.f / 2,
+        lit_f=2 / pl.col.f,
+    )
+    expected = pl.DataFrame(
+        {"f_lit": [2.0], "lit_f": [0.5]},
+        schema={"f_lit": float_dtype, "lit_f": float_dtype},
+    )
+    assert_schema_equal(lf.collect_schema(), expected.schema)
+    assert_frame_equal(lf.collect(), expected)
