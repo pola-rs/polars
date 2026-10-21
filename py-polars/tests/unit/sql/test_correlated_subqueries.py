@@ -466,20 +466,101 @@ def test_correlated_aggregate_empty_or_disjoint_inputs(
     [
         "COUNT(*) + 1",
         "COALESCE(SUM(v), 0)",
+        "COALESCE(MAX(v), -1)",
         "COUNT(DISTINCT v)",
+        "COUNT(*) FILTER (WHERE v > 8)",
+        "COUNT(*) * 2 + COALESCE(SUM(v), 0)",
+        "CASE WHEN COUNT(*) = 0 THEN 'none' ELSE 'some' END",
+        "SUM(v) + 1",
     ],
 )
-@pytest.mark.xfail(
-    reason="only a bare COUNT is recognised as non-null over an unmatched outer row",
-    strict=True,
+@pytest.mark.parametrize(
+    "correlation",
+    [
+        "i.k = o.k",
+        # not an equality, so this takes the row-index path
+        "i.k <= o.k AND i.k >= o.k",
+    ],
 )
-def test_correlated_aggregate_wrapped_count_over_no_match(agg: str) -> None:
+def test_correlated_aggregate_expression_over_no_match(
+    agg: str, correlation: str
+) -> None:
+    # An outer row without inner rows gets the projection's value over no rows.
     assert_sql_matches(
         frames=_key_frames(),
-        query=f"SELECT p, (SELECT {agg} FROM i WHERE i.k = o.k) AS r FROM o ORDER BY p",
+        query=(
+            f"SELECT p, (SELECT {agg} FROM i WHERE {correlation}) AS r "
+            "FROM o ORDER BY p"
+        ),
         compare_with="duckdb",
         engines=ENGINES,
     )
+
+
+def test_correlated_aggregate_expression_over_no_match_in_where() -> None:
+    assert_sql_matches(
+        frames=_key_frames(),
+        query=(
+            "SELECT p FROM o "
+            "WHERE (SELECT COALESCE(MAX(v), 0) FROM i WHERE i.k = o.k) = 0 ORDER BY p"
+        ),
+        compare_with="duckdb",
+        expected={"p": ["c", "e", "f"]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_aggregate_fallible_expression_only_over_outer_rows() -> None:
+    # The cast fails over no rows. That value is only computed for outer rows
+    # without inner rows, so the query fails only when such a row exists.
+    query = (
+        "SELECT k, (SELECT CAST(CASE WHEN COUNT(*) = 0 THEN 'x' ELSE '1' END AS INT) "
+        "FROM i WHERE i.k = o.k) AS r FROM o ORDER BY k"
+    )
+    inner = pl.DataFrame({"k": [1, 1, 2]})
+    assert_sql_matches(
+        frames={"o": pl.DataFrame({"k": [1, 2]}), "i": inner},
+        query=query,
+        compare_with="duckdb",
+        expected={"k": [1, 2], "r": [1, 1]},
+        engines=ENGINES,
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.SQLContext(o=pl.DataFrame({"k": [1, 3]}), i=inner).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [
+        # a matched group whose cast gives NULL keeps it
+        ("TRY_CAST(COUNT(*) AS TINYINT)", [None, 0]),
+        # the 0 is cast like any other count
+        ("CAST(CAST(COUNT(*) AS DECIMAL(10, 2)) AS VARCHAR)", ["128.00", "0.00"]),
+    ],
+)
+def test_correlated_aggregate_cast_count_over_no_match(
+    agg: str, expected: list[Any]
+) -> None:
+    assert_sql_matches(
+        frames={"o": pl.DataFrame({"k": [1, 2]}), "i": pl.DataFrame({"k": [1] * 128})},
+        query=f"SELECT k, (SELECT {agg} FROM i WHERE i.k = o.k) AS r FROM o ORDER BY k",
+        compare_with="duckdb",
+        expected={"k": [1, 2], "r": expected},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("agg", ["COUNT(*) OVER ()", "COUNT(*) OVER () + 1"])
+def test_correlated_window_is_not_an_aggregate(agg: str) -> None:
+    # A window gives a value per inner row, so this is not lowered as an
+    # aggregate, which would hide that a key has more than one row.
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(
+            o=pl.DataFrame({"k": [1, 2]}), i=pl.DataFrame({"k": [1, 1]})
+        ).execute(
+            f"SELECT k, (SELECT {agg} FROM i WHERE i.k = o.k) AS r FROM o",
+            eager=True,
+        )
 
 
 def test_correlated_aggregate_strict_cast_only_over_matched_rows() -> None:
