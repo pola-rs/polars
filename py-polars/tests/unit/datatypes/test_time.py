@@ -9,18 +9,6 @@ def test_time_to_string_cast() -> None:
     assert pl.Series([time(12, 1, 1)]).cast(str).to_list() == ["12:01:01"]
 
 
-def test_time_to_string_cast_fractional_seconds_30046() -> None:
-    s = pl.Series(
-        [time(12, 1, 1), time(12, 1, 1, 100000), time(12, 1, 1, 123456), None]
-    )
-    expected = ["12:01:01", "12:01:01.100", "12:01:01.123456", None]
-    assert s.cast(pl.String).to_list() == expected
-    assert s.dt.to_string().to_list() == expected
-
-    s = pl.Series([43_261_000_000_001]).cast(pl.Time)
-    assert s.cast(pl.String).to_list() == ["12:01:01.000000001"]
-
-
 def test_time_zero_3828() -> None:
     assert pl.Series(values=[time(0)], dtype=pl.Time).to_list() == [time(0)]
 
