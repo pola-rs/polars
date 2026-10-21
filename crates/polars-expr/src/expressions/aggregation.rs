@@ -730,17 +730,27 @@ impl PhysicalExpr for AnonymousAggregationExpr {
     }
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        let mut cols = self
+            .inputs
+            .iter()
+            .map(|e| e.evaluate(df, state))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let len = cols.iter().map(Column::len).max().unwrap();
+        for (col, e) in cols.iter_mut().zip(&self.inputs) {
+            if col.len() == 1 && e.is_scalar() {
+                *col = col.new_from_index(0, len);
+            }
+        }
         polars_ensure!(
-            self.inputs.len() == 1,
-            ComputeError: "AnonymousAggregationExpr with more than one input is not supported"
+            cols.iter().all(|c| c.len() == len),
+            ShapeMismatch: "inputs of an anonymous aggregation have different lengths"
         );
 
-        let col = self.inputs[0].evaluate(df, state)?;
         let mut gr = self.grouped_reduction.new_empty();
         gr.resize(1);
-        gr.update_group(&[&col], 0, 0)?;
+        gr.update_group(&cols.iter().collect::<Vec<_>>(), 0, 0)?;
         let out_series = gr.finalize()?;
-        Ok(Column::new(col.name().clone(), out_series))
+        Ok(Column::new(cols[0].name().clone(), out_series))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -750,70 +760,100 @@ impl PhysicalExpr for AnonymousAggregationExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        polars_ensure!(
-            self.inputs.len() == 1,
-            ComputeError: "AnonymousAggregationExpr with more than one input is not supported"
-        );
-
-        let input = &self.inputs[0];
-        let mut ac = input.evaluate_on_groups(df, groups, state)?;
+        let mut acs = self
+            .inputs
+            .iter()
+            .map(|e| e.evaluate_on_groups(df, groups, state))
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         // don't change names by aggregations as is done in polars-core
-        let input_column_name = ac.get_values().name().clone();
+        let input_column_name = acs[0].get_values().name().clone();
 
-        if let AggState::LiteralScalar(input_column) = &mut ac.state {
-            *input_column = self.evaluate(df, state)?;
+        if acs
+            .iter()
+            .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)))
+        {
+            let mut ac = acs.swap_remove(0);
+            ac.state = AggState::LiteralScalar(self.evaluate(df, state)?);
             return Ok(ac);
         }
 
-        let (input_column, resolved_groups) = ac.get_final_aggregation();
+        for ac in &mut acs {
+            ac.set_groups_for_undefined_agg_states();
+        }
+        if let Some(i) = self.inputs.iter().position(|e| !e.is_scalar()) {
+            let mut target = acs.remove(i);
+            for (j, ac) in acs.iter_mut().enumerate() {
+                let input = &self.inputs[if j < i { j } else { j + 1 }];
+                if input.is_scalar() && ac.broadcast_unit_groups_to(&mut target) {
+                    ac.normalize_values();
+                }
+            }
+            acs.insert(i, target);
+        }
+
+        let mut inputs: Vec<_> = acs
+            .into_iter()
+            .map(|ac| ac.get_final_aggregation())
+            .collect();
+        let resolved_groups = &inputs[0].1;
+        for (_, input_groups) in &inputs[1..] {
+            resolved_groups.check_lengths(input_groups)?;
+        }
 
         let mut gr = self.grouped_reduction.new_empty();
         gr.resize(groups.len() as IdxSize);
 
-        assert!(
-            !resolved_groups.is_overlapping(),
-            "Aggregating with overlapping groups is a logic error"
-        );
-
-        let subset = (0..input_column.len() as IdxSize).collect::<Vec<IdxSize>>();
-
-        let mut group_idxs = Vec::with_capacity(input_column.len());
-        match &**resolved_groups {
-            GroupsType::Idx(group_indices) => {
-                group_idxs.resize(input_column.len(), 0);
-                for (group_idx, indices_in_group) in group_indices.all().iter().enumerate() {
-                    for pos in indices_in_group.iter() {
-                        group_idxs[*pos as usize] = group_idx as IdxSize;
-                    }
-                }
-            },
-            GroupsType::Slice { groups, .. } => {
-                for (group_idx, [_start, len]) in groups.iter().enumerate() {
-                    group_idxs.extend(std::iter::repeat_n(group_idx as IdxSize, *len as usize));
-                }
-            },
+        // The positions of each input's values, group after group.
+        let positions = |groups: &GroupsType| -> Vec<IdxSize> {
+            match groups {
+                GroupsType::Idx(idx) => idx.all().iter().flat_map(|g| g.iter().copied()).collect(),
+                GroupsType::Slice { groups, .. } => groups
+                    .iter()
+                    .flat_map(|&[start, len]| start..start + len)
+                    .collect(),
+            }
         };
-        assert_eq!(group_idxs.len(), input_column.len());
-
-        // `update_groups_subset` needs a single chunk.
-        let input_column_rechunked = input_column.rechunk();
+        // `update_groups_subset` needs single chunks. Inputs with their own groups are gathered
+        // into group order, so that their values line up.
+        let (columns, subset): (Vec<_>, _) =
+            if inputs.iter().all(|(_, g)| g.is_same(resolved_groups)) {
+                let columns = inputs.iter().map(|(c, _)| c.rechunk()).collect();
+                (columns, positions(resolved_groups))
+            } else {
+                let columns = inputs
+                    .iter()
+                    .map(|(c, g)| c.take_slice(&positions(g)))
+                    .collect::<PolarsResult<_>>()?;
+                let len = resolved_groups.iter().map(|g| g.len()).sum::<usize>();
+                (columns, (0..len as IdxSize).collect())
+            };
+        let group_idxs: Vec<IdxSize> = resolved_groups
+            .iter()
+            .enumerate()
+            .flat_map(|(group_idx, g)| std::iter::repeat_n(group_idx as IdxSize, g.len()))
+            .collect();
+        assert_eq!(group_idxs.len(), subset.len());
 
         // Single call so no need to resolve ordering.
         let seq_id = 0;
 
         // SAFETY:
-        // - `subset` is in-bounds because it is 0..N
-        // - `group_idxs` is in-bounds because we checked that it matches `input_column.len()` *and*
-        //   is filled with values <= `input_column.len()` since they are derived from it via
-        //   `enumerate`.
+        // - `subset` holds positions of the groups, which are in-bounds of their columns.
+        // - `group_idxs` holds one index per group, and there are `groups.len()` of them.
         unsafe {
-            gr.update_groups_subset(&[&input_column_rechunked], &subset, &group_idxs, seq_id)?;
+            gr.update_groups_subset(
+                &columns.iter().collect::<Vec<_>>(),
+                &subset,
+                &group_idxs,
+                seq_id,
+            )?;
         }
 
         let out_series = gr.finalize()?;
         let out = AggregatedScalar(Column::new(input_column_name, out_series));
 
+        let resolved_groups = inputs.swap_remove(0).1;
         Ok(AggregationContext::from_agg_state(out, resolved_groups))
     }
 
