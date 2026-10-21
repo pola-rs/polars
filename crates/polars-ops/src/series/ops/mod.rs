@@ -45,6 +45,7 @@ mod is_unique;
 mod linear_space;
 #[cfg(feature = "log")]
 mod log;
+mod mm3_hash;
 #[cfg(feature = "moment")]
 mod moment;
 mod negate;
@@ -120,6 +121,7 @@ pub use is_unique::*;
 pub use linear_space::*;
 #[cfg(feature = "log")]
 pub use log::*;
+pub use mm3_hash::*;
 #[cfg(feature = "moment")]
 pub use moment::*;
 pub use negate::*;

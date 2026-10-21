@@ -629,6 +629,7 @@ pub(super) fn convert_functions(
         }),
         #[cfg(feature = "row_hash")]
         F::Hash(seed) => I::Hash(seed),
+        F::Mm3Hash => I::Mm3Hash,
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]

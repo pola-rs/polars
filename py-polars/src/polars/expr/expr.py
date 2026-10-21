@@ -7430,6 +7430,14 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.hash(seed))
 
+    def _mm3_hash(self) -> Expr:
+        """
+        Compute the 32-bit MurmurHash3 of the values, as specified by Iceberg.
+
+        This is the hash used by the Iceberg `bucket` partition transform.
+        """
+        return wrap_expr(self._pyexpr.mm3_hash())
+
     def reinterpret(
         self,
         *,

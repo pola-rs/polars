@@ -194,6 +194,7 @@ pub fn function_expr_to_udf(
         F::Hash(seed) => {
             map!(misc::row_hash, seed)
         },
+        F::Mm3Hash => map!(misc::mm3_hash),
         #[cfg(feature = "arg_where")]
         F::ArgWhere => {
             wrap!(misc::arg_where)

@@ -1679,6 +1679,11 @@ impl Expr {
         self.map_unary(FunctionExpr::Hash(seed))
     }
 
+    /// Compute the 32-bit MurmurHash3 of the values as defined by the Iceberg specification.
+    pub fn mm3_hash(self) -> Expr {
+        self.map_unary(FunctionExpr::Mm3Hash)
+    }
+
     pub fn to_physical(self) -> Expr {
         self.map_unary(FunctionExpr::ToPhysical)
     }

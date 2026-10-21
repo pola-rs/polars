@@ -449,6 +449,10 @@ pub(super) fn row_hash(c: &Column, seed: u64) -> PolarsResult<Column> {
         .into_column())
 }
 
+pub(super) fn mm3_hash(c: &Column) -> PolarsResult<Column> {
+    polars_ops::series::mm3_hash(c.as_materialized_series()).map(Column::from)
+}
+
 #[cfg(feature = "arg_where")]
 pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
     use polars_core::utils::polars_arrow::bitmap::utils::SlicesIterator;
