@@ -1,6 +1,8 @@
 use polars_utils::format_pl_smallstr;
 
 use super::*;
+#[cfg(feature = "asof_join")]
+mod asof;
 mod predicate_pruning;
 use hive::rewrite_hive;
 use predicate_pruning::*;
@@ -319,18 +321,52 @@ pub(super) fn process_join(
 
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
+    // A filter on the left key of an as-of join also bounds the right keys it can match.
+    #[cfg(feature = "asof_join")]
+    let asof_keys = match (&options.args.how, left_on.as_slice(), right_on.as_slice()) {
+        (JoinType::AsOf(asof), [l], [r]) => {
+            match (expr_arena.get(l.node()), expr_arena.get(r.node())) {
+                (AExpr::Column(l), AExpr::Column(r))
+                    if schema_left.get(l) == schema_right.get(r) =>
+                {
+                    Some((
+                        asof,
+                        l.clone(),
+                        r.clone(),
+                        schema_left.get(l).unwrap().clone(),
+                    ))
+                },
+                _ => None,
+            }
+        },
+        _ => None,
+    };
+    #[cfg(feature = "asof_join")]
+    let mut asof_pushdown_right = Vec::new();
+
     // Which sides of the join a predicate can be pushed to, and whether it has to
     // stay above the join as well.
     struct Placement {
         push_left: bool,
         push_right: bool,
         keep_local: bool,
+        #[cfg(feature = "asof_join")]
+        uses_asof_key: bool,
     }
     let classify = |predicate: &ExprIR, expr_arena: &Arena<AExpr>| {
         let mut push_left = true;
         let mut push_right = true;
+        #[cfg(feature = "asof_join")]
+        let mut uses_asof_key = false;
 
         for col_name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
+            #[cfg(feature = "asof_join")]
+            {
+                uses_asof_key |= asof_keys
+                    .as_ref()
+                    .is_some_and(|(_, left_key, ..)| left_key == col_name);
+            }
+
             let origin: ExprOrigin = ExprOrigin::get_column_origin(
                 col_name.as_str(),
                 &schema_left,
@@ -416,6 +452,8 @@ pub(super) fn process_join(
             push_left,
             push_right,
             keep_local: has_residual,
+            #[cfg(feature = "asof_join")]
+            uses_asof_key,
         }
     };
 
@@ -464,6 +502,21 @@ pub(super) fn process_join(
 
     for (_, predicate) in acc_predicates {
         let placement = classify(&predicate, expr_arena);
+        #[cfg(feature = "asof_join")]
+        if placement.uses_asof_key
+            && !placement.push_right
+            && let Some((asof, left_key, right_key, key_dtype)) = &asof_keys
+        {
+            asof_pushdown_right.extend(asof::asof_right_predicates(
+                predicate.node(),
+                asof,
+                left_key,
+                right_key,
+                key_dtype,
+                &schema_left,
+                expr_arena,
+            ));
+        }
         if !placement.keep_local {
             push(predicate, &placement, expr_arena, opt);
             continue;
@@ -479,6 +532,17 @@ pub(super) fn process_join(
             }
         }
         local_predicates.push(predicate);
+    }
+
+    #[cfg(feature = "asof_join")]
+    for node in asof_pushdown_right {
+        let predicate = ExprIR::from_node(node, expr_arena);
+        insert_predicate_dedup(
+            &mut pushdown_right,
+            &predicate,
+            expr_arena,
+            &mut opt.dedup_state,
+        );
     }
 
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;

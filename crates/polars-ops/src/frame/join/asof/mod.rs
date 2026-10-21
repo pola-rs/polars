@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 
 use default::*;
 pub use groups::AsofJoinBy;
+use num_traits::NumCast;
 use polars_core::prelude::*;
 use polars_defs::join::AsofStrategy;
 use polars_utils::pl_str::PlSmallStr;
@@ -30,6 +31,20 @@ fn lt_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
         Ordering::Less => true,
         Ordering::Greater => false,
     }
+}
+
+/// The largest key distance a match may have. For integer keys this is the size of the
+/// tolerance, capped at the largest distance two keys can have; the planner stores the tolerance
+/// in this form.
+fn abs_tolerance<T: NumericNative>(tolerance: &AnyValue) -> PolarsResult<T::Abs> {
+    if T::is_float() {
+        return Ok(tolerance.try_extract::<T>()?.abs_diff(T::zero()));
+    }
+    let distance = match tolerance.extract::<i128>() {
+        Some(v) => v.unsigned_abs(),
+        None => tolerance.try_extract::<u128>()?,
+    };
+    Ok(NumCast::from(distance).unwrap_or_else(T::max_abs_diff))
 }
 
 trait AsofJoinState<T> {
@@ -366,3 +381,28 @@ pub fn _join_asof_dispatch(
 }
 
 impl AsofJoin for DataFrame {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_abs_tolerance() {
+        // The same rule as the planner, so raw and planned tolerances give the same distance.
+        assert_eq!(
+            abs_tolerance::<i32>(&AnyValue::Int64(1 << 40)).unwrap(),
+            u32::MAX
+        );
+        assert_eq!(abs_tolerance::<u32>(&AnyValue::Int32(-1)).unwrap(), 1);
+        assert_eq!(abs_tolerance::<i32>(&AnyValue::Float64(-2.7)).unwrap(), 2);
+        assert_eq!(
+            abs_tolerance::<i64>(&AnyValue::Int64(i64::MIN)).unwrap(),
+            1 << 63
+        );
+        assert_eq!(
+            abs_tolerance::<i64>(&AnyValue::UInt64(1 << 63)).unwrap(),
+            1 << 63
+        );
+        assert_eq!(abs_tolerance::<f64>(&AnyValue::Float64(-2.5)).unwrap(), 2.5);
+    }
+}
