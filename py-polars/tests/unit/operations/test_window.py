@@ -1103,3 +1103,17 @@ def test_window_order_by_multiple_keys_scalar(key: pl.Expr) -> None:
         .height
         == 0
     )
+
+
+def test_window_order_by_scalar() -> None:
+    lf = pl.LazyFrame({"g": [0, 0, 1, 1, 1], "a": [3, 1, 2, 5, 4]})
+    a = pl.col("a")
+    no_opt = pl.QueryOptFlags.none()
+
+    q = lf.select(a.cum_sum().over(order_by=pl.lit(1)))
+    assert q.collect(optimizations=no_opt)["a"].to_list() == [3, 4, 6, 11, 15]
+    q = lf.select(a.cum_sum().over("g", order_by=pl.lit(1)))
+    assert q.collect(optimizations=no_opt)["a"].to_list() == [3, 4, 2, 7, 11]
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        lf.collect().select(a.cum_sum().over("g", order_by=a.head(1)))

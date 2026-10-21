@@ -523,10 +523,17 @@ impl PhysicalExpr for WindowExpr {
             let mut groups = gb.into_groups();
 
             if let Some((order_by, options)) = &self.order_by {
-                let order_by = order_by.evaluate(df, state)?;
-                polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
-                groups = update_groups_sort_by(&groups, order_by.as_materialized_series(), options)?
+                let order_by_col = order_by.evaluate(df, state)?;
+                // A constant key leaves the order of every group unchanged.
+                if !order_by.is_scalar() {
+                    polars_ensure!(order_by_col.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by_col.len(), df.height());
+                    groups = update_groups_sort_by(
+                        &groups,
+                        order_by_col.as_materialized_series(),
+                        options,
+                    )?
                     .into_sliceable()
+                }
             }
 
             let out: PolarsResult<GroupPositions> = Ok(groups);
@@ -540,7 +547,9 @@ impl PhysicalExpr for WindowExpr {
             for s in &group_by_columns {
                 cache_key.push_str(s.name());
             }
-            if let Some((e, options)) = &self.order_by {
+            if let Some((e, options)) = &self.order_by
+                && !e.is_scalar()
+            {
                 let e = match e.as_expression() {
                     Some(e) => e,
                     None => {
