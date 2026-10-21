@@ -66,6 +66,39 @@ class _AlreadyCommitted(Exception):
         self.table = table
 
 
+def _create_namespace_if_not_exists(
+    catalog: pyiceberg.catalog.Catalog,
+    namespace: tuple[str, ...],
+    *,
+    create_parents: bool = True,
+) -> None:
+    """Create `namespace`, and any missing parent namespaces."""
+    try:
+        # Tolerates a concurrent create of the same namespace.
+        catalog.create_namespace_if_not_exists(namespace)
+    except Exception:
+        # The create may have landed with its response lost.
+        with contextlib.suppress(Exception):
+            if catalog.namespace_exists(namespace):
+                return
+
+        # The parent namespace may be missing. Catalogs report this differently
+        # (e.g. REST raises a `RESTError` rather than `NoSuchNamespaceError`), so
+        # check for it directly.
+        parent_missing = False
+        if create_parents and len(namespace) > 1:
+            with contextlib.suppress(Exception):
+                parent_missing = not catalog.namespace_exists(namespace[:-1])
+
+        if not parent_missing:
+            raise
+    else:
+        return
+
+    _create_namespace_if_not_exists(catalog, namespace[:-1])
+    _create_namespace_if_not_exists(catalog, namespace, create_parents=False)
+
+
 def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) -> None:
     # Same check as `Table.refresh`: a dropped and recreated table must not take
     # over the caller's table.
@@ -703,6 +736,7 @@ class IcebergSinkState:
     mode: Literal["append", "overwrite"]
     schema_mode: Literal["merge", "overwrite"] | None
     create_if_not_exists: bool
+    create_namespace_if_not_exists: bool
     snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
     compression: ParquetCompression
@@ -726,6 +760,7 @@ class IcebergSinkState:
         mode: Literal["append", "overwrite"] = "append",
         schema_mode: Literal["merge", "overwrite"] | None = None,
         create_if_not_exists: bool = False,
+        create_namespace_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
@@ -741,6 +776,12 @@ class IcebergSinkState:
         if create_if_not_exists and not isinstance(target, str):
             msg = "create_if_not_exists=True requires a table identifier as `target`"
             raise TypeError(msg)
+
+        if create_namespace_if_not_exists and not create_if_not_exists:
+            msg = (
+                "create_namespace_if_not_exists=True requires create_if_not_exists=True"
+            )
+            raise ValueError(msg)
 
         catalog_config = (
             (
@@ -777,6 +818,7 @@ class IcebergSinkState:
             mode=mode,
             schema_mode=schema_mode,
             create_if_not_exists=create_if_not_exists,
+            create_namespace_if_not_exists=create_namespace_if_not_exists,
             snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
             compression=compression,
@@ -822,10 +864,7 @@ class IcebergSinkState:
                 raise
 
         try:
-            # Tolerates a concurrent create of the same table.
-            return catalog.create_table_if_not_exists(
-                self.table_name, schema=self._get_source_schema()
-            )
+            return self._create_table(catalog)
         except Exception:
             # The create may have landed with its response lost.
             try:
@@ -833,6 +872,28 @@ class IcebergSinkState:
             except NoSuchTableError:
                 pass
             raise
+
+    def _create_table(
+        self, catalog: pyiceberg.catalog.Catalog
+    ) -> pyiceberg.table.Table:
+        from pyiceberg.exceptions import NoSuchNamespaceError
+
+        # Tolerates a concurrent create of the same table.
+        try:
+            return catalog.create_table_if_not_exists(
+                self.table_name, schema=self._get_source_schema()
+            )
+        except NoSuchNamespaceError:
+            if not self.create_namespace_if_not_exists:
+                raise
+
+        _create_namespace_if_not_exists(
+            catalog, catalog.namespace_from(self.table_name)
+        )
+
+        return catalog.create_table_if_not_exists(
+            self.table_name, schema=self._get_source_schema()
+        )
 
     def _get_converted_storage_options(self) -> dict[str, str]:
         return _convert_iceberg_to_object_store_storage_options(

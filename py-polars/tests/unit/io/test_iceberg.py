@@ -998,6 +998,131 @@ def test_sink_iceberg_create_if_not_exists(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_sink_iceberg_create_namespace_if_not_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+
+    df = pl.DataFrame({"a": [1, 2]})
+
+    with pytest.raises(pyiceberg.exceptions.NoSuchTableError):
+        df.lazy().sink_iceberg("ns.t", mode="append", catalog=catalog)
+
+    with pytest.raises(pyiceberg.exceptions.NoSuchNamespaceError):
+        df.lazy().sink_iceberg(
+            "ns.t", mode="append", create_if_not_exists=True, catalog=catalog
+        )
+
+    with pytest.raises(ValueError, match="requires create_if_not_exists=True"):
+        df.lazy().sink_iceberg(
+            "ns.t", mode="append", create_namespace_if_not_exists=True, catalog=catalog
+        )
+
+    assert not catalog.namespace_exists("ns")
+
+    df.lazy().sink_iceberg(
+        "ns.t",
+        mode="append",
+        create_if_not_exists=True,
+        create_namespace_if_not_exists=True,
+        catalog=catalog,
+    )
+    assert catalog.namespace_exists("ns")
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("ns.t")).collect(), df)
+
+    # Missing parent namespaces are created first. Like the REST catalog, report a
+    # missing parent as a `RESTError` rather than a `NoSuchNamespaceError`.
+    create_namespace = SqlCatalog.create_namespace
+    created = []
+
+    def create_namespace_requires_parent(
+        self: SqlCatalog, namespace: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        namespace = self.identifier_to_tuple(namespace)
+        if len(namespace) > 1 and not self.namespace_exists(namespace[:-1]):
+            raise pyiceberg.exceptions.RESTError(namespace[:-1])
+        created.append(namespace)
+        return create_namespace(self, namespace, *args, **kwargs)
+
+    monkeypatch.setattr(
+        SqlCatalog, "create_namespace", create_namespace_requires_parent
+    )
+
+    df.lazy().sink_iceberg(
+        "a.b.t",
+        mode="append",
+        create_if_not_exists=True,
+        create_namespace_if_not_exists=True,
+        catalog=catalog,
+    )
+    assert created == [("a",), ("a", "b")]
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("a.b.t")).collect(), df)
+
+    # The retried child create may land with its response lost.
+    def create_namespace_requires_parent_lost_response(
+        self: SqlCatalog, namespace: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        create_namespace_requires_parent(self, namespace, *args, **kwargs)
+        if len(self.identifier_to_tuple(namespace)) > 1:
+            msg = "lost response"
+            raise ConnectionError(msg)
+
+    monkeypatch.setattr(
+        SqlCatalog, "create_namespace", create_namespace_requires_parent_lost_response
+    )
+
+    created.clear()
+    df.lazy().sink_iceberg(
+        "c.d.t",
+        mode="append",
+        create_if_not_exists=True,
+        create_namespace_if_not_exists=True,
+        catalog=catalog,
+    )
+    assert created == [("c",), ("c", "d")]
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("c.d.t")).collect(), df)
+
+    # The namespace create may land with its response lost.
+    def create_namespace_lost_response(
+        self: SqlCatalog, *args: Any, **kwargs: Any
+    ) -> Any:
+        create_namespace(self, *args, **kwargs)
+        msg = "lost response"
+        raise ConnectionError(msg)
+
+    monkeypatch.setattr(SqlCatalog, "create_namespace", create_namespace_lost_response)
+
+    df.lazy().sink_iceberg(
+        "ns2.t",
+        mode="append",
+        create_if_not_exists=True,
+        create_namespace_if_not_exists=True,
+        catalog=catalog,
+    )
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("ns2.t")).collect(), df)
+
+    # Errors are raised if the namespace was not created.
+    def create_namespace_fails(self: SqlCatalog, *args: Any, **kwargs: Any) -> Any:
+        msg = "create failed"
+        raise ConnectionError(msg)
+
+    monkeypatch.setattr(SqlCatalog, "create_namespace", create_namespace_fails)
+
+    with pytest.raises(ConnectionError, match="create failed"):
+        df.lazy().sink_iceberg(
+            "ns3.t",
+            mode="append",
+            create_if_not_exists=True,
+            create_namespace_if_not_exists=True,
+            catalog=catalog,
+        )
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_create_if_not_exists_lost_response(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
