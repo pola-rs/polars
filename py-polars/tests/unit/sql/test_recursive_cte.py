@@ -381,6 +381,41 @@ def test_recursive_step_input_computed_once(user_cache: bool, query: str) -> Non
     assert len(calls) == 1
 
 
+def test_recursive_step_local_cte_shared_within_round() -> None:
+    # `b` is defined in the step, so it is computed once per round, and both of its
+    # readers see the same values in a round.
+    calls: list[None] = []
+
+    def stamp(df: pl.DataFrame) -> pl.DataFrame:
+        calls.append(None)
+        return df.with_columns(pl.lit(len(calls), dtype=pl.Int64).alias("x"))
+
+    src = pl.LazyFrame({"k": [1, 2], "x": [0, 0]}).map_batches(
+        stamp, schema={"k": pl.Int64, "x": pl.Int64}
+    )
+    res = (
+        pl.SQLContext(src=src)
+        .execute(
+            """
+        WITH RECURSIVE t AS (
+          SELECT 0 AS n, CAST(0 AS BIGINT) AS x, CAST(0 AS BIGINT) AS y
+          UNION ALL (
+            WITH b AS (SELECT * FROM src)
+            SELECT n + 1, b1.x, b2.x
+            FROM t
+            CROSS JOIN (SELECT * FROM b WHERE k = 1) b1
+            CROSS JOIN (SELECT * FROM b WHERE k = 2) b2
+            WHERE n < 2
+          )
+        )
+        SELECT * FROM t ORDER BY n
+        """
+        )
+        .collect()
+    )
+    assert res.rows() == [(0, 0, 0), (1, 1, 1), (2, 2, 2)]
+
+
 def test_recursive_step_cache_also_read_outside(plmonkeypatch: PlMonkeyPatch) -> None:
     # The reader outside the recursive query is pruned, which leaves one reader of the
     # cache: the one in the step.

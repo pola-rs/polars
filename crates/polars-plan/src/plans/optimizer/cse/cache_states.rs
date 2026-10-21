@@ -13,7 +13,7 @@ use crate::plans::aexpr::ExprPushdownGroup;
 use crate::plans::aexpr::filter_constraint::widen_over_predicates;
 use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
-use crate::plans::optimizer::recursive_caches::caches_shared_across_rounds;
+use crate::plans::optimizer::recursive_caches::caches_in_recursive_steps;
 use crate::plans::visitor::AexprNode;
 use crate::plans::{
     AExpr, ExecutionHooks, ExprIR, IR, PredicatePushDown, attach_dataset_scan_statistics,
@@ -315,7 +315,7 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let caches_shared_across_rounds = caches_shared_across_rounds(root, lp_arena);
+        let caches_in_recursive_steps = caches_in_recursive_steps(root, lp_arena);
         let mut pred_pd =
             PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive, hooks);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
@@ -343,8 +343,9 @@ pub(crate) fn set_cache_states(
             // below it have their own predicates and get their own decision in a later iteration;
             // deleting them here would duplicate their subplan without any of them ever having
             // been evaluated.
-            // A cache that a recursive query reads in every round must stay.
-            if v.predicate_union.len() > 1 && !caches_shared_across_rounds.contains(&cache_id) {
+            // A cache read in the step of a recursive query is kept, so all its readers in a
+            // round see the same values.
+            if v.predicate_union.len() > 1 && !caches_in_recursive_steps.contains(&cache_id) {
                 let mut replacements = Vec::with_capacity(v.cache_nodes.len());
                 let mut remove_caches = true;
                 // Summed over the copies; `None` once any of them is not modelled.
