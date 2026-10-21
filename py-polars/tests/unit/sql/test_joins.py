@@ -1291,6 +1291,32 @@ def test_join_on_expression_conditions(expression: str, expected_length: int) ->
 
 
 @pytest.mark.parametrize(
+    "join",
+    [
+        "JOIN r ON {on}",
+        "LEFT JOIN r ON {on}",
+        "FULL JOIN r ON {on}",
+        ", r WHERE {on}",
+    ],
+)
+@pytest.mark.parametrize("on", ["r.k + 1 = m.k", "m.k = r.k + 1"])
+def test_join_on_expression_over_chained_left_input(join: str, on: str) -> None:
+    # `m` is not the first relation, but is part of the left input
+    assert_sql_matches(
+        frames={
+            "l": pl.DataFrame({"k": [1, 2, 3]}),
+            "m": pl.DataFrame({"k": [2, 3, 4]}),
+            "r": pl.DataFrame({"k": [1, 2, 3, 4]}),
+        },
+        query=(
+            f"SELECT l.k AS lk, r.k AS rk FROM l NATURAL JOIN m {join.format(on=on)} "
+            "ORDER BY lk, rk"
+        ),
+        compare_with="duckdb",
+    )
+
+
+@pytest.mark.parametrize(
     ("df1", "df2", "join_constraint", "select_cols", "expected", "schema"),
     [
         (

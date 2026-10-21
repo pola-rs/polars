@@ -65,6 +65,8 @@ pub struct TableInfo {
     pub(crate) frame: LazyFrame,
     pub(crate) name: PlSmallStr,
     pub(crate) schema: Arc<Schema>,
+    /// The relations joined into `frame`, by `RelationName::key`.
+    pub(crate) relations: Vec<String>,
 }
 
 /// An `ORDER BY` clause pointed at the aggregated frame, with the named
@@ -1660,6 +1662,12 @@ impl SQLContext {
                 }
                 let left_schema = self.get_frame_schema(&mut lf)?;
                 let right_schema = self.get_frame_schema(&mut rf)?;
+                let relation_keys = |names: Vec<RelationName>| -> Vec<String> {
+                    names.iter().map(RelationName::key).collect()
+                };
+                let left_relations = relation_keys(factor_relations(factors.clone().take(i + 1)));
+                let right_relations =
+                    relation_keys(factor_relations(std::iter::once(&join.relation)));
 
                 lf = match &join.join_operator {
                     op @ (JoinOperator::Join(constraint)  // note: bare "join" is inner
@@ -1684,11 +1692,13 @@ impl SQLContext {
                                 frame: lf,
                                 name: (&l_name).into(),
                                 schema: left_schema.clone(),
+                                relations: left_relations,
                             },
                             &TableInfo {
                                 frame: rf,
                                 name: (&r_name).into(),
                                 schema: right_schema.clone(),
+                                relations: right_relations,
                             },
                             constraint,
                             match op {
@@ -1725,11 +1735,13 @@ impl SQLContext {
                             frame: lf,
                             name: (&l_name).into(),
                             schema: left_schema.clone(),
+                            relations: left_relations,
                         },
                         &TableInfo {
                             frame: rf,
                             name: (&r_name).into(),
                             schema: right_schema.clone(),
+                            relations: right_relations,
                         },
                         match_condition,
                         constraint,
@@ -3328,11 +3340,20 @@ impl SQLContext {
                             &joined_table_names.first().cloned().unwrap_or_default(),
                         ),
                         schema: left_schema.clone(),
+                        relations: joined_table_names.clone(),
                     },
                     &TableInfo {
                         frame: rf,
                         name: PlSmallStr::from_str(&r_name),
                         schema: right_schema.clone(),
+                        relations: std::iter::once(r_name.clone())
+                            .chain(
+                                tbl_expr
+                                    .joins
+                                    .iter()
+                                    .filter_map(|j| get_table_name(&j.relation)),
+                            )
+                            .collect(),
                     },
                     &JoinConstraint::On(on_expr),
                     JoinType::Inner,
@@ -5108,13 +5129,18 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
+    let refers_to = |expr: &SQLExpr, tbl: &TableInfo| {
+        tbl.relations
+            .iter()
+            .any(|name| expr_refers_to_table(expr, name, &ctx.active_relations))
+    };
     let left_refs = (
-        expr_refers_to_table(expr_left, &tbl_left.name, &ctx.active_relations),
-        expr_refers_to_table(expr_left, &tbl_right.name, &ctx.active_relations),
+        refers_to(expr_left, tbl_left),
+        refers_to(expr_left, tbl_right),
     );
     let right_refs = (
-        expr_refers_to_table(expr_right, &tbl_left.name, &ctx.active_relations),
-        expr_refers_to_table(expr_right, &tbl_right.name, &ctx.active_relations),
+        refers_to(expr_right, tbl_left),
+        refers_to(expr_right, tbl_right),
     );
     // an operand's dtypes come from the table it names; the merged schema keeps the left
     // dtype for a column name that exists in both tables
