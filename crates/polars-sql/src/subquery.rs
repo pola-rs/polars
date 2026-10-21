@@ -20,10 +20,10 @@ use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::Arena;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
-    Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
-    UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
-    visit_expressions_mut,
+    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident,
+    NamedWindowDefinition, NamedWindowExpr, Query, Select, SelectItem, SetExpr, Statement,
+    TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor,
+    VisitorMut, WindowSpec, WindowType, visit_expressions, visit_expressions_mut,
 };
 
 use crate::catalog::CatalogSpellings;
@@ -31,6 +31,7 @@ use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
     flatten_and_conditions, get_table_name, match_qualifier, relation_name,
 };
+use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
 use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
 use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_subquery_expr};
@@ -238,6 +239,10 @@ impl SQLContext {
         let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
+        // An aggregating subquery is left to `try_decorrelate_exists_subquery`.
+        if exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) != Some(false) {
+            return Ok(None);
+        }
         if let Some(conjuncts) = ctx.split_subquery_conjuncts(
             &selection,
             &inner_names,
@@ -1188,6 +1193,17 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}exists");
+        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
+            None => return Ok(None),
+            // An aggregate without GROUP BY returns one row, even over no rows.
+            Some(true) => {
+                return Ok(Some((
+                    lf.with_column(lit(true).alias(flag_name.clone())),
+                    flag_name,
+                )));
+            },
+            Some(false) => {},
+        }
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
         if corr_preds.is_empty() {
@@ -1771,6 +1787,162 @@ fn classify_correlation_column(
             (false, false) => None,
         },
     })
+}
+
+/// How many rows an `EXISTS` subquery that passed `eligible_subquery_select` returns because
+/// of its aggregates: `Some(true)` if it aggregates its own rows and so returns exactly one,
+/// `Some(false)` if it does not aggregate, and `None` for shapes left unsupported (an
+/// aggregate over outer columns only, which belongs to the outer query, or `UNNEST`).
+fn exists_aggregates(
+    ctx: &SQLContext,
+    query: &Query,
+    select: &Select,
+    inner_names: &[RelationName],
+    inner_schema: &Schema,
+) -> Option<bool> {
+    /// Whether the columns an aggregate call reads, outside of its subqueries, are inner
+    /// or outer ones.
+    struct Columns<'a> {
+        inner_names: &'a [RelationName],
+        inner_schema: &'a Schema,
+        query_depth: usize,
+        inner: bool,
+        outer: bool,
+    }
+
+    impl Visitor for Columns<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            let is_inner = match expr {
+                _ if self.query_depth > 0 => return ControlFlow::Continue(()),
+                SQLExpr::Identifier(ident) => self.inner_schema.contains(&ident.value),
+                SQLExpr::CompoundIdentifier(parts) => {
+                    match_qualifier(parts, self.inner_names.iter()).is_some()
+                        || self.inner_schema.contains(&parts[0].value)
+                },
+                _ => return ControlFlow::Continue(()),
+            };
+            if is_inner {
+                self.inner = true;
+            } else {
+                self.outer = true;
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    struct Aggregates<'a> {
+        ctx: &'a SQLContext,
+        inner_names: &'a [RelationName],
+        inner_schema: &'a Schema,
+        query_depth: usize,
+        local: bool,
+        outer: bool,
+        unsupported: bool,
+        /// Named windows used so far, whose definitions may hold aggregates.
+        windows: Vec<String>,
+    }
+
+    impl Visitor for Aggregates<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            let SQLExpr::Function(function) = expr else {
+                return ControlFlow::Continue(());
+            };
+            if self.query_depth > 0 {
+                return ControlFlow::Continue(());
+            }
+            match &function.over {
+                Some(WindowType::NamedWindow(name))
+                | Some(WindowType::WindowSpec(WindowSpec {
+                    window_name: Some(name),
+                    ..
+                })) => self.windows.push(name.value.clone()),
+                _ => {},
+            }
+            match PolarsSQLFunctions::try_from_sql(function, self.ctx) {
+                Ok(PolarsSQLFunctions::Explode) => self.unsupported = true,
+                Ok(f) if f.is_builtin_aggregate() && function.over.is_none() => {
+                    // An aggregate belongs to the outer query if it reads only outer columns,
+                    // in its arguments or its FILTER clause.
+                    let mut columns = Columns {
+                        inner_names: self.inner_names,
+                        inner_schema: self.inner_schema,
+                        query_depth: 0,
+                        inner: false,
+                        outer: false,
+                    };
+                    let _ = function.args.visit(&mut columns);
+                    let _ = function.filter.visit(&mut columns);
+                    if columns.inner || !columns.outer {
+                        self.local = true;
+                    } else {
+                        self.outer = true;
+                    }
+                },
+                _ => {},
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut aggregates = Aggregates {
+        ctx,
+        inner_names,
+        inner_schema,
+        query_depth: 0,
+        local: false,
+        outer: false,
+        unsupported: false,
+        windows: vec![],
+    };
+    let _ = select.projection.visit(&mut aggregates);
+    let _ = query.order_by.visit(&mut aggregates);
+    let mut visited = PlHashSet::new();
+    while let Some(name) = aggregates.windows.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        let definition = select
+            .named_window
+            .iter()
+            .find(|NamedWindowDefinition(ident, _)| ident.value == name);
+        match definition {
+            Some(NamedWindowDefinition(_, NamedWindowExpr::NamedWindow(base))) => {
+                aggregates.windows.push(base.value.clone())
+            },
+            Some(NamedWindowDefinition(_, NamedWindowExpr::WindowSpec(spec))) => {
+                aggregates
+                    .windows
+                    .extend(spec.window_name.iter().map(|i| i.value.clone()));
+                let _ = spec.visit(&mut aggregates);
+            },
+            None => {},
+        }
+    }
+    (!aggregates.unsupported && !aggregates.outer).then_some(aggregates.local)
 }
 
 // Shared eligibility gate for the rewrites: bail on any clause that changes

@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import SQLInterfaceError
 from tests.unit.sql import assert_sql_matches
 
 
@@ -92,6 +93,49 @@ def test_not_exists_inequality_correlation(op: str, expected: list[int]) -> None
         compare_with="duckdb",
         expected={"a": expected},
     )
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        ("EXISTS (SELECT COUNT(*) FROM t2 WHERE FALSE)", [1, 2, 3]),
+        ("NOT EXISTS (SELECT COUNT(*) FROM t2 WHERE FALSE)", []),
+        ("EXISTS (SELECT MAX(w) + 1 FROM t2 WHERE w > 100)", [1, 2, 3]),
+        ("EXISTS (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b)", [1, 2, 3]),
+        ("a = 1 OR NOT EXISTS (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b)", [1]),
+        ("EXISTS (SELECT COUNT(*) OVER () FROM t2 WHERE FALSE)", []),
+        ("EXISTS (SELECT (SELECT COUNT(*) FROM t2) FROM t2 WHERE FALSE)", []),
+        ("EXISTS (SELECT 1 FROM t2 WHERE FALSE ORDER BY COUNT(*))", [1, 2, 3]),
+        (
+            "EXISTS (SELECT COUNT(*) OVER win FROM t2 WHERE FALSE "
+            "WINDOW win AS (ORDER BY SUM(g)))",
+            [1, 2, 3],
+        ),
+    ],
+)
+def test_exists_over_aggregate(condition: str, expected: list[int]) -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=f"SELECT a FROM t1 WHERE {condition} ORDER BY a",
+        compare_with="duckdb",
+        expected={"a": expected},
+    )
+
+
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        # the aggregate reads only outer columns, so it belongs to the outer query
+        "SELECT COUNT(t1.a) FROM t2 WHERE FALSE",
+        "SELECT COUNT(*) FILTER (WHERE t1.a > 0) FROM t2 WHERE FALSE",
+        "SELECT UNNEST(ARRAY_AGG(w)) FROM t2 WHERE FALSE",
+    ],
+)
+def test_exists_over_aggregate_unsupported(subquery: str) -> None:
+    with pytest.raises(SQLInterfaceError, match="EXISTS subquery is not currently"):
+        pl.SQLContext(_frames()).execute(
+            f"SELECT a, EXISTS ({subquery}) AS e FROM t1", eager=True
+        )
 
 
 def test_exists_empty_inner_result() -> None:

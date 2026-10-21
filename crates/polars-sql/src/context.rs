@@ -1626,13 +1626,33 @@ impl SQLContext {
 
     fn execute_joins(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
-        let factors =
-            std::iter::once(&tbl_expr.relation).chain(tbl_expr.joins.iter().map(|j| &j.relation));
+        let relation_keys = |names: Vec<RelationName>| -> Vec<String> {
+            names.iter().map(RelationName::key).collect()
+        };
+        // The factors whose columns the joins so far return.
+        let mut kept = vec![&tbl_expr.relation];
         if !tbl_expr.joins.is_empty() {
-            for (i, join) in tbl_expr.joins.iter().enumerate() {
+            for join in &tbl_expr.joins {
                 // A join condition only sees the relations joined so far.
-                self.active_relations =
-                    factor_relations(factors.clone().take(i + 2), &self.catalog_spellings);
+                self.active_relations = factor_relations(
+                    kept.iter().copied().chain(std::iter::once(&join.relation)),
+                    &self.catalog_spellings,
+                );
+                let left_relations = relation_keys(factor_relations(
+                    kept.iter().copied(),
+                    &self.catalog_spellings,
+                ));
+                let right_relations = relation_keys(factor_relations(
+                    std::iter::once(&join.relation),
+                    &self.catalog_spellings,
+                ));
+                let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);
+                if !keep_left {
+                    kept.clear();
+                }
+                if keep_right {
+                    kept.push(&join.relation);
+                }
                 // Handle "CROSS JOIN UNNEST(col)" as a lateral join op
                 if let (
                     JoinOperator::CrossJoin(JoinConstraint::None),
@@ -1660,17 +1680,6 @@ impl SQLContext {
                 }
                 let left_schema = self.get_frame_schema(&mut lf)?;
                 let right_schema = self.get_frame_schema(&mut rf)?;
-                let relation_keys = |names: Vec<RelationName>| -> Vec<String> {
-                    names.iter().map(RelationName::key).collect()
-                };
-                let left_relations = relation_keys(factor_relations(
-                    factors.clone().take(i + 1),
-                    &self.catalog_spellings,
-                ));
-                let right_relations = relation_keys(factor_relations(
-                    std::iter::once(&join.relation),
-                    &self.catalog_spellings,
-                ));
 
                 lf = match &join.join_operator {
                     op @ (JoinOperator::Join(constraint)  // note: bare "join" is inner
@@ -3558,22 +3567,21 @@ impl SQLContext {
         where_clause: &Option<SQLExpr>,
     ) -> PolarsResult<Option<SQLExpr>> {
         let first = from.first().unwrap();
-        let base_name = get_table_name(&first.relation).unwrap_or_default();
         let mut remaining_where = where_clause.clone();
-        let mut joined_table_names: Vec<String> = vec![base_name];
-
-        // Track table names from explicit joins in the first FROM entry
-        for join in &first.joins {
-            if let Some(name) = get_table_name(&join.relation) {
-                joined_table_names.push(name);
-            }
-        }
+        let mut joined_table_names: Vec<String> = kept_factors(first)
+            .into_iter()
+            .filter_map(get_table_name)
+            .collect();
         // Resolving is `&mut self`, so all relations must be resolved up-front rather than
         // mid-probe while picking a join order below.
         let mut pending = Vec::with_capacity(from.len() - 1);
         for tbl_expr in from.iter().skip(1) {
             let mut rf = self.execute_from_statement(tbl_expr)?;
-            let r_name = get_table_name(&tbl_expr.relation).unwrap_or_default();
+            let r_name = kept_factors(tbl_expr)
+                .into_iter()
+                .next()
+                .and_then(get_table_name)
+                .unwrap_or_default();
             polars_ensure!(
                 !r_name.is_empty(),
                 SQLInterface: "implicit joins require named tables; please provide an alias"
@@ -3647,13 +3655,9 @@ impl SQLContext {
                         frame: rf,
                         name: PlSmallStr::from_str(&r_name),
                         schema: right_schema.clone(),
-                        relations: std::iter::once(r_name.clone())
-                            .chain(
-                                tbl_expr
-                                    .joins
-                                    .iter()
-                                    .filter_map(|j| get_table_name(&j.relation)),
-                            )
+                        relations: kept_factors(tbl_expr)
+                            .into_iter()
+                            .filter_map(get_table_name)
                             .collect(),
                     },
                     &JoinConstraint::On(on_expr),
@@ -3668,12 +3672,11 @@ impl SQLContext {
 
             let joined_schema = self.get_frame_schema(lf)?;
             self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
-            joined_table_names.push(r_name);
-            for join in &tbl_expr.joins {
-                if let Some(name) = get_table_name(&join.relation) {
-                    joined_table_names.push(name);
-                }
-            }
+            joined_table_names.extend(
+                kept_factors(tbl_expr)
+                    .into_iter()
+                    .filter_map(get_table_name),
+            );
         }
         Ok(remaining_where)
     }
@@ -5183,12 +5186,36 @@ pub(crate) fn is_correlated_result_col(name: &str) -> bool {
 /// The relations of a `FROM` (see `factor_relations`).
 fn declared_relations(from: &[TableWithJoins], spellings: &CatalogSpellings) -> Vec<RelationName> {
     from.iter()
-        .flat_map(|tbl| {
-            let factors =
-                std::iter::once(&tbl.relation).chain(tbl.joins.iter().map(|j| &j.relation));
-            factor_relations(factors, spellings)
-        })
+        .flat_map(|tbl| factor_relations(kept_factors(tbl).into_iter(), spellings))
         .collect()
+}
+
+/// Whether a join returns the columns of its left and of its right input.
+fn join_keeps_inputs(op: &JoinOperator) -> (bool, bool) {
+    match op {
+        JoinOperator::Semi(_)
+        | JoinOperator::LeftSemi(_)
+        | JoinOperator::Anti(_)
+        | JoinOperator::LeftAnti(_) => (true, false),
+        JoinOperator::RightSemi(_) | JoinOperator::RightAnti(_) => (false, true),
+        _ => (true, true),
+    }
+}
+
+/// The table factors of `tbl` whose columns it returns, as a semi or anti join drops one
+/// of its inputs.
+fn kept_factors(tbl: &TableWithJoins) -> Vec<&TableFactor> {
+    let mut factors = vec![&tbl.relation];
+    for join in &tbl.joins {
+        let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);
+        if !keep_left {
+            factors.clear();
+        }
+        if keep_right {
+            factors.push(&join.relation);
+        }
+    }
+    factors
 }
 
 /// The relations that table factors bring into scope. A nested join is flattened rather than
