@@ -85,8 +85,9 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
-                let inv = <$T>::one() / rhs;
-                prim_unary_values(lhs, |x| (x * inv).trunc())
+                // Not `x * (1 / rhs)`: the rounded reciprocal can put an exact quotient
+                // just below an integer, e.g. 49 * (1 / 49) < 1.
+                prim_unary_values(lhs, |x| (x / rhs).trunc())
             }
 
             fn prim_wrapping_trunc_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {

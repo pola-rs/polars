@@ -279,6 +279,22 @@ def test_truncdiv_float() -> None:
     assert_series_equal(out, expected)
 
 
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_truncdiv_float_literal_divisor(dtype: pl.DataType) -> None:
+    # Eager, so the literal reaches the scalar kernel rather than being broadcast.
+    df = pl.DataFrame(
+        {"x": [49.0, -49.0, 98.0, -98.0, 50.0], "d": [49.0] * 5},
+        schema={"x": dtype, "d": dtype},
+    )
+    out = df.select(
+        literal=pl.col("x").truncdiv(pl.lit(49.0, dtype=dtype)),
+        column=pl.col("x").truncdiv(pl.col("d")),
+    )
+    expected = pl.Series([1.0, -1.0, 2.0, -2.0, 1.0], dtype=dtype)
+    assert_series_equal(out["literal"], expected, check_names=False)
+    assert_series_equal(out["column"], expected, check_names=False)
+
+
 def test_truncdiv_decimal() -> None:
     lf = pl.LazyFrame(
         {"a": [PyDecimal("7.50"), PyDecimal("-7.50")]},
