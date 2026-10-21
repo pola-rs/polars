@@ -25,6 +25,7 @@ use sqlparser::ast::{
     visit_expressions_mut,
 };
 
+use crate::catalog::CatalogSpellings;
 use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, combine_conditions, get_table_name,
     match_qualifier, relation_name,
@@ -179,7 +180,8 @@ impl SQLContext {
             return Ok(None);
         }
         let anti = negated != removing;
-        if is_correlated_subquery(subquery) || expr_contains_subquery(lhs) {
+        if is_correlated_subquery(subquery, self.catalog_spellings()) || expr_contains_subquery(lhs)
+        {
             return Ok(None);
         }
         let Some(left_key) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
@@ -484,7 +486,7 @@ impl SQLContext {
                 std::iter::once(&tbl_expr.relation)
                     .chain(tbl_expr.joins.iter().map(|j| &j.relation))
             })
-            .map(relation_name)
+            .map(|factor| Some(relation_name(factor)?.spelled(factor, self.catalog_spellings())))
             .collect::<Option<Vec<_>>>()
         else {
             return Ok(None);
@@ -1765,20 +1767,20 @@ pub(crate) enum SubqueryKind {
 
 /// Whether a subquery reads a qualifier it does not declare, which is what
 /// correlates it with the query around it.
-pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
-    #[derive(Default)]
-    struct Declared(Vec<RelationName>);
+pub(crate) fn is_correlated_subquery(query: &Query, spellings: &CatalogSpellings) -> bool {
+    struct Declared<'a>(Vec<RelationName>, &'a CatalogSpellings);
 
-    impl Visitor for Declared {
+    impl Visitor for Declared<'_> {
         type Break = ();
 
         fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
-            self.0.extend(relation_name(factor));
+            let name = relation_name(factor).map(|name| name.spelled(factor, self.1));
+            self.0.extend(name);
             ControlFlow::Continue(())
         }
     }
 
-    let mut declared = Declared::default();
+    let mut declared = Declared(Vec::new(), spellings);
     let _ = query.visit(&mut declared);
 
     struct Foreign<'a>(&'a [RelationName]);
