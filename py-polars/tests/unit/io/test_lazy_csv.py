@@ -1053,7 +1053,6 @@ def test_scan_csv_extra_columns_truncate_ragged_lines() -> None:
 
 @pytest.mark.parametrize("comment_prefix", [None, "#"])
 def test_scan_csv_wide_rows_30114(comment_prefix: str | None) -> None:
-    # Line batches grow with the number of projected columns.
     n_rows, n_cols = 50, 3000
     df = pl.DataFrame(
         {f"c{i}": pl.int_range(n_rows, eager=True) % 10 for i in range(n_cols)}
@@ -1067,9 +1066,7 @@ def test_scan_csv_wide_rows_30114(comment_prefix: str | None) -> None:
 
 @pytest.mark.write_disk
 def test_scan_csv_wide_rows_schema_inference_memory_30114(tmp_path: Path) -> None:
-    # Schema inference keeps its rows for the scan. On copying readers every read used
-    # to copy all kept rows again, and each kept row pinned its copy: memory quadratic
-    # in the number of reads (~0.8 GB here).
+    # Schema inference used to take memory quadratic in the number of reads (~0.8 GB).
     path = tmp_path / "wide.csv"
     pl.DataFrame({"a": ["x" * 300_000] * 100}).write_csv(path)
 

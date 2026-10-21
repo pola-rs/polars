@@ -18,14 +18,16 @@ use super::{NO_SLICE, SLICE_ENDED};
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext;
 
-/// Every morsel has a fixed memory and compute cost per column (~700 bytes). For wide rows a batch
-/// has to span at least this many bytes per projected column to amortize it, otherwise each morsel
-/// only holds a few rows. Small in debug mode so that narrow tests keep exercising the boundaries.
-const MIN_BATCH_BYTES_PER_COLUMN: usize = if cfg!(debug_assertions) { 16 } else { 1024 };
+/// Morsels have a fixed cost per column (~700 bytes), so batches of wide rows may grow to this many
+/// bytes per projected column. Small in debug mode to keep exercising the boundaries.
+const MAX_BATCH_BYTES_PER_COLUMN: usize = if cfg!(debug_assertions) { 16 } else { 1024 };
 
-/// Minimum size of a line batch given the number of projected columns.
-fn min_batch_size(num_projected_columns: usize) -> usize {
-    num_projected_columns.saturating_mul(MIN_BATCH_BYTES_PER_COLUMN)
+/// Batches of wide rows grow to about this many rows, beyond which the decoded data outweighs that
+/// cost.
+const WIDE_BATCH_ROWS: usize = 100;
+
+fn max_wide_batch_size(num_projected_columns: usize) -> usize {
+    num_projected_columns.saturating_mul(MAX_BATCH_BYTES_PER_COLUMN)
 }
 
 pub(super) struct LineBatch {
@@ -101,7 +103,8 @@ impl LineBatchSource {
                     usize::MAX,
                 )
             };
-        let max_batch_size = max_batch_size.max(min_batch_size(num_projected_columns));
+        let default_max_batch_size = max_batch_size;
+        let max_batch_size = max_batch_size.max(max_wide_batch_size(num_projected_columns));
 
         // Task: Read segments. This may block, so it runs on tokio's elastic blocking pool.
         let (segment_tx, mut segment_rx) = tokio::sync::mpsc::channel::<Buffer<u8>>(1);
@@ -213,7 +216,13 @@ impl LineBatchSource {
             // Cut early if there is a carry and at the end of a segment, so that only rows crossing
             // a segment boundary are copied.
             let must_cut = !carry.is_empty() || block.end == segment.len();
-            if batch_lines == 0 || (!must_cut && batch_end - prev_cut < batch_size) {
+            if batch_lines == 0 {
+                continue;
+            }
+            let batch_len = batch_end - prev_cut;
+            let has_enough_rows = batch_lines >= WIDE_BATCH_ROWS
+                && batch_len >= batch_size.min(default_max_batch_size);
+            if !must_cut && !has_enough_rows && batch_len < batch_size {
                 continue;
             }
 
@@ -270,7 +279,7 @@ impl LineBatchSource {
                     self.pre_slice,
                     self.needs_full_row_count,
                     use_l2_prefetch,
-                    min_batch_size(self.num_projected_columns),
+                    max_wide_batch_size(self.num_projected_columns),
                 );
 
                 while let Some(batch) = producer.next_batch()? {
@@ -414,7 +423,7 @@ impl LineBatchProducer {
         pre_slice: Option<Slice>,
         needs_full_row_count: bool,
         use_prefetch_l2: bool,
-        min_batch_size: usize,
+        max_wide_batch_size: usize,
     ) -> Self {
         Self {
             reader,
@@ -423,7 +432,8 @@ impl LineBatchProducer {
             slicer: BatchSlicer::new(pre_slice, needs_full_row_count),
             use_prefetch_l2,
             read_size: ByteSourceReader::<ReaderSource>::initial_read_size(),
-            max_read_size: ByteSourceReader::<ReaderSource>::ideal_read_size().max(min_batch_size),
+            max_read_size: ByteSourceReader::<ReaderSource>::ideal_read_size()
+                .max(max_wide_batch_size),
             finished: false,
         }
     }
@@ -475,8 +485,14 @@ impl LineBatchProducer {
                 self.finished = true;
             }
 
-            if self.read_size < self.max_read_size {
-                self.read_size = (self.read_size * 4).min(self.max_read_size);
+            let ideal_read_size = ByteSourceReader::<ReaderSource>::ideal_read_size();
+            if self.read_size < ideal_read_size {
+                self.read_size *= 4;
+            } else if self.max_read_size > ideal_read_size {
+                let row_len = unconsumed_offset.div_ceil(n_lines.max(1));
+                self.read_size = WIDE_BATCH_ROWS
+                    .saturating_mul(row_len)
+                    .clamp(ideal_read_size, self.max_read_size);
             }
 
             return Ok(Some(batch));
