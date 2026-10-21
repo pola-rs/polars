@@ -58,7 +58,7 @@ pub(crate) fn factor_or_in_aexpr(node: Node, expr_arena: &mut Arena<AExpr>) {
 }
 
 /// Collect an expression's OR-tree branches into `out` (dual of `MintermIter`).
-fn collect_or_branches(root: Node, expr_arena: &Arena<AExpr>, out: &mut Vec<Node>) {
+pub(crate) fn collect_or_branches(root: Node, expr_arena: &Arena<AExpr>, out: &mut Vec<Node>) {
     let mut stack = vec![root];
     while let Some(top) = stack.pop() {
         match expr_arena.get(top) {

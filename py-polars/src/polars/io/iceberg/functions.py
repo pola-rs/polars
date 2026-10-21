@@ -304,3 +304,37 @@ def delete_iceberg(
         table = target
 
     table.delete(predicate_to_pyiceberg_delete_filter(predicate, table))
+
+
+def _scan_catalog_table(
+    identifier: tuple[str, ...],
+    catalog_config: IcebergCatalogConfig,
+    catalog_instance: pyiceberg.catalog.Catalog | None,
+    *,
+    storage_options: StorageOptionsDict | None,
+    display_name: str,
+) -> LazyFrame:
+    """Lazily scan a catalog table by its identifier parts, for SQL catalogs."""
+    from polars._plr import PyLazyFrame
+
+    dataset = IcebergScanResolver(
+        table=IcebergTableWrap(
+            table_=NoPickleOption(None),
+            table_descriptor_=IcebergCatalogTableDescriptor(
+                table_identifier=identifier,
+                catalog_config=catalog_config,
+                catalog_=NoPickleOption(_reusable_catalog(catalog_instance)),
+                display_name=display_name,
+            ),
+            serializer=IcebergScanTableSerializer(),
+            iceberg_storage_properties=storage_options,
+        ),
+        snapshot_id=None,
+        from_snapshot_id_exclusive=None,
+        to_snapshot_id_inclusive=None,
+        reader_override=None,
+        use_metadata_statistics=True,
+        fast_deletion_count=False,
+        use_pyiceberg_filter=True,
+    )
+    return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))

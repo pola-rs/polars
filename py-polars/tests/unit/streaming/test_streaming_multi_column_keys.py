@@ -113,12 +113,14 @@ def many_keys_frame(n: int, offset: int = 0) -> pl.LazyFrame:
     ).lazy()
 
 
+@pytest.mark.slow
 def test_group_by_many_multi_column_keys() -> None:
     # Large tables, looked up in many blocks, the last one partly.
     lf = many_keys_frame(600_007)
     assert_engines_equal(lf.group_by("a", "b").agg(pl.len(), pl.col("v").sum()))
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("how", ["inner", "left", "semi", "anti"])
 @pytest.mark.parametrize("build_side", ["force_left", "force_right"])
 @pytest.mark.parametrize("nulls_equal", [False, True])

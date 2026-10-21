@@ -1569,15 +1569,32 @@ fn lower_ir_inner(
                     #[cfg(feature = "asof_join")]
                     _ if use_streaming_asof_join => {
                         assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
+                        let tmp_right_key_col = tmp_right_col_names.pop().unwrap();
+                        // Right rows with a null key never match, and the binary searches in
+                        // the node rely on a key without nulls.
+                        let right_key = tmp_right_key_col
+                            .clone()
+                            .unwrap_or_else(|| right_on_names[0].clone());
+                        let predicate = AExprBuilder::col(right_key, expr_arena)
+                            .is_not_null(expr_arena)
+                            .expr_ir_unnamed();
+                        let input_right = build_filter_stream(
+                            trans_input_right,
+                            predicate,
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        )?;
                         phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::AsOfJoin {
                                 input_left: trans_input_left,
-                                input_right: trans_input_right,
+                                input_right,
                                 left_on: left_on_names[0].clone(),
                                 right_on: right_on_names[0].clone(),
                                 tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
-                                tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
+                                tmp_right_key_col,
                                 by_descending,
                                 by_nulls_last,
                                 args: args.clone(),

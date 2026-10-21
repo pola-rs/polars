@@ -7,6 +7,7 @@ use tokio::runtime::{Builder, Runtime};
 use crate::executor::{THREAD_SPAWNED_BY_POLARS_EXECUTOR, is_scheduling_polars_executor_thread};
 
 pub mod executor;
+pub mod parallel;
 pub mod primitives;
 
 pub struct RuntimeManager {

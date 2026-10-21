@@ -65,6 +65,9 @@ impl PyExpr {
     fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
+    fn trunc_div(&self, rhs: Self) -> PyResult<Self> {
+        Ok(self.inner.clone().trunc_div(rhs.inner).into())
+    }
     fn __neg__(&self) -> PyResult<Self> {
         Ok(self.inner.clone().neg().into())
     }
@@ -1119,6 +1122,9 @@ impl PyExpr {
     }
     fn hash(&self, seed: u64) -> Self {
         self.inner.clone().hash(seed).into()
+    }
+    fn mm3_hash(&self) -> Self {
+        self.inner.clone().mm3_hash().into()
     }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()

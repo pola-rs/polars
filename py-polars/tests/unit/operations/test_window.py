@@ -12,7 +12,7 @@ from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import TimeUnit, WindowMappingStrategy
+    from polars._typing import EngineType, TimeUnit, WindowMappingStrategy
 
 
 def test_over_args() -> None:
@@ -1041,10 +1041,23 @@ def test_shape_mismatch_group_by_unique_slice() -> None:
     ).select(pl.col.t.unique().over(pl.col("x").rle_id()))
 
     with pytest.raises(
-        ShapeError,
-        match="the length of the window expression did not match that of the group",
+        ShapeError, match="expressions must have matching group lengths"
     ):
         q.collect()
+
+
+@pytest.mark.parametrize("sorted", [True, False])
+def test_explode_over_group_length_mismatch(sorted: bool) -> None:
+    # The total length matches the frame, but the group lengths differ.
+    lf = pl.LazyFrame({"k": [0, 0, 1, 1], "a": [[1, 2], [3], [4], []]})
+    if sorted:
+        lf = lf.set_sorted("k")
+    engines: list[EngineType] = ["in-memory", "streaming"]
+    for engine in engines:
+        with pytest.raises(ShapeError, match="group"):
+            lf.select(pl.col("a").explode().over("k")).collect(engine=engine)
+    out = lf.select(pl.col("a").explode().over("k", mapping_strategy="explode"))
+    assert out.collect().to_series().to_list() == [1, 2, 3, 4]
 
 
 def test_over_literal_cum_sum_26800() -> None:

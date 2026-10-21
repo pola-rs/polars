@@ -6,8 +6,9 @@ import itertools
 import math
 import random
 import warnings
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
 import numpy as np
@@ -21,7 +22,9 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
-    from polars._typing import AsofJoinStrategy, PolarsIntegerType
+    from pathlib import Path
+
+    from polars._typing import AsofJoinStrategy, EngineType, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1932,3 +1935,415 @@ def test_join_asof_buffer_ordering_27619() -> None:
             check_sortedness=False,
         )
         assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize(
+    ("strategy", "tolerance", "expected"),
+    [
+        ("backward", None, [None, 1, 1, 2]),
+        ("forward", None, [0, 1, 2, None]),
+        ("nearest", None, [0, 1, 2, 2]),
+        ("nearest", 0, [None, 1, None, None]),
+    ],
+)
+def test_join_asof_null_right_keys(
+    engine: EngineType,
+    nulls_last: bool,
+    strategy: AsofJoinStrategy,
+    tolerance: int | None,
+    expected: list[int | None],
+) -> None:
+    right = pl.DataFrame({"t": [1, 2, 6], "b": [0, 1, 2]})
+    nulls = pl.DataFrame({"t": [None, None], "b": [None, None]}, schema=right.schema)
+    right = pl.concat([right, nulls] if nulls_last else [nulls, right])
+    # Split the right side over several morsels.
+    right_lf = pl.concat([right[:2].lazy(), right[2:4].lazy(), right[4:].lazy()])
+
+    out = (
+        pl.LazyFrame({"t": [0, 2, 5, 7]})
+        .join_asof(
+            right_lf,
+            on="t",
+            strategy=strategy,
+            tolerance=tolerance,
+            check_sortedness=False,
+        )
+        .collect(engine=engine)
+    )
+    assert out["b"].to_list() == expected
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("strategy", ["backward", "nearest"])
+def test_join_asof_by_null_right_keys_in_group(
+    engine: EngineType, strategy: AsofJoinStrategy
+) -> None:
+    right = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 2],
+            "t": [1, 4, None, 2, 5, None],
+            "b": [0, 1, 2, 3, 4, 5],
+        }
+    )
+    right_lf = pl.concat([right[:3].lazy(), right[3:].lazy()]).set_sorted("g")
+
+    out = (
+        pl.LazyFrame({"g": [1, 1, 2, 2], "t": [4, 6, 2, 6]})
+        .set_sorted("g")
+        .join_asof(right_lf, on="t", by="g", strategy=strategy, check_sortedness=False)
+        .collect(engine=engine)
+    )
+    assert out["b"].to_list() == [1, 1, 3, 4]
+
+
+def _asof_right_filter(q: pl.LazyFrame) -> str | None:
+    right_plan = q.explain().split("RIGHT PLAN")[1].splitlines()
+    return right_plan[1].strip() if "FILTER" in right_plan[1] else None
+
+
+def _assert_asof_optimized_equal(q: pl.LazyFrame) -> None:
+    expected = q.collect(optimizations=pl.QueryOptFlags.none())
+    engines: list[EngineType] = ["in-memory", "streaming"]
+    for engine in engines:
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("strategy", "tolerance", "expected_filter"),
+    [
+        ("backward", 2, 'FILTER (col("t") >= 2) & (col("t") <= 6)'),
+        ("backward", None, 'FILTER col("t") <= 6'),
+        ("forward", 2, 'FILTER (col("t") >= 4) & (col("t") <= 8)'),
+        ("forward", None, 'FILTER col("t") >= 4'),
+        ("nearest", 2, 'FILTER (col("t") >= 2) & (col("t") <= 8)'),
+        ("nearest", -2, 'FILTER (col("t") >= 2) & (col("t") <= 8)'),
+        ("nearest", None, None),
+    ],
+)
+def test_join_asof_key_filter_pushdown(
+    strategy: AsofJoinStrategy, tolerance: int | None, expected_filter: str | None
+) -> None:
+    left = pl.LazyFrame({"t": range(10), "a": range(10)})
+    right = pl.LazyFrame({"t": range(0, 10, 3), "b": range(4)})
+    q = left.join_asof(right, on="t", strategy=strategy, tolerance=tolerance).filter(
+        pl.col("t").is_between(4, 6)
+    )
+
+    assert _asof_right_filter(q) == expected_filter
+    _assert_asof_optimized_equal(q)
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected_filter"),
+    [
+        (
+            (pl.col("t") < 2) | (pl.col("t") > 12),
+            'FILTER (col("t") <= 2) | (col("t") >= 10)',
+        ),
+        # Overlapping ranges are merged.
+        (
+            (pl.col("t") < 6) | (pl.col("t").is_between(7, 9)),
+            'FILTER col("t") <= 9',
+        ),
+        (pl.col("t").is_in([5, 9]), 'FILTER (col("t") >= 3) & (col("t") <= 9)'),
+        (pl.col("t") == 5, 'FILTER (col("t") >= 3) & (col("t") <= 5)'),
+        # Each OR branch also bounds the key, so the filter is kept above the join
+        # and a weaker one goes to the right.
+        (
+            ((pl.col("t") < 2) & (pl.col("b") > 0))
+            | ((pl.col("t") > 12) & (pl.col("a") < 9)),
+            'FILTER (col("t") <= 2) | (col("t") >= 10)',
+        ),
+        # A branch without a bound on the key.
+        ((pl.col("t") < 2) | (pl.col("b") > 2), None),
+        ((pl.col("t") >= 5) | (pl.col("b") > pl.col("b").mean()), None),
+        (
+            (pl.col("t") >= 5) & (pl.col("b") > pl.col("b").mean()),
+            None,
+        ),
+        (pl.col("t") > pl.col("t").max() - 3, None),
+    ],
+)
+def test_join_asof_key_filter_pushdown_shapes(
+    predicate: pl.Expr, expected_filter: str | None
+) -> None:
+    left = pl.LazyFrame({"t": range(15), "a": range(15)})
+    right = pl.LazyFrame({"t": range(0, 15, 2), "b": range(8)})
+    q = left.join_asof(right, on="t", tolerance=2).filter(predicate)
+
+    assert _asof_right_filter(q) == expected_filter
+    _assert_asof_optimized_equal(q)
+
+
+def test_join_asof_key_filter_pushdown_chained_filters() -> None:
+    left = pl.LazyFrame({"t": range(30)})
+    right = pl.LazyFrame({"t": range(0, 30, 2), "b": range(15)})
+    q = (
+        left.join_asof(right, on="t", tolerance=2)
+        .filter((pl.col("t") < 5) | (pl.col("t") > 20))
+        .filter((pl.col("t") < 3) | (pl.col("t") > 25))
+    )
+    right_filter = _asof_right_filter(q)
+    assert right_filter is not None
+    assert '(col("t") <= 5) | (col("t") >= 18)' in right_filter
+    assert '(col("t") <= 3) | (col("t") >= 23)' in right_filter
+    _assert_asof_optimized_equal(q)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "left_t", "right_t", "tolerance", "predicate", "expected_filter"),
+    [
+        (
+            pl.Date,
+            [date(2024, 1, d) for d in range(1, 10)],
+            [date(2024, 1, d) for d in range(1, 10, 2)],
+            # Truncated to 1 day.
+            "36h",
+            pl.col("t") >= date(2024, 1, 5),
+            'FILTER col("t") >= 2024-01-04',
+        ),
+        (
+            pl.Datetime("us", "Europe/Amsterdam"),
+            [datetime(2024, 1, 1, h) for h in range(10)],
+            [datetime(2024, 1, 1, h) for h in range(0, 10, 3)],
+            timedelta(hours=2),
+            pl.col("t") >= datetime(2024, 1, 1, 5, tzinfo=ZoneInfo("Europe/Amsterdam")),
+            'FILTER col("t") >= 2024-01-01 03:00:00 CET',
+        ),
+        # Bounds past midnight are dropped.
+        (
+            pl.Time,
+            [time(0, 30), time(12), time(23, 30)],
+            [time(0, 10), time(11), time(22)],
+            "2h",
+            pl.col("t").is_between(time(0), time(1)) | (pl.col("t") >= time(23)),
+            'FILTER (col("t") <= 01:00:00) | (col("t") >= 21:00:00)',
+        ),
+        (
+            pl.UInt8,
+            [0, 1, 2, 250, 255],
+            [0, 2, 249, 254],
+            3,
+            (pl.col("t") <= 1) | (pl.col("t") >= 254),
+            'FILTER (col("t") <= 1) | (col("t") >= 251)',
+        ),
+        (
+            pl.Int64,
+            [-(2**63), 0, 2**63 - 1],
+            [-(2**63), 1, 2**63 - 1],
+            -(2**63),
+            pl.col("t") >= 0,
+            None,
+        ),
+        (
+            pl.Duration("ms"),
+            [timedelta(milliseconds=i) for i in range(10)],
+            [timedelta(milliseconds=i) for i in range(0, 10, 3)],
+            "2ms",
+            pl.col("t") >= timedelta(milliseconds=5),
+            'FILTER col("t") >= 3ms',
+        ),
+        (
+            pl.Float64,
+            [1.0, 2.0, 3.0],
+            [1.0, 2.5],
+            1.0,
+            pl.col("t") >= 2.0,
+            None,
+        ),
+    ],
+)
+def test_join_asof_key_filter_pushdown_dtypes(
+    dtype: pl.DataType,
+    left_t: list[Any],
+    right_t: list[Any],
+    tolerance: Any,
+    predicate: pl.Expr,
+    expected_filter: str | None,
+) -> None:
+    left = pl.LazyFrame({"t": left_t}, schema={"t": dtype})
+    right = pl.LazyFrame(
+        {"t": right_t, "b": range(len(right_t))}, schema={"t": dtype, "b": pl.Int64}
+    )
+    q = left.join_asof(right, on="t", tolerance=tolerance).filter(predicate)
+
+    assert _asof_right_filter(q) == expected_filter
+    _assert_asof_optimized_equal(q)
+
+
+@pytest.mark.parametrize(
+    ("right_on", "coalesce", "allow_exact_matches"),
+    [("s", True, True), ("t", False, True), ("t", True, False)],
+)
+def test_join_asof_key_filter_pushdown_names(
+    right_on: str, coalesce: bool, allow_exact_matches: bool
+) -> None:
+    left = pl.LazyFrame({"t": range(10), "g": [0, 1] * 5})
+    right = pl.LazyFrame({right_on: range(0, 10, 3), "g": [0, 1, 0, 1], "b": range(4)})
+    q = left.join_asof(
+        right,
+        left_on="t",
+        right_on=right_on,
+        by="g",
+        tolerance=2,
+        coalesce=coalesce,
+        allow_exact_matches=allow_exact_matches,
+    ).filter(pl.col("t") >= 5)
+
+    assert _asof_right_filter(q) == f'FILTER col("{right_on}") >= 3'
+    _assert_asof_optimized_equal(q)
+
+
+def test_join_asof_key_filter_pushdown_scan(tmp_path: Path) -> None:
+    path = tmp_path / "right.parquet"
+    pl.DataFrame({"t": range(100), "b": range(100)}).write_parquet(
+        path, row_group_size=10
+    )
+    q = (
+        pl.LazyFrame({"t": range(0, 100, 5)})
+        .join_asof(pl.scan_parquet(path), on="t", tolerance=7)
+        .filter(pl.col("t").is_between(50, 60))
+    )
+
+    right_plan = q.explain().split("RIGHT PLAN")[1]
+    assert 'SELECTION: (col("t") >= 43) & (col("t") <= 60)' in right_plan
+    _assert_asof_optimized_equal(q)
+
+
+def test_join_asof_key_filter_pushdown_random() -> None:
+    rng = random.Random(0)
+    for _ in range(40):
+        left = pl.LazyFrame({"t": sorted(rng.choices(range(20), k=8))})
+        right = pl.LazyFrame({"t": sorted(rng.choices(range(20), k=8)), "b": range(8)})
+        strategy: AsofJoinStrategy = rng.choice(["backward", "forward", "nearest"])
+        tolerance = rng.choice([None, 0, 1, 3])
+        lo, hi = sorted(rng.choices(range(-2, 22), k=2))
+        predicate = pl.col("t").is_between(lo, hi)
+        if rng.random() < 0.5:
+            predicate = predicate | (pl.col("t") == rng.randint(0, 20))
+        q = left.join_asof(
+            right,
+            on="t",
+            strategy=strategy,
+            tolerance=tolerance,
+            allow_exact_matches=rng.random() < 0.8,
+            check_sortedness=False,
+        ).filter(predicate)
+        _assert_asof_optimized_equal(q)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("dtype", "tolerance", "expected"),
+    [
+        # Larger than any distance between two keys.
+        (pl.Int8, 2**40, [0, 0, 2]),
+        (pl.Int64, -(2**63), [0, 0, 2]),
+        (pl.UInt64, 2**63 + 5, [0, 0, 2]),
+        # Same as a tolerance of 1.
+        (pl.UInt32, -1, [0, None, 2]),
+        (pl.Int16, -1.7, [0, None, 2]),
+    ],
+)
+def test_join_asof_tolerance_normalized(
+    engine: EngineType,
+    dtype: pl.DataType,
+    tolerance: int | float,
+    expected: list[int | None],
+) -> None:
+    left = pl.LazyFrame({"t": [0, 5, 100]}, schema={"t": dtype})
+    right = pl.LazyFrame(
+        {"t": [0, 50, 99], "b": [0, 1, 2]}, schema_overrides={"t": dtype}
+    )
+    out = left.join_asof(right, on="t", tolerance=tolerance).collect(engine=engine)
+    assert out["b"].to_list() == expected
+
+
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("allow_exact_matches", [True, False])
+def test_join_asof_streaming_right_morsel_edges(
+    strategy: AsofJoinStrategy, allow_exact_matches: bool
+) -> None:
+    schema = {"t": pl.Int64, "b": pl.Int64}
+    parts = [
+        pl.DataFrame({"t": [], "b": []}, schema=schema),
+        pl.DataFrame({"t": [1, 3, 3], "b": [0, 1, 2]}, schema=schema),
+        pl.DataFrame({"t": [3, 3, 7], "b": [3, 4, 5]}, schema=schema),
+        pl.DataFrame({"t": [], "b": []}, schema=schema),
+        pl.DataFrame({"t": [None, None], "b": [6, 7]}, schema=schema),
+        pl.DataFrame({"t": [None], "b": [8]}, schema=schema),
+    ]
+    right = pl.concat([p.lazy() for p in parts])
+    left = pl.LazyFrame({"t": [0, 3, 4, 7, 9]})
+
+    def join(right: pl.LazyFrame) -> pl.LazyFrame:
+        return left.join_asof(
+            right,
+            on="t",
+            strategy=strategy,
+            allow_exact_matches=allow_exact_matches,
+        )
+
+    expected = join(right.drop_nulls()).collect(engine="in-memory")
+    assert_frame_equal(join(right).collect(engine="streaming"), expected)
+    assert_frame_equal(
+        join(right).head(2).collect(engine="streaming"), expected.head(2)
+    )
+
+
+@pytest.mark.parametrize("strategy", ["backward", "forward"])
+@pytest.mark.parametrize(
+    ("dtype", "value", "tolerance"),
+    [
+        (pl.Date, date(2024, 1, 5), 2**31 - 20_000),
+        (pl.Datetime("ms"), datetime(2024, 1, 5), 2**62),
+        (pl.Datetime("us", "Europe/Amsterdam"), datetime(2024, 1, 5), 9 * 10**18),
+    ],
+)
+def test_join_asof_key_filter_pushdown_calendar_range(
+    strategy: AsofJoinStrategy, dtype: pl.DataType, value: Any, tolerance: int
+) -> None:
+    left = pl.DataFrame({"t": [value]}).cast({"t": dtype}).lazy()
+    right = pl.DataFrame({"t": [value], "b": [1]}).cast({"t": dtype}).lazy()
+    q = left.join_asof(right, on="t", strategy=strategy, tolerance=tolerance).filter(
+        pl.col("t") == pl.lit(value).cast(dtype)
+    )
+    # The shifted bound lies outside the calendar and is dropped.
+    right_filter = _asof_right_filter(q)
+    assert right_filter is not None
+    assert ("<=" in right_filter) != (">=" in right_filter)
+    _assert_asof_optimized_equal(q)
+
+
+def test_join_asof_key_filter_pushdown_128_bit_keys() -> None:
+    left = pl.LazyFrame({"t": [1, 5, 9]}, schema={"t": pl.Int128})
+    right = pl.LazyFrame(
+        {"t": [0, 4, 8], "b": [0, 1, 2]}, schema_overrides={"t": pl.Int128}
+    )
+    q = left.join_asof(right, on="t", tolerance=2).filter(pl.col("t") >= 5)
+    assert _asof_right_filter(q) is None
+    _assert_asof_optimized_equal(q)
+
+
+def test_join_asof_key_filter_pushdown_hive_pruning(tmp_path: Path) -> None:
+    for t in range(10):
+        part = tmp_path / f"t={t}"
+        part.mkdir()
+        if t >= 8:
+            # Only readable if the scan does not prune this partition.
+            (part / "0.parquet").write_bytes(b"not a parquet file")
+        else:
+            pl.DataFrame({"b": [t]}).write_parquet(part / "0.parquet")
+
+    q = (
+        pl.LazyFrame({"t": [2, 3, 4, 5]})
+        .join_asof(
+            pl.scan_parquet(tmp_path, hive_partitioning=True), on="t", tolerance=2
+        )
+        .filter(pl.col("t").is_between(3, 4))
+    )
+    expected = pl.DataFrame({"t": [3, 4], "b": [3, 4]})
+    assert_frame_equal(q.collect(engine="in-memory"), expected)
+    assert_frame_equal(q.collect(engine="streaming"), expected)

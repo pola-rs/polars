@@ -629,6 +629,7 @@ pub(super) fn convert_functions(
         }),
         #[cfg(feature = "row_hash")]
         F::Hash(seed) => I::Hash(seed),
+        F::Mm3Hash => I::Mm3Hash,
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -1312,6 +1313,12 @@ pub(super) fn convert_functions(
                     target_dtype.numeric_to_unsigned_bit_repr(),
                 ) {
                     (Some(l), Some(r)) if l == r => {},
+                    #[cfg(feature = "dtype-decimal")]
+                    _ if matches!(
+                        (&input_dtype, &target_dtype),
+                        (DataType::Int128, DataType::Decimal(_, _))
+                            | (DataType::Decimal(_, _), DataType::Int128)
+                    ) => {},
                     _ => polars_bail!(
                         InvalidOperation:
                         "cannot reinterpret from {input_dtype:?} to {target_dtype:?}"

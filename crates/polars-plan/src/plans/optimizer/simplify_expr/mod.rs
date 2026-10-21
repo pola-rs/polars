@@ -1115,6 +1115,7 @@ impl OptimizationRule for SimplifyExprRule {
 
                         l.wrapping_floor_div_mod(r).0
                     }),
+                    TruncDivide => None,
                 };
                 if out.is_some() {
                     return Ok(out);

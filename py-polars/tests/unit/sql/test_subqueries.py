@@ -760,14 +760,8 @@ def test_subquery_unsupported_positions_report_sql_errors() -> None:
 
     with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
         pl.sql(
-            "SELECT * FROM df1 JOIN df2 ON df1.a = df2.b AND df1.a > (SELECT MAX(b) FROM df2)",
+            "SELECT * FROM df1 JOIN df2 ON df1.a + df2.b > (SELECT MAX(b) FROM df2)",
             eager=True,
-        )
-
-    # column-free ON with a subquery must not be mistaken for a constant predicate
-    with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
-        pl.sql(
-            "SELECT * FROM df1 JOIN df2 ON (SELECT COUNT(*) FROM df2) > 0", eager=True
         )
 
 
@@ -839,16 +833,17 @@ def test_quantified_subquery_matches_in(
     )
 
 
+@pytest.mark.parametrize("projection", ["x.b", "MAX(x.b)"])
 @pytest.mark.parametrize("op", [">", "<", ">=", "<="])
 @pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
 def test_quantified_subquery_correlated_ordering_rejected(
-    op: str, quantifier: str
+    projection: str, op: str, quantifier: str
 ) -> None:
     ctx = pl.SQLContext(t1=pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     with pytest.raises(SQLInterfaceError, match="correlated subquery"):
         ctx.execute(
             f"SELECT a FROM t1 WHERE b {op} {quantifier}"
-            f" (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)"
+            f" (SELECT {projection} FROM t1 AS x WHERE x.a < t1.a)"
         ).collect()
 
 

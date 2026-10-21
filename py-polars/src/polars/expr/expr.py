@@ -6677,6 +6677,7 @@ class Expr(metaclass=_Meta):
         See Also
         --------
         truediv
+        truncdiv
 
         Examples
         --------
@@ -6751,6 +6752,47 @@ class Expr(metaclass=_Meta):
         └──────┴────────┘
         """
         return self.__floordiv__(other)
+
+    def truncdiv(self, other: Any) -> Expr:
+        """
+        Divide, rounding the quotient toward zero.
+
+        Unlike :meth:`floordiv`, which rounds down, this rounds a negative quotient up,
+        as integer division does in C and Rust. The result has the same data type
+        as `floordiv`'s.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        See Also
+        --------
+        floordiv
+        truediv
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [-5, -4, 4, 5]})
+        >>> df.with_columns(
+        ...     pl.col("x").floordiv(2).alias("x//2"),
+        ...     pl.col("x").truncdiv(2).alias("truncdiv(x, 2)"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬──────┬────────────────┐
+        │ x   ┆ x//2 ┆ truncdiv(x, 2) │
+        │ --- ┆ ---  ┆ ---            │
+        │ i64 ┆ i64  ┆ i64            │
+        ╞═════╪══════╪════════════════╡
+        │ -5  ┆ -3   ┆ -2             │
+        │ -4  ┆ -2   ┆ -2             │
+        │ 4   ┆ 2    ┆ 2              │
+        │ 5   ┆ 2    ┆ 2              │
+        └─────┴──────┴────────────────┘
+        """
+        return wrap_expr(self._pyexpr.trunc_div(parse_into_expression(other)))
 
     def mod(self, other: Any) -> Expr:
         """
@@ -7430,6 +7472,14 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.hash(seed))
 
+    def _mm3_hash(self) -> Expr:
+        """
+        Compute the 32-bit MurmurHash3 of the values, as specified by Iceberg.
+
+        This is the hash used by the Iceberg `bucket` partition transform.
+        """
+        return wrap_expr(self._pyexpr.mm3_hash())
+
     def reinterpret(
         self,
         *,
@@ -7437,10 +7487,14 @@ class Expr(metaclass=_Meta):
         dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed between numeric types of the same size. To
+        convert between types of different sizes, use :meth:`cast` instead.
+
+        A `Decimal` can also be reinterpreted to and from `Int128`, its unscaled integer
+        representation: `1.23` as `Decimal(5, 2)` becomes `123`. Reinterpreting an
+        `Int128` raises if the value doesn't fit the precision of the target `Decimal`.
 
         Exactly one of `signed` or `dtype` must be specified.
 

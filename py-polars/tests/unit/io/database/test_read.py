@@ -1416,3 +1416,44 @@ def test_sync_sqlalchemy_read_does_not_require_asyncio_extra(
         for connection in (engine, conn, session):
             df = pl.read_database("SELECT 1 AS x", connection=connection)
             assert_frame_equal(df, pl.DataFrame({"x": [1]}))
+
+
+def test_read_database_duckdb_uses_arrow(monkeypatch: pytest.MonkeyPatch) -> None:
+    duckdb = pytest.importorskip("duckdb")
+
+    def no_rows(*args: Any, **kwargs: Any) -> None:
+        msg = "row-wise fallback used"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(ConnectionExecutor, "_from_rows", no_rows)
+
+    query = "SELECT range AS x, range::VARCHAR AS s FROM range(5)"
+    expected = pl.DataFrame(
+        {"x": range(5), "s": [str(i) for i in range(5)]},
+        schema={"x": pl.Int64, "s": pl.String},
+    )
+    with duckdb.connect() as conn:
+        assert_frame_equal(pl.read_database(query, conn), expected)
+        batches = list(pl.read_database(query, conn, iter_batches=True, batch_size=2))
+        assert [len(df) for df in batches] == [2, 2, 1]
+        assert_frame_equal(pl.concat(batches), expected)
+
+        df = pl.read_database(
+            f"SELECT * FROM ({query}) WHERE x >= ?",
+            conn,
+            execute_options={"parameters": [3]},
+        )
+        assert_frame_equal(df, expected.slice(3))
+
+        # the query runs in `read_database`, not when the batches are read
+        conn.execute("CREATE TABLE t AS SELECT 1 AS x")
+        batch_iter = pl.read_database(
+            "SELECT * FROM t", conn, iter_batches=True, batch_size=10
+        )
+        conn.execute("INSERT INTO t VALUES (2)")
+        assert pl.concat(batch_iter)["x"].to_list() == [1]
+
+        with pytest.raises(duckdb.ConversionException):
+            pl.read_database(
+                "SELECT CAST('x' AS INTEGER)", conn, iter_batches=True, batch_size=2
+            )

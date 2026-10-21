@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 #[cfg(feature = "round_series")]
-use polars_ops::prelude::floor_div_series;
+use polars_ops::prelude::{floor_div_series, trunc_div_series};
 #[cfg(feature = "dtype-struct")]
 use polars_utils::aliases::PlHashMap;
 #[cfg(feature = "dtype-struct")]
@@ -161,6 +161,20 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
             #[cfg(feature = "round_series")]
             {
                 floor_div_series(
+                    left.as_materialized_series(),
+                    right.as_materialized_series(),
+                )
+                .map(Column::from)
+            }
+            #[cfg(not(feature = "round_series"))]
+            {
+                panic!("activate 'round_series' feature")
+            }
+        },
+        Operator::TruncDivide => {
+            #[cfg(feature = "round_series")]
+            {
+                trunc_div_series(
                     left.as_materialized_series(),
                     right.as_materialized_series(),
                 )
