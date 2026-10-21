@@ -364,6 +364,25 @@ def test_recursive_shared_cte_computed_once() -> None:
             SELECT * FROM t ORDER BY n
             """,
         ),
+        # A CTE read in the step and outside, that reads another CTE twice.
+        (
+            False,
+            """
+            WITH RECURSIVE
+              b AS (SELECT x FROM src),
+              a AS (
+                SELECT b1.x AS x
+                FROM (SELECT x FROM b WHERE x > 0) b1
+                CROSS JOIN (SELECT x FROM b WHERE x < 100) b2
+              ),
+              t AS (
+                SELECT 0 AS n, CAST(0 AS BIGINT) AS x
+                UNION ALL
+                SELECT n + 1, a.x FROM t CROSS JOIN a WHERE n < 2
+              )
+            SELECT t.* FROM t CROSS JOIN a ORDER BY n
+            """,
+        ),
     ],
 )
 def test_recursive_step_input_computed_once(user_cache: bool, query: str) -> None:
