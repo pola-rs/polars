@@ -1248,6 +1248,33 @@ def test_correlated_subquery_in_join_on(query: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The `IN` operand reads one input and the subquery the other one.
+        "SELECT a.id, d.y FROM a JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.y FROM a RIGHT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON a.id IN (SELECT c.b_id FROM c WHERE c.id = d.x)",
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.x + 1 IN (SELECT c.id + 1 FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.y > 100 AND d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT * FROM a LEFT JOIN d ON d.x IN (SELECT DISTINCT c.id FROM c WHERE c.b_id = a.id)",
+        # `EXISTS` reading both inputs.
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id = d.x)",
+        # The subquery reads a relation of the left input that is not its first.
+        "SELECT a.id, b.w, d.y FROM a JOIN b ON a.id = b.id LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = b.id)",
+    ],
+)
+def test_correlated_membership_in_join_on(query: str) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=query,
+        compare_with="sqlite",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
 def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
     # Key 2 and the NULL key have two rows each, but no outer row asks for them.
     assert_sql_matches(
@@ -1266,8 +1293,12 @@ def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
 @pytest.mark.parametrize(
     "query",
     [
-        # The `IN` operand reads the right input and the subquery the left one.
-        "SELECT a.id FROM a JOIN b ON b.id IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        # The rows of the subquery can't join onto an input that the join keeps.
+        "SELECT a.id FROM a FULL JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id FROM a LEFT JOIN d ON d.x NOT IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id > a.id)",
+        # A window over the subquery's rows depends on the outer row.
+        "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT ROW_NUMBER() OVER (ORDER BY c.id) FROM c WHERE c.b_id = a.id)",
         # Conditions on one join input.
         "SELECT a.id FROM a JOIN b ON a.v = (SELECT c.id * 10 FROM c WHERE c.b_id = a.id)",
         "SELECT a.id FROM a LEFT JOIN b ON b.id = a.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id)",
