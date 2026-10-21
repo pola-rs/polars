@@ -196,6 +196,18 @@ def test_exists_over_aggregate_without_from(where: str) -> None:
     assert res["x"].to_list() == [True]
 
 
+def test_uncorrelated_exists_over_union() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE EXISTS "
+            "(SELECT g FROM t2 WHERE FALSE UNION ALL SELECT g FROM t2) ORDER BY a"
+        ),
+        compare_with="duckdb",
+        expected={"a": [1, 2, 3]},
+    )
+
+
 def test_uncorrelated_exists_missing_column() -> None:
     with pytest.raises(ColumnNotFoundError, match="missing"):
         pl.SQLContext(_frames()).execute(

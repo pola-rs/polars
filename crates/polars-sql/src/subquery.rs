@@ -1234,7 +1234,6 @@ impl SQLContext {
                         let inner = local_filters
                             .into_iter()
                             .fold(inner_lf, LazyFrame::filter)
-                            .limit(1)
                             .select([len().gt(lit(0))]);
                         inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
                         reduced_subquery(inner, first().as_expr().item(true))

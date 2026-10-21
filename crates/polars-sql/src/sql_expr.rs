@@ -669,7 +669,7 @@ impl SQLExprVisitor<'_> {
         let lf = self
             .execute_subquery(subquery)
             .map_err(|e| outer_err(e, self))?;
-        let lf = lf.limit(1).select([len().gt(lit(0))]);
+        let lf = lf.select([len().gt(lit(0))]);
         Ok(reduced_subquery(lf, first().as_expr().item(true)))
     }
 
