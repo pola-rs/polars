@@ -239,6 +239,9 @@ pub struct SQLContext {
     active_relations: Vec<RelationName>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     join_base: Option<JoinBase>,
+    /// The values of uncorrelated `EXISTS` subqueries that were planned while lowering,
+    /// taken when the `EXISTS` expression is parsed.
+    pub(crate) exists_values: Vec<(Query, Expr)>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
     pub(crate) group_scope: GroupScope,
     /// The attached catalogs.
@@ -307,6 +310,7 @@ impl Default for SQLContext {
             active_relations: Default::default(),
             joined_aliases: Default::default(),
             join_base: None,
+            exists_values: Default::default(),
             named_windows: Default::default(),
             group_scope: Default::default(),
             lp_arena: Default::default(),
@@ -634,6 +638,7 @@ impl SQLContext {
         self.table_aliases.clear();
         self.joined_aliases.clear();
         self.join_base = None;
+        self.exists_values.clear();
         self.named_windows.clear();
     }
 
@@ -2859,7 +2864,7 @@ impl SQLContext {
             .collect())
     }
 
-    fn process_where(
+    pub(crate) fn process_where(
         &mut self,
         mut lf: LazyFrame,
         expr: Option<&SQLExpr>,
