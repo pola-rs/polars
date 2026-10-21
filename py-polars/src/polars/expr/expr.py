@@ -6677,6 +6677,7 @@ class Expr(metaclass=_Meta):
         See Also
         --------
         truediv
+        truncdiv
 
         Examples
         --------
@@ -6751,6 +6752,47 @@ class Expr(metaclass=_Meta):
         └──────┴────────┘
         """
         return self.__floordiv__(other)
+
+    def truncdiv(self, other: Any) -> Expr:
+        """
+        Divide, rounding the quotient toward zero.
+
+        Unlike :meth:`floordiv`, which rounds down, this rounds a negative quotient up,
+        as integer division does in C and Rust. The result has the same data type
+        as `floordiv`'s.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        See Also
+        --------
+        floordiv
+        truediv
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [-5, -4, 4, 5]})
+        >>> df.with_columns(
+        ...     pl.col("x").floordiv(2).alias("x//2"),
+        ...     pl.col("x").truncdiv(2).alias("truncdiv(x, 2)"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬──────┬────────────────┐
+        │ x   ┆ x//2 ┆ truncdiv(x, 2) │
+        │ --- ┆ ---  ┆ ---            │
+        │ i64 ┆ i64  ┆ i64            │
+        ╞═════╪══════╪════════════════╡
+        │ -5  ┆ -3   ┆ -2             │
+        │ -4  ┆ -2   ┆ -2             │
+        │ 4   ┆ 2    ┆ 2              │
+        │ 5   ┆ 2    ┆ 2              │
+        └─────┴──────┴────────────────┘
+        """
+        return wrap_expr(self._pyexpr.trunc_div(parse_into_expression(other)))
 
     def mod(self, other: Any) -> Expr:
         """

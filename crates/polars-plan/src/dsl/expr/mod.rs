@@ -768,6 +768,8 @@ pub enum Operator {
     Xor,
     LogicalAnd,
     LogicalOr,
+    /// Division with the quotient rounded toward zero, the counterpart of `FloorDivide`.
+    TruncDivide,
 }
 
 impl Display for Operator {
@@ -788,6 +790,7 @@ impl Display for Operator {
             RustDivide => "rust_div",
             TrueDivide => "/",
             FloorDivide => "//",
+            TruncDivide => "trunc_div",
             Modulus => "%",
             And | LogicalAnd => "&",
             Or | LogicalOr => "|",
@@ -854,6 +857,7 @@ impl Operator {
             | Self::RustDivide
             | Self::TrueDivide
             | Self::FloorDivide
+            | Self::TruncDivide
             | Self::Modulus => return None,
         })
     }
@@ -883,6 +887,7 @@ impl Operator {
             | Self::RustDivide
             | Self::TrueDivide
             | Self::FloorDivide
+            | Self::TruncDivide
             | Self::Modulus => None,
         }
     }

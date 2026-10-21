@@ -77,6 +77,7 @@ pub enum PyOperator {
     Xor,
     LogicalAnd,
     LogicalOr,
+    TruncDivide,
 }
 
 #[pymethods]
@@ -113,6 +114,7 @@ impl<'py> IntoPyObject<'py> for Wrap<Operator> {
             Operator::Xor => PyOperator::Xor,
             Operator::LogicalAnd => PyOperator::LogicalAnd,
             Operator::LogicalOr => PyOperator::LogicalOr,
+            Operator::TruncDivide => PyOperator::TruncDivide,
         }
         .into_pyobject(py)
     }
