@@ -1985,15 +1985,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "home"
-version = "0.5.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
-dependencies = [
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "http"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3355,6 +3346,7 @@ dependencies = [
  "polars-defs",
  "polars-io",
  "polars-json",
+ "polars-ooc",
  "polars-ops",
  "polars-plan",
  "polars-row",
@@ -3394,7 +3386,6 @@ dependencies = [
  "futures",
  "glob",
  "hashbrown 0.17.1",
- "home",
  "itoa",
  "libc",
  "memchr",
@@ -3428,26 +3419,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "zmij",
- "zstd",
-]
-
-[[package]]
-name = "polars-io-ext"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "flate2",
- "futures",
- "hex",
- "polars-arrow",
- "polars-error",
- "polars-io-ext-ffi",
- "polars-utils",
- "pyo3",
- "serde",
- "serde_json",
- "snap",
- "tokio",
  "zstd",
 ]
 
@@ -3638,6 +3609,7 @@ dependencies = [
  "regex",
  "schemars",
  "serde",
+ "serde_json",
  "simdutf8",
  "snap",
  "streaming-decompression",
@@ -3842,7 +3814,6 @@ dependencies = [
  "regex",
  "serde",
  "sqlparser",
- "tempfile",
 ]
 
 [[package]]
@@ -4675,9 +4646,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.14"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0527518605e68109d875e248ea259b6758801cf165e4b2c2733ae3b51f12535a"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "aws-lc-rs",
  "ring",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 import tempfile
 import textwrap
@@ -9,6 +10,7 @@ from typing import IO, TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+import zstandard
 
 import polars as pl
 from polars.exceptions import (
@@ -650,6 +652,257 @@ def test_scan_csv_progressive_infer_schema_length(
     for infer_len in [1, 2, 100, n_rows - 1, n_rows, n_rows + 1, None]:
         out = pl.scan_csv(file_path, infer_schema_length=infer_len).collect()
         assert df.schema == out.schema
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("compression", "prefix_len"),
+    [("uncompressed", 64 * 1024), ("zstd", 256 * 1024), ("gzip", 256 * 1024)],
+)
+def test_scan_csv_progressive_infer_schema_truncated_row_29950(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    compression: CsvCompression,
+    prefix_len: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The first downloaded (and decompressed) prefix of `prefix_len` bytes ends right
+    # after the '-' of '-1.5' in the second row. Inferring from that cut-off row gives
+    # String for 'b'.
+    pad = prefix_len - len("a,b\nx,-1.5\n") - len(",-")
+    df = pl.DataFrame({"a": ["x", "x" * pad, "x"], "b": [-1.5, -1.5, -1.5]})
+    assert df.write_csv().encode()[:prefix_len].endswith(b"x,-")
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    out = pl.scan_csv(file_path, infer_schema_length=2).collect()
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["zstd", "gzip"])
+def test_scan_csv_progressive_infer_schema_long_compressed_rows(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: CsvCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # Long, poorly compressible rows, so that the downloaded compressed prefix ends
+    # shortly after the rows needed for schema inference.
+    rng = np.random.default_rng(0)
+    for row_len in [20_000, 50_000, 100_000]:
+        df = pl.DataFrame(
+            {"a": [rng.bytes(row_len).hex() for _ in range(6)], "b": [-1.5] * 6}
+        )
+        df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+        out = pl.scan_csv(file_path, infer_schema_length=2).collect()
+        assert_frame_equal(out, df)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.parametrize("infer_schema_length", [0, 1])
+def test_scan_csv_progressive_infer_schema_wide_header(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, infer_schema_length: int
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The header line alone is longer than the first downloaded prefix.
+    df = pl.DataFrame({f"column_{i:05}": [1, 2] for i in range(10_000)})
+    df.write_csv(file_path)
+
+    out = pl.scan_csv(file_path, infer_schema_length=infer_schema_length).collect()
+    assert out.columns == df.columns
+    assert out.height == 2
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+@pytest.mark.parametrize("infer_schema_length", [0, 1])
+def test_scan_csv_progressive_infer_schema_multiline_header(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    compression: CsvCompression,
+    infer_schema_length: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The first downloaded prefix ends inside the quoted header, after its line break.
+    df = pl.DataFrame({"foo\n" + "x" * 400_000: ["a", "b"], "bar": ["c", "d"]})
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    q = pl.scan_csv(file_path, infer_schema_length=infer_schema_length)
+    assert q.collect_schema() == df.schema
+    assert_frame_equal(q.collect(), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+@pytest.mark.parametrize("infer_schema_length", [0, 1])
+def test_scan_csv_progressive_infer_schema_bom_comment_multiline_header(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    compression: CsvCompression,
+    infer_schema_length: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # A UTF-8 BOM, then a comment line with an unmatched quote. The first downloaded
+    # prefix ends inside the quoted header, after its line break.
+    name = "foo\n" + "x" * 400_000
+    data = b'\xef\xbb\xbf#"\n"' + name.encode() + b'",bar\na,c\nb,d\n'
+    if compression == "zstd":
+        data = zstandard.compress(data)
+    elif compression == "gzip":
+        data = gzip.compress(data)
+    file_path.write_bytes(data)
+
+    df = pl.DataFrame({name: ["a", "b"], "bar": ["c", "d"]})
+    q = pl.scan_csv(
+        file_path, infer_schema_length=infer_schema_length, comment_prefix="#"
+    )
+    assert q.collect_schema() == df.schema
+    assert_frame_equal(q.collect(), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+def test_scan_csv_progressive_infer_schema_header_only_positional_overrides(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: CsvCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The first downloaded prefix ends inside the header.
+    df = pl.DataFrame({"a": [1, 2], "x" * 400_000: [3, 4]})
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    q = pl.scan_csv(
+        file_path, infer_schema_length=0, schema_overrides=[pl.Int64, pl.Int64]
+    )
+    assert q.collect_schema() == df.schema
+    assert_frame_equal(q.collect(), df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("with_data", [True, False])
+def test_scan_csv_progressive_infer_schema_header_only_row_estimate(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, with_data: bool
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The header fits in the first downloaded prefix, the first data row does not.
+    names = [f"c{i:03}_" + "n" * 95 for i in range(600)]
+    data = "y" * 10_000 + "," * (len(names) - 1) + "\n" if with_data else ""
+    file_path.write_text(",".join(names) + "\n" + data)
+
+    q = pl.scan_csv(file_path, infer_schema_length=0)
+    # Without a data row, the estimate comes from the header length if only the header
+    # was read, and is 0 if the whole file was (it used to be u64::MAX).
+    assert f"ESTIMATED ROWS: {int(with_data)}" in q.explain()
+    assert q.collect().shape == (int(with_data), len(names))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("force_async", ["0", "1"])
+def test_scan_csv_row_estimate_with_header_only_file(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, force_async: str
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", force_async)
+
+    (tmp_path / "a.csv").write_text("a,b\n")
+    (tmp_path / "b.csv").write_text("a,b\n1,2\n3,4\n5,6\n")
+
+    # The header-only file adds 0 rows to the estimate of the other one.
+    q = pl.scan_csv([tmp_path / "a.csv", tmp_path / "b.csv"], infer_schema_files=2)
+    assert "ESTIMATED ROWS: 4" in q.explain()
+    assert q.collect().height == 3
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["zstd", "gzip"])
+def test_scan_csv_progressive_infer_schema_cut_off_compressed_file(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: CsvCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # Cut off halfway, the file decompresses to less than inference first asks for. It
+    # used to keep asking for more data forever.
+    df = pl.DataFrame({"a": [1] * 50_000, "b": [2] * 50_000})
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+    data = file_path.read_bytes()
+    file_path.write_bytes(data[: len(data) // 2])
+
+    with pytest.raises(OSError):
+        pl.scan_csv(file_path).collect_schema()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["zstd", "gzip"])
+@pytest.mark.parametrize("infer_schema_length", [0, 1, 100])
+def test_scan_csv_progressive_infer_schema_magic_bytes_text(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    compression: CsvCompression,
+    infer_schema_length: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The decompressed text starts with zlib magic bytes ('x^').
+    df = pl.DataFrame({"x^2": [1, 2, 3], "y": [-1.5, 2.5, 3.5]})
+    df.lazy().sink_csv(file_path, compression=compression, check_extension=False)
+
+    out = pl.scan_csv(file_path, infer_schema_length=infer_schema_length).collect()
+    assert_frame_equal(out, df if infer_schema_length else df.cast(pl.String))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(("skip_rows", "skip_lines"), [(2, 0), (0, 2)])
+def test_scan_csv_progressive_infer_schema_long_skipped_rows(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, skip_rows: int, skip_lines: int
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The first downloaded prefix holds fewer complete lines than are skipped.
+    junk = ("x" * 50_000 + "\n") * 2
+    file_path.write_text(junk + "a,b\n1,-1.5\n2,-2.5\n")
+
+    out = pl.scan_csv(
+        file_path, infer_schema_length=10, skip_rows=skip_rows, skip_lines=skip_lines
+    ).collect()
+    assert_frame_equal(out, pl.DataFrame({"a": [1, 2], "b": [-1.5, -2.5]}))
 
 
 @pytest.mark.write_disk

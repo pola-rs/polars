@@ -120,6 +120,8 @@ struct AsofJoinNearestState {
     /// If `allow_eq == true`: the last value of the first chunk of equal
     /// values that are strictly greater than the current left value.
     upper_candidate: IdxSize,
+    /// The last non-null value that is <= the current left value.
+    last_non_null_lower: Option<IdxSize>,
     allow_eq: bool,
 }
 
@@ -147,14 +149,15 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
             if scan_right_val > *left_val {
                 break;
             }
+            self.last_non_null_lower = Some(self.upper_candidate);
             self.upper_candidate += 1;
         }
 
         if self.allow_eq
-            && self.upper_candidate > 0
-            && right(self.upper_candidate - 1) == Some(*left_val)
+            && let Some(idx) = self.last_non_null_lower
+            && right(idx) == Some(*left_val)
         {
-            return Some(self.upper_candidate - 1);
+            return Some(idx);
         }
 
         // It is possible there are later elements equal to our

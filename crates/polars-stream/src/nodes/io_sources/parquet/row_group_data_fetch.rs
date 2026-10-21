@@ -8,7 +8,7 @@ use polars_core::prelude::PlHashMap;
 use polars_core::runtime::ASYNC;
 use polars_core::series::IsSorted;
 use polars_core::utils::polars_arrow::bitmap::Bitmap;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
@@ -23,6 +23,7 @@ use crate::utils::tokio_handle_ext;
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RowGroupData {
     pub(super) fetched_bytes: FetchedBytes,
+    pub(super) row_group_idx: usize,
     pub(super) row_offset: usize,
     pub(super) slice: Option<(usize, usize)>,
     pub(super) row_group_metadata: RowGroupMetadata,
@@ -139,7 +140,7 @@ impl RowGroupDataFetcher {
             && self
                 .runtime_range_skipper
                 .as_ref()
-                .is_some_and(|s| s.skips(&self.metadata.row_groups[row_group.idx]))
+                .is_some_and(|s| s.skips(row_group.idx))
         {
             self.row_groups.pop_front();
         }
@@ -228,27 +229,19 @@ impl RowGroupDataFetcher {
                     }
                 },
                 DynByteSource::File(source) => {
-                    let mut ranges = if !is_full_projection {
-                        get_row_group_byte_ranges_for_projection(
-                            row_group_metadata,
-                            &mut projection.iter().map(|x| &x.arrow_field().name),
-                        )
-                        .collect::<ParquetResult<Vec<_>>>()?
-                    } else {
-                        row_group_metadata
-                            .byte_ranges_iter()
-                            .map(|x| x.start as usize..x.end as usize)
-                            .collect::<Vec<_>>()
-                    };
+                    let mut ranges = get_row_group_fetch_ranges(
+                        row_group_metadata,
+                        &projection,
+                        is_full_projection,
+                    )?;
 
-                    // Reade a cached row group in its decode tasks, each column chunk on
-                    // the thread that decompresses it. This beats copying it ahead on the blocking
-                    // pool. Uncached ones are prefetched, so that the I/O overlaps decoding.
-                    let defer = read_stats.defer_cached_reads
-                        && !ranges.is_empty()
-                        && source.is_cached(&ranges);
-
-                    if defer {
+                    if ranges.is_empty() {
+                        // Nothing to read, e.g. an empty row group.
+                        FetchedBytes::BytesMap(PlHashMap::default())
+                    } else if read_stats.defer_cached_reads && source.is_cached(&ranges) {
+                        // Read a cached row group in its decode tasks, each column chunk on
+                        // the thread that decompresses it. This beats copying it ahead on the blocking
+                        // pool. Uncached ones are prefetched, so that the I/O overlaps decoding.
                         read_stats.deferred.fetch_add(1, Ordering::Relaxed);
                         FetchedBytes::Deferred {
                             source: current_byte_source.clone(),
@@ -258,54 +251,30 @@ impl RowGroupDataFetcher {
                     } else {
                         read_stats.prefetched.fetch_add(1, Ordering::Relaxed);
 
-                        let n_ranges = ranges.len();
-
-                        let bytes_map = source.get_ranges(&mut ranges).await?;
-
-                        assert_eq!(bytes_map.len(), n_ranges);
-
-                        FetchedBytes::BytesMap(bytes_map)
+                        FetchedBytes::BytesMap(
+                            fetch_ranges(&current_byte_source, &mut ranges).await?,
+                        )
                     }
                 },
                 DynByteSource::Cloud(_) => {
-                    if !is_full_projection {
-                        let mut ranges = get_row_group_byte_ranges_for_projection(
-                            row_group_metadata,
-                            &mut projection.iter().map(|x| &x.arrow_field().name),
-                        )
-                        .collect::<ParquetResult<Vec<_>>>()?;
+                    // We still prefer `get_ranges()` over a single `get_range()` for downloading
+                    // the entire row group, as it can have less memory-copying. A single `get_range()`
+                    // would naively concatenate the memory blocks of the entire row group, while
+                    // `get_ranges()` can skip concatenation since the downloaded blocks are
+                    // aligned to the columns.
+                    let mut ranges = get_row_group_fetch_ranges(
+                        row_group_metadata,
+                        &projection,
+                        is_full_projection,
+                    )?;
 
-                        let n_ranges = ranges.len();
-
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
-
-                        assert_eq!(bytes_map.len(), n_ranges);
-
-                        FetchedBytes::BytesMap(bytes_map)
-                    } else {
-                        // We still prefer `get_ranges()` over a single `get_range()` for downloading
-                        // the entire row group, as it can have less memory-copying. A single `get_range()`
-                        // would naively concatenate the memory blocks of the entire row group, while
-                        // `get_ranges()` can skip concatenation since the downloaded blocks are
-                        // aligned to the columns.
-                        let mut ranges = row_group_metadata
-                            .byte_ranges_iter()
-                            .map(|x| x.start as usize..x.end as usize)
-                            .collect::<Vec<_>>();
-
-                        let n_ranges = ranges.len();
-
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
-
-                        assert_eq!(bytes_map.len(), n_ranges);
-
-                        FetchedBytes::BytesMap(bytes_map)
-                    }
+                    FetchedBytes::BytesMap(fetch_ranges(&current_byte_source, &mut ranges).await?)
                 },
             };
 
             PolarsResult::Ok(RowGroupData {
                 fetched_bytes,
+                row_group_idx: idx,
                 row_offset: current_row_offset,
                 slice,
                 // @TODO: Remove clone
@@ -356,19 +325,22 @@ impl FetchedBytes {
         read_stats.reread.fetch_add(1, Ordering::Relaxed);
         let source = source.clone();
         let mut ranges = std::mem::take(ranges);
-        let n_ranges = ranges.len();
         let bytes_map = tokio_handle_ext::AbortOnDropHandle(
-            ASYNC.spawn(async move { source.get_ranges(&mut ranges).await }),
+            ASYNC.spawn(async move { fetch_ranges(&source, &mut ranges).await }),
         )
         .await
         .expect("fetch task panicked")?;
-        assert_eq!(bytes_map.len(), n_ranges);
 
         *self = Self::BytesMap(bytes_map);
         Ok(())
     }
 
     pub(super) fn get_range(&self, range: std::ops::Range<usize>) -> PolarsResult<Buffer<u8>> {
+        // Empty ranges are not fetched.
+        if range.is_empty() {
+            return Ok(Buffer::new());
+        }
+
         Ok(match self {
             Self::Buffer { buffer, offset } => {
                 let offset = *offset;
@@ -388,6 +360,44 @@ impl FetchedBytes {
             },
         })
     }
+}
+
+/// Byte ranges of the projected column chunks to fetch. Empty ranges (chunks without pages) are
+/// left out: they need no I/O and can share their start with another range.
+fn get_row_group_fetch_ranges(
+    row_group_metadata: &RowGroupMetadata,
+    projection: &[ArrowFieldProjection],
+    is_full_projection: bool,
+) -> ParquetResult<Vec<Range<usize>>> {
+    let mut ranges = if !is_full_projection {
+        get_row_group_byte_ranges_for_projection(
+            row_group_metadata,
+            &mut projection.iter().map(|x| &x.arrow_field().name),
+        )
+        .collect::<ParquetResult<Vec<_>>>()?
+    } else {
+        row_group_metadata
+            .byte_ranges_iter()
+            .map(|x| x.start as usize..x.end as usize)
+            .collect::<Vec<_>>()
+    };
+    ranges.retain(|r| !r.is_empty());
+    Ok(ranges)
+}
+
+/// Fetches `ranges`, keyed by their start.
+async fn fetch_ranges(
+    source: &DynByteSource,
+    ranges: &mut [Range<usize>],
+) -> PolarsResult<PlHashMap<usize, Buffer<u8>>> {
+    let n_ranges = ranges.len();
+    let bytes_map = source.get_ranges(ranges).await?;
+    polars_ensure!(
+        bytes_map.len() == n_ranges,
+        ComputeError: "parquet column chunks share a start offset: {} distinct of {} byte ranges",
+        bytes_map.len(), n_ranges
+    );
+    Ok(bytes_map)
 }
 
 fn get_row_group_byte_ranges_for_projection<'a>(

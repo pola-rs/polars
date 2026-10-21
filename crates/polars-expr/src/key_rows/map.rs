@@ -471,10 +471,6 @@ impl<V> KeyRowIndexMap<V> {
         self.values.get_unchecked_mut(idx as usize)
     }
 
-    pub(crate) fn get_value(&self, idx: IdxSize) -> Option<&V> {
-        self.values.get(idx as usize)
-    }
-
     /// Returns the keys as columns of `schema`, in insertion order.
     pub(crate) fn keys_frame(&self, schema: &Schema) -> DataFrame {
         let buffers = self

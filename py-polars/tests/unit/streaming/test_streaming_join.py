@@ -21,10 +21,13 @@ from polars.testing.parametric.strategies.core import column, dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
+    from polars._typing import (
+        AsofJoinStrategy,
+        JoinBuildSide,
+        JoinStrategy,
+        MaintainOrderJoin,
+    )
     from tests.conftest import PlMonkeyPatch
-
-pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_full_outer_joins() -> None:
@@ -122,6 +125,20 @@ def test_streaming_cross_join_empty() -> None:
     out = df1.join(df2, how="cross").collect(engine="streaming")
     assert out.shape == (0, 2)
     assert out.columns == ["col1", "col1_right"]
+
+
+def test_streaming_cross_join_nullable_struct_probe() -> None:
+    # Each probe row is repeated once per build row, its validity included.
+    build = pl.LazyFrame({"a": [1, 2, 3]})
+    probe = pl.LazyFrame({"s": [{"x": 1}, None, {"x": 3}, None]})
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2, 3] * 4,
+            "s": [s for s in [{"x": 1}, None, {"x": 3}, None] for _ in range(3)],
+        }
+    )
+    out = build.join(probe, how="cross").collect(engine="streaming")
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 def test_streaming_join_rechunk_12498() -> None:
@@ -978,3 +995,79 @@ def test_merge_join_set_sorted_key() -> None:
     expected = q.collect(engine="in-memory")
     assert expected.height == 4
     assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+def _join_keys(k: pl.Expr, key_type: str) -> dict[str, pl.Expr]:
+    # Each key type uses a different kind of hash table.
+    if key_type == "int":
+        return {"k": k}
+    if key_type == "str":
+        return {"k": k.cast(pl.String)}
+    if key_type == "int, int":
+        return {"k": k, "k2": k % 3}
+    struct = pl.when(k.is_not_null()).then(pl.struct(a=k, b=k % 3))
+    if key_type == "struct":
+        return {"k": struct}
+    assert key_type == "struct, int"
+    return {"k": struct, "k2": k % 3}
+
+
+@pytest.mark.parametrize(
+    "key_type", ["int", "str", "int, int", "struct", "struct, int"]
+)
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize("build_side", ["force_left", "force_right"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
+def test_streaming_join_unmatched_build_rows(
+    key_type: str,
+    how: JoinStrategy,
+    build_side: JoinBuildSide,
+    nulls_equal: bool,
+    maintain_order: MaintainOrderJoin,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Small morsels so the unmatched rows of a table are emitted in parts.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+    # Enough rows that a partition of the table spans several 64-row words.
+    i = pl.int_range(3000)
+    keys = _join_keys(pl.when(i % 7 != 0).then(i % 50), key_type)
+    left = pl.select([e.alias(n) for n, e in keys.items()], v=i).lazy()
+    i = pl.int_range(60)
+    # Both sides have keys without a match.
+    keys = _join_keys(pl.when(i % 5 != 0).then(i % 25 + 30), key_type)
+    right = pl.select([e.alias(n) for n, e in keys.items()], w=i).lazy()
+    q = left.join(
+        right,
+        on=list(keys),
+        how=how,
+        build_side=build_side,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=maintain_order != "none",
+    )
+
+
+@pytest.mark.parametrize(
+    "key_type", ["int", "str", "int, int", "struct", "struct, int"]
+)
+def test_streaming_join_unmatched_repeated_key_morsels(
+    key_type: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # One key with many unmatched rows is not split into a morsel per row.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100000")
+    keys = _join_keys(pl.lit(1, pl.Int64), key_type)
+    left = pl.select([e.alias(n) for n, e in keys.items()], v=pl.int_range(3000))
+    keys = _join_keys(pl.lit(2, pl.Int64), key_type)
+    right = pl.select([e.alias(n) for n, e in keys.items()], w=0)
+    q = left.lazy().join(
+        right.lazy(), on=list(keys), how="left", build_side="force_left"
+    )
+    out = q.collect(engine="streaming")
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+    # At most a morsel per pipeline, there is one pipeline per thread.
+    assert out.n_chunks() <= pl.thread_pool_size()

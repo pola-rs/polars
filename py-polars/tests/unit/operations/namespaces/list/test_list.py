@@ -782,6 +782,33 @@ def test_list_gather_oob_10079() -> None:
         df.select(pl.col("a").gather(999))
 
 
+@pytest.mark.parametrize(
+    "a",
+    [
+        pl.Series("a", [], pl.List(pl.Int64)),
+        pl.Series("a", [None, None], pl.List(pl.Int64)),
+    ],
+)
+def test_list_gather_keeps_dtype(a: pl.Series) -> None:
+    idx = pl.Series("i", [[0]] * len(a), pl.List(pl.UInt32))
+    out = pl.DataFrame([a, idx]).select(pl.col("a").list.gather(pl.col("i")))
+    assert_series_equal(
+        out.to_series(), pl.Series("a", [None] * len(a), pl.List(pl.Int64))
+    )
+
+
+def test_list_gather_after_eval() -> None:
+    lf = (
+        pl.LazyFrame({"d": [1, 1, 2], "t": [3, 1, 2]})
+        .group_by("d")
+        .agg(pl.col("t").implode(maintain_order=False))
+        .with_columns(i=pl.col("t").list.eval(pl.element().arg_sort()))
+        .select("d", pl.col("t").list.gather(pl.col("i")))
+    )
+    expected = pl.DataFrame({"d": [1, 2], "t": [[1, 3], [2]]})
+    assert_frame_equal(lf.collect(), expected, check_row_order=False)
+
+
 def test_utf8_empty_series_arg_min_max_10703() -> None:
     res = pl.select(pl.lit(pl.Series("list", [["a"], []]))).with_columns(
         pl.all(),

@@ -14,8 +14,6 @@ if TYPE_CHECKING:
 
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 ROLLING_FUNCTIONS: dict[str, Callable[..., pl.Expr]] = {
     "min": lambda e, **kw: e.rolling_min(**kw),
     "max": lambda e, **kw: e.rolling_max(**kw),
