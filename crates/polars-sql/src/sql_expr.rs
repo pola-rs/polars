@@ -78,12 +78,13 @@ pub(crate) fn sql_unknown() -> Expr {
 // A correlated subquery here would be evaluated against its own scope, where an
 // outer column resolves to a like-named table.
 fn quantified_subquery_unsupported(
+    ctx: &SQLContext,
     compare_op: &SQLBinaryOperator,
     right: &SQLExpr,
 ) -> PolarsResult<()> {
     if let SQLExpr::Subquery(query) = right {
         polars_ensure!(
-            !is_correlated_subquery(query),
+            !is_correlated_subquery(query, ctx.catalog_spellings()),
             SQLInterface: "ANY/ALL with `{}` and a correlated subquery is not currently supported",
             compare_op
         );
@@ -1176,7 +1177,7 @@ impl SQLExprVisitor<'_> {
         compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        quantified_subquery_unsupported(compare_op, right)?;
+        quantified_subquery_unsupported(self.ctx, compare_op, right)?;
         if let SQLExpr::Subquery(subquery) = right {
             // `x > ALL (S)` is `NOT (x <= ANY (S))`.
             let any_op = match compare_op {
@@ -1213,7 +1214,7 @@ impl SQLExprVisitor<'_> {
         compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        quantified_subquery_unsupported(compare_op, right)?;
+        quantified_subquery_unsupported(self.ctx, compare_op, right)?;
         if let SQLExpr::Subquery(subquery) = right {
             return self.visit_any_subquery(left, compare_op, subquery);
         }

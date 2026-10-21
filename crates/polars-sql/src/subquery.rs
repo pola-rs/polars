@@ -9,9 +9,10 @@ use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_defs::join::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_lazy::prelude::*;
+use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::plans::{
     ExprPushdownGroup, ExprToIRContext, NodeStats, attach_dataset_scan_statistics,
-    is_inherently_nondeterministic, node_stats, to_expr_ir,
+    is_elementwise_rec, is_inherently_nondeterministic, node_stats, to_expr_ir,
 };
 use polars_plan::prelude::{AggExpr, DslPlan, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
@@ -19,18 +20,21 @@ use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::Arena;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
-    Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
-    UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
-    visit_expressions_mut,
+    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident,
+    NamedWindowDefinition, NamedWindowExpr, Query, Select, SelectItem, SetExpr, Statement,
+    TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor,
+    VisitorMut, WindowSpec, WindowType, visit_expressions, visit_expressions_mut,
 };
 
+use crate::catalog::CatalogSpellings;
 use crate::context::{
-    CORRELATED_COL_PREFIX, FilterMode, RelationName, combine_conditions, get_table_name,
-    match_qualifier, relation_name,
+    CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
+    flatten_and_conditions, get_table_name, match_qualifier, relation_name,
 };
+use crate::functions::PolarsSQLFunctions;
+use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
 use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
-use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
+use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_subquery_expr};
 use crate::{SQLContext, unique_column_name};
 
 impl SQLContext {
@@ -179,7 +183,8 @@ impl SQLContext {
             return Ok(None);
         }
         let anti = negated != removing;
-        if is_correlated_subquery(subquery) || expr_contains_subquery(lhs) {
+        if is_correlated_subquery(subquery, self.catalog_spellings()) || expr_contains_subquery(lhs)
+        {
             return Ok(None);
         }
         let Some(left_key) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
@@ -234,6 +239,10 @@ impl SQLContext {
         let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
+        // An aggregating subquery is left to `try_decorrelate_exists_subquery`.
+        if exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) != Some(false) {
+            return Ok(None);
+        }
         if let Some(conjuncts) = ctx.split_subquery_conjuncts(
             &selection,
             &inner_names,
@@ -484,7 +493,7 @@ impl SQLContext {
                 std::iter::once(&tbl_expr.relation)
                     .chain(tbl_expr.joins.iter().map(|j| &j.relation))
             })
-            .map(relation_name)
+            .map(|factor| Some(relation_name(factor)?.spelled(factor, self.catalog_spellings())))
             .collect::<Option<Vec<_>>>()
         else {
             return Ok(None);
@@ -737,6 +746,7 @@ impl SQLContext {
             bindings,
             join_tree,
             query_depth: 0,
+            skips: Vec::new(),
             changed: false,
         };
         if let ControlFlow::Break(e) = VisitMut::visit(&mut rewritten, &mut lowering) {
@@ -750,14 +760,85 @@ impl SQLContext {
         Ok((lowering.lf, rewritten))
     }
 
-    // Attempt the decorrelation of a single scalar aggregate subquery:
+    // Lower the correlated subqueries of a `JOIN ... ON` condition against the
+    // input they read, one conjunct at a time, so that the condition compares
+    // plain columns of both inputs. A conjunct that `correlated_join_side`
+    // declines is left as it is. Returns the inputs with the lowered columns
+    // added and the rewritten condition, or `None` when nothing was lowered.
+    pub(crate) fn lower_join_on_subqueries(
+        &mut self,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+        on: &SQLExpr,
+    ) -> PolarsResult<Option<(TableInfo, TableInfo, SQLExpr)>> {
+        let mut left = tbl_left.frame.clone();
+        let mut right = tbl_right.frame.clone();
+        let mut left_bindings = SubqueryBindings::new();
+        let mut right_bindings = SubqueryBindings::new();
+        let mut changed = false;
+        let mut conjuncts = Vec::new();
+        for conj in flatten_and_conditions(on) {
+            let lowered;
+            match correlated_join_side(self, conj, tbl_left, tbl_right) {
+                Some(true) => {
+                    (left, lowered) = self.lower_correlated_subqueries(
+                        left,
+                        &tbl_left.schema,
+                        conj,
+                        LowerScope::ScalarAndPredicates,
+                        &mut left_bindings,
+                        None,
+                    )?;
+                },
+                Some(false) => {
+                    (right, lowered) = self.lower_correlated_subqueries(
+                        right,
+                        &tbl_right.schema,
+                        conj,
+                        LowerScope::ScalarAndPredicates,
+                        &mut right_bindings,
+                        None,
+                    )?;
+                },
+                None => lowered = Cow::Borrowed(conj),
+            }
+            changed |= matches!(lowered, Cow::Owned(_));
+            conjuncts.push(lowered.into_owned());
+        }
+        if !changed {
+            return Ok(None);
+        }
+        let left_schema = self.get_frame_schema(&mut left)?;
+        let right_schema = self.get_frame_schema(&mut right)?;
+        let on = combine_conditions(conjuncts, SQLBinaryOperator::And)
+            .expect("a condition has at least one conjunct");
+        Ok(Some((
+            TableInfo {
+                frame: left,
+                name: tbl_left.name.clone(),
+                schema: left_schema,
+                relations: tbl_left.relations.clone(),
+            },
+            TableInfo {
+                frame: right,
+                name: tbl_right.name.clone(),
+                schema: right_schema,
+                relations: tbl_right.relations.clone(),
+            },
+            on,
+        )))
+    }
+
+    // Attempt the decorrelation of a single scalar subquery:
     //   (SELECT AGG(...) FROM inner WHERE <corr-preds> AND <inner-filters>)
+    // A projection without an aggregate is taken as the `item` of its values,
+    // which raises when an outer row matches more than one inner row.
     // Equality-only correlation: `inner GROUP BY <corr cols>` once, joined onto
     // the outer frame on those columns directly. Otherwise: row-index the outer
     // frame, inner-join outer × inner on the correlation predicates (`join_where`
     // handles inequality), aggregate per outer row, then left-join back on the
     // row index. Either way, `COUNT` over no matches is 0, every other aggregate
-    // is NULL. Returns `None` when uncorrelated or not a scalar-aggregate shape.
+    // is NULL. Returns `None` when uncorrelated or not a supported shape.
     // When `join_tree` describes the outer frame and the subquery repeats a part
     // of it, the aggregate is taken over the outer frame itself instead.
     fn try_decorrelate_scalar_subquery(
@@ -784,14 +865,38 @@ impl SQLContext {
             return Ok(None);
         };
 
-        // The projection must be a scalar aggregate over the inner relation.
-        let Some(agg_expr) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
+        // A window gives one value per inner row, not one per group.
+        if expr_has_window_functions(proj) {
+            return Ok(None);
+        }
+        let Some(proj_expr) = ctx.marking_aggregates(|ctx| {
+            ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)
+        })?
         else {
             return Ok(None);
         };
-        if !has_expr(&agg_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
-            return Ok(None);
-        }
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        let has_aggregate = has_marked_aggregate(&proj_expr);
+        let proj_expr = strip_aggregate_marks(proj_expr);
+        // The projection is either a scalar aggregate over the inner relation, or a
+        // value per inner row, of which each outer row may match at most one.
+        let (agg_expr, row_value) =
+            if has_expr(&proj_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
+                (proj_expr, None)
+            } else if !has_aggregate
+                && !matches!(select.distinct, Some(Distinct::On(_)))
+                && !has_expr(&proj_expr, |e| matches!(e, Expr::SubPlan(_, _)))
+            {
+                let value_name = format_pl_smallstr!("{prefix}val");
+                let values = col(value_name.clone());
+                let values = match select.distinct {
+                    Some(Distinct::Distinct) => values.unique(),
+                    _ => values,
+                };
+                (values.item(true), Some(proj_expr.alias(value_name)))
+            } else {
+                return Ok(None);
+            };
 
         let Some((corr_preds, local_filters)) = ctx.split_correlation_conjuncts(
             selection,
@@ -808,9 +913,12 @@ impl SQLContext {
             return Ok(None);
         }
 
-        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let result_name = format_pl_smallstr!("{prefix}res");
-        let equality_only = corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq);
+        // Without a semi join to restrict the inner groups, a value per row is taken
+        // per matched outer row instead.
+        let is_row_value = row_value.is_some();
+        let equality_only = corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq)
+            && (cfg!(feature = "semi_anti_join") || !is_row_value);
 
         // When the subquery repeats a part of the outer join tree, the outer frame
         // holds each outer row's subquery rows, each one repeated once per match
@@ -833,12 +941,13 @@ impl SQLContext {
                 .all(|name| outer_schema.contains(&name))
             {
                 let outer = lf.cache();
+                let aggregate = ScalarAggregate::new(agg_expr, &result_name, &prefix, outer_schema);
                 let joined = equality_correlated_aggregate(
                     outer.clone(),
                     outer,
                     keys.clone(),
                     keys,
-                    agg_expr.alias(result_name.clone()),
+                    &aggregate,
                     false,
                 )?;
                 return Ok(Some((joined, result_name)));
@@ -848,26 +957,35 @@ impl SQLContext {
         // Apply inner-only filters, then rename inner columns to collision-free
         // names so they can't clash with outer columns of the same name (as in a
         // self-correlated `t1 AS x` subquery over outer `t1`).
-        let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
+        let mut inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
+        if let Some(row_value) = row_value {
+            inner_filtered = inner_filtered.with_column(row_value);
+        }
         let rename_from: Vec<PlSmallStr> = inner_schema.iter_names().cloned().collect();
         let rename_to: Vec<PlSmallStr> = rename_from
             .iter()
             .map(|name| prefixed_inner(&prefix, name))
             .collect();
         let mut inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
-        let restrict = equality_only && group_local_aggregate(&agg_expr) && {
-            let inner_rows = ctx.estimated_rows(&mut inner_renamed)?;
-            let outer_rows = self.estimated_rows(&mut lf)?;
-            restriction_pays_off(outer_rows.as_ref(), inner_rows.as_ref())
-        };
+        // The single-row check must only see the groups that outer rows ask for.
+        let restrict = equality_only
+            && group_local_aggregate(&agg_expr)
+            && (is_row_value || {
+                let inner_rows = ctx.estimated_rows(&mut inner_renamed)?;
+                let outer_rows = self.estimated_rows(&mut lf)?;
+                restriction_pays_off(outer_rows.as_ref(), inner_rows.as_ref())
+            });
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
-        let agg_expr = agg_expr.map_expr(|e| match e {
-            Expr::Column(name) if inner_schema.contains(name.as_str()) => {
-                col(prefixed_inner(&prefix, &name))
-            },
-            other => other,
-        });
+        let aggregate = ScalarAggregate::new(agg_expr, &result_name, &prefix, &inner_schema)
+            .map_inputs(|e| {
+                e.map_expr(|e| match e {
+                    Expr::Column(name) if inner_schema.contains(name.as_str()) => {
+                        col(prefixed_inner(&prefix, &name))
+                    },
+                    other => other,
+                })
+            });
 
         if equality_only {
             let outer_on: Vec<Expr> = corr_preds.iter().map(|p| col(p.outer.clone())).collect();
@@ -880,7 +998,7 @@ impl SQLContext {
                 inner_renamed,
                 outer_on,
                 inner_on,
-                agg_expr.alias(result_name.clone()),
+                &aggregate,
                 restrict,
             )?;
             return Ok(Some((joined, result_name)));
@@ -896,21 +1014,21 @@ impl SQLContext {
             .with(inner_renamed)
             .how(JoinType::Inner)
             .join_where(join_preds);
-        let agg = agg_expr.alias(result_name.clone());
-        let count_like = count_like(&agg);
-        let grouped = matched.group_by([col(idx_name.clone())]).agg([agg]);
+        let grouped = matched
+            .group_by([col(idx_name.clone())])
+            .agg(aggregate.aggs.clone());
 
-        let joined = left_join_aggregate(
-            outer_indexed,
-            grouped,
-            vec![col(idx_name.clone())],
-            vec![col(idx_name.clone())],
-            count_like,
-        )?
-        .drop(Selector::ByName {
-            names: Arc::from([idx_name]),
-            strict: true,
-        });
+        let joined = aggregate
+            .finish(left_join_aggregate(
+                outer_indexed,
+                grouped,
+                vec![col(idx_name.clone())],
+                vec![col(idx_name.clone())],
+            )?)
+            .drop(Selector::ByName {
+                names: Arc::from([idx_name]),
+                strict: true,
+            });
         Ok(Some((joined, result_name)))
     }
 
@@ -997,7 +1115,7 @@ impl SQLContext {
             let grouped = inner_renamed
                 .group_by(inner_on.clone())
                 .agg([value.alias(set_name.clone())]);
-            left_join_aggregate(lf, grouped, outer_on, inner_on, None)?
+            left_join_aggregate(lf, grouped, outer_on, inner_on)?
         } else {
             let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
             let idx_name = format_pl_smallstr!("{prefix}idx");
@@ -1016,7 +1134,6 @@ impl SQLContext {
                 grouped,
                 vec![col(idx_name.clone())],
                 vec![col(idx_name.clone())],
-                None,
             )?
             .drop(Selector::ByName {
                 names: Arc::from([idx_name]),
@@ -1076,6 +1193,17 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}exists");
+        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
+            None => return Ok(None),
+            // An aggregate without GROUP BY returns one row, even over no rows.
+            Some(true) => {
+                return Ok(Some((
+                    lf.with_column(lit(true).alias(flag_name.clone())),
+                    flag_name,
+                )));
+            },
+            Some(false) => {},
+        }
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
         if corr_preds.is_empty() {
@@ -1614,17 +1742,16 @@ fn classify_correlation_column(
     let (qualifier, name) = match expr {
         SQLExpr::Identifier(ident) => (None, ident.value.as_str()),
         SQLExpr::CompoundIdentifier(parts) => {
-            // A qualifier that names no inner relation is taken as outer (so same-named
-            // columns like `o.id = c.id` resolve).
+            // A relation of the outer query is outer (so same-named columns like
+            // `o.id = c.id` resolve). Any other qualifier, or one that may be a struct
+            // column of the subquery, is not an outer column.
             let (side, q, len) = match inner.resolve_qualifier(parts)? {
                 Some((q, len)) => (CorrelationSide::Inner, q, len),
                 None => match outer.resolve_qualifier(parts)? {
-                    Some((q, len)) => (CorrelationSide::Outer, q, len),
-                    None => (
-                        CorrelationSide::Outer,
-                        parts[parts.len() - 2].value.clone(),
-                        parts.len() - 1,
-                    ),
+                    Some((q, len)) if !inner_schema.contains(&parts[0].value) => {
+                        (CorrelationSide::Outer, q, len)
+                    },
+                    _ => return Ok(None),
                 },
             };
             // A struct field is not a column of either frame.
@@ -1660,6 +1787,162 @@ fn classify_correlation_column(
             (false, false) => None,
         },
     })
+}
+
+/// How many rows an `EXISTS` subquery that passed `eligible_subquery_select` returns because
+/// of its aggregates: `Some(true)` if it aggregates its own rows and so returns exactly one,
+/// `Some(false)` if it does not aggregate, and `None` for shapes left unsupported (an
+/// aggregate over outer columns only, which belongs to the outer query, or `UNNEST`).
+fn exists_aggregates(
+    ctx: &SQLContext,
+    query: &Query,
+    select: &Select,
+    inner_names: &[RelationName],
+    inner_schema: &Schema,
+) -> Option<bool> {
+    /// Whether the columns an aggregate call reads, outside of its subqueries, are inner
+    /// or outer ones.
+    struct Columns<'a> {
+        inner_names: &'a [RelationName],
+        inner_schema: &'a Schema,
+        query_depth: usize,
+        inner: bool,
+        outer: bool,
+    }
+
+    impl Visitor for Columns<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            let is_inner = match expr {
+                _ if self.query_depth > 0 => return ControlFlow::Continue(()),
+                SQLExpr::Identifier(ident) => self.inner_schema.contains(&ident.value),
+                SQLExpr::CompoundIdentifier(parts) => {
+                    match_qualifier(parts, self.inner_names.iter()).is_some()
+                        || self.inner_schema.contains(&parts[0].value)
+                },
+                _ => return ControlFlow::Continue(()),
+            };
+            if is_inner {
+                self.inner = true;
+            } else {
+                self.outer = true;
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    struct Aggregates<'a> {
+        ctx: &'a SQLContext,
+        inner_names: &'a [RelationName],
+        inner_schema: &'a Schema,
+        query_depth: usize,
+        local: bool,
+        outer: bool,
+        unsupported: bool,
+        /// Named windows used so far, whose definitions may hold aggregates.
+        windows: Vec<String>,
+    }
+
+    impl Visitor for Aggregates<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            let SQLExpr::Function(function) = expr else {
+                return ControlFlow::Continue(());
+            };
+            if self.query_depth > 0 {
+                return ControlFlow::Continue(());
+            }
+            match &function.over {
+                Some(WindowType::NamedWindow(name))
+                | Some(WindowType::WindowSpec(WindowSpec {
+                    window_name: Some(name),
+                    ..
+                })) => self.windows.push(name.value.clone()),
+                _ => {},
+            }
+            match PolarsSQLFunctions::try_from_sql(function, self.ctx) {
+                Ok(PolarsSQLFunctions::Explode) => self.unsupported = true,
+                Ok(f) if f.is_builtin_aggregate() && function.over.is_none() => {
+                    // An aggregate belongs to the outer query if it reads only outer columns,
+                    // in its arguments or its FILTER clause.
+                    let mut columns = Columns {
+                        inner_names: self.inner_names,
+                        inner_schema: self.inner_schema,
+                        query_depth: 0,
+                        inner: false,
+                        outer: false,
+                    };
+                    let _ = function.args.visit(&mut columns);
+                    let _ = function.filter.visit(&mut columns);
+                    if columns.inner || !columns.outer {
+                        self.local = true;
+                    } else {
+                        self.outer = true;
+                    }
+                },
+                _ => {},
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut aggregates = Aggregates {
+        ctx,
+        inner_names,
+        inner_schema,
+        query_depth: 0,
+        local: false,
+        outer: false,
+        unsupported: false,
+        windows: vec![],
+    };
+    let _ = select.projection.visit(&mut aggregates);
+    let _ = query.order_by.visit(&mut aggregates);
+    let mut visited = PlHashSet::new();
+    while let Some(name) = aggregates.windows.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        let definition = select
+            .named_window
+            .iter()
+            .find(|NamedWindowDefinition(ident, _)| ident.value == name);
+        match definition {
+            Some(NamedWindowDefinition(_, NamedWindowExpr::NamedWindow(base))) => {
+                aggregates.windows.push(base.value.clone())
+            },
+            Some(NamedWindowDefinition(_, NamedWindowExpr::WindowSpec(spec))) => {
+                aggregates
+                    .windows
+                    .extend(spec.window_name.iter().map(|i| i.value.clone()));
+                let _ = spec.visit(&mut aggregates);
+            },
+            None => {},
+        }
+    }
+    (!aggregates.unsupported && !aggregates.outer).then_some(aggregates.local)
 }
 
 // Shared eligibility gate for the rewrites: bail on any clause that changes
@@ -1765,25 +2048,159 @@ pub(crate) enum SubqueryKind {
 
 /// Whether a subquery reads a qualifier it does not declare, which is what
 /// correlates it with the query around it.
-pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
-    #[derive(Default)]
-    struct Declared(Vec<RelationName>);
+pub(crate) fn is_correlated_subquery(query: &Query, spellings: &CatalogSpellings) -> bool {
+    let mut is_correlated = false;
+    visit_foreign_qualifiers(query, spellings, |_| {
+        is_correlated = true;
+        ControlFlow::Break(())
+    });
+    is_correlated
+}
 
-    impl Visitor for Declared {
+/// Which input of a join the correlated subqueries in `conj` read, together with the
+/// left operand of an `IN`: `Some(true)` for the left input, `Some(false)` for the right
+/// one. `None` if they read neither or both, or a relation whose columns can't be found
+/// by name, or if the rest of `conj` doesn't read the other input: the lowered condition
+/// must still compare the two inputs.
+fn correlated_join_side(
+    ctx: &SQLContext,
+    conj: &SQLExpr,
+    tbl_left: &TableInfo,
+    tbl_right: &TableInfo,
+) -> Option<bool> {
+    struct JoinSides<'a> {
+        ctx: &'a SQLContext,
+        tbl_left: &'a TableInfo,
+        tbl_right: &'a TableInfo,
+        query_depth: usize,
+        is_correlated: bool,
+        unresolved: bool,
+        reads_left: bool,
+        reads_right: bool,
+        outside_reads_left: bool,
+        outside_reads_right: bool,
+    }
+
+    impl Visitor for JoinSides<'_> {
         type Break = ();
 
-        fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
-            self.0.extend(relation_name(factor));
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            // A nested subquery's qualifiers may name relations of the subquery
+            // around it.
+            if self.query_depth > 0 {
+                return ControlFlow::Continue(());
+            }
+            match self
+                .ctx
+                .column_join_input(expr, self.tbl_left, self.tbl_right)
+            {
+                Some(true) => self.outside_reads_left = true,
+                Some(false) => self.outside_reads_right = true,
+                None => {},
+            }
+            let (subquery, lhs) = match expr {
+                SQLExpr::Subquery(subquery) | SQLExpr::Exists { subquery, .. } => (subquery, None),
+                SQLExpr::InSubquery {
+                    expr: lhs,
+                    subquery,
+                    ..
+                } => (subquery, Some(lhs)),
+                _ => return ControlFlow::Continue(()),
+            };
+            visit_foreign_qualifiers(subquery, self.ctx.catalog_spellings(), |parts| {
+                self.is_correlated = true;
+                match self.ctx.resolve_qualifier(parts) {
+                    // A struct field path is not resolved.
+                    Ok(Some((name, len))) if len + 1 == parts.len() => {
+                        if self.ctx.is_right_relation(&name, self.tbl_right) {
+                            self.reads_right = true;
+                        } else if self.ctx.is_joined_relation(&name, self.tbl_left) {
+                            self.reads_left = true;
+                        } else {
+                            self.unresolved = true;
+                        }
+                    },
+                    _ => self.unresolved = true,
+                }
+                ControlFlow::Continue(())
+            });
+            // The left operand of a lowered `IN` is read on the same input.
+            if let Some(lhs) = lhs {
+                let (reads_left, reads_right) =
+                    self.ctx
+                        .join_inputs_read(lhs, self.tbl_left, self.tbl_right);
+                self.reads_left |= reads_left;
+                self.reads_right |= reads_right;
+            }
             ControlFlow::Continue(())
         }
     }
 
-    let mut declared = Declared::default();
+    let mut sides = JoinSides {
+        ctx,
+        tbl_left,
+        tbl_right,
+        query_depth: 0,
+        is_correlated: false,
+        unresolved: false,
+        reads_left: false,
+        reads_right: false,
+        outside_reads_left: false,
+        outside_reads_right: false,
+    };
+    let _ = conj.visit(&mut sides);
+    if !sides.is_correlated || sides.unresolved {
+        return None;
+    }
+    match (sides.reads_left, sides.reads_right) {
+        (true, false) if sides.outside_reads_right => Some(true),
+        (false, true) if sides.outside_reads_left => Some(false),
+        _ => None,
+    }
+}
+
+fn strip_nested(mut expr: &SQLExpr) -> &SQLExpr {
+    while let SQLExpr::Nested(inner) = expr {
+        expr = inner;
+    }
+    expr
+}
+
+/// Call `f` on each compound identifier that `query` reads without naming one of
+/// its own relations.
+fn visit_foreign_qualifiers(
+    query: &Query,
+    spellings: &CatalogSpellings,
+    f: impl FnMut(&[Ident]) -> ControlFlow<()>,
+) {
+    struct Declared<'a>(Vec<RelationName>, &'a CatalogSpellings);
+
+    impl Visitor for Declared<'_> {
+        type Break = ();
+
+        fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
+            let name = relation_name(factor).map(|name| name.spelled(factor, self.1));
+            self.0.extend(name);
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut declared = Declared(Vec::new(), spellings);
     let _ = query.visit(&mut declared);
 
-    struct Foreign<'a>(&'a [RelationName]);
+    struct Foreign<'a, F>(&'a [RelationName], F);
 
-    impl Visitor for Foreign<'_> {
+    impl<F: FnMut(&[Ident]) -> ControlFlow<()>> Visitor for Foreign<'_, F> {
         type Break = ();
 
         fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
@@ -1791,14 +2208,14 @@ pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
                 SQLExpr::CompoundIdentifier(parts)
                     if match_qualifier(parts, self.0.iter()).is_none() =>
                 {
-                    ControlFlow::Break(())
+                    (self.1)(parts)
                 },
                 _ => ControlFlow::Continue(()),
             }
         }
     }
 
-    query.visit(&mut Foreign(&declared.0)).is_break()
+    let _ = query.visit(&mut Foreign(&declared.0, f));
 }
 
 /// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`
@@ -1861,6 +2278,7 @@ fn lowerable_kind(expr: &SQLExpr, scope: LowerScope) -> bool {
 /// Rewrites correlated subqueries in-place into references to the columns their
 /// decorrelated lowering materialises, threading the growing `LazyFrame` through the
 /// traversal. `query_depth` keeps each subquery a leaf rather than recursing into it.
+/// `skips` holds, per expression being visited, whether it was skipped as a whole.
 struct CorrelatedLowering<'a> {
     ctx: &'a mut SQLContext,
     lf: LazyFrame,
@@ -1869,6 +2287,7 @@ struct CorrelatedLowering<'a> {
     bindings: &'a mut SubqueryBindings,
     join_tree: Option<&'a OuterJoinTree>,
     query_depth: usize,
+    skips: Vec<bool>,
     changed: bool,
 }
 
@@ -1910,22 +2329,9 @@ impl CorrelatedLowering<'_> {
         self.bindings.push((subquery.clone(), kind, name.clone()));
         Ok(Some(name))
     }
-}
 
-impl VisitorMut for CorrelatedLowering<'_> {
-    type Break = PolarsError;
-
-    fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<PolarsError> {
-        self.query_depth += 1;
-        ControlFlow::Continue(())
-    }
-
-    fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<PolarsError> {
-        self.query_depth -= 1;
-        ControlFlow::Continue(())
-    }
-
-    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+    /// Replace `expr` by the column of its lowering when it is a lowerable subquery.
+    fn lower_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
         // Inside a nested query: not ours to lower against the outer schema.
         if self.query_depth > 0 || !lowerable_kind(expr, self.scope) {
             return ControlFlow::Continue(());
@@ -1959,6 +2365,45 @@ impl VisitorMut for CorrelatedLowering<'_> {
             resolved
         };
         self.changed = true;
+        ControlFlow::Continue(())
+    }
+}
+
+impl VisitorMut for CorrelatedLowering<'_> {
+    type Break = PolarsError;
+
+    fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<PolarsError> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<PolarsError> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        // The subquery of `x > ANY (subquery)` is a set of values rather than a
+        // scalar: only the left operand is lowered, and the rest is skipped like a
+        // nested query.
+        let skip = self.query_depth == 0
+            && matches!(
+                expr,
+                SQLExpr::AnyOp { right, .. } | SQLExpr::AllOp { right, .. }
+                    if matches!(strip_nested(right), SQLExpr::Subquery(_))
+            );
+        if skip && let SQLExpr::AnyOp { left, .. } | SQLExpr::AllOp { left, .. } = expr {
+            VisitMut::visit(left.as_mut(), self)?;
+            self.query_depth += 1;
+        }
+        self.skips.push(skip);
+        self.lower_expr(expr)
+    }
+
+    fn post_visit_expr(&mut self, _expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        if self.skips.pop() == Some(true) {
+            self.query_depth -= 1;
+        }
         ControlFlow::Continue(())
     }
 }
@@ -2243,7 +2688,7 @@ fn equality_correlated_aggregate(
     inner: LazyFrame,
     outer_on: Vec<Expr>,
     inner_on: Vec<Expr>,
-    agg: Expr,
+    aggregate: &ScalarAggregate,
     restrict: bool,
 ) -> PolarsResult<LazyFrame> {
     let (outer, inner) = if restrict {
@@ -2251,9 +2696,8 @@ fn equality_correlated_aggregate(
     } else {
         (outer, inner)
     };
-    let count_like = count_like(&agg);
-    let grouped = inner.group_by(inner_on.clone()).agg([agg]);
-    left_join_aggregate(outer, grouped, outer_on, inner_on, count_like)
+    let grouped = inner.group_by(inner_on.clone()).agg(aggregate.aggs.clone());
+    Ok(aggregate.finish(left_join_aggregate(outer, grouped, outer_on, inner_on)?))
 }
 
 // Restrict the inner frame to the rows whose keys occur in the outer frame by a
@@ -2307,38 +2751,219 @@ fn group_local_aggregate(agg: &Expr) -> bool {
     })
 }
 
-// Left-join a per-group aggregate onto the outer frame, filling an unmatched
-// `COUNT` result with 0 (every other aggregate stays NULL for unmatched rows).
+// Left-join a per-group aggregate onto the outer frame. Outer rows without a
+// group get NULL.
 fn left_join_aggregate(
     outer: LazyFrame,
     grouped: LazyFrame,
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
-    count_like: Option<PlSmallStr>,
 ) -> PolarsResult<LazyFrame> {
-    let joined = outer
+    outer
         .join_builder()
         .with(grouped)
         .left_on(left_on)
         .right_on(right_on)
         .how(JoinType::Left)
         .coalesce(JoinCoalesce::CoalesceColumns)
-        .finish()?;
-    Ok(match count_like {
-        Some(result_name) => joined.with_columns([col(result_name).fill_null(lit(0))]),
-        None => joined,
-    })
+        .finish()
 }
 
-// The output name of an aggregate whose value over no rows is 0 rather than
-// NULL: a (possibly aliased or cast) `COUNT`.
-fn count_like(agg: &Expr) -> Option<PlSmallStr> {
+// The projection of a correlated scalar aggregate subquery, as the aggregates
+// computed per group plus what turns them into the result after the left join.
+//
+// An outer row without inner rows must get the projection's value over no
+// rows. The left join gives NULL there. That is right for most projections,
+// but not for `COUNT(*)`, `COUNT(*) + 1` or `COALESCE(MAX(x), 0)`. For those,
+// each aggregate gets its value over no rows, and a projection that combines
+// several aggregates is evaluated per outer row after the join. It then only
+// runs on outer rows that exist, so it can't fail on a value no row needs.
+struct ScalarAggregate {
+    // Computed per group.
+    aggs: Vec<Expr>,
+    // Columns of `aggs` and the value they take for an outer row without inner
+    // rows, where that is not NULL.
+    fill: Vec<(PlSmallStr, Expr)>,
+    // The result over the `aggs` columns, and those columns to drop after.
+    combine: Option<(Expr, Vec<PlSmallStr>)>,
+}
+
+impl ScalarAggregate {
+    // `schema` is the frame `agg` reads.
+    fn new(agg: Expr, result_name: &PlSmallStr, prefix: &str, schema: &Schema) -> Self {
+        let whole = |fill: Vec<(PlSmallStr, Expr)>| Self {
+            aggs: vec![agg.clone().alias(result_name.clone())],
+            fill,
+            combine: None,
+        };
+        match agg_output_root(&agg) {
+            e if zero_over_no_rows(e) && widening_integer_casts(&agg, schema) => {
+                return whole(vec![(result_name.clone(), lit(0))]);
+            },
+            // A cast of NULL is NULL.
+            e @ Expr::Agg(_) if !zero_over_no_rows(e) => return whole(vec![]),
+            _ => {},
+        }
+
+        let mut aggs = Vec::new();
+        let combine = split_aggregates(agg.clone(), prefix, &mut aggs);
+        let Ok(fields) = aggs
+            .iter()
+            .map(|e| e.to_field(schema))
+            .collect::<PolarsResult<Vec<_>>>()
+        else {
+            return whole(vec![]);
+        };
+        let agg_schema = Schema::from_iter(fields);
+        let fill: Vec<(PlSmallStr, Expr)> = aggs
+            .iter()
+            .zip(agg_schema.iter())
+            .filter(|(e, _)| zero_over_no_rows(agg_output_root(e)))
+            .map(|(_, (name, dtype))| (name.clone(), lit(0).cast(dtype.clone())))
+            .collect();
+        if !is_elementwise_over(&combine, &agg_schema) {
+            return whole(vec![]);
+        }
+        // Only a cheap expression is evaluated here. Any other one is split,
+        // which is right whatever its value over no rows is.
+        if is_cheap(&combine) && null_over_no_rows(&combine, &agg_schema, &fill) {
+            return whole(vec![]);
+        }
+        let names = agg_schema.iter_names().cloned().collect();
+        Self {
+            aggs,
+            fill,
+            combine: Some((combine.alias(result_name.clone()), names)),
+        }
+    }
+
+    // Apply `f` to every per-group aggregate.
+    fn map_inputs(mut self, f: impl Fn(Expr) -> Expr) -> Self {
+        self.aggs = self.aggs.into_iter().map(f).collect();
+        self
+    }
+
+    // Turn the left-joined aggregate columns into the result column.
+    fn finish(&self, joined: LazyFrame) -> LazyFrame {
+        let joined = if self.fill.is_empty() {
+            joined
+        } else {
+            joined.with_columns(
+                self.fill
+                    .iter()
+                    .map(|(name, value)| col(name.clone()).fill_null(value.clone()))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        match &self.combine {
+            Some((combine, names)) => joined.with_column(combine.clone()).drop(Selector::ByName {
+                names: Arc::from(names.as_slice()),
+                strict: true,
+            }),
+            None => joined,
+        }
+    }
+}
+
+// Whether an aggregate is 0 over no rows rather than NULL. A bare `sum` is: SQL
+// `SUM` puts its NULL over no rows around it.
+fn zero_over_no_rows(agg: &Expr) -> bool {
     matches!(
-        agg_output_root(agg),
-        Expr::Len | Expr::Agg(AggExpr::Count { .. })
+        agg,
+        Expr::Len | Expr::Agg(AggExpr::Count { .. } | AggExpr::NUnique(_) | AggExpr::Sum(_))
     )
-    .then(|| agg.clone().meta().output_name().ok())
-    .flatten()
+}
+
+// Replace every aggregate in `expr` with a column named after it, pushing the
+// aliased aggregate onto `aggs`.
+fn split_aggregates(expr: Expr, prefix: &str, aggs: &mut Vec<Expr>) -> Expr {
+    match expr {
+        Expr::Len | Expr::Agg(_) => {
+            let name = format_pl_smallstr!("{prefix}agg{}", aggs.len());
+            aggs.push(expr.alias(name.clone()));
+            col(name)
+        },
+        e => e
+            .map_children(&mut |c, _| Ok(split_aggregates(c, prefix, aggs)), &mut ())
+            .unwrap(),
+    }
+}
+
+// Whether `combine` is NULL when its aggregates hold their values over no rows:
+// `fill`, else NULL. An error counts as not NULL.
+fn null_over_no_rows(combine: &Expr, agg_schema: &Schema, fill: &[(PlSmallStr, Expr)]) -> bool {
+    let columns = agg_schema
+        .iter()
+        .map(|(name, dtype)| {
+            let value = fill
+                .iter()
+                .find(|(n, _)| n == name)
+                .map_or(lit(LiteralValue::untyped_null()), |(_, v)| v.clone());
+            value.cast(dtype.clone()).alias(name.clone())
+        })
+        .collect::<Vec<_>>();
+    DataFrame::empty()
+        .lazy()
+        .select(columns)
+        .select([combine.clone()])
+        .collect()
+        .is_ok_and(|df| df.height() == 1 && df.columns()[0].null_count() == 1)
+}
+
+// Whether `combine`, over the columns of `agg_schema`, gives one value per row.
+fn is_elementwise_over(combine: &Expr, agg_schema: &Schema) -> bool {
+    let mut arena = Arena::new();
+    let mut ctx = ExprToIRContext::new(&mut arena, agg_schema);
+    let Ok(combine) = to_expr_ir(combine.clone(), &mut ctx) else {
+        return false;
+    };
+    is_elementwise_rec(combine.node(), &arena)
+}
+
+// Whether `expr` is built from operations that are cheap on one row and run no
+// user code: arithmetic, comparisons, casts, `CASE` and `COALESCE`.
+fn is_cheap(expr: &Expr) -> bool {
+    match expr {
+        Expr::Column(_) | Expr::Literal(_) => true,
+        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => is_cheap(inner),
+        Expr::BinaryExpr { left, op: _, right } => is_cheap(left) && is_cheap(right),
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => is_cheap(predicate) && is_cheap(truthy) && is_cheap(falsy),
+        Expr::Function {
+            input,
+            function:
+                FunctionExpr::Sql(_)
+                | FunctionExpr::Coalesce
+                | FunctionExpr::FillNull
+                | FunctionExpr::Boolean(BooleanFunction::IsNull | BooleanFunction::IsNotNull),
+        } => input.iter().all(is_cheap),
+        _ => false,
+    }
+}
+
+// Whether every cast around the aggregate in `expr` turns an integer into an
+// integer type that holds all its values. Filling in 0 after such casts is the
+// same as before them.
+fn widening_integer_casts(expr: &Expr, schema: &Schema) -> bool {
+    match expr {
+        Expr::Alias(inner, _) => widening_integer_casts(inner, schema),
+        Expr::Cast {
+            expr: inner, dtype, ..
+        } => {
+            let Some(to) = dtype.as_literal() else {
+                return false;
+            };
+            inner.to_field(schema).is_ok_and(|from| {
+                from.dtype.is_integer()
+                    && to.is_integer()
+                    && try_get_supertype(&from.dtype, to).is_ok_and(|st| &st == to)
+            }) && widening_integer_casts(inner, schema)
+        },
+        _ => true,
+    }
 }
 
 // Peel the alias/cast wrappers SQL puts around an aggregate to reach the

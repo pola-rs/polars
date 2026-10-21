@@ -503,6 +503,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     | O::RustDivide
                     | O::TrueDivide
                     | O::FloorDivide
+                    | O::TruncDivide
                     | O::Modulus
                     | O::Xor => None,
                 }

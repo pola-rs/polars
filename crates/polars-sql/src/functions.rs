@@ -1,7 +1,8 @@
+use chrono::Timelike;
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
-    polars_ensure, polars_err,
+    AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
+    datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
 use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
@@ -339,6 +340,24 @@ pub(crate) enum PolarsSQLFunctions {
     // ----
     // Temporal functions
     // ----
+    /// SQL 'current_date' function.
+    /// Returns the local date at the start of the statement.
+    /// ```sql
+    /// SELECT CURRENT_DATE;
+    /// ```
+    CurrentDate,
+    /// SQL 'current_time' function (alias: 'localtime').
+    /// Returns the local time at the start of the statement.
+    /// ```sql
+    /// SELECT CURRENT_TIME;
+    /// ```
+    CurrentTime,
+    /// SQL 'current_timestamp' function (aliases: 'localtimestamp', 'now').
+    /// Returns the local date and time at the start of the statement, without a time zone.
+    /// ```sql
+    /// SELECT CURRENT_TIMESTAMP, NOW();
+    /// ```
+    CurrentTimestamp,
     /// SQL 'date_part' function.
     /// Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     /// ```sql
@@ -971,6 +990,9 @@ impl PolarsSQLFunctions {
             "covar_pop",
             "covar_samp",
             "cume_dist",
+            "current_date",
+            "current_time",
+            "current_timestamp",
             "date",
             "date_part",
             "date_trunc",
@@ -1001,6 +1023,8 @@ impl PolarsSQLFunctions {
             "left",
             "length",
             "ln",
+            "localtime",
+            "localtimestamp",
             "log",
             "log10",
             "log1p",
@@ -1014,6 +1038,7 @@ impl PolarsSQLFunctions {
             "minute",
             "mod",
             "month",
+            "now",
             "nth_value",
             "ntile",
             "nullif",
@@ -1067,7 +1092,10 @@ impl PolarsSQLFunctions {
 }
 
 impl PolarsSQLFunctions {
-    fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
+    pub(crate) fn try_from_sql(
+        function: &'_ SQLFunction,
+        ctx: &'_ SQLContext,
+    ) -> PolarsResult<Self> {
         let function_name = function.name.0[0].as_ident().unwrap().value.to_lowercase();
         Ok(match function_name.as_str() {
             // ----
@@ -1139,6 +1167,9 @@ impl PolarsSQLFunctions {
             // ----
             // Temporal functions
             // ----
+            "current_date" => Self::CurrentDate,
+            "current_time" | "localtime" => Self::CurrentTime,
+            "current_timestamp" | "localtimestamp" | "now" => Self::CurrentTimestamp,
             "date" => Self::Date,
             "date_part" => Self::DatePart,
             "date_trunc" => Self::DateTrunc,
@@ -1277,7 +1308,7 @@ impl PolarsSQLFunctions {
     }
 
     /// Whether this is a SQL aggregate function when called without OVER.
-    fn is_builtin_aggregate(&self) -> bool {
+    pub(crate) fn is_builtin_aggregate(&self) -> bool {
         use PolarsSQLFunctions::*;
         match self {
             #[cfg(feature = "approx_quantile")]
@@ -1505,6 +1536,22 @@ impl SQLFunctionVisitor<'_> {
                 }
             }),
             DatePartOf(field) => self.try_visit_unary(|e| parse_extract_date_part(e, &field)),
+            CurrentDate => {
+                let date = self.ctx.statement_time().date().to_epoch_days();
+                self.visit_nullary(|| lit(Scalar::new(DataType::Date, AnyValue::Date(date))))
+            },
+            CurrentTime => {
+                let time = self.ctx.statement_time().time();
+                let time = time.num_seconds_from_midnight() as i64 * 1_000_000_000
+                    + time.nanosecond() as i64;
+                self.visit_nullary(|| lit(Scalar::new(DataType::Time, AnyValue::Time(time))))
+            },
+            CurrentTimestamp => {
+                let timestamp = datetime_to_timestamp_us(self.ctx.statement_time());
+                let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+                let value = AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None);
+                self.visit_nullary(|| lit(Scalar::new(dtype.clone(), value.clone())))
+            },
             DateTrunc => self.visit_date_trunc(),
             Strftime => {
                 let args = extract_args(function)?;
