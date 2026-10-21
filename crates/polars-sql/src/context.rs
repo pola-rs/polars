@@ -53,7 +53,7 @@ use crate::sql_visitors::{
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
 };
-use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
+use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 use crate::unique_column_name;
@@ -508,7 +508,7 @@ impl SQLContext {
         }
 
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
-        desugar_quantified_subqueries(&mut stmt);
+        desugar_subqueries(&mut stmt, self);
         self.catalog_spellings = catalog_spellings;
         let res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
@@ -570,7 +570,7 @@ impl SQLContext {
             })
             .collect();
 
-        desugar_quantified_subqueries(&mut stmt);
+        desugar_subqueries(&mut stmt, self);
         DslPlan::SQL {
             query: Arc::new(query.to_owned()),
             relations,
@@ -599,7 +599,7 @@ impl SQLContext {
                     Some(stmt) => stmt.clone(),
                     None => {
                         let mut stmt = parse_single_statement(query)?;
-                        desugar_quantified_subqueries(&mut stmt);
+                        desugar_subqueries(&mut stmt, self);
                         stmt
                     },
                 };

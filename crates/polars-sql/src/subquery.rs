@@ -22,8 +22,8 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
     Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
-    UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
-    visit_expressions_mut,
+    UnaryOperator as SQLUnaryOperator, Value as SQLValue, Visit, VisitMut, Visitor, VisitorMut,
+    visit_expressions, visit_expressions_mut,
 };
 
 use crate::catalog::CatalogSpellings;
@@ -31,6 +31,7 @@ use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
     flatten_and_conditions, get_table_name, match_qualifier, relation_name,
 };
+use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
 use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
 use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_subquery_expr};
@@ -2080,8 +2081,93 @@ impl VisitorMut for DesugarQuantified {
     }
 }
 
-pub(crate) fn desugar_quantified_subqueries(stmt: &mut Statement) {
+/// Rewrite `EXISTS (subquery)` to `TRUE` and `NOT EXISTS (subquery)` to `FALSE` when the
+/// subquery aggregates without `GROUP BY`, as it then returns exactly one row.
+struct FoldExistsOverAggregates<'a>(&'a SQLContext);
+
+impl VisitorMut for FoldExistsOverAggregates<'_> {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+        if let SQLExpr::Exists { subquery, negated } = &*expr
+            && returns_one_row(subquery, self.0)
+        {
+            *expr = SQLExpr::value(SQLValue::Boolean(!*negated));
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Whether `query` aggregates without `GROUP BY` and keeps its single row.
+fn returns_one_row(query: &Query, ctx: &SQLContext) -> bool {
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return false;
+    };
+    let no_group_by = matches!(
+        &select.group_by,
+        GroupByExpr::Expressions(e, m) if e.is_empty() && m.is_empty()
+    );
+    if !no_group_by
+        || select.having.is_some()
+        || select.qualify.is_some()
+        || select.top.is_some()
+        || query.limit_clause.is_some()
+        || query.fetch.is_some()
+        || !query.pipe_operators.is_empty()
+    {
+        return false;
+    }
+
+    // Finds an aggregate call outside of windows and subqueries.
+    struct Aggregates<'a> {
+        ctx: &'a SQLContext,
+        query_depth: usize,
+    }
+
+    impl Visitor for Aggregates<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match expr {
+                SQLExpr::Function(function)
+                    if self.query_depth == 0
+                        && function.over.is_none()
+                        && PolarsSQLFunctions::is_builtin_aggregate_call(function, self.ctx) =>
+                {
+                    ControlFlow::Break(())
+                },
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    select.projection.iter().any(|item| {
+        let expr = match item {
+            SelectItem::UnnamedExpr(expr) | SelectItem::ExprWithAlias { expr, .. } => expr,
+            _ => return false,
+        };
+        expr.visit(&mut Aggregates {
+            ctx,
+            query_depth: 0,
+        })
+        .is_break()
+    })
+}
+
+/// Rewrites applied to a statement before it is planned.
+pub(crate) fn desugar_subqueries(stmt: &mut Statement, ctx: &SQLContext) {
     let _ = VisitMut::visit(stmt, &mut DesugarQuantified);
+    let _ = VisitMut::visit(stmt, &mut FoldExistsOverAggregates(ctx));
 }
 
 /// Which correlated-subquery node kinds a lowering pass should claim.

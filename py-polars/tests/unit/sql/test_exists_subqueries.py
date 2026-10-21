@@ -94,6 +94,27 @@ def test_not_exists_inequality_correlation(op: str, expected: list[int]) -> None
     )
 
 
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        ("EXISTS (SELECT COUNT(*) FROM t2 WHERE FALSE)", [1, 2, 3]),
+        ("NOT EXISTS (SELECT COUNT(*) FROM t2 WHERE FALSE)", []),
+        ("EXISTS (SELECT MAX(w) + 1 FROM t2 WHERE w > 100)", [1, 2, 3]),
+        ("EXISTS (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b)", [1, 2, 3]),
+        ("a = 1 OR NOT EXISTS (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b)", [1]),
+        ("EXISTS (SELECT COUNT(*) OVER () FROM t2 WHERE FALSE)", []),
+        ("EXISTS (SELECT (SELECT COUNT(*) FROM t2) FROM t2 WHERE FALSE)", []),
+    ],
+)
+def test_exists_over_aggregate(condition: str, expected: list[int]) -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=f"SELECT a FROM t1 WHERE {condition} ORDER BY a",
+        compare_with="duckdb",
+        expected={"a": expected},
+    )
+
+
 def test_exists_empty_inner_result() -> None:
     # No `x.b` value is ever both less than and greater than the same
     # `t1.b`, so EXISTS is false for every outer row.
