@@ -1347,7 +1347,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 inputs,
                 options:
                     UnionOptions {
-                        slice: _,
+                        slice,
                         rows: _,
                         parallel: _,
                         from_partitioned_ds: _,
@@ -1358,7 +1358,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
             } => {
                 // concat(a, b, ..).select(len())
                 //   -> concat(a.select(len()), b.select(len()), ..).select(col('len').cast(UInt128).sum().cast(IDX_DTYPE))
-                if out_edge.projection() == Projection::Len && !inputs.is_empty() {
+                // A slice of the union would apply to the per-input lengths instead of the rows.
+                if out_edge.projection() == Projection::Len && !inputs.is_empty() && slice.is_none()
+                {
                     *rechunk = false;
                     *maintain_order = false;
                     let len_schema =

@@ -9,7 +9,7 @@ import polars as pl
 from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Sequence
     from pathlib import Path
 
     from polars._typing import EngineType
@@ -1325,6 +1325,48 @@ def test_subquery_struct_field_is_not_correlated(projection: str, field: str) ->
         compare_with="duckdb",
         check_row_order=False,
         expected={"id": [1, 2], "v": [10, 10]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT a.id, (SELECT c.v FROM c WHERE c.id = a.id) AS v FROM a",
+            {"id": [1, 2, 3], "v": [10, 20, None]},
+        ),
+        (
+            "SELECT a.id, (SELECT MAX(c.v) FROM c WHERE c.id = a.id) AS v FROM a",
+            {"id": [1, 2, 3], "v": [10, 20, None]},
+        ),
+        (
+            "SELECT id FROM a WHERE EXISTS (SELECT 1 FROM c WHERE c.id = a.id)",
+            {"id": [1, 2]},
+        ),
+        (
+            "SELECT id FROM a WHERE NOT EXISTS (SELECT 1 FROM c WHERE c.id = a.id)",
+            {"id": [3]},
+        ),
+        (
+            "SELECT id FROM a WHERE id IN (SELECT c.id FROM c WHERE c.v > a.id)",
+            {"id": [1, 2]},
+        ),
+    ],
+)
+def test_subquery_non_struct_column_named_like_outer_relation(
+    query: str, expected: dict[str, Sequence[Any]]
+) -> None:
+    # `a` is also an integer column of `c`, so `a.id` can only be the outer column.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2, 3]}),
+            "c": pl.DataFrame({"id": [1, 2], "a": [0, 0], "v": [10, 20]}),
+        },
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        expected=expected,
         engines=ENGINES,
     )
 
