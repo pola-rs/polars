@@ -1164,3 +1164,187 @@ def test_correlated_avg_over_repeated_outer_rows() -> None:
         expected={"ok": [1, 1, 1], "v": [0.1, 0.1, 0.1]},
         engines=ENGINES,
     )
+
+
+def _join_on_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"id": [1, 2, 3, None], "v": [10, 20, 30, 40]}),
+        "b": pl.DataFrame({"id": [1, 2, 3], "w": ["x", "y", "z"]}),
+        # `b_id` 1 has one row, 2 has two rows, 3 has none.
+        "c": pl.DataFrame(
+            {"id": [1, 5, 6, 7], "b_id": [1, 2, 2, None], "name": ["p", "q", "r", "s"]}
+        ),
+        "d": pl.DataFrame({"x": [1, 5, 9], "y": [100, 200, 300]}),
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6) AS x FROM a",
+        "SELECT a.id, (SELECT upper(c.name) FROM c WHERE c.b_id = a.id AND c.id <> 6) AS x FROM a",
+        "SELECT a.id, (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id <> 6) AS x FROM a",
+        "SELECT a.id, (SELECT DISTINCT c.b_id FROM c WHERE c.b_id = a.id) AS x FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id < a.id AND c.id = 1) AS x FROM a",
+        "SELECT a.id FROM a WHERE a.v > (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6)",
+    ],
+)
+def test_correlated_scalar_subquery_without_aggregate(query: str) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id) AS x FROM a",
+        "SELECT a.id, (SELECT 1 FROM c WHERE c.b_id = a.id) AS x FROM a",
+        "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id < a.id) AS x FROM a",
+        "SELECT a.id FROM a LEFT JOIN b ON b.id = (SELECT c.id FROM c WHERE c.b_id = a.id)",
+    ],
+)
+@pytest.mark.parametrize("engine", ENGINES)
+def test_correlated_scalar_subquery_more_than_one_row(
+    query: str, engine: EngineType
+) -> None:
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    with pytest.raises(pl.exceptions.ComputeError, match="single value"):
+        ctx.execute(query).collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # https://github.com/pola-rs/polars/issues/30117
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON b.id = (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6)",
+        "SELECT a.id, b.w FROM a JOIN b ON b.id = (SELECT COUNT(*) FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, b.w FROM a RIGHT JOIN b ON b.id = (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6)",
+        "SELECT a.id, b.w FROM a FULL JOIN b ON b.id = (SELECT c.id FROM c WHERE c.b_id = a.id AND c.id <> 6)",
+        # The subquery reads the right input.
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON a.id = (SELECT MAX(c.id) FROM c WHERE c.b_id = b.id)",
+        # One conjunct is a join key, the other compares with a subquery.
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON a.id = b.id AND b.id <= (SELECT COUNT(*) FROM c WHERE c.b_id = a.id) + 1",
+        # The right input is named in another case.
+        "SELECT a.id, b.w FROM a LEFT JOIN b ON a.id = (SELECT MAX(c.id) FROM c WHERE c.b_id = B.id)",
+        # Parentheses without an alias only group the joins.
+        "SELECT a.id, d.y FROM (a JOIN b ON a.id = b.id) LEFT JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id AND c.id <> 6)",
+        # `b.id` has another name in the joined left input.
+        "SELECT a.id, b.w, d.y FROM a JOIN b ON a.id = b.id LEFT JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id AND c.id <> 6)",
+    ],
+)
+def test_correlated_subquery_in_join_on(query: str) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
+    # Key 2 and the NULL key have two rows each, but no outer row asks for them.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 3]}),
+            "c": pl.DataFrame({"k": [1, 2, 2, None, None], "v": [10, 20, 30, 1, 2]}),
+        },
+        query="SELECT a.id, (SELECT c.v FROM c WHERE c.k = a.id) AS v FROM a",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": [1, 3], "v": [10, None]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The `IN` operand reads the right input and the subquery the left one.
+        "SELECT a.id FROM a JOIN b ON b.id IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        # Conditions on one join input.
+        "SELECT a.id FROM a JOIN b ON a.v = (SELECT c.id * 10 FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id FROM a LEFT JOIN b ON b.id = a.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id FROM a LEFT JOIN b ON b.id = a.id AND a.v IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        # The subquery's own `b` is not the joined `b`, so the condition reads only `a`.
+        "SELECT a.id FROM a JOIN b ON a.id = (SELECT b.id FROM c AS b WHERE b.b_id = a.id)",
+        # `a.b.id` is a struct field of `a`, not a column of the joined `b`.
+        "SELECT a.id FROM a JOIN b ON a.id < (SELECT c.id FROM c WHERE c.b_id = a.b.id)",
+        # The relations inside an aliased nested join are not resolved by name.
+        "SELECT a.id FROM a JOIN (b JOIN d ON b.id = d.x) AS r ON a.id = (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        # A correlated `ANY` is not supported, also not in parentheses.
+        "SELECT a.id, a.id > ANY (((SELECT c.id FROM c WHERE c.b_id = a.id))) FROM a",
+    ],
+)
+def test_correlated_subquery_unsupported(query: str) -> None:
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        ctx.execute(query).collect()
+
+
+@pytest.mark.parametrize("projection", ["x.v", "MAX(x.v)"])
+def test_subquery_alias_case_insensitive(projection: str) -> None:
+    # `X` is the subquery's own `x`, so the subquery is not correlated.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2], "k": [1, 2]}),
+            "c": pl.DataFrame({"id": [1, 3], "k": [1, 2], "v": [10, 20]}),
+        },
+        query=f"SELECT a.id, (SELECT {projection} FROM c AS x WHERE x.id = X.k) AS v FROM a",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": [1, 2], "v": [10, 10]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("projection", ["c.v", "MAX(c.v)"])
+@pytest.mark.parametrize("field", ["s.id", "c.s.id", "a.id", "c.a.id"])
+def test_subquery_struct_field_is_not_correlated(projection: str, field: str) -> None:
+    # `s` and `a` are struct columns of `c`; `a` is also the outer relation.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2]}),
+            "c": pl.DataFrame(
+                {
+                    "id": [1, 3],
+                    "s": [{"id": 1}, {"id": 2}],
+                    "a": [{"id": 1}, {"id": 2}],
+                    "v": [10, 20],
+                }
+            ),
+        },
+        query=f"SELECT a.id, (SELECT {projection} FROM c WHERE {field} = c.id) AS v FROM a",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": [1, 2], "v": [10, 10]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("projection", ["c.v", "MAX(c.v)"])
+def test_subquery_nested_struct_field_is_not_correlated(projection: str) -> None:
+    # `s.a.id` is a field of the struct column `s`, not the outer `a.id`.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2]}),
+            "c": pl.DataFrame(
+                {
+                    "k": [10, 20],
+                    "v": [1, 2],
+                    "s": [{"a": {"id": 10}}, {"a": {"id": 99}}],
+                }
+            ),
+        },
+        query=f"SELECT a.id, (SELECT {projection} FROM c WHERE s.a.id = c.k) AS v FROM a",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": [1, 2], "v": [1, 1]},
+        engines=ENGINES,
+    )

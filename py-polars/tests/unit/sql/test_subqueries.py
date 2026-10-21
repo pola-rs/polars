@@ -839,16 +839,17 @@ def test_quantified_subquery_matches_in(
     )
 
 
+@pytest.mark.parametrize("projection", ["x.b", "MAX(x.b)"])
 @pytest.mark.parametrize("op", [">", "<", ">=", "<="])
 @pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
 def test_quantified_subquery_correlated_ordering_rejected(
-    op: str, quantifier: str
+    projection: str, op: str, quantifier: str
 ) -> None:
     ctx = pl.SQLContext(t1=pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     with pytest.raises(SQLInterfaceError, match="correlated subquery"):
         ctx.execute(
             f"SELECT a FROM t1 WHERE b {op} {quantifier}"
-            f" (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)"
+            f" (SELECT {projection} FROM t1 AS x WHERE x.a < t1.a)"
         ).collect()
 
 
