@@ -982,6 +982,7 @@ fn classify_comparison(
         | Operator::RustDivide
         | Operator::TrueDivide
         | Operator::FloorDivide
+        | Operator::TruncDivide
         | Operator::Modulus => return Classification::Opaque,
     }
     if cc.unsat {

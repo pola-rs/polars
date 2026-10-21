@@ -20,14 +20,14 @@ mod eager;
 mod ewm;
 #[cfg(feature = "ewma_by")]
 mod ewm_by;
-#[cfg(feature = "round_series")]
-mod floor_divide;
 #[cfg(feature = "fused")]
 mod fused;
 mod horizontal;
 mod index;
 #[cfg(feature = "index_of")]
 mod index_of;
+#[cfg(feature = "round_series")]
+mod int_divide;
 #[cfg(any(feature = "interpolate_by", feature = "interpolate"))]
 mod interpolation;
 #[cfg(feature = "is_between")]
@@ -92,14 +92,14 @@ pub use eager::*;
 pub use ewm::*;
 #[cfg(feature = "ewma_by")]
 pub use ewm_by::*;
-#[cfg(feature = "round_series")]
-pub use floor_divide::*;
 #[cfg(feature = "fused")]
 pub use fused::*;
 pub use horizontal::*;
 pub use index::*;
 #[cfg(feature = "index_of")]
 pub use index_of::*;
+#[cfg(feature = "round_series")]
+pub use int_divide::*;
 #[cfg(feature = "interpolate")]
 pub use interpolation::interpolate::*;
 #[cfg(feature = "interpolate_by")]

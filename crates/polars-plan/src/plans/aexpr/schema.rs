@@ -537,6 +537,7 @@ pub(crate) fn get_struct_numeric_dtype(
                         Operator::Multiply => NumericListOp::mul(),
                         Operator::TrueDivide | Operator::RustDivide => NumericListOp::div(),
                         Operator::FloorDivide => NumericListOp::floor_div(),
+                        Operator::TruncDivide => NumericListOp::trunc_div(),
                         Operator::Modulus => NumericListOp::rem(),
                         _ => unreachable!(),
                     };
