@@ -1298,6 +1298,8 @@ def _first_row_frames() -> dict[str, pl.DataFrame]:
         "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.y DESC, c.x LIMIT 1) AS r FROM a",
         "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY 1 DESC NULLS LAST LIMIT 1) AS r FROM a",
         "SELECT a.id, (SELECT c.x AS xx FROM c WHERE c.k = a.k ORDER BY xx LIMIT 1) AS r FROM a",
+        # `y` is the output alias, not the inner column `c.y`.
+        "SELECT a.id, (SELECT c.x AS y FROM c WHERE c.k = a.k ORDER BY (y) LIMIT 1) AS r FROM a",
         "SELECT a.id, (SELECT c.y FROM c WHERE c.k = a.k ORDER BY c.x * 2 - c.y DESC NULLS LAST LIMIT 1) AS r FROM a",
         "SELECT a.id, (SELECT c.x FROM c WHERE c.k = a.k ORDER BY c.x FETCH FIRST 1 ROW ONLY) AS r FROM a",
         "SELECT a.id, (SELECT c.x FROM c WHERE c.k > a.k ORDER BY c.x DESC NULLS LAST LIMIT 1) AS r FROM a",
@@ -1369,6 +1371,9 @@ def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
         "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 2) FROM a",
         "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 1 OFFSET 1) FROM a",
         "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id * a.v LIMIT 1) FROM a",
+        # An aggregate that is unnested gives several rows.
+        "SELECT a.id, (SELECT UNNEST(ARRAY_AGG(c.id)) FROM c WHERE c.b_id = a.id) FROM a",
+        "SELECT a.id, (SELECT UNNEST(ARRAY_AGG(c.id)) FROM c WHERE c.b_id = a.id LIMIT 1) FROM a",
         # A correlated `ANY` is not supported, also not in parentheses.
         "SELECT a.id, a.id > ANY (((SELECT c.id FROM c WHERE c.b_id = a.id))) FROM a",
     ],

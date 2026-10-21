@@ -690,8 +690,12 @@ impl SQLContext {
             if ob.with_fill.is_some() || expr_has_window_functions(&ob.expr) {
                 return Ok(None);
             }
+            let mut expr = &ob.expr;
+            while let SQLExpr::Nested(inner) = expr {
+                expr = inner;
+            }
             // The output column, by name or by position.
-            let is_output = match &ob.expr {
+            let is_output = match expr {
                 SQLExpr::Identifier(ident) => alias.is_some_and(|a| a.value == ident.value),
                 SQLExpr::Value(ValueWithSpan {
                     value: SQLValue::Number(n, _),
@@ -1248,6 +1252,10 @@ impl SQLContext {
         let mut row_columns: Vec<Expr> = Vec::new();
         let (agg_expr, single_row_check) =
             if has_expr(&proj_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
+                // An aggregate within a row-expanding function gives several rows.
+                if !is_scalar_over(&proj_expr, &inner_schema) {
+                    return Ok(None);
+                }
                 (proj_expr, false)
             } else if !has_aggregate
                 && !matches!(select.distinct, Some(Distinct::On(_)))
@@ -3376,6 +3384,16 @@ fn null_over_no_rows(combine: &Expr, agg_schema: &Schema, fill: &[(PlSmallStr, E
         .select([combine.clone()])
         .collect()
         .is_ok_and(|df| df.height() == 1 && df.columns()[0].null_count() == 1)
+}
+
+// Whether `expr`, over the columns of `schema`, gives a single value.
+fn is_scalar_over(expr: &Expr, schema: &Schema) -> bool {
+    let mut arena = Arena::new();
+    let mut ctx = ExprToIRContext::new(&mut arena, schema);
+    let Ok(expr) = to_expr_ir(expr.clone(), &mut ctx) else {
+        return false;
+    };
+    expr.is_scalar(&arena)
 }
 
 // Whether `combine`, over the columns of `agg_schema`, gives one value per row.
