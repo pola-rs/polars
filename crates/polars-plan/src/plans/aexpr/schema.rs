@@ -895,6 +895,11 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (String, _) | (_, String) => polars_bail!(
             InvalidOperation: "division with 'String' datatypes is not allowed"
         ),
+        (left, right) if (left.is_numeric() || left.is_bool()) && right.is_temporal() => {
+            polars_bail!(
+                InvalidOperation: "division of {} with {} is not allowed", left, right,
+            )
+        },
         #[cfg(feature = "dtype-struct")]
         (Struct(a), Struct(b)) => {
             polars_ensure!(a.len() == b.len() || b.len() == 1,
