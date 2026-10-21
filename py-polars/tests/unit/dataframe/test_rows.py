@@ -164,6 +164,20 @@ def test_rows_by_key() -> None:
     }
 
 
+def test_rows_by_key_all_columns_as_key_27925() -> None:
+    df = pl.DataFrame({"a": [1, 2, 2], "b": [4, 5, 5]})
+    assert df.rows_by_key(["a", "b"]) == {(1, 4): [()], (2, 5): [(), ()]}
+    assert df.rows_by_key(["a", "b"], named=True) == {
+        (1, 4): [{}],
+        (2, 5): [{}, {}],
+    }
+    assert df.rows_by_key(["a", "b"], unique=True) == {(1, 4): (), (2, 5): ()}
+    assert df.rows_by_key("a", include_key=False, named=True) == {
+        1: [{"b": 4}],
+        2: [{"b": 5}, {"b": 5}],
+    }
+
+
 def test_iter_rows() -> None:
     df = pl.DataFrame(
         {

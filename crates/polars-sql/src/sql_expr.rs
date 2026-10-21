@@ -46,7 +46,7 @@ use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::is_correlated_subquery;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
-    timeunit_from_precision,
+    strip_utc_offset,
 };
 use crate::{SQLContext, unique_column_name};
 
@@ -148,9 +148,33 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
             DataType::Time => return Ok(ca.as_time(None, false)?.into_series()),
             DataType::Datetime(tu, tz) => {
                 let ambiguous = StringChunked::from_slice(PlSmallStr::EMPTY, &["latest"]);
-                return Ok(ca
-                    .as_datetime(None, *tu, false, false, tz.as_ref(), &ambiguous)?
-                    .into_series());
+                // A naive timestamp ignores the UTC offset of the value.
+                let ca = match tz {
+                    None => &ca.apply_values(|s| Cow::Borrowed(strip_utc_offset(s))),
+                    Some(_) => ca,
+                };
+                let parse = |ca: &StringChunked| {
+                    ca.as_datetime(None, *tu, false, false, tz.as_ref(), &ambiguous)
+                };
+                let bulk = parse(ca);
+                if let Ok(out) = &bulk
+                    && out.null_count() == ca.null_count()
+                {
+                    return Ok(out.clone().into_series());
+                }
+                // The format is inferred once per series, so values in different
+                // formats (e.g. with and without an offset) are parsed one by one.
+                let mut out = Series::new_empty(PlSmallStr::EMPTY, dtype);
+                for i in 0..ca.len() {
+                    let value = parse(&ca.slice(i as i64, 1))
+                        .map(|v| v.into_series())
+                        .unwrap_or_else(|_| Series::full_null(PlSmallStr::EMPTY, 1, dtype));
+                    out.append(&value)?;
+                }
+                if out.null_count() == out.len() {
+                    bulk?;
+                }
+                return Ok(out);
             },
             _ => {},
         }
@@ -364,6 +388,8 @@ impl SQLExprVisitor<'_> {
         }
         let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
         if let Some(dtype) = resolve_common_dtype(&cast_dtypes, Some("array literal "))? {
+            // Checked on the assembled series, whose elements share one type.
+            ensure_nested_cast_source("CAST", &dtype, s.dtype())?;
             s = cast_literal_series(&s, &dtype)?;
         }
         Ok(s)
@@ -397,6 +423,10 @@ impl SQLExprVisitor<'_> {
                 format,
                 array: _,
             } => self.visit_cast(expr, data_type, format, kind),
+            SQLExpr::AtTimeZone {
+                timestamp,
+                time_zone,
+            } => self.visit_at_time_zone(timestamp, time_zone),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundFieldAccess { root, access_chain } => {
                 // simple subscript access (eg: "array_col[1]")
@@ -691,13 +721,7 @@ impl SQLExprVisitor<'_> {
         }) else {
             return right.clone();
         };
-        // Without a schema, only a cast gives the type.
-        let left_dtype = match left {
-            Expr::Cast { dtype, .. } => dtype.as_literal().cloned(),
-            _ => None,
-        }
-        .or_else(|| self.expr_dtype(left));
-        let parsed = match left_dtype {
+        let parsed = match self.cast_or_expr_dtype(left) {
             Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
             Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
             Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
@@ -748,7 +772,16 @@ impl SQLExprVisitor<'_> {
 
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
     fn expr_dtype(&self, expr: &Expr) -> Option<DataType> {
-        resolve_expr_dtype(expr, self.active_schema)
+        self.ctx.expr_dtype(expr, self.active_schema)
+    }
+
+    /// Like [`Self::expr_dtype`], but without a schema a cast still gives its type.
+    fn cast_or_expr_dtype(&self, expr: &Expr) -> Option<DataType> {
+        match expr {
+            Expr::Cast { dtype, .. } => dtype.as_literal().cloned(),
+            _ => None,
+        }
+        .or_else(|| self.expr_dtype(expr))
     }
 
     /// `date + n` / `date - n` shift the date by a whole number of days.
@@ -1213,13 +1246,9 @@ impl SQLExprVisitor<'_> {
         polars_ensure!(schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
         let values_dtype = schema.get_at_index(0).unwrap().1;
         let left = self.visit_expr(left)?;
-        let empty_schema = Schema::default();
+        let typed_left = self.ctx.with_typed_subqueries(&left)?;
         let left_dtype = self
-            .ctx
-            .with_typed_subqueries(&left)?
-            .to_field(self.active_schema.unwrap_or(&empty_schema))
-            .ok()
-            .map(|field| field.dtype)
+            .expr_dtype(&typed_left)
             .filter(|dtype| dtype.is_known());
 
         // The comparison casts keep the order of the values, except as handled here.
@@ -1324,21 +1353,17 @@ impl SQLExprVisitor<'_> {
         elems: Series,
         dtype_expr_match: Option<&Expr>,
     ) -> PolarsResult<Series> {
-        if let (Some(Expr::Column(name)), Some(schema)) =
-            (dtype_expr_match, self.active_schema.as_ref())
-        {
-            if elems.dtype() == &DataType::String {
-                if let Some(dtype) = schema.get(name) {
-                    if matches!(
-                        dtype,
-                        DataType::Date | DataType::Time | DataType::Datetime(_, _)
-                    ) {
-                        return cast_literal_series(&elems, dtype);
-                    }
-                }
+        let target = dtype_expr_match.and_then(|expr| self.expr_dtype(expr));
+        if let (Some(Expr::Column(_)), Some(dtype)) = (dtype_expr_match, &target) {
+            if elems.dtype() == &DataType::String
+                && matches!(
+                    dtype,
+                    DataType::Date | DataType::Time | DataType::Datetime(_, _)
+                )
+            {
+                return cast_literal_series(&elems, dtype);
             }
         }
-        let target = dtype_expr_match.and_then(|expr| self.expr_dtype(expr));
         if elems.dtype().is_integer() && target == Some(DataType::String) {
             return elems.cast(&DataType::String);
         }
@@ -1389,6 +1414,25 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
+        if nested_target_name(&polars_type).is_some() {
+            // A scalar subquery only gets a type from its plan, and a window has the type of its
+            // function (`OVER ()` partitions by a column that isn't in the schema).
+            let typed = self
+                .ctx
+                .with_typed_subqueries(&expr)?
+                .map_expr(|e| match e {
+                    Expr::Over { function, .. } => Arc::unwrap_or_clone(function),
+                    e => e,
+                });
+            if let Some(source) = self.cast_or_expr_dtype(&typed) {
+                let kind = match cast_kind {
+                    CastKind::TryCast => "TRY_CAST",
+                    CastKind::SafeCast => "SAFE_CAST",
+                    CastKind::Cast | CastKind::DoubleColon => "CAST",
+                };
+                ensure_nested_cast_source(kind, &polars_type, &source)?;
+            }
+        }
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
 
         // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
@@ -1408,9 +1452,8 @@ impl SQLExprVisitor<'_> {
     }
 
     fn convert_int_literal_for_string(&self, lhs: Expr, rhs: Expr) -> (Expr, Expr) {
-        let empty = Schema::default();
-        let schema = self.active_schema.unwrap_or(&empty);
-        convert_int_literal_for_string((lhs, schema), (rhs, schema))
+        let is_string = |e: &Expr| self.expr_dtype(e) == Some(DataType::String);
+        convert_int_literal_for_string(lhs, rhs, is_string, is_string)
     }
 
     /// Visit a SQL literal.
@@ -1513,11 +1556,11 @@ impl SQLExprVisitor<'_> {
                 polars_ensure!(is_iso_date(value), SQLSyntax: "invalid DATE literal '{}'", value);
                 Ok(DataType::Date)
             },
-            SQLDataType::Time(None, TimezoneInfo::None) => {
+            SQLDataType::Time(None, TimezoneInfo::None | TimezoneInfo::WithoutTimeZone) => {
                 polars_ensure!(is_iso_time(value), SQLSyntax: "invalid TIME literal '{}'", value);
                 Ok(DataType::Time)
             },
-            SQLDataType::Timestamp(prec, TimezoneInfo::None) | SQLDataType::Datetime(prec) => {
+            SQLDataType::Timestamp(_, _) | SQLDataType::Datetime(_) => {
                 let fn_name = match data_type {
                     SQLDataType::Timestamp(_, _) => "TIMESTAMP",
                     _ => "DATETIME",
@@ -1526,12 +1569,53 @@ impl SQLExprVisitor<'_> {
                     is_iso_datetime(value) || is_iso_date(value),
                     SQLSyntax: "invalid {} literal '{}'", fn_name, value,
                 );
-                Ok(DataType::Datetime(timeunit_from_precision(prec)?, None))
+                map_sql_dtype_to_polars(data_type)
             },
             _ => {
                 polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", data_type)
             },
         }
+    }
+
+    /// Visit a SQL `AT TIME ZONE` expression.
+    ///
+    /// A naive timestamp is read as a local time in the given zone (the result is in
+    /// UTC); a time-zone-aware timestamp becomes the naive local time in that zone.
+    fn visit_at_time_zone(
+        &mut self,
+        timestamp: &SQLExpr,
+        time_zone: &SQLExpr,
+    ) -> PolarsResult<Expr> {
+        let zone_expr = self.visit_expr(time_zone)?;
+        let Some(zone) = (match &zone_expr {
+            Expr::Literal(lv) => lv.extract_str(),
+            _ => None,
+        }) else {
+            polars_bail!(SQLInterface: "AT TIME ZONE expects a string literal time zone; found {}", time_zone)
+        };
+        let time_zone = TimeZone::opt_try_new(Some(zone))?.ok_or_else(
+            || polars_err!(SQLInterface: "AT TIME ZONE expects a time zone; found '{}'", zone),
+        )?;
+        let expr = self.visit_expr(timestamp)?;
+        let ambiguous = || lit("latest");
+        Ok(match self.cast_or_expr_dtype(&expr) {
+            Some(DataType::Datetime(_, None)) => expr
+                .dt()
+                .replace_time_zone(Some(time_zone), ambiguous(), NonExistent::Raise)
+                .dt()
+                .convert_time_zone(TimeZone::UTC),
+            Some(DataType::Datetime(_, Some(_))) => expr
+                .dt()
+                .convert_time_zone(time_zone)
+                .dt()
+                .replace_time_zone(None, ambiguous(), NonExistent::Raise),
+            Some(dtype) => {
+                polars_bail!(SQLInterface: "AT TIME ZONE expects a timestamp; found {}", dtype)
+            },
+            None => {
+                polars_bail!(SQLInterface: "AT TIME ZONE could not resolve the type of {}", timestamp)
+            },
+        })
     }
 
     /// Visit a SQL `BETWEEN` expression.
@@ -1878,24 +1962,26 @@ pub(crate) fn parse_sql_expr(
 }
 
 /// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.
-fn is_string_expr(expr: &Expr, schema: &Schema) -> bool {
+pub(crate) fn is_string_expr(expr: &Expr, schema: &Schema) -> bool {
     matches!(expr.to_field(schema), Ok(fld) if fld.dtype == DataType::String)
 }
 
 /// `str_expr = 13` compares against the string '13'; each operand's dtype is
 /// resolved against its own schema.
 pub(crate) fn convert_int_literal_for_string(
-    (lhs, lhs_schema): (Expr, &Schema),
-    (rhs, rhs_schema): (Expr, &Schema),
+    lhs: Expr,
+    rhs: Expr,
+    lhs_is_string: impl Fn(&Expr) -> bool,
+    rhs_is_string: impl Fn(&Expr) -> bool,
 ) -> (Expr, Expr) {
     match (&lhs, &rhs) {
         (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), other)
-            if is_string_expr(other, rhs_schema) =>
+            if rhs_is_string(other) =>
         {
             (lit(n.to_string()), rhs)
         },
         (other, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))))
-            if is_string_expr(other, lhs_schema) =>
+            if lhs_is_string(other) =>
         {
             (lhs, lit(n.to_string()))
         },
@@ -2257,4 +2343,97 @@ pub(crate) fn resolve_expr_dtype(expr: &Expr, schema: Option<&Schema>) -> Option
     expr.to_field(schema.unwrap_or(&empty))
         .ok()
         .map(|fld| fld.dtype)
+}
+
+/// The SQL name of a `STRUCT` or `MAP` cast target, possibly inside lists (`STRUCT[]`).
+fn nested_target_name(dtype: &DataType) -> Option<String> {
+    match dtype {
+        DataType::List(inner) | DataType::Array(inner, _) => {
+            nested_target_name(inner).map(|name| format!("{name}[]"))
+        },
+        DataType::Struct(_) => Some("STRUCT".to_string()),
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(..) => Some("MAP".to_string()),
+        _ => None,
+    }
+}
+
+/// Only a `STRUCT` (`MAP`) value or `NULL` casts to `STRUCT` (`MAP`), at any depth, as in
+/// PostgreSQL. Polars' cast would wrap a value into a 1-field struct (`1` -> `{1}`), and strings
+/// stay free for parsing later. A source of unknown type (no schema) still uses Polars' cast.
+fn ensure_nested_cast_source(
+    cast_kind: &str,
+    target: &DataType,
+    source: &DataType,
+) -> PolarsResult<()> {
+    let Some(mismatch) = nested_cast_mismatch(target, source) else {
+        return Ok(());
+    };
+    // A literal's dynamic type (`dyn int`) is shown as the type it becomes.
+    let source = source.clone().materialize_unknown(true)?;
+    let name = mismatch.target;
+    if mismatch.path.is_empty() {
+        polars_bail!(
+            SQLInterface: "{} from {} to {} is not supported; only {} values or NULL can be cast to {}",
+            cast_kind, source, name, name, name
+        )
+    }
+    polars_bail!(
+        SQLInterface: "{} from {} to {} is not supported: {} is {}; only {} values or NULL can be cast to {}",
+        cast_kind, source, nested_target_name(target).unwrap_or_default(),
+        mismatch.path.join(" of "), mismatch.source.materialize_unknown(true)?, name, name
+    )
+}
+
+/// Where a cast source doesn't fit a `STRUCT` or `MAP` in the target.
+struct NestedCastMismatch {
+    source: DataType,
+    target: String,
+    /// Where in the cast it is, innermost first: `["list element", "field 'a'"]`.
+    path: Vec<String>,
+}
+
+fn nested_cast_mismatch(target: &DataType, source: &DataType) -> Option<NestedCastMismatch> {
+    let within = |segment: String, mismatch: Option<NestedCastMismatch>| {
+        mismatch.map(|mut mismatch| {
+            mismatch.path.push(segment);
+            mismatch
+        })
+    };
+    match (target, source) {
+        (_, DataType::Null | DataType::Unknown(UnknownKind::Any)) => None,
+        (
+            DataType::List(target) | DataType::Array(target, _),
+            DataType::List(source) | DataType::Array(source, _),
+        ) => within("list element".into(), nested_cast_mismatch(target, source)),
+        (DataType::Struct(target_fields), DataType::Struct(source_fields)) => {
+            target_fields.iter().find_map(|field| {
+                let source_field = source_fields.iter().find(|f| f.name == field.name)?;
+                within(
+                    format!("field '{}'", field.name),
+                    nested_cast_mismatch(&field.dtype, &source_field.dtype),
+                )
+            })
+        },
+        #[cfg(feature = "dtype-map")]
+        (DataType::Map(key, value), DataType::Map(source_key, source_value)) => {
+            within("map key".into(), nested_cast_mismatch(key, source_key)).or_else(|| {
+                within(
+                    "map value".into(),
+                    nested_cast_mismatch(value, source_value),
+                )
+            })
+        },
+        // A map is stored as a list of `{key, value}` structs, which a list target can take.
+        #[cfg(feature = "dtype-map")]
+        (DataType::List(target) | DataType::Array(target, _), DataType::Map(..)) => within(
+            "map entry".into(),
+            nested_cast_mismatch(target, &source.map_entries_dtype()?),
+        ),
+        _ => nested_target_name(target).map(|target| NestedCastMismatch {
+            source: source.clone(),
+            target,
+            path: Vec::new(),
+        }),
+    }
 }

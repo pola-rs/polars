@@ -215,7 +215,7 @@ pub(super) fn coerced_binop_dtype(
         match (&type_left, &type_right) {
             (Duration(_), Duration(_)) => return Ok(None),
             (Duration(_), r) if r.is_primitive_numeric() => return Ok(None),
-            (String, a) | (a, String) if a.is_primitive_numeric() => {
+            (String, a) | (a, String) if a.is_primitive_numeric() || a.is_decimal() => {
                 let fmt_side = |node: Node, ae: &AExpr| -> std::string::String {
                     if let AExpr::Column(name) = ae {
                         format!(" column '{name}'")

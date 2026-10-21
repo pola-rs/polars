@@ -80,6 +80,7 @@ Iceberg
    scan_iceberg
    DataFrame.write_iceberg
    LazyFrame.sink_iceberg
+   delete_iceberg
 
 Lance
 ~~~~~~~

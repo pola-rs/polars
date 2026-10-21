@@ -13,12 +13,11 @@ use super::*;
 use crate::hash_keys::HashKeys;
 
 pub struct BinviewKeyIdxTable {
-    // These AtomicU64s actually are IdxSizes, but we use the top bit of the
-    // first index in each to mark keys during probing.
-    idx_map: BinaryViewIndexMap<UnitVec<RelaxedCell<u64>>>,
+    idx_map: BinaryViewIndexMap<UnitVec<RelaxedCell<IdxSize>>>,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
-    nulls_emitted: RelaxedCell<bool>,
+    nulls_marked: RelaxedCell<bool>,
+    matched: MatchedRows,
 }
 
 impl BinviewKeyIdxTable {
@@ -27,7 +26,8 @@ impl BinviewKeyIdxTable {
             idx_map: BinaryViewIndexMap::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
-            nulls_emitted: RelaxedCell::from(false),
+            nulls_marked: RelaxedCell::from(false),
+            matched: MatchedRows::default(),
         }
     }
 
@@ -45,19 +45,12 @@ impl BinviewKeyIdxTable {
     ) -> bool {
         if let Some(idxs) = unsafe { self.idx_map.get_view(hash, key, buffers) } {
             for idx in &idxs[..] {
-                // Create matches, making sure to clear top bit.
-                table_match.push((idx.load() & !(1 << 63)) as IdxSize);
+                table_match.push(idx.load() & !MARKED);
                 probe_match.push(key_idx);
             }
 
-            // Mark if necessary. This action is idempotent so doesn't need
-            // atomic fetch_or to do it atomically.
             if MARK_MATCHES {
-                let first_idx = unsafe { idxs.get_unchecked(0) };
-                let first_idx_val = first_idx.load();
-                if first_idx_val >> 63 == 0 {
-                    first_idx.store(first_idx_val | (1 << 63));
-                }
+                unsafe { self.matched.mark_rows(idxs) };
             }
             true
         } else {
@@ -96,8 +89,11 @@ impl BinviewKeyIdxTable {
                     table_match.push(*idx);
                     probe_match.push(key_idx);
                 }
-                if MARK_MATCHES && !self.nulls_emitted.load() {
-                    self.nulls_emitted.store(true);
+                if MARK_MATCHES && !self.nulls_marked.load() {
+                    self.nulls_marked.store(true);
+                    for idx in &self.null_keys {
+                        self.matched.mark(*idx);
+                    }
                 }
                 !self.null_keys.is_empty()
             } else {
@@ -207,9 +203,12 @@ impl IdxTable for BinviewKeyIdxTable {
             .checked_add(subset.len())
             .unwrap();
         assert!(
-            new_idx_offset < IdxSize::MAX as usize,
+            new_idx_offset <= MARKED as usize,
             "overly large index in BinviewKeyIdxTable"
         );
+        if track_unmatchable {
+            self.matched.grow(new_idx_offset);
+        }
 
         unsafe {
             let buffers = hash_keys.keys.data_buffers();
@@ -222,10 +221,10 @@ impl IdxTable for BinviewKeyIdxTable {
                     if validity.get_bit_unchecked(*subset_idx as usize) {
                         match self.idx_map.entry_view(hash, *key, buffers) {
                             Entry::Occupied(o) => {
-                                o.into_mut().push(RelaxedCell::from(idx as u64));
+                                o.into_mut().push(RelaxedCell::from(idx));
                             },
                             Entry::Vacant(v) => {
-                                v.insert(unitvec![RelaxedCell::from(idx as u64)]);
+                                v.insert(unitvec![RelaxedCell::from(idx)]);
                             },
                         }
                     } else if track_unmatchable | hash_keys.null_is_valid {
@@ -239,10 +238,10 @@ impl IdxTable for BinviewKeyIdxTable {
                     let idx = self.idx_offset + i;
                     match self.idx_map.entry_view(hash, *key, buffers) {
                         Entry::Occupied(o) => {
-                            o.into_mut().push(RelaxedCell::from(idx as u64));
+                            o.into_mut().push(RelaxedCell::from(idx));
                         },
                         Entry::Vacant(v) => {
-                            v.insert(unitvec![RelaxedCell::from(idx as u64)]);
+                            v.insert(unitvec![RelaxedCell::from(idx)]);
                         },
                     }
                 }
@@ -326,48 +325,8 @@ impl IdxTable for BinviewKeyIdxTable {
         }
     }
 
-    fn unmarked_keys(
-        &self,
-        out: &mut Vec<IdxSize>,
-        mut offset: IdxSize,
-        limit: IdxSize,
-    ) -> IdxSize {
-        out.clear();
-
-        let mut keys_processed = 0;
-        if !self.nulls_emitted.load() {
-            if (offset as usize) < self.null_keys.len() {
-                out.extend(
-                    self.null_keys[offset as usize..]
-                        .iter()
-                        .copied()
-                        .take(limit as usize),
-                );
-                keys_processed += out.len() as IdxSize;
-                offset += out.len() as IdxSize;
-                if out.len() >= limit as usize {
-                    return keys_processed;
-                }
-            }
-            offset -= self.null_keys.len() as IdxSize;
-        }
-
-        while let Some((_, _, idxs)) = self.idx_map.get_index(offset) {
-            let first_idx = unsafe { idxs.get_unchecked(0) };
-            let first_idx_val = first_idx.load();
-            if first_idx_val >> 63 == 0 {
-                for idx in &idxs[..] {
-                    out.push((idx.load() & !(1 << 63)) as IdxSize);
-                }
-            }
-
-            keys_processed += 1;
-            offset += 1;
-            if out.len() >= limit as usize {
-                break;
-            }
-        }
-
-        keys_processed
+    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize {
+        self.matched
+            .unmarked_rows(self.idx_offset, out, offset, limit)
     }
 }

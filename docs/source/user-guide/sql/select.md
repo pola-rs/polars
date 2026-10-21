@@ -80,3 +80,94 @@ functions `read_xxx`.
 ```python exec="on" result="text" session="user-guide/sql/select"
 --8<-- "python/user-guide/sql/select.py:tablefunctions"
 ```
+
+The path can also be a glob, or a list of paths or globs, as in
+`read_parquet(['a.parquet', 'b.parquet'])`.
+
+`read_csv` also accepts named options after the path, with the same names and meaning as the options
+of `scan_csv`. Write them as `name => value` (or `name := value`):
+
+{{code_block('user-guide/sql/select','tablefunctionoptions',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionoptions"
+```
+
+The supported options are:
+
+- Layout: `has_header`, `separator`, `quote_char`, `comment_prefix`, `skip_rows`,
+  `skip_rows_after_header`, `skip_lines`, `encoding`.
+- Names and types: `new_columns`, `schema`, `schema_overrides`, `infer_schema`,
+  `infer_schema_length`, `infer_schema_files`, `try_parse_dates`, `decimal_comma`.
+- Values and errors: `null_values`, `ignore_errors`.
+- Ragged rows and multiple files: `truncate_ragged_lines`, `missing_columns`, `extra_columns`,
+  `include_file_paths`.
+
+Values are SQL literals:
+
+- `NULL` stands for `None`, as in `infer_schema_length => NULL` to infer the schema from the whole
+  file, or `quote_char => NULL` to turn quoting off.
+- Lists use brackets: `new_columns => ['a', 'b']`.
+- `schema`, `schema_overrides` and per-column `null_values` take a dictionary, with types written as
+  SQL type names: `schema_overrides => {'id': 'INT', 'name': 'VARCHAR'}`. `schema_overrides` also
+  accepts a list of type names, by position.
+- Escape sequences need an `E''` string, as in `separator => E'\t'` for tab-separated files.
+
+Unlike `scan_csv`, `read_csv` tries to parse dates by default (`try_parse_dates => true`).
+
+Some options are unstable: those marked as such in the
+[`scan_csv`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_csv.html) API
+reference are unstable in `read_csv` too, and may be changed at any point without it being
+considered a breaking change.
+
+`read_ndjson` reads newline-delimited JSON (one object per line) and accepts the options of
+`scan_ndjson` in the same way: `schema`, `schema_overrides`, `infer_schema_length`, `ignore_errors`
+and `include_file_paths`.
+
+{{code_block('user-guide/sql/select','tablefunctionndjson',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionndjson"
+```
+
+- The schema is inferred from the first 100 rows, so a key that first appears later is dropped. Use
+  `infer_schema_length => NULL` to infer it from the whole file.
+- A nested object read as `'VARCHAR'` keeps its JSON text.
+- `read_json` reads the same files, but takes only the path. For a JSON array or a pretty-printed
+  JSON document, use `pl.read_json` instead.
+
+`read_parquet` accepts the options of `scan_parquet` in the same way: `schema`, `missing_columns`,
+`extra_columns`, `hive_partitioning`, `hive_schema`, `try_parse_hive_dates` and
+`include_file_paths`.
+
+{{code_block('user-guide/sql/select','tablefunctionparquet',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionparquet"
+```
+
+- Unlike `scan_parquet`, `read_parquet` reads hive partitions by default when given one path, for a
+  glob or a single file too: a path such as `data/k=1/part.parquet` adds a column `k`. Every
+  `key=value` folder in such a path counts, so an absolute path can also pick up columns from its
+  parent folders. A list of paths reads them only when it is a single directory, as in
+  `scan_parquet`. Set `hive_partitioning` to `true` or `false` to choose either way.
+- When reading several files, the first one defines the columns, unless `schema` is given. Use
+  `missing_columns => 'insert'` and `extra_columns => 'ignore'` for files that differ from it.
+- As for `read_csv`, options marked unstable in the
+  [`scan_parquet`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
+  API reference are unstable in `read_parquet` too.
+
+`read_ipc` accepts the options of `scan_ipc` in the same way: `hive_partitioning`, `hive_schema`,
+`try_parse_hive_dates` and `include_file_paths`.
+
+{{code_block('user-guide/sql/select','tablefunctionipc',['SQLexecute'])}}
+
+```python exec="on" result="text" session="user-guide/sql/select"
+--8<-- "python/user-guide/sql/select.py:tablefunctionipc"
+```
+
+- Hive partitions are read as for `read_parquet`: by default for one path, and for a list only when
+  it is a single directory.
+- As for `read_parquet`, options marked unstable in the
+  [`scan_ipc`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ipc.html) API
+  reference are unstable in `read_ipc` too.

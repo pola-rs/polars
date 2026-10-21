@@ -29,6 +29,7 @@ polars-error = { workspace = true }
 polars-parquet-format = "0.1"
 polars-utils = { workspace = true, features = ["mmap"] }
 regex = { workspace = true }
+serde_json = { workspace = true }
 simdutf8 = { workspace = true }
 
 streaming-decompression = "0.1"

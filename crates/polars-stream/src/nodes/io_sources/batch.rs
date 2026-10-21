@@ -299,6 +299,40 @@ impl FileReader for BatchFnReader {
 
         Ok((morsel_rx, handle))
     }
+
+    /// Reads all batches and buffers them for the following `begin_read`, as the batch function
+    /// can be called through only once (e.g. for resolving a negative slice).
+    async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
+        let mut get_batch_state = self
+            .get_batch_state
+            .take()
+            .expect("unimplemented: BatchFnReader called more than once");
+
+        let mut batches = std::collections::VecDeque::new();
+        let mut n_rows: usize = 0;
+
+        loop {
+            let opt_df;
+
+            (get_batch_state, opt_df) =
+                GetBatchState::next(get_batch_state, self.execution_state().clone()).await?;
+
+            let Some(df) = opt_df else {
+                break;
+            };
+
+            n_rows = n_rows.saturating_add(df.height());
+            batches.push_back(df);
+        }
+
+        let batches = std::sync::Mutex::new(batches);
+        self.get_batch_state = Some(GetBatchState::from(Box::new(
+            move |_: &StreamingExecutionState| Ok(batches.lock().unwrap().pop_front()),
+        ) as GetBatchFn));
+
+        IdxSize::try_from(n_rows)
+            .map_err(|_| polars_err!(bigidx, ctx = "batch reader", size = n_rows))
+    }
 }
 
 impl BatchFnReader {

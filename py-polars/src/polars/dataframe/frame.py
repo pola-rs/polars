@@ -127,7 +127,6 @@ if TYPE_CHECKING:
         Callable,
         Collection,
         Iterator,
-        Mapping,
     )
     from datetime import timedelta
     from io import IOBase
@@ -405,7 +404,7 @@ class DataFrame:
             if height is not None and self.width == 0:
                 self._df = PyDataFrame.empty_with_height(height)
 
-        elif isinstance(data, dict):
+        elif isinstance(data, Mapping):
             self._df = dict_to_pydf(
                 data=data,
                 schema=schema,
@@ -11681,7 +11680,6 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        - Int8 + String = String
         - Float32 + Int64 = Float32
         - Float32 + Float64 = Float64
 
@@ -11726,7 +11724,7 @@ class DataFrame:
         ...         "c": [1.0, 2.0, 3.0],
         ...     }
         ... )
-        >>> df.fold(lambda s1, s2: s1 + s2)
+        >>> df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
         shape: (3,)
         Series: 'a' [str]
         [
@@ -12122,7 +12120,13 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
-        zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
+        if values.width == 0:
+            data_rows: Iterable[Any] = (
+                ({} if named else ()) for _ in range(self.height)
+            )
+        else:
+            data_rows = values.iter_rows(named=named)  # type: ignore[call-overload]
+        zipped = zip(keys, data_rows, strict=True)
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.

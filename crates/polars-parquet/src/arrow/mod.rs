@@ -1,3 +1,4 @@
+pub mod geo;
 pub mod read;
 pub mod write;
 

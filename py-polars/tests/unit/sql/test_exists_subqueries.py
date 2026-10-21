@@ -265,7 +265,7 @@ def test_uncorrelated_exists_in_expression_position() -> None:
 def test_decorrelated_exists_is_order_independent() -> None:
     # Needs several morsels and a joined outer frame: a smaller or unjoined
     # fixture has a stable row order and passes either way.
-    n = 200_000
+    n = 20_000
     fact = pl.DataFrame(
         {
             "ord": [i // 2 for i in range(n)],

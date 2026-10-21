@@ -4,6 +4,7 @@ import operator
 import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
+from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -1026,6 +1027,18 @@ def test_float_truediv_output_type() -> None:
     )
 
 
+@pytest.mark.parametrize("dtype", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize("swap", [False, True])
+def test_truediv_float_string_raises(dtype: pl.DataType, swap: bool) -> None:
+    lf = pl.LazyFrame(schema={"f": dtype, "s": pl.String})
+    a, b = ("s", "f") if swap else ("f", "s")
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="division with 'String' datatypes is not allowed",
+    ):
+        lf.select(pl.col(a) / pl.col(b)).collect_schema()
+
+
 @pytest.mark.parametrize(
     "dtype",
     [
@@ -1117,6 +1130,23 @@ def test_fma_unknown_type_coercion_28315() -> None:
     )
 
 
+def test_bool_mul_float_literal_schema_28505() -> None:
+    lf = pl.LazyFrame(
+        {"b": [True, False], "f": [1.0, 2.0]},
+        schema={"b": pl.Boolean, "f": pl.Float32},
+    )
+    q = lf.select(
+        a=pl.col("b") * pl.lit(0.1),
+        c=pl.col("b") * 0.5 + pl.col("f"),
+    )
+    expected = pl.LazyFrame(
+        {"a": [0.1, 0.0], "c": [1.5, 2.0]},
+        schema={"a": pl.Float64, "c": pl.Float32},
+    )
+    assert_schema_equal(q.collect_schema(), expected.collect_schema())
+    assert_frame_equal(q, expected)
+
+
 def test_truediv_decimal_schema_28372() -> None:
     lf = pl.LazyFrame(
         {"x": [1.0, 2.5, 3.5656]}, schema={"x": pl.Decimal(15, 2)}
@@ -1126,3 +1156,59 @@ def test_truediv_decimal_schema_28372() -> None:
     )
     assert_schema_equal(lf.collect_schema(), expected.collect_schema())
     assert_frame_equal(lf, expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        operator.add,
+        operator.sub,
+        operator.mul,
+        operator.truediv,
+        operator.floordiv,
+        operator.mod,
+    ],
+)
+@pytest.mark.parametrize(
+    ("lhs", "rhs"),
+    [
+        (pl.Series(["4"]), pl.Series([2], dtype=pl.Int64)),
+        (pl.Series([2], dtype=pl.UInt8), pl.Series(["4"])),
+        (pl.Series(["4"]), pl.Series([2.0], dtype=pl.Float32)),
+        (pl.Series([2.0], dtype=pl.Float32), pl.Series(["4"])),
+        (pl.Series(["4"]), pl.Series([PyDecimal("2.5")])),
+        (pl.Series([PyDecimal("2.5")]), pl.Series(["4"])),
+        (pl.Series([2], dtype=pl.Int64), "4"),
+        (pl.Series([2.0], dtype=pl.Float32), "4"),
+        (pl.Series([2.0], dtype=pl.Float32), "t"),
+        (pl.Series([PyDecimal("2.5")]), "4"),
+        ("4", pl.Series([2], dtype=pl.Int64)),
+        ("4", pl.Series([2.0], dtype=pl.Float32)),
+        ("t", pl.Series([2.0], dtype=pl.Float32)),
+        (pl.Series(["4"]), 2.0),
+        (2.0, pl.Series(["4"])),
+    ],
+)
+def test_string_numeric_arithmetic_raises(
+    op: Callable[[Any, Any], Any], lhs: Any, rhs: Any
+) -> None:
+    # `str % Series` is Python string formatting, which Polars cannot intercept.
+    if not (isinstance(lhs, str) and op is operator.mod):
+        with pytest.raises(InvalidOperationError):
+            op(lhs, rhs)
+    with pytest.raises(InvalidOperationError):
+        pl.select(op(pl.lit(lhs), pl.lit(rhs)))
+
+
+@pytest.mark.parametrize(
+    ("other", "expected"),
+    [
+        (pl.Series(["b"]), ["ab"]),
+        ("b", ["ab"]),
+        (pl.Series(["b"], dtype=pl.Categorical), ["ab"]),
+        (pl.Series([True]), ["atrue"]),
+    ],
+)
+def test_string_add_concatenates(other: Any, expected: list[str]) -> None:
+    s = pl.Series(["a"])
+    assert (s + other).to_list() == expected

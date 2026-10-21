@@ -414,11 +414,20 @@ pub(crate) fn decimal_op_operands<'a>(
 }
 
 /// Like [`coerce_lhs_rhs`], but decimal operands keep their own scales, and an integer
-/// combined with a decimal is cast to `Decimal(38, 0)`.
+/// combined with a decimal is cast to `Decimal(38, 0)`. Also disallows mixed
+/// string <=> numeric upcasts.
 pub fn coerce_lhs_rhs_numeric_op<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> PolarsResult<(Cow<'a, Series>, Cow<'a, Series>)> {
+    // String is a supertype of the numeric types, but they must not be mixed in arithmetic.
+    let (l, r) = (lhs.dtype(), rhs.dtype());
+    let is_numeric = |dt: &DataType| dt.is_primitive_numeric() || dt.is_decimal();
+    polars_ensure!(
+        !((l.is_string() && is_numeric(r)) || (is_numeric(l) && r.is_string())),
+        InvalidOperation: "arithmetic on dtypes {l} and {r} is not allowed; try an explicit cast first"
+    );
+
     #[cfg(feature = "dtype-decimal")]
     if let Some(out) = decimal_op_operands(lhs, rhs) {
         return out;

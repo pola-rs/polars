@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
@@ -31,6 +31,7 @@ from tests.unit.conftest import DATETIME_DTYPES, TEMPORAL_DTYPES
 if TYPE_CHECKING:
     from polars._typing import (
         Ambiguous,
+        PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
     )
@@ -1595,6 +1596,112 @@ def test_replace_time_zone_ambiguous_null() -> None:
     assert result[3] is None
 
 
+@pytest.mark.parametrize(
+    ("value", "time_zone", "ambiguous", "expected"),
+    [
+        (
+            datetime(2020, 1, 1, 12),
+            "Europe/Amsterdam",
+            "raise",
+            datetime(2020, 1, 1, 12, tzinfo=ZoneInfo("Europe/Amsterdam")),
+        ),
+        (
+            datetime(2020, 1, 1, 12, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            None,
+            "raise",
+            datetime(2020, 1, 1, 12),
+        ),
+        (
+            datetime(2020, 10, 25, 1),
+            "Europe/London",
+            "latest",
+            datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London")),
+        ),
+        (datetime(2020, 10, 25, 1), "Europe/London", "null", None),
+    ],
+)
+def test_replace_time_zone_literal_constant_folding(
+    value: datetime,
+    time_zone: str | None,
+    ambiguous: Ambiguous,
+    expected: datetime | None,
+) -> None:
+    expr = pl.lit(value).dt.replace_time_zone(time_zone, ambiguous=ambiguous)
+    lf = pl.LazyFrame({"a": [expected]}).filter(pl.col("a") == expr)
+    assert "replace_time_zone" not in lf.explain()
+
+    result = pl.select(expr).item()
+    assert result == expected
+    if expected is not None:
+        assert result.tzinfo == expected.tzinfo
+        assert result.fold == expected.fold
+
+
+def test_replace_time_zone_literal_constant_folding_raises() -> None:
+    expr = pl.lit(datetime(2020, 10, 25, 1)).dt.replace_time_zone("Europe/London")
+    with pytest.raises(ComputeError, match="ambiguous"):
+        pl.select(expr)
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected", "dtype"),
+    [
+        (
+            pl.lit(datetime(2020, 1, 1, 12, 0, 0, 123456)).dt.cast_time_unit("ms"),
+            datetime(2020, 1, 1, 12, 0, 0, 123000),
+            pl.Datetime("ms"),
+        ),
+        (
+            pl.lit(datetime(2020, 1, 1, 12)).dt.cast_time_unit("ns"),
+            datetime(2020, 1, 1, 12),
+            pl.Datetime("ns"),
+        ),
+        (
+            pl.lit(timedelta(days=1, microseconds=1)).dt.cast_time_unit("ms"),
+            timedelta(days=1),
+            pl.Duration("ms"),
+        ),
+    ],
+)
+def test_cast_time_unit_literal_constant_folding(
+    expr: pl.Expr, expected: datetime | timedelta, dtype: PolarsDataType
+) -> None:
+    lf = pl.LazyFrame({"a": [expected]}).filter(pl.col("a") == expr)
+    assert "cast_time_unit" not in lf.explain()
+
+    result = pl.select(expr).to_series()
+    assert result.dtype == dtype
+    assert result.item() == expected
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected", "dtype"),
+    [
+        (
+            pl.lit(datetime(2020, 1, 1, 12, tzinfo=UTC)).dt.convert_time_zone(
+                "Europe/Amsterdam"
+            ),
+            datetime(2020, 1, 1, 13, tzinfo=ZoneInfo("Europe/Amsterdam")),
+            pl.Datetime("us", "Europe/Amsterdam"),
+        ),
+        (
+            pl.lit(datetime(2020, 1, 1, 12)).dt.convert_time_zone("Asia/Kathmandu"),
+            datetime(2020, 1, 1, 17, 45, tzinfo=ZoneInfo("Asia/Kathmandu")),
+            pl.Datetime("us", "Asia/Kathmandu"),
+        ),
+    ],
+)
+def test_convert_time_zone_literal_constant_folding(
+    expr: pl.Expr, expected: datetime, dtype: PolarsDataType
+) -> None:
+    lf = pl.LazyFrame({"a": [expected]}).filter(pl.col("a") == expr)
+    assert "convert_time_zone" not in lf.explain()
+
+    result = pl.select(expr).to_series()
+    assert result.dtype == dtype
+    assert result.item() == expected
+
+
 def test_ambiguous_expressions() -> None:
     # strptime
     df = pl.DataFrame(
@@ -2404,7 +2511,7 @@ def test_series_is_temporal(dtype: pl.DataType) -> None:
     "time_zone",
     [
         None,
-        timezone.utc,
+        UTC,
         "America/Caracas",
         "America/New_York",
         "Asia/Kathmandu",

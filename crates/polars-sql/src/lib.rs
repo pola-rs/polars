@@ -12,6 +12,13 @@ mod resolver;
 mod sql_expr;
 mod sql_visitors;
 mod subquery;
+#[cfg(any(
+    feature = "csv",
+    feature = "json",
+    feature = "parquet",
+    feature = "ipc"
+))]
+mod table_function_args;
 mod table_functions;
 mod types;
 mod window_frames;

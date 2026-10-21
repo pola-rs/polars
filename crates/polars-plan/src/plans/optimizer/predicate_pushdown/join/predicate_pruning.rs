@@ -905,6 +905,8 @@ pub fn try_rewrite_join_type(
     // Maps the original join output names to the new join output names (used for mapping column
     // references of the predicates).
     let mut original_to_new_names_map: PlIndexMap<PlSmallStr, PlSmallStr> = Default::default();
+    // Original join output names whose new column has another dtype.
+    let mut original_to_new_casts: PlIndexMap<PlSmallStr, DataType> = Default::default();
     // Projects the new join output table back into the original join output table.
     let mut project_to_original: Option<Vec<ExprIR>> = None;
 
@@ -969,16 +971,30 @@ pub fn try_rewrite_join_type(
                     let new_key_output_name = lhs_input_key.clone();
                     let rhs_input_key = rhs_input_key.clone();
 
-                    let node = expr_arena.add(AExpr::Column(lhs_input_key.clone()));
+                    let mut node = expr_arena.add(AExpr::Column(new_key_output_name.clone()));
+                    // The right-join outputs the right key, which can have another dtype.
+                    let rhs_dtype = schema_right.get(&rhs_input_key).unwrap();
+                    let dtypes_differ = schema_left.get(&new_key_output_name).unwrap() != rhs_dtype;
+                    if dtypes_differ {
+                        node = expr_arena.add(AExpr::Cast {
+                            expr: node,
+                            dtype: rhs_dtype.clone(),
+                            options: CastOptions::Overflowing,
+                        });
+                        original_to_new_casts
+                            .insert(original_key_output_name.clone(), rhs_dtype.clone());
+                    }
                     let mut ae = ExprIR::from_node(node, expr_arena);
 
-                    if original_key_output_name != new_key_output_name {
-                        // E.g. left_on=col(a), right_on=col(b)
-                        // rhs_output_key = 'b', lhs_input_key = 'a', the original right-join is supposed to output 'b'.
+                    if original_key_output_name != new_key_output_name || dtypes_differ {
                         original_to_new_names_map.insert(
                             original_key_output_name.clone(),
                             new_key_output_name.clone(),
                         );
+                    }
+                    if original_key_output_name != new_key_output_name {
+                        // E.g. left_on=col(a), right_on=col(b)
+                        // rhs_output_key = 'b', lhs_input_key = 'a', the original right-join is supposed to output 'b'.
                         ae.set_alias(original_key_output_name)
                     }
 
@@ -1194,7 +1210,12 @@ pub fn try_rewrite_join_type(
         assert!(project_to_original.is_some());
 
         for (_, predicate_expr) in acc_predicates.iter_mut() {
-            map_column_references(predicate_expr, expr_arena, &original_to_new_names_map);
+            map_column_references_with_casts(
+                predicate_expr,
+                expr_arena,
+                &original_to_new_names_map,
+                &original_to_new_casts,
+            );
         }
     }
 

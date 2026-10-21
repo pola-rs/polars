@@ -3038,6 +3038,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         mode: Literal["append", "overwrite"],
         schema_mode: Literal["merge", "overwrite"] | None = None,
+        create_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
@@ -3077,6 +3078,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - If 'overwrite', replace the table schema with the incoming schema.
               This requires ``mode='overwrite'``.
             - If None, require the schemas to match.
+        create_if_not_exists
+            Create the table if it does not exist in the catalog. The table schema
+            is derived from the LazyFrame schema, and is created unpartitioned and
+            unsorted with the catalog's default location. Requires `target` to be a
+            table identifier.
+
+            Columns are cast losslessly to the Iceberg types of the table: small
+            and unsigned integers are widened (`UInt32` to `Int64`), `Float16` to
+            `Float32`, `Categorical` and `Enum` to `String`, `Array` to `List`, and
+            `Datetime` to microseconds, with time zones converted to UTC. Columns
+            without a lossless Iceberg type (e.g. `UInt64`, nanosecond `Datetime`,
+            `Duration`) raise an error before the table is created.
+
+            The table is created before the query runs, so it remains (empty)
+            if the query fails.
         snapshot_properties
             Custom properties to add to the Iceberg snapshot summary.
         catalog
@@ -3133,6 +3149,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             target,
             mode=mode,
             schema_mode=schema_mode,
+            create_if_not_exists=create_if_not_exists,
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,

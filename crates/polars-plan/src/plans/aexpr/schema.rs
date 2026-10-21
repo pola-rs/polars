@@ -205,15 +205,29 @@ impl AExpr {
                         }
                         Ok(field)
                     },
-                    Median(expr) => {
+                    Median(expr) | Mean(expr) | Std(expr, _) | Var(expr, _) => {
+                        let (op, allow_temporal) = match agg {
+                            Median(_) => ("median", true),
+                            Mean(_) => ("mean", true),
+                            Std(..) => ("std", false),
+                            Var(..) => ("var", false),
+                            _ => unreachable!(),
+                        };
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
-                    },
-                    Mean(expr) => {
-                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
+                        let dt = field[0].dtype();
+                        let supported = match dt {
+                            Null | Unknown(_) | Boolean => true,
+                            #[cfg(feature = "dtype-decimal")]
+                            Decimal(_, _) => true,
+                            dt if dt.is_primitive_numeric() => true,
+                            dt if dt.is_temporal() => allow_temporal,
+                            _ => false,
+                        };
+                        polars_ensure!(
+                            supported,
+                            InvalidOperation: "`{op}` operation not supported for dtype `{dt}`"
+                        );
+                        FieldsMapper::new(&field).moment_dtype()
                     },
                     Implode {
                         input,
@@ -226,16 +240,6 @@ impl AExpr {
                         );
                         field.set_dtype(DataType::List(field.dtype().clone().into()));
                         Ok(field)
-                    },
-                    Std(expr, _) => {
-                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
-                    },
-                    Var(expr, _) => {
-                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
                     },
                     NUnique(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
@@ -258,13 +262,23 @@ impl AExpr {
                 // left: col(foo):              list<T>         nesting: 1
                 // right; col(foo).first():     T               nesting: 0
                 // col(foo) + col(foo).first() will have nesting 1 as we still maintain the groups list.
-                let mut truthy = ctx.arena.get(*truthy).to_field_impl(ctx)?;
-                let falsy = ctx.arena.get(*falsy).to_field_impl(ctx)?;
+                let truthy_ae = ctx.arena.get(*truthy);
+                let falsy_ae = ctx.arena.get(*falsy);
+                let mut truthy = truthy_ae.to_field_impl(ctx)?;
+                let falsy = falsy_ae.to_field_impl(ctx)?;
 
                 let st = if let DataType::Null = *truthy.dtype() {
                     falsy.dtype().clone()
                 } else {
-                    try_get_supertype(truthy.dtype(), falsy.dtype())?
+                    let st = try_get_supertype(truthy.dtype(), falsy.dtype())?;
+                    // Must match the output dtype chosen by type coercion.
+                    crate::plans::conversion::type_coercion::modify_supertype(
+                        st,
+                        truthy_ae,
+                        falsy_ae,
+                        truthy.dtype(),
+                        falsy.dtype(),
+                    )
                 };
 
                 truthy.set_dtype(st);
@@ -877,6 +891,9 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
     // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code
     // originally (mostly) only looked at the LHS dtype.
     let out_type = match (left_dtype, right_dtype) {
+        (String, _) | (_, String) => polars_bail!(
+            InvalidOperation: "division with 'String' datatypes is not allowed"
+        ),
         #[cfg(feature = "dtype-struct")]
         (Struct(a), Struct(b)) => {
             polars_ensure!(a.len() == b.len() || b.len() == 1,
@@ -951,9 +968,6 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Float32, other) if other.is_integer() => Float64,
         (Float32, Float64) => Float64,
         (Float32, _) => Float32,
-        (String, _) | (_, String) => polars_bail!(
-            InvalidOperation: "division with 'String' datatypes is not allowed"
-        ),
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, scale_left), Decimal(_, scale_right)) => {
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))

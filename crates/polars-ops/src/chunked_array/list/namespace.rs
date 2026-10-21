@@ -13,7 +13,7 @@ use crate::chunked_array::list::sum_mean::sum_with_nulls;
 #[cfg(feature = "diff")]
 use crate::prelude::diff;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
-use crate::series::{ArgAgg, convert_and_bound_index};
+use crate::series::ArgAgg;
 
 pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
     for arr in ca.downcast_iter() {
@@ -294,12 +294,6 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(self.same_type(out))
     }
 
-    fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
-        let ca = self.as_list();
-        // SAFETY: `slice` doesn't change the dtype
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().slice(offset, length)) }
-    }
-
     fn lst_lengths(&self) -> IdxCa {
         let ca = self.as_list();
 
@@ -410,126 +404,6 @@ pub trait ListNameSpaceImpl: AsList {
             },
         };
         Ok(out.into_series())
-    }
-
-    #[cfg(feature = "list_gather")]
-    fn lst_gather(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
-        let list_ca = self.as_list();
-        let idx_ca = idx.list()?;
-
-        polars_ensure!(
-            idx_ca.inner_dtype().is_integer(),
-            ComputeError: "cannot use dtype `{}` as an index", idx_ca.inner_dtype()
-        );
-
-        let index_typed_index = |idx: &Series| {
-            let idx = idx.cast(&IDX_DTYPE).unwrap();
-            {
-                list_ca
-                    .amortized_iter()
-                    .map(|s| {
-                        s.map(|s| {
-                            let s = s.as_ref();
-                            take_series(s, idx.clone(), null_on_oob)
-                        })
-                        .transpose()
-                    })
-                    .collect::<PolarsResult<ListChunked>>()
-                    .map(|mut ca| {
-                        ca.rename(list_ca.name().clone());
-                        ca.into_series()
-                    })
-            }
-        };
-
-        match (list_ca.len(), idx_ca.len()) {
-            (1, _) => {
-                let mut out = if list_ca.has_nulls() {
-                    ListChunked::full_null_with_dtype(
-                        PlSmallStr::EMPTY,
-                        idx.len(),
-                        list_ca.inner_dtype(),
-                    )
-                } else {
-                    let s = list_ca.explode(ExplodeOptions {
-                        empty_as_null: true,
-                        keep_nulls: true,
-                    })?;
-                    idx_ca
-                        .series_iter()
-                        .map(|opt_idx| {
-                            opt_idx
-                                .map(|idx| take_series(&s, idx, null_on_oob))
-                                .transpose()
-                        })
-                        .collect::<PolarsResult<ListChunked>>()?
-                };
-                out.rename(list_ca.name().clone());
-                Ok(out.into_series())
-            },
-            (_, 1) => {
-                let idx_ca = idx_ca.explode(ExplodeOptions {
-                    empty_as_null: true,
-                    keep_nulls: true,
-                })?;
-
-                use DataType as D;
-                match idx_ca.dtype() {
-                    D::UInt32 | D::UInt64 => index_typed_index(&idx_ca),
-                    dt if dt.is_signed_integer() => {
-                        if let Some(min) = idx_ca.min::<i64>().unwrap() {
-                            if min >= 0 {
-                                index_typed_index(&idx_ca)
-                            } else {
-                                let mut out = {
-                                    list_ca
-                                        .amortized_iter()
-                                        .map(|opt_s| {
-                                            opt_s
-                                                .map(|s| {
-                                                    take_series(
-                                                        s.as_ref(),
-                                                        idx_ca.clone(),
-                                                        null_on_oob,
-                                                    )
-                                                })
-                                                .transpose()
-                                        })
-                                        .collect::<PolarsResult<ListChunked>>()?
-                                };
-                                out.rename(list_ca.name().clone());
-                                Ok(out.into_series())
-                            }
-                        } else {
-                            polars_bail!(ComputeError: "all indices are null");
-                        }
-                    },
-                    dt => polars_bail!(ComputeError: "cannot use dtype `{dt}` as an index"),
-                }
-            },
-            (a, b) if a == b => {
-                let mut out = {
-                    list_ca
-                        .amortized_iter()
-                        .zip(idx_ca.series_iter())
-                        .map(|(opt_s, opt_idx)| {
-                            {
-                                match (opt_s, opt_idx) {
-                                    (Some(s), Some(idx)) => {
-                                        Some(take_series(s.as_ref(), idx, null_on_oob))
-                                    },
-                                    _ => None,
-                                }
-                            }
-                            .transpose()
-                        })
-                        .collect::<PolarsResult<ListChunked>>()?
-                };
-                out.rename(list_ca.name().clone());
-                Ok(out.into_series())
-            },
-            (a, b) => polars_bail!(length_mismatch = "list.gather", a, b),
-        }
     }
 
     #[cfg(feature = "list_drop_nulls")]
@@ -830,13 +704,6 @@ pub trait ListNameSpaceImpl: AsList {
 
 impl ListNameSpaceImpl for ListChunked {}
 
-#[cfg(feature = "list_gather")]
-fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Series> {
-    let len = s.len();
-    let idx = convert_and_bound_index(&idx, len, null_on_oob)?;
-    s.take(&idx)
-}
-
 pub fn slice_broadcast_list(
     single_list: Option<Series>,
     offsets: &Int64Chunked,
@@ -854,10 +721,9 @@ pub fn slice_broadcast_list(
     let iter = (0..target_len).map(|index| {
         let opt_offset = offsets.get(if offsets.len() == 1 { 0 } else { index });
         let opt_length = lengths.get(if lengths.len() == 1 { 0 } else { index });
-        match (opt_offset, opt_length) {
-            (Some(offset), Some(length)) => Some(single_list.slice(offset, length as usize)),
-            _ => None,
-        }
+        let offset = opt_offset?;
+        let length = opt_length.map_or(usize::MAX, |l| l as usize);
+        Some(single_list.slice(offset, length))
     });
 
     let mut out: ListChunked = iter.collect_trusted();

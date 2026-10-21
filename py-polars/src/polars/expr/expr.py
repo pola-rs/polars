@@ -92,6 +92,7 @@ if TYPE_CHECKING:
     from builtins import str as str_
     from collections.abc import Callable, Iterable
     from io import IOBase
+    from typing import Concatenate, ParamSpec
 
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
@@ -117,13 +118,6 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
     from polars.datatypes import DataType
-
-    if sys.version_info >= (3, 11):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing import Concatenate
-
-        from typing_extensions import ParamSpec
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -3996,8 +3990,8 @@ class Expr(metaclass=_Meta):
 
         Notes
         -----
-        * As long as your data can fit in RAM, it is always more efficient to use the
-          regular :meth:`quantile` function instead.
+        * If the Expr has fewer than 100 million items, it is generally more efficient
+          to use the regular :meth:`quantile` function instead.
 
         * NaN values are regarded as larger than any finite number (and equal to one
           another). As a result, ``NaN`` values are treated as the largest values when

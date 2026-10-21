@@ -7,8 +7,10 @@ use crate::constants::get_pl_structfields_name;
 use crate::dsl::Operator;
 use crate::plans::aexpr::AExpr;
 use crate::plans::ir::IR;
-use crate::plans::{ExprIR, ToFieldContext, get_input, get_input_schema};
+use crate::plans::ir::inputs::ExprSchema;
+use crate::plans::{ExprIR, ToFieldContext, get_input_schema};
 use crate::prelude::{Arena, Node};
+use crate::utils::is_scan;
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion
 pub struct StackOptimizer {}
@@ -57,15 +59,31 @@ impl StackOptimizer {
                     continue;
                 }
 
-                let input_schema = get_input_schema(lp_arena, current_node);
+                let is_filter = matches!(plan, IR::Filter { .. });
 
                 schema_stack.clear();
-                let schema_idx = 0;
-                schema_stack.push(input_schema.into_owned());
+                for input in plan.inputs() {
+                    schema_stack.push(lp_arena.get(input).schema(lp_arena).into_owned());
+                }
+                let has_inputs = !schema_stack.is_empty() || is_scan(plan);
+                if schema_stack.is_empty() {
+                    schema_stack.push(get_input_schema(lp_arena, current_node).into_owned());
+                }
 
-                let is_filter = matches!(plan, IR::Filter { .. });
-                while let Some(expr_ir) = scratch.pop() {
+                let output_schema_idx = schema_stack.len();
+                let mut uses_output_schema = false;
+                for (idx, expr_ir) in scratch.drain(..).enumerate().rev() {
+                    let schema_idx = match plan.expr_schema(idx) {
+                        ExprSchema::Input(input_idx) => input_idx,
+                        ExprSchema::Output => {
+                            uses_output_schema = true;
+                            output_schema_idx
+                        },
+                    };
                     exprs.push((expr_ir.node(), schema_idx, is_filter));
+                }
+                if uses_output_schema {
+                    schema_stack.push(plan.schema(lp_arena).into_owned());
                 }
 
                 let mut ctx = OptimizeExprContext::default();
@@ -75,7 +93,7 @@ impl StackOptimizer {
                     ctx.in_pyarrow_scan = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow);
                     ctx.in_io_plugin = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin);
                 };
-                ctx.has_inputs = !get_input(lp_arena, current_node).is_empty();
+                ctx.has_inputs = has_inputs;
 
                 // process the expressions on the stack and apply optimizations.
                 while let Some((current_expr_node, schema_idx, is_filter_predicate)) = exprs.pop() {

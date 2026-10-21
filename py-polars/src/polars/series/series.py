@@ -127,6 +127,7 @@ if TYPE_CHECKING:
     from builtins import set as set_
     from builtins import str as str_
     from collections.abc import Callable, Collection, Generator, Mapping
+    from typing import Self
 
     import jax
 
@@ -156,11 +157,6 @@ if TYPE_CHECKING:
         TemporalLiteral,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 elif BUILDING_SPHINX_DOCS:
@@ -1053,9 +1049,8 @@ class Series(metaclass=_Meta):
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
-        elif (
-            isinstance(other, (float, date, datetime, str))
-            and not self.dtype.is_float()
+        elif isinstance(other, str) or (
+            isinstance(other, (float, date, datetime)) and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -1156,6 +1151,7 @@ class Series(metaclass=_Meta):
             if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
+                or self.dtype == String
                 or isinstance(self.dtype, (List, Array, Duration))
                 or (
                     isinstance(other, Series) and isinstance(other.dtype, (List, Array))
@@ -1257,7 +1253,9 @@ class Series(metaclass=_Meta):
 
         if isinstance(other, int):
             other = float(other)
-        return self.cast(Float64).__rfloordiv__(other)
+        if self.dtype != String:
+            self = self.cast(Float64)
+        return self.__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.dtype.is_temporal():
@@ -9959,8 +9957,8 @@ class Series(metaclass=_Meta):
 
         Notes
         -----
-        * As long as your data can fit in RAM, it is always more efficient to use the
-          regular :meth:`quantile` function instead.
+        * If the series has fewer than 100 million items, it is generally more efficient
+          to use the regular :meth:`quantile` function instead.
 
         * NaN values are regarded as larger than any finite number (and equal to one
           another). As a result, ``NaN`` values are treated as the largest values when

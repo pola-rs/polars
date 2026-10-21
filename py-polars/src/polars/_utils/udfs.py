@@ -61,8 +61,7 @@ class ContainmentKind(Enum):
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
 StackEntry: TypeAlias = str | StackValue
 
-_MIN_PY311: Final = sys.version_info >= (3, 11)
-_MIN_PY312: Final = _MIN_PY311 and sys.version_info >= (3, 12)
+_MIN_PY312: Final = sys.version_info >= (3, 12)
 _MIN_PY314: Final = _MIN_PY312 and sys.version_info >= (3, 14)
 
 _BYTECODE_PARSER_CACHE_: MutableMapping[
@@ -76,21 +75,7 @@ _INSTRUCTIONS_CACHE_: MutableMapping[
 
 
 class OpNames:
-    BINARY: ClassVar[dict[str, str]] = {
-        "BINARY_ADD": "+",
-        "BINARY_AND": "&",
-        "BINARY_FLOOR_DIVIDE": "//",
-        "BINARY_LSHIFT": "<<",
-        "BINARY_RSHIFT": ">>",
-        "BINARY_MODULO": "%",
-        "BINARY_MULTIPLY": "*",
-        "BINARY_OR": "|",
-        "BINARY_POWER": "**",
-        "BINARY_SUBTRACT": "-",
-        "BINARY_TRUE_DIVIDE": "/",
-        "BINARY_XOR": "^",
-    }
-    CALL = frozenset({"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"})
+    CALL = frozenset({"CALL"})
     CONTROL_FLOW: ClassVar[dict[str, str]] = (
         {
             "POP_JUMP_FORWARD_IF_FALSE": "&",
@@ -99,7 +84,7 @@ class OpNames:
             "JUMP_IF_TRUE_OR_POP": "|",
         }
         # note: 3.12 dropped POP_JUMP_FORWARD_IF_* opcodes
-        if _MIN_PY311 and not _MIN_PY312
+        if not _MIN_PY312
         else {
             "POP_JUMP_IF_FALSE": "&",
             "POP_JUMP_IF_TRUE": "|",
@@ -131,9 +116,7 @@ class OpNames:
         | set(SYNTHETIC)
         | LOAD_VALUES
     )
-    MATCHABLE_OPS = (
-        set(SIMPLIFY_SPECIALIZED) | PARSEABLE_OPS | set(BINARY) | LOAD_ATTR | CALL
-    )
+    MATCHABLE_OPS = set(SIMPLIFY_SPECIALIZED) | PARSEABLE_OPS | LOAD_ATTR | CALL
     UNARY_VALUES = frozenset(UNARY.values())
 
 
@@ -1236,13 +1219,7 @@ class RewrittenInstructions:
     @staticmethod
     def _update_instruction(inst: Instruction) -> Instruction:
         """Update/modify specific instructions to simplify multi-version parsing."""
-        if not _MIN_PY311 and inst.opname in OpNames.BINARY:
-            # update older binary opcodes using py >= 3.11 'BINARY_OP' instead
-            inst = inst._replace(
-                argrepr=OpNames.BINARY[inst.opname],
-                opname="BINARY_OP",
-            )
-        elif _MIN_PY314:
+        if _MIN_PY314:
             if (opname := inst.opname) in OpNames.SIMPLIFY_SPECIALIZED:
                 # simplify specialised opcode variants to their more generic form
                 # (eg: 'LOAD_FAST_BORROW' -> 'LOAD_FAST', etc)
