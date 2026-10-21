@@ -1,3 +1,6 @@
+use std::cell::Cell;
+
+use polars_arrow::bitmap::BitmapBuilder;
 use polars_utils::min_max::MinMaxPolicy;
 
 use super::super::van_herk::{rolling_minmax_shifted, shift_trailing, van_herk_kernel};
@@ -129,46 +132,43 @@ fn sliding_count_validity(
 /// rounds.
 fn dilate(bitmap: &Bitmap, w: usize, out_len: usize) -> Bitmap {
     assert!(out_len >= bitmap.len());
-    let num_words = out_len.div_ceil(64);
-    let mut bytes = vec![0u8; num_words * 8];
-    let mut chunks = bitmap.fast_iter_u64();
-    let mut i = 0;
-    for word in &mut chunks {
-        bytes[i * 8..i * 8 + 8].copy_from_slice(&word.to_le_bytes());
-        i += 1;
-    }
-    let (remainder, remainder_len) = chunks.remainder();
-    for word in &remainder[..remainder_len.div_ceil(64)] {
-        bytes[i * 8..i * 8 + 8].copy_from_slice(&word.to_le_bytes());
-        i += 1;
-    }
+    let padded_len = out_len.div_ceil(64) * 64;
+    let mut out = BitmapBuilder::with_capacity(padded_len);
+    out.extend_from_bitmap(bitmap);
+    out.extend_constant(padded_len - bitmap.len(), false);
+    let mut out = out.into_mut();
+    let words = out.as_mut_slice().as_chunks_mut::<8>().0;
 
-    // Double the covered range each round, in place: walking backward, every
-    // source position is still at its pre-round value when read.
+    // Carry original words forward for sub-word shifts; walk backward for larger shifts.
+    // Earlier doubling already covers a mixed shift's first destination word.
     let mut covered = 1usize;
     while covered < w {
         let shift = covered.min(w - covered);
         covered += shift;
-        let (word_shift, bit_shift) = (shift / 64, (shift % 64) as u32);
+        let (word_shift, bit_shift) = (shift / 64, shift % 64);
         let inverse_shift = 64 - bit_shift;
-        for i in (word_shift..num_words).rev() {
-            let dst = u64::from_le_bytes(bytes[i * 8..i * 8 + 8].try_into().unwrap());
-            let hi = u64::from_le_bytes(
-                bytes[(i - word_shift) * 8..(i - word_shift) * 8 + 8]
-                    .try_into()
-                    .unwrap(),
-            );
-            let mut smeared = hi << bit_shift;
-            if bit_shift > 0 && i > word_shift {
-                let lo = u64::from_le_bytes(
-                    bytes[(i - word_shift - 1) * 8..(i - word_shift) * 8]
-                        .try_into()
-                        .unwrap(),
-                );
-                smeared |= lo >> inverse_shift;
+        if word_shift == 0 {
+            let mut previous_word = 0u64;
+            for word in words.iter_mut() {
+                let current_word = u64::from_le_bytes(*word);
+                *word = (current_word | previous_word >> inverse_shift | current_word << bit_shift)
+                    .to_le_bytes();
+                previous_word = current_word;
             }
-            bytes[i * 8..i * 8 + 8].copy_from_slice(&(dst | smeared).to_le_bytes());
+        } else if bit_shift == 0 {
+            // Cells allow overlapping source and destination views without copying.
+            let cells = Cell::from_mut(words).as_slice_of_cells();
+            for (dst, src) in cells.iter().skip(word_shift).zip(cells).rev() {
+                dst.set(std::array::from_fn(|i| dst.get()[i] | src.get()[i]));
+            }
+        } else {
+            for i in (word_shift + 1..words.len()).rev() {
+                let smeared = u64::from_le_bytes(words[i - word_shift]) << bit_shift
+                    | u64::from_le_bytes(words[i - word_shift - 1]) >> inverse_shift;
+                words[i] = (u64::from_le_bytes(words[i]) | smeared).to_le_bytes();
+            }
         }
     }
-    Bitmap::from_u8_vec(bytes, out_len)
+    out.resize(out_len, false);
+    out.into()
 }

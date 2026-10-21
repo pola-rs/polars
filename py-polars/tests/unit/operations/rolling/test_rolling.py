@@ -425,23 +425,34 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
     }
 
 
-@pytest.mark.parametrize("with_nulls", [False, True])
+@pytest.mark.parametrize("invert", [False, True])
 @pytest.mark.parametrize("with_nan", [False, True])
-def test_rolling_extrema_matches_naive(with_nulls: bool, with_nan: bool) -> None:
-    values: list[float | None] = [float((i * 17) % 23 - 11) for i in range(131)]
+@pytest.mark.parametrize("stride", [0, 67, 1024])
+@pytest.mark.parametrize(
+    "length",
+    [*range(10), 130, *(n + d for n in (64, 128, 192, 256, 512) for d in (-1, 0, 1))],
+)
+def test_rolling_extrema_matches_naive(
+    invert: bool, with_nan: bool, stride: int, length: int
+) -> None:
+    values: list[float | None] = [float((i * 17) % 23 - 11) for i in range(513)]
     if with_nan:
         values[17] = float("nan")
     values[79] = float("inf")
     values[101] = -float("inf")
-    if with_nulls:
-        for i in range(0, len(values), 11):
+    values = values[:length]
+    for i in range(length):
+        if (stride == 0 or i % stride == 0) != invert:
             values[i] = None
 
-    s = pl.Series(values)
-    for window_size in (2, 9, 65, 130):
-        min_samples_values = (
-            (1, window_size) if window_size == 2 else (1, 2, window_size)
-        )
+    slices = [
+        pl.Series([0.0] * offset + values + [0.0] * 64).slice(offset, length)
+        for offset in (*range(9), 63, 65)
+    ]
+    for window_size in {0, 1, 2, 3, 9, 100, 130, 131, 385, 1024, 2**64 - 1} | {
+        n + d for n in (64, 128, 192, 256) for d in (-1, 0, 1)
+    }:
+        min_samples_values = {min(p, window_size) for p in (0, 1, 2, window_size)}
         for min_samples in min_samples_values:
             for center in (False, True):
                 for operation in ("min", "max"):
@@ -456,7 +467,7 @@ def test_rolling_extrema_matches_naive(with_nulls: bool, with_nan: bool) -> None
                             )
                         )
                         window = [v for v in values[start:stop] if v is not None]
-                        if len(window) < min_samples:
+                        if not window or len(window) < min_samples:
                             expected.append(None)
                         elif np.isnan(window).any():
                             expected.append(float("nan"))
@@ -465,10 +476,13 @@ def test_rolling_extrema_matches_naive(with_nulls: bool, with_nan: bool) -> None
                                 min(window) if operation == "min" else max(window)
                             )
 
-                    result = getattr(s, f"rolling_{operation}")(
-                        window_size, min_samples=min_samples, center=center
-                    )
-                    assert_series_equal(result, pl.Series(expected, dtype=s.dtype))
+                    expected_series = pl.Series(expected, dtype=pl.Float64)
+                    for s in slices:
+                        result = getattr(s, f"rolling_{operation}")(
+                            window_size, min_samples=min_samples, center=center
+                        )
+                        assert result.null_count() == expected_series.null_count()
+                        assert_series_equal(result, expected_series)
 
 
 def test_rolling_extrema_edge_cases() -> None:
