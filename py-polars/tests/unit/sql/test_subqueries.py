@@ -760,14 +760,8 @@ def test_subquery_unsupported_positions_report_sql_errors() -> None:
 
     with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
         pl.sql(
-            "SELECT * FROM df1 JOIN df2 ON df1.a = df2.b AND df1.a > (SELECT MAX(b) FROM df2)",
+            "SELECT * FROM df1 JOIN df2 ON df1.a + df2.b > (SELECT MAX(b) FROM df2)",
             eager=True,
-        )
-
-    # column-free ON with a subquery must not be mistaken for a constant predicate
-    with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
-        pl.sql(
-            "SELECT * FROM df1 JOIN df2 ON (SELECT COUNT(*) FROM df2) > 0", eager=True
         )
 
 

@@ -1317,6 +1317,125 @@ def test_join_on_expression_conditions(expression: str, expected_length: int) ->
     assert len(res) == expected_length
 
 
+@pytest.fixture
+def join_subquery_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"id": [1, 2, 3, 4], "v": [10, 20, 30, None]}),
+        "b": pl.DataFrame({"id": [1, 2, 3, 5], "v": [10, 25, 30, 40]}),
+        "c": pl.DataFrame({"x": [10, 30, None]}),
+    }
+
+
+@pytest.mark.parametrize(
+    "join",
+    [
+        # the issue example: a filter on the right input of a LEFT JOIN
+        "LEFT JOIN b ON a.id = b.id AND b.v = (SELECT MAX(v) FROM b)",
+        # a flag on the left input of a LEFT JOIN
+        "LEFT JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id = b.id AND a.v NOT IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id = b.id AND a.v = (SELECT x FROM c WHERE x > 99)",
+        "LEFT JOIN b ON a.v IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id < b.id AND a.v = (SELECT MAX(x) FROM c)",
+        "LEFT JOIN b ON (SELECT COUNT(*) FROM c) > 5",
+        # a condition that is not a boolean is cast to one
+        "LEFT JOIN b ON (SELECT NULL)",
+        "LEFT JOIN b ON (SELECT 1)",
+        "JOIN b ON a.id = b.id AND b.v > (SELECT AVG(x) FROM c) AND a.v IN (SELECT x FROM c)",
+        "JOIN b ON (SELECT COUNT(*) FROM c) > 0 AND a.id = b.id",
+        "RIGHT JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)",
+        "RIGHT JOIN b ON a.id = b.id AND b.v IN (SELECT x FROM c)",
+        "FULL JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c) AND b.v IN (SELECT x FROM c)",
+        "FULL JOIN b ON a.v IN (SELECT x FROM c)",
+        # the left input holds two relations
+        "JOIN b AS d ON a.id = d.id LEFT JOIN b ON b.id = d.id AND d.v IN (SELECT x FROM c)",
+    ],
+)
+def test_join_on_uncorrelated_subquery(
+    join: str, join_subquery_frames: dict[str, pl.DataFrame]
+) -> None:
+    assert_sql_matches(
+        frames=join_subquery_frames,
+        query=f"SELECT a.id, b.id AS bid FROM a {join} ORDER BY a.id, bid",
+        compare_with="sqlite",
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("join", "expected"),
+    [
+        ("SEMI JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)", [1, 3]),
+        ("ANTI JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)", [2, 4]),
+        ("ANTI JOIN b ON a.id = b.id AND b.v IN (SELECT x FROM c)", [2, 4]),
+        ("ANTI JOIN b ON (SELECT COUNT(*) FROM c) > 5", [1, 2, 3, 4]),
+        ("RIGHT SEMI JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)", [1, 3]),
+        ("RIGHT ANTI JOIN b ON a.id = b.id AND b.v IN (SELECT x FROM c)", [2, 5]),
+        ("RIGHT ANTI JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)", [2, 5]),
+    ],
+)
+def test_join_on_uncorrelated_subquery_semi_anti(
+    join: str, expected: list[int], join_subquery_frames: dict[str, pl.DataFrame]
+) -> None:
+    res = pl.SQLContext(join_subquery_frames).execute(
+        f"SELECT id FROM a {join} ORDER BY id", eager=True
+    )
+    assert res["id"].to_list() == expected
+
+
+def test_join_on_subquery_keeps_columns(
+    join_subquery_frames: dict[str, pl.DataFrame],
+) -> None:
+    res = pl.SQLContext(join_subquery_frames).execute(
+        "SELECT * FROM a LEFT JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c) "
+        "ORDER BY a.id",
+        eager=True,
+    )
+    assert res.rows() == [
+        (1, 10, 1, 10),
+        (2, 20, None, None),
+        (3, 30, 3, 30),
+        (4, None, None, None),
+    ]
+    assert res.columns == ["id", "v", "id:b", "v:b"]
+
+
+def test_join_on_subquery_reading_struct_field() -> None:
+    frames = {
+        "k": pl.DataFrame({"k": [10, 20]}),
+        "c": pl.DataFrame({"s": [{"x": 10}]}),
+    }
+    res = pl.SQLContext(frames).execute(
+        "SELECT k.k, c.s.x FROM k LEFT JOIN c ON k.k = (SELECT s.x FROM c) ORDER BY k.k",
+        eager=True,
+    )
+    assert res.rows() == [(10, 10), (20, None)]
+
+
+@pytest.mark.parametrize(
+    ("condition", "err"),
+    [
+        # correlated
+        ("b.v IN (SELECT x FROM c WHERE c.x = a.v)", "no table or struct column"),
+        # an unqualified column of the joined tables
+        ("b.v IN (SELECT x FROM c WHERE x = id)", 'unable to find column "id"'),
+        # reads both tables
+        ("a.v + b.v > (SELECT MAX(x) FROM c)", "not currently supported in the JOIN"),
+        ("v IN (SELECT x FROM c)", "not currently supported in the JOIN"),
+        ("EXISTS (SELECT 1 FROM c)", "EXISTS subquery is not currently supported"),
+        # more than one row
+        ("a.v = (SELECT x FROM c)", "expected no or a single value"),
+    ],
+)
+def test_join_on_subquery_unsupported(
+    condition: str, err: str, join_subquery_frames: dict[str, pl.DataFrame]
+) -> None:
+    with pytest.raises(Exception, match=err):
+        pl.SQLContext(join_subquery_frames).execute(
+            f"SELECT * FROM a LEFT JOIN b ON a.id = b.id AND {condition}", eager=True
+        )
+
+
 @pytest.mark.parametrize(
     "join",
     [
