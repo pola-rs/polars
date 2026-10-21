@@ -301,6 +301,52 @@ def test_recursive_shared_cte_computed_once() -> None:
     assert res.rows() == [(5, 5)]
 
 
+@pytest.mark.parametrize(
+    ("user_cache", "query"),
+    [
+        # A cached table that only the step reads.
+        (
+            True,
+            """
+            WITH RECURSIVE t AS (
+              SELECT 0 AS n, CAST(0 AS BIGINT) AS x
+              UNION ALL
+              SELECT n + 1, src.x FROM t CROSS JOIN src WHERE n < 2
+            )
+            SELECT * FROM t ORDER BY n
+            """,
+        ),
+        # A CTE that only the step reads.
+        (
+            False,
+            """
+            WITH RECURSIVE
+              b AS (SELECT x FROM src),
+              t AS (
+                SELECT 0 AS n, CAST(0 AS BIGINT) AS x
+                UNION ALL
+                SELECT n + 1, b.x FROM t CROSS JOIN b WHERE n < 2
+              )
+            SELECT * FROM t ORDER BY n
+            """,
+        ),
+    ],
+)
+def test_recursive_step_input_computed_once(user_cache: bool, query: str) -> None:
+    calls: list[None] = []
+
+    def stamp(_: pl.DataFrame) -> pl.DataFrame:
+        calls.append(None)
+        return pl.DataFrame({"x": [len(calls)]})
+
+    src = pl.LazyFrame({"x": [0]}).map_batches(stamp, schema={"x": pl.Int64})
+    if user_cache:
+        src = src.cache()
+    res = pl.SQLContext(src=src).execute(query).collect()
+    assert res.rows() == [(0, 0), (1, 1), (2, 1)]
+    assert len(calls) == 1
+
+
 def test_recursive_in_memory_engine_uses_streaming_optimizations(
     ctx: pl.SQLContext[pl.LazyFrame],
 ) -> None:
@@ -356,8 +402,8 @@ def test_recursive_query_from_resolver() -> None:
 
 @pytest.mark.slow
 def test_recursive_background_single_thread() -> None:
-    # The step uses a Python callback that collects an in-memory query. With one Rayon
-    # thread this deadlocks if a round blocks the Rayon worker.
+    # The anchor or the step uses a Python callback that collects an in-memory query.
+    # With one Rayon thread this deadlocks if the query blocks the Rayon worker.
     out = subprocess.check_output(
         [
             sys.executable,
@@ -376,6 +422,11 @@ src = pl.LazyFrame({"n": [1, 2, 3]}).with_columns(
 lf = pl.SQLContext(src=src).execute(
     "WITH RECURSIVE t AS (SELECT 1 AS n UNION ALL "
     "SELECT t.n + 1 FROM t JOIN src ON src.n = t.n WHERE t.n < 3) SELECT * FROM t"
+)
+assert lf.collect(background=True).fetch_blocking()["n"].to_list() == [1, 2, 3]
+lf = pl.SQLContext(src=src).execute(
+    "WITH RECURSIVE t AS (SELECT n FROM src WHERE n = 1 UNION ALL "
+    "SELECT n + 1 FROM t WHERE n < 3) SELECT * FROM t"
 )
 assert lf.collect(background=True).fetch_blocking()["n"].to_list() == [1, 2, 3]
 print("OK", end="")

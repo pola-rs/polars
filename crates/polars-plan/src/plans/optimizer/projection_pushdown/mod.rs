@@ -11,7 +11,7 @@ use polars_core::schema::Schema;
 use polars_defs::join::{JoinCoalesce, JoinType};
 use polars_io::RowIndex;
 #[allow(clippy::disallowed_types)]
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{PlHashMap, PlHashSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools as _;
 use polars_utils::itertools::iters_eq::iters_eq;
@@ -54,6 +54,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
 
     #[allow(clippy::disallowed_types)]
     let mut optimized_cache_nodes = PlHashMap::default();
+    let caches_shared_across_rounds = caches_shared_across_rounds(optimize_root, ir_arena);
 
     ir_graph_traversal(
         optimize_root,
@@ -68,6 +69,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
             optimized_cache_nodes: &mut optimized_cache_nodes,
+            caches_shared_across_rounds: &caches_shared_across_rounds,
             default_edge: Edge::new(
                 Projection::All,
                 None,
@@ -126,6 +128,8 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
     #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     optimized_cache_nodes: &'a mut PlHashMap<UniqueId, Node>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over it.
+    caches_shared_across_rounds: &'a PlHashSet<UniqueId>,
     default_edge: Edge,
     maintain_errors: bool,
 }
@@ -2120,10 +2124,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::Cache { input, .. } => {
+            IR::Cache { input, id } => {
                 let input = *input;
 
-                if edges.outputs().len() == 1 {
+                // A single reader in the step of a recursive query can run more than once.
+                if edges.outputs().len() == 1 && !self.caches_shared_across_rounds.contains(id) {
                     unlink_current_node_and_return!(input)
                 }
 
@@ -2206,6 +2211,40 @@ impl ProjectionPushdownVisitor<'_, '_> {
             IR::Invalid => unreachable!(),
         };
     }
+}
+
+/// The caches in the steps of recursive queries that are computed less often than their
+/// readers run: a cache is computed again in every round only if the innermost recursive query
+/// around it lists it in its `round_local_caches`.
+#[allow(clippy::disallowed_types)] // We don't iterate over it.
+fn caches_shared_across_rounds(root: Node, ir_arena: &Arena<IR>) -> PlHashSet<UniqueId> {
+    let mut out = PlHashSet::default();
+    let mut seen_caches = PlHashSet::default();
+    let mut stack: Vec<(Node, Option<&[UniqueId]>)> = vec![(root, None)];
+    while let Some((node, round_local)) = stack.pop() {
+        match ir_arena.get(node) {
+            IR::Cache { input, id } => {
+                if !seen_caches.insert(*id) {
+                    continue;
+                }
+                if round_local.is_some_and(|caches| !caches.contains(id)) {
+                    out.insert(*id);
+                }
+                stack.push((*input, round_local));
+            },
+            IR::Recursive {
+                anchor,
+                step,
+                round_local_caches,
+                ..
+            } => {
+                stack.push((*anchor, round_local));
+                stack.push((*step, Some(round_local_caches)));
+            },
+            ir => stack.extend(ir.inputs().map(|input| (input, round_local))),
+        }
+    }
+    out
 }
 
 fn min_dtype_size_col<'a, I, K>(iter: I) -> Option<K>

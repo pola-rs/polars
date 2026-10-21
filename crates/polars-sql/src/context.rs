@@ -1609,7 +1609,8 @@ impl SQLContext {
             for name in collector.tables {
                 *reference_counts.entry(name).or_insert(0) += 1;
             }
-            // The step of a recursive CTE reads the working table, not the CTE itself.
+            // The step of a recursive CTE reads the working table, not the CTE itself. Other
+            // tables it reads are read again in every round, so cache them.
             for (cte, _) in with
                 .cte_tables
                 .iter()
@@ -1619,9 +1620,14 @@ impl SQLContext {
                 let name = &cte.alias.name.value;
                 let mut collector = TableIdentifierCollector::default();
                 let _ = cte.query.visit(&mut collector);
-                let n_self = collector.tables.iter().filter(|t| *t == name).count();
-                if let Some(count) = reference_counts.get_mut(name) {
-                    *count = count.saturating_sub(n_self);
+                for table in collector.tables {
+                    if let Some(count) = reference_counts.get_mut(&table) {
+                        if table == *name {
+                            *count -= 1;
+                        } else {
+                            *count += 1;
+                        }
+                    }
                 }
             }
 
