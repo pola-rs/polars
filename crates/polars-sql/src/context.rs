@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::ops::{ControlFlow, Deref};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
+use chrono::{NaiveDateTime, SubsecRound};
 use polars_core::prelude::*;
 #[cfg(feature = "asof_join")]
 use polars_core::utils::try_get_supertype;
@@ -250,6 +251,9 @@ pub struct SQLContext {
     catalog_names: Vec<RewrittenName>,
     /// The names the current statement wrote for its catalog tables, by position.
     catalog_spellings: CatalogSpellings,
+    /// The local time that `CURRENT_DATE` and friends read in the current statement, set on
+    /// first use. Shared with the contexts of its subqueries.
+    statement_time: Arc<OnceLock<NaiveDateTime>>,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -311,6 +315,7 @@ impl Default for SQLContext {
             catalog_tables: Default::default(),
             catalog_names: Default::default(),
             catalog_spellings: Default::default(),
+            statement_time: Default::default(),
         }
     }
 }
@@ -510,6 +515,7 @@ impl SQLContext {
         let (_, catalog_spellings) = self.rewrite_catalog_names(&mut stmt)?;
         desugar_quantified_subqueries(&mut stmt);
         self.catalog_spellings = catalog_spellings;
+        self.statement_time = Default::default();
         let res = self.execute_statement(&stmt).inspect_err(|_| {
             self.clear_statement_state();
         })?;
@@ -609,6 +615,7 @@ impl SQLContext {
             },
         };
 
+        self.statement_time = Default::default();
         std::mem::swap(&mut self.lp_arena, lp_arena);
         std::mem::swap(&mut self.expr_arena, expr_arena);
         let res = self.execute_statement(stmt);
@@ -628,6 +635,14 @@ impl SQLContext {
         self.joined_aliases.clear();
         self.join_base = None;
         self.named_windows.clear();
+    }
+
+    /// The local time, to microseconds, that `CURRENT_DATE` and friends read in the current
+    /// statement.
+    pub(crate) fn statement_time(&self) -> NaiveDateTime {
+        *self
+            .statement_time
+            .get_or_init(|| chrono::Local::now().naive_local().trunc_subsecs(6))
     }
 
     /// Add a function registry to the SQLContext.
@@ -666,6 +681,7 @@ impl SQLContext {
             catalog_tables: self.catalog_tables.clone(),
             catalog_names: self.catalog_names.clone(),
             catalog_spellings: self.catalog_spellings.clone(),
+            statement_time: self.statement_time.clone(),
 
             ..Default::default()
         }
