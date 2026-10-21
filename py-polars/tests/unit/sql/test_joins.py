@@ -106,6 +106,29 @@ def test_join_right_semi_anti_on(join: str, expected: list[int]) -> None:
     assert_frame_equal(out, r.filter(pl.col("rk").is_in(expected)))
 
 
+@pytest.mark.parametrize(
+    ("query", "relation"),
+    [
+        ("SELECT r.v FROM l SEMI JOIN r ON l.lk = r.rk", "r"),
+        ("SELECT * FROM l ANTI JOIN r ON l.lk = r.rk WHERE r.v > 0", "r"),
+        ("SELECT l.lk FROM l SEMI JOIN r ON l.lk = r.rk ORDER BY r.v", "r"),
+        ("SELECT l.v FROM l RIGHT SEMI JOIN r ON l.lk = r.rk", "l"),
+        ("SELECT l.lk FROM l SEMI JOIN r ON l.lk = r.rk JOIN m ON m.mk = r.rk", "r"),
+        ("SELECT m.mk FROM m, l SEMI JOIN r ON l.lk = r.rk WHERE m.mk = r.rk", "r"),
+    ],
+)
+def test_join_semi_anti_drops_relation(query: str, relation: str) -> None:
+    frames = {
+        "l": pl.DataFrame({"lk": [1, 2, 3], "v": [10, 20, 40]}),
+        "m": pl.DataFrame({"mk": [1, 3]}),
+        "r": pl.DataFrame({"rk": [2, 3, 4], "v": [20, 30, 10]}),
+    }
+    with pytest.raises(
+        SQLInterfaceError, match=f"no table or struct column named '{relation}'"
+    ):
+        pl.SQLContext(frames).execute(query, eager=True)
+
+
 def test_join_cross() -> None:
     frames = {
         "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
