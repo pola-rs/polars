@@ -1554,6 +1554,30 @@ def test_replace_time_zone_sortedness_expressions(
     assert result["ts"].is_sorted() == expected_sortedness
 
 
+def test_replace_time_zone_non_existent_null_sortedness_30077() -> None:
+    naive = pl.Series(
+        "t", [datetime(2021, 3, 14, 1) + timedelta(minutes=30 * i) for i in range(8)]
+    ).sort()
+    assert naive.flags["SORTED_ASC"]
+
+    # 02:00 and 02:30 don't exist and become null, in the middle of the series.
+    result = naive.dt.replace_time_zone("America/New_York", non_existent="null")
+    assert result.null_count() == 2
+    assert not result.flags["SORTED_ASC"]
+    tz = ZoneInfo("America/New_York")
+    assert result.max() == datetime(2021, 3, 14, 4, 30, tzinfo=tz)
+    assert pl.DataFrame({"t": result}).group_by("t").len().sort("t").rows()[-3:] == [
+        (datetime(2021, 3, 14, 3, 30, tzinfo=tz), 1),
+        (datetime(2021, 3, 14, 4, 0, tzinfo=tz), 1),
+        (datetime(2021, 3, 14, 4, 30, tzinfo=tz), 1),
+    ]
+
+    # No values in the gap, so no nulls are introduced and the flag is kept.
+    result = naive.tail(4).dt.replace_time_zone("America/New_York", non_existent="null")
+    assert result.null_count() == 0
+    assert result.flags["SORTED_ASC"]
+
+
 def test_invalid_ambiguous_value_in_expression() -> None:
     df = pl.DataFrame(
         {"a": [datetime(2020, 10, 25, 1)] * 2, "b": ["earliest", "cabbage"]}

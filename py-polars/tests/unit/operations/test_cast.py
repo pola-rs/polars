@@ -642,6 +642,78 @@ def test_cast_int_to_string_unsets_sorted_flag_19424() -> None:
     assert not s.cast(pl.String).flags["SORTED_ASC"]
 
 
+@pytest.mark.parametrize(
+    ("values", "from_dtype", "to_dtype", "expected"),
+    [
+        (
+            [date(1, 1, 1), date(1969, 12, 31), date(2000, 5, 5), date(9999, 12, 31)],
+            pl.Date,
+            pl.Datetime("ns"),
+            [datetime(1969, 12, 31), datetime(2000, 5, 5)],
+        ),
+        (
+            [
+                datetime(1, 1, 1),
+                datetime(1969, 12, 31),
+                datetime(2000, 5, 5),
+                datetime(9999, 12, 31),
+            ],
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+            [datetime(1969, 12, 31), datetime(2000, 5, 5)],
+        ),
+        # Datetimes outside the range of `Date` can't be printed, so build them from
+        # integer timestamps.
+        (
+            [-(2**62), -86_400_000, 0, 2**62],
+            pl.Datetime("ms"),
+            pl.Date,
+            [date(1969, 12, 31), date(1970, 1, 1)],
+        ),
+    ],
+)
+def test_cast_temporal_overflow_unsets_sorted_flag_30077(
+    values: list[Any],
+    from_dtype: PolarsDataType,
+    to_dtype: PolarsDataType,
+    expected: list[Any],
+) -> None:
+    s = pl.Series(values).cast(from_dtype).sort()
+    assert s.flags["SORTED_ASC"]
+
+    # The out-of-range values at both ends become null.
+    result = s.cast(to_dtype, strict=False)
+    assert result.to_list() == [None, *expected, None]
+    assert not result.flags["SORTED_ASC"]
+    assert result.min() == expected[0]
+    assert result.max() == expected[1]
+    assert result.n_unique() == 3
+
+
+@pytest.mark.parametrize(
+    ("values", "from_dtype", "to_dtype"),
+    [
+        ([None, date(1969, 12, 31), date(2000, 5, 5)], pl.Date, pl.Datetime("ns")),
+        (
+            [None, datetime(1969, 12, 31), datetime(2000, 5, 5)],
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+        ),
+        (
+            [None, datetime(1969, 12, 31), datetime(2000, 5, 5)],
+            pl.Datetime("ms"),
+            pl.Date,
+        ),
+    ],
+)
+def test_cast_temporal_in_range_keeps_sorted_flag_30077(
+    values: list[Any], from_dtype: PolarsDataType, to_dtype: PolarsDataType
+) -> None:
+    s = pl.Series(values, dtype=from_dtype).sort()
+    assert s.flags["SORTED_ASC"]
+    assert s.cast(to_dtype, strict=False).flags["SORTED_ASC"]
+
+
 def test_cast_integer_to_decimal() -> None:
     s = pl.Series([1, 2, 3])
     result = s.cast(pl.Decimal(10, 2))
