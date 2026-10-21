@@ -67,26 +67,36 @@ class _AlreadyCommitted(Exception):
 
 
 def _create_namespace_if_not_exists(
-    catalog: pyiceberg.catalog.Catalog, namespace: tuple[str, ...]
+    catalog: pyiceberg.catalog.Catalog,
+    namespace: tuple[str, ...],
+    *,
+    create_parents: bool = True,
 ) -> None:
     """Create `namespace`, and any missing parent namespaces."""
-    from pyiceberg.exceptions import NoSuchNamespaceError
-
     try:
         # Tolerates a concurrent create of the same namespace.
-        catalog.create_namespace_if_not_exists(namespace)
-    except NoSuchNamespaceError:
-        # The parent namespace is missing.
-        if len(namespace) <= 1:
-            raise
-        _create_namespace_if_not_exists(catalog, namespace[:-1])
         catalog.create_namespace_if_not_exists(namespace)
     except Exception:
         # The create may have landed with its response lost.
         with contextlib.suppress(Exception):
             if catalog.namespace_exists(namespace):
                 return
-        raise
+
+        # The parent namespace may be missing. Catalogs report this differently
+        # (e.g. REST raises a `RESTError` rather than `NoSuchNamespaceError`), so
+        # check for it directly.
+        parent_missing = False
+        if create_parents and len(namespace) > 1:
+            with contextlib.suppress(Exception):
+                parent_missing = not catalog.namespace_exists(namespace[:-1])
+
+        if not parent_missing:
+            raise
+    else:
+        return
+
+    _create_namespace_if_not_exists(catalog, namespace[:-1])
+    _create_namespace_if_not_exists(catalog, namespace, create_parents=False)
 
 
 def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) -> None:
