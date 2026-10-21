@@ -694,6 +694,85 @@ def test_implicit_self_join() -> None:
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
+        (
+            "SELECT l.k AS lk, m.k AS mk FROM l, r NATURAL JOIN m "
+            "WHERE l.k + 1 = m.k + r.k",
+            {"lk": [1, 3], "mk": [1, 2]},
+        ),
+        (
+            "SELECT l.k AS lk, m.k AS mk FROM l, r AS x JOIN m USING (k) "
+            "WHERE l.k + 1 = m.k + x.k",
+            {"lk": [1, 3], "mk": [1, 2]},
+        ),
+        (
+            "SELECT l.k AS lk FROM l WHERE EXISTS (SELECT 1 FROM l AS a, "
+            "r NATURAL JOIN m WHERE a.k + 1 = m.k + r.k AND a.k = l.k)",
+            {"lk": [1, 3]},
+        ),
+    ],
+)
+def test_implicit_join_with_joined_relation(
+    query: str, expected: dict[str, Any]
+) -> None:
+    # the columns of every relation of the joined item are renamed, not only the first
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2, 3]}),
+        "r": pl.DataFrame({"k": [1, 2]}),
+        "m": pl.DataFrame({"k": [1, 2, 3]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        expected=expected,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("alias", ["a", "x"])
+def test_aliased_nested_join_as_relation(alias: str) -> None:
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2, 3]}),
+        "r": pl.DataFrame({"k": [1, 2]}),
+        "m": pl.DataFrame({"k": [1, 2, 3]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            f"SELECT {alias}.k AS ak, r.k AS rk "
+            f"FROM (l AS a NATURAL JOIN m AS b) AS {alias} JOIN r ON r.k + 1 = {alias}.k"
+        ),
+        compare_with="duckdb",
+        expected={"ak": [2, 3], "rk": [1, 2]},
+        check_row_order=False,
+    )
+
+
+def test_aliased_nested_join_does_not_hide_table() -> None:
+    frames = {"l": pl.LazyFrame({"k": [1]}), "m": pl.LazyFrame({"k": [1]})}
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(
+            "WITH x AS (SELECT 99 AS k) "
+            "SELECT x.k AS a, y.k AS b FROM (l NATURAL JOIN m) AS x, x AS y",
+            eager=True,
+        )
+        assert res.rows() == [(1, 99)]
+
+        res = ctx.execute(
+            "WITH x AS (SELECT 99 AS k) SELECT x.k AS a, "
+            "(SELECT k FROM l WHERE FALSE UNION ALL TABLE x LIMIT 1) AS b "
+            "FROM (l NATURAL JOIN m) AS x",
+            eager=True,
+        )
+        assert res.rows() == [(1, 99)]
+
+        ctx.execute("CREATE TABLE made AS SELECT * FROM (l NATURAL JOIN m) AS x")
+        assert sorted(ctx.tables()) == ["l", "m", "made"]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
         # INNER joins
         (
             "SELECT df1.* FROM df1 INNER JOIN df2 USING (a)",
@@ -1384,6 +1463,8 @@ def join_subquery_frames() -> dict[str, pl.DataFrame]:
         "RIGHT JOIN b ON a.id = b.id AND b.v IN (SELECT x FROM c)",
         "FULL JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c) AND b.v IN (SELECT x FROM c)",
         "FULL JOIN b ON a.v IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE x > 20)",
+        "LEFT JOIN b ON a.id = b.id AND NOT EXISTS (SELECT 1 FROM c WHERE x > 20)",
         # the left input holds two relations
         "JOIN b AS d ON a.id = d.id LEFT JOIN b ON b.id = d.id AND d.v IN (SELECT x FROM c)",
     ],
@@ -1459,7 +1540,10 @@ def test_join_on_subquery_reading_struct_field() -> None:
         # reads both tables
         ("a.v + b.v > (SELECT MAX(x) FROM c)", "not currently supported in the JOIN"),
         ("v IN (SELECT x FROM c)", "not currently supported in the JOIN"),
-        ("EXISTS (SELECT 1 FROM c)", "EXISTS subquery is not currently supported"),
+        (
+            "EXISTS (SELECT 1 FROM c WHERE c.x = a.v)",
+            "EXISTS subquery is not currently supported",
+        ),
         # more than one row
         ("a.v = (SELECT x FROM c)", "expected no or a single value"),
     ],

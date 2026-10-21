@@ -140,10 +140,6 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
             ComputeError: "Malformed IPC file: got decompressed buffer length which is not a multiple of the data type");
     let n_rows_in_array = decompressed_bytes / size_of::<T>();
 
-    if decompressed_len_field == -1 {
-        return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
-    }
-
     // It is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
     // see also https://github.com/MaikKlein/ash/issues/354#issue-781730580
 
@@ -153,6 +149,12 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     let mut buffer = vec![T::default(); n_rows_exact];
     let out_slice = bytemuck::cast_slice_mut(&mut buffer);
+
+    if decompressed_len_field == -1 {
+        // The data is stored uncompressed. Copy handles the alignment for `T`.
+        out_slice.copy_from_slice(&scratch[8..8 + out_slice.len()]);
+        return Ok(buffer);
+    }
 
     let compression = compression
         .codec()
@@ -324,7 +326,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
         ComputeError: "Malformed IPC file: got unexpected decompressed output length {decompressed_bytes}, expected {}", row_limit.div_ceil(8));
 
     if decompressed_len_field == -1 {
-        return Ok(bytemuck::cast_slice(&scratch[8..]).to_vec());
+        return Ok(scratch[8..].to_vec());
     }
 
     #[expect(clippy::slow_vector_initialization)] // Avoid alloc_zeroed, leads to syscall.
@@ -413,4 +415,54 @@ pub fn read_validity<R: Read + Seek>(
             .ok_or_else(|| polars_err!(oos = OutOfSpecKind::ExpectedBuffer))?;
         None
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use polars_arrow_format::ipc::planus::{Builder, ReadAsRoot};
+    use polars_arrow_format::ipc::{
+        BodyCompression, BodyCompressionMethod, BodyCompressionRef, CompressionType,
+    };
+
+    use super::*;
+
+    #[test]
+    fn read_uncompressed_buffer_in_compressed_body() {
+        let mut builder = Builder::new();
+        let compression = builder.finish(
+            &BodyCompression {
+                codec: CompressionType::Lz4Frame,
+                method: BodyCompressionMethod::Buffer,
+            },
+            None,
+        );
+        let compression = BodyCompressionRef::read_as_root(compression).unwrap();
+
+        // An uncompressed length of -1 means the data that follows is not compressed. The
+        // values start 8 bytes into `scratch`, so they are misaligned for `i128` whenever
+        // `scratch` is 16-byte aligned.
+        let values = [i128::MIN, -1, 0, i128::MAX];
+        let mut data = (-1i64).to_le_bytes().to_vec();
+        data.extend_from_slice(bytemuck::cast_slice(&values));
+
+        let mut scratch = vec![];
+        for (row_limit, expected) in [
+            (None, &values[..]),
+            (Some(2), &values[..2]),
+            (Some(10), &values[..]),
+        ] {
+            let out = read_compressed_buffer::<i128, _>(
+                &mut Cursor::new(&data),
+                data.len(),
+                row_limit,
+                is_native_little_endian(),
+                compression,
+                &mut scratch,
+            )
+            .unwrap();
+            assert_eq!(out, expected);
+        }
+    }
 }

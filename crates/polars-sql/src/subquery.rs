@@ -29,11 +29,11 @@ use sqlparser::ast::{
 use crate::catalog::CatalogSpellings;
 use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
-    flatten_and_conditions, get_table_name, match_qualifier, relation_name,
+    declared_relations, flatten_and_conditions, get_table_name, match_qualifier, relation_name,
 };
 use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
-use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
+use crate::sql_expr::{parse_sql_expr, reduced_subquery, sql_in_membership, sql_is_in};
 use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_subquery_expr};
 use crate::{SQLContext, unique_column_name};
 
@@ -515,7 +515,18 @@ impl SQLContext {
             let right_schema = self.get_frame_schema(&mut rf)?;
             inner_lf = inner_lf.cross_join(rf, Some(format_pl_smallstr!(":{r_name}")));
             let joined_schema = self.get_frame_schema(&mut inner_lf)?;
-            self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
+            let right_relations: Vec<String> =
+                declared_relations(std::slice::from_ref(tbl_expr), self.catalog_spellings())
+                    .iter()
+                    .map(RelationName::key)
+                    .collect();
+            self.record_joined_aliases(
+                &r_name,
+                &right_relations,
+                &left_schema,
+                &right_schema,
+                &joined_schema,
+            )?;
         }
         self.set_join_base(&select.from);
         self.check_select_column_refs(select)?;
@@ -1154,11 +1165,42 @@ impl SQLContext {
         Ok(Some((joined, set_name)))
     }
 
+    /// Whether the uncorrelated `subquery` aggregates without `GROUP BY`, and so returns
+    /// exactly one row.
+    pub(crate) fn exists_over_aggregate(&mut self, subquery: &Query) -> PolarsResult<bool> {
+        let Some(select) = eligible_subquery_select(subquery) else {
+            return Ok(false);
+        };
+        let mut ctx = self.isolated();
+        let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
+            return Ok(false);
+        };
+        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
+            Some(true) => {
+                // The rows are not read, but WHERE must still be valid.
+                if let Some(selection) = &select.selection {
+                    let mut filtered = ctx.process_where(
+                        inner_lf,
+                        Some(selection),
+                        FilterMode::KeepTrue,
+                        Some(inner_schema),
+                    )?;
+                    ctx.get_frame_schema(&mut filtered)?;
+                }
+                Ok(true)
+            },
+            Some(false) => Ok(false),
+            None => polars_bail!(
+                SQLInterface:
+                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+            ),
+        }
+    }
+
     // Attempt the decorrelation of a single `EXISTS` subquery into a boolean flag
     // column holding `count(*) > 0` over the correlated match set. An uncorrelated
-    // subquery yields a single constant boolean broadcast onto every outer row
-    // instead, no join being needed to know whether a fixed relation is non-empty.
-    // Returns `None` for shapes that can't be soundly classified.
+    // subquery is one value instead, kept in `exists_values` for `visit_exists`, and
+    // `None` is returned. Also `None` for shapes that can't be soundly classified.
     fn try_decorrelate_exists_subquery(
         &mut self,
         lf: LazyFrame,
@@ -1193,6 +1235,24 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}exists");
+        // An uncorrelated subquery is one value, which `visit_exists` takes.
+        if corr_preds.is_empty() && !is_correlated_subquery(subquery, self.catalog_spellings()) {
+            let exists =
+                match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
+                    None => return Ok(None),
+                    Some(true) => lit(true),
+                    Some(false) => {
+                        let inner = local_filters
+                            .into_iter()
+                            .fold(inner_lf, LazyFrame::filter)
+                            .select([len().gt(lit(0))]);
+                        inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+                        reduced_subquery(inner, first().as_expr().item(true))
+                    },
+                };
+            self.exists_values.push((subquery.clone(), exists));
+            return Ok(None);
+        }
         match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
             None => return Ok(None),
             // An aggregate without GROUP BY returns one row, even over no rows.
@@ -1207,8 +1267,8 @@ impl SQLContext {
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
         if corr_preds.is_empty() {
-            // Uncorrelated: the inner relation doesn't depend on the outer row, so
-            // its existence is a single constant boolean broadcast onto every row.
+            // Outer columns are only in the projection, which EXISTS ignores, so the
+            // existence is a single constant boolean broadcast onto every row.
             let inner_flag = inner_filtered.select([len().gt(lit(0)).alias(flag_name.clone())]);
             inner_flag.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
             let joined = concat_lf_horizontal(

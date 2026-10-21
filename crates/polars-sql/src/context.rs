@@ -238,7 +238,14 @@ pub struct SQLContext {
     /// only ones a qualified column may name.
     active_relations: Vec<RelationName>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
+    /// The aliased parenthesized joins of the current statement, by alias. Only qualified
+    /// columns look them up (`get_relation_frame`), so the alias doesn't hide a table of
+    /// the same name.
+    nested_join_frames: PlHashMap<String, LazyFrame>,
     join_base: Option<JoinBase>,
+    /// The values of uncorrelated `EXISTS` subqueries that were planned while lowering,
+    /// taken when the `EXISTS` expression is parsed.
+    pub(crate) exists_values: Vec<(Query, Expr)>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
     pub(crate) group_scope: GroupScope,
     /// The attached catalogs.
@@ -306,7 +313,9 @@ impl Default for SQLContext {
             table_aliases: Default::default(),
             active_relations: Default::default(),
             joined_aliases: Default::default(),
+            nested_join_frames: Default::default(),
             join_base: None,
+            exists_values: Default::default(),
             named_windows: Default::default(),
             group_scope: Default::default(),
             lp_arena: Default::default(),
@@ -633,7 +642,9 @@ impl SQLContext {
         self.catalog_spellings.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
+        self.nested_join_frames.clear();
         self.join_base = None;
+        self.exists_values.clear();
         self.named_windows.clear();
     }
 
@@ -672,6 +683,7 @@ impl SQLContext {
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
+            nested_join_frames: self.nested_join_frames.clone(),
 
             // Context-level; needs to remain visible in nested scopes.
             // (Note: shared by Arc, no need to deep-copy)
@@ -751,7 +763,7 @@ impl SQLContext {
         if self.active_relations.is_empty() {
             for len in (1..idents.len()).rev() {
                 let qualifier = join_idents(&idents[..len]);
-                if self.get_table_from_current_scope(&qualifier)?.is_some() {
+                if self.get_relation_frame(&qualifier)?.is_some() {
                     return Ok(Some((qualifier, len)));
                 }
             }
@@ -801,16 +813,22 @@ impl SQLContext {
 
     /// Resolve a relation innermost-scope-first: a `FROM` alias, then a CTE, then
     /// a registered table.
-    pub(super) fn get_table_from_current_scope(
-        &self,
-        name: &str,
-    ) -> PolarsResult<Option<LazyFrame>> {
+    fn get_table_from_current_scope(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
         if let Some(aliased) = get_ignoring_case(&self.table_aliases, name)? {
             if let Some(lf) = self.get_table_unaliased(aliased)? {
                 return Ok(Some(lf));
             }
         }
         self.get_table_unaliased(name)
+    }
+
+    /// The frame of the relation `name` that a qualified column reads: an aliased
+    /// parenthesized join, else a table in the current scope.
+    pub(crate) fn get_relation_frame(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
+        if let Some(lf) = get_ignoring_case(&self.nested_join_frames, name)? {
+            return Ok(Some(lf.clone()));
+        }
+        self.get_table_from_current_scope(name)
     }
 
     fn get_table_unaliased(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
@@ -953,27 +971,48 @@ impl SQLContext {
     }
 
     /// Track the columns of the joined relation `r_name` that also exist on the left
-    /// side, and so are stored under an aliased name in the joined frame.
+    /// side, and so are stored under an aliased name in the joined frame. The other
+    /// relations of the right input (`right_relations`) refer to these columns too.
     pub(crate) fn record_joined_aliases(
         &mut self,
         r_name: &str,
+        right_relations: &[String],
         left_schema: &Schema,
         right_schema: &Schema,
         joined_schema: &Schema,
-    ) {
-        self.joined_aliases.insert(
-            r_name.to_string(),
-            right_schema
-                .iter_names()
-                .filter(|name| left_schema.contains(name))
-                .filter_map(|name| {
-                    let aliased_name = format!("{name}:{r_name}");
-                    joined_schema
-                        .contains(aliased_name.as_str())
-                        .then(|| (name.to_string(), aliased_name))
-                })
-                .collect(),
-        );
+    ) -> PolarsResult<()> {
+        let renamed: PlHashMap<String, String> = right_schema
+            .iter_names()
+            .filter(|name| left_schema.contains(name))
+            .filter_map(|name| {
+                let aliased_name = format!("{name}:{r_name}");
+                joined_schema
+                    .contains(aliased_name.as_str())
+                    .then(|| (name.to_string(), aliased_name))
+            })
+            .collect();
+        for relation in right_relations {
+            if relation == r_name {
+                continue;
+            }
+            let Some(mut relation_lf) = self.get_relation_frame(relation)? else {
+                continue;
+            };
+            let relation_schema = self.get_frame_schema(&mut relation_lf)?;
+            let aliases = self.joined_aliases.entry(relation.clone()).or_default();
+            for name in aliases.values_mut() {
+                if let Some(aliased_name) = renamed.get(name.as_str()) {
+                    *name = aliased_name.clone();
+                }
+            }
+            for (name, aliased_name) in &renamed {
+                if relation_schema.contains(name) && !aliases.contains_key(name) {
+                    aliases.insert(name.clone(), aliased_name.clone());
+                }
+            }
+        }
+        self.joined_aliases.insert(r_name.to_string(), renamed);
+        Ok(())
     }
 
     /// Error if the unqualified column `name` exists in more than one of the joined
@@ -1791,7 +1830,13 @@ impl SQLContext {
                 };
 
                 let joined_schema = self.get_frame_schema(&mut lf)?;
-                self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
+                self.record_joined_aliases(
+                    &r_name,
+                    &[],
+                    &left_schema,
+                    &right_schema,
+                    &joined_schema,
+                )?;
             }
         };
         Ok(lf)
@@ -2859,7 +2904,7 @@ impl SQLContext {
             .collect())
     }
 
-    fn process_where(
+    pub(crate) fn process_where(
         &mut self,
         mut lf: LazyFrame,
         expr: Option<&SQLExpr>,
@@ -3687,7 +3732,13 @@ impl SQLContext {
             remaining_where = residual;
 
             let joined_schema = self.get_frame_schema(lf)?;
-            self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
+            self.record_joined_aliases(
+                &r_name,
+                &pending_relations[next],
+                &left_schema,
+                &right_schema,
+                &joined_schema,
+            )?;
             joined_table_names.extend(
                 kept_factors(tbl_expr)
                     .into_iter()
@@ -3841,6 +3892,12 @@ impl SQLContext {
     }
 
     fn get_table(&mut self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
+        if !self.nested_join_frames.is_empty() {
+            if let Some(name) = get_table_name(relation) {
+                self.nested_join_frames
+                    .retain(|key, _| !key.eq_ignore_ascii_case(&name));
+            }
+        }
         match relation {
             TableFactor::Table {
                 name, alias, args, ..
@@ -3967,16 +4024,20 @@ impl SQLContext {
             } => {
                 // Only an alias makes the parenthesized join a scope of its own; bare parens
                 // just group, so their relation aliases stay visible to the enclosing query.
-                let lf = match alias {
-                    Some(_) => {
-                        self.execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?
+                match alias {
+                    Some(alias) => {
+                        let lf = self
+                            .execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?;
+                        let lf = self.rename_columns_from_table_alias(lf, alias)?;
+                        let name = alias.name.value.clone();
+                        self.nested_join_frames.insert(name.clone(), lf.clone());
+                        Ok((name, lf))
                     },
-                    None => self.execute_from_statement(table_with_joins)?,
-                };
-                let name = alias
-                    .as_ref()
-                    .map_or_else(String::new, |a| a.name.value.clone());
-                Ok((name, lf))
+                    None => Ok((
+                        String::new(),
+                        self.execute_from_statement(table_with_joins)?,
+                    )),
+                }
             },
             // Support bare table, optionally with an alias, for now
             _ => polars_bail!(SQLInterface: "not yet implemented: {}", relation),
@@ -5200,7 +5261,10 @@ pub(crate) fn is_correlated_result_col(name: &str) -> bool {
 }
 
 /// The relations of a `FROM` (see `factor_relations`).
-fn declared_relations(from: &[TableWithJoins], spellings: &CatalogSpellings) -> Vec<RelationName> {
+pub(crate) fn declared_relations(
+    from: &[TableWithJoins],
+    spellings: &CatalogSpellings,
+) -> Vec<RelationName> {
     from.iter()
         .flat_map(|tbl| factor_relations(kept_factors(tbl).into_iter(), spellings))
         .collect()
