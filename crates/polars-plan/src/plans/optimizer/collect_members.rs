@@ -38,6 +38,7 @@ pub(super) struct MemberCollector {
     pub(crate) has_sort: bool,
     pub(crate) has_group_by: bool,
     pub(crate) has_hint: bool,
+    pub(crate) has_recursive: bool,
     pub(crate) with_columns_count: u32,
     #[expect(clippy::disallowed_types)]
     pub(crate) seen_dsl_resolvers: Option<polars_utils::aliases::PlHashSet<Arc<DslResolver>>>,
@@ -57,6 +58,7 @@ impl MemberCollector {
             has_sort: false,
             has_group_by: false,
             has_hint: false,
+            has_recursive: false,
             with_columns_count: 0,
             seen_dsl_resolvers: Some(Default::default()),
             #[cfg(feature = "cse")]
@@ -89,6 +91,7 @@ impl MemberCollector {
                 Sort { .. } => {
                     self.has_sort = true;
                 },
+                Recursive { .. } => self.has_recursive = true,
                 #[cfg(feature = "cse")]
                 Scan { .. } => {
                     self.scans

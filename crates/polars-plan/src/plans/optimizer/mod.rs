@@ -182,6 +182,13 @@ pub fn optimize(
         });
     };
 
+    // Caches block predicate pushdown. A recursive query keeps caches that have one reader in
+    // its step, so their inputs must be optimized by the cache pass.
+    #[cfg(feature = "cse")]
+    if get_or_init_members!().has_recursive {
+        run_set_cache_states = true;
+    }
+
     let mut repeat_slice_pd_after_filter_pd = false;
 
     if opt_flags.slice_pushdown() {

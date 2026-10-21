@@ -421,6 +421,27 @@ def test_recursive_step_is_optimized() -> None:
     assert sorted(lf.collect()["n"].to_list()) == [1, 2, 3]
 
 
+def test_recursive_step_cached_input_is_optimized() -> None:
+    # `base` is cached as the step reads it in every round; its join must still be
+    # optimized.
+    ctx = pl.SQLContext(a=pl.LazyFrame({"k": [1, 2]}), b=pl.LazyFrame({"k": [1, 2]}))
+    lf = ctx.execute(
+        """
+        WITH base AS (SELECT a.k FROM a JOIN b ON a.k = b.k AND a.k < 3)
+        SELECT * FROM (
+          WITH RECURSIVE t AS (
+            SELECT 0 AS n
+            UNION ALL
+            SELECT n + 1 FROM t JOIN base ON base.k = t.n + 1 WHERE n < 2
+          )
+          SELECT * FROM t
+        )
+        """
+    )
+    assert "CROSS JOIN" not in lf.explain()
+    assert sorted(lf.collect()["n"].to_list()) == [0, 1, 2]
+
+
 def test_recursive_query_from_resolver() -> None:
     class Resolver(LazyFrameResolver):
         def schema(self) -> dict[str, Any]:
