@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use polars_arrow::bitmap::BitmapBuilder;
+use polars_arrow::bitmap::bitmask::BitMask;
 use polars_utils::min_max::MinMaxPolicy;
 
 use super::super::van_herk::{rolling_minmax_shifted, shift_trailing, van_herk_kernel};
@@ -93,33 +94,33 @@ fn sliding_count_validity(
         return polars_arrow::bitmap::and_not(&full, &nulls_reach).sliced(shift, n);
     }
 
-    // General case: two running popcounts over the virtual input.
-    let mut buf: Vec<u8> = Vec::with_capacity(n.div_ceil(8));
-    let (mut byte, mut filled) = (0u8, 0u8);
-    let (mut hi, mut lo) = (0usize, 0usize);
-    for v in 0..total {
-        if v < n {
-            // SAFETY: `v < n` is checked above.
-            hi += unsafe { validity.get_bit_unchecked(v) } as usize;
-        }
-        if v >= w {
-            // SAFETY: `v < n + shift` and `w > shift` here.
-            lo += unsafe { validity.get_bit_unchecked(v - w) } as usize;
-        }
-        if v >= shift {
-            byte |= ((hi - lo >= threshold) as u8) << filled;
-            if filled == 7 {
-                buf.push(byte);
-                (byte, filled) = (0, 0);
-            } else {
-                filled += 1;
-            }
-        }
+    // General case: batch entering and leaving bits in 32-bit words.
+    if n - validity.unset_bits() < threshold {
+        return Bitmap::new_zeroed(n);
     }
-    if filled > 0 {
-        buf.push(byte);
+    let mask = BitMask::from_bitmap(validity);
+    let mut count = shift - validity.null_count_range(0, shift);
+    let mut bytes = Vec::with_capacity(n.div_ceil(8));
+    for i in (0..n).step_by(32) {
+        let v = shift + i;
+        let mut incoming = mask.get_u32(v);
+        // Zero-pad outgoing bits before the window reaches the input.
+        let mut outgoing = mask
+            .get_u32(v.saturating_sub(w))
+            .checked_shl(w.saturating_sub(v).min(32) as u32)
+            .unwrap_or(0);
+        let len = (n - i).min(32);
+        let mut word = 0u32;
+        for bit in 0..len {
+            count += (incoming & 1) as usize;
+            incoming >>= 1;
+            count -= (outgoing & 1) as usize;
+            outgoing >>= 1;
+            word |= ((count >= threshold) as u32) << bit;
+        }
+        bytes.extend_from_slice(&word.to_le_bytes()[..len.div_ceil(8)]);
     }
-    MutableBitmap::from_vec(buf, n).into()
+    Bitmap::from_u8_vec(bytes, n)
 }
 
 /// Dilate set bits to the following `w.saturating_sub(1)` positions.

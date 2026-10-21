@@ -452,7 +452,9 @@ def test_rolling_extrema_matches_naive(
     for window_size in {0, 1, 2, 3, 9, 100, 130, 131, 385, 1024, 2**64 - 1} | {
         n + d for n in (64, 128, 192, 256) for d in (-1, 0, 1)
     }:
-        min_samples_values = {min(p, window_size) for p in (0, 1, 2, window_size)}
+        min_samples_values = {
+            min(p, window_size) for p in (0, 1, 2, window_size // 2, window_size)
+        }
         for min_samples in min_samples_values:
             for center in (False, True):
                 for operation in ("min", "max"):
