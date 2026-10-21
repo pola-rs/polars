@@ -191,7 +191,7 @@ pub(crate) fn rewrite_catalog_names(
         is_local,
         registered_aliases: registered.0,
         cte_scopes: Vec::new(),
-        withs: Vec::new(),
+        with_stack: Vec::new(),
         rewritten: Vec::new(),
         spellings: CatalogSpellings::default(),
         desugared: 0,
@@ -233,7 +233,7 @@ struct Rewriter<R, L> {
     /// The CTE names visible in each enclosing query.
     cte_scopes: Vec<Vec<String>>,
     /// The `WITH` clauses of the queries being visited, taken out while their bodies are visited.
-    withs: Vec<Option<With>>,
+    with_stack: Vec<Option<With>>,
     rewritten: Vec<RewrittenName>,
     spellings: CatalogSpellings,
     /// The number of `TABLE x` desugared, which numbers their (made-up) name positions.
@@ -349,14 +349,14 @@ where
             }
         }
         self.cte_scopes.push(names);
-        self.withs.push(with);
+        self.with_stack.push(with);
         self.desugar_table(&mut query.body);
         ControlFlow::Continue(())
     }
 
     fn post_visit_query(&mut self, query: &mut Query) -> ControlFlow<PolarsError> {
         self.cte_scopes.pop();
-        query.with = self.withs.pop().flatten();
+        query.with = self.with_stack.pop().flatten();
         ControlFlow::Continue(())
     }
 
