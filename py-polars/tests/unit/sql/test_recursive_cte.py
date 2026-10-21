@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import io
+import os
+import subprocess
+import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import InvalidOperationError, SQLInterfaceError
+from polars.lazyframe.resolver import LazyFrameResolver
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
@@ -307,6 +311,80 @@ def test_recursive_in_memory_engine_uses_streaming_optimizations(
         """
     ).collect(engine="in-memory")
     assert res.rows() == [(6, 7)]
+
+
+def test_recursive_step_is_optimized() -> None:
+    # The step's read of the working table is not a second use of the CTE, so the CTE
+    # is not cached and the filters in the step are still pushed down.
+    ctx = pl.SQLContext(e=pl.LazyFrame({"src": [1, 2, 3], "dst": [2, 3, 4]}))
+    lf = ctx.execute(
+        """
+        WITH RECURSIVE t AS (
+            SELECT 1 AS n, 0 AS depth
+            UNION ALL
+            SELECT e.dst, t.depth + 1 FROM e JOIN t ON e.src = t.n AND t.depth < 2
+        )
+        SELECT n FROM t
+        """
+    )
+    plan = lf.explain()
+    assert "CROSS JOIN" not in plan
+    assert "CACHE" not in plan
+    assert sorted(lf.collect()["n"].to_list()) == [1, 2, 3]
+
+
+def test_recursive_query_from_resolver() -> None:
+    class Resolver(LazyFrameResolver):
+        def schema(self) -> dict[str, Any]:
+            return {"n": pl.Int32}
+
+        def resolve_lazyframe(self, **kwargs: Any) -> pl.LazyFrame:
+            return pl.SQLContext().execute(
+                "WITH RECURSIVE t AS (SELECT 1 AS n UNION ALL "
+                "SELECT n + 1 FROM t WHERE n < 3) SELECT * FROM t"
+            )
+
+    lf = (
+        Resolver()
+        .lazy()
+        .select(pl.col("n").sum().alias("a"), (pl.col("n").sum() + 1).alias("b"))
+    )
+    assert lf.collect(engine="streaming").rows() == [(6, 7)]
+    with pytest.raises(InvalidOperationError, match="resolver"):
+        lf.collect(engine="in-memory")
+
+
+@pytest.mark.slow
+def test_recursive_background_single_thread() -> None:
+    # The step uses a Python callback that collects an in-memory query. With one Rayon
+    # thread this deadlocks if a round blocks the Rayon worker.
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import polars as pl
+
+def inner(s):
+    d = pl.DataFrame({"a": [1, 2]})
+    d.lazy().join(d.lazy(), on="a").collect(engine="in-memory")
+    return s
+
+src = pl.LazyFrame({"n": [1, 2, 3]}).with_columns(
+    pl.col("n").map_batches(inner, return_dtype=pl.Int64, is_elementwise=True)
+)
+lf = pl.SQLContext(src=src).execute(
+    "WITH RECURSIVE t AS (SELECT 1 AS n UNION ALL "
+    "SELECT t.n + 1 FROM t JOIN src ON src.n = t.n WHERE t.n < 3) SELECT * FROM t"
+)
+assert lf.collect(background=True).fetch_blocking()["n"].to_list() == [1, 2, 3]
+print("OK", end="")
+""",
+        ],
+        env={**os.environ, "POLARS_MAX_THREADS": "1"},
+        timeout=30,
+    )
+    assert out == b"OK"
 
 
 def test_recursive_collect_all(ctx: pl.SQLContext[pl.LazyFrame]) -> None:

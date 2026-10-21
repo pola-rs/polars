@@ -1609,6 +1609,21 @@ impl SQLContext {
             for name in collector.tables {
                 *reference_counts.entry(name).or_insert(0) += 1;
             }
+            // The step of a recursive CTE reads the working table, not the CTE itself.
+            for (cte, _) in with
+                .cte_tables
+                .iter()
+                .zip(&reads_itself)
+                .filter(|(_, r)| **r)
+            {
+                let name = &cte.alias.name.value;
+                let mut collector = TableIdentifierCollector::default();
+                let _ = cte.query.visit(&mut collector);
+                let n_self = collector.tables.iter().filter(|t| *t == name).count();
+                if let Some(count) = reference_counts.get_mut(name) {
+                    *count = count.saturating_sub(n_self);
+                }
+            }
 
             for idx in order {
                 let cte = &with.cte_tables[idx];
@@ -1748,11 +1763,12 @@ impl SQLContext {
         .into())
     }
 
-    /// The ids of the caches in the registered tables and CTEs.
+    /// The ids of the caches in the registered tables, catalog tables and CTEs.
     fn cache_ids(&self) -> PlHashSet<UniqueId> {
         let table_map = self.table_map.read().unwrap();
         table_map
             .values()
+            .chain(self.catalog_tables.values())
             .chain(self.cte_map.values())
             .flat_map(|lf| &lf.logical_plan)
             .filter_map(|plan| match plan {

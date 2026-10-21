@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_async::executor::TaskMetricAggregator;
+use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_plan::dsl::SinkTypeIR;
@@ -144,7 +145,10 @@ impl ComputeNode for RecursiveNode {
                 .iter_mut()
                 .map(|sink| Ok(Arc::new(sink.get_output()?.unwrap())))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let df = self.step.run(anchor, &externals)?;
+            // The rounds run new queries that may need Rayon, so don't block a Rayon worker
+            // while they run.
+            let step = &*self.step;
+            let df = RAYON.block_on(|| step.run(anchor, &externals))?;
             self.state =
                 RecursiveState::Source(InMemorySourceNode::new(Arc::new(df), MorselSeq::default()));
         }

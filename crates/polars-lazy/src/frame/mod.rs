@@ -582,6 +582,12 @@ impl LazyFrame {
             },
         )?;
 
+        // A resolver can add a recursive query after the plan was optimized for another engine.
+        polars_ensure!(
+            opt_flags.streaming() || !contains_recursive(lp_top, ir_arena),
+            InvalidOperation: "a recursive query added by a resolver must be collected with the streaming engine"
+        );
+
         Ok(lp_top)
     }
 
