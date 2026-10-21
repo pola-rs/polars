@@ -216,8 +216,9 @@ macro_rules! impl_signed_arith_kernel {
             }
 
             fn prim_true_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<Self::TrueDivT> {
-                let inv = 1.0 / rhs as f64;
-                prim_unary_values(lhs, |x| x as f64 * inv)
+                // Not `x * (1 / rhs)`, which isn't exact: 49 * (1 / 49) < 1.
+                let rhs = rhs as f64;
+                prim_unary_values(lhs, |x| x as f64 / rhs)
             }
 
             fn prim_true_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<Self::TrueDivT> {

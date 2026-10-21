@@ -75,9 +75,10 @@ macro_rules! impl_float_arith_kernel {
                 }
             }
 
+            // The scalar kernels divide like the array ones: multiplying by the rounded
+            // reciprocal isn't exact, e.g. 49 * (1 / 49) < 1.
             fn prim_wrapping_floor_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
-                let inv = <$T>::one() / rhs;
-                prim_unary_values(lhs, |x| (x * inv).floor())
+                prim_unary_values(lhs, |x| (x / rhs).floor())
             }
 
             fn prim_wrapping_floor_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
@@ -85,8 +86,7 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
-                let inv = <$T>::one() / rhs;
-                prim_unary_values(lhs, |x| (x * inv).trunc())
+                prim_unary_values(lhs, |x| (x / rhs).trunc())
             }
 
             fn prim_wrapping_trunc_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
@@ -94,8 +94,7 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
-                let inv = <$T>::one() / rhs;
-                prim_unary_values(lhs, |x| x - rhs * (x * inv).floor())
+                prim_unary_values(lhs, |x| x - rhs * (x / rhs).floor())
             }
 
             fn prim_wrapping_mod_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
@@ -111,7 +110,7 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_true_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<Self::TrueDivT> {
-                Self::prim_wrapping_mul_scalar(lhs, <$T>::one() / rhs)
+                prim_unary_values(lhs, |x| x / rhs)
             }
 
             fn prim_true_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<Self::TrueDivT> {

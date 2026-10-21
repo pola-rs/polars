@@ -234,6 +234,34 @@ def test_simd_float_sum_determinism() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("op", "dtype", "expected"),
+    [
+        (operator.truediv, pl.Float32, 1.0),
+        (operator.truediv, pl.Float64, 1.0),
+        (operator.truediv, pl.Int64, 1.0),
+        (operator.truediv, pl.UInt64, 1.0),
+        (operator.floordiv, pl.Float64, 1.0),
+        (operator.mod, pl.Float64, 0.0),
+        (pl.Expr.truncdiv, pl.Float64, 1.0),
+    ],
+)
+def test_division_by_literal_matches_column(
+    op: Any, dtype: pl.DataType, expected: float
+) -> None:
+    # 1 / 107 is inexact in both f32 and f64. Eager, so the literal reaches the scalar
+    # kernels rather than being broadcast.
+    df = pl.DataFrame(
+        {"x": [107, 214, 0, 50, 3], "d": [107] * 5}, schema={"x": dtype, "d": dtype}
+    )
+    out = df.select(
+        literal=op(pl.col("x"), pl.lit(107, dtype=dtype)),
+        column=op(pl.col("x"), pl.col("d")),
+    )
+    assert_series_equal(out["literal"], out["column"], check_names=False)
+    assert out["literal"][0] == expected
+
+
 def test_floor_division_float_int_consistency() -> None:
     a = np.random.randn(10) * 10
 
