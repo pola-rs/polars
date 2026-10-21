@@ -322,12 +322,22 @@ pub fn function_expr_to_udf(
             map_as_slice!(misc::as_struct)
         },
         #[cfg(feature = "top_k")]
-        F::TopK { descending } => {
-            map_as_slice!(polars_ops::prelude::top_k, descending)
+        F::TopK {
+            descending,
+            maintain_order,
+        } => {
+            map_as_slice!(polars_ops::prelude::top_k, descending, maintain_order)
         },
         #[cfg(feature = "top_k")]
-        F::TopKBy { descending } => {
-            map_as_slice!(polars_ops::prelude::top_k_by, descending.clone())
+        F::TopKBy {
+            descending,
+            maintain_order,
+        } => {
+            map_as_slice!(
+                polars_ops::prelude::top_k_by,
+                descending.clone(),
+                maintain_order
+            )
         },
         F::Shift => map_as_slice!(shift_and_fill::shift),
         #[cfg(feature = "cum_agg")]

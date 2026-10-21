@@ -3804,13 +3804,14 @@ class Series(metaclass=_Meta):
                 self._s.sort(descending, nulls_last, multithreaded)
             )
 
-    def top_k(self, k: int = 5) -> Series:
+    def top_k(self, k: int = 5, *, maintain_order: bool = False) -> Series:
         r"""
         Return the `k` largest elements.
 
-        Non-null elements are always preferred over null elements. The output is
-        not guaranteed to be in any particular order, call :func:`sort` after
-        this function if you wish the output to be sorted.
+        Non-null elements are always preferred over null elements. If
+        ``maintain_order`` is set to ``True``, the order of the input data is
+        preserved in the output. Otherwise, the output is not guaranteed to be
+        in any particular order.
 
         This has time complexity:
 
@@ -3820,6 +3821,9 @@ class Series(metaclass=_Meta):
         ----------
         k
             Number of elements to return.
+        maintain_order
+            Maintain the order of the input data in the output. This requires more
+            work.
 
         See Also
         --------
@@ -3846,14 +3850,15 @@ class Series(metaclass=_Meta):
         k: int = 5,
         *,
         reverse: bool | Sequence[bool] = False,
+        maintain_order: bool = False,
     ) -> Series:
         r"""
         Return the `k` largest elements of the `by` column.
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `reverse`. The output is not guaranteed to be in any
-        particular order, call :func:`sort` after this function if you wish the
-        output to be sorted.
+        the value of `reverse`. If ``maintain_order`` is set to ``True``, the order
+        of the input data is preserved in the output. Otherwise, the output is not
+        guaranteed to be in any particular order.
 
         This has time complexity:
 
@@ -3870,6 +3875,9 @@ class Series(metaclass=_Meta):
             Consider the `k` smallest elements of the `by` column (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
+        maintain_order
+            Maintain the order of the input data in the output. This requires more
+            work.
 
         See Also
         --------
@@ -3890,13 +3898,14 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    def bottom_k(self, k: int = 5) -> Series:
+    def bottom_k(self, k: int = 5, *, maintain_order: bool = False) -> Series:
         r"""
         Return the `k` smallest elements.
 
-        Non-null elements are always preferred over null elements. The output is
-        not guaranteed to be in any particular order, call :func:`sort` after
-        this function if you wish the output to be sorted.
+        Non-null elements are always preferred over null elements. If
+        ``maintain_order`` is set to ``True``, the order of the input data is
+        preserved in the output. Otherwise, the output is not guaranteed to be
+        in any particular order.
 
         This has time complexity:
 
@@ -3906,6 +3915,9 @@ class Series(metaclass=_Meta):
         ----------
         k
             Number of elements to return.
+        maintain_order
+            Maintain the order of the input data in the output. This requires more
+            work.
 
         See Also
         --------
@@ -3932,14 +3944,15 @@ class Series(metaclass=_Meta):
         k: int = 5,
         *,
         reverse: bool | Sequence[bool] = False,
+        maintain_order: bool = False,
     ) -> Series:
         r"""
         Return the `k` smallest elements of the `by` column.
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `reverse`. The output is not guaranteed to be in any
-        particular order, call :func:`sort` after this function if you wish the
-        output to be sorted.
+        the value of `reverse`. If ``maintain_order`` is set to ``True``, the order
+        of the input data is preserved in the output. Otherwise, the output is not
+        guaranteed to be in any particular order.
 
         This has time complexity:
 
@@ -3956,6 +3969,9 @@ class Series(metaclass=_Meta):
             Consider the `k` largest elements of the `by` column( (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
+        maintain_order
+            Maintain the order of the input data in the output. This requires more
+            work.
 
         See Also
         --------
