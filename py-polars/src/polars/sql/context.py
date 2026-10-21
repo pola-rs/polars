@@ -102,6 +102,7 @@ class SQLContext(Generic[FrameType]):
     _ctxt: PySQLContext
     _eager_execution: Final[bool]
     _tables_scope_stack: list[set[str]]
+    _catalogs_scope_stack: list[set[str]]
     # Attached catalogs by name: config, instance (if known) and storage options.
     _catalogs: dict[
         str,
@@ -297,9 +298,11 @@ class SQLContext(Generic[FrameType]):
             return ctx.execute(query=query, eager=eager)
 
     def __enter__(self) -> SQLContext[FrameType]:
-        """Track currently registered tables on scope entry; supports nested scopes."""
+        """Track tables and catalogs on scope entry; supports nested scopes."""
         self._tables_scope_stack = getattr(self, "_tables_scope_stack", [])
         self._tables_scope_stack.append(set(self.tables()))
+        self._catalogs_scope_stack = getattr(self, "_catalogs_scope_stack", [])
+        self._catalogs_scope_stack.append(set(self._catalogs))
         return self
 
     def __exit__(
@@ -309,15 +312,19 @@ class SQLContext(Generic[FrameType]):
         exc_tb: TracebackType | None,
     ) -> None:
         """
-        Unregister any tables created within the given scope on context exit.
+        Unregister any tables and catalogs created within the given scope on exit.
 
         See Also
         --------
         unregister
+        unregister_catalog
         """
         self.unregister(
             names=(set(self.tables()) - self._tables_scope_stack.pop()),
         )
+        for name in set(self._catalogs) - self._catalogs_scope_stack.pop():
+            self._ctxt.unregister_catalog(name)
+            del self._catalogs[name]
 
     def __repr__(self) -> str:
         n_tables = len(self.tables())
@@ -498,17 +505,22 @@ class SQLContext(Generic[FrameType]):
         Parameters
         ----------
         name
-            The catalog's name in SQL. The same name replaces the catalog; a name
-            that differs from an attached catalog's only in case is an error.
+            The catalog's name in SQL. Registering the same name again replaces
+            the catalog: `catalog`, `default_namespace` and `storage_options` take
+            the new values, including their defaults when omitted, while the
+            catalog stays the default if it was (see `default`). A name that
+            differs from an attached catalog's only in case is an error.
         catalog
             A PyIceberg catalog, or an `IcebergCatalogConfig`.
         default_namespace
             The namespace of table names without one: a string (split on ".") or a
             sequence of namespace parts.
         default
-            Whether table names that start with no attached catalog refer to this
-            catalog. At most one catalog is the default; a later default replaces
-            it.
+            Make this catalog the default: table names that start with no attached
+            catalog refer to it. At most one catalog is the default; a later default
+            replaces it. `False` never removes the default: re-registering the
+            default catalog keeps it the default, and re-registering another
+            catalog leaves it. Only `unregister_catalog` leaves no default.
         storage_options
             Options for the storage of the catalog's tables, as for
             :func:`scan_iceberg`. Pass the storage credentials here when a plan is
@@ -523,7 +535,12 @@ class SQLContext(Generic[FrameType]):
         serialized plans as secret.
 
         `CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on a table of an
-        attached catalog are not supported.
+        attached catalog are not supported. `DROP TABLE IF EXISTS` and
+        `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
+        catalog only act on a registered table, and are a no-op otherwise.
+
+        Catalogs attached inside a `with SQLContext()` block are detached on exit,
+        like the tables registered there.
 
         `SQLContext` is not thread-safe: do not register catalogs or tables while
         another thread executes a query on the same context.
