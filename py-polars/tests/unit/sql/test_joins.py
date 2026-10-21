@@ -758,6 +758,14 @@ def test_aliased_nested_join_does_not_hide_table() -> None:
         )
         assert res.rows() == [(1, 99)]
 
+        res = ctx.execute(
+            "WITH x AS (SELECT 99 AS k) SELECT x.k AS a, "
+            "(SELECT k FROM l WHERE FALSE UNION ALL TABLE x LIMIT 1) AS b "
+            "FROM (l NATURAL JOIN m) AS x",
+            eager=True,
+        )
+        assert res.rows() == [(1, 99)]
+
         ctx.execute("CREATE TABLE made AS SELECT * FROM (l NATURAL JOIN m) AS x")
         assert sorted(ctx.tables()) == ["l", "m", "made"]
 

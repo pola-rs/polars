@@ -239,7 +239,8 @@ pub struct SQLContext {
     active_relations: Vec<RelationName>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     /// The aliased parenthesized joins of the current statement, by alias. Only qualified
-    /// columns look them up, so the alias doesn't hide a table of the same name.
+    /// columns look them up (`get_relation_frame`), so the alias doesn't hide a table of
+    /// the same name.
     aliased_joins: PlHashMap<String, LazyFrame>,
     join_base: Option<JoinBase>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
@@ -757,7 +758,7 @@ impl SQLContext {
         if self.active_relations.is_empty() {
             for len in (1..idents.len()).rev() {
                 let qualifier = join_idents(&idents[..len]);
-                if self.get_table_from_current_scope(&qualifier)?.is_some() {
+                if self.get_relation_frame(&qualifier)?.is_some() {
                     return Ok(Some((qualifier, len)));
                 }
             }
@@ -807,19 +808,22 @@ impl SQLContext {
 
     /// Resolve a relation innermost-scope-first: a `FROM` alias, then a CTE, then
     /// a registered table.
-    pub(super) fn get_table_from_current_scope(
-        &self,
-        name: &str,
-    ) -> PolarsResult<Option<LazyFrame>> {
-        if let Some(lf) = get_ignoring_case(&self.aliased_joins, name)? {
-            return Ok(Some(lf.clone()));
-        }
+    fn get_table_from_current_scope(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
         if let Some(aliased) = get_ignoring_case(&self.table_aliases, name)? {
             if let Some(lf) = self.get_table_unaliased(aliased)? {
                 return Ok(Some(lf));
             }
         }
         self.get_table_unaliased(name)
+    }
+
+    /// The frame of the relation `name` that a qualified column reads: an aliased
+    /// parenthesized join, else a table in the current scope.
+    pub(crate) fn get_relation_frame(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
+        if let Some(lf) = get_ignoring_case(&self.aliased_joins, name)? {
+            return Ok(Some(lf.clone()));
+        }
+        self.get_table_from_current_scope(name)
     }
 
     fn get_table_unaliased(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
@@ -986,7 +990,7 @@ impl SQLContext {
             if relation == r_name {
                 continue;
             }
-            let Some(mut relation_lf) = self.get_table_from_current_scope(relation)? else {
+            let Some(mut relation_lf) = self.get_relation_frame(relation)? else {
                 continue;
             };
             let relation_schema = self.get_frame_schema(&mut relation_lf)?;
