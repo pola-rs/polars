@@ -78,7 +78,8 @@ class ConnectionExecutor:
         self.driver_name = (
             "arrow_odbc_proxy"
             if isinstance(connection, ODBCCursorProxy)
-            else type(connection).__module__.split(".", 1)[0].lower()
+            # compiled driver modules can have a leading underscore (eg: "_duckdb")
+            else type(connection).__module__.split(".", 1)[0].lower().lstrip("_")
         )
         if self.driver_name == "surrealdb":
             connection = SurrealDBCursorProxy(client=connection)
@@ -148,6 +149,15 @@ class ConnectionExecutor:
                 msg = f"`read_database` queries require at least {module_name} version {minimum_version}"
                 raise ModuleUpgradeRequiredError(msg)
 
+    @staticmethod
+    def _duckdb_has_lazy_relations() -> bool:
+        """Check if DuckDB is version 2.0 or later."""
+        try:
+            ConnectionExecutor._check_module_version("duckdb", "2.0.0")
+        except ModuleUpgradeRequiredError:
+            return False
+        return True
+
     def _fetch_arrow(
         self,
         driver_properties: ArrowDriverProperties,
@@ -155,28 +165,31 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
     ) -> Iterable[pa.RecordBatch]:
-        """Yield Arrow data as a generator of one or more RecordBatches or Tables."""
+        """Return Arrow data as an iterable of one or more RecordBatches or Tables."""
+        # note: the fetch method is called here, not when iterating, as a DuckDB
+        # relation runs its query (and needs an open cursor) at that call
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
             fetch_method = driver_properties["fetch_all"]
             res = getattr(self.result, fetch_method)()
+            return res if isinstance(res, Iterable) else [res]
 
-            if isinstance(res, Iterable):
-                yield from res
-            else:
-                yield res
-        else:
-            size = [batch_size] if driver_properties["exact_batch_size"] else []
-            repeat_batch_calls = driver_properties["repeat_batch_calls"]
-            fetchmany_arrow = getattr(self.result, fetch_batches)
-            if not repeat_batch_calls:
-                yield from fetchmany_arrow(*size)
-            else:
-                while True:
-                    arrow = fetchmany_arrow(*size)
-                    if not arrow:
-                        break
-                    yield arrow
+        size = [batch_size] if driver_properties["exact_batch_size"] else []
+        fetchmany_arrow = getattr(self.result, fetch_batches)
+        if not driver_properties["repeat_batch_calls"]:
+            return fetchmany_arrow(*size)  # type: ignore[no-any-return]
+        return self._repeat_fetch(fetchmany_arrow, size)
+
+    @staticmethod
+    def _repeat_fetch(
+        fetchmany_arrow: Any, size: list[int | None]
+    ) -> Iterator[pa.RecordBatch]:
+        """Call a batch fetch method until it returns no more data."""
+        while True:
+            arrow = fetchmany_arrow(*size)
+            if not arrow:
+                break
+            yield arrow
 
     @staticmethod
     def _fetchall_rows(result: Cursor, *, is_alchemy: bool) -> Iterable[Sequence[Any]]:
@@ -574,6 +587,18 @@ class ConnectionExecutor:
                 return self
 
             cursor_execute, options, query = self._sqlalchemy_setup(query, options)
+        elif (
+            self.driver_name == "duckdb"
+            and isinstance(query, str)
+            and self._duckdb_has_lazy_relations()
+        ):
+            # Arrow output from a DuckDB relation avoids copying the result rows
+            if "parameters" in options and "params" not in options:
+                options = options.copy()
+                options["params"] = options.pop("parameters")
+            relation = self.cursor.sql(query, **options)  # type: ignore[attr-defined]
+            self.result = self.cursor if relation is None else relation
+            return self
         else:
             cursor_execute = self.cursor.execute
 
@@ -585,7 +610,12 @@ class ConnectionExecutor:
             params = {}  # type: ignore[assignment]
 
         if not options or any(
-            p.kind in (Parameter.KEYWORD_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+            p.kind
+            in (
+                Parameter.KEYWORD_ONLY,
+                Parameter.POSITIONAL_OR_KEYWORD,
+                Parameter.VAR_KEYWORD,
+            )
             for p in params.values()
         ):
             result = cursor_execute(query, **options)
@@ -626,22 +656,28 @@ class ConnectionExecutor:
         if defer_cursor_close := (iter_batches and can_close):
             self.can_close_cursor = False
 
-        for frame_init in (
-            self._from_arrow,  # init from arrow-native data (where support exists)
-            self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
-        ):
-            frame = frame_init(
-                batch_size=batch_size,
-                iter_batches=iter_batches,
-                schema_overrides=schema_overrides,
-                infer_schema_length=infer_schema_length,
-            )
-            if frame is not None:
-                if defer_cursor_close:
-                    frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
-                    frame = (df for df in frame_cursor)
-                return frame
+        try:
+            for frame_init in (
+                self._from_arrow,  # init from arrow-native data (where support exists)
+                self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
+            ):
+                frame = frame_init(
+                    batch_size=batch_size,
+                    iter_batches=iter_batches,
+                    schema_overrides=schema_overrides,
+                    infer_schema_length=infer_schema_length,
+                )
+                if frame is not None:
+                    if defer_cursor_close:
+                        frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
+                        frame = (df for df in frame_cursor)
+                    return frame
+        except BaseException:
+            # no frame iterator owns the cursor, so `__exit__` should close it
+            self.can_close_cursor = can_close
+            raise
 
+        self.can_close_cursor = can_close
         msg = (
             f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )
