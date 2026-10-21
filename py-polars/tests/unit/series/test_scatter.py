@@ -141,3 +141,21 @@ def test_scatter_decimal_25869() -> None:
 
     with pytest.raises(InvalidOperationError):
         s.scatter(1, "test")
+
+
+def test_scatter_boolean_offset_slice_30105() -> None:
+    # The slice is the only owner of its buffers.
+    s = pl.Series("s", [True, True, False, False]).slice(2)
+    s.scatter(0, False)
+    assert s.to_list() == [False, False]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value"), [(pl.Int64, 1), (pl.String, "x"), (pl.Boolean, True)]
+)
+def test_scatter_offset_slice_validity_30105(dtype: PolarsDataType, value: Any) -> None:
+    values = [value, value, value, None, value, None, value]
+    s = pl.Series("s", values, dtype=dtype).slice(3)
+    # Position 1 already holds `value`, so nothing should change.
+    s.scatter(1, value)
+    assert s.to_list() == [None, value, None, value]

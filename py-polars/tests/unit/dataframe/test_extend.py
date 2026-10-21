@@ -60,6 +60,21 @@ def test_extend_slice_offset_8745() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_extend_filtered_suffix_30105() -> None:
+    # #30105
+    df = pl.DataFrame(
+        {"b": [True] * 61 + [False] * 3, "keep": [False] * 61 + [True] * 3}
+    )
+    # Keeping a contiguous suffix returns an offset slice.
+    result = df.filter(pl.col("keep"))
+    del df
+
+    result.extend(pl.DataFrame({"b": [False], "keep": [True]}))
+
+    expected = pl.DataFrame({"b": [False] * 4, "keep": [True] * 4})
+    assert_frame_equal(result, expected)
+
+
 def test_extend_self() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [True, False]})
 

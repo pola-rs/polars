@@ -34,6 +34,40 @@ fn as_slice_offset_middle() {
 }
 
 #[test]
+fn into_mut_offset() {
+    let b = Bitmap::from([true, false, true, true, false, false, true, false, true]);
+    assert!(b.into_mut().is_right());
+
+    // A `MutableBitmap` has no offset, so an offset slice must not be converted in place.
+    let b = Bitmap::from([true, false, true, true, false, false, true, false, true]);
+    let b = b.sliced(2, 7);
+    assert!(b.into_mut().is_left());
+}
+
+#[test]
+fn make_mut_offset() {
+    // non-periodic pattern, so bits read from the wrong position don't match by accident.
+    let mut state = 0x2545_f491_u32;
+    let values: Vec<bool> = (0..200)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state & 1 == 1
+        })
+        .collect();
+
+    for offset in [1, 7, 8, 9, 64, 65] {
+        let b = Bitmap::from_iter(values.iter().copied()).sliced(offset, 50);
+        let b: Bitmap = b.make_mut().into();
+        assert!(
+            b.iter().eq(values[offset..offset + 50].iter().copied()),
+            "offset={offset}"
+        );
+    }
+}
+
+#[test]
 fn split_at_unset_bits() {
     let bm = Bitmap::from_u8_slice([0b01101010, 0, 0, 0b100], 27);
 
