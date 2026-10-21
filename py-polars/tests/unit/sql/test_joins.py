@@ -694,6 +694,63 @@ def test_implicit_self_join() -> None:
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
+        (
+            "SELECT l.k AS lk, m.k AS mk FROM l, r NATURAL JOIN m "
+            "WHERE l.k + 1 = m.k + r.k",
+            {"lk": [1, 3], "mk": [1, 2]},
+        ),
+        (
+            "SELECT l.k AS lk, m.k AS mk FROM l, r AS x JOIN m USING (k) "
+            "WHERE l.k + 1 = m.k + x.k",
+            {"lk": [1, 3], "mk": [1, 2]},
+        ),
+        (
+            "SELECT l.k AS lk FROM l WHERE EXISTS (SELECT 1 FROM l AS a, "
+            "r NATURAL JOIN m WHERE a.k + 1 = m.k + r.k AND a.k = l.k)",
+            {"lk": [1, 3]},
+        ),
+    ],
+)
+def test_implicit_join_with_joined_relation(
+    query: str, expected: dict[str, Any]
+) -> None:
+    # the columns of every relation of the joined item are renamed, not only the first
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2, 3]}),
+        "r": pl.DataFrame({"k": [1, 2]}),
+        "m": pl.DataFrame({"k": [1, 2, 3]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        expected=expected,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("alias", ["a", "x"])
+def test_aliased_nested_join_as_relation(alias: str) -> None:
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2, 3]}),
+        "r": pl.DataFrame({"k": [1, 2]}),
+        "m": pl.DataFrame({"k": [1, 2, 3]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            f"SELECT {alias}.k AS ak, r.k AS rk "
+            f"FROM (l AS a NATURAL JOIN m AS b) AS {alias} JOIN r ON r.k + 1 = {alias}.k"
+        ),
+        compare_with="duckdb",
+        expected={"ak": [2, 3], "rk": [1, 2]},
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
         # INNER joins
         (
             "SELECT df1.* FROM df1 INNER JOIN df2 USING (a)",

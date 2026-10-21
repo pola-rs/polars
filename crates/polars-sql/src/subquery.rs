@@ -29,7 +29,7 @@ use sqlparser::ast::{
 use crate::catalog::CatalogSpellings;
 use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
-    flatten_and_conditions, get_table_name, match_qualifier, relation_name,
+    declared_relations, flatten_and_conditions, get_table_name, match_qualifier, relation_name,
 };
 use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
@@ -515,7 +515,18 @@ impl SQLContext {
             let right_schema = self.get_frame_schema(&mut rf)?;
             inner_lf = inner_lf.cross_join(rf, Some(format_pl_smallstr!(":{r_name}")));
             let joined_schema = self.get_frame_schema(&mut inner_lf)?;
-            self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
+            let right_relations: Vec<String> =
+                declared_relations(std::slice::from_ref(tbl_expr), self.catalog_spellings())
+                    .iter()
+                    .map(RelationName::key)
+                    .collect();
+            self.record_joined_aliases(
+                &r_name,
+                &right_relations,
+                &left_schema,
+                &right_schema,
+                &joined_schema,
+            )?;
         }
         self.set_join_base(&select.from);
         self.check_select_column_refs(select)?;

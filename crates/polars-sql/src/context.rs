@@ -953,27 +953,48 @@ impl SQLContext {
     }
 
     /// Track the columns of the joined relation `r_name` that also exist on the left
-    /// side, and so are stored under an aliased name in the joined frame.
+    /// side, and so are stored under an aliased name in the joined frame. The other
+    /// relations of the right input (`right_relations`) refer to these columns too.
     pub(crate) fn record_joined_aliases(
         &mut self,
         r_name: &str,
+        right_relations: &[String],
         left_schema: &Schema,
         right_schema: &Schema,
         joined_schema: &Schema,
-    ) {
-        self.joined_aliases.insert(
-            r_name.to_string(),
-            right_schema
-                .iter_names()
-                .filter(|name| left_schema.contains(name))
-                .filter_map(|name| {
-                    let aliased_name = format!("{name}:{r_name}");
-                    joined_schema
-                        .contains(aliased_name.as_str())
-                        .then(|| (name.to_string(), aliased_name))
-                })
-                .collect(),
-        );
+    ) -> PolarsResult<()> {
+        let renamed: PlHashMap<String, String> = right_schema
+            .iter_names()
+            .filter(|name| left_schema.contains(name))
+            .filter_map(|name| {
+                let aliased_name = format!("{name}:{r_name}");
+                joined_schema
+                    .contains(aliased_name.as_str())
+                    .then(|| (name.to_string(), aliased_name))
+            })
+            .collect();
+        for relation in right_relations {
+            if relation == r_name {
+                continue;
+            }
+            let Some(mut relation_lf) = self.get_table_from_current_scope(relation)? else {
+                continue;
+            };
+            let relation_schema = self.get_frame_schema(&mut relation_lf)?;
+            let aliases = self.joined_aliases.entry(relation.clone()).or_default();
+            for name in aliases.values_mut() {
+                if let Some(aliased_name) = renamed.get(name.as_str()) {
+                    *name = aliased_name.clone();
+                }
+            }
+            for (name, aliased_name) in &renamed {
+                if relation_schema.contains(name) && !aliases.contains_key(name) {
+                    aliases.insert(name.clone(), aliased_name.clone());
+                }
+            }
+        }
+        self.joined_aliases.insert(r_name.to_string(), renamed);
+        Ok(())
     }
 
     /// Error if the unqualified column `name` exists in more than one of the joined
@@ -1791,7 +1812,13 @@ impl SQLContext {
                 };
 
                 let joined_schema = self.get_frame_schema(&mut lf)?;
-                self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
+                self.record_joined_aliases(
+                    &r_name,
+                    &[],
+                    &left_schema,
+                    &right_schema,
+                    &joined_schema,
+                )?;
             }
         };
         Ok(lf)
@@ -3687,7 +3714,13 @@ impl SQLContext {
             remaining_where = residual;
 
             let joined_schema = self.get_frame_schema(lf)?;
-            self.record_joined_aliases(&r_name, &left_schema, &right_schema, &joined_schema);
+            self.record_joined_aliases(
+                &r_name,
+                &pending_relations[next],
+                &left_schema,
+                &right_schema,
+                &joined_schema,
+            )?;
             joined_table_names.extend(
                 kept_factors(tbl_expr)
                     .into_iter()
@@ -3880,20 +3913,9 @@ impl SQLContext {
                 // Execute the subquery in isolation so that outer join state
                 // doesn't leak into it and cause spurious ambiguous-column errors
                 let lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
-                if let Some(alias) = alias {
-                    let lf = self.rename_columns_from_table_alias(lf, alias)?;
-                    let name = alias.name.value.clone();
-                    {
-                        let mut table_map = self.table_map.write().unwrap();
-                        if !table_map.keys().any(|key| key.eq_ignore_ascii_case(&name)) {
-                            table_map.insert(name.clone(), lf.clone());
-                        }
-                    }
-                    // Shadows a registered table of the same name in this statement only.
-                    self.register_cte(&name, lf.clone());
-                    Ok((name, lf))
-                } else {
-                    Ok(("".to_string(), lf))
+                match alias {
+                    Some(alias) => self.register_aliased_relation(lf, alias),
+                    None => Ok(("".to_string(), lf)),
                 }
             },
             TableFactor::UNNEST {
@@ -3967,16 +3989,17 @@ impl SQLContext {
             } => {
                 // Only an alias makes the parenthesized join a scope of its own; bare parens
                 // just group, so their relation aliases stay visible to the enclosing query.
-                let lf = match alias {
-                    Some(_) => {
-                        self.execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?
+                match alias {
+                    Some(alias) => {
+                        let lf = self
+                            .execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?;
+                        self.register_aliased_relation(lf, alias)
                     },
-                    None => self.execute_from_statement(table_with_joins)?,
-                };
-                let name = alias
-                    .as_ref()
-                    .map_or_else(String::new, |a| a.name.value.clone());
-                Ok((name, lf))
+                    None => Ok((
+                        String::new(),
+                        self.execute_from_statement(table_with_joins)?,
+                    )),
+                }
             },
             // Support bare table, optionally with an alias, for now
             _ => polars_bail!(SQLInterface: "not yet implemented: {}", relation),
@@ -4889,6 +4912,25 @@ impl SQLContext {
         Ok(named_exprs.into_iter().map(|(_, expr)| expr).collect())
     }
 
+    /// Make `lf` the relation that `alias` names in the current statement.
+    fn register_aliased_relation(
+        &mut self,
+        lf: LazyFrame,
+        alias: &TableAlias,
+    ) -> PolarsResult<(String, LazyFrame)> {
+        let lf = self.rename_columns_from_table_alias(lf, alias)?;
+        let name = alias.name.value.clone();
+        {
+            let mut table_map = self.table_map.write().unwrap();
+            if !table_map.keys().any(|key| key.eq_ignore_ascii_case(&name)) {
+                table_map.insert(name.clone(), lf.clone());
+            }
+        }
+        // Shadows a registered table of the same name in this statement only.
+        self.register_cte(&name, lf.clone());
+        Ok((name, lf))
+    }
+
     fn rename_columns_from_table_alias(
         &mut self,
         mut lf: LazyFrame,
@@ -5200,7 +5242,10 @@ pub(crate) fn is_correlated_result_col(name: &str) -> bool {
 }
 
 /// The relations of a `FROM` (see `factor_relations`).
-fn declared_relations(from: &[TableWithJoins], spellings: &CatalogSpellings) -> Vec<RelationName> {
+pub(crate) fn declared_relations(
+    from: &[TableWithJoins],
+    spellings: &CatalogSpellings,
+) -> Vec<RelationName> {
     from.iter()
         .flat_map(|tbl| factor_relations(kept_factors(tbl).into_iter(), spellings))
         .collect()
