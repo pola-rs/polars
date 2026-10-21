@@ -559,6 +559,17 @@ impl LazyFrame {
         }
         let root = to_alp(self.logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
 
+        // A recursive query always runs on the streaming engine. This must be known before
+        // optimizing, as some optimizations depend on the engine.
+        if contains_recursive(root, ir_arena) {
+            polars_ensure!(
+                cfg!(feature = "streaming"),
+                InvalidOperation: "recursive queries require the `streaming` feature"
+            );
+            opt_flags |= OptFlags::STREAMING;
+            opt_flags &= !OptFlags::GPU;
+        }
+
         let lp_top = optimize(
             root,
             opt_flags,
@@ -600,12 +611,18 @@ impl LazyFrame {
         } else {
             true
         };
-        let physical_plan = create_physical_plan(
-            lp_top,
-            &mut lp_arena,
-            &mut expr_arena,
-            BUILD_STREAMING_EXECUTOR,
-        )?;
+        let physical_plan = if contains_recursive(lp_top, &lp_arena) {
+            let build_streaming_executor = BUILD_STREAMING_EXECUTOR
+                .ok_or_else(|| polars_err!(InvalidOperation: "recursive queries require the `streaming` feature"))?;
+            build_streaming_executor(lp_top, &mut lp_arena, &mut expr_arena)?
+        } else {
+            create_physical_plan(
+                lp_top,
+                &mut lp_arena,
+                &mut expr_arena,
+                BUILD_STREAMING_EXECUTOR,
+            )?
+        };
 
         let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
@@ -680,6 +697,11 @@ impl LazyFrame {
         })?;
         ir_plan.ensure_root_node_is_sink();
 
+        let engine = if contains_recursive(ir_plan.lp_top, &ir_plan.lp_arena) {
+            Engine::Streaming
+        } else {
+            engine
+        };
         match engine {
             Engine::Streaming => feature_gated!("streaming", {
                 polars_stream::run_query(
@@ -2460,4 +2482,18 @@ impl Iterator for CollectBatches {
         self.start();
         self.recv.recv().ok()
     }
+}
+
+/// Whether the plan contains a recursive query.
+fn contains_recursive(root: Node, ir_arena: &Arena<IR>) -> bool {
+    let mut stack = vec![root];
+    let mut seen_caches = PlHashSet::new();
+    while let Some(node) = stack.pop() {
+        match ir_arena.get(node) {
+            IR::Recursive { .. } => return true,
+            IR::Cache { id, .. } if !seen_caches.insert(*id) => continue,
+            ir => stack.extend(ir.inputs()),
+        }
+    }
+    false
 }

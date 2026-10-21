@@ -435,6 +435,17 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::Recursive {
+            anchor, externals, ..
+        } => (
+            PhysicalPropsDescription::Recursive {
+                num_external_inputs: externals.len(),
+            },
+            std::iter::once(anchor)
+                .chain(externals)
+                .map(|s| s.node)
+                .collect(),
+        ),
         PhysNodeKind::OrderedUnion { inputs, .. } => (
             PhysicalPropsDescription::OrderedUnion {
                 num_inputs: inputs.len(),

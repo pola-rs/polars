@@ -429,6 +429,18 @@ impl IR {
                 };
                 l_key == r_key && l_maintain_order == r_maintain_order
             },
+            IR::Recursive { id: l_id, .. } => {
+                let IR::Recursive { id: r_id, .. } = other else {
+                    return false;
+                };
+                l_id == r_id
+            },
+            IR::WorkingTableScan { id: l_id, .. } => {
+                let IR::WorkingTableScan { id: r_id, .. } = other else {
+                    return false;
+                };
+                l_id == r_id
+            },
             IR::UnoptimizedDispatch {
                 inputs: _,
                 arg_map: l_arg_map,

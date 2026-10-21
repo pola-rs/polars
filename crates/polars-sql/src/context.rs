@@ -15,8 +15,9 @@ use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
+use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
+    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions, Cte,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
     GroupByExpr, HiveDistributionStyle, HiveFormat, Ident, JoinConstraint, JoinOperator,
     LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy,
@@ -1596,10 +1597,11 @@ impl SQLContext {
 
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
         if let Some(with) = &query.with {
-            let order = if with.recursive {
+            let (order, reads_itself) = if with.recursive {
                 recursive_cte_order(with)?
             } else {
-                (0..with.cte_tables.len()).collect()
+                let n = with.cte_tables.len();
+                ((0..n).collect(), vec![false; n])
             };
             let mut reference_counts = PlHashMap::<String, usize>::new();
             let mut collector = TableIdentifierCollector::default();
@@ -1608,11 +1610,16 @@ impl SQLContext {
                 *reference_counts.entry(name).or_insert(0) += 1;
             }
 
-            for cte in order.iter().map(|&idx| &with.cte_tables[idx]) {
-                // Note: isolate CTE execution to prevent context state leakage
+            for idx in order {
+                let cte = &with.cte_tables[idx];
                 let cte_name = cte.alias.name.value.clone();
-                let mut lf = self.execute_isolated(|ctx| ctx.execute_query(&cte.query))?;
-                lf = self.rename_columns_from_table_alias(lf, &cte.alias)?;
+                let mut lf = if reads_itself[idx] {
+                    self.execute_recursive_cte(cte)?
+                } else {
+                    // Note: isolate CTE execution to prevent context state leakage
+                    let lf = self.execute_isolated(|ctx| ctx.execute_query(&cte.query))?;
+                    self.rename_columns_from_table_alias(lf, &cte.alias)?
+                };
                 if reference_counts.get(&cte_name).copied().unwrap_or(0) > 1 {
                     lf = lf.cache();
                 }
@@ -1620,6 +1627,139 @@ impl SQLContext {
             }
         }
         Ok(())
+    }
+
+    /// Plans a CTE that reads itself: `anchor UNION ALL step`, where only `step` reads the CTE.
+    /// The step reads the rows of the round before.
+    fn execute_recursive_cte(&mut self, cte: &Cte) -> PolarsResult<LazyFrame> {
+        let name = &cte.alias.name.value;
+        let query = &cte.query;
+        let SetExpr::SetOperation {
+            op: SetOperator::Union,
+            set_quantifier,
+            left,
+            right,
+        } = &*query.body
+        else {
+            polars_bail!(
+                SQLInterface: "recursive CTE '{}' must have the form `anchor UNION ALL step`", name
+            )
+        };
+        polars_ensure!(
+            matches!(set_quantifier, SetQuantifier::All),
+            SQLInterface: "recursive CTE '{}' only supports UNION ALL", name
+        );
+        polars_ensure!(
+            query.with.is_none()
+                && query.order_by.is_none()
+                && query.limit_clause.is_none()
+                && query.fetch.is_none(),
+            SQLInterface: "recursive CTE '{}' does not support WITH, ORDER BY, LIMIT or FETCH around its UNION ALL", name
+        );
+        let term_query = |body: &SetExpr| Query {
+            body: Box::new(body.clone()),
+            ..query.as_ref().clone()
+        };
+        let anchor_query = term_query(left);
+        let step_query = term_query(right);
+        polars_ensure!(
+            referenced_ctes(&anchor_query, std::slice::from_ref(name)).is_empty(),
+            SQLInterface: "the anchor of recursive CTE '{}' may not read '{}'", name, name
+        );
+
+        let anchor = self.execute_isolated(|ctx| ctx.execute_query(&anchor_query))?;
+        let mut anchor = self.rename_columns_from_table_alias(anchor, &cte.alias)?;
+        let mut schema = self.get_frame_schema(&mut anchor)?;
+
+        let known_caches = self.cache_ids();
+        let id = UniqueId::new();
+        // A column with a NULL anchor takes the type of the step. Each pass can type one more
+        // column, as a column may get its type from another column of the round before.
+        let mut step;
+        let mut passes = 0;
+        loop {
+            self.register_cte(
+                name,
+                DslPlan::WorkingTable {
+                    id,
+                    schema: schema.clone(),
+                }
+                .into(),
+            );
+            step = self.execute_isolated(|ctx| ctx.execute_query(&step_query))?;
+            let step_schema = self.get_frame_schema(&mut step)?;
+            polars_ensure!(
+                step_schema.len() == schema.len(),
+                SQLInterface: "the anchor and the step of recursive CTE '{}' have a different number of columns ({} and {})",
+                name, schema.len(), step_schema.len()
+            );
+            let typed_schema: Schema = schema
+                .iter()
+                .zip(step_schema.iter_values())
+                .map(|((col_name, dtype), step_dtype)| {
+                    let dtype = if dtype.is_null() { step_dtype } else { dtype };
+                    (col_name.clone(), dtype.clone())
+                })
+                .collect();
+            passes += 1;
+            if typed_schema == *schema || passes > schema.len() {
+                break;
+            }
+            schema = Arc::new(typed_schema);
+        }
+
+        let cast_to_schema = |lf: LazyFrame, lf_schema: &Schema| {
+            let exprs: Vec<Expr> = lf_schema
+                .iter()
+                .zip(schema.iter())
+                .map(|((lf_name, lf_dtype), (col_name, dtype))| {
+                    let e = col(lf_name.clone());
+                    let e = if lf_dtype == dtype {
+                        e
+                    } else {
+                        e.strict_cast(dtype.clone())
+                    };
+                    e.alias(col_name.clone())
+                })
+                .collect();
+            lf.select(exprs)
+        };
+        let anchor_schema = self.get_frame_schema(&mut anchor)?;
+        let anchor = cast_to_schema(anchor, &anchor_schema);
+        let step_schema = self.get_frame_schema(&mut step)?;
+        let step = cast_to_schema(step, &step_schema);
+
+        let round_local_caches: Arc<[UniqueId]> = (&step.logical_plan)
+            .into_iter()
+            .filter_map(|plan| match plan {
+                DslPlan::Cache { id, .. } if !known_caches.contains(id) => Some(*id),
+                _ => None,
+            })
+            .collect::<PlIndexSet<_>>()
+            .into_iter()
+            .collect();
+
+        Ok(DslPlan::Recursive {
+            anchor: Arc::new(anchor.logical_plan),
+            step: Arc::new(step.logical_plan),
+            id,
+            round_local_caches,
+        }
+        .into())
+    }
+
+    /// The ids of the caches in the registered tables and CTEs.
+    fn cache_ids(&self) -> PlHashSet<UniqueId> {
+        let table_map = self.table_map.read().unwrap();
+        table_map
+            .values()
+            .chain(self.cte_map.values())
+            .flat_map(|lf| &lf.logical_plan)
+            .filter_map(|plan| match plan {
+                DslPlan::Cache { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect()
     }
 
     fn register_named_windows(
@@ -6053,10 +6193,10 @@ pub fn extract_table_identifiers(
     })
 }
 
-/// The order to register the CTEs of a `WITH RECURSIVE` in, where a CTE may read any other.
-/// Each CTE comes after the CTEs it reads; CTEs that read themselves or each other are not
-/// supported.
-fn recursive_cte_order(with: &With) -> PolarsResult<Vec<usize>> {
+/// The order to register the CTEs of a `WITH RECURSIVE` in, where a CTE may read any other,
+/// and whether each CTE reads itself. Each CTE comes after the other CTEs it reads; CTEs that
+/// read each other are not supported.
+fn recursive_cte_order(with: &With) -> PolarsResult<(Vec<usize>, Vec<bool>)> {
     let names: Vec<String> = with
         .cte_tables
         .iter()
@@ -6069,16 +6209,16 @@ fn recursive_cte_order(with: &With) -> PolarsResult<Vec<usize>> {
     {
         polars_bail!(SQLInterface: "CTE name '{}' is used more than once", name)
     }
-    let deps: Vec<PlHashSet<usize>> = with
+    let mut deps: Vec<PlHashSet<usize>> = with
         .cte_tables
         .iter()
         .map(|cte| referenced_ctes(&cte.query, &names))
         .collect();
-    if let Some(idx) = (0..names.len()).find(|idx| deps[*idx].contains(idx)) {
-        polars_bail!(
-            SQLInterface: "recursive CTEs are not supported (CTE '{}' reads itself)", names[idx]
-        )
-    }
+    let reads_itself: Vec<bool> = deps
+        .iter_mut()
+        .enumerate()
+        .map(|(idx, deps)| deps.remove(&idx))
+        .collect();
     let mut order = Vec::with_capacity(names.len());
     let mut done = vec![false; names.len()];
     while order.len() < names.len() {
@@ -6097,7 +6237,7 @@ fn recursive_cte_order(with: &With) -> PolarsResult<Vec<usize>> {
         done[next] = true;
         order.push(next);
     }
-    Ok(order)
+    Ok((order, reads_itself))
 }
 
 /// Table identifiers referenced by a single parsed statement.

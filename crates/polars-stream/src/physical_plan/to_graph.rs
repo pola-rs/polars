@@ -993,6 +993,33 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Recursive {
+            anchor,
+            externals,
+            step,
+        } => {
+            let anchor_schema = anchor.output_schema(ctx.phys_sm).clone();
+            let external_schemas = externals
+                .iter()
+                .map(|i| i.output_schema(ctx.phys_sm).clone())
+                .collect();
+            let input_keys = std::iter::once(anchor)
+                .chain(externals)
+                .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
+                .try_collect_vec()?;
+            ctx.add_node_with_metrics(
+                |registry| {
+                    nodes::recursive::RecursiveNode::new(
+                        anchor_schema,
+                        external_schemas,
+                        step.clone(),
+                        registry.task_metrics(),
+                    )
+                },
+                input_keys,
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()

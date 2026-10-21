@@ -1028,6 +1028,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::Resolver { .. } => Err(PyNotImplementedError::new_err(
             "not implemented: IR::Resolver to Python conversion",
         )),
+        IR::Recursive { .. } | IR::WorkingTableScan { .. } => {
+            Err(PyNotImplementedError::new_err("recursive query"))
+        },
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

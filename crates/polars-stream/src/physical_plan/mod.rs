@@ -589,6 +589,14 @@ pub enum PhysNodeKind {
         maintain_order: bool,
     },
 
+    /// Recursive query: collects the anchor and the caches the step reads, then runs the step
+    /// as its own streaming query once per round.
+    Recursive {
+        anchor: PhysStream,
+        externals: Vec<PhysStream>,
+        step: Arc<crate::nodes::recursive::RecursiveStep>,
+    },
+
     Gather {
         input: PhysStream,
         idxs: PhysStream,
@@ -839,6 +847,17 @@ fn _visit_nodes_impl(
                 rec!(repeats.node);
                 visit_input(value);
                 visit_input(repeats);
+            },
+
+            PhysNodeKind::Recursive {
+                anchor, externals, ..
+            } => {
+                rec!(anchor.node);
+                visit_input(anchor);
+                for input in externals {
+                    rec!(input.node);
+                    visit_input(input);
+                }
             },
 
             PhysNodeKind::GroupBy { inputs, .. }

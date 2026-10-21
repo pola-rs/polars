@@ -31,9 +31,10 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } | K::InMemoryJoin { .. } | K::ColumnarFunction { .. } => {
-                Self::InMemoryFallback
-            },
+            K::InMemoryMap { .. }
+            | K::InMemoryJoin { .. }
+            | K::ColumnarFunction { .. }
+            | K::Recursive { .. } => Self::InMemoryFallback,
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -191,6 +192,7 @@ fn visualize_plan_rec(
     let kind = &phys_sm[node_key].kind;
 
     use std::slice::from_ref;
+    let recursive_inputs: Vec<super::PhysStream>;
     let (label, inputs) = match kind {
         PhysNodeKind::InMemorySource {
             df,
@@ -558,6 +560,12 @@ fn visualize_plan_rec(
             &[*input][..],
         ),
         PhysNodeKind::IsSorted { input, .. } => ("is_sorted".to_owned(), &[*input][..]),
+        PhysNodeKind::Recursive {
+            anchor, externals, ..
+        } => {
+            recursive_inputs = std::iter::once(anchor).chain(externals).copied().collect();
+            ("recursive".to_string(), recursive_inputs.as_slice())
+        },
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::UnorderedUnion { inputs } => {
             ("unordered-union".to_string(), inputs.as_slice())

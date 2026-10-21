@@ -2169,7 +2169,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::UnoptimizedDispatch { .. } => {
+            // Each round reads all columns of the round before.
+            IR::UnoptimizedDispatch { .. } | IR::Recursive { .. } | IR::WorkingTableScan { .. } => {
                 post_project_and_return!()
             },
 

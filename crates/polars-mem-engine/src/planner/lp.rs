@@ -901,6 +901,10 @@ fn create_physical_plan_impl(
             Ok(Box::new(exec))
         },
         UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
+        // Queries with a recursive part run on the streaming engine as a whole.
+        Recursive { .. } | WorkingTableScan { .. } => {
+            polars_bail!(InvalidOperation: "recursive queries are only supported on the streaming engine")
+        },
         Resolver { resolved_ir, .. } => {
             let node = resolved_ir.expect("IR::Resolver not resolved at create_physical_plan_impl");
             recurse!(node, state)
