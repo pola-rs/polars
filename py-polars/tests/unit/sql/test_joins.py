@@ -1534,7 +1534,7 @@ def test_join_on_subquery_reading_struct_field() -> None:
     ("condition", "err"),
     [
         # correlated
-        ("b.v IN (SELECT x FROM c WHERE c.x = a.v)", "no table or struct column"),
+        ("b.v NOT IN (SELECT x FROM c WHERE c.x = a.v)", "no table or struct column"),
         # an unqualified column of the joined tables
         ("b.v IN (SELECT x FROM c WHERE x = id)", 'unable to find column "id"'),
         # reads both tables

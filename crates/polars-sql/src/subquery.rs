@@ -781,6 +781,7 @@ impl SQLContext {
         tbl_left: &TableInfo,
         tbl_right: &TableInfo,
         on: &SQLExpr,
+        join_type: &JoinType,
     ) -> PolarsResult<Option<(TableInfo, TableInfo, SQLExpr)>> {
         let mut left = tbl_left.frame.clone();
         let mut right = tbl_right.frame.clone();
@@ -811,7 +812,14 @@ impl SQLContext {
                         None,
                     )?;
                 },
-                None => lowered = Cow::Borrowed(conj),
+                None => {
+                    lowered = match self.try_attach_join_membership(
+                        conj, &mut left, &mut right, tbl_left, tbl_right, join_type,
+                    )? {
+                        Some(rewritten) => Cow::Owned(rewritten),
+                        None => Cow::Borrowed(conj),
+                    }
+                },
             }
             changed |= matches!(lowered, Cow::Owned(_));
             conjuncts.push(lowered.into_owned());
@@ -838,6 +846,229 @@ impl SQLContext {
             },
             on,
         )))
+    }
+
+    // Join the distinct inner rows that make `lhs IN (subquery)` or `EXISTS (subquery)`
+    // true onto one input of a join, when the subquery correlates with an input that the
+    // rest of the conjunct doesn't read. The conjunct then becomes equalities between the
+    // other input and the joined columns. For a pair of input rows at most one joined row
+    // matches, so only an input whose unmatched rows the join drops can take them.
+    fn try_attach_join_membership(
+        &mut self,
+        conj: &SQLExpr,
+        left: &mut LazyFrame,
+        right: &mut LazyFrame,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+        join_type: &JoinType,
+    ) -> PolarsResult<Option<SQLExpr>> {
+        let (attach_left, attach_right) = match join_type {
+            JoinType::Inner => (true, true),
+            JoinType::Left => (false, true),
+            JoinType::Right => (true, false),
+            _ => return Ok(None),
+        };
+        let (lhs, subquery) = match strip_nested(conj) {
+            SQLExpr::InSubquery {
+                expr,
+                subquery,
+                negated: false,
+            } => (Some(expr.as_ref()), subquery.as_ref()),
+            SQLExpr::Exists {
+                subquery,
+                negated: false,
+            } => (None, subquery.as_ref()),
+            _ => return Ok(None),
+        };
+        let Some(select) = eligible_subquery_select(subquery) else {
+            return Ok(None);
+        };
+        let Some(selection) = &select.selection else {
+            return Ok(None);
+        };
+        if matches!(&select.distinct, Some(Distinct::On(_))) {
+            return Ok(None);
+        }
+        let mut ctx = self.isolated();
+        let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
+            return Ok(None);
+        };
+        if exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) != Some(false) {
+            return Ok(None);
+        }
+
+        // Pairs of an input expression and the inner expression it must equal.
+        let mut keys: Vec<JoinMembershipKey> = Vec::new();
+        if let Some(lhs) = lhs {
+            let [SelectItem::UnnamedExpr(proj) | SelectItem::ExprWithAlias { expr: proj, .. }] =
+                select.projection.as_slice()
+            else {
+                return Ok(None);
+            };
+            let Some(value) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
+            else {
+                return Ok(None);
+            };
+            let is_left = match self.join_inputs_read(lhs, tbl_left, tbl_right) {
+                (true, false) => true,
+                (false, true) => false,
+                _ => return Ok(None),
+            };
+            let tbl = if is_left { tbl_left } else { tbl_right };
+            let Some(outer) = self.try_parse_outer_only_expr(lhs, &tbl.schema)? else {
+                return Ok(None);
+            };
+            keys.push(JoinMembershipKey {
+                is_left,
+                outer,
+                inner: value.meta().undo_aliases(),
+            });
+        }
+        let mut local_filters = Vec::new();
+        let selection = factored_selection(selection);
+        for c in MintermIter::new(&selection) {
+            if let Some(key) =
+                self.join_correlation_key(c, &ctx, &inner_schema, tbl_left, tbl_right)?
+            {
+                keys.push(key);
+            } else if let Some(filter) =
+                ctx.try_parse_inner_only_expr(c, &inner_names, &inner_schema)?
+                && !has_expr(&filter, |e| matches!(e, Expr::SubPlan(_, _)))
+            {
+                local_filters.push(filter);
+            } else {
+                return Ok(None);
+            }
+        }
+        let reads_left = keys.iter().any(|k| k.is_left);
+        let reads_right = keys.iter().any(|k| !k.is_left);
+        if !(reads_left && reads_right) {
+            return Ok(None);
+        }
+        // With a choice, the rows join onto the input the `IN` operand doesn't read.
+        let to_left = match (attach_left, attach_right) {
+            (true, true) => lhs.is_none() || !keys[0].is_left,
+            (to_left, _) => to_left,
+        };
+
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        let names: Vec<PlSmallStr> = (0..keys.len())
+            .map(|i| format_pl_smallstr!("{prefix}{i}"))
+            .collect();
+        let mut rows = local_filters
+            .into_iter()
+            .fold(inner_lf, LazyFrame::filter)
+            .select(
+                keys.iter()
+                    .zip(&names)
+                    .map(|(k, name)| k.inner.clone().alias(name.clone()))
+                    .collect::<Vec<_>>(),
+            );
+        let rows_schema = ctx.get_frame_schema(&mut rows)?;
+        rows.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+
+        // Each key is compared as a column of its input, both sides cast to a shared type.
+        let (mut left_frame, mut right_frame) = (left.clone(), right.clone());
+        let mut row_casts = Vec::with_capacity(keys.len());
+        let (mut target_on, mut rows_on, mut equalities) = (Vec::new(), Vec::new(), Vec::new());
+        for (i, (key, name)) in keys.into_iter().zip(names).enumerate() {
+            let frame = if key.is_left {
+                &mut left_frame
+            } else {
+                &mut right_frame
+            };
+            let key_name = format_pl_smallstr!("{prefix}key{i}");
+            let mut keyed = frame.clone().with_column(key.outer.alias(key_name.clone()));
+            let keyed_schema = self.get_frame_schema(&mut keyed)?;
+            let Some((outer, inner)) = try_prepare_join_keys(
+                &keyed_schema,
+                &rows_schema,
+                vec![col(key_name.clone())],
+                vec![col(name.clone())],
+            ) else {
+                return Ok(None);
+            };
+            let [outer] = <[Expr; 1]>::try_from(outer).unwrap();
+            let [inner] = <[Expr; 1]>::try_from(inner).unwrap();
+            *frame = keyed.with_column(outer.alias(key_name.clone()));
+            row_casts.push(inner.alias(name.clone()));
+            if key.is_left == to_left {
+                target_on.push(col(key_name));
+                rows_on.push(col(name));
+            } else {
+                equalities.push(SQLExpr::BinaryOp {
+                    left: Box::new(SQLExpr::Identifier(Ident::new(key_name.as_str()))),
+                    op: SQLBinaryOperator::Eq,
+                    right: Box::new(SQLExpr::Identifier(Ident::new(name.as_str()))),
+                });
+            }
+        }
+        let rows = rows
+            .with_columns(row_casts)
+            .unique(None, UniqueKeepStrategy::Any);
+        let (target, other, mut target_frame, other_frame) = if to_left {
+            (left, right, left_frame, right_frame)
+        } else {
+            (right, left, right_frame, left_frame)
+        };
+        target_frame = target_frame
+            .join_builder()
+            .with(rows)
+            .left_on(target_on)
+            .right_on(rows_on)
+            .how(JoinType::Inner)
+            .coalesce(JoinCoalesce::KeepColumns)
+            .finish()?;
+        *target = target_frame;
+        *other = other_frame;
+        Ok(combine_conditions(equalities, SQLBinaryOperator::And))
+    }
+
+    // An equality between a column of the subquery and a column of one input of the
+    // join around it, either way round.
+    fn join_correlation_key(
+        &self,
+        conj: &SQLExpr,
+        inner: &SQLContext,
+        inner_schema: &Schema,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> PolarsResult<Option<JoinMembershipKey>> {
+        let SQLExpr::BinaryOp {
+            left,
+            op: SQLBinaryOperator::Eq,
+            right,
+        } = strip_nested(conj)
+        else {
+            return Ok(None);
+        };
+        for (inner_sql, outer_sql) in [(left, right), (right, left)] {
+            let Some((CorrelationSide::Inner, inner_name)) = classify_correlation_column(
+                inner_sql,
+                inner_schema,
+                &Schema::default(),
+                inner,
+                self,
+            )?
+            else {
+                continue;
+            };
+            let Some(is_left) = self.column_join_input(outer_sql, tbl_left, tbl_right) else {
+                continue;
+            };
+            let tbl = if is_left { tbl_left } else { tbl_right };
+            let Some((CorrelationSide::Outer, outer_name)) =
+                classify_correlation_column(outer_sql, inner_schema, &tbl.schema, inner, self)?
+            else {
+                continue;
+            };
+            return Ok(Some(JoinMembershipKey {
+                is_left,
+                outer: col(outer_name),
+                inner: col(inner_name),
+            }));
+        }
+        Ok(None)
     }
 
     // Attempt the decorrelation of a single scalar subquery:
@@ -3039,6 +3270,14 @@ fn agg_output_root(expr: &Expr) -> &Expr {
         Expr::Cast { expr: inner, .. } => agg_output_root(inner.as_ref()),
         other => other,
     }
+}
+
+// An expression of one input of a join and the inner expression of a subquery it must
+// equal.
+struct JoinMembershipKey {
+    is_left: bool,
+    outer: Expr,
+    inner: Expr,
 }
 
 // A correlation conjunct `<inner col> <cmp> <outer col>` (either way round),
