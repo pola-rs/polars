@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 
 @pytest.fixture(autouse=True)
 def small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
@@ -95,6 +93,8 @@ def _assert_same_on_path(
         [pl.col("y").min().over("h").alias("w")],
         [pl.col("y").max().over("h").alias("w")],
         [pl.col("x").count().over("g").alias("w")],
+        [pl.col("x").std().over("g").alias("w")],
+        [pl.col("y").var(ddof=0).over("h").alias("w")],
         [pl.len().over("g").alias("w")],
         [pl.col("z").sum().over("k").alias("w")],
         [pl.col("n").sum().over("g").alias("w")],
@@ -111,6 +111,11 @@ def _assert_same_on_path(
         ],
         [(pl.col("y") - pl.col("y").mean().over("k")).alias("w")],
         [(pl.col("x").sum().over("g") / pl.col("x").count().over("g")).alias("w")],
+        [(pl.col("x") + 1).sum().over("g").alias("w")],
+        [pl.col("z").abs().max().over("g").alias("w")],
+        [(pl.col("x").max() - pl.col("x").min()).over("g").alias("w")],
+        [(pl.col("x").sum() * 2 + pl.len()).over("g").alias("w")],
+        [(pl.col("y").std() + pl.col("x").abs().mean()).over("g", "k").alias("w")],
     ],
 )
 def test_scalar_window_matches_in_memory(tmp_path: Path, exprs: list[pl.Expr]) -> None:
@@ -211,13 +216,157 @@ def test_scalar_window_stops_early(tmp_path: Path) -> None:
         pl.col("x").cum_sum().over("g"),
         pl.col("x").sum().over("g", mapping_strategy="join"),
         pl.col("h").count().over("g"),
-        (pl.col("x") + 1).sum().over("g"),
+        (pl.col("x") + 1).sum().over("g", order_by="id"),
+        (pl.col("x").max() - pl.col("x").median()).over("g"),
     ],
 )
 def test_scalar_window_fallbacks(tmp_path: Path, expr: pl.Expr) -> None:
     q = _scan(_frame(), tmp_path).with_columns(w=expr)
     assert not any(_scalar_flags(q))
     _assert_same(q)
+
+
+def test_scalar_window_split_and_deduplicated() -> None:
+    x = pl.col("x")
+    q = (
+        _frame()
+        .lazy()
+        .select(
+            a=x.std().over("g") + x.std().over("g"),
+            b=(x.max() - x.min()).over("g") * x.abs().max().over("g"),
+            c=(x.abs().max() - x.min()).over("g"),
+        )
+    )
+    plan = q.explain(engine="streaming")
+    # std, max, min and max(abs(x)) once each.
+    assert plan.count(".over(") == 4
+    assert plan.count(".abs()") == 1
+    assert _scalar_flags(q) == [True]
+    _assert_same(q)
+
+
+def test_scalar_window_not_split_for_string_result() -> None:
+    padded = pl.col("x").max().cast(pl.String).str.pad_start(5, "0")
+    q = _frame().lazy().select(w=padded.over("g"))
+    plan = q.explain(engine="streaming")
+    assert "pad_start" in plan.split("WINDOW[")[1]
+    _assert_same(q)
+
+
+def test_scalar_window_split_with_null_literal() -> None:
+    x = pl.col("x")
+    spread = pl.when(x.max() > 500).then(x.max() - x.min()).otherwise(None)
+    q = _frame().lazy().select(sd=x.std().over("g"), spread=spread.over("g"))
+    assert _scalar_flags(q) == [True]
+    _assert_same(q)
+
+
+def test_scalar_window_not_split_with_null_result() -> None:
+    clipped = pl.col("x").max().cast(pl.Null, strict=False).clip(0, 1)
+    q = pl.LazyFrame(schema={"g": pl.Int64, "x": pl.Int64}).select(w=clipped.over("g"))
+    assert q.collect(engine="streaming").schema == {"w": pl.Null}
+
+
+def test_scalar_window_split_computed_once() -> None:
+    x = pl.col("x")
+    spread = (x.max() - x.min()).over("g")
+    q = _frame().lazy().select(a=spread, b=spread, c=spread + 1)
+    plan = q.explain(engine="streaming")
+    assert plan.count(" - ") == 1
+    _assert_same(q)
+
+
+def test_scalar_window_split_columns_dropped_before_next_window() -> None:
+    x = pl.col("x")
+    q = (
+        _frame()
+        .lazy()
+        .select(a=(x.max() - x.min()).over("g"), b=(x.max() - x.min()).over("h"))
+    )
+    plan = q.explain(engine="streaming")
+    between_windows = plan.split("WINDOW[")[1]
+    assert "WITH_COLUMNS" in between_windows
+    assert "simple π" in between_windows
+    _assert_same(q)
+
+
+@pytest.mark.parametrize(
+    "exprs",
+    [
+        {"a": pl.col("x").shuffle().over("k"), "b": pl.col("x").shuffle().over("k")},
+        {
+            "a": pl.col("xs").list.sample(1).list.first().sum().over("k"),
+            "b": pl.col("xs").list.sample(1).list.first().sum().over("k"),
+        },
+    ],
+)
+def test_scalar_window_random_not_deduplicated(exprs: dict[str, pl.Expr]) -> None:
+    i = pl.int_range(200)
+    q = (
+        pl.LazyFrame()
+        .select(k=i % 4, x=i)
+        .with_columns(xs=pl.int_ranges(0, 100))
+        .select(**exprs)
+        .select((pl.col("a") != pl.col("b")).any())
+    )
+    assert q.collect(engine="streaming").item()
+
+
+def test_scalar_window_random_not_split() -> None:
+    x = pl.col("x")
+    sampled = pl.concat_list(x.min(), x.max()).list.sample(1).list.first()
+    q = _frame().lazy().select("k", w=sampled.over("k", order_by="id"))
+    assert q.explain(engine="streaming").count(".over(") == 1
+    out = q.collect(engine="streaming")
+    assert out.group_by("k").agg(pl.col("w").n_unique()).get_column("w").max() == 1
+
+
+@pytest.mark.parametrize(
+    "exprs",
+    [
+        [(pl.col("h").min() + pl.col("h").max()).over("g").alias("w")],
+        [
+            (pl.col("x").max() - pl.col("x").min()).over("g").alias("a"),
+            pl.col("x").median().over("g").alias("b"),
+        ],
+        [pl.col("x").abs().max().over("g", order_by="id").alias("w")],
+    ],
+)
+def test_scalar_window_not_split_without_fast_path(exprs: list[pl.Expr]) -> None:
+    q = _frame().lazy().with_columns(exprs)
+    plan = q.explain(engine="streaming")
+    assert plan.count(".over(") == len(exprs)
+    assert "WITH_COLUMNS" not in plan.split("WINDOW[")[1]
+    _assert_same(q)
+
+
+def test_scalar_window_not_split_with_object_column() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": [1, 1, 2],
+            "x": [1, 3, 4],
+            "o": pl.Series([object(), object(), object()], dtype=pl.Object),
+        }
+    )
+    x = pl.col("x")
+    q = lf.with_columns(w=(x.max() - x.min()).over("g"))
+    assert q.explain(engine="streaming").count(".over(") == 1
+    assert q.collect(engine="streaming").get_column("w").to_list() == [2, 2, 0]
+
+    to_object = x.map_batches(
+        lambda s: pl.Series(s.to_list(), dtype=pl.Object),
+        return_dtype=pl.Object,
+        is_elementwise=True,
+    )
+    q = lf.select(o=to_object.over("x"), w=(x.max() - x.min()).over("g"))
+    assert q.explain(engine="streaming").count(".over(") == 2
+    assert q.collect(engine="streaming").get_column("w").to_list() == [2, 2, 0]
+
+    q = lf.select(
+        a=x.sum().over(to_object, order_by="x"), w=(x.max() - x.min()).over("g")
+    )
+    assert q.explain(engine="streaming").count(".over(") == 2
+    assert q.collect(engine="streaming").get_column("w").to_list() == [2, 2, 0]
 
 
 def test_scalar_window_mixed_spec_falls_back(tmp_path: Path) -> None:
@@ -276,6 +425,8 @@ def test_scalar_window_value_dtypes(dtype: pl.DataType) -> None:
         lo=pl.col("x").min().over("k"),
         hi=pl.col("x").max().over("k"),
         c=pl.col("x").count().over("k"),
+        sd=pl.col("x").std().over("k"),
+        v=pl.col("x").var().over("k"),
     )
     assert _scalar_flags(q) == [True]
     _assert_same(q)

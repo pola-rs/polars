@@ -246,36 +246,50 @@ fn mul_128_pow10(x: i128, e: usize) -> Option<i128> {
     x.checked_mul(POW10_I128[e])
 }
 
+/// Returns (floor(n / 10^e), n % 10^e == 0), with 1 <= e <= DEC128_MAX_PREC
+/// and n <= 2^127 + 10^e / 2.
+#[inline]
+fn div_128_pow10_impl(n: u128, e: usize) -> (u128, bool) {
+    // Most values fit in 64 bits, where a single division replaces the
+    // 128x128 widening multiply.
+    if n <= u64::MAX as u128 && POW10_I128[e] <= u64::MAX as i128 {
+        let d = POW10_I128[e] as u64;
+        let nu = n as u64;
+        return ((nu / d) as u128, nu.is_multiple_of(d));
+    }
+
+    let c = POW10_127_INV_MUL[e];
+    let s = POW10_127_SHIFT[e];
+    let (lo, hi) = widening_mul_128(n, c);
+    (hi >> s, lo < c && (hi << (128 - s)) == 0)
+}
+
 /// Returns round(x / 10^e), with e <= DEC128_MAX_PREC, rounding to nearest even.
 #[inline]
-fn div_128_pow10(x: i128, e: usize) -> i128 {
+fn div_128_pow10_round(x: i128, e: usize) -> i128 {
     if e == 0 {
         return x;
     }
 
     let n = x.unsigned_abs();
     let z = n + ((POW10_I128[e] as u128) / 2); // Can't overflow.
-
-    // Most values fit in 64 bits, where a single division replaces the
-    // 128x128 widening multiply.
-    if z <= u64::MAX as u128 && POW10_I128[e] <= u64::MAX as i128 {
-        let d = POW10_I128[e] as u64;
-        let zu = z as u64;
-        let mut ret = (zu / d) as i128;
-        // z = n + d/2, so d divides z iff n is exactly halfway; round to even.
-        if zu.is_multiple_of(d) && ret % 2 == 1 {
-            ret -= 1;
-        }
-        return if x < 0 { -ret } else { ret };
-    }
-
-    let c = POW10_127_INV_MUL[e];
-    let s = POW10_127_SHIFT[e];
-    let (lo, hi) = widening_mul_128(z, c);
-    let mut ret = (hi >> s) as i128;
-    if lo < c && ret % 2 == 1 && (hi << (128 - s)) == 0 {
+    let (q, is_multiple) = div_128_pow10_impl(z, e);
+    let mut ret = q as i128;
+    // z = n + 10^e/2, so 10^e divides z iff n is exactly halfway; round to even.
+    if is_multiple && ret % 2 == 1 {
         ret -= 1;
     }
+    if x < 0 { -ret } else { ret }
+}
+
+/// Returns x / 10^e, with e <= DEC128_MAX_PREC, rounding towards zero.
+#[inline]
+fn div_128_pow10_trunc(x: i128, e: usize) -> i128 {
+    if e == 0 {
+        return x;
+    }
+
+    let ret = div_128_pow10_impl(x.unsigned_abs(), e).0 as i128;
     if x < 0 { -ret } else { ret }
 }
 
@@ -523,9 +537,11 @@ pub fn i64_binary_values(
     Some(out)
 }
 
+/// Converts a Decimal128 with the given scale to an integer, truncating
+/// towards zero.
 #[inline]
 pub fn dec128_to_i128(x: i128, s: usize) -> i128 {
-    if s == 0 { x } else { div_128_pow10(x, s) }
+    div_128_pow10_trunc(x, s)
 }
 
 /// Converts an i128 to a Decimal128 with the given precision and scale,
@@ -594,7 +610,7 @@ pub fn f64_to_dec128(x: f64, p: usize, s: usize) -> Option<i128> {
 #[inline]
 pub fn dec128_rescale(x: i128, old_s: usize, new_p: usize, new_s: usize) -> Option<i128> {
     let r = if new_s < old_s {
-        div_128_pow10(x, old_s - new_s)
+        div_128_pow10_round(x, old_s - new_s)
     } else if new_s > old_s {
         mul_128_pow10(x, new_s - old_s)?
     } else {
@@ -709,7 +725,7 @@ fn i256_to_dec128(x: I256, s: usize, s_out: usize) -> Option<i128> {
 #[inline]
 fn i128_to_dec128_scaled(x: i128, s: usize, s_out: usize) -> Option<i128> {
     let r = match s_out.cmp(&s) {
-        Ordering::Less => div_128_pow10(x, s - s_out),
+        Ordering::Less => div_128_pow10_round(x, s - s_out),
         Ordering::Equal => x,
         Ordering::Greater => x.checked_mul(POW10_I128[s_out - s])?,
     };

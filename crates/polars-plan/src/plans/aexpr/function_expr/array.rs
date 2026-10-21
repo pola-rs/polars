@@ -1,6 +1,7 @@
 #[cfg(feature = "array_to_struct")]
 use polars_buffer::Buffer;
-use polars_core::utils::{slice_offsets, try_get_supertype};
+use polars_core::utils::try_get_supertype;
+use polars_utils::slice::slice_offsets;
 
 use super::*;
 

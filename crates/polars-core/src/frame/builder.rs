@@ -102,7 +102,7 @@ impl DataFrameBuilder {
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
-                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, len, share);
+                    builder.subslice_extend_each_repeated(&scalar_as_series, 0, 1, len, share);
                 },
             }
         }
@@ -130,7 +130,13 @@ impl DataFrameBuilder {
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
-                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, len * repeats, share);
+                    builder.subslice_extend_each_repeated(
+                        &scalar_as_series,
+                        0,
+                        1,
+                        len * repeats,
+                        share,
+                    );
                 },
             }
         }
@@ -159,7 +165,13 @@ impl DataFrameBuilder {
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
-                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, len * repeats, share);
+                    builder.subslice_extend_each_repeated(
+                        &scalar_as_series,
+                        0,
+                        1,
+                        len * repeats,
+                        share,
+                    );
                 },
             }
         }
@@ -189,7 +201,13 @@ impl DataFrameBuilder {
                 },
                 Column::Scalar(sc) => {
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
-                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, idxs.len(), share);
+                    builder.subslice_extend_each_repeated(
+                        &scalar_as_series,
+                        0,
+                        1,
+                        idxs.len(),
+                        share,
+                    );
                 },
             }
         }

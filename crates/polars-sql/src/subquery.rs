@@ -25,7 +25,10 @@ use sqlparser::ast::{
     visit_expressions_mut,
 };
 
-use crate::context::{CORRELATED_COL_PREFIX, FilterMode, combine_conditions, get_table_name};
+use crate::context::{
+    CORRELATED_COL_PREFIX, FilterMode, RelationName, combine_conditions, get_table_name,
+    match_qualifier, relation_name,
+};
 use crate::sql_expr::{parse_sql_expr, sql_in_membership, sql_is_in};
 use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
 use crate::{SQLContext, unique_column_name};
@@ -275,7 +278,7 @@ impl SQLContext {
         lf: &LazyFrame,
         inner_lf: LazyFrame,
         selection: &SQLExpr,
-        inner_names: &PlHashSet<String>,
+        inner_names: &[RelationName],
         inner_schema: &Schema,
         outer_schema: &Schema,
         outer: &SQLContext,
@@ -284,14 +287,9 @@ impl SQLContext {
         let mut corr_preds = Vec::new();
         let mut local_filters = Vec::new();
         for conj in MintermIter::new(selection) {
-            if let Some(pred) = scalar_correlation_predicate(
-                conj,
-                inner_names,
-                inner_schema,
-                outer_schema,
-                &self,
-                outer,
-            )? {
+            if let Some(pred) =
+                scalar_correlation_predicate(conj, inner_schema, outer_schema, &self, outer)?
+            {
                 corr_preds.push(pred);
             } else if let Some(filter) =
                 self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
@@ -478,7 +476,7 @@ impl SQLContext {
     fn resolve_subquery_from(
         &mut self,
         select: &Select,
-    ) -> PolarsResult<Option<(PlHashSet<String>, LazyFrame, SchemaRef)>> {
+    ) -> PolarsResult<Option<(Vec<RelationName>, LazyFrame, SchemaRef)>> {
         let from = select.from.as_slice();
         let Some(inner_names) = from
             .iter()
@@ -486,14 +484,16 @@ impl SQLContext {
                 std::iter::once(&tbl_expr.relation)
                     .chain(tbl_expr.joins.iter().map(|j| &j.relation))
             })
-            .map(get_table_name)
-            .collect::<Option<PlHashSet<_>>>()
+            .map(relation_name)
+            .collect::<Option<Vec<_>>>()
         else {
             return Ok(None);
         };
         let Some((first, rest)) = from.split_first() else {
             return Ok(None);
         };
+        // Qualifiers in the inner predicates resolve against the inner relations first.
+        self.set_active_relations(from);
         let mut inner_lf = self.execute_from_statement(first)?;
         // Comma-separated relations cross join; the equalities linking them are
         // inner-only filters.
@@ -521,7 +521,7 @@ impl SQLContext {
     fn split_subquery_conjuncts(
         &mut self,
         selection: &SQLExpr,
-        inner_names: &PlHashSet<String>,
+        inner_names: &[RelationName],
         inner_schema: &Schema,
         outer_schema: &Schema,
         outer: &SQLContext,
@@ -531,7 +531,7 @@ impl SQLContext {
         let mut local_filters = Vec::new();
         for conj in MintermIter::new(selection) {
             if let Some((outer_key, inner_key)) =
-                correlation_key_pair(conj, inner_names, inner_schema, outer_schema, self, outer)?
+                correlation_key_pair(conj, inner_schema, outer_schema, self, outer)?
             {
                 left_on.push(col(outer_key));
                 right_on.push(col(inner_key));
@@ -575,7 +575,7 @@ impl SQLContext {
     fn split_correlation_conjuncts(
         &mut self,
         selection: &SQLExpr,
-        inner_names: &PlHashSet<String>,
+        inner_names: &[RelationName],
         inner_schema: &Schema,
         outer_schema: &Schema,
         outer: &SQLContext,
@@ -584,14 +584,9 @@ impl SQLContext {
         let mut local_filters = Vec::new();
         let selection = factored_selection(selection);
         for conj in MintermIter::new(&selection) {
-            if let Some(pred) = scalar_correlation_predicate(
-                conj,
-                inner_names,
-                inner_schema,
-                outer_schema,
-                self,
-                outer,
-            )? {
+            if let Some(pred) =
+                scalar_correlation_predicate(conj, inner_schema, outer_schema, self, outer)?
+            {
                 if !corr_preds.iter().any(|p| p.same_comparison(&pred)) {
                     corr_preds.push(pred);
                 }
@@ -632,7 +627,7 @@ impl SQLContext {
     fn try_parse_inner_only_expr(
         &mut self,
         sql_expr: &SQLExpr,
-        inner_names: &PlHashSet<String>,
+        inner_names: &[RelationName],
         inner_schema: &Schema,
     ) -> PolarsResult<Option<Expr>> {
         if !binds_to_inner_relation(sql_expr, inner_names, inner_schema) {
@@ -1548,7 +1543,6 @@ struct SubqueryConjuncts {
 #[cfg(feature = "semi_anti_join")]
 fn correlation_key_pair(
     conj: &SQLExpr,
-    inner_names: &PlHashSet<String>,
     inner_schema: &Schema,
     outer_schema: &Schema,
     inner: &SQLContext,
@@ -1563,12 +1557,12 @@ fn correlation_key_pair(
         return Ok(None);
     };
     let Some((lside, lname)) =
-        classify_correlation_column(left, inner_names, inner_schema, outer_schema, inner, outer)?
+        classify_correlation_column(left, inner_schema, outer_schema, inner, outer)?
     else {
         return Ok(None);
     };
     let Some((rside, rname)) =
-        classify_correlation_column(right, inner_names, inner_schema, outer_schema, inner, outer)?
+        classify_correlation_column(right, inner_schema, outer_schema, inner, outer)?
     else {
         return Ok(None);
     };
@@ -1586,17 +1580,16 @@ fn correlation_key_pair(
 // schema wins over the outer one.
 fn binds_to_inner_relation(
     expr: &SQLExpr,
-    inner_names: &PlHashSet<String>,
+    inner_names: &[RelationName],
     inner_schema: &Schema,
 ) -> bool {
     visit_expressions(expr, |e| {
         let resolves = match e {
             // A nested subquery is its own scope, which this cannot resolve against.
             _ if is_subquery_expr(e) => false,
-            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) => qualifier_and_name(e)
-                .is_some_and(|(qualifier, name)| {
-                    qualifier.is_none_or(|q| inner_names.contains(q)) && inner_schema.contains(name)
-                }),
+            SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),
+            SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, inner_names.iter())
+                .is_some_and(|(_, len)| inner_schema.contains(&parts[len].value)),
             _ => true,
         };
         if resolves {
@@ -1608,46 +1601,50 @@ fn binds_to_inner_relation(
     .is_continue()
 }
 
-// Split an identifier into its optional table qualifier and its bare column name.
-// Catalog and schema prefixes are dropped, matching how `get_table_name` builds
-// `inner_names`.
-fn qualifier_and_name(expr: &SQLExpr) -> Option<(Option<&str>, &str)> {
-    match expr {
-        SQLExpr::Identifier(ident) => Some((None, ident.value.as_str())),
-        SQLExpr::CompoundIdentifier(parts) => {
-            let (last, init) = parts.split_last()?;
-            Some((init.last().map(|q| q.value.as_str()), last.value.as_str()))
-        },
-        _ => None,
-    }
-}
-
 // Classify a correlation operand as an inner- or outer-query column and return
 // its column name in that frame. `None` for non-identifiers or names in neither
 // schema.
 fn classify_correlation_column(
     expr: &SQLExpr,
-    inner_names: &PlHashSet<String>,
     inner_schema: &Schema,
     outer_schema: &Schema,
     inner: &SQLContext,
     outer: &SQLContext,
 ) -> PolarsResult<Option<(CorrelationSide, PlSmallStr)>> {
-    let Some((qualifier, name)) = qualifier_and_name(expr) else {
-        return Ok(None);
+    let (qualifier, name) = match expr {
+        SQLExpr::Identifier(ident) => (None, ident.value.as_str()),
+        SQLExpr::CompoundIdentifier(parts) => {
+            // A qualifier that names no inner relation is taken as outer (so same-named
+            // columns like `o.id = c.id` resolve).
+            let (side, q, len) = match inner.resolve_qualifier(parts)? {
+                Some((q, len)) => (CorrelationSide::Inner, q, len),
+                None => match outer.resolve_qualifier(parts)? {
+                    Some((q, len)) => (CorrelationSide::Outer, q, len),
+                    None => (
+                        CorrelationSide::Outer,
+                        parts[parts.len() - 2].value.clone(),
+                        parts.len() - 1,
+                    ),
+                },
+            };
+            // A struct field is not a column of either frame.
+            if len + 1 != parts.len() {
+                return Ok(None);
+            }
+            (Some((side, q)), parts[len].value.as_str())
+        },
+        _ => return Ok(None),
     };
     // A joined relation's column may be stored under another name.
     Ok(match qualifier {
-        Some(q) if inner_names.contains(q) => {
-            let name = inner.resolve_name(q, name);
+        Some((CorrelationSide::Inner, q)) => {
+            let name = inner.resolve_name(&q, name);
             inner_schema
                 .contains(name.as_str())
                 .then(|| (CorrelationSide::Inner, name.into()))
         },
-        // Any other qualifier is taken as outer (so same-named columns like
-        // `o.id = c.id` resolve).
-        Some(q) => {
-            let name = outer.resolve_name(q, name);
+        Some((CorrelationSide::Outer, q)) => {
+            let name = outer.resolve_name(&q, name);
             outer_schema
                 .contains(name.as_str())
                 .then(|| (CorrelationSide::Outer, name.into()))
@@ -1770,15 +1767,13 @@ pub(crate) enum SubqueryKind {
 /// correlates it with the query around it.
 pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
     #[derive(Default)]
-    struct Declared(PlHashSet<String>);
+    struct Declared(Vec<RelationName>);
 
     impl Visitor for Declared {
         type Break = ();
 
         fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
-            if let Some(name) = get_table_name(factor) {
-                self.0.insert(name);
-            }
+            self.0.extend(relation_name(factor));
             ControlFlow::Continue(())
         }
     }
@@ -1786,14 +1781,18 @@ pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
     let mut declared = Declared::default();
     let _ = query.visit(&mut declared);
 
-    struct Foreign<'a>(&'a PlHashSet<String>);
+    struct Foreign<'a>(&'a [RelationName]);
 
     impl Visitor for Foreign<'_> {
         type Break = ();
 
         fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
-            match qualifier_and_name(expr) {
-                Some((Some(qualifier), _)) if !self.0.contains(qualifier) => ControlFlow::Break(()),
+            match expr {
+                SQLExpr::CompoundIdentifier(parts)
+                    if match_qualifier(parts, self.0.iter()).is_none() =>
+                {
+                    ControlFlow::Break(())
+                },
                 _ => ControlFlow::Continue(()),
             }
         }
@@ -2398,7 +2397,6 @@ impl CorrPredicate {
 // correlation shapes leave the whole subquery to the generic path.
 fn scalar_correlation_predicate(
     conj: &SQLExpr,
-    inner_names: &PlHashSet<String>,
     inner_schema: &Schema,
     outer_schema: &Schema,
     inner: &SQLContext,
@@ -2419,12 +2417,12 @@ fn scalar_correlation_predicate(
         return Ok(None);
     }
     let Some((lside, lname)) =
-        classify_correlation_column(left, inner_names, inner_schema, outer_schema, inner, outer)?
+        classify_correlation_column(left, inner_schema, outer_schema, inner, outer)?
     else {
         return Ok(None);
     };
     let Some((rside, rname)) =
-        classify_correlation_column(right, inner_names, inner_schema, outer_schema, inner, outer)?
+        classify_correlation_column(right, inner_schema, outer_schema, inner, outer)?
     else {
         return Ok(None);
     };

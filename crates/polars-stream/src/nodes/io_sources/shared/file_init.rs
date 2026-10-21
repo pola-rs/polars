@@ -99,6 +99,13 @@ impl InitializedState {
         !(matches!(self.byte_source.as_ref(), DynByteSource::Buffer(_))
             && self.compression.is_none())
     }
+
+    /// Size of the file if it is local and uncompressed, see [`FileReader::local_read_size`].
+    ///
+    /// [`FileReader::local_read_size`]: crate::nodes::io_sources::multi_scan::reader_interface::FileReader::local_read_size
+    pub(crate) fn local_read_size(&self) -> Option<usize> {
+        (!self.byte_source.is_cloud() && self.compression.is_none()).then_some(self.file_size)
+    }
 }
 
 pub struct ChunkPrefetchSync {

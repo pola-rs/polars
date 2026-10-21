@@ -987,3 +987,17 @@ def test_when_then_masks_multichunk_struct_29799(engine: EngineType) -> None:
         .collect(engine=engine)
     )
     assert out["x"].to_list() == [1] * 17
+
+
+def test_when_then_string_literal_categorical_join_29816() -> None:
+    lf = pl.LazyFrame(
+        {"k": [0, 1], "c": ["a", "b"]}, schema_overrides={"c": pl.Categorical}
+    )
+    q = lf.with_columns(
+        pl.when(pl.col("c") == "a").then(pl.lit("z")).otherwise(pl.col("c")).alias("c")
+    ).join(pl.LazyFrame({"k": [0, 1]}), on="k")
+    assert q.collect_schema()["c"] == pl.Categorical
+    expected = pl.DataFrame(
+        {"k": [0, 1], "c": ["z", "b"]}, schema_overrides={"c": pl.Categorical}
+    )
+    assert_frame_equal(q.collect(), expected, check_row_order=False)

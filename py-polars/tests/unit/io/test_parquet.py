@@ -5480,10 +5480,10 @@ def test_resolve_heavy_sources_cache_key_covers_the_source_sizes(
     )
 
     # Sizes pin the heavy source 2; without them the sample falls back to source 1.
-    # Scans come back in traversal order, which is not the order of the concat.
-    assert sorted(combined._ldf._retained_parquet_footers()) == sorted(
-        [[(0, 1), (2, 8)], [(0, 1), (1, 1)]]
-    )
+    # The concat becomes one scan, where the second scan's sources start at 4.
+    assert combined._ldf._retained_parquet_footers() == [
+        [(0, 1), (2, 8), (4, 1), (5, 1)]
+    ]
 
 
 def test_resolve_heavy_sources_rejects_zero() -> None:
@@ -6264,3 +6264,43 @@ def test_plain_strings_invalid_utf8(
     f.seek(0)
     with pytest.raises(pl.exceptions.ComputeError, match=r"(?i)invalid utf-?8"):
         pl.read_parquet(f)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("defer_cached_reads", ["1", "0"])
+@pytest.mark.parametrize("row_group_sizes", [[0, 2], [2, 0], [2, 0, 2]])
+def test_parquet_empty_row_groups_29995(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    defer_cached_reads: str,
+    row_group_sizes: list[int],
+) -> None:
+    # pyarrow writes no pages for the columns of an empty row group.
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "empty_row_groups.parquet"
+    schema = pa.schema([("a", pa.int64()), ("b", pa.bool_()), ("c", pa.bool_())])
+    expect = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Boolean, "c": pl.Boolean})
+    with pq.ParquetWriter(path, schema) as writer:
+        for n in row_group_sizes:
+            df = pl.DataFrame(
+                {
+                    "a": range(expect.height, expect.height + n),
+                    "b": [True] * n,
+                    "c": [None] * n,
+                },
+                schema=expect.schema,
+            )
+            writer.write_table(df.to_arrow())
+            expect = expect.vstack(df)
+
+    plmonkeypatch.setenv("POLARS_FILE_DEFER_CACHED_READS", defer_cached_reads)
+    assert_frame_equal(pl.read_parquet(path), expect)
+    lf = pl.scan_parquet(path)
+    assert_frame_equal(lf.collect(), expect)
+    assert_frame_equal(lf.select("b", "c").collect(), expect.select("b", "c"))
+    assert_frame_equal(lf.select("a").collect(), expect.select("a"))
+    pred = pl.col("a") > 0
+    assert_frame_equal(
+        pl.scan_parquet(path, parallel="prefiltered").filter(pred).collect(),
+        expect.filter(pred),
+    )

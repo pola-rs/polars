@@ -37,6 +37,7 @@ use sqlparser::keywords;
 use sqlparser::parser::{Parser, ParserOptions};
 use sqlparser::tokenizer::Token;
 
+use crate::context::join_idents;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{
@@ -388,6 +389,8 @@ impl SQLExprVisitor<'_> {
         }
         let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
         if let Some(dtype) = resolve_common_dtype(&cast_dtypes, Some("array literal "))? {
+            // Checked on the assembled series, whose elements share one type.
+            ensure_nested_cast_source("CAST", &dtype, s.dtype())?;
             s = cast_literal_series(&s, &dtype)?;
         }
         Ok(s)
@@ -1412,6 +1415,25 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
+        if nested_target_name(&polars_type).is_some() {
+            // A scalar subquery only gets a type from its plan, and a window has the type of its
+            // function (`OVER ()` partitions by a column that isn't in the schema).
+            let typed = self
+                .ctx
+                .with_typed_subqueries(&expr)?
+                .map_expr(|e| match e {
+                    Expr::Over { function, .. } => Arc::unwrap_or_clone(function),
+                    e => e,
+                });
+            if let Some(source) = self.cast_or_expr_dtype(&typed) {
+                let kind = match cast_kind {
+                    CastKind::TryCast => "TRY_CAST",
+                    CastKind::SafeCast => "SAFE_CAST",
+                    CastKind::Cast | CastKind::DoubleColon => "CAST",
+                };
+                ensure_nested_cast_source(kind, &polars_type, &source)?;
+            }
+        }
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
 
         // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
@@ -2100,11 +2122,11 @@ pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
 
 fn resolve_column<'a>(
     ctx: &'a mut SQLContext,
-    ident_root: &'a Ident,
+    relation: &'a str,
     name: &'a str,
     dtype: &'a DataType,
 ) -> PolarsResult<(Expr, Option<&'a DataType>)> {
-    let resolved = ctx.resolve_name(&ident_root.value, name);
+    let resolved = ctx.resolve_name(relation, name);
     let resolved = resolved.as_str();
     Ok((
         if name != resolved {
@@ -2121,14 +2143,16 @@ pub(crate) fn resolve_compound_identifier(
     idents: &[Ident],
     active_schema: Option<&Schema>,
 ) -> PolarsResult<Vec<Expr>> {
-    // inference priority: table > struct > column
+    // inference priority: table > struct > column; the longest qualifier naming a table wins
     let ident_root = &idents[0];
-    let mut remaining_idents = idents.iter().skip(1);
-    let mut lf = if ctx.relation_in_scope(&ident_root.value) {
-        ctx.get_table_from_current_scope(&ident_root.value)
-    } else {
-        None
+    let (relation, mut lf, qualifier_len) = match ctx.resolve_qualifier(idents)? {
+        Some((name, len)) => match ctx.get_table_from_current_scope(&name)? {
+            Some(lf) => (Some(name), Some(lf), len),
+            None => (None, None, 1),
+        },
+        None => (None, None, 1),
     };
+    let mut remaining_idents = idents.iter().skip(qualifier_len);
 
     // get schema from table (or the active/default schema)
     let schema = if let Some(ref mut lf) = lf {
@@ -2174,7 +2198,9 @@ pub(crate) fn resolve_compound_identifier(
     if lf.is_some() && name == "*" {
         return schema
             .iter_names_and_dtypes()
-            .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).map(|(expr, _)| expr))
+            .map(|(name, dtype)| {
+                resolve_column(ctx, relation.as_deref().unwrap(), name, dtype).map(|(expr, _)| expr)
+            })
             .collect();
     }
 
@@ -2188,19 +2214,24 @@ pub(crate) fn resolve_compound_identifier(
             },
             // root is not in schema and no table found
             (true, None) => {
+                let hint = (1..idents.len())
+                    .rev()
+                    .find_map(|len| ctx.hidden_by_alias_hint(&join_idents(&idents[..len])))
+                    .unwrap_or_default();
                 polars_bail!(
-                    SQLInterface: "no table or struct column named '{}' found",
-                    ident_root
+                    SQLInterface: "no table or struct column named '{}' found{}",
+                    ident_root, hint
                 )
             },
             // root is a table, resolve column from table schema
             (false, _) => {
+                let relation = relation.as_deref().unwrap();
                 if let Some((_, col_name, dtype)) = schema.get_full(name) {
-                    resolve_column(ctx, ident_root, col_name, dtype)
+                    resolve_column(ctx, relation, col_name, dtype)
                 } else {
                     polars_bail!(
                         SQLInterface: "no column named '{}' found in table '{}'",
-                        name, ident_root
+                        name, relation
                     )
                 }
             },
@@ -2322,4 +2353,97 @@ pub(crate) fn resolve_expr_dtype(expr: &Expr, schema: Option<&Schema>) -> Option
     expr.to_field(schema.unwrap_or(&empty))
         .ok()
         .map(|fld| fld.dtype)
+}
+
+/// The SQL name of a `STRUCT` or `MAP` cast target, possibly inside lists (`STRUCT[]`).
+fn nested_target_name(dtype: &DataType) -> Option<String> {
+    match dtype {
+        DataType::List(inner) | DataType::Array(inner, _) => {
+            nested_target_name(inner).map(|name| format!("{name}[]"))
+        },
+        DataType::Struct(_) => Some("STRUCT".to_string()),
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(..) => Some("MAP".to_string()),
+        _ => None,
+    }
+}
+
+/// Only a `STRUCT` (`MAP`) value or `NULL` casts to `STRUCT` (`MAP`), at any depth, as in
+/// PostgreSQL. Polars' cast would wrap a value into a 1-field struct (`1` -> `{1}`), and strings
+/// stay free for parsing later. A source of unknown type (no schema) still uses Polars' cast.
+fn ensure_nested_cast_source(
+    cast_kind: &str,
+    target: &DataType,
+    source: &DataType,
+) -> PolarsResult<()> {
+    let Some(mismatch) = nested_cast_mismatch(target, source) else {
+        return Ok(());
+    };
+    // A literal's dynamic type (`dyn int`) is shown as the type it becomes.
+    let source = source.clone().materialize_unknown(true)?;
+    let name = mismatch.target;
+    if mismatch.path.is_empty() {
+        polars_bail!(
+            SQLInterface: "{} from {} to {} is not supported; only {} values or NULL can be cast to {}",
+            cast_kind, source, name, name, name
+        )
+    }
+    polars_bail!(
+        SQLInterface: "{} from {} to {} is not supported: {} is {}; only {} values or NULL can be cast to {}",
+        cast_kind, source, nested_target_name(target).unwrap_or_default(),
+        mismatch.path.join(" of "), mismatch.source.materialize_unknown(true)?, name, name
+    )
+}
+
+/// Where a cast source doesn't fit a `STRUCT` or `MAP` in the target.
+struct NestedCastMismatch {
+    source: DataType,
+    target: String,
+    /// Where in the cast it is, innermost first: `["list element", "field 'a'"]`.
+    path: Vec<String>,
+}
+
+fn nested_cast_mismatch(target: &DataType, source: &DataType) -> Option<NestedCastMismatch> {
+    let within = |segment: String, mismatch: Option<NestedCastMismatch>| {
+        mismatch.map(|mut mismatch| {
+            mismatch.path.push(segment);
+            mismatch
+        })
+    };
+    match (target, source) {
+        (_, DataType::Null | DataType::Unknown(UnknownKind::Any)) => None,
+        (
+            DataType::List(target) | DataType::Array(target, _),
+            DataType::List(source) | DataType::Array(source, _),
+        ) => within("list element".into(), nested_cast_mismatch(target, source)),
+        (DataType::Struct(target_fields), DataType::Struct(source_fields)) => {
+            target_fields.iter().find_map(|field| {
+                let source_field = source_fields.iter().find(|f| f.name == field.name)?;
+                within(
+                    format!("field '{}'", field.name),
+                    nested_cast_mismatch(&field.dtype, &source_field.dtype),
+                )
+            })
+        },
+        #[cfg(feature = "dtype-map")]
+        (DataType::Map(key, value), DataType::Map(source_key, source_value)) => {
+            within("map key".into(), nested_cast_mismatch(key, source_key)).or_else(|| {
+                within(
+                    "map value".into(),
+                    nested_cast_mismatch(value, source_value),
+                )
+            })
+        },
+        // A map is stored as a list of `{key, value}` structs, which a list target can take.
+        #[cfg(feature = "dtype-map")]
+        (DataType::List(target) | DataType::Array(target, _), DataType::Map(..)) => within(
+            "map entry".into(),
+            nested_cast_mismatch(target, &source.map_entries_dtype()?),
+        ),
+        _ => nested_target_name(target).map(|target| NestedCastMismatch {
+            source: source.clone(),
+            target,
+            path: Vec::new(),
+        }),
+    }
 }

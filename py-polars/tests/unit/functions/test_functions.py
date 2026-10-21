@@ -11,7 +11,12 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import ConcatMethod, CorrelationMethod, PolarsDataType
+    from polars._typing import (
+        ConcatMethod,
+        CorrelationMethod,
+        EngineType,
+        PolarsDataType,
+    )
 
 
 def test_concat_align() -> None:
@@ -525,6 +530,98 @@ def test_coalesce_eager() -> None:
         match="expected at least one Series in 'coalesce' if 'eager=True'",
     ):
         pl.coalesce("x", "y", eager=True)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_coalesce_broadcast_first_input(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [None, 2, 3], "b": [10, None, 30], "g": [1, 1, 2]})
+
+    result = lf.select(
+        lit=pl.coalesce(pl.lit(1), "a"),
+        agg=pl.coalesce(pl.col("b").max(), "a"),
+        lit_sum=pl.coalesce(pl.lit(1), "a").sum(),
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {"lit": [1, 1, 1], "agg": [30, 30, 30], "lit_sum": [3, 3, 3]},
+        schema={"lit": pl.Int64, "agg": pl.Int64, "lit_sum": pl.Int64},
+    )
+    assert_frame_equal(result, expected)
+
+    result = (
+        lf.group_by("g", maintain_order=True)
+        .agg(
+            first=pl.coalesce(pl.col("b").first(), "a"),
+            lit=pl.coalesce(pl.lit(1), "a"),
+        )
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"g": [1, 2], "first": [[10, 10], [30]], "lit": [[1, 1], [1]]},
+        schema={"g": pl.Int64, "first": pl.List(pl.Int64), "lit": pl.List(pl.Int64)},
+    )
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.coalesce(pl.lit(1), "a").len().over("g")).collect(
+        engine=engine
+    )
+    assert result.to_series().to_list() == [2, 2, 1]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_coalesce_null_and_scalar_inputs(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "n": [None, None, None],
+            "a": [None, 2, 3],
+            "b": [10, None, 30],
+            "g": [1, 1, 2],
+        },
+        schema_overrides={"n": pl.Int64},
+    )
+    null = pl.lit(None, pl.Int64)
+
+    result = lf.select(
+        null_lit=pl.coalesce(null, "a"),
+        null_null_lit=pl.coalesce(null, null, "b"),
+        null_col_lit=pl.coalesce("n", pl.lit(5), "b"),
+        mid_break=pl.coalesce("a", pl.lit(1), "b"),
+    ).collect(engine=engine)
+    expected = pl.DataFrame(
+        {
+            "null_lit": [None, 2, 3],
+            "null_null_lit": [10, None, 30],
+            "null_col_lit": [5, 5, 5],
+            "mid_break": [1, 2, 3],
+        },
+        schema=dict.fromkeys(
+            ["null_lit", "null_null_lit", "null_col_lit", "mid_break"], pl.Int64
+        ),
+    )
+    assert_frame_equal(result, expected)
+
+    # The output keeps the first input's name, also when that input is all-null.
+    result = lf.select(pl.coalesce("n", "a")).collect(engine=engine)
+    expected = pl.DataFrame({"n": [None, 2, 3]}, schema={"n": pl.Int64})
+    assert_frame_equal(result, expected)
+
+    result = (
+        lf.group_by("g", maintain_order=True)
+        .agg(null_lit=pl.coalesce(null, "a"))
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"g": [1, 2], "null_lit": [[None, 2], [3]]},
+        schema={"g": pl.Int64, "null_lit": pl.List(pl.Int64)},
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_coalesce_length_mismatch(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [None, 2, 3]})
+    for exprs in [("a", pl.col("b").head(2)), ("b", pl.col("a").head(2))]:
+        with pytest.raises(pl.exceptions.ShapeError):
+            lf.select(pl.coalesce(*exprs)).collect(engine=engine)
 
 
 def test_overflow_diff() -> None:
