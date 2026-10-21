@@ -16,6 +16,7 @@ from polars.exceptions import (
     ArgumentRemovedError,
     AttributeRemovedError,
     ChronoFormatWarning,
+    ComputeError,
 )
 from polars.expr.string import _validate_format_argument
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -985,6 +986,41 @@ def test_reinterpret_errors_13659() -> None:
         match="cannot reinterpret from Int8 to Int16",
     ):
         q.collect_schema()
+
+
+@pytest.mark.parametrize(("precision", "scale"), [(10, 2), (38, 0), (38, 9)])
+def test_reinterpret_int128_decimal(precision: int, scale: int) -> None:
+    bound = 10**precision - 1
+    s = pl.Series("a", [-bound, -1, None, 0, bound], dtype=pl.Int128)
+    dtype = pl.Decimal(precision, scale)
+
+    out = s.to_frame().lazy().select(pl.col.a.reinterpret(dtype=dtype)).collect()
+    assert out.schema == {"a": dtype}
+    assert_series_equal(out["a"].to_physical(), s)
+
+    back = out.lazy().select(pl.col.a.reinterpret(dtype=pl.Int128)).collect()
+    assert_series_equal(back["a"], s)
+
+
+def test_reinterpret_decimal_int128() -> None:
+    s = pl.Series("a", ["1.25", None, "-3.50"]).cast(pl.Decimal(10, 2))
+    out = s.to_frame().lazy().select(pl.col.a.reinterpret(dtype=pl.Int128)).collect()
+    assert_series_equal(out["a"], pl.Series("a", [125, None, -350], dtype=pl.Int128))
+
+
+@pytest.mark.parametrize(
+    ("precision", "value"),
+    [(10, 10**10), (10, -(10**10)), (38, 2**127 - 1), (38, -(2**127))],
+)
+def test_reinterpret_int128_decimal_out_of_range(precision: int, value: int) -> None:
+    q = (
+        pl.Series("a", [0, value, None], dtype=pl.Int128)
+        .to_frame()
+        .lazy()
+        .select(pl.col.a.reinterpret(dtype=pl.Decimal(precision, 0)))
+    )
+    with pytest.raises(ComputeError, match=f"decimal precision {precision} can't fit"):
+        q.collect()
 
 
 def test_append_no_upcast_27345() -> None:

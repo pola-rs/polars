@@ -8421,10 +8421,12 @@ class Series(metaclass=_Meta):
         dtype: type[int | float] | PolarsDataType | None = None,
     ) -> Series:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed for numeric types of the same size, and
+        between `Int128` and the unscaled integer of a `Decimal`; an `Int128` that
+        doesn't fit the `Decimal` precision raises. For lower bits numbers, you can
+        safely use the cast operation.
 
         Exactly one of `signed` or `dtype` must be specified.
 
