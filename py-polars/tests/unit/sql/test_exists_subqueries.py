@@ -122,6 +122,7 @@ def test_exists_over_aggregate(condition: str, expected: list[int]) -> None:
     [
         # the aggregate reads only outer columns, so it belongs to the outer query
         "SELECT COUNT(t1.a) FROM t2 WHERE FALSE",
+        "SELECT COUNT(*) FILTER (WHERE t1.a > 0) FROM t2 WHERE FALSE",
         "SELECT UNNEST(ARRAY_AGG(w)) FROM t2 WHERE FALSE",
     ],
 )

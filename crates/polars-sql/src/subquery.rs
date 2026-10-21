@@ -1800,6 +1800,48 @@ fn exists_aggregates(
     inner_names: &[RelationName],
     inner_schema: &Schema,
 ) -> Option<bool> {
+    /// Whether the columns an aggregate call reads, outside of its subqueries, are inner
+    /// or outer ones.
+    struct Columns<'a> {
+        inner_names: &'a [RelationName],
+        inner_schema: &'a Schema,
+        query_depth: usize,
+        inner: bool,
+        outer: bool,
+    }
+
+    impl Visitor for Columns<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            let is_inner = match expr {
+                _ if self.query_depth > 0 => return ControlFlow::Continue(()),
+                SQLExpr::Identifier(ident) => self.inner_schema.contains(&ident.value),
+                SQLExpr::CompoundIdentifier(parts) => {
+                    match_qualifier(parts, self.inner_names.iter()).is_some()
+                        || self.inner_schema.contains(&parts[0].value)
+                },
+                _ => return ControlFlow::Continue(()),
+            };
+            if is_inner {
+                self.inner = true;
+            } else {
+                self.outer = true;
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
     struct Aggregates<'a> {
         ctx: &'a SQLContext,
         inner_names: &'a [RelationName],
@@ -1808,19 +1850,6 @@ fn exists_aggregates(
         local: bool,
         outer: bool,
         unsupported: bool,
-    }
-
-    impl Aggregates<'_> {
-        fn is_inner_column(&self, expr: &SQLExpr) -> Option<bool> {
-            match expr {
-                SQLExpr::Identifier(ident) => Some(self.inner_schema.contains(&ident.value)),
-                SQLExpr::CompoundIdentifier(parts) => Some(
-                    match_qualifier(parts, self.inner_names.iter()).is_some()
-                        || self.inner_schema.contains(&parts[0].value),
-                ),
-                _ => None,
-            }
-        }
     }
 
     impl Visitor for Aggregates<'_> {
@@ -1846,17 +1875,18 @@ fn exists_aggregates(
             match PolarsSQLFunctions::try_from_sql(function, self.ctx) {
                 Ok(PolarsSQLFunctions::Explode) => self.unsupported = true,
                 Ok(f) if f.is_builtin_aggregate() && function.over.is_none() => {
-                    // An aggregate belongs to the outer query if it reads only outer columns.
-                    let (mut inner, mut outer) = (false, false);
-                    let _ = visit_expressions(&function.args, |e: &SQLExpr| {
-                        match self.is_inner_column(e) {
-                            Some(true) => inner = true,
-                            Some(false) => outer = true,
-                            None => {},
-                        }
-                        ControlFlow::<()>::Continue(())
-                    });
-                    if inner || !outer {
+                    // An aggregate belongs to the outer query if it reads only outer columns,
+                    // in its arguments or its FILTER clause.
+                    let mut columns = Columns {
+                        inner_names: self.inner_names,
+                        inner_schema: self.inner_schema,
+                        query_depth: 0,
+                        inner: false,
+                        outer: false,
+                    };
+                    let _ = function.args.visit(&mut columns);
+                    let _ = function.filter.visit(&mut columns);
+                    if columns.inner || !columns.outer {
                         self.local = true;
                     } else {
                         self.outer = true;
