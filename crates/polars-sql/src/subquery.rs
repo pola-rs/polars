@@ -20,10 +20,10 @@ use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::Arena;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
-    Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
-    UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
-    visit_expressions_mut,
+    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident,
+    NamedWindowDefinition, NamedWindowExpr, Query, Select, SelectItem, SetExpr, Statement,
+    TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor,
+    VisitorMut, WindowSpec, WindowType, visit_expressions, visit_expressions_mut,
 };
 
 use crate::catalog::CatalogSpellings;
@@ -1850,6 +1850,8 @@ fn exists_aggregates(
         local: bool,
         outer: bool,
         unsupported: bool,
+        /// Named windows used so far, whose definitions may hold aggregates.
+        windows: Vec<String>,
     }
 
     impl Visitor for Aggregates<'_> {
@@ -1871,6 +1873,14 @@ fn exists_aggregates(
             };
             if self.query_depth > 0 {
                 return ControlFlow::Continue(());
+            }
+            match &function.over {
+                Some(WindowType::NamedWindow(name))
+                | Some(WindowType::WindowSpec(WindowSpec {
+                    window_name: Some(name),
+                    ..
+                })) => self.windows.push(name.value.clone()),
+                _ => {},
             }
             match PolarsSQLFunctions::try_from_sql(function, self.ctx) {
                 Ok(PolarsSQLFunctions::Explode) => self.unsupported = true,
@@ -1906,9 +1916,32 @@ fn exists_aggregates(
         local: false,
         outer: false,
         unsupported: false,
+        windows: vec![],
     };
     let _ = select.projection.visit(&mut aggregates);
     let _ = query.order_by.visit(&mut aggregates);
+    let mut visited = PlHashSet::new();
+    while let Some(name) = aggregates.windows.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        let definition = select
+            .named_window
+            .iter()
+            .find(|NamedWindowDefinition(ident, _)| ident.value == name);
+        match definition {
+            Some(NamedWindowDefinition(_, NamedWindowExpr::NamedWindow(base))) => {
+                aggregates.windows.push(base.value.clone())
+            },
+            Some(NamedWindowDefinition(_, NamedWindowExpr::WindowSpec(spec))) => {
+                aggregates
+                    .windows
+                    .extend(spec.window_name.iter().map(|i| i.value.clone()));
+                let _ = spec.visit(&mut aggregates);
+            },
+            None => {},
+        }
+    }
     (!aggregates.unsupported && !aggregates.outer).then_some(aggregates.local)
 }
 

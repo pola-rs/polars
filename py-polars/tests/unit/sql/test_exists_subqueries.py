@@ -106,6 +106,11 @@ def test_not_exists_inequality_correlation(op: str, expected: list[int]) -> None
         ("EXISTS (SELECT COUNT(*) OVER () FROM t2 WHERE FALSE)", []),
         ("EXISTS (SELECT (SELECT COUNT(*) FROM t2) FROM t2 WHERE FALSE)", []),
         ("EXISTS (SELECT 1 FROM t2 WHERE FALSE ORDER BY COUNT(*))", [1, 2, 3]),
+        (
+            "EXISTS (SELECT COUNT(*) OVER win FROM t2 WHERE FALSE "
+            "WINDOW win AS (ORDER BY SUM(g)))",
+            [1, 2, 3],
+        ),
     ],
 )
 def test_exists_over_aggregate(condition: str, expected: list[int]) -> None:
