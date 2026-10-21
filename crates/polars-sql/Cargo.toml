@@ -21,6 +21,7 @@ polars-testing = { workspace = true }
 polars-utils = { workspace = true }
 
 bitflags = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
 hex = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }

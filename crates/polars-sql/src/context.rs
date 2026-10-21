@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::ops::{ControlFlow, Deref};
 use std::sync::{Arc, RwLock};
 
+use chrono::NaiveDateTime;
 use polars_core::prelude::*;
 #[cfg(feature = "asof_join")]
 use polars_core::utils::try_get_supertype;
@@ -250,6 +251,9 @@ pub struct SQLContext {
     catalog_names: Vec<RewrittenName>,
     /// The names the current statement wrote for its catalog tables, by position.
     catalog_spellings: CatalogSpellings,
+    /// The local time at which the current statement started, read by `CURRENT_DATE` and
+    /// friends so that they agree within the statement.
+    statement_time: Option<NaiveDateTime>,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -311,6 +315,7 @@ impl Default for SQLContext {
             catalog_tables: Default::default(),
             catalog_names: Default::default(),
             catalog_spellings: Default::default(),
+            statement_time: None,
         }
     }
 }
@@ -628,6 +633,14 @@ impl SQLContext {
         self.joined_aliases.clear();
         self.join_base = None;
         self.named_windows.clear();
+        self.statement_time = None;
+    }
+
+    /// The local time at which the current statement started.
+    pub(crate) fn statement_time(&mut self) -> NaiveDateTime {
+        *self
+            .statement_time
+            .get_or_insert_with(|| chrono::Local::now().naive_local())
     }
 
     /// Add a function registry to the SQLContext.
@@ -666,12 +679,14 @@ impl SQLContext {
             catalog_tables: self.catalog_tables.clone(),
             catalog_names: self.catalog_names.clone(),
             catalog_spellings: self.catalog_spellings.clone(),
+            statement_time: self.statement_time,
 
             ..Default::default()
         }
     }
 
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        self.statement_time();
         let ast = stmt;
         Ok(match ast {
             Statement::Query(query) => self.execute_query(query)?,
