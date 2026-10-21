@@ -5,12 +5,14 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    Ident, ObjectName, ObjectNamePart, Query, SetExpr, Statement, TableFactor, Visit, VisitMut,
-    Visitor, VisitorMut, With,
+    Ident, ObjectName, ObjectNamePart, Query, SetExpr, Statement, TableFactor, Visitor, VisitorMut,
+    With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Location, Span};
+
+use crate::dyn_visit;
 
 /// A table of an attached catalog that a statement reads.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -209,7 +211,7 @@ pub(crate) fn rewrite_catalog_names(
     is_local: impl Fn(&str) -> bool,
 ) -> PolarsResult<(Vec<RewrittenName>, CatalogSpellings)> {
     let mut registered = RegisteredAliases(Vec::new());
-    let _ = Visit::visit(&*stmt, &mut registered);
+    let _ = dyn_visit::visit(&*stmt, &mut registered);
     let mut rewriter = Rewriter {
         resolve,
         is_local,
@@ -220,7 +222,7 @@ pub(crate) fn rewrite_catalog_names(
         spellings: CatalogSpellings::default(),
         desugared: 0,
     };
-    if let ControlFlow::Break(err) = VisitMut::visit(stmt, &mut rewriter) {
+    if let ControlFlow::Break(err) = dyn_visit::visit_mut(stmt, &mut rewriter) {
         return Err(err);
     }
     Ok((rewriter.rewritten, rewriter.spellings))
@@ -366,7 +368,7 @@ where
                 } else {
                     names.clone()
                 });
-                let flow = VisitMut::visit(&mut *cte.query, self);
+                let flow = dyn_visit::visit_mut(&mut *cte.query, self);
                 self.cte_scopes.pop();
                 flow?;
                 names.push(cte.alias.name.value.clone());

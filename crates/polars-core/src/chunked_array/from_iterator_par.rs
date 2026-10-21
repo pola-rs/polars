@@ -412,25 +412,35 @@ where
     F: Fn(usize) -> Option<T::Native> + Send + Sync,
 {
     let mut values: Vec<T::Native> = vec![T::Native::default(); len];
-    let mut validity: Vec<u8> = Vec::with_capacity(len.div_ceil(8));
-
-    values
-        .par_chunks_mut(8)
-        .enumerate()
-        .map(|(b, out)| {
-            let lo = b * 8;
-            let mut m = 0u8;
-            for (bit, slot) in out.iter_mut().enumerate() {
-                if let Some(x) = f(lo + bit) {
-                    *slot = x;
-                    m |= 1 << bit;
-                }
+    let validity = fill_blocks_of_8_par(&mut values, &|b, out| {
+        let lo = b * 8;
+        let mut m = 0u8;
+        for (bit, slot) in out.iter_mut().enumerate() {
+            if let Some(x) = f(lo + bit) {
+                *slot = x;
+                m |= 1 << bit;
             }
-            m
-        })
-        .collect_into_vec(&mut validity);
+        }
+        m
+    });
 
     let validity = Bitmap::from_u8_vec(validity, len);
     let validity = (validity.unset_bits() > 0).then_some(validity);
     ChunkedArray::from_vec_validity(PlSmallStr::EMPTY, values, validity)
+}
+
+/// Calls `fill(block_idx, block)` in parallel for every block of 8 values and returns the
+/// validity bytes it produced. `fill` is dynamic so that the rayon code is only generated once
+/// per value type.
+fn fill_blocks_of_8_par<N: Send>(
+    values: &mut [N],
+    fill: &(dyn Fn(usize, &mut [N]) -> u8 + Sync),
+) -> Vec<u8> {
+    let mut validity: Vec<u8> = Vec::with_capacity(values.len().div_ceil(8));
+    values
+        .par_chunks_mut(8)
+        .enumerate()
+        .map(|(b, out)| fill(b, out))
+        .collect_into_vec(&mut validity);
+    validity
 }
