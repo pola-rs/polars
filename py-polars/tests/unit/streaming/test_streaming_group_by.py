@@ -668,3 +668,220 @@ def test_streaming_group_by_null_on_empty_after_valid_morsels(
         None,
     )
     assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+
+
+SPILL_ENV = {
+    "POLARS_OOC_MEMORY_BUDGET_MB": "0",
+    "POLARS_OOC_SPILL_MIN_BYTES": "1",
+    "POLARS_OOC_DRIFT_THRESHOLD": "0",
+}
+
+
+@pytest.fixture(
+    params=[
+        "at_once",
+        "stored",
+        pytest.param("spilled", marks=[pytest.mark.write_disk, pytest.mark.slow]),
+    ]
+)
+def group_by_mode(
+    request: pytest.FixtureRequest, plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> str:
+    """Makes small inputs take the paths of large ones."""
+    mode = str(request.param)
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "32")
+    plmonkeypatch.setenv("POLARS_GROUP_BY_BATCH_BYTES", "4096")
+    plmonkeypatch.setenv("POLARS_GROUP_BY_MIN_ROWS_PER_PARTITION", "1")
+    if mode != "at_once":
+        num_partitions = 4 * pl.thread_pool_size() + 3
+        plmonkeypatch.setenv("POLARS_GROUP_BY_NUM_PARTITIONS", str(num_partitions))
+    if mode == "spilled":
+        for name, value in SPILL_ENV.items():
+            plmonkeypatch.setenv(name, value)
+        plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
+    return mode
+
+
+def _modes(*modes: str) -> pytest.MarkDecorator:
+    return pytest.mark.parametrize("group_by_mode", modes, indirect=True)
+
+
+def _mostly_cold_frame(n: int) -> pl.DataFrame:
+    # One frequent key, all other keys unique.
+    i = pl.int_range(n)
+    return pl.select(k=pl.when(i % 8 == 0).then(0).otherwise(n + i), v=i)
+
+
+def test_streaming_group_by_mostly_cold(group_by_mode: str) -> None:
+    n = 2048
+    m = n // 8
+    gb = _mostly_cold_frame(n).lazy().group_by("k")
+    cold = [j for j in range(n) if j % 8]
+    keys = pl.Series("k", [0, *(n + j for j in cold)], dtype=pl.Int64)
+
+    expected = pl.DataFrame(
+        [keys, pl.Series("len", [m] + [1] * len(cold), dtype=pl.get_index_type())]
+    )
+    out = gb.agg(pl.len()).collect(engine="streaming")
+    assert_frame_equal(out, expected, check_row_order=False)
+
+    expected = pl.DataFrame(
+        [keys, pl.Series("v", [8 * m * (m - 1) // 2, *cold], dtype=pl.Int64)]
+    ).select("k", d=2 * pl.col("v"), v=pl.col("v"))
+    out = gb.agg((pl.col("v") * 2).sum().alias("d"), pl.col("v").sum()).collect(
+        engine="streaming"
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+def _keys(dtype: str) -> dict[str, pl.Expr]:
+    g = pl.col("g")
+    long_string = pl.format("a-string-longer-than-twelve-{}", g)
+    keys = {
+        "categorical": {"k": g.cast(pl.String).cast(pl.Categorical)},
+        "decimal": {"k": g.cast(pl.Decimal(18, 2))},
+        "datetime": {"k": g.cast(pl.Datetime("us"))},
+        "string": {"k": long_string},
+        "struct": {"k": pl.struct(a=g, b=g.cast(pl.String))},
+        "multiple": {
+            "i8": (g % 7).cast(pl.Int8),
+            "i16": g.cast(pl.Int16),
+            "i32": g.cast(pl.Int32),
+            "f64": g / 4,
+            "i128": g.cast(pl.Int128) * pl.lit(10**20, dtype=pl.Int128),
+            "b": g % 2 == 0,
+            "s": long_string,
+            "bin": g.cast(pl.String).cast(pl.Binary),
+        },
+    }[dtype]
+    return {name: pl.when(g != 0).then(key) for name, key in keys.items()}
+
+
+@_modes("spilled")
+@pytest.mark.parametrize(
+    "dtype", ["categorical", "decimal", "datetime", "string", "struct", "multiple"]
+)
+def test_streaming_group_by_spilled_keys(group_by_mode: str, dtype: str) -> None:
+    num_groups = 200
+    c = 10
+    keys = _keys(dtype)
+    i = pl.int_range(num_groups * c)
+    lf = (
+        pl.select(g=i % num_groups, v=i)
+        .lazy()
+        .with_columns(**keys)
+        .group_by(list(keys))
+        .agg(pl.len(), pl.col("v").sum())
+    )
+    expected = pl.DataFrame({"g": range(num_groups)}).select(
+        **keys,
+        len=pl.lit(c, dtype=pl.get_index_type()),
+        v=num_groups * c * (c - 1) // 2 + pl.col("g") * c,
+    )
+    assert_frame_equal(lf.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@_modes("stored")
+def test_streaming_group_by_first_last_stored(group_by_mode: str) -> None:
+    i = pl.int_range(1000)
+    v = pl.col("v")
+    lf = (
+        pl.select(k=i % 50, v=pl.when(i >= 50).then(i))
+        .lazy()
+        .group_by("k")
+        .agg(
+            v.first().alias("first"),
+            v.last().alias("last"),
+            v.first(ignore_nulls=True).alias("first_nn"),
+            v.last(ignore_nulls=True).alias("last_nn"),
+        )
+    )
+    k = pl.col("k")
+    expected = pl.select(k=pl.int_range(50)).with_columns(
+        first=pl.lit(None, dtype=pl.Int64),
+        last=950 + k,
+        first_nn=50 + k,
+        last_nn=950 + k,
+    )
+    assert_frame_equal(lf.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@_modes("stored")
+def test_streaming_group_by_multiple_inputs_stored(group_by_mode: str) -> None:
+    num_groups = 200
+    c = 10
+    i = pl.int_range(num_groups * c)
+    v = pl.col("v")
+    lf = (
+        pl.select(g=i % num_groups, v=i)
+        .lazy()
+        .group_by("g")
+        .agg(
+            v.filter(v % 2 == 0).sum().alias("even"),
+            v.filter(v < 0).sum().alias("neg"),
+            pl.len(),
+        )
+    )
+    g = pl.col("g")
+    full = num_groups * c * (c - 1) // 2 + g * c
+    expected = pl.select(g=pl.int_range(num_groups)).select(
+        "g",
+        even=pl.when(g % 2 == 0).then(full).otherwise(0),
+        neg=pl.lit(0, dtype=pl.Int64),
+        len=pl.lit(c, dtype=pl.get_index_type()),
+    )
+    assert_frame_equal(lf.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@_modes("at_once", "stored")
+def test_streaming_group_by_error_while_building_partitions(group_by_mode: str) -> None:
+    n = 2048
+    # Only the last rows fail to parse.
+    t = pl.Series("t", [str(j) if j < n - 3 else "x" for j in range(n)])
+    lf = (
+        _mostly_cold_frame(n)
+        .with_columns(t)
+        .lazy()
+        .group_by("k")
+        .agg(pl.col("t").max(), pl.col("t").str.to_integer().sum().alias("t_sum"))
+    )
+    with pytest.raises(pl.exceptions.ComputeError, match="strict integer parsing"):
+        lf.collect(engine="streaming")
+
+
+@_modes("stored")
+def test_streaming_group_by_head_stored(group_by_mode: str) -> None:
+    n = 2000
+    k = (pl.int_range(n) * 7919) % n
+    lf = pl.select(k=k, v=k).lazy().group_by("k").agg(pl.col("v").sum())
+    out = lf.head(1).collect(engine="streaming")
+    assert out.height == 1
+    assert out["k"][0] == out["v"][0]
+
+
+@_modes("stored")
+def test_streaming_group_by_into_sampling_join(
+    group_by_mode: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # The join pauses its inputs after sampling 100 rows.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    left = pl.select(k=pl.int_range(9000) % 3000, v=pl.lit(1, dtype=pl.Int64))
+    right = pl.select(k=pl.int_range(6000) % 3000, w=pl.int_range(6000))
+    lf = (
+        left.lazy()
+        .group_by("k")
+        .agg(pl.col("v").sum(), pl.len())
+        .join(right.lazy().group_by("k").agg(pl.col("w").max()), on="k")
+    )
+
+    out = lf.collect(engine="streaming")
+    k = pl.int_range(3000)
+    expected = pl.select(
+        k=k,
+        v=pl.lit(3, dtype=pl.Int64),
+        len=pl.lit(3, dtype=pl.get_index_type()),
+        w=3000 + k,
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
