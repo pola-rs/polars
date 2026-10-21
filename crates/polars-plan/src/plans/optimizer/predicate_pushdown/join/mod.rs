@@ -350,12 +350,23 @@ pub(super) fn process_join(
         push_left: bool,
         push_right: bool,
         keep_local: bool,
+        #[cfg(feature = "asof_join")]
+        uses_asof_key: bool,
     }
     let classify = |predicate: &ExprIR, expr_arena: &Arena<AExpr>| {
         let mut push_left = true;
         let mut push_right = true;
+        #[cfg(feature = "asof_join")]
+        let mut uses_asof_key = false;
 
         for col_name in aexpr_to_leaf_names_iter(predicate.node(), expr_arena) {
+            #[cfg(feature = "asof_join")]
+            {
+                uses_asof_key |= asof_keys
+                    .as_ref()
+                    .is_some_and(|(_, left_key, ..)| left_key == col_name);
+            }
+
             let origin: ExprOrigin = ExprOrigin::get_column_origin(
                 col_name.as_str(),
                 &schema_left,
@@ -441,6 +452,8 @@ pub(super) fn process_join(
             push_left,
             push_right,
             keep_local: has_residual,
+            #[cfg(feature = "asof_join")]
+            uses_asof_key,
         }
     };
 
@@ -490,7 +503,8 @@ pub(super) fn process_join(
     for (_, predicate) in acc_predicates {
         let placement = classify(&predicate, expr_arena);
         #[cfg(feature = "asof_join")]
-        if !placement.push_right
+        if placement.uses_asof_key
+            && !placement.push_right
             && let Some((asof, left_key, right_key, key_dtype)) = &asof_keys
         {
             asof_pushdown_right.extend(asof::asof_right_predicates(
