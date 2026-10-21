@@ -3,6 +3,7 @@ use polars_arrow::array::*;
 use polars_arrow::bitmap::utils::set_bit_unchecked;
 use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::legacy::array::SlicedArray;
+use polars_arrow::offset::OffsetsBuffer;
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -232,6 +233,58 @@ impl ExplodeByOffsets for BooleanChunked {
     }
 }
 
+/// Number of rows `explode` emits for one row of the offsets returned by `explode_and_offsets`.
+#[inline]
+fn exploded_len(start: i64, end: i64, is_valid: bool, options: ExplodeOptions) -> usize {
+    if start == end {
+        ((is_valid && options.empty_as_null) || (!is_valid && options.keep_nulls)) as usize
+    } else {
+        (end - start) as usize
+    }
+}
+
+/// Explode a List or Array `Series`, also returning where each input row starts in the output.
+pub fn explode_with_row_offsets(
+    s: &Series,
+    options: ExplodeOptions,
+) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+    let s = s.rechunk();
+    let (out, offsets) = match s.dtype() {
+        DataType::List(_) => s.list()?.explode_and_offsets(options)?,
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(_, width) => {
+            let (out, offsets) = s.array()?.explode_and_offsets(options)?;
+            // Width 0 doesn't return per-row offsets.
+            let offsets = if *width == 0 {
+                polars_arrow::offset::Offsets::new_zeroed(s.len()).into()
+            } else {
+                offsets
+            };
+            (out, offsets)
+        },
+        dt => polars_bail!(opq = explode_with_row_offsets, dt),
+    };
+
+    let validity = s.rechunk_validity();
+    let mut row_offsets = Vec::with_capacity(offsets.len());
+    let mut length_so_far = 0i64;
+    row_offsets.push(length_so_far);
+    for (i, w) in offsets.as_slice().windows(2).enumerate() {
+        let is_valid = validity.as_ref().is_none_or(|v| v.get_bit(i));
+        length_so_far += exploded_len(w[0], w[1], is_valid, options) as i64;
+        row_offsets.push(length_so_far);
+    }
+    polars_ensure!(
+        length_so_far as usize == out.len(),
+        ComputeError: "explode produced {} rows, expected {}", out.len(), length_so_far
+    );
+
+    // SAFETY: monotonically increasing.
+    Ok((out, unsafe {
+        OffsetsBuffer::new_unchecked(row_offsets.into())
+    }))
+}
+
 /// Convert Arrow array offsets to indexes of the original list
 pub(crate) fn offsets_to_indexes(
     offsets: &[i64],
@@ -255,19 +308,8 @@ pub(crate) fn offsets_to_indexes(
                     break;
                 }
 
-                if offset_start == offset_end {
-                    if options.empty_as_null {
-                        // if the previous offset is equal to the current offset, we have an empty
-                        // list and we duplicate the previous index
-                        idx.push(last_idx);
-                    }
-                } else {
-                    let width = (offset_end - offset_start) as usize;
-                    for _ in 0..width {
-                        idx.push(last_idx);
-                    }
-                }
-
+                let n = exploded_len(*offset_start, *offset_end, true, options);
+                idx.extend(std::iter::repeat_n(last_idx, n));
                 last_idx += 1;
             }
         },
@@ -281,19 +323,8 @@ pub(crate) fn offsets_to_indexes(
                     break;
                 }
 
-                if offset_start == offset_end {
-                    if (is_valid && options.empty_as_null) || (!is_valid && options.keep_nulls) {
-                        // if the previous offset is equal to the current offset, we have an empty
-                        // list and we duplicate the previous index
-                        idx.push(last_idx);
-                    }
-                } else {
-                    let width = (offset_end - offset_start) as usize;
-                    for _ in 0..width {
-                        idx.push(last_idx);
-                    }
-                }
-
+                let n = exploded_len(*offset_start, *offset_end, is_valid, options);
+                idx.extend(std::iter::repeat_n(last_idx, n));
                 last_idx += 1;
             }
         },
