@@ -71,13 +71,13 @@ pub enum PyOperator {
     Divide,
     TrueDivide,
     FloorDivide,
+    TruncDivide,
     Modulus,
     And,
     Or,
     Xor,
     LogicalAnd,
     LogicalOr,
-    TruncDivide,
 }
 
 #[pymethods]
@@ -108,13 +108,13 @@ impl<'py> IntoPyObject<'py> for Wrap<Operator> {
             Operator::RustDivide => PyOperator::Divide,
             Operator::TrueDivide => PyOperator::TrueDivide,
             Operator::FloorDivide => PyOperator::FloorDivide,
+            Operator::TruncDivide => PyOperator::TruncDivide,
             Operator::Modulus => PyOperator::Modulus,
             Operator::And => PyOperator::And,
             Operator::Or => PyOperator::Or,
             Operator::Xor => PyOperator::Xor,
             Operator::LogicalAnd => PyOperator::LogicalAnd,
             Operator::LogicalOr => PyOperator::LogicalOr,
-            Operator::TruncDivide => PyOperator::TruncDivide,
         }
         .into_pyobject(py)
     }

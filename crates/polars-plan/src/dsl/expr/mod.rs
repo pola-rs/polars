@@ -762,14 +762,14 @@ pub enum Operator {
     TrueDivide,
     /// Floor division semantics, this is what python `//` dispatches to
     FloorDivide,
+    /// Division with the quotient rounded toward zero, the counterpart of `FloorDivide`.
+    TruncDivide,
     Modulus,
     And,
     Or,
     Xor,
     LogicalAnd,
     LogicalOr,
-    /// Division with the quotient rounded toward zero, the counterpart of `FloorDivide`.
-    TruncDivide,
 }
 
 impl Display for Operator {
