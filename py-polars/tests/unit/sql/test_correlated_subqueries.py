@@ -1297,6 +1297,8 @@ def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
         "SELECT a.id FROM a FULL JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
         "SELECT a.id FROM a LEFT JOIN d ON d.x NOT IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
         "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id > a.id)",
+        # A window over the subquery's rows depends on the outer row.
+        "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT ROW_NUMBER() OVER (ORDER BY c.id) FROM c WHERE c.b_id = a.id)",
         # Conditions on one join input.
         "SELECT a.id FROM a JOIN b ON a.v = (SELECT c.id * 10 FROM c WHERE c.b_id = a.id)",
         "SELECT a.id FROM a LEFT JOIN b ON b.id = a.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id)",

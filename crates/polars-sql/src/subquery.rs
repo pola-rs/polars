@@ -889,6 +889,22 @@ impl SQLContext {
         if matches!(&select.distinct, Some(Distinct::On(_))) {
             return Ok(None);
         }
+        // Planning the subquery is only worth it if its qualifiers read the other input.
+        let lhs_is_left = match lhs.map(|lhs| self.join_inputs_read(lhs, tbl_left, tbl_right)) {
+            Some((true, false)) => Some(true),
+            Some((false, true)) => Some(false),
+            Some(_) => return Ok(None),
+            None => None,
+        };
+        let (corr_left, corr_right) = self.foreign_join_inputs(subquery, tbl_left, tbl_right);
+        let reads_both = match lhs_is_left {
+            Some(true) => corr_right,
+            Some(false) => corr_left,
+            None => corr_left && corr_right,
+        };
+        if !reads_both {
+            return Ok(None);
+        }
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
@@ -909,11 +925,11 @@ impl SQLContext {
             else {
                 return Ok(None);
             };
-            let is_left = match self.join_inputs_read(lhs, tbl_left, tbl_right) {
-                (true, false) => true,
-                (false, true) => false,
-                _ => return Ok(None),
-            };
+            // The value is taken per inner row, before the rows are grouped by outer row.
+            if !is_elementwise_over(&value, &inner_schema) {
+                return Ok(None);
+            }
+            let is_left = lhs_is_left.unwrap();
             let tbl = if is_left { tbl_left } else { tbl_right };
             let Some(outer) = self.try_parse_outer_only_expr(lhs, &tbl.schema)? else {
                 return Ok(None);
@@ -1022,6 +1038,28 @@ impl SQLContext {
         *target = target_frame;
         *other = other_frame;
         Ok(combine_conditions(equalities, SQLBinaryOperator::And))
+    }
+
+    // Which inputs of a join the qualifiers that `subquery` doesn't declare name, as
+    // `(reads_left, reads_right)`.
+    fn foreign_join_inputs(
+        &self,
+        subquery: &Query,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> (bool, bool) {
+        let (mut reads_left, mut reads_right) = (false, false);
+        visit_foreign_qualifiers(subquery, self.catalog_spellings(), |parts| {
+            if let Ok(Some((name, _))) = self.resolve_qualifier(parts) {
+                if self.is_right_relation(&name, tbl_right) {
+                    reads_right = true;
+                } else if self.is_joined_relation(&name, tbl_left) {
+                    reads_left = true;
+                }
+            }
+            ControlFlow::Continue(())
+        });
+        (reads_left, reads_right)
     }
 
     // An equality between a column of the subquery and a column of one input of the
@@ -1708,7 +1746,6 @@ fn build_semi_anti_join(
 // stand in for: not elementwise over columns, reading no column, holding an
 // untyped literal (whose type the comparison would take from the other operand),
 // of unresolvable types, or of different non-numeric types.
-#[cfg(feature = "semi_anti_join")]
 fn try_prepare_join_keys(
     outer_schema: &Schema,
     inner_schema: &Schema,
