@@ -80,9 +80,9 @@ A table name is resolved in this order:
    `default_namespace`.
 
 Catalog tables are scanned lazily, like `scan_iceberg`: a table loads when the query's schema is
-first needed. The name after the catalog is passed to the catalog as written, so catalog
-identifiers are case-sensitive. A column can be qualified by any trailing part of the table's full
-name: `lineitem.k`, `tpch.lineitem.k` or `lake.tpch.lineitem.k`.
+first needed. The name after the catalog is passed to the catalog as written, so catalog identifiers
+are case-sensitive. A column can be qualified by any trailing part of the table's full name:
+`lineitem.k`, `tpch.lineitem.k` or `lake.tpch.lineitem.k`.
 
 !!! warning "Serialized plans"
 
