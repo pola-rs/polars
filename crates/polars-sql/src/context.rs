@@ -23,7 +23,7 @@ use sqlparser::ast::{
     OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, WindowType,
+    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, WindowType, With,
     visit_expressions, visit_expressions_mut,
 };
 use sqlparser::dialect::GenericDialect;
@@ -52,7 +52,7 @@ use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
     check_for_ambiguous_column_refs, collect_grouping_calls, expr_contains_scalar_subquery,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
-    expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
+    expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema, statement_registers_table,
 };
 use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
@@ -1596,9 +1596,11 @@ impl SQLContext {
 
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
         if let Some(with) = &query.with {
-            if with.recursive {
-                polars_bail!(SQLInterface: "recursive CTEs are not supported")
-            }
+            let order = if with.recursive {
+                recursive_cte_order(with)?
+            } else {
+                (0..with.cte_tables.len()).collect()
+            };
             let mut reference_counts = PlHashMap::<String, usize>::new();
             let mut collector = TableIdentifierCollector::default();
             let _ = query.visit(&mut collector);
@@ -1606,7 +1608,7 @@ impl SQLContext {
                 *reference_counts.entry(name).or_insert(0) += 1;
             }
 
-            for cte in &with.cte_tables {
+            for cte in order.iter().map(|&idx| &with.cte_tables[idx]) {
                 // Note: isolate CTE execution to prevent context state leakage
                 let cte_name = cte.alias.name.value.clone();
                 let mut lf = self.execute_isolated(|ctx| ctx.execute_query(&cte.query))?;
@@ -6014,6 +6016,53 @@ pub fn extract_table_identifiers(
     } else {
         tables
     })
+}
+
+/// The order to register the CTEs of a `WITH RECURSIVE` in, where a CTE may read any other.
+/// Each CTE comes after the CTEs it reads; CTEs that read themselves or each other are not
+/// supported.
+fn recursive_cte_order(with: &With) -> PolarsResult<Vec<usize>> {
+    let names: Vec<String> = with
+        .cte_tables
+        .iter()
+        .map(|cte| cte.alias.name.value.clone())
+        .collect();
+    let mut seen = PlHashSet::with_capacity(names.len());
+    if let Some(name) = names
+        .iter()
+        .find(|name| !seen.insert(name.to_ascii_lowercase()))
+    {
+        polars_bail!(SQLInterface: "CTE name '{}' is used more than once", name)
+    }
+    let deps: Vec<PlHashSet<usize>> = with
+        .cte_tables
+        .iter()
+        .map(|cte| referenced_ctes(&cte.query, &names))
+        .collect();
+    if let Some(idx) = (0..names.len()).find(|idx| deps[*idx].contains(idx)) {
+        polars_bail!(
+            SQLInterface: "recursive CTEs are not supported (CTE '{}' reads itself)", names[idx]
+        )
+    }
+    let mut order = Vec::with_capacity(names.len());
+    let mut done = vec![false; names.len()];
+    while order.len() < names.len() {
+        // Keep the written order among the CTEs that are ready.
+        let Some(next) =
+            (0..names.len()).find(|idx| !done[*idx] && deps[*idx].iter().all(|dep| done[*dep]))
+        else {
+            let cycle: Vec<&str> = (0..names.len())
+                .filter(|idx| !done[*idx])
+                .map(|idx| names[idx].as_str())
+                .collect();
+            polars_bail!(
+                SQLInterface: "mutually recursive CTEs are not supported ({})", cycle.join(", ")
+            )
+        };
+        done[next] = true;
+        order.push(next);
+    }
+    Ok(order)
 }
 
 /// Table identifiers referenced by a single parsed statement.
