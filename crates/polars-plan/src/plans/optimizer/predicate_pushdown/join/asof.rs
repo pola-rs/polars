@@ -88,7 +88,7 @@ fn key_intervals(
         if bounds.unsat {
             continue;
         }
-        let key_bounds = bounds.columns.iter().find(|c| &c.name == left_key)?;
+        let key_bounds = bounds.columns.iter().find(|c| c.name == *left_key)?;
 
         let mut lower = key_bounds.lower.as_ref().and_then(|(v, _)| physical(v));
         let mut upper = key_bounds.upper.as_ref().and_then(|(v, _)| physical(v));
