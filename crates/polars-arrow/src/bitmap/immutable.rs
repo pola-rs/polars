@@ -388,6 +388,9 @@ impl Bitmap {
     /// * this [`Bitmap`] has not been cloned (i.e. [`Arc`]`::get_mut` yields [`Some`])
     /// * this [`Bitmap`] was not imported from the c data interface (FFI)
     pub fn into_mut(mut self) -> Either<Self, MutableBitmap> {
+        if self.offset != 0 {
+            return Either::Left(self);
+        }
         match self.storage.try_into_vec() {
             Ok(v) => Either::Right(MutableBitmap::from_vec(v, self.length)),
             Err(storage) => {

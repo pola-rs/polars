@@ -241,9 +241,10 @@ def test_repeated_correlated_subquery_is_decorrelated_once() -> None:
         )
         # EXISTS and a scalar subquery over the same inner query must not share:
         # one yields a value column, the other a boolean flag
+        rows = "(SELECT w FROM t2 WHERE t2.k = t1.k AND t2.w > 5)"
         assert (
             _decorrelation_count(
-                ctx, f"SELECT k, EXISTS {sub} AS e, {sub} AS s FROM t1"
+                ctx, f"SELECT k, EXISTS {rows} AS e, {rows} AS s FROM t1"
             )
             == 2
         )
