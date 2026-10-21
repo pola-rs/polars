@@ -441,8 +441,6 @@ pub struct Join {
     left_on: Vec<PyExprIR>,
     #[pyo3(get)]
     right_on: Vec<PyExprIR>,
-    /// Boolean match condition in the join's output namespace, set on a join with a fused
-    /// predicate or on a nested loop join. A candidate pair survives only on `true`.
     #[pyo3(get)]
     predicate: Option<PyExprIR>,
     #[pyo3(get)]
@@ -811,8 +809,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                                 )
                                     .into_py_any(py)?
                             },
-                            // A join whose match condition is not `left_on == right_on` must not
-                            // be exposed as a bare `how`, or consumers run a plain equi join.
                             _ => match &options.options {
                                 // An outer join whose ON condition was rewritten to inequalities.
                                 #[cfg(feature = "iejoin")]
