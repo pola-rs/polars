@@ -403,8 +403,6 @@ impl Config {
             u64::min(oomkill_mb_bytes, oomkill_frac_bytes),
             Ordering::Relaxed,
         );
-        OOMKILL_THRESHOLD_FROM_FRACTION_ATOMIC
-            .store(oomkill_frac_bytes < oomkill_mb_bytes, Ordering::Relaxed);
     }
 
     fn apply_env_var(&self, var: &str, val: Option<&str>) {
@@ -924,7 +922,6 @@ pub fn total_memory() -> u64 {
 static OOC_DRIFT_THRESHOLD_ATOMIC: AtomicU64 = AtomicU64::new(DEFAULT_OOC_DRIFT_THRESHOLD);
 static OOMKILL_THRESHOLD_BYTES_ATOMIC: AtomicU64 =
     AtomicU64::new(DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000));
-static OOMKILL_THRESHOLD_FROM_FRACTION_ATOMIC: AtomicBool = AtomicBool::new(false);
 
 #[inline(always)]
 pub fn get_ooc_drift_threshold() -> u64 {
@@ -934,10 +931,4 @@ pub fn get_ooc_drift_threshold() -> u64 {
 #[inline(always)]
 pub fn get_oomkill_threshold_bytes() -> u64 {
     OOMKILL_THRESHOLD_BYTES_ATOMIC.load(Ordering::Relaxed)
-}
-
-/// Whether `POLARS_OOMKILL_THRESHOLD_FRACTION` (rather than `_MB`) set the threshold.
-#[inline(always)]
-pub fn get_oomkill_threshold_from_fraction() -> bool {
-    OOMKILL_THRESHOLD_FROM_FRACTION_ATOMIC.load(Ordering::Relaxed)
 }
