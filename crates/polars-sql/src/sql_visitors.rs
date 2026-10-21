@@ -432,6 +432,32 @@ impl VisitorMut for CteReferenceCollector<'_> {
         self.scopes.push(names);
         self.with_stack.push(with);
         self.reference_set_expr_tables(&query.body);
+
+        // The CTEs of a parenthesized query stay visible to the clauses wrapping it.
+        let mut inner_names = Vec::new();
+        let mut body = &*query.body;
+        while let SetExpr::Query(inner) = body {
+            if let Some(inner_with) = &inner.with {
+                inner_names.extend(
+                    inner_with
+                        .cte_tables
+                        .iter()
+                        .map(|cte| cte.alias.name.value.clone()),
+                );
+            }
+            body = &inner.body;
+        }
+        if !inner_names.is_empty() {
+            self.scopes.push(inner_names);
+            let _ = VisitMut::visit(&mut query.order_by, self);
+            let _ = VisitMut::visit(&mut query.limit_clause, self);
+            let _ = VisitMut::visit(&mut query.fetch, self);
+            self.scopes.pop();
+            // Already visited; the visitor works on a copy.
+            query.order_by = None;
+            query.limit_clause = None;
+            query.fetch = None;
+        }
         ControlFlow::Continue(())
     }
 

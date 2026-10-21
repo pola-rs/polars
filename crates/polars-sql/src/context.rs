@@ -6004,6 +6004,13 @@ fn recursive_cte_order(with: &With) -> PolarsResult<Vec<usize>> {
         .iter()
         .map(|cte| cte.alias.name.value.clone())
         .collect();
+    let mut seen = PlHashSet::with_capacity(names.len());
+    if let Some(name) = names
+        .iter()
+        .find(|name| !seen.insert(name.to_ascii_lowercase()))
+    {
+        polars_bail!(SQLInterface: "CTE name '{}' is used more than once", name)
+    }
     let deps: Vec<PlHashSet<usize>> = with
         .cte_tables
         .iter()

@@ -75,6 +75,18 @@ def test_recursive_with_nested_with_scopes(ctx: pl.SQLContext[pl.LazyFrame]) -> 
     )
     assert res["x"].to_list() == [1, 2, 3]
 
+    # The inner `b` is also visible to the ORDER BY wrapping its query.
+    res = ctx.execute(
+        """
+        WITH RECURSIVE b AS (
+          (WITH b AS (SELECT 1 AS x) SELECT * FROM b) ORDER BY (SELECT x FROM b)
+        )
+        SELECT * FROM b
+        """,
+        eager=True,
+    )
+    assert res["x"].to_list() == [1]
+
 
 @pytest.mark.parametrize(
     "query",
@@ -89,6 +101,30 @@ def test_recursive_with_self_reference_unsupported(
     ctx: pl.SQLContext[pl.LazyFrame], query: str
 ) -> None:
     with pytest.raises(SQLInterfaceError, match="CTE 't' reads itself"):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "name"),
+    [
+        (
+            "WITH RECURSIVE b AS (SELECT * FROM c), c AS (SELECT 1 AS x), "
+            "C AS (SELECT 2 AS x) SELECT * FROM b",
+            "C",
+        ),
+        (
+            "WITH RECURSIVE b AS (SELECT 1 AS x), b AS (SELECT x + 1 AS x FROM b) "
+            "SELECT * FROM b",
+            "b",
+        ),
+    ],
+)
+def test_recursive_with_duplicate_names(
+    ctx: pl.SQLContext[pl.LazyFrame], query: str, name: str
+) -> None:
+    with pytest.raises(
+        SQLInterfaceError, match=f"CTE name '{name}' is used more than once"
+    ):
         ctx.execute(query, eager=True)
 
 
