@@ -1135,7 +1135,9 @@ def test_current_date_and_time() -> None:
           NOW() AS now,
           LOCALTIME AS lt,
           LOCALTIMESTAMP AS lts,
-          CURRENT_TIMESTAMP = (SELECT NOW()) AS same_in_subquery
+          CURRENT_TIMESTAMP = (SELECT NOW()) AS same_in_subquery,
+          CURRENT_DATE = CAST(CURRENT_TIMESTAMP AS DATE) AS same_date,
+          CURRENT_TIME = CAST(CURRENT_TIMESTAMP AS TIME) AS same_time
         """,
         eager=True,
     )
@@ -1148,6 +1150,8 @@ def test_current_date_and_time() -> None:
         "lt": pl.Time,
         "lts": pl.Datetime("us"),
         "same_in_subquery": pl.Boolean,
+        "same_date": pl.Boolean,
+        "same_time": pl.Boolean,
     }
     row = res.row(0, named=True)
     assert before <= row["ts"] <= after
@@ -1155,6 +1159,8 @@ def test_current_date_and_time() -> None:
     assert row["d"] == row["ts"].date()
     assert row["t"] == row["lt"] == row["ts"].time()
     assert row["same_in_subquery"]
+    assert row["same_date"]
+    assert row["same_time"]
 
 
 def test_current_date_arithmetic() -> None:

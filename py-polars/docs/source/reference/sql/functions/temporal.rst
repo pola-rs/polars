@@ -28,8 +28,10 @@ Temporal
 
 CURRENT_DATE
 ------------
-Returns the local date at the start of the statement, as a Date. All calls in a statement
-return the same value. A query that is collected later reads the clock when it is collected.
+Returns the local date at the start of the statement, as a Date. All calls in a statement,
+including its subqueries, return the same value. A lazy query reads the clock when its SQL is
+translated, which can be before it is collected (for example, when its schema is read). A
+table that is itself a lazy SQL query reads the clock separately.
 
 **Example:**
 
