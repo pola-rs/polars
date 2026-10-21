@@ -241,7 +241,7 @@ pub struct SQLContext {
     /// The aliased parenthesized joins of the current statement, by alias. Only qualified
     /// columns look them up (`get_relation_frame`), so the alias doesn't hide a table of
     /// the same name.
-    aliased_joins: PlHashMap<String, LazyFrame>,
+    nested_join_frames: PlHashMap<String, LazyFrame>,
     join_base: Option<JoinBase>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
     pub(crate) group_scope: GroupScope,
@@ -310,7 +310,7 @@ impl Default for SQLContext {
             table_aliases: Default::default(),
             active_relations: Default::default(),
             joined_aliases: Default::default(),
-            aliased_joins: Default::default(),
+            nested_join_frames: Default::default(),
             join_base: None,
             named_windows: Default::default(),
             group_scope: Default::default(),
@@ -638,7 +638,7 @@ impl SQLContext {
         self.catalog_spellings.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
-        self.aliased_joins.clear();
+        self.nested_join_frames.clear();
         self.join_base = None;
         self.named_windows.clear();
     }
@@ -678,7 +678,7 @@ impl SQLContext {
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
-            aliased_joins: self.aliased_joins.clone(),
+            nested_join_frames: self.nested_join_frames.clone(),
 
             // Context-level; needs to remain visible in nested scopes.
             // (Note: shared by Arc, no need to deep-copy)
@@ -820,7 +820,7 @@ impl SQLContext {
     /// The frame of the relation `name` that a qualified column reads: an aliased
     /// parenthesized join, else a table in the current scope.
     pub(crate) fn get_relation_frame(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
-        if let Some(lf) = get_ignoring_case(&self.aliased_joins, name)? {
+        if let Some(lf) = get_ignoring_case(&self.nested_join_frames, name)? {
             return Ok(Some(lf.clone()));
         }
         self.get_table_from_current_scope(name)
@@ -3887,9 +3887,9 @@ impl SQLContext {
     }
 
     fn get_table(&mut self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
-        if !self.aliased_joins.is_empty() {
+        if !self.nested_join_frames.is_empty() {
             if let Some(name) = get_table_name(relation) {
-                self.aliased_joins
+                self.nested_join_frames
                     .retain(|key, _| !key.eq_ignore_ascii_case(&name));
             }
         }
@@ -4025,7 +4025,7 @@ impl SQLContext {
                             .execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?;
                         let lf = self.rename_columns_from_table_alias(lf, alias)?;
                         let name = alias.name.value.clone();
-                        self.aliased_joins.insert(name.clone(), lf.clone());
+                        self.nested_join_frames.insert(name.clone(), lf.clone());
                         Ok((name, lf))
                     },
                     None => Ok((
