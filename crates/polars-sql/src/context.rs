@@ -14,8 +14,6 @@ use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
-#[cfg(feature = "asof_join")]
-use sqlparser::ast::visit_expressions;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -25,7 +23,7 @@ use sqlparser::ast::{
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
     ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, WindowType,
-    visit_expressions_mut,
+    visit_expressions, visit_expressions_mut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -65,6 +63,8 @@ pub struct TableInfo {
     pub(crate) frame: LazyFrame,
     pub(crate) name: PlSmallStr,
     pub(crate) schema: Arc<Schema>,
+    /// The relations joined into `frame`, by `RelationName::key`.
+    pub(crate) relations: Vec<String>,
 }
 
 /// An `ORDER BY` clause pointed at the aggregated frame, with the named
@@ -1660,6 +1660,17 @@ impl SQLContext {
                 }
                 let left_schema = self.get_frame_schema(&mut lf)?;
                 let right_schema = self.get_frame_schema(&mut rf)?;
+                let relation_keys = |names: Vec<RelationName>| -> Vec<String> {
+                    names.iter().map(RelationName::key).collect()
+                };
+                let left_relations = relation_keys(factor_relations(
+                    factors.clone().take(i + 1),
+                    &self.catalog_spellings,
+                ));
+                let right_relations = relation_keys(factor_relations(
+                    std::iter::once(&join.relation),
+                    &self.catalog_spellings,
+                ));
 
                 lf = match &join.join_operator {
                     op @ (JoinOperator::Join(constraint)  // note: bare "join" is inner
@@ -1675,20 +1686,22 @@ impl SQLContext {
                     | JoinOperator::LeftSemi(constraint)
                     | JoinOperator::RightAnti(constraint)
                     | JoinOperator::RightSemi(constraint)) => {
-                        let (lf, rf) = match op {
-                            JoinOperator::RightAnti(_) | JoinOperator::RightSemi(_) => (rf, lf),
-                            _ => (lf, rf),
-                        };
+                        let keep_right = matches!(
+                            op,
+                            JoinOperator::RightAnti(_) | JoinOperator::RightSemi(_)
+                        );
                         self.process_join(
                             &TableInfo {
                                 frame: lf,
                                 name: (&l_name).into(),
                                 schema: left_schema.clone(),
+                                relations: left_relations,
                             },
                             &TableInfo {
                                 frame: rf,
                                 name: (&r_name).into(),
                                 schema: right_schema.clone(),
+                                relations: right_relations,
                             },
                             constraint,
                             match op {
@@ -1714,6 +1727,7 @@ impl SQLContext {
                                     join_type
                                 ),
                             },
+                            keep_right,
                         )?
                     },
                     #[cfg(feature = "asof_join")]
@@ -1725,11 +1739,13 @@ impl SQLContext {
                             frame: lf,
                             name: (&l_name).into(),
                             schema: left_schema.clone(),
+                            relations: left_relations,
                         },
                         &TableInfo {
                             frame: rf,
                             name: (&r_name).into(),
                             schema: right_schema.clone(),
+                            relations: right_relations,
                         },
                         match_condition,
                         constraint,
@@ -2092,7 +2108,7 @@ impl SQLContext {
     }
 
     /// Run `f` with the aggregate calls it parses marked (see `GroupScope::mark_aggregates`).
-    fn marking_aggregates<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+    pub(crate) fn marking_aggregates<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
         let mark_aggregates = std::mem::replace(&mut self.group_scope.mark_aggregates, true);
         let result = f(self);
         self.group_scope.mark_aggregates = mark_aggregates;
@@ -2946,39 +2962,117 @@ impl SQLContext {
         Ok(independent.then_some(predicate))
     }
 
+    /// Join `tbl_left` with `tbl_right`. With `keep_right` (`RIGHT SEMI` / `RIGHT ANTI`),
+    /// `join_type` is a semi or anti join that keeps the rows of `tbl_right`.
     pub(super) fn process_join(
         &mut self,
         tbl_left: &TableInfo,
         tbl_right: &TableInfo,
         constraint: &JoinConstraint,
         join_type: JoinType,
+        keep_right: bool,
     ) -> PolarsResult<LazyFrame> {
-        // A condition that reads no input (eg: `ON TRUE`, `ON 1 = 1`) pairs every row with
-        // every row, or none: join on the condition itself as a boolean key (a null key
-        // matches nothing, like an unknown condition).
         if let JoinConstraint::On(expr) = constraint
-            && let Some(predicate) = self.input_independent_predicate(expr)?
+            && expr_contains_subquery(expr)
         {
-            return tbl_left
+            // A correlated subquery in the condition is lowered to a column of the input it
+            // reads, which then only lives for the join.
+            if matches!(
+                join_type,
+                JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full
+            ) && let Some((left, right, on)) =
+                self.lower_join_on_subqueries(tbl_left, tbl_right, expr)?
+            {
+                let lowered: Arc<[PlSmallStr]> = left
+                    .schema
+                    .iter_names()
+                    .filter(|name| !tbl_left.schema.contains(name))
+                    .chain(
+                        right
+                            .schema
+                            .iter_names()
+                            .filter(|name| !tbl_right.schema.contains(name)),
+                    )
+                    .cloned()
+                    .collect();
+                let joined =
+                    self.process_join(&left, &right, &JoinConstraint::On(on), join_type, false)?;
+                return Ok(joined.drop(Selector::ByName {
+                    names: lowered,
+                    strict: true,
+                }));
+            }
+            return self
+                .process_join_on_subqueries(tbl_left, tbl_right, expr, join_type, keep_right);
+        }
+        self.join_inputs(
+            tbl_left,
+            tbl_right,
+            Some(constraint),
+            (vec![], vec![]),
+            join_type,
+            keep_right,
+        )
+    }
+
+    /// Join on `constraint` and on the key pairs `extra_keys`. Without either, every row
+    /// pairs with every row.
+    fn join_inputs(
+        &mut self,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+        constraint: Option<&JoinConstraint>,
+        extra_keys: (Vec<Expr>, Vec<Expr>),
+        join_type: JoinType,
+        keep_right: bool,
+    ) -> PolarsResult<LazyFrame> {
+        let (mut left_on, mut right_on, predicates) = match constraint {
+            // A condition that reads no input (eg: `ON TRUE`, `ON 1 = 1`) pairs every row with
+            // every row, or none: join on the condition itself as a boolean key (a null key
+            // matches nothing, like an unknown condition).
+            Some(JoinConstraint::On(expr))
+                if let Some(predicate) = self.input_independent_predicate(expr)? =>
+            {
+                (
+                    vec![strip_join_aliases(predicate).cast(DataType::Boolean)],
+                    vec![lit(true)],
+                    vec![],
+                )
+            },
+            Some(constraint) => {
+                let keys = process_join_constraint(constraint, tbl_left, tbl_right, self)?;
+                for e in keys.0.iter().chain(&keys.1).chain(&keys.2) {
+                    reject_unresolved_subquery(e, "JOIN ... ON")?;
+                }
+                keys
+            },
+            None => (vec![], vec![], vec![]),
+        };
+        left_on.extend(extra_keys.0);
+        right_on.extend(extra_keys.1);
+        if left_on.is_empty() && predicates.is_empty() {
+            left_on.push(lit(true));
+            right_on.push(lit(true));
+        }
+        if keep_right {
+            polars_ensure!(
+                predicates.is_empty(),
+                InvalidOperation: "'{}' join is not supported with non-equi join conditions",
+                join_type
+            );
+            return tbl_right
                 .frame
                 .clone()
                 .join_builder()
-                .with(tbl_right.frame.clone())
-                .left_on([strip_join_aliases(predicate).cast(DataType::Boolean)])
-                .right_on([lit(true)])
+                .with(tbl_left.frame.clone())
+                .left_on(right_on)
+                .right_on(left_on)
                 .how(join_type)
-                .suffix(format!(":{}", tbl_right.name))
-                .coalesce(JoinCoalesce::KeepColumns)
                 .finish();
-        }
-        let (left_on, right_on, predicates) =
-            process_join_constraint(constraint, tbl_left, tbl_right, self)?;
-        for e in left_on.iter().chain(&right_on).chain(&predicates) {
-            reject_unresolved_subquery(e, "JOIN ... ON")?;
         }
         let coalesce_type = match constraint {
             // "NATURAL" joins should coalesce; otherwise we disambiguate
-            JoinConstraint::Natural => JoinCoalesce::CoalesceColumns,
+            Some(JoinConstraint::Natural) => JoinCoalesce::CoalesceColumns,
             _ => JoinCoalesce::KeepColumns,
         };
         let suffix = format!(":{}", tbl_right.name);
@@ -3021,6 +3115,258 @@ impl SQLContext {
         Ok(joined)
     }
 
+    /// Whether the relation `name` is the right input of a join; any other relation in
+    /// scope is in the left input.
+    pub(crate) fn is_right_relation(&self, name: &str, tbl_right: &TableInfo) -> bool {
+        name == tbl_right.name
+            || (!self.active_relations.iter().any(|r| r.key() == name)
+                && name.eq_ignore_ascii_case(&tbl_right.name))
+    }
+
+    /// Whether the columns of the joined relation `name` can be found by name, which is not
+    /// the case for the relations inside an aliased nested join.
+    pub(crate) fn is_joined_relation(&self, name: &str, tbl_left: &TableInfo) -> bool {
+        name == tbl_left.name
+            || name.eq_ignore_ascii_case(&tbl_left.name)
+            || matches!(get_ignoring_case(&self.joined_aliases, name), Ok(Some(_)))
+    }
+
+    /// Which input of a join the column `expr` reads: `Some(true)` for the left input,
+    /// `Some(false)` for the right one, and `None` if it is not a column or is in both.
+    pub(crate) fn column_join_input(
+        &self,
+        expr: &SQLExpr,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> Option<bool> {
+        let column_side = |name: &str| match (
+            tbl_left.schema.contains(name),
+            tbl_right.schema.contains(name),
+        ) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            _ => None,
+        };
+        match expr {
+            SQLExpr::Identifier(ident) => column_side(&ident.value),
+            // A table qualifier takes precedence over a struct column of the same name.
+            SQLExpr::CompoundIdentifier(idents) => match self.resolve_qualifier(idents) {
+                Ok(Some((name, _))) => Some(!self.is_right_relation(&name, tbl_right)),
+                Ok(None) => column_side(&idents[0].value),
+                // An ambiguous qualifier is reported when the condition is parsed.
+                Err(_) => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Which inputs of a join `expr` reads, as `(reads_left, reads_right)`. A column found
+    /// in both inputs counts for neither.
+    pub(crate) fn join_inputs_read(
+        &self,
+        expr: &SQLExpr,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> (bool, bool) {
+        let (mut reads_left, mut reads_right) = (false, false);
+        let _ = visit_expressions(expr, |e| {
+            match self.column_join_input(e, tbl_left, tbl_right) {
+                Some(true) => reads_left = true,
+                Some(false) => reads_right = true,
+                None => {},
+            }
+            ControlFlow::<()>::Continue(())
+        });
+        (reads_left, reads_right)
+    }
+
+    /// Join on an `ON` condition that holds subqueries. A conjunct whose own columns read
+    /// one input is applied to that input first: as a filter if the join drops the rows it
+    /// rejects, else as a flag column joined against `TRUE`. Its subqueries must not read
+    /// the joined inputs. Any other conjunct stays in the condition, which rejects
+    /// subqueries.
+    fn process_join_on_subqueries(
+        &mut self,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+        expr: &SQLExpr,
+        join_type: JoinType,
+        keep_right: bool,
+    ) -> PolarsResult<LazyFrame> {
+        // Whether the join drops the rows of an input that match no row of the other.
+        let (filter_left, filter_right) = match (&join_type, keep_right) {
+            (JoinType::Inner, _) => (true, true),
+            (JoinType::Left, _) => (false, true),
+            (JoinType::Right, _) => (true, false),
+            #[cfg(feature = "semi_anti_join")]
+            (JoinType::Semi, _) => (true, true),
+            #[cfg(feature = "semi_anti_join")]
+            (JoinType::Anti, false) => (false, true),
+            #[cfg(feature = "semi_anti_join")]
+            (JoinType::Anti, true) => (true, false),
+            _ => (false, false),
+        };
+        let mut left = tbl_left.clone();
+        let mut right = tbl_right.clone();
+        let (mut left_on, mut right_on) = (vec![], vec![]);
+        let mut flags = vec![];
+        let mut residual = vec![];
+        for conjunct in flatten_and_conditions(expr) {
+            if !expr_contains_subquery(conjunct) {
+                residual.push(conjunct.clone());
+                continue;
+            }
+            let is_left = match self.conjunct_join_inputs(conjunct, tbl_left, tbl_right) {
+                JoinInputs::Left => true,
+                JoinInputs::Right => false,
+                JoinInputs::Neither => !filter_right && filter_left,
+                JoinInputs::Both | JoinInputs::Unknown => {
+                    residual.push(conjunct.clone());
+                    continue;
+                },
+            };
+            let (tbl, filter) = if is_left {
+                (&mut left, filter_left)
+            } else {
+                (&mut right, filter_right)
+            };
+            // Planning the subqueries here also rejects those that read the other input.
+            let mut condition =
+                strip_join_aliases(parse_sql_expr(conjunct, self, Some(&tbl.schema))?);
+            let placeholders;
+            (tbl.frame, placeholders) = self.process_subqueries(
+                tbl.frame.clone(),
+                vec![&mut condition],
+                SubqueryShape::Scalar,
+            )?;
+            let condition = condition.cast(DataType::Boolean);
+            if filter {
+                tbl.frame =
+                    drop_subquery_placeholders(tbl.frame.clone().filter(condition), placeholders);
+                continue;
+            }
+            let name = unique_column_name();
+            tbl.frame = drop_subquery_placeholders(
+                tbl.frame.clone().with_column(condition.alias(name.clone())),
+                placeholders,
+            );
+            tbl.schema = self.get_frame_schema(&mut tbl.frame)?;
+            let (own_keys, other_keys) = if is_left {
+                (&mut left_on, &mut right_on)
+            } else {
+                (&mut right_on, &mut left_on)
+            };
+            own_keys.push(col(name.clone()));
+            other_keys.push(lit(true));
+            flags.push(name);
+        }
+        let residual = combine_conditions(residual, SQLBinaryOperator::And).map(JoinConstraint::On);
+        let joined = self.join_inputs(
+            &left,
+            &right,
+            residual.as_ref(),
+            (left_on, right_on),
+            join_type,
+            keep_right,
+        )?;
+        Ok(if flags.is_empty() {
+            joined
+        } else {
+            joined.drop(Selector::ByName {
+                names: flags.into(),
+                strict: false,
+            })
+        })
+    }
+
+    /// Which inputs of a join the conjunct `expr` reads, leaving out the inside of its
+    /// subqueries. `Unknown` if a column is in neither input or, unqualified, in both.
+    fn conjunct_join_inputs(
+        &self,
+        expr: &SQLExpr,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> JoinInputs {
+        struct Reads<'a> {
+            ctx: &'a SQLContext,
+            left: &'a TableInfo,
+            right: &'a TableInfo,
+            subquery_depth: usize,
+            reads_left: bool,
+            reads_right: bool,
+            unknown: bool,
+        }
+
+        impl Reads<'_> {
+            fn column(&mut self, name: &str) {
+                match (
+                    self.left.schema.contains(name),
+                    self.right.schema.contains(name),
+                ) {
+                    (true, false) => self.reads_left = true,
+                    (false, true) => self.reads_right = true,
+                    _ => self.unknown = true,
+                }
+            }
+        }
+
+        impl sqlparser::ast::Visitor for Reads<'_> {
+            type Break = ();
+
+            fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+                self.subquery_depth += 1;
+                ControlFlow::Continue(())
+            }
+
+            fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+                self.subquery_depth -= 1;
+                ControlFlow::Continue(())
+            }
+
+            fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+                if self.subquery_depth > 0 {
+                    return ControlFlow::Continue(());
+                }
+                match expr {
+                    SQLExpr::Identifier(ident) => self.column(&ident.value),
+                    SQLExpr::CompoundIdentifier(idents) => match self.ctx.resolve_qualifier(idents)
+                    {
+                        Ok(Some((name, _))) => match (
+                            self.left.relations.contains(&name),
+                            self.right.relations.contains(&name),
+                        ) {
+                            (true, false) => self.reads_left = true,
+                            (false, true) => self.reads_right = true,
+                            _ => self.unknown = true,
+                        },
+                        Ok(None) => self.column(&idents[0].value),
+                        Err(_) => self.unknown = true,
+                    },
+                    _ => {},
+                }
+                ControlFlow::Continue(())
+            }
+        }
+
+        let mut reads = Reads {
+            ctx: self,
+            left: tbl_left,
+            right: tbl_right,
+            subquery_depth: 0,
+            reads_left: false,
+            reads_right: false,
+            unknown: false,
+        };
+        let _ = expr.visit(&mut reads);
+        match (reads.unknown, reads.reads_left, reads.reads_right) {
+            (true, _, _) => JoinInputs::Unknown,
+            (false, true, true) => JoinInputs::Both,
+            (false, true, false) => JoinInputs::Left,
+            (false, false, true) => JoinInputs::Right,
+            (false, false, false) => JoinInputs::Neither,
+        }
+    }
+
     /// Which input an `ASOF JOIN` match operand reads: `Some(true)` for the left input,
     /// `Some(false)` for the right one, and `None` if all its columns are in both.
     #[cfg(feature = "asof_join")]
@@ -3030,40 +3376,7 @@ impl SQLContext {
         tbl_left: &TableInfo,
         tbl_right: &TableInfo,
     ) -> PolarsResult<Option<bool>> {
-        let column_side = |name: &str| match (
-            tbl_left.schema.contains(name),
-            tbl_right.schema.contains(name),
-        ) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            _ => None,
-        };
-        let (mut reads_left, mut reads_right) = (false, false);
-        let _ = visit_expressions(expr, |e| {
-            let side = match e {
-                SQLExpr::Identifier(ident) => column_side(&ident.value),
-                // A table qualifier takes precedence over a struct column of the same name. The
-                // right input is a single relation, so any other relation is in the left input.
-                SQLExpr::CompoundIdentifier(idents) => match self.resolve_qualifier(idents) {
-                    Ok(Some((name, _))) => {
-                        let is_right = name == tbl_right.name.as_str()
-                            || (!self.active_relations.iter().any(|r| r.key() == name)
-                                && name.eq_ignore_ascii_case(&tbl_right.name));
-                        Some(!is_right)
-                    },
-                    Ok(None) => column_side(&idents[0].value),
-                    // An ambiguous qualifier is reported when the condition is parsed.
-                    Err(_) => None,
-                },
-                _ => None,
-            };
-            match side {
-                Some(true) => reads_left = true,
-                Some(false) => reads_right = true,
-                None => {},
-            }
-            ControlFlow::<()>::Continue(())
-        });
+        let (reads_left, reads_right) = self.join_inputs_read(expr, tbl_left, tbl_right);
         polars_ensure!(
             !(reads_left && reads_right),
             SQLSyntax: "ASOF JOIN MATCH_CONDITION operand {} reads both tables", expr
@@ -3328,14 +3641,24 @@ impl SQLContext {
                             &joined_table_names.first().cloned().unwrap_or_default(),
                         ),
                         schema: left_schema.clone(),
+                        relations: joined_table_names.clone(),
                     },
                     &TableInfo {
                         frame: rf,
                         name: PlSmallStr::from_str(&r_name),
                         schema: right_schema.clone(),
+                        relations: std::iter::once(r_name.clone())
+                            .chain(
+                                tbl_expr
+                                    .joins
+                                    .iter()
+                                    .filter_map(|j| get_table_name(&j.relation)),
+                            )
+                            .collect(),
                     },
                     &JoinConstraint::On(on_expr),
                     JoinType::Inner,
+                    false,
                 )?
             } else {
                 lf.clone()
@@ -4969,6 +5292,15 @@ fn reduce_correlated_cols_in_group_context(expr: Expr) -> Expr {
     }
 }
 
+/// Which inputs of a join a condition reads.
+enum JoinInputs {
+    Neither,
+    Left,
+    Right,
+    Both,
+    Unknown,
+}
+
 /// How a resolved subquery placeholder column should be referenced.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SubqueryShape {
@@ -5108,13 +5440,18 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
+    let refers_to = |expr: &SQLExpr, tbl: &TableInfo| {
+        tbl.relations
+            .iter()
+            .any(|name| expr_refers_to_table(expr, name, &ctx.active_relations))
+    };
     let left_refs = (
-        expr_refers_to_table(expr_left, &tbl_left.name, &ctx.active_relations),
-        expr_refers_to_table(expr_left, &tbl_right.name, &ctx.active_relations),
+        refers_to(expr_left, tbl_left),
+        refers_to(expr_left, tbl_right),
     );
     let right_refs = (
-        expr_refers_to_table(expr_right, &tbl_left.name, &ctx.active_relations),
-        expr_refers_to_table(expr_right, &tbl_right.name, &ctx.active_relations),
+        refers_to(expr_right, tbl_left),
+        refers_to(expr_right, tbl_right),
     );
     // an operand's dtypes come from the table it names; the merged schema keeps the left
     // dtype for a column name that exists in both tables
@@ -5397,7 +5734,7 @@ fn process_join_constraint(
 }
 
 /// Flatten a SQL AND-expression tree into individual leaf conditions.
-fn flatten_and_conditions(expr: &SQLExpr) -> Vec<&SQLExpr> {
+pub(crate) fn flatten_and_conditions(expr: &SQLExpr) -> Vec<&SQLExpr> {
     match expr {
         SQLExpr::BinaryOp {
             left,
