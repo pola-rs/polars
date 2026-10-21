@@ -1474,10 +1474,10 @@ impl SQLContext {
                     | JoinOperator::LeftSemi(constraint)
                     | JoinOperator::RightAnti(constraint)
                     | JoinOperator::RightSemi(constraint)) => {
-                        let (lf, rf) = match op {
-                            JoinOperator::RightAnti(_) | JoinOperator::RightSemi(_) => (rf, lf),
-                            _ => (lf, rf),
-                        };
+                        let keep_right = matches!(
+                            op,
+                            JoinOperator::RightAnti(_) | JoinOperator::RightSemi(_)
+                        );
                         self.process_join(
                             &TableInfo {
                                 frame: lf,
@@ -1513,6 +1513,7 @@ impl SQLContext {
                                     join_type
                                 ),
                             },
+                            keep_right,
                         )?
                     },
                     #[cfg(feature = "asof_join")]
@@ -2745,12 +2746,15 @@ impl SQLContext {
         Ok(independent.then_some(predicate))
     }
 
+    /// Join `tbl_left` with `tbl_right`. With `keep_right` (`RIGHT SEMI` / `RIGHT ANTI`),
+    /// `join_type` is a semi or anti join that keeps the rows of `tbl_right`.
     pub(super) fn process_join(
         &mut self,
         tbl_left: &TableInfo,
         tbl_right: &TableInfo,
         constraint: &JoinConstraint,
         join_type: JoinType,
+        keep_right: bool,
     ) -> PolarsResult<LazyFrame> {
         // A condition that reads no input (eg: `ON TRUE`, `ON 1 = 1`) pairs every row with
         // every row, or none: join on the condition itself as a boolean key (a null key
@@ -2758,12 +2762,24 @@ impl SQLContext {
         if let JoinConstraint::On(expr) = constraint
             && let Some(predicate) = self.input_independent_predicate(expr)?
         {
+            let key = strip_join_aliases(predicate).cast(DataType::Boolean);
+            if keep_right {
+                return tbl_right
+                    .frame
+                    .clone()
+                    .join_builder()
+                    .with(tbl_left.frame.clone())
+                    .left_on([lit(true)])
+                    .right_on([key])
+                    .how(join_type)
+                    .finish();
+            }
             return tbl_left
                 .frame
                 .clone()
                 .join_builder()
                 .with(tbl_right.frame.clone())
-                .left_on([strip_join_aliases(predicate).cast(DataType::Boolean)])
+                .left_on([key])
                 .right_on([lit(true)])
                 .how(join_type)
                 .suffix(format!(":{}", tbl_right.name))
@@ -2774,6 +2790,22 @@ impl SQLContext {
             process_join_constraint(constraint, tbl_left, tbl_right, self)?;
         for e in left_on.iter().chain(&right_on).chain(&predicates) {
             reject_unresolved_subquery(e, "JOIN ... ON")?;
+        }
+        if keep_right {
+            polars_ensure!(
+                predicates.is_empty(),
+                InvalidOperation: "'{}' join is not supported with non-equi join conditions",
+                join_type
+            );
+            return tbl_right
+                .frame
+                .clone()
+                .join_builder()
+                .with(tbl_left.frame.clone())
+                .left_on(right_on)
+                .right_on(left_on)
+                .how(join_type)
+                .finish();
         }
         let coalesce_type = match constraint {
             // "NATURAL" joins should coalesce; otherwise we disambiguate
@@ -3135,6 +3167,7 @@ impl SQLContext {
                     },
                     &JoinConstraint::On(on_expr),
                     JoinType::Inner,
+                    false,
                 )?
             } else {
                 lf.clone()

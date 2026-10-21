@@ -79,6 +79,33 @@ def test_join_anti_semi(sql: str, expected: pl.DataFrame) -> None:
     assert_frame_equal(expected, ctx.execute(sql))
 
 
+@pytest.mark.parametrize(
+    ("join", "expected"),
+    [
+        ("RIGHT SEMI JOIN r ON l.lk = r.rk", [2, 3]),
+        ("RIGHT SEMI JOIN r ON rk = lk", [2, 3]),
+        ("RIGHT ANTI JOIN r ON l.lk = r.rk", [4]),
+        ("RIGHT SEMI JOIN r ON l.v = r.v", [2, 4]),
+        ("RIGHT SEMI JOIN r ON l.lk = r.rk AND l.v = r.v", [2]),
+        ("RIGHT SEMI JOIN r ON TRUE", [2, 3, 4]),
+        ("RIGHT ANTI JOIN r ON TRUE", []),
+        ("JOIN m ON l.lk = m.mk RIGHT SEMI JOIN r ON m.mk = r.rk", [3]),
+        ("JOIN m ON l.lk = m.mk RIGHT ANTI JOIN r ON r.rk = m.mk", [2, 4]),
+    ],
+)
+def test_join_right_semi_anti_on(join: str, expected: list[int]) -> None:
+    frames = {
+        "l": pl.DataFrame({"lk": [1, 2, 3], "v": [10, 20, 40]}),
+        "m": pl.DataFrame({"mk": [1, 3]}),
+        "r": pl.DataFrame({"rk": [2, 3, 4], "v": [20, 30, 10]}),
+    }
+    out = pl.SQLContext(frames).execute(
+        f"SELECT * FROM l {join} ORDER BY rk", eager=True
+    )
+    r = frames["r"]
+    assert_frame_equal(out, r.filter(pl.col("rk").is_in(expected)))
+
+
 def test_join_cross() -> None:
     frames = {
         "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
