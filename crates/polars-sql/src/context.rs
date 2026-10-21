@@ -3051,7 +3051,7 @@ impl SQLContext {
                 join_type,
                 JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full
             ) && let Some((left, right, on)) =
-                self.lower_join_on_subqueries(tbl_left, tbl_right, expr)?
+                self.lower_join_on_subqueries(tbl_left, tbl_right, expr, &join_type)?
             {
                 let lowered: Arc<[PlSmallStr]> = left
                     .schema
