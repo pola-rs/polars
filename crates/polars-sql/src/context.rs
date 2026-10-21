@@ -53,10 +53,7 @@ use crate::sql_visitors::{
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
 };
-use crate::subquery::{
-    LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
-    is_correlated_subquery,
-};
+use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 use crate::unique_column_name;
@@ -3183,10 +3180,11 @@ impl SQLContext {
         (reads_left, reads_right)
     }
 
-    /// Join on an `ON` condition that holds subqueries. A conjunct whose subqueries are
-    /// uncorrelated and whose own columns read one input is applied to that input first:
-    /// as a filter if the join drops the rows it rejects, else as a flag column joined
-    /// against `TRUE`. Any other conjunct stays in the condition, which rejects subqueries.
+    /// Join on an `ON` condition that holds subqueries. A conjunct whose own columns read
+    /// one input is applied to that input first: as a filter if the join drops the rows it
+    /// rejects, else as a flag column joined against `TRUE`. Its subqueries must not read
+    /// the joined inputs. Any other conjunct stays in the condition, which rejects
+    /// subqueries.
     fn process_join_on_subqueries(
         &mut self,
         tbl_left: &TableInfo,
@@ -3232,24 +3230,24 @@ impl SQLContext {
             } else {
                 (&mut right, filter_right)
             };
+            // Planning the subqueries here also rejects those that read the other input.
+            let mut condition =
+                strip_join_aliases(parse_sql_expr(conjunct, self, Some(&tbl.schema))?);
+            let placeholders;
+            (tbl.frame, placeholders) = self.process_subqueries(
+                tbl.frame.clone(),
+                vec![&mut condition],
+                SubqueryShape::Scalar,
+            )?;
+            let condition = condition.cast(DataType::Boolean);
             if filter {
-                tbl.frame = self.process_where(
-                    tbl.frame.clone(),
-                    Some(conjunct),
-                    FilterMode::KeepTrue,
-                    Some(tbl.schema.clone()),
-                )?;
+                tbl.frame =
+                    drop_subquery_placeholders(tbl.frame.clone().filter(condition), placeholders);
                 continue;
             }
-            let mut flag = strip_join_aliases(parse_sql_expr(conjunct, self, Some(&tbl.schema))?);
-            let placeholders;
-            (tbl.frame, placeholders) =
-                self.process_subqueries(tbl.frame.clone(), vec![&mut flag], SubqueryShape::Scalar)?;
             let name = unique_column_name();
             tbl.frame = drop_subquery_placeholders(
-                tbl.frame
-                    .clone()
-                    .with_column(flag.cast(DataType::Boolean).alias(name.clone())),
+                tbl.frame.clone().with_column(condition.alias(name.clone())),
                 placeholders,
             );
             tbl.schema = self.get_frame_schema(&mut tbl.frame)?;
@@ -3282,10 +3280,9 @@ impl SQLContext {
     }
 
     /// Which inputs of a join the conjunct `expr` reads, leaving out the inside of its
-    /// subqueries. `Unknown` if a column is in neither input or, unqualified, in both, or if a
-    /// subquery is an `EXISTS` or reads a column it does not declare.
+    /// subqueries. `Unknown` if a column is in neither input or, unqualified, in both.
     fn conjunct_join_inputs(
-        &mut self,
+        &self,
         expr: &SQLExpr,
         tbl_left: &TableInfo,
         tbl_right: &TableInfo,
@@ -3295,7 +3292,6 @@ impl SQLContext {
             left: &'a TableInfo,
             right: &'a TableInfo,
             subquery_depth: usize,
-            subqueries: Vec<Query>,
             reads_left: bool,
             reads_right: bool,
             unknown: bool,
@@ -3317,10 +3313,7 @@ impl SQLContext {
         impl sqlparser::ast::Visitor for Reads<'_> {
             type Break = ();
 
-            fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<()> {
-                if self.subquery_depth == 0 {
-                    self.subqueries.push(query.clone());
-                }
+            fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
                 self.subquery_depth += 1;
                 ControlFlow::Continue(())
             }
@@ -3335,7 +3328,6 @@ impl SQLContext {
                     return ControlFlow::Continue(());
                 }
                 match expr {
-                    SQLExpr::Exists { .. } => self.unknown = true,
                     SQLExpr::Identifier(ident) => self.column(&ident.value),
                     SQLExpr::CompoundIdentifier(idents) => match self.ctx.resolve_qualifier(idents)
                     {
@@ -3361,29 +3353,12 @@ impl SQLContext {
             left: tbl_left,
             right: tbl_right,
             subquery_depth: 0,
-            subqueries: vec![],
             reads_left: false,
             reads_right: false,
             unknown: false,
         };
         let _ = expr.visit(&mut reads);
-        let Reads {
-            subqueries,
-            reads_left,
-            reads_right,
-            mut unknown,
-            ..
-        } = reads;
-        // A qualified outer column is found by name; an unqualified one fails to plan.
-        for query in &subqueries {
-            unknown = unknown
-                || is_correlated_subquery(query, self.catalog_spellings())
-                || self
-                    .execute_isolated(|ctx| ctx.execute_query(query))
-                    .and_then(|mut lf| self.get_frame_schema(&mut lf))
-                    .is_err();
-        }
-        match (unknown, reads_left, reads_right) {
+        match (reads.unknown, reads.reads_left, reads.reads_right) {
             (true, _, _) => JoinInputs::Unknown,
             (false, true, true) => JoinInputs::Both,
             (false, true, false) => JoinInputs::Left,

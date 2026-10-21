@@ -1338,6 +1338,9 @@ def join_subquery_frames() -> dict[str, pl.DataFrame]:
         "LEFT JOIN b ON a.v IN (SELECT x FROM c)",
         "LEFT JOIN b ON a.id < b.id AND a.v = (SELECT MAX(x) FROM c)",
         "LEFT JOIN b ON (SELECT COUNT(*) FROM c) > 5",
+        # a condition that is not a boolean is cast to one
+        "LEFT JOIN b ON (SELECT NULL)",
+        "LEFT JOIN b ON (SELECT 1)",
         "JOIN b ON a.id = b.id AND b.v > (SELECT AVG(x) FROM c) AND a.v IN (SELECT x FROM c)",
         "JOIN b ON (SELECT COUNT(*) FROM c) > 0 AND a.id = b.id",
         "RIGHT JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)",
@@ -1395,6 +1398,18 @@ def test_join_on_subquery_keeps_columns(
         (4, None, None, None),
     ]
     assert res.columns == ["id", "v", "id:b", "v:b"]
+
+
+def test_join_on_subquery_reading_struct_field() -> None:
+    frames = {
+        "k": pl.DataFrame({"k": [10, 20]}),
+        "c": pl.DataFrame({"s": [{"x": 10}]}),
+    }
+    res = pl.SQLContext(frames).execute(
+        "SELECT k.k, c.s.x FROM k LEFT JOIN c ON k.k = (SELECT s.x FROM c) ORDER BY k.k",
+        eager=True,
+    )
+    assert res.rows() == [(10, 10), (20, None)]
 
 
 @pytest.mark.parametrize(
