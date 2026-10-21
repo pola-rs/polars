@@ -211,7 +211,9 @@ impl StreamingQuery {
         } = self;
 
         let query_start = Instant::now();
-        let mut results = crate::execute::execute_graph(&mut graph, metrics.clone())?;
+        // Callbacks in the query may need Rayon, so don't block a Rayon worker while it runs.
+        let mut results =
+            RAYON.block_on(|| crate::execute::execute_graph(&mut graph, metrics.clone()))?;
         let query_elapsed = query_start.elapsed();
 
         // Print metrics.

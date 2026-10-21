@@ -2224,13 +2224,12 @@ fn caches_shared_across_rounds(root: Node, ir_arena: &Arena<IR>) -> PlHashSet<Un
     while let Some((node, round_local)) = stack.pop() {
         match ir_arena.get(node) {
             IR::Cache { input, id } => {
-                if !seen_caches.insert(*id) {
-                    continue;
-                }
                 if round_local.is_some_and(|caches| !caches.contains(id)) {
                     out.insert(*id);
                 }
-                stack.push((*input, round_local));
+                if seen_caches.insert(*id) {
+                    stack.push((*input, round_local));
+                }
             },
             IR::Recursive {
                 anchor,

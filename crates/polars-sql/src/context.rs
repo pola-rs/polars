@@ -1609,8 +1609,7 @@ impl SQLContext {
             for name in collector.tables {
                 *reference_counts.entry(name).or_insert(0) += 1;
             }
-            // The step of a recursive CTE reads the working table, not the CTE itself. Other
-            // tables it reads are read again in every round, so cache them.
+            // The step of a recursive CTE reads the working table, not the CTE itself.
             for (cte, _) in with
                 .cte_tables
                 .iter()
@@ -1620,14 +1619,9 @@ impl SQLContext {
                 let name = &cte.alias.name.value;
                 let mut collector = TableIdentifierCollector::default();
                 let _ = cte.query.visit(&mut collector);
-                for table in collector.tables {
-                    if let Some(count) = reference_counts.get_mut(&table) {
-                        if table == *name {
-                            *count -= 1;
-                        } else {
-                            *count += 1;
-                        }
-                    }
+                let n_self = collector.tables.iter().filter(|t| *t == name).count();
+                if let Some(count) = reference_counts.get_mut(name) {
+                    *count = count.saturating_sub(n_self);
                 }
             }
 
@@ -1692,6 +1686,18 @@ impl SQLContext {
         let mut anchor = self.rename_columns_from_table_alias(anchor, &cte.alias)?;
         let mut schema = self.get_frame_schema(&mut anchor)?;
 
+        // The step runs once per round, so a CTE it reads is cached to compute it only once.
+        let mut collector = TableIdentifierCollector::default();
+        let _ = step_query.visit(&mut collector);
+        for (cte_name, lf) in self.cte_map.iter_mut() {
+            let read_by_step = collector
+                .tables
+                .iter()
+                .any(|t| t.eq_ignore_ascii_case(cte_name) && !t.eq_ignore_ascii_case(name));
+            if read_by_step && !matches!(lf.logical_plan, DslPlan::Cache { .. }) {
+                *lf = lf.clone().cache();
+            }
+        }
         let known_caches = self.cache_ids();
         let id = UniqueId::new();
         // A column with a NULL anchor takes the type of the step. Each pass can type one more

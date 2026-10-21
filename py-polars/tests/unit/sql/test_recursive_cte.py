@@ -14,6 +14,7 @@ from polars.lazyframe.resolver import LazyFrameResolver
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -330,6 +331,21 @@ def test_recursive_shared_cte_computed_once() -> None:
             SELECT * FROM t ORDER BY n
             """,
         ),
+        # A CTE of an enclosing WITH that only the step reads.
+        (
+            False,
+            """
+            WITH b AS (SELECT x FROM src)
+            SELECT * FROM (
+              WITH RECURSIVE t AS (
+                SELECT 0 AS n, CAST(0 AS BIGINT) AS x
+                UNION ALL
+                SELECT n + 1, b.x FROM t CROSS JOIN b WHERE n < 2
+              )
+              SELECT * FROM t
+            ) ORDER BY n
+            """,
+        ),
     ],
 )
 def test_recursive_step_input_computed_once(user_cache: bool, query: str) -> None:
@@ -345,6 +361,32 @@ def test_recursive_step_input_computed_once(user_cache: bool, query: str) -> Non
     res = pl.SQLContext(src=src).execute(query).collect()
     assert res.rows() == [(0, 0), (1, 1), (2, 1)]
     assert len(calls) == 1
+
+
+def test_recursive_step_cache_also_read_outside(plmonkeypatch: PlMonkeyPatch) -> None:
+    # The reader outside the recursive query is pruned, which leaves one reader of the
+    # cache: the one in the step.
+    plmonkeypatch.setenv("POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS", "1")
+    calls: list[None] = []
+
+    def stamp(_: pl.DataFrame) -> pl.DataFrame:
+        calls.append(None)
+        return pl.DataFrame({"x": [len(calls)]})
+
+    base = pl.LazyFrame({"x": [0]}).map_batches(stamp, schema={"x": pl.Int64}).cache()
+    lf = pl.SQLContext(base=base).execute(
+        """
+        WITH RECURSIVE t AS (
+          SELECT 0 AS n, CAST(0 AS BIGINT) AS x
+          UNION ALL
+          SELECT n + 1, b.x FROM t CROSS JOIN base b WHERE n < 2
+        )
+        SELECT * FROM t ORDER BY n
+        """
+    )
+    other = base.select(pl.col("x").repeat_by(3).explode().alias("unused"))
+    res = pl.concat([lf, other], how="horizontal").select("n", "x").collect()
+    assert res.rows() == [(0, 0), (1, 1), (2, 1)]
 
 
 def test_recursive_in_memory_engine_uses_streaming_optimizations(
@@ -403,7 +445,8 @@ def test_recursive_query_from_resolver() -> None:
 @pytest.mark.slow
 def test_recursive_background_single_thread() -> None:
     # The anchor or the step uses a Python callback that collects an in-memory query.
-    # With one Rayon thread this deadlocks if the query blocks the Rayon worker.
+    # With one Rayon thread this deadlocks if the query blocks the Rayon worker, both
+    # in a background collect and when collected from an in-memory callback.
     out = subprocess.check_output(
         [
             sys.executable,
@@ -429,6 +472,16 @@ lf = pl.SQLContext(src=src).execute(
     "SELECT n + 1 FROM t WHERE n < 3) SELECT * FROM t"
 )
 assert lf.collect(background=True).fetch_blocking()["n"].to_list() == [1, 2, 3]
+
+out = []
+def outer(s):
+    out.append(lf.collect(engine="in-memory")["n"].to_list())
+    return s
+
+pl.LazyFrame({"a": [1]}).select(
+    pl.col("a").map_batches(outer, return_dtype=pl.Int64), pl.col("a").alias("b")
+).collect(engine="in-memory")
+assert out == [[1, 2, 3]]
 print("OK", end="")
 """,
         ],
