@@ -1154,6 +1154,33 @@ impl SQLContext {
         Ok(Some((joined, set_name)))
     }
 
+    /// Whether the uncorrelated `subquery` aggregates without `GROUP BY`, and so returns
+    /// exactly one row.
+    pub(crate) fn exists_over_aggregate(&mut self, subquery: &Query) -> PolarsResult<bool> {
+        let Some(select) = eligible_subquery_select(subquery) else {
+            return Ok(false);
+        };
+        let mut ctx = self.isolated();
+        let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
+            return Ok(false);
+        };
+        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
+            Some(true) => {
+                // The rows are not read, but WHERE must still be valid.
+                if let Some(selection) = &select.selection {
+                    let predicate = parse_sql_expr(selection, &mut ctx, Some(&inner_schema))?;
+                    ctx.get_frame_schema(&mut inner_lf.filter(predicate))?;
+                }
+                Ok(true)
+            },
+            Some(false) => Ok(false),
+            None => polars_bail!(
+                SQLInterface:
+                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+            ),
+        }
+    }
+
     // Attempt the decorrelation of a single `EXISTS` subquery into a boolean flag
     // column holding `count(*) > 0` over the correlated match set. An uncorrelated
     // subquery is one value instead, kept in `exists_values` for `visit_exists`, and

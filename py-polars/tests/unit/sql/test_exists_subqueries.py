@@ -175,6 +175,16 @@ def test_uncorrelated_exists_simple_case_operand() -> None:
     assert res["x"].to_list() == [1, 1, 1]
 
 
+@pytest.mark.parametrize("op", ["~~", "LIKE"])
+def test_uncorrelated_exists_over_aggregate_in_like(op: str) -> None:
+    res = pl.SQLContext(_frames()).execute(
+        "SELECT CAST(EXISTS (SELECT 1 FROM t2 WHERE FALSE ORDER BY COUNT(*)) "
+        f"AS VARCHAR) {op} 'true' AS x",
+        eager=True,
+    )
+    assert res["x"].to_list() == [True]
+
+
 def test_uncorrelated_exists_missing_column() -> None:
     with pytest.raises(ColumnNotFoundError, match="missing"):
         pl.SQLContext(_frames()).execute(

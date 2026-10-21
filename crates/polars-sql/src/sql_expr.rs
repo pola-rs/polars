@@ -651,12 +651,24 @@ impl SQLExprVisitor<'_> {
         {
             return Err(unsupported());
         }
-        let lf = match self.execute_subquery(subquery) {
-            Ok(lf) => lf,
-            // An unqualified outer column makes the subquery correlated.
-            Err(_) if self.reads_outer_column(subquery) => return Err(unsupported()),
-            Err(e) => return Err(e),
+        // An unqualified outer column makes the subquery correlated.
+        let outer_err = |e, this: &Self| {
+            if this.reads_outer_column(subquery) {
+                unsupported()
+            } else {
+                e
+            }
         };
+        if self
+            .ctx
+            .exists_over_aggregate(subquery)
+            .map_err(|e| outer_err(e, self))?
+        {
+            return Ok(lit(true));
+        }
+        let lf = self
+            .execute_subquery(subquery)
+            .map_err(|e| outer_err(e, self))?;
         let lf = lf.limit(1).select([len().gt(lit(0))]);
         Ok(reduced_subquery(lf, first().as_expr().item(true)))
     }
@@ -917,6 +929,34 @@ impl SQLExprVisitor<'_> {
         if let Some(folded) = try_fold_decimal_arithmetic(left, op, right)? {
             return Ok(folded);
         }
+        // "x ~~ y", "x !~~ y", "x ~~* y" and "x !~~* y" are LIKE and ILIKE.
+        let like = match op {
+            SQLBinaryOperator::PGLikeMatch => Some((false, false)),
+            SQLBinaryOperator::PGNotLikeMatch => Some((true, false)),
+            SQLBinaryOperator::PGILikeMatch => Some((false, true)),
+            SQLBinaryOperator::PGNotILikeMatch => Some((true, true)),
+            _ => None,
+        };
+        if let Some((negated, case_insensitive)) = like {
+            let (expr, pattern) = (Box::new(left.clone()), Box::new(right.clone()));
+            return self.visit_expr(&if case_insensitive {
+                SQLExpr::ILike {
+                    negated,
+                    any: false,
+                    expr,
+                    pattern,
+                    escape_char: None,
+                }
+            } else {
+                SQLExpr::Like {
+                    negated,
+                    any: false,
+                    expr,
+                    pattern,
+                    escape_char: None,
+                }
+            });
+        }
         // need special handling for interval offsets and comparisons
         let (mut lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
@@ -994,65 +1034,91 @@ impl SQLExprVisitor<'_> {
             // ----
             // Bitwise operators
             // ----
-            SQLBinaryOperator::BitwiseAnd => lhs.and(rhs),  // "x & y"
-            SQLBinaryOperator::BitwiseOr => lhs.or(rhs),  // "x | y"
-            SQLBinaryOperator::Xor => lhs.xor(rhs),  // "x XOR y"
+            SQLBinaryOperator::BitwiseAnd => lhs.and(rhs), // "x & y"
+            SQLBinaryOperator::BitwiseOr => lhs.or(rhs),   // "x | y"
+            SQLBinaryOperator::Xor => lhs.xor(rhs),        // "x XOR y"
 
             // ----
             // Comparison operators
             // ----
-            SQLBinaryOperator::Eq if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Eq, rhs),
-            SQLBinaryOperator::Gt if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Gt, rhs),
-            SQLBinaryOperator::GtEq if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::GtEq, rhs),
-            SQLBinaryOperator::Lt if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Lt, rhs),
-            SQLBinaryOperator::LtEq if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::LtEq, rhs),
-            SQLBinaryOperator::NotEq if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Eq, rhs).not(),
-            SQLBinaryOperator::Spaceship if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::EqMissing, rhs),
-            SQLBinaryOperator::Eq => lhs.eq(rhs),  // "x = y"
-            SQLBinaryOperator::Gt => lhs.gt(rhs),  // "x > y"
-            SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),  // "x >= y"
-            SQLBinaryOperator::Lt => lhs.lt(rhs),  // "x < y"
-            SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),  // "x <= y"
-            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),  // "x != y"
-            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),  // "x <=> y"
+            SQLBinaryOperator::Eq if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Eq, rhs)
+            },
+            SQLBinaryOperator::Gt if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Gt, rhs)
+            },
+            SQLBinaryOperator::GtEq if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::GtEq, rhs)
+            },
+            SQLBinaryOperator::Lt if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Lt, rhs)
+            },
+            SQLBinaryOperator::LtEq if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::LtEq, rhs)
+            },
+            SQLBinaryOperator::NotEq if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Eq, rhs).not()
+            },
+            SQLBinaryOperator::Spaceship if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::EqMissing, rhs)
+            },
+            SQLBinaryOperator::Eq => lhs.eq(rhs), // "x = y"
+            SQLBinaryOperator::Gt => lhs.gt(rhs), // "x > y"
+            SQLBinaryOperator::GtEq => lhs.gt_eq(rhs), // "x >= y"
+            SQLBinaryOperator::Lt => lhs.lt(rhs), // "x < y"
+            SQLBinaryOperator::LtEq => lhs.lt_eq(rhs), // "x <= y"
+            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(), // "x != y"
+            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs), // "x <=> y"
 
             // ----
             // Logical operators
             // ----
-            SQLBinaryOperator::And => lhs.and(rhs),  // "x AND y"
-            SQLBinaryOperator::Or => lhs.or(rhs),  // "x OR y"
+            SQLBinaryOperator::And => lhs.and(rhs), // "x AND y"
+            SQLBinaryOperator::Or => lhs.or(rhs),   // "x OR y"
 
             // ----
             // Mathematical operators
             // ----
-            SQLBinaryOperator::Divide => sql_binary(lhs, SqlBinaryOp::Div, rhs),  // "x / y"
-            SQLBinaryOperator::DuckIntegerDivide => sql_binary(lhs, SqlBinaryOp::IntDiv, rhs),  // "x // y"
-            SQLBinaryOperator::Minus if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Minus, rhs),
-            SQLBinaryOperator::Minus => lhs - rhs,  // "x - y"
-            SQLBinaryOperator::Modulo => sql_binary(lhs, SqlBinaryOp::Rem, rhs),  // "x % y"
-            SQLBinaryOperator::Multiply => sql_binary(lhs, SqlBinaryOp::Mul, rhs),  // "x * y"
-            SQLBinaryOperator::Plus if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Plus, rhs),
-            SQLBinaryOperator::Plus => lhs + rhs,  // "x + y"
+            SQLBinaryOperator::Divide => sql_binary(lhs, SqlBinaryOp::Div, rhs), // "x / y"
+            SQLBinaryOperator::DuckIntegerDivide => sql_binary(lhs, SqlBinaryOp::IntDiv, rhs), // "x // y"
+            SQLBinaryOperator::Minus if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Minus, rhs)
+            },
+            SQLBinaryOperator::Minus => lhs - rhs, // "x - y"
+            SQLBinaryOperator::Modulo => sql_binary(lhs, SqlBinaryOp::Rem, rhs), // "x % y"
+            SQLBinaryOperator::Multiply => sql_binary(lhs, SqlBinaryOp::Mul, rhs), // "x * y"
+            SQLBinaryOperator::Plus if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Plus, rhs)
+            },
+            SQLBinaryOperator::Plus => lhs + rhs, // "x + y"
 
             // ----
             // Regular expression operators
             // ----
-            SQLBinaryOperator::PGRegexMatch => match rhs {  // "x ~ y"
-                Expr::Literal(ref lv) if lv.extract_str().is_some() => lhs.str().contains(rhs, true),
+            SQLBinaryOperator::PGRegexMatch => match rhs {
+                // "x ~ y"
+                Expr::Literal(ref lv) if lv.extract_str().is_some() => {
+                    lhs.str().contains(rhs, true)
+                },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexNotMatch => match rhs {  // "x !~ y"
-                Expr::Literal(ref lv) if lv.extract_str().is_some() => lhs.str().contains(rhs, true).not(),
+            SQLBinaryOperator::PGRegexNotMatch => match rhs {
+                // "x !~ y"
+                Expr::Literal(ref lv) if lv.extract_str().is_some() => {
+                    lhs.str().contains(rhs, true).not()
+                },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '!~' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexIMatch => match rhs {  // "x ~* y"
+            SQLBinaryOperator::PGRegexIMatch => match rhs {
+                // "x ~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
                     lhs.str().contains(lit(format!("(?i){pat}")), true)
                 },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexNotIMatch => match rhs {  // "x !~* y"
+            SQLBinaryOperator::PGRegexNotIMatch => match rhs {
+                // "x !~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
                     lhs.str().contains(lit(format!("(?i){pat}")), true).not()
@@ -1062,45 +1128,18 @@ impl SQLExprVisitor<'_> {
                 },
             },
             // ----
-            // LIKE/ILIKE operators
-            // ----
-            SQLBinaryOperator::PGLikeMatch  // "x ~~ y"
-            | SQLBinaryOperator::PGNotLikeMatch  // "x !~~ y"
-            | SQLBinaryOperator::PGILikeMatch  // "x ~~* y"
-            | SQLBinaryOperator::PGNotILikeMatch => {  // "x !~~* y"
-                let expr = if matches!(
-                    op,
-                    SQLBinaryOperator::PGLikeMatch | SQLBinaryOperator::PGNotLikeMatch
-                ) {
-                    SQLExpr::Like {
-                        negated: matches!(op, SQLBinaryOperator::PGNotLikeMatch),
-                        any: false,
-                        expr: Box::new(left.clone()),
-                        pattern: Box::new(right.clone()),
-                        escape_char: None,
-                    }
-                } else {
-                    SQLExpr::ILike {
-                        negated: matches!(op, SQLBinaryOperator::PGNotILikeMatch),
-                        any: false,
-                        expr: Box::new(left.clone()),
-                        pattern: Box::new(right.clone()),
-                        escape_char: None,
-                    }
-                };
-                self.visit_expr(&expr)?
-            },
-            // ----
             // String operators
             // ----
-            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs),  // "x ^@ y"
-            SQLBinaryOperator::StringConcat => {  // "x || y"
+            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs), // "x ^@ y"
+            SQLBinaryOperator::StringConcat => {
+                // "x || y"
                 lhs.cast(DataType::String) + rhs.cast(DataType::String)
             },
             // ----
             // Nested (JSON) field access operators
             // ----
-            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {  // "x -> y", "x ->> y"
+            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {
+                // "x -> y", "x ->> y"
                 Expr::Literal(lv) if lv.extract_str().is_some() => {
                     let path = lv.extract_str().unwrap();
                     let mut expr = self.struct_field_access_expr(&lhs, path, false)?;
@@ -1120,7 +1159,8 @@ impl SQLExprVisitor<'_> {
                     polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
                 },
             },
-            SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {  // "x #> y", "x #>> y"
+            SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
+                // "x #> y", "x #>> y"
                 match rhs {
                     Expr::Literal(lv) if lv.extract_str().is_some() => {
                         let path = lv.extract_str().unwrap();
@@ -1132,7 +1172,7 @@ impl SQLExprVisitor<'_> {
                     },
                     _ => {
                         polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", rhs)
-                    }
+                    },
                 }
             },
             other => {
