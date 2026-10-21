@@ -2,6 +2,7 @@ use std::cell::Cell;
 
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and;
+use polars_compute::arithmetic::DivRounding;
 use polars_compute::decimal::{
     DEC128_MAX_PREC, dec128_add_scaled, dec128_div_scaled, dec128_int_div_scaled,
     dec128_mul_scaled, dec128_rem_scaled, dec128_rescale, dec128_sub_scaled, i64_binary_values,
@@ -168,23 +169,28 @@ impl DecimalChunked {
         self.apply_scaled_kernel(rhs, scale, "division", dec128_div_scaled)
     }
 
-    /// The exact remainder, with the sign of `rhs` if `floor` (as `%`), else of `self`.
-    pub fn rem_with(&self, rhs: &Self, floor: bool) -> PolarsResult<Self> {
+    /// The exact remainder, with the sign of `rhs` when flooring (as `%`), else of `self`.
+    pub fn rem_with(&self, rhs: &Self, rounding: DivRounding) -> PolarsResult<Self> {
         let scale = self.scale().max(rhs.scale());
         self.apply_scaled_kernel(rhs, scale, "remainder", |l, sl, r, sr, s| {
-            dec128_rem_scaled(l, sl, r, sr, s, floor)
+            dec128_rem_scaled(l, sl, r, sr, s, rounding)
         })
     }
 
-    /// The integer quotient, rounded down if `floor` (as `//`), else toward zero.
-    pub fn int_div(&self, rhs: &Self, floor: bool) -> PolarsResult<Self> {
-        self.int_div_with_scale(rhs, self.scale().max(rhs.scale()), floor)
+    /// The integer quotient, rounded per `rounding`.
+    pub fn int_div(&self, rhs: &Self, rounding: DivRounding) -> PolarsResult<Self> {
+        self.int_div_with_scale(rhs, self.scale().max(rhs.scale()), rounding)
     }
 
     /// [`Self::int_div`] with the quotient at `scale`.
-    pub fn int_div_with_scale(&self, rhs: &Self, scale: usize, floor: bool) -> PolarsResult<Self> {
+    pub fn int_div_with_scale(
+        &self,
+        rhs: &Self,
+        scale: usize,
+        rounding: DivRounding,
+    ) -> PolarsResult<Self> {
         self.apply_scaled_kernel(rhs, scale, "integer division", |l, sl, r, sr, s| {
-            dec128_int_div_scaled(l, sl, r, sr, s, floor)
+            dec128_int_div_scaled(l, sl, r, sr, s, rounding)
         })
     }
 }
