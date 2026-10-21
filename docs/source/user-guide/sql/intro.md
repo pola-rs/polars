@@ -93,9 +93,10 @@ has no `default_namespace`, or `tpch.lineitem` when an attached catalog named `t
 `lake.tpch.lineitem`, makes the catalog explicit.
 
 Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
-registered there. `CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on catalog tables are not
-supported yet. `DROP TABLE IF EXISTS` and `TRUNCATE TABLE IF EXISTS` of a name that does not start
-with an attached catalog only act on a registered table.
+registered there. If that detaches the default catalog, the default catalog on entry is restored.
+`CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet.
+`DROP TABLE IF EXISTS` and `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
+catalog only act on a registered table.
 
 !!! warning "Serialized plans"
 

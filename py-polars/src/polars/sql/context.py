@@ -102,7 +102,8 @@ class SQLContext(Generic[FrameType]):
     _ctxt: PySQLContext
     _eager_execution: Final[bool]
     _tables_scope_stack: list[set[str]]
-    _catalogs_scope_stack: list[set[str]]
+    # Attached catalogs and the default catalog on scope entry.
+    _catalogs_scope_stack: list[tuple[set[str], str | None]]
     # Attached catalogs by name: config, instance (if known) and storage options.
     _catalogs: dict[
         str,
@@ -302,7 +303,9 @@ class SQLContext(Generic[FrameType]):
         self._tables_scope_stack = getattr(self, "_tables_scope_stack", [])
         self._tables_scope_stack.append(set(self.tables()))
         self._catalogs_scope_stack = getattr(self, "_catalogs_scope_stack", [])
-        self._catalogs_scope_stack.append(set(self._catalogs))
+        self._catalogs_scope_stack.append(
+            (set(self._catalogs), self._ctxt.default_catalog())
+        )
         return self
 
     def __exit__(
@@ -314,6 +317,8 @@ class SQLContext(Generic[FrameType]):
         """
         Unregister any tables and catalogs created within the given scope on exit.
 
+        If that detaches the default catalog, the default on scope entry is restored.
+
         See Also
         --------
         unregister
@@ -322,9 +327,14 @@ class SQLContext(Generic[FrameType]):
         self.unregister(
             names=(set(self.tables()) - self._tables_scope_stack.pop()),
         )
-        for name in set(self._catalogs) - self._catalogs_scope_stack.pop():
+        attached, entry_default = self._catalogs_scope_stack.pop()
+        detached = set(self._catalogs) - attached
+        detaches_default = self._ctxt.default_catalog() in detached
+        for name in detached:
             self._ctxt.unregister_catalog(name)
             del self._catalogs[name]
+        if detaches_default and entry_default in self._catalogs:
+            self._ctxt.set_default_catalog(entry_default)
 
     def __repr__(self) -> str:
         n_tables = len(self.tables())
@@ -540,7 +550,8 @@ class SQLContext(Generic[FrameType]):
         catalog only act on a registered table, and are a no-op otherwise.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
-        like the tables registered there.
+        like the tables registered there. If that detaches the default catalog, the
+        default catalog on entry is restored.
 
         `SQLContext` is not thread-safe: do not register catalogs or tables while
         another thread executes a query on the same context.

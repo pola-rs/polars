@@ -86,6 +86,20 @@ impl CatalogRegistry {
         Ok(())
     }
 
+    /// The name of the default catalog.
+    pub(crate) fn default_catalog(&self) -> Option<&str> {
+        self.default.as_deref()
+    }
+
+    /// Make an attached catalog (exact name, else ignoring case) the default.
+    pub(crate) fn set_default(&mut self, name: &str) -> PolarsResult<()> {
+        let Some(name) = self.catalog_name(name).map(str::to_string) else {
+            polars_bail!(SQLInterface: "catalog '{}' is not attached", name);
+        };
+        self.default = Some(name);
+        Ok(())
+    }
+
     /// Detach a catalog (exact name, else ignoring case), returning the name it had.
     pub(crate) fn unregister(&mut self, name: &str) -> Option<String> {
         let idx = self.position(name)?;

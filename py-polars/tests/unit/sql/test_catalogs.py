@@ -340,6 +340,27 @@ def test_catalogs_attached_in_scope_are_detached(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+def test_scope_exit_restores_default_catalog(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+
+    def lineitem_rows() -> int:
+        return int(ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item())
+
+    with ctx:
+        ctx.register_catalog("tmp", lake, default_namespace="CH0010", default=True)
+        with ctx:
+            ctx.register_catalog("inner", lake, default_namespace="tpch", default=True)
+        assert lineitem_rows() == 1
+    assert lineitem_rows() == 2
+
+    # a default moved to a catalog attached before the scope stays
+    ctx.register_catalog("other", lake, default_namespace="CH0010")
+    with ctx:
+        ctx.register_catalog("other", lake, default_namespace="CH0010", default=True)
+    assert lineitem_rows() == 1
+
+
+@pytest.mark.write_disk
 def test_ddl_on_local_table_named_like_catalog(lake: CountingCatalog) -> None:
     # a registered table with the whole dotted name is dropped instead
     ctx = lake_ctx(lake)

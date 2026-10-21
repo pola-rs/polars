@@ -390,6 +390,16 @@ impl SQLContext {
         self.catalogs.register(name, default_namespace, default)
     }
 
+    /// The name of the default catalog, if one is set.
+    pub fn default_catalog(&self) -> Option<&str> {
+        self.catalogs.default_catalog()
+    }
+
+    /// Make the attached catalog `name` (exact, else ignoring case) the default.
+    pub fn set_default_catalog(&mut self, name: &str) -> PolarsResult<()> {
+        self.catalogs.set_default(name)
+    }
+
     /// Detach a catalog (exact name, else ignoring case), returning the name it had.
     pub fn unregister_catalog(&mut self, name: &str) -> Option<String> {
         self.catalogs.unregister(name)
