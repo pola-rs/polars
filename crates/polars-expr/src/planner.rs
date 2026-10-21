@@ -4,7 +4,7 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
 
-use crate::dispatch::{function_expr_to_groups_udf, function_expr_to_udf};
+use crate::dispatch::{explode_groups_udf, function_expr_to_groups_udf, function_expr_to_udf};
 use crate::expressions as phys_expr;
 use crate::expressions::*;
 use crate::reduce::GroupedReduction;
@@ -709,7 +709,7 @@ fn create_physical_expr_inner(
             Ok(Arc::new(ApplyExpr::new(
                 vec![input],
                 function,
-                None,
+                Some(explode_groups_udf(options)),
                 node_to_expr(expression, expr_arena),
                 FunctionOptions::groupwise(),
                 state.allow_threading,

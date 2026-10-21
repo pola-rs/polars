@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
 import pyarrow as pa
 import pytest
 from hypothesis import given
@@ -633,3 +637,148 @@ def test_explode_params() -> None:
         df.explode("a", empty_as_null=False, keep_nulls=False),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 6], "b": [1, 1, 1, 3, 3, 3]}),
     )
+
+
+def _explode_rows(
+    rows: list[Any], *, empty_as_null: bool, keep_nulls: bool
+) -> list[Any]:
+    out: list[Any] = []
+    for r in rows:
+        if r is None:
+            out += [None] if keep_nulls else []
+        elif len(r) == 0:
+            out += [None] if empty_as_null else []
+        else:
+            out += list(r)
+    return out
+
+
+EXPLODE_AGG_DATA = [
+    ([[1, None], None, [], [2, 3], None, [4], [], [5, 6]], pl.List(pl.Int64)),
+    ([["a"], None, [], ["b", None], None, ["c"], [], ["d", "e"]], pl.List(pl.String)),
+    (
+        [[[1]], None, [], [[2], None], None, [[]], [], [[3, 4]]],
+        pl.List(pl.List(pl.Int64)),
+    ),
+    (
+        [[1, 2], None, [3, None], [4, 5], None, [6, 7], [8, 9], [0, 0]],
+        pl.Array(pl.Int64, 2),
+    ),
+    # Logical inner dtypes must keep their physical representation.
+    (
+        [["x"], None, [], ["y", None], None, ["x"], [], ["z", "y"]],
+        pl.List(pl.Categorical),
+    ),
+    (
+        [["x"], None, [], ["y", None], None, ["x"], [], ["z", "y"]],
+        pl.List(pl.Enum(["x", "y", "z"])),
+    ),
+    (
+        [
+            [datetime(2020, 1, 1)],
+            None,
+            [],
+            [datetime(2021, 2, 3), None],
+            None,
+            [datetime(1999, 12, 31)],
+            [],
+            [datetime(2000, 1, 1)],
+        ],
+        pl.List(pl.Datetime("us")),
+    ),
+    (
+        [
+            [Decimal("1.25")],
+            None,
+            [],
+            [Decimal("-2.50"), None],
+            None,
+            [Decimal("0.01")],
+            [],
+            [Decimal("3.00")],
+        ],
+        pl.List(pl.Decimal(10, 2)),
+    ),
+    (
+        [[{"x": 1}], None, [], [{"x": None}, None], None, [{"x": 2}], [], [{"x": 3}]],
+        pl.List(pl.Struct({"x": pl.Int64})),
+    ),
+]
+EXPLODE_AGG_KEYS = [0, 1, 0, 2, 1, 0, 2, 3]
+
+
+@pytest.mark.parametrize("empty_as_null", [False, True])
+@pytest.mark.parametrize("keep_nulls", [False, True])
+@pytest.mark.parametrize("sort_first", [False, True])
+@pytest.mark.parametrize(("data", "dtype"), EXPLODE_AGG_DATA)
+def test_explode_agg_29993(
+    data: list[Any],
+    dtype: pl.DataType,
+    empty_as_null: bool,
+    keep_nulls: bool,
+    sort_first: bool,
+) -> None:
+    opts = {"empty_as_null": empty_as_null, "keep_nulls": keep_nulls}
+    df = pl.DataFrame({"k": EXPLODE_AGG_KEYS, "a": pl.Series(data, dtype=dtype)})
+    if sort_first:
+        # Sorted keys give slice groups.
+        df = df.sort("k", maintain_order=True)
+
+    groups: dict[int, list[Any]] = {}
+    for k, d in zip(EXPLODE_AGG_KEYS, data, strict=True):
+        groups.setdefault(k, []).append(d)
+    keys = sorted(groups)
+
+    out = (
+        df.group_by("k")
+        .agg(
+            plain=pl.col("a").explode(**opts),
+            first=pl.col("a").first().explode(**opts),
+            empty=pl.col("a").filter(pl.col("k") < 0).explode(**opts),
+        )
+        .sort("k")
+    )
+    assert out["plain"].to_list() == [_explode_rows(groups[k], **opts) for k in keys]
+    assert out["first"].to_list() == [
+        _explode_rows(groups[k][:1], **opts) for k in keys
+    ]
+    assert out["empty"].to_list() == [[] for _ in keys]
+
+    # Overlapping groups.
+    out = (
+        df.with_row_index()
+        .rolling("index", period="3i")
+        .agg(pl.col("a").explode(**opts))
+    )
+    rows = df["a"].to_list()
+    assert out["a"].to_list() == [
+        _explode_rows(rows[max(0, i - 2) : i + 1], **opts) for i in range(len(rows))
+    ]
+
+
+def test_explode_agg_literal_29993() -> None:
+    df = pl.DataFrame({"k": [1, 2, 1]})
+    out = df.group_by("k").agg(pl.lit([1, 2]).explode()).sort("k")
+    assert out["literal"].to_list() == [[1, 2], [1, 2]]
+
+
+def test_explode_agg_chained_29993() -> None:
+    df = pl.DataFrame(
+        {
+            "k": [0, 1, 0, 1, 0],
+            "a": [["x", None], ["y"], None, [], ["x", "z"]],
+        }
+    )
+    out = (
+        df.group_by("k")
+        .agg(pl.col("a").explode().drop_nulls().unique().sort())
+        .sort("k")
+    )
+    assert out["a"].to_list() == [["x", "z"], ["y"]]
+
+
+def test_list_agg_explode_30023() -> None:
+    s = pl.Series([[[]], [[1, 2]], [None, [3]]], dtype=pl.List(pl.List(pl.Int64)))
+    expected = [[], [1, 2], [None, 3]]
+    assert s.list.agg(pl.element().explode()).to_list() == expected
+    assert s.list.eval(pl.element().explode()).to_list() == expected

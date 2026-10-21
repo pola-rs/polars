@@ -55,7 +55,7 @@ fn flush_local_drift() {
 #[inline(never)]
 fn oomkill() -> ! {
     // Can't allocate here, so write directly to stderr.
-    const MSG: &[u8] = b"polars: memory usage exceeded POLARS_OOMKILL_THRESHOLD_MB, aborting\n";
+    const MSG: &[u8] = b"polars: memory usage exceeded POLARS_OOMKILL_THRESHOLD_MB or POLARS_OOMKILL_THRESHOLD_FRACTION, aborting\n";
     unsafe {
         libc::write(2, MSG.as_ptr().cast(), MSG.len() as _);
         libc::abort()

@@ -96,6 +96,9 @@ const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
 
+const OOMKILL_THRESHOLD_FRACTION: &str = "POLARS_OOMKILL_THRESHOLD_FRACTION";
+const DEFAULT_OOMKILL_THRESHOLD_FRACTION: f64 = f64::INFINITY;
+
 const OOMKILL_THRESHOLD_MB: &str = "POLARS_OOMKILL_THRESHOLD_MB";
 const DEFAULT_OOMKILL_THRESHOLD_MB: u64 = u64::MAX;
 
@@ -208,6 +211,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MAX_PARALLEL_SPILL_TASKS,
     OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
+    OOMKILL_THRESHOLD_FRACTION,
     OOMKILL_THRESHOLD_MB,
     JOIN_SAMPLE_LIMIT,
     JOIN_RUNTIME_FILTERS,
@@ -254,6 +258,8 @@ pub struct Config {
     ooc_max_parallel_spill_tasks: AtomicU64,
     ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
+    oomkill_threshold_fraction: AtomicU64,
+    oomkill_threshold_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
     join_runtime_filters: AtomicBool,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
@@ -316,6 +322,12 @@ impl Config {
                 DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
             ),
             ooc_log_metrics: AtomicBool::new(false),
+            oomkill_threshold_fraction: AtomicU64::new(
+                DEFAULT_OOMKILL_THRESHOLD_FRACTION.to_bits(),
+            ),
+            oomkill_threshold_bytes: AtomicU64::new(
+                DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000),
+            ),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
             join_runtime_filters: AtomicBool::new(DEFAULT_JOIN_RUNTIME_FILTERS),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
@@ -379,6 +391,18 @@ impl Config {
         let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
+
+        let oomkill_frac = f64::from_bits(self.oomkill_threshold_fraction.load(Ordering::Relaxed));
+        let oomkill_frac_bytes = if oomkill_frac.is_finite() {
+            (total_memory() as f64 * oomkill_frac) as u64
+        } else {
+            u64::MAX
+        };
+        let oomkill_mb_bytes = self.oomkill_threshold_bytes.load(Ordering::Relaxed);
+        OOMKILL_THRESHOLD_BYTES_ATOMIC.store(
+            u64::min(oomkill_mb_bytes, oomkill_frac_bytes),
+            Ordering::Relaxed,
+        );
     }
 
     fn apply_env_var(&self, var: &str, val: Option<&str>) {
@@ -519,7 +543,13 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
                 Ordering::Relaxed,
             ),
-            OOMKILL_THRESHOLD_MB => OOMKILL_THRESHOLD_BYTES_ATOMIC.store(
+            OOMKILL_THRESHOLD_FRACTION => self.oomkill_threshold_fraction.store(
+                val.and_then(|x| parse::parse_f64(var, x))
+                    .unwrap_or(DEFAULT_OOMKILL_THRESHOLD_FRACTION)
+                    .to_bits(),
+                Ordering::Relaxed,
+            ),
+            OOMKILL_THRESHOLD_MB => self.oomkill_threshold_bytes.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOMKILL_THRESHOLD_MB)
                     .saturating_mul(1_000_000),

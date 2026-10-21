@@ -21,7 +21,7 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
-    from polars._typing import AsofJoinStrategy, PolarsIntegerType
+    from polars._typing import AsofJoinStrategy, EngineType, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1932,3 +1932,64 @@ def test_join_asof_buffer_ordering_27619() -> None:
             check_sortedness=False,
         )
         assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mark.parametrize(
+    ("strategy", "tolerance", "expected"),
+    [
+        ("backward", None, [None, 1, 1, 2]),
+        ("forward", None, [0, 1, 2, None]),
+        ("nearest", None, [0, 1, 2, 2]),
+        ("nearest", 0, [None, 1, None, None]),
+    ],
+)
+def test_join_asof_null_right_keys(
+    engine: EngineType,
+    nulls_last: bool,
+    strategy: AsofJoinStrategy,
+    tolerance: int | None,
+    expected: list[int | None],
+) -> None:
+    right = pl.DataFrame({"t": [1, 2, 6], "b": [0, 1, 2]})
+    nulls = pl.DataFrame({"t": [None, None], "b": [None, None]}, schema=right.schema)
+    right = pl.concat([right, nulls] if nulls_last else [nulls, right])
+    # Split the right side over several morsels.
+    right_lf = pl.concat([right[:2].lazy(), right[2:4].lazy(), right[4:].lazy()])
+
+    out = (
+        pl.LazyFrame({"t": [0, 2, 5, 7]})
+        .join_asof(
+            right_lf,
+            on="t",
+            strategy=strategy,
+            tolerance=tolerance,
+            check_sortedness=False,
+        )
+        .collect(engine=engine)
+    )
+    assert out["b"].to_list() == expected
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("strategy", ["backward", "nearest"])
+def test_join_asof_by_null_right_keys_in_group(
+    engine: EngineType, strategy: AsofJoinStrategy
+) -> None:
+    right = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 2, 2, 2],
+            "t": [1, 4, None, 2, 5, None],
+            "b": [0, 1, 2, 3, 4, 5],
+        }
+    )
+    right_lf = pl.concat([right[:3].lazy(), right[3:].lazy()]).set_sorted("g")
+
+    out = (
+        pl.LazyFrame({"g": [1, 1, 2, 2], "t": [4, 6, 2, 6]})
+        .set_sorted("g")
+        .join_asof(right_lf, on="t", by="g", strategy=strategy, check_sortedness=False)
+        .collect(engine=engine)
+    )
+    assert out["b"].to_list() == [1, 1, 3, 4]

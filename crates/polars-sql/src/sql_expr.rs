@@ -37,6 +37,7 @@ use sqlparser::keywords;
 use sqlparser::parser::{Parser, ParserOptions};
 use sqlparser::tokenizer::Token;
 
+use crate::context::join_idents;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{
@@ -2121,11 +2122,11 @@ pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
 
 fn resolve_column<'a>(
     ctx: &'a mut SQLContext,
-    ident_root: &'a Ident,
+    relation: &'a str,
     name: &'a str,
     dtype: &'a DataType,
 ) -> PolarsResult<(Expr, Option<&'a DataType>)> {
-    let resolved = ctx.resolve_name(&ident_root.value, name);
+    let resolved = ctx.resolve_name(relation, name);
     let resolved = resolved.as_str();
     Ok((
         if name != resolved {
@@ -2142,14 +2143,16 @@ pub(crate) fn resolve_compound_identifier(
     idents: &[Ident],
     active_schema: Option<&Schema>,
 ) -> PolarsResult<Vec<Expr>> {
-    // inference priority: table > struct > column
+    // inference priority: table > struct > column; the longest qualifier naming a table wins
     let ident_root = &idents[0];
-    let mut remaining_idents = idents.iter().skip(1);
-    let mut lf = if ctx.relation_in_scope(&ident_root.value) {
-        ctx.get_table_from_current_scope(&ident_root.value)
-    } else {
-        None
+    let (relation, mut lf, qualifier_len) = match ctx.resolve_qualifier(idents)? {
+        Some((name, len)) => match ctx.get_table_from_current_scope(&name)? {
+            Some(lf) => (Some(name), Some(lf), len),
+            None => (None, None, 1),
+        },
+        None => (None, None, 1),
     };
+    let mut remaining_idents = idents.iter().skip(qualifier_len);
 
     // get schema from table (or the active/default schema)
     let schema = if let Some(ref mut lf) = lf {
@@ -2195,7 +2198,9 @@ pub(crate) fn resolve_compound_identifier(
     if lf.is_some() && name == "*" {
         return schema
             .iter_names_and_dtypes()
-            .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).map(|(expr, _)| expr))
+            .map(|(name, dtype)| {
+                resolve_column(ctx, relation.as_deref().unwrap(), name, dtype).map(|(expr, _)| expr)
+            })
             .collect();
     }
 
@@ -2209,19 +2214,24 @@ pub(crate) fn resolve_compound_identifier(
             },
             // root is not in schema and no table found
             (true, None) => {
+                let hint = (1..idents.len())
+                    .rev()
+                    .find_map(|len| ctx.hidden_by_alias_hint(&join_idents(&idents[..len])))
+                    .unwrap_or_default();
                 polars_bail!(
-                    SQLInterface: "no table or struct column named '{}' found",
-                    ident_root
+                    SQLInterface: "no table or struct column named '{}' found{}",
+                    ident_root, hint
                 )
             },
             // root is a table, resolve column from table schema
             (false, _) => {
+                let relation = relation.as_deref().unwrap();
                 if let Some((_, col_name, dtype)) = schema.get_full(name) {
-                    resolve_column(ctx, ident_root, col_name, dtype)
+                    resolve_column(ctx, relation, col_name, dtype)
                 } else {
                     polars_bail!(
                         SQLInterface: "no column named '{}' found in table '{}'",
-                        name, ident_root
+                        name, relation
                     )
                 }
             },
