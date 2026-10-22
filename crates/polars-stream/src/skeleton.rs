@@ -40,13 +40,18 @@ pub fn run_query(
     expr_arena: &mut Arena<AExpr>,
     observer: Option<Box<dyn QueryObserver>>,
 ) -> PolarsResult<QueryResult> {
-    let query = StreamingQuery::build(node, ir_arena, expr_arena, observer.is_some()).inspect_err(
-        |err| {
-            if let Some(o) = observer.as_ref() {
-                o.on_query_failed(err)
-            }
-        },
-    )?;
+    let query = StreamingQuery::build(
+        node,
+        ir_arena,
+        expr_arena,
+        observer.is_some(),
+        polars_config::config().max_threads(),
+    )
+    .inspect_err(|err| {
+        if let Some(o) = observer.as_ref() {
+            o.on_query_failed(err)
+        }
+    })?;
 
     /// if the query fails, [`observer::on_query_failed`] needs to be called before [`_guard`] is dropped
     let _guard = observer
@@ -111,6 +116,7 @@ pub struct StreamingQuery {
     pub phys_to_ir: SecondaryMap<PhysNodeKey, Node>,
     pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    pub num_pipelines: usize,
 }
 
 /// Configures if IR lowering creates the `format_str` for `InMemoryMap`.
@@ -137,6 +143,7 @@ impl StreamingQuery {
         ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         observe: bool,
+        num_pipelines: usize,
     ) -> PolarsResult<Self> {
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
             let plan = IRPlan {
@@ -170,9 +177,7 @@ impl StreamingQuery {
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
             || observe
         {
-            Some(Arc::new(Mutex::new(GraphMetrics::new(
-                polars_config::config().max_threads(),
-            ))))
+            Some(Arc::new(Mutex::new(GraphMetrics::new(num_pipelines))))
         } else {
             None
         };
@@ -182,6 +187,7 @@ impl StreamingQuery {
             &phys_sm,
             expr_arena,
             metrics.clone(),
+            num_pipelines,
         )?;
 
         let top_ir = ir_arena.get(node).clone();
@@ -194,6 +200,7 @@ impl StreamingQuery {
             phys_to_ir,
             phys_to_graph,
             metrics,
+            num_pipelines,
         };
 
         Ok(out)
@@ -208,12 +215,14 @@ impl StreamingQuery {
             phys_to_ir: _,
             phys_to_graph,
             metrics,
+            num_pipelines,
         } = self;
 
         let query_start = Instant::now();
         // Callbacks in the query may need Rayon, so don't block a Rayon worker while it runs.
-        let mut results =
-            RAYON.block_on(|| crate::execute::execute_graph(&mut graph, metrics.clone()))?;
+        let mut results = RAYON.block_on(|| {
+            crate::execute::execute_graph(&mut graph, metrics.clone(), num_pipelines)
+        })?;
         let query_elapsed = query_start.elapsed();
 
         // Print metrics.

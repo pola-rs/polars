@@ -116,8 +116,8 @@ pub fn physical_plan_to_graph(
     phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    num_pipelines: usize,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
-    let num_pipelines = polars_config::config().max_threads();
     let mut ctx = GraphConversionContext {
         phys_sm,
         expr_arena,

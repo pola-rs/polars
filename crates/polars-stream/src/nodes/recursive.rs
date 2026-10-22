@@ -11,6 +11,7 @@ use polars_utils::unique_id::UniqueId;
 use super::compute_node_prelude::*;
 use super::in_memory_sink::InMemorySinkNode;
 use super::in_memory_source::InMemorySourceNode;
+use crate::morsel::get_ideal_morsel_size;
 
 /// The step of a recursive query, run as its own streaming query in every round.
 pub struct RecursiveStep {
@@ -36,6 +37,7 @@ impl RecursiveStep {
         &self,
         frontier: &Arc<DataFrame>,
         externals: &[Arc<DataFrame>],
+        num_pipelines: usize,
     ) -> PolarsResult<DataFrame> {
         let mut ir_arena = self.ir_arena.clone();
         let mut expr_arena = self.expr_arena.clone();
@@ -63,18 +65,60 @@ impl RecursiveStep {
             input: self.root,
             payload: SinkTypeIR::Memory,
         });
-        let query = crate::StreamingQuery::build(root, &mut ir_arena, &mut expr_arena, false)?;
+        let query = crate::StreamingQuery::build(
+            root,
+            &mut ir_arena,
+            &mut expr_arena,
+            false,
+            num_pipelines,
+        )?;
         Ok(query.execute()?.unwrap_single())
+    }
+
+    /// The number of rows the step reads from memory, besides the rows of the previous round.
+    /// `None` if the step also reads other sources.
+    fn in_memory_rows(&self, externals: &[Arc<DataFrame>]) -> Option<usize> {
+        let mut rows = 0;
+        let mut stack = vec![self.root];
+        while let Some(node) = stack.pop() {
+            match self.ir_arena.get(node) {
+                IR::WorkingTableScan { .. } => {},
+                IR::DataFrameScan { df, .. } => rows += df.height(),
+                IR::Cache { input, id } => {
+                    match self.external_caches.iter().position(|c| c == id) {
+                        Some(idx) => rows += externals[idx].height(),
+                        None => stack.push(*input),
+                    }
+                },
+                ir => {
+                    let n = stack.len();
+                    stack.extend(ir.inputs());
+                    if stack.len() == n {
+                        return None;
+                    }
+                },
+            }
+        }
+        Some(rows)
     }
 
     /// The anchor rows followed by the rows of every round, until a round has no rows.
     fn run(&self, anchor: DataFrame, externals: &[Arc<DataFrame>]) -> PolarsResult<DataFrame> {
+        // Starting the pipelines of a round has a cost per pipeline, so small rounds use fewer.
+        let max_pipelines = polars_config::config().max_threads();
+        let in_memory_rows = self.in_memory_rows(externals);
         let mut frontier = Arc::new(anchor);
         let mut out = vec![];
         while frontier.height() > 0 {
             // The loop has no bound, so let a keyboard interrupt stop it.
             polars_error::abort::try_raise_polars_abort();
-            let next = Arc::new(self.run_round(&frontier, externals)?);
+            let num_pipelines = match in_memory_rows {
+                Some(rows) => (rows + frontier.height())
+                    .div_ceil(get_ideal_morsel_size())
+                    .clamp(1, max_pipelines),
+                None => max_pipelines,
+            };
+            let next = Arc::new(self.run_round(&frontier, externals, num_pipelines)?);
             out.push(Arc::unwrap_or_clone(std::mem::replace(&mut frontier, next)));
         }
         if out.is_empty() {
