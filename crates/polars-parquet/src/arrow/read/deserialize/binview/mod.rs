@@ -853,13 +853,37 @@ impl utils::Decoder for BinViewDecoder {
     fn finalize(
         &self,
         dtype: ArrowDataType,
-        _dict: Option<Self::Dict>,
+        dict: Option<Self::Dict>,
         state: Self::DecodedState,
     ) -> ParquetResult<Box<dyn Array>> {
-        let mut array: BinaryViewArray = state.binview.freeze();
+        // Below this the copy is not worth it, as `gc` allocates at least one block.
+        const GC_MIN_BUFFER_LEN: usize = 32 * 1024;
 
+        let mut binview = state.binview;
         let validity = freeze_validity(state.validity);
-        array = array.with_validity(validity);
+
+        // Views of dictionary-encoded values point into the dictionary buffers. If only a few
+        // values were kept, copy them out so the output does not keep the whole dictionary alive.
+        let array: BinaryViewArray = if binview.total_buffer_len() >= GC_MIN_BUFFER_LEN
+            && binview.total_bytes_len() < binview.total_buffer_len() / 4
+        {
+            // Dictionary decoding can leave views of real values in null slots. Clear them so
+            // they are not copied.
+            if dict.is_some()
+                && let Some(validity) = &validity
+            {
+                let views = unsafe { binview.views_mut() };
+                assert_eq!(validity.len(), views.len());
+                for i in (!validity).true_idx_iter() {
+                    *unsafe { views.get_unchecked_mut(i) } = View::default();
+                }
+            }
+            binview.freeze().gc()
+        } else {
+            binview.freeze()
+        };
+
+        let array = array.with_validity(validity);
 
         match dtype.to_physical_type() {
             PhysicalType::BinaryView => Ok(array.boxed()),
