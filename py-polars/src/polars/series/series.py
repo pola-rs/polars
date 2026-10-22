@@ -62,6 +62,7 @@ from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
     _is_generator,
+    is_sequence,
     parse_version,
     qualified_type_name,
     require_same_type,
@@ -785,8 +786,11 @@ class Series(metaclass=_Meta):
             assert f is not None
             return self._from_pyseries(f(d))
 
-        if isinstance(other, Sequence) and not isinstance(other, str):
+        if is_sequence(other):
             if self.dtype in (List, Array):
+                if _check_for_numpy(other) and isinstance(other, np.ndarray):
+                    msg = f"cannot compare a Series of dtype {self.dtype} to a NumPy array"
+                    raise TypeError(msg)
                 other = [other]
             other = Series("", other)
             if other.dtype == Null:
