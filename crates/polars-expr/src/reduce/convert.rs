@@ -267,13 +267,14 @@ pub fn into_reduction(
             function,
         } => {
             let ann_agg = function.materialize()?;
-            assert!(inner_exprs.len() == 1);
-            let input = inner_exprs[0].node();
             let reduction = ann_agg.as_any();
             let reduction = reduction
                 .downcast_ref::<Box<dyn GroupedReduction>>()
                 .unwrap();
-            (reduction.new_empty(), input)
+            return Ok((
+                reduction.new_empty(),
+                inner_exprs.iter().map(|e| e.node()).collect(),
+            ));
         },
 
         #[cfg(feature = "cov")]
