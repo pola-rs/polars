@@ -6304,3 +6304,52 @@ def test_parquet_empty_row_groups_29995(
         pl.scan_parquet(path, parallel="prefiltered").filter(pred).collect(),
         expect.filter(pred),
     )
+
+
+def test_dict_strings_selected_rows_do_not_keep_dictionary(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "dict_strings.parquet"
+    df = pl.DataFrame(
+        {"a": range(1000), "s": [f"{i:04}" + "x" * 100 for i in range(1000)]}
+    )
+    pq.write_table(df.to_arrow(compat_level=pl.CompatLevel.oldest()), path)
+    assert (
+        "RLE_DICTIONARY"
+        in pq.ParquetFile(path).metadata.row_group(0).column(1).encodings
+    )
+
+    def data_buffers_size(s: pl.Series) -> int:
+        arr = s.to_arrow(compat_level=pl.CompatLevel.newest())
+        return sum(b.size for b in arr.buffers()[2:] if b is not None)
+
+    out = pl.scan_parquet(path).filter(pl.col("a") == 5).collect()
+    assert_frame_equal(out, df.filter(pl.col("a") == 5))
+    assert data_buffers_size(out["s"]) < 1000
+
+    out = pl.read_parquet(path, n_rows=3)
+    assert_frame_equal(out, df.head(3))
+    assert data_buffers_size(out["s"]) < 1000
+
+    out = pl.read_parquet(path)
+    assert_frame_equal(out, df)
+
+
+def test_dict_strings_selected_nulls_do_not_keep_dictionary(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "dict_strings_nulls.parquet"
+    # The nulls are inside a run of one long value, so the decoder can fill their views
+    # with that value.
+    long = "y" * 50_000
+    s = [long if i % 2 == 0 else None for i in range(100)]
+    s += [f"{i:04}" + "x" * 1000 for i in range(200)]
+    df = pl.DataFrame({"a": range(len(s)), "s": s})
+    pq.write_table(df.to_arrow(compat_level=pl.CompatLevel.oldest()), path)
+    assert (
+        "RLE_DICTIONARY"
+        in pq.ParquetFile(path).metadata.row_group(0).column(1).encodings
+    )
+
+    out = pl.scan_parquet(path).filter(pl.col("a") == 51).collect()
+    assert_frame_equal(out, df.filter(pl.col("a") == 51))
+    arr = out["s"].to_arrow(compat_level=pl.CompatLevel.newest())
+    assert sum(b.size for b in arr.buffers()[2:] if b is not None) < 1000
