@@ -426,12 +426,22 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
     }
 
 
-@pytest.mark.parametrize("invert", [False, True])
-@pytest.mark.parametrize("with_nan", [False, True])
-@pytest.mark.parametrize("stride", [0, 67, 1024])
 @pytest.mark.parametrize(
-    "length",
-    [*range(10), 130, *(n + d for n in (64, 128, 192, 256, 512) for d in (-1, 0, 1))],
+    ("length", "stride", "invert", "with_nan"),
+    [
+        (length, stride, invert, with_nan)
+        for length in [
+            *range(10),
+            130,
+            *(n + d for n in (64, 128, 192, 256, 512) for d in (-1, 0, 1)),
+        ]
+        # Minimum length at which each stride adds a distinct null mask.
+        for stride, min_length in ((0, 0), (67, 2), (1024, 68))
+        if length >= min_length
+        # Only the unmasked case needs a NaN variant.
+        for invert, with_nan in ((False, False), (True, False), (stride == 0, True))
+        if (length > 0 or not invert) and (length > 17 or not with_nan)
+    ],
 )
 def test_rolling_extrema_matches_naive(
     invert: bool, with_nan: bool, stride: int, length: int
