@@ -64,7 +64,8 @@ fn chain_from(cluster: &Cluster, anchor: usize) -> (f64, Vec<usize>) {
         let best = (0..n)
             .filter(|&i| !is_placed[i])
             .filter_map(|candidate| {
-                let denominator = key_domain_product(cluster, &is_placed, candidate)?;
+                let denominator =
+                    key_domain_product(cluster, &is_placed, placed.len() == 1, candidate)?;
                 let out =
                     join_cardinality(card, cluster.leaves[candidate].stats.filtered, denominator);
                 Some((out, candidate))
@@ -112,12 +113,17 @@ struct DomainEstimate<'a> {
 /// Only keys that are actually independent multiply.
 ///
 /// A key with no output name cannot be matched up, so it counts on its own.
-fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Option<f64> {
+///
+/// A key unique on one of several placed leaves can repeat in their join, so a
+/// placed leaf only counts as unique when `single_placed`.
+fn key_domain_product(
+    cluster: &Cluster,
+    is_placed: &[bool],
+    single_placed: bool,
+    candidate: usize,
+) -> Option<f64> {
     let mut per_key: Vec<DomainEstimate<'_>> = Vec::new();
     let mut max_rows = cluster.leaves[candidate].stats.unfiltered;
-    // A key unique on one of several placed leaves can repeat in their join, so a
-    // placed leaf only counts when it is the only one.
-    let single_placed = is_placed.iter().filter(|&&placed| placed).count() == 1;
 
     for bridge in cluster.bridging(is_placed, candidate) {
         let placed_stats = &cluster.leaves[bridge.placed_leaf].stats;
@@ -238,9 +244,9 @@ mod tests {
         };
 
         // Leaves 0 and 1 placed, 2 the candidate: it bridges on `k` to both.
-        let two_edges = key_domain_product(&cluster, &[true, true, false], 2).unwrap();
+        let two_edges = key_domain_product(&cluster, &[true, true, false], false, 2).unwrap();
         // Only leaf 0 placed: the same key reached once.
-        let one_edge = key_domain_product(&cluster, &[true, false, false], 2).unwrap();
+        let one_edge = key_domain_product(&cluster, &[true, false, false], true, 2).unwrap();
 
         // The smallest of the estimates of `k`'s domain, counted a single time.
         assert_eq!(two_edges, 100.0);

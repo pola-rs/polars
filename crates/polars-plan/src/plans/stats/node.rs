@@ -815,9 +815,9 @@ pub fn composite_key_domain(parts: impl Iterator<Item = (f64, Option<f64>)>, max
 
 /// The rows of `side`, if the key joining it to `other` is unique on it.
 ///
-/// Only the smaller side counts. Its own distinct count or range must reach its
-/// rows. Without either, [`key_domain`] guessed the key unique on the smaller side,
-/// and the shared `domain` reaching its rows says so.
+/// Only the smaller side counts. Its own distinct count, or else its range, must
+/// reach its rows. Without either, [`key_domain`] guessed the key unique on the
+/// smaller side, and the shared `domain` reaching its rows says so.
 pub fn unique_side_rows(
     side: &NodeStats,
     key: Option<&PlSmallStr>,
@@ -826,7 +826,10 @@ pub fn unique_side_rows(
 ) -> Option<f64> {
     let rows = side.unfiltered;
     let distinct = key
-        .and_then(|name| side.key_distinct_estimate(name))
+        .and_then(|name| {
+            side.distinct_count_key(name)
+                .or_else(|| side.int_domain(name))
+        })
         .unwrap_or(domain);
     (rows <= other.unfiltered && distinct >= rows).then_some(rows)
 }
@@ -1230,6 +1233,17 @@ mod tests {
         assert_eq!(unique_side_rows(&small, Some(&k), &large, domain), None);
 
         // Without statistics the key is guessed unique on the smaller side.
+        // A known distinct count wins over a wide range.
+        let sparse = leaf(2_000.0, 2_000.0).with_column(
+            "k",
+            ScanColumnStats {
+                distinct: Card::Exact(10),
+                int_range: Some((0, 1_000_000)),
+                ..Default::default()
+            },
+        );
+        assert_eq!(unique_side_rows(&sparse, Some(&k), &large, 1e6), None);
+
         let opaque = leaf(2_000.0, 2_000.0);
         let domain = key_domain(&large, Some(&k), &opaque, Some(&k));
         assert_eq!(
