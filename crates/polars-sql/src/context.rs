@@ -29,8 +29,8 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
-    CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName, display_name, name_parts,
-    name_position, rewrite_catalog_names,
+    CatalogDdl, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName, display_name,
+    name_parts, name_position, rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -419,6 +419,30 @@ impl SQLContext {
             }
         }
         Ok(tables)
+    }
+
+    /// The catalog DDL of `query`, if any, for the caller to perform: [`SQLContext::execute`]
+    /// rejects it.
+    pub fn catalog_ddl(&self, query: &str) -> PolarsResult<Option<CatalogDdl>> {
+        let stmt = parse_single_statement(query)?;
+        if !matches!(
+            stmt,
+            Statement::Drop {
+                object_type: ObjectType::Table,
+                ..
+            }
+        ) {
+            return Ok(None);
+        }
+        let (names, if_exists, purge) = drop_table_parts(&stmt)?;
+        Ok(self
+            .catalog_drop_target(names, purge)?
+            .map(|(name, table)| CatalogDdl::DropTable {
+                name,
+                table,
+                if_exists,
+                purge,
+            }))
     }
 
     /// Execute `query` with the scans of the catalog tables it reads, by full name (see
@@ -1441,49 +1465,64 @@ impl SQLContext {
 
     // DROP TABLE <tbl>
     fn execute_drop_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
-        // Destructure exhaustively so new sqlparser fields surface as compile errors.
-        if let Statement::Drop {
-            object_type: _,
-            names,
-            if_exists,
-
-            // Unsupported modifiers
-            cascade,
-            restrict,
-            purge,
-            temporary,
-            table,
-        } = stmt
-        {
-            polars_ensure!(!cascade, SQLInterface: "`DROP ... CASCADE` is not supported");
-            polars_ensure!(!purge, SQLInterface: "`DROP ... PURGE` is not supported");
-            polars_ensure!(!restrict, SQLInterface: "`DROP ... RESTRICT` is not supported");
-            polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
-            polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
-            for name in names {
-                self.ensure_not_catalog_table(name, "DROP TABLE", true, *if_exists)?;
-            }
-
-            let mut table_map = self.table_map.write().unwrap();
-            // Resolve every name before dropping any, so an error drops nothing.
-            let mut keys = Vec::with_capacity(names.len());
-            for name in names {
-                let tbl = object_name_to_string(name);
-                // `DROP TABLE IF EXISTS <tbl>` is a no-op on a missing table;
-                // otherwise dropping a table that doesn't exist is an error.
-                match key_ignoring_case(&table_map, &tbl)?.cloned() {
-                    Some(key) => keys.push(key),
-                    None if *if_exists => {},
-                    None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
-                }
-            }
-            for key in keys {
-                table_map.remove(&key);
-            }
-            Ok(DataFrame::empty().lazy())
-        } else {
-            polars_bail!(SQLInterface: "unexpected statement type; expected DROP")
+        let (names, if_exists, purge) = drop_table_parts(stmt)?;
+        if let Some((name, table)) = self.catalog_drop_target(names, purge)? {
+            polars_bail!(
+                SQLInterface: "DROP TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                name, display_name(&table.full_name())
+            );
         }
+
+        let mut table_map = self.table_map.write().unwrap();
+        // Resolve every name before dropping any, so an error drops nothing.
+        let mut keys = Vec::with_capacity(names.len());
+        for name in names {
+            let tbl = object_name_to_string(name);
+            // `DROP TABLE IF EXISTS <tbl>` is a no-op on a missing table;
+            // otherwise dropping a table that doesn't exist is an error.
+            match key_ignoring_case(&table_map, &tbl)?.cloned() {
+                Some(key) => keys.push(key),
+                None if if_exists => {},
+                None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
+            }
+        }
+        for key in keys {
+            table_map.remove(&key);
+        }
+        Ok(DataFrame::empty().lazy())
+    }
+
+    /// The catalog table a `DROP TABLE` targets, with its name as written. A registered table
+    /// of that name comes first, as in a read.
+    fn catalog_drop_target(
+        &self,
+        names: &[ObjectName],
+        purge: bool,
+    ) -> PolarsResult<Option<(String, CatalogTable)>> {
+        let mut target = None;
+        for name in names {
+            // Only names that resolve are checked against registered tables, so other names
+            // keep their errors in order.
+            let Some(table) = name_parts(name).and_then(|parts| self.catalogs.resolve(&parts))
+            else {
+                continue;
+            };
+            let tbl = object_name_to_string(name);
+            if self.registered_table_key(&tbl)?.is_some() {
+                continue;
+            }
+            polars_ensure!(
+                names.len() == 1,
+                SQLInterface: "DROP TABLE of catalog table '{}' ('{}') takes one table name",
+                tbl, display_name(&table.full_name())
+            );
+            target = Some((tbl, table));
+        }
+        polars_ensure!(
+            !purge || target.is_some(),
+            SQLInterface: "`DROP ... PURGE` only applies to catalog tables"
+        );
+        Ok(target)
     }
 
     // DELETE FROM <tbl> [WHERE ...]
@@ -6145,6 +6184,31 @@ fn is_read_only_query(stmt: &Statement) -> bool {
         },
         _ => false,
     }
+}
+
+/// The names, `IF EXISTS` and `PURGE` of a `DROP` statement, rejecting unsupported modifiers.
+fn drop_table_parts(stmt: &Statement) -> PolarsResult<(&[ObjectName], bool, bool)> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Statement::Drop {
+        object_type: _,
+        names,
+        if_exists,
+        purge,
+
+        // Unsupported modifiers
+        cascade,
+        restrict,
+        temporary,
+        table,
+    } = stmt
+    else {
+        polars_bail!(SQLInterface: "unexpected statement type; expected DROP")
+    };
+    polars_ensure!(!cascade, SQLInterface: "`DROP ... CASCADE` is not supported");
+    polars_ensure!(!restrict, SQLInterface: "`DROP ... RESTRICT` is not supported");
+    polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
+    polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
+    Ok((names, *if_exists, *purge))
 }
 
 fn parse_single_statement(query: &str) -> PolarsResult<Statement> {

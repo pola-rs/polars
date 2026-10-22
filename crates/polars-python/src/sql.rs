@@ -1,6 +1,7 @@
 use parking_lot::RwLock;
-use polars::sql::{SQLContext, extract_table_identifiers};
+use polars::sql::{CatalogDdl, SQLContext, extract_table_identifiers};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use crate::PyLazyFrame;
 use crate::error::PyPolarsErr;
@@ -101,6 +102,39 @@ impl PySQLContext {
             .into_iter()
             .map(|t| (t.catalog, t.identifier))
             .collect())
+    }
+
+    /// The catalog DDL of a query, as a dict keyed by `kind`, or None.
+    pub fn catalog_ddl<'py>(
+        &self,
+        py: Python<'py>,
+        query: &str,
+    ) -> PyResult<Option<Bound<'py, PyDict>>> {
+        let ddl = self
+            .context
+            .read()
+            .catalog_ddl(query)
+            .map_err(PyPolarsErr::from)?;
+        let Some(ddl) = ddl else {
+            return Ok(None);
+        };
+        let dict = PyDict::new(py);
+        match ddl {
+            CatalogDdl::DropTable {
+                name,
+                table,
+                if_exists,
+                purge,
+            } => {
+                dict.set_item("kind", "drop_table")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_exists", if_exists)?;
+                dict.set_item("purge", purge)?;
+            },
+        }
+        Ok(Some(dict))
     }
 
     /// Execute a query with the scans of the catalog tables it reads, by full name.
