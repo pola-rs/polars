@@ -2,7 +2,6 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::datatypes::AnyValue;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
@@ -3121,6 +3120,33 @@ pub(crate) fn build_hstack_stream_with_ctx(
     }
 }
 
+/// An expression with one row per row of an input with `input_schema`, which keeps the
+/// input from being replaced when the other expressions read none of its columns.
+pub(crate) fn input_height_expr(input_schema: &Schema, expr_arena: &mut Arena<AExpr>) -> Node {
+    let height_ae = if let Some(name) = input_schema.iter_names_cloned().next() {
+        AExpr::Column(name)
+    } else {
+        let function = IRFunctionExpr::Repeat;
+        let options = function.function_options();
+
+        // repeat(lit({}), len()), where len() counts all rows of the input.
+        let value = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+            DataType::Struct(vec![]),
+            AnyValue::StructOwned(Box::new((vec![], vec![]))),
+        ))));
+        let n = expr_arena.add(AExpr::Len);
+        AExpr::Function {
+            input: vec![
+                ExprIR::from_node(value, expr_arena),
+                ExprIR::from_node(n, expr_arena),
+            ],
+            function,
+            options,
+        }
+    };
+    expr_arena.add(height_ae)
+}
+
 /// Builds a new selection node given an input stream and the expressions to
 /// select for, if needed. Preserves the length of the input, like in with_columns.
 fn build_length_preserving_select_stream_with_ctx(
@@ -3140,31 +3166,7 @@ fn build_length_preserving_select_stream_with_ctx(
     // remove it from the final selector. This should ensure scalars gets zipped
     // back to the input to broadcast them.
     let tmp_name = unique_column_name();
-    let height_ae = if let Some(name) = input_schema.iter_names_cloned().next() {
-        AExpr::Column(name)
-    } else {
-        let function = IRFunctionExpr::Repeat;
-        let options = function.function_options();
-
-        // repeat(lit({}), len()) within each morsel.
-        let value = ctx
-            .expr_arena
-            .add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
-                DataType::Struct(vec![]),
-                AnyValue::StructOwned(Box::new((vec![], vec![]))),
-            ))));
-        let n = ctx.expr_arena.add(AExpr::Len);
-        AExpr::Function {
-            input: vec![
-                ExprIR::from_node(value, ctx.expr_arena),
-                ExprIR::from_node(n, ctx.expr_arena),
-            ],
-            function,
-            options,
-        }
-    };
-
-    let height_col = ctx.expr_arena.add(height_ae);
+    let height_col = input_height_expr(input_schema, ctx.expr_arena);
     let mut tmp_exprs = Vec::with_capacity(exprs.len() + 1);
     tmp_exprs.extend(exprs.iter().cloned());
     tmp_exprs.push(ExprIR::new(height_col, OutputName::Alias(tmp_name.clone())));
@@ -3200,8 +3202,6 @@ pub(crate) fn build_sort_stream_with_ctx(
     }
     let input_schema = input.output_schema(ctx.phys_sm).clone();
 
-    _broadcast_bools(by_column.len(), &mut sort_options.descending);
-    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
     assert_eq!(sort_options.descending.len(), by_column.len());
     assert_eq!(sort_options.nulls_last.len(), by_column.len());
 

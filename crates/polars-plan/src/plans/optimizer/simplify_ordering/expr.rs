@@ -817,12 +817,9 @@ pub(super) fn non_scalar_keys(
     (kept.len() < num_keys).then_some(kept)
 }
 
-/// The flags of the keys at `positions`, where a single flag applies to every key.
+/// The flags of the keys at `positions`.
 pub(super) fn flags_at(flags: &[bool], positions: &[usize]) -> Vec<bool> {
-    positions
-        .iter()
-        .map(|&i| flags.get(i).or(flags.first()) == Some(&true))
-        .collect()
+    positions.iter().map(|&i| flags[i]).collect()
 }
 
 /// Drops the scalar ordering keys of a `sort_by`, `top_k_by` or window.

@@ -35,17 +35,6 @@ impl SortByExpr {
     }
 }
 
-fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
-    match (values.len(), by_len) {
-        // Equal length.
-        (n_rvalues, n) if n_rvalues == n => values.to_vec(),
-        // None given all false.
-        (0, n) => vec![false; n],
-        // Broadcast first.
-        (_, n) => vec![values[0]; n],
-    }
-}
-
 /// Preserve logical ordering information, including inside nested columns
 fn to_sort_repr(c: &Column) -> Column {
     let dtype = c.dtype();
@@ -244,9 +233,6 @@ impl PhysicalExpr for SortByExpr {
             };
             RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
-            let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
-            let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
-
             let sorted_idx_f = || {
                 let mut s_sort_by = self
                     .by
@@ -266,13 +252,10 @@ impl PhysicalExpr for SortByExpr {
                     }
                 }
 
-                let options = self
-                    .sort_options
-                    .clone()
-                    .with_order_descending_multi(descending)
-                    .with_nulls_last_multi(nulls_last);
-
-                Ok((arg_sort(&s_sort_by, options)?, broadcast_length))
+                Ok((
+                    arg_sort(&s_sort_by, self.sort_options.clone())?,
+                    broadcast_length,
+                ))
             };
             RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         };
@@ -297,8 +280,8 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
-        let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
-        let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
+        let descending = &self.sort_options.descending;
+        let nulls_last = &self.sort_options.nulls_last;
 
         let mut ac_sort_by = self
             .by
@@ -406,8 +389,8 @@ impl PhysicalExpr for SortByExpr {
                         sort_by_groups_multiple_by(
                             indicator,
                             &sort_by_s,
-                            &descending,
-                            &nulls_last,
+                            descending,
+                            nulls_last,
                             self.sort_options.multithreaded,
                             self.sort_options.maintain_order,
                             self.sort_options.limit,
@@ -469,14 +452,17 @@ mod tests {
         for by in [vec!["a"], vec!["a", "b"]] {
             let mut arena = Arena::new();
             let x = arena.add(AExpr::Column("x".into()));
-            let by = by
+            let by: Vec<_> = by
                 .into_iter()
                 .map(|name| arena.add(AExpr::Column(name.into())))
                 .collect();
+            let num_keys = by.len();
             let sort_by = arena.add(AExpr::SortBy {
                 expr: x,
                 by,
                 sort_options: SortMultipleOptions {
+                    descending: vec![false; num_keys],
+                    nulls_last: vec![false; num_keys],
                     limit: Some(2),
                     ..Default::default()
                 },
