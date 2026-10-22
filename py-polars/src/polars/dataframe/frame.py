@@ -3844,7 +3844,7 @@ class DataFrame:
             options = {"hidden": True} if column in hidden else {}
             col_idx = table_start[1] + df.get_column_index(column)
             if column in column_widths:  # type: ignore[operator]
-                ws.set_column_pixels(
+                ws.set_column_pixels(  # pyrefly: ignore[no-matching-overload]
                     col_idx,
                     col_idx,
                     column_widths[column],  # type: ignore[index]
