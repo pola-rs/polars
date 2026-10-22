@@ -5,12 +5,14 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    Ident, ObjectName, ObjectNamePart, Query, SetExpr, Statement, TableFactor, Visit, VisitMut,
-    Visitor, VisitorMut, With,
+    Ident, ObjectName, ObjectNamePart, Query, SetExpr, Statement, TableFactor, Visitor, VisitorMut,
+    With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Location, Span};
+
+use crate::dyn_visit;
 
 /// A table of an attached catalog that a statement reads.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -50,8 +52,9 @@ impl CatalogRegistry {
         self.catalogs.is_empty()
     }
 
-    /// Attach a catalog; the same name replaces it. A name that differs from an attached one
-    /// only in case is an error, so matching names ignoring case is never ambiguous.
+    /// Attach a catalog; the same name replaces it, with the new `default_namespace`, and keeps
+    /// its default status (`default` only ever sets the default). A name that differs from an
+    /// attached one only in case is an error, so matching names ignoring case is never ambiguous.
     pub(crate) fn register(
         &mut self,
         name: &str,
@@ -73,14 +76,29 @@ impl CatalogRegistry {
                 name, other.name
             );
         }
+        let keep_default = self.default.as_deref() == Some(name);
         self.unregister(name);
         self.catalogs.push(AttachedCatalog {
             name: name.to_string(),
             default_namespace,
         });
-        if default {
+        if default || keep_default {
             self.default = Some(name.to_string());
         }
+        Ok(())
+    }
+
+    /// The name of the default catalog.
+    pub(crate) fn default_catalog(&self) -> Option<&str> {
+        self.default.as_deref()
+    }
+
+    /// Make an attached catalog (exact name, else ignoring case) the default.
+    pub(crate) fn set_default(&mut self, name: &str) -> PolarsResult<()> {
+        let Some(name) = self.catalog_name(name).map(str::to_string) else {
+            polars_bail!(SQLInterface: "catalog '{}' is not attached", name);
+        };
+        self.default = Some(name);
         Ok(())
     }
 
@@ -108,6 +126,14 @@ impl CatalogRegistry {
     /// The attached catalog called `name` (exact, else ignoring case).
     pub(crate) fn catalog_name(&self, name: &str) -> Option<&str> {
         self.position(name).map(|i| self.catalogs[i].name.as_str())
+    }
+
+    /// The attached catalog a table name explicitly starts with.
+    pub(crate) fn named_catalog(&self, parts: &[String]) -> Option<&str> {
+        match parts {
+            [first, _, ..] => self.catalog_name(first),
+            _ => None,
+        }
     }
 
     /// The catalog table a table name refers to: a leading part naming an attached catalog
@@ -143,13 +169,13 @@ impl CatalogRegistry {
         if self.is_empty() || self.resolve(parts).is_some() {
             return None;
         }
-        let catalog = match parts {
-            [first, _, ..] if self.position(first).is_some() => self.catalog_name(first),
-            _ => match &self.default {
-                Some(default) => Some(default.as_str()),
+        let catalog = match self.named_catalog(parts) {
+            Some(named) => named,
+            None => match &self.default {
+                Some(default) => default.as_str(),
                 None => return Some("; no default catalog is set".to_string()),
             },
-        }?;
+        };
         Some(format!("; catalog '{catalog}' has no default namespace"))
     }
 }
@@ -185,7 +211,7 @@ pub(crate) fn rewrite_catalog_names(
     is_local: impl Fn(&str) -> bool,
 ) -> PolarsResult<(Vec<RewrittenName>, CatalogSpellings)> {
     let mut registered = RegisteredAliases(Vec::new());
-    let _ = Visit::visit(&*stmt, &mut registered);
+    let _ = dyn_visit::visit(&*stmt, &mut registered);
     let mut rewriter = Rewriter {
         resolve,
         is_local,
@@ -196,7 +222,7 @@ pub(crate) fn rewrite_catalog_names(
         spellings: CatalogSpellings::default(),
         desugared: 0,
     };
-    if let ControlFlow::Break(err) = VisitMut::visit(stmt, &mut rewriter) {
+    if let ControlFlow::Break(err) = dyn_visit::visit_mut(stmt, &mut rewriter) {
         return Err(err);
     }
     Ok((rewriter.rewritten, rewriter.spellings))
@@ -342,7 +368,7 @@ where
                 } else {
                     names.clone()
                 });
-                let flow = VisitMut::visit(&mut *cte.query, self);
+                let flow = dyn_visit::visit_mut(&mut *cte.query, self);
                 self.cte_scopes.pop();
                 flow?;
                 names.push(cte.alias.name.value.clone());
