@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         CsvQuoteStyle,
         IpcCompression,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         StorageOptionsDict,
         SyncOnCloseMethod,
@@ -32,7 +33,6 @@ if TYPE_CHECKING:
     from polars.dataframe import DataFrame
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy, SinkedPathsCallback
     from polars.lazyframe.frame import LazyFrame
 
@@ -71,7 +71,7 @@ def _sink_parquet_plan(
     sync_on_close: SyncOnCloseMethod | None,
     metadata: ParquetMetadata | None,
     arrow_schema: ArrowSchemaExportable | None,
-    encryption: ParquetEncryptionProperties | None,
+    encryption: ParquetEncryption | None,
     mkdir: bool,
     sinked_paths_callback: SinkedPathsCallback | None,
 ) -> LazyFrame:
@@ -94,11 +94,17 @@ def _sink_parquet_plan(
         msg = "`encryption` parameter is considered unstable"
         issue_unstable_warning(msg)
 
-        from polars.io.parquet.encryption import ParquetEncryptionProperties
+        from polars.io.parquet.encryption import (
+            ParquetEncryptionConfig,
+            ParquetEncryptionProperties,
+        )
 
-        if not isinstance(encryption, ParquetEncryptionProperties):
+        if not isinstance(
+            encryption, (ParquetEncryptionProperties, ParquetEncryptionConfig)
+        ):
             msg = (
-                "`encryption` must be a `ParquetEncryptionProperties`, "
+                "`encryption` must be a `ParquetEncryptionProperties` or "
+                "`ParquetEncryptionConfig`, "
                 f"got {qualified_type_name(encryption)!r}"
             )
             raise TypeError(msg)

@@ -175,6 +175,7 @@ if TYPE_CHECKING:
         OneOrMoreDataTypes,
         Orientation,
         ParquetCompression,
+        ParquetEncryption,
         ParquetMetadata,
         PivotAgg,
         PolarsDataType,
@@ -196,7 +197,6 @@ if TYPE_CHECKING:
     from polars._utils.various import NoDefault
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
 
@@ -4220,7 +4220,7 @@ class DataFrame:
         ) = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption: ParquetEncryptionProperties | None = None,
+        encryption: ParquetEncryption | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4326,7 +4326,9 @@ class DataFrame:
                 point without it being considered a breaking change.
         encryption
             Properties for writing Parquet files encrypted with Parquet modular
-            encryption. See :class:`ParquetEncryptionProperties`.
+            encryption. See :class:`ParquetEncryptionProperties`, or
+            :class:`~polars.io.parquet.encryption.ParquetEncryptionConfig` to use keys
+            managed by a KMS.
 
             When partitioning, the partition key values are written unencrypted in
             the file paths. Columns with their own encryption key can't be used as
