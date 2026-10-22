@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import decimal
 import functools
 import io
@@ -7,7 +8,7 @@ import math
 import re
 import subprocess
 import sys
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -3399,6 +3400,193 @@ def test_int96_timestamps_respect_scan_schema_time_unit_29184() -> None:
 
     f.seek(0)
     assert_frame_equal(pl.scan_parquet(f, schema=df.collect_schema()).collect(), df)
+
+
+@pytest.mark.parametrize(("unit", "microsecond"), [("ms", 456_000), ("us", 456_789)])
+def test_parquet_time_units_from_parquet_type_17440_21392(
+    unit: TimeUnit, microsecond: int
+) -> None:
+    # The Arrow schema stored by pyarrow records the types before they were converted
+    # to the units Parquet supports. The Parquet types decide the unit.
+    t = datetime(2025, 4, 2, 1, 2, 3, 456_789, tzinfo=UTC)
+    tm = time(1, 2, 3)
+    d = timedelta(microseconds=5)
+    tbl = pa.table(
+        {
+            "time": pa.array([tm, None], pa.time32("s")),
+            "ts": pa.array([t, None], pa.timestamp("ns")),
+            "ts_tz": pa.array([t, None], pa.timestamp("ns", "Europe/Amsterdam")),
+            "dur": pa.array([d, None], pa.duration("ns")),
+            "list": pa.array([[tm, None], None], pa.list_(pa.time32("s"))),
+            "struct": pa.array(
+                [{"t": t, "d": d}, None],
+                pa.struct(
+                    [("t", pa.timestamp("ns", "Asia/Tokyo")), ("d", pa.duration("ns"))]
+                ),
+            ),
+            "array": pa.array([[t, None], None], pa.list_(pa.timestamp("ns"), 2)),
+            "map": pa.array(
+                [[("k", t)], None], pa.map_(pa.string(), pa.timestamp("ns", "UTC"))
+            ),
+        }
+    )
+    f = io.BytesIO()
+    pq.write_table(tbl, f, coerce_timestamps=unit, allow_truncated_timestamps=True)
+
+    t = t.replace(microsecond=microsecond)
+    naive = t.replace(tzinfo=None)
+    expected = pl.DataFrame(
+        [
+            pl.Series("time", [tm, None], pl.Time),
+            pl.Series("ts", [naive, None], pl.Datetime(unit)),
+            pl.Series("ts_tz", [t, None], pl.Datetime(unit, "Europe/Amsterdam")),
+            pl.Series("dur", [d, None], pl.Duration("ns")),
+            pl.Series("list", [[tm, None], None], pl.List(pl.Time)),
+            pl.Series(
+                "struct",
+                [{"t": t, "d": d}, None],
+                pl.Struct(
+                    {"t": pl.Datetime(unit, "Asia/Tokyo"), "d": pl.Duration("ns")}
+                ),
+            ),
+            pl.Series("array", [[naive, None], None], pl.Array(pl.Datetime(unit), 2)),
+            pl.Series(
+                "map", [{"k": t}, None], pl.Map(pl.String, pl.Datetime(unit, "UTC"))
+            ),
+        ]
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), expected)
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series([timedelta(days=1), None], dtype=pl.Duration("ms")),
+        pl.Series([timedelta(microseconds=3), None], dtype=pl.Duration("ns")),
+        pl.Series(
+            [datetime(2020, 1, 1), None], dtype=pl.Datetime("ns", "Europe/Amsterdam")
+        ),
+        pl.Series([b"a", None], dtype=pl.Binary),
+        pl.Series([1.5, None], dtype=pl.Float16),
+        pl.Series(
+            [[datetime(2020, 1, 1), None], None],
+            dtype=pl.Array(pl.Datetime("us", "Asia/Tokyo"), 2),
+        ),
+        pl.Series(
+            [[[timedelta(1), None]] * 3, None],
+            dtype=pl.Array(pl.Array(pl.Duration("ns"), 2), 3),
+        ),
+        pl.Series(
+            [{"x": [Decimal("1.5"), None]}, None],
+            dtype=pl.Struct({"x": pl.Array(pl.Decimal(20, 3), 2)}),
+        ),
+        pl.Series(
+            [
+                [{"d": timedelta(1), "c": "x", "e": "q", "t": datetime(2020, 1, 1)}],
+                None,
+            ],
+            dtype=pl.List(
+                pl.Struct(
+                    {
+                        "d": pl.Duration("us"),
+                        "c": pl.Categorical,
+                        "e": pl.Enum(["q", "r"]),
+                        "t": pl.Datetime("ns", "America/New_York"),
+                    }
+                )
+            ),
+        ),
+        pl.Series(
+            [{"k": timedelta(1)}, None], dtype=pl.Map(pl.String, pl.Duration("ms"))
+        ),
+        pl.Series(
+            [{"k": "v"}, None], dtype=pl.Map(pl.Categorical, pl.Enum(["v", "w"]))
+        ),
+    ],
+)
+def test_parquet_roundtrip_types_from_arrow_schema(s: pl.Series) -> None:
+    df = s.alias("a").to_frame()
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
+
+
+def test_parquet_map_with_custom_field_names_keeps_arrow_types() -> None:
+    # The writer renames the key and value to `key` and `value` in Parquet.
+    t = datetime(2020, 1, 1, 12, tzinfo=UTC)
+    tbl = pa.table(
+        {
+            "m": pa.array(
+                [[(t, t)], None, [(t, None)]],
+                pa.map_(
+                    pa.field("k", pa.timestamp("ms", "Asia/Tokyo"), nullable=False),
+                    pa.field("v", pa.timestamp("us", "Europe/Amsterdam")),
+                ),
+            ),
+            "l": pa.array(
+                [[[("a", t)]], None, []],
+                pa.list_(
+                    pa.map_(
+                        pa.field("kk", pa.string(), nullable=False),
+                        pa.field("vv", pa.timestamp("ns", "America/New_York")),
+                    )
+                ),
+            ),
+        }
+    )
+    f = io.BytesIO()
+    pq.write_table(tbl, f)
+
+    expected = pl.Schema(
+        {
+            "m": pl.Map(
+                pl.Datetime("ms", "Asia/Tokyo"), pl.Datetime("us", "Europe/Amsterdam")
+            ),
+            "l": pl.List(pl.Map(pl.String, pl.Datetime("ns", "America/New_York"))),
+        }
+    )
+    f.seek(0)
+    assert pl.read_parquet_schema(f) == expected
+    f.seek(0)
+    df = pl.read_parquet(f)
+    assert df.schema == expected
+    assert df.to_dicts() == [
+        {"m": {t: t}, "l": [{"a": t}]},
+        {"m": None, "l": None},
+        {"m": {t: None}, "l": []},
+    ]
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+def test_parquet_incompatible_arrow_schema_uses_parquet_types() -> None:
+    df = pl.DataFrame(
+        {
+            "i": pl.Series([1, None], dtype=pl.Int32),
+            "s": ["x", None],
+            "t": [datetime(2020, 1, 1), None],
+            "l": [[1], None],
+        }
+    )
+    arrow_schema = pa.schema(
+        [
+            ("i", pa.string()),
+            ("s", pa.int64()),
+            ("t", pa.dictionary(pa.int32(), pa.string())),
+            ("l", pa.struct([("x", pa.int64())])),
+        ]
+    )
+    encoded = base64.b64encode(arrow_schema.serialize().to_pybytes()).decode()
+    f = io.BytesIO()
+    df.write_parquet(f, metadata={"ARROW:schema": encoded})
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), df)
 
 
 def test_final_masked_optional_iteration_21378() -> None:
