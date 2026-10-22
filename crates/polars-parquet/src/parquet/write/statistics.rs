@@ -142,10 +142,24 @@ pub fn reduce(stats: &[&Option<Statistics>]) -> ParquetResult<Option<Statistics>
     use PhysicalType as T;
     let stats = match stats[0].physical_type() {
         T::Boolean => reduce_boolean(stats.iter().map(|x| x.expect_as_boolean())).into(),
-        T::Int32 => reduce_primitive::<i32, _>(stats.iter().map(|x| x.expect_as_int32())).into(),
-        T::Int64 => reduce_primitive(stats.iter().map(|x| x.expect_as_int64())).into(),
-        T::Float => reduce_primitive(stats.iter().map(|x| x.expect_as_float())).into(),
-        T::Double => reduce_primitive(stats.iter().map(|x| x.expect_as_double())).into(),
+        T::Int32 => {
+            let iter = stats.iter().map(|x| x.expect_as_int32());
+            if is_unsigned(&stats[0].expect_as_int32().primitive_type) {
+                reduce_primitive(iter, |x| x as u32).into()
+            } else {
+                reduce_primitive(iter, |x| x).into()
+            }
+        },
+        T::Int64 => {
+            let iter = stats.iter().map(|x| x.expect_as_int64());
+            if is_unsigned(&stats[0].expect_as_int64().primitive_type) {
+                reduce_primitive(iter, |x| x as u64).into()
+            } else {
+                reduce_primitive(iter, |x| x).into()
+            }
+        },
+        T::Float => reduce_primitive(stats.iter().map(|x| x.expect_as_float()), |x| x).into(),
+        T::Double => reduce_primitive(stats.iter().map(|x| x.expect_as_double()), |x| x).into(),
         T::ByteArray => {
             let order = bounds_order(&stats[0].expect_as_binary().primitive_type);
             reduce_binary(stats.iter().map(|x| x.expect_as_binary()), order).into()
@@ -209,25 +223,29 @@ fn reduce_boolean<'a, I: Iterator<Item = &'a BooleanStatistics>>(
     })
 }
 
-fn reduce_primitive<
-    'a,
-    T: NativeType + std::cmp::PartialOrd,
+fn is_unsigned(primitive_type: &PrimitiveType) -> bool {
+    get_sort_order(
+        &primitive_type.logical_type,
+        &primitive_type.converted_type,
+        &primitive_type.physical_type,
+    ) == SortOrder::Unsigned
+}
+
+/// Merges the statistics, comparing values by `key`.
+fn reduce_primitive<'a, T, K, I>(mut stats: I, key: impl Fn(T) -> K) -> PrimitiveStatistics<T>
+where
+    T: NativeType,
+    K: PartialOrd,
     I: Iterator<Item = &'a PrimitiveStatistics<T>>,
->(
-    mut stats: I,
-) -> PrimitiveStatistics<T> {
+{
     let initial = stats.next().unwrap().clone();
     let mut result = stats.fold(initial, |mut acc, new| {
-        acc.min_value = reduce_single(
-            acc.min_value,
-            new.min_value,
-            |x, y| if x > y { y } else { x },
-        );
-        acc.max_value = reduce_single(
-            acc.max_value,
-            new.max_value,
-            |x, y| if x > y { x } else { y },
-        );
+        acc.min_value = reduce_single(acc.min_value, new.min_value, |x, y| {
+            if key(x) > key(y) { y } else { x }
+        });
+        acc.max_value = reduce_single(acc.max_value, new.max_value, |x, y| {
+            if key(x) > key(y) { x } else { y }
+        });
         acc.null_count = reduce_single(acc.null_count, new.null_count, |x, y| x + y);
         acc.distinct_count = None;
         acc
@@ -358,7 +376,7 @@ mod tests {
             max_value: Some(70),
             primitive_type: PrimitiveType::from_physical("bla".into(), PhysicalType::Int32),
         }];
-        let a = reduce_primitive(iter.iter());
+        let a = reduce_primitive(iter.iter(), |x| x);
 
         assert_eq!(
             a,
