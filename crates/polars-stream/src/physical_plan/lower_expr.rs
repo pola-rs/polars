@@ -2,7 +2,6 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::datatypes::AnyValue;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
@@ -3200,8 +3199,6 @@ pub(crate) fn build_sort_stream_with_ctx(
     }
     let input_schema = input.output_schema(ctx.phys_sm).clone();
 
-    _broadcast_bools(by_column.len(), &mut sort_options.descending);
-    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
     assert_eq!(sort_options.descending.len(), by_column.len());
     assert_eq!(sort_options.nulls_last.len(), by_column.len());
 

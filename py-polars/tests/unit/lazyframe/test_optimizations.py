@@ -1544,3 +1544,42 @@ def test_literal_select_skips_input(engine: EngineType) -> None:
         ),
     )
     assert calls == []
+
+
+def test_repeated_keys_removed() -> None:
+    lf = pl.LazyFrame(
+        {"a": [3, 1, 2, 0, 3], "b": ["x", "y", "z", "w", "x"], "c": [1, 2, 3, 4, 5]}
+    )
+    for q in [
+        lf.sort("a", "b", "a"),
+        lf.top_k(2, by=["a", "b", "a"]),
+        lf.select(pl.col("b").sort_by("a", "b", "a")),
+        lf.select(pl.col("b").top_k_by(["a", "b", "a"], 2)),
+        lf.select(pl.col("c").sum().over("a", "b", "a")),
+    ]:
+        assert 'col("a"), col("b"), col("a")' not in q.explain()
+
+    q = lf.unique(subset=["a", "a"], maintain_order=True)
+    assert 'BY Some(["a"])' in q.explain()
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [3, 1, 2, 0], "b": ["x", "y", "z", "w"], "c": [1, 2, 3, 4]}),
+    )
+
+    q = lf.select(pl.col("c").sum().over("a", "a"))
+    assert 'over([col("a")])' in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"c": [6, 2, 3, 4, 6]}))
+
+    q = lf.select(
+        pl.col("a").cum_sum().over(order_by=["c", "c"], descending=True),
+    )
+    assert 'order_by: col("c"))' in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [9, 6, 5, 3, 3]}))
+
+    left = lf.sort("a")
+    right = left.rename({"b": "d", "c": "e"})
+    q = left.join_asof(right, on="a", by_left=["b", "b"], by_right=["d", "d"])
+    assert_frame_equal(
+        q.collect(),
+        left.join_asof(right, on="a", by_left="b", by_right="d").collect(),
+    )
