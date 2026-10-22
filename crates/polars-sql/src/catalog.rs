@@ -444,7 +444,7 @@ fn select_star_from(parts: &[String], span: Span) -> SetExpr {
 }
 
 /// A table name for messages, with parts containing dots quoted.
-fn display_name(parts: &[String]) -> String {
+pub(crate) fn display_name(parts: &[String]) -> String {
     let parts: Vec<String> = parts
         .iter()
         .map(|part| match part.contains('.') {

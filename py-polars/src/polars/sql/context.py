@@ -545,7 +545,10 @@ class SQLContext(Generic[FrameType]):
         serialized plans as secret.
 
         `CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on a table of an
-        attached catalog are not supported. `DROP TABLE IF EXISTS` and
+        attached catalog are not supported. For `CREATE TABLE` that includes a name
+        the default catalog applies to, even if a table of that name is registered:
+        with a default catalog, `CREATE TABLE tpch.t` does not create a registered
+        table. `DROP TABLE IF EXISTS` and
         `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
         catalog only act on a registered table, and are a no-op otherwise.
 
