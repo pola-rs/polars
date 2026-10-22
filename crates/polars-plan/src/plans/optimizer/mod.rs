@@ -149,7 +149,7 @@ pub fn optimize(
 
     macro_rules! get_or_init_members {
         () => {
-            _get_or_init_members(_opt_members, root, ir_arena, expr_arena)
+            _get_or_init_members(_opt_members, root, ir_arena, expr_arena, comm_subplan_elim)
         };
     }
 
@@ -450,10 +450,11 @@ fn _get_or_init_members<'a>(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    comm_subplan_elim: bool,
 ) -> &'a mut MemberCollector {
     opt_members.get_or_insert_with(|| {
         let mut members = MemberCollector::new();
-        members.collect(root, ir_arena, expr_arena);
+        members.collect(root, ir_arena, expr_arena, comm_subplan_elim);
 
         members
     })

@@ -65,7 +65,14 @@ impl MemberCollector {
             scans: UniqueScans::default(),
         }
     }
-    pub(super) fn collect(&mut self, root: Node, lp_arena: &Arena<IR>, _expr_arena: &Arena<AExpr>) {
+    /// Only gives an id to the scans, which `has_duplicate_scans` needs, if `_hash_scans` is set.
+    pub(super) fn collect(
+        &mut self,
+        root: Node,
+        lp_arena: &Arena<IR>,
+        _expr_arena: &Arena<AExpr>,
+        _hash_scans: bool,
+    ) {
         #[cfg(feature = "cse")]
         let mut canonical_ir_map = CanonicalIRMap::new();
 
@@ -93,7 +100,7 @@ impl MemberCollector {
                 },
                 Recursive { .. } => self.has_recursive = true,
                 #[cfg(feature = "cse")]
-                Scan { .. } => {
+                Scan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
@@ -101,12 +108,12 @@ impl MemberCollector {
                     self.with_columns_count += 1;
                 },
                 #[cfg(feature = "cse")]
-                DataFrameScan { .. } => {
+                DataFrameScan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
                 #[cfg(all(feature = "cse", feature = "python"))]
-                PythonScan { .. } => {
+                PythonScan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
