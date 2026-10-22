@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -121,9 +121,18 @@ def _widen_truncated_timestamp_max(s: Series) -> Series:
     dtype = s.dtype
 
     if isinstance(dtype, pl.Datetime):
-        return s + timedelta(milliseconds=1)
+        # Add in physical units to keep the time unit (adding a `timedelta` turns ns
+        # into us) and map overflow to null (unknown) rather than wrapping around.
+        one_ms = {"ms": 1, "us": 1_000, "ns": 1_000_000}[dtype.time_unit]
+        phys = s.to_physical()
+        return pl.select(
+            pl.when(phys <= 2**63 - 1 - one_ms)
+            .then(phys + one_ms)
+            .cast(dtype)
+            .alias(s.name)
+        ).to_series()
 
-    if isinstance(dtype, pl.Struct):
+    if isinstance(dtype, pl.Struct) and dtype.fields:
         fields = [
             _widen_truncated_timestamp_max(f) for f in s.struct.unnest().iter_columns()
         ]
