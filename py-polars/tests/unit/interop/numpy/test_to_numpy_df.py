@@ -10,6 +10,7 @@ from hypothesis import given
 from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import series
 
@@ -350,7 +351,10 @@ def test_to_numpy_df_masked_zero_copy_16398() -> None:
 @pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
 def test_to_numpy_df_128_bit_integers(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"a": pl.Series([1, 2], dtype=dtype), "b": [3, 4]})
-    assert_array_equal(df.to_numpy(), np.array([[1.0, 3.0], [2.0, 4.0]]))
+    with pytest.raises(InvalidOperationError, match="no 128-bit integer types"):
+        df.to_numpy()
+    with pytest.raises(InvalidOperationError, match="no 128-bit integer types"):
+        df.to_numpy(masked=True)
 
 
 def test_to_numpy_df_masked_structured_16398() -> None:

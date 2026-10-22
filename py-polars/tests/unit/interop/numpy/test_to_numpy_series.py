@@ -12,7 +12,7 @@ from hypothesis import given, settings
 from numpy.testing import assert_array_equal
 
 import polars as pl
-from polars.exceptions import ArgumentRemovedError
+from polars.exceptions import ArgumentRemovedError, InvalidOperationError
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
@@ -568,13 +568,14 @@ def test_to_numpy_series_masked_struct_16398() -> None:
 
 @pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
 def test_to_numpy_128_bit_integers(dtype: PolarsDataType) -> None:
-    s = pl.Series([1, 2, 3], dtype=dtype)
-    assert_array_equal(s.to_numpy(), np.array([1.0, 2.0, 3.0]))
-
-    s = pl.Series([1, None, 3], dtype=dtype)
-    result = s.to_numpy(masked=True)
-    assert_array_equal(result.mask, [False, True, False])
-    assert_array_equal(result.compressed(), [1.0, 3.0])
+    msg = "no 128-bit integer types"
+    for s in [pl.Series([1, 2], dtype=dtype), pl.Series([1, None], dtype=dtype)]:
+        with pytest.raises(InvalidOperationError, match=msg):
+            s.to_numpy()
+        with pytest.raises(InvalidOperationError, match=msg):
+            s.to_numpy(masked=True)
+    with pytest.raises(InvalidOperationError, match=msg):
+        pl.Series([[1, 2]], dtype=pl.Array(dtype, 2)).to_numpy()
 
 
 def test_to_numpy_series_masked_copy_16398() -> None:
