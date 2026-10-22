@@ -165,11 +165,11 @@ check: update-cargo-env ## Run cargo check with all features
 
 .PHONY: clippy
 clippy: update-cargo-env ## Run clippy with all features
-	python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
+	$(PYTHON) tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
 
 .PHONY: clippy-default
 clippy-default: update-cargo-env ## Run clippy with default features
-	python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
+	$(PYTHON) tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
 
 .PHONY: fmt
 fmt: update-cargo-env ## Run autoformatting and linting
