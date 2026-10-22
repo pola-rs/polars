@@ -23,8 +23,7 @@ use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, Fetch, GroupByExpr, Ident,
     LimitClause, NamedWindowDefinition, NamedWindowExpr, OrderByKind, Query, Select, SelectItem,
     SetExpr, Statement, TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator,
-    Value as SQLValue, ValueWithSpan, Visit, VisitMut, Visitor, VisitorMut, WindowSpec, WindowType,
-    visit_expressions, visit_expressions_mut,
+    Value as SQLValue, ValueWithSpan, Visitor, VisitorMut, WindowSpec, WindowType,
 };
 
 use crate::catalog::CatalogSpellings;
@@ -32,6 +31,7 @@ use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
     declared_relations, flatten_and_conditions, get_table_name, match_qualifier, relation_name,
 };
+use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
 use crate::sql_expr::{
@@ -845,7 +845,7 @@ impl SQLContext {
             skips: Vec::new(),
             changed: false,
         };
-        if let ControlFlow::Break(e) = VisitMut::visit(&mut rewritten, &mut lowering) {
+        if let ControlFlow::Break(e) = dyn_visit::visit_mut(&mut rewritten, &mut lowering) {
             return Err(e);
         }
         let rewritten = if lowering.changed {
@@ -2341,8 +2341,8 @@ fn exists_aggregates(
                         inner: false,
                         outer: false,
                     };
-                    let _ = function.args.visit(&mut columns);
-                    let _ = function.filter.visit(&mut columns);
+                    let _ = dyn_visit::visit(&function.args, &mut columns);
+                    let _ = dyn_visit::visit(&function.filter, &mut columns);
                     if columns.inner || !columns.outer {
                         self.local = true;
                     } else {
@@ -2365,8 +2365,8 @@ fn exists_aggregates(
         unsupported: false,
         windows: vec![],
     };
-    let _ = select.projection.visit(&mut aggregates);
-    let _ = query.order_by.visit(&mut aggregates);
+    let _ = dyn_visit::visit(&select.projection, &mut aggregates);
+    let _ = dyn_visit::visit(&query.order_by, &mut aggregates);
     let mut visited = PlHashSet::new();
     while let Some(name) = aggregates.windows.pop() {
         if !visited.insert(name.clone()) {
@@ -2384,7 +2384,7 @@ fn exists_aggregates(
                 aggregates
                     .windows
                     .extend(spec.window_name.iter().map(|i| i.value.clone()));
-                let _ = spec.visit(&mut aggregates);
+                let _ = dyn_visit::visit(spec, &mut aggregates);
             },
             None => {},
         }
@@ -2634,7 +2634,7 @@ fn correlated_join_side(
         outside_reads_left: false,
         outside_reads_right: false,
     };
-    let _ = conj.visit(&mut sides);
+    let _ = dyn_visit::visit(conj, &mut sides);
     if !sides.is_correlated || sides.unresolved {
         return None;
     }
@@ -2672,7 +2672,7 @@ fn visit_foreign_qualifiers(
     }
 
     let mut declared = Declared(Vec::new(), spellings);
-    let _ = query.visit(&mut declared);
+    let _ = dyn_visit::visit(query, &mut declared);
 
     struct Foreign<'a, F>(&'a [RelationName], F);
 
@@ -2691,7 +2691,7 @@ fn visit_foreign_qualifiers(
         }
     }
 
-    let _ = query.visit(&mut Foreign(&declared.0, f));
+    let _ = dyn_visit::visit(query, &mut Foreign(&declared.0, f));
 }
 
 /// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`
@@ -2729,7 +2729,7 @@ impl VisitorMut for DesugarQuantified {
 }
 
 pub(crate) fn desugar_quantified_subqueries(stmt: &mut Statement) {
-    let _ = VisitMut::visit(stmt, &mut DesugarQuantified);
+    let _ = dyn_visit::visit_mut(stmt, &mut DesugarQuantified);
 }
 
 /// Which correlated-subquery node kinds a lowering pass should claim.
@@ -2869,7 +2869,7 @@ impl VisitorMut for CorrelatedLowering<'_> {
                     if matches!(strip_nested(right), SQLExpr::Subquery(_))
             );
         if skip && let SQLExpr::AnyOp { left, .. } | SQLExpr::AllOp { left, .. } = expr {
-            VisitMut::visit(left.as_mut(), self)?;
+            dyn_visit::visit_mut(left.as_mut(), self)?;
             self.query_depth += 1;
         }
         self.skips.push(skip);

@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 mod catalog;
 mod context;
+mod dyn_visit;
 pub mod function_registry;
 mod functions;
 mod group_context;
