@@ -107,7 +107,6 @@ pub struct ExecutionHooks {
     pub hive_join: HiveJoinFn,
 }
 
-/// Returns the optimized root and whether the plan contains a recursive query.
 #[recursive::recursive]
 pub fn optimize(
     mut root: Node,
@@ -116,7 +115,7 @@ pub fn optimize(
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     hooks: ExecutionHooks,
-) -> PolarsResult<(Node, bool)> {
+) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
 
@@ -153,8 +152,8 @@ pub fn optimize(
         };
     }
 
-    // A recursive query always runs on the streaming engine, and some optimizations depend on
-    // the engine.
+    // A recursive query runs on the streaming engine, and some optimizations depend on the
+    // engine.
     let has_recursive = get_or_init_members!().has_recursive;
     if has_recursive {
         opt_flags |= OptFlags::STREAMING;
@@ -411,8 +410,7 @@ pub fn optimize(
         hooks.apply_scan_predicate_to_scan_ir,
     )?;
 
-    let resolved_recursive =
-        call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
+    call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
 
     // Needs the final plan, with the predicates that are set while the query runs.
     if has_recursive {
@@ -442,7 +440,7 @@ pub fn optimize(
         }
     };
 
-    Ok((root, has_recursive || resolved_recursive))
+    Ok(root)
 }
 
 fn _get_or_init_members<'a>(

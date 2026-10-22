@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SQLInterfaceError
+from polars.exceptions import SQLInterfaceError
 from polars.lazyframe.resolver import LazyFrameResolver
 
 if TYPE_CHECKING:
@@ -588,7 +588,7 @@ def test_recursive_step_cache_also_read_outside(plmonkeypatch: PlMonkeyPatch) ->
     assert res.rows() == [(0, 0), (1, 1), (2, 1)]
 
 
-def test_recursive_in_memory_engine_uses_streaming_optimizations(
+def test_recursive_in_memory_engine(
     ctx: pl.SQLContext[pl.LazyFrame],
 ) -> None:
     res = ctx.execute(
@@ -658,8 +658,7 @@ def test_recursive_query_from_resolver() -> None:
         .select(pl.col("n").sum().alias("a"), (pl.col("n").sum() + 1).alias("b"))
     )
     assert lf.collect(engine="streaming").rows() == [(6, 7)]
-    with pytest.raises(InvalidOperationError, match="resolver"):
-        lf.collect(engine="in-memory")
+    assert lf.collect(engine="in-memory").rows() == [(6, 7)]
 
 
 @pytest.mark.slow

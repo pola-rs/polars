@@ -522,12 +522,11 @@ impl LazyFrame {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![])
-            .map(|(node, _)| node)
     }
 
     pub fn to_alp_optimized(mut self) -> PolarsResult<IRPlan> {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
-        let (node, _) = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])?;
+        let node = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])?;
 
         Ok(IRPlan::new(node, lp_arena, expr_arena))
     }
@@ -544,13 +543,12 @@ impl LazyFrame {
         Ok(plan)
     }
 
-    /// Returns the optimized root and whether the plan contains a recursive query.
     pub(crate) fn optimize_with_scratch(
         self,
         ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
-    ) -> PolarsResult<(Node, bool)> {
+    ) -> PolarsResult<Node> {
         let mut opt_flags = self.opt_state;
         // Unset CSE
         // This can be turned on again during ir-conversion.
@@ -560,7 +558,8 @@ impl LazyFrame {
             opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
         }
         let root = to_alp(self.logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
-        let (lp_top, has_recursive) = optimize(
+
+        let lp_top = optimize(
             root,
             opt_flags,
             ir_arena,
@@ -571,12 +570,8 @@ impl LazyFrame {
                 hive_join,
             },
         )?;
-        polars_ensure!(
-            !has_recursive || cfg!(feature = "streaming"),
-            InvalidOperation: "recursive queries require the `streaming` feature"
-        );
 
-        Ok((lp_top, has_recursive))
+        Ok(lp_top)
     }
 
     fn prepare_collect_post_opt<P>(
@@ -590,8 +585,7 @@ impl LazyFrame {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
 
         let mut scratch = vec![];
-        let (lp_top, has_recursive) =
-            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
+        let lp_top = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
         post_opt(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         // sink should be replaced
@@ -606,18 +600,12 @@ impl LazyFrame {
         } else {
             true
         };
-        let physical_plan = if has_recursive {
-            let build_streaming_executor = BUILD_STREAMING_EXECUTOR
-                .ok_or_else(|| polars_err!(InvalidOperation: "recursive queries require the `streaming` feature"))?;
-            build_streaming_executor(lp_top, &mut lp_arena, &mut expr_arena)?
-        } else {
-            create_physical_plan(
-                lp_top,
-                &mut lp_arena,
-                &mut expr_arena,
-                BUILD_STREAMING_EXECUTOR,
-            )?
-        };
+        let physical_plan = create_physical_plan(
+            lp_top,
+            &mut lp_arena,
+            &mut expr_arena,
+            BUILD_STREAMING_EXECUTOR,
+        )?;
 
         let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
@@ -685,22 +673,13 @@ impl LazyFrame {
             o.on_query_started()
         }
 
-        let (mut lp_arena, mut expr_arena) = self.get_arenas();
-        let (lp_top, has_recursive) = self
-            .optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])
-            .inspect_err(|err| {
-                if let Some(o) = observer.as_ref() {
-                    o.on_query_failed(err)
-                }
-            })?;
-        let mut ir_plan = IRPlan::new(lp_top, lp_arena, expr_arena);
+        let mut ir_plan = self.to_alp_optimized().inspect_err(|err| {
+            if let Some(o) = observer.as_ref() {
+                o.on_query_failed(err)
+            }
+        })?;
         ir_plan.ensure_root_node_is_sink();
 
-        let engine = if has_recursive {
-            Engine::Streaming
-        } else {
-            engine
-        };
         match engine {
             Engine::Streaming => feature_gated!("streaming", {
                 polars_stream::run_query(
