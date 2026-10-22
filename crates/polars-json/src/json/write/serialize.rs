@@ -243,29 +243,29 @@ fn struct_serializer<'a>(
         .map(|arr| new_serializer(arr, offset, take))
         .collect::<Vec<_>>();
 
-    Box::new(BufStreamingIterator::new(
-        ZipValidity::new_with_validity(0..array.len(), array.validity()),
-        move |maybe, buf| {
-            if maybe.is_some() {
-                let names = array.fields().iter().map(|f| f.name.as_str());
-                serialize_item(
-                    buf,
-                    names.zip(
-                        serializers
-                            .iter_mut()
-                            .map(|serializer| serializer.next().unwrap()),
-                    ),
-                    true,
-                );
-            } else {
-                serializers.iter_mut().for_each(|iter| {
-                    let _ = iter.next();
-                });
-                buf.extend(b"null");
-            }
-        },
-        vec![],
-    ))
+    let f = move |maybe: Option<usize>, buf: &mut Vec<u8>| {
+        if maybe.is_some() {
+            let names = array.fields().iter().map(|f| f.name.as_str());
+            serialize_item(
+                buf,
+                names.zip(
+                    serializers
+                        .iter_mut()
+                        .map(|serializer| serializer.next().unwrap()),
+                ),
+                true,
+            );
+        } else {
+            serializers.iter_mut().for_each(|iter| {
+                let _ = iter.next();
+            });
+            buf.extend(b"null");
+        }
+    };
+
+    // The field serializers skip `offset` rows, so the validity must skip them too.
+    let iter = ZipValidity::new_with_validity(0..array.len(), array.validity());
+    materialize_serializer(f, iter, offset, take)
 }
 
 fn list_serializer<'a, O: Offset>(
@@ -378,30 +378,30 @@ fn fixed_size_list_serializer<'a>(
         take.saturating_mul(array.size()),
     );
 
-    Box::new(BufStreamingIterator::new(
-        ZipValidity::new(0..array.len(), array.validity().map(|x| x.iter())),
-        move |ix, buf| {
-            let length = array.size();
-            if ix.is_some() {
-                buf.push(b'[');
-                let mut is_first_row = true;
-                for _ in 0..length {
-                    if !is_first_row {
-                        buf.push(b',');
-                    }
-                    is_first_row = false;
-                    buf.extend(serializer.next().unwrap());
+    let f = move |ix: Option<usize>, buf: &mut Vec<u8>| {
+        let length = array.size();
+        if ix.is_some() {
+            buf.push(b'[');
+            let mut is_first_row = true;
+            for _ in 0..length {
+                if !is_first_row {
+                    buf.push(b',');
                 }
-                buf.push(b']');
-            } else {
-                buf.extend(b"null");
-                for _ in 0..length {
-                    serializer.next();
-                }
+                is_first_row = false;
+                buf.extend(serializer.next().unwrap());
             }
-        },
-        vec![],
-    ))
+            buf.push(b']');
+        } else {
+            buf.extend(b"null");
+            for _ in 0..length {
+                serializer.next();
+            }
+        }
+    };
+
+    // The values serializer skips `offset` rows, so the validity must skip them too.
+    let iter = ZipValidity::new_with_validity(0..array.len(), array.validity());
+    materialize_serializer(f, iter, offset, take)
 }
 
 fn date_serializer<'a, T, F>(

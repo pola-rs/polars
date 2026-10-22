@@ -10,7 +10,7 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 from decimal import Decimal as D
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import zstandard
 from hypothesis import given
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 import orjson
 import pytest
@@ -325,6 +326,86 @@ def test_ndjson_sliced_list_serialization() -> None:
     sliced_df = df[1, :]
     sliced_df.write_ndjson(f)
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
+
+
+def test_write_ndjson_sliced_list_of_structs_30178() -> None:
+    df = pl.DataFrame(
+        {"a": [[{"x": 1}, None], [None, {"x": 2}], [{"x": 3}]]},
+        schema={"a": pl.List(pl.Struct({"x": pl.Int64}))},
+    )
+    assert df.tail(2).write_ndjson() == '{"a":[null,{"x":2}]}\n{"a":[{"x":3}]}\n'
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (
+            [[{"x": 1}, None], [None, {"x": 2}], [{"x": 3}], None, [{"x": 4}, None]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[{"x": 1}, {"x": 2}], [{"x": 3}], [], [{"x": 4}, {"x": 5}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[[1, 2], None], [None, [3, 4]], [[5, 6]], None, [[7, 8], None]],
+            pl.List(pl.Array(pl.Int64, 2)),
+        ),
+        (
+            [[{"y": {"x": 1}}, None], [None, {"y": None}], [{"y": {"x": 3}}]],
+            pl.List(pl.Struct({"y": pl.Struct({"x": pl.Int64})})),
+        ),
+        (
+            [[[{"x": 1}, None], None], [None, [None, {"x": 2}]], [[{"x": 3}, None]]],
+            pl.List(pl.Array(pl.Struct({"x": pl.Int64}), 2)),
+        ),
+        (
+            [[{"a": [1, 2]}, None], [None, {"a": None}], [{"a": [3, 4]}]],
+            pl.List(pl.Struct({"a": pl.Array(pl.Int64, 2)})),
+        ),
+        (
+            [[{"l": [1]}, None], [None, {"l": [2, 3]}], [{"l": None}]],
+            pl.List(pl.Struct({"l": pl.List(pl.Int64)})),
+        ),
+    ],
+)
+@pytest.mark.parametrize(("offset", "length"), [(1, None), (1, 1), (2, None)])
+def test_write_json_sliced_nested_30178(
+    values: list[Any], dtype: pl.DataType, offset: int, length: int | None
+) -> None:
+    df = pl.DataFrame({"a": values}, schema={"a": dtype}).slice(offset, length)
+    rows = [json.dumps(row, separators=(",", ":")) for row in df.rows(named=True)]
+
+    assert df.write_ndjson() == "".join(f"{row}\n" for row in rows)
+    assert df.write_json() == f"[{','.join(rows)}]"
+    assert df.select(pl.struct("a").struct.json_encode())["a"].to_list() == rows
+
+
+def test_sink_ndjson_nested_multiple_morsels_30178(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Every morsel after the first is a slice, so its lists start at an offset.
+    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "100")
+    n = 1000
+    df = pl.DataFrame(
+        {
+            "s": [[None, {"x": i}] if i % 3 == 0 else [{"x": i}] for i in range(n)],
+            "a": [[None, [i, i]] if i % 3 == 0 else [[i, i]] for i in range(n)],
+        },
+        schema={
+            "s": pl.List(pl.Struct({"x": pl.Int64})),
+            "a": pl.List(pl.Array(pl.Int64, 2)),
+        },
+    )
+    expected = "".join(
+        f"{json.dumps(row, separators=(',', ':'))}\n" for row in df.rows(named=True)
+    )
+
+    assert df.write_ndjson() == expected
+
+    f = io.BytesIO()
+    df.lazy().sink_ndjson(f)
+    assert f.getvalue().decode() == expected
 
 
 def test_json_deserialize_9687() -> None:
