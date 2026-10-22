@@ -3082,9 +3082,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               convertible to an Iceberg expression with the same semantics,
               otherwise an error is raised before any data is written: it may
               only use comparisons with literals, ``is_in``, ``is_between``,
-              ``is_null``, ``is_not_null`` and ``str.starts_with`` combined with
-              ``&``, ``|`` and ``~``. Floating-point columns, and columns nested
-              within a nullable struct, are not supported.
+              ``is_null``, ``is_not_null``, ``is_nan``, ``is_not_nan`` and
+              ``str.starts_with`` combined with ``&``, ``|`` and ``~``, as with
+              :func:`polars.delete_iceberg`. Columns nested within a nullable
+              struct are not supported.
             - A PyIceberg ``BooleanExpression`` or filter string, e.g.
               ``"date = '2026-10-01'"``, is used as-is, with the semantics of
               PyIceberg's ``Table.overwrite(overwrite_filter=...)``.
@@ -3095,8 +3096,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         partition_overwrite : {'dynamic'}
             With ``mode='overwrite'``, only delete the existing rows of the
             partitions that the incoming data is written to. Requires a table
-            whose partition spec uses only identity transforms. If there is no
-            incoming data, nothing is deleted.
+            whose partition spec uses only identity transforms, on source columns
+            that are not floating-point, nanosecond timestamps, or nested within a
+            nullable struct. If there is no incoming data, nothing is deleted.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed

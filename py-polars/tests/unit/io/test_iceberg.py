@@ -1055,6 +1055,10 @@ def _overwrite_filter_table(
         pl.col("tz")
         == datetime(2026, 10, 1, 1, 2, 3, 456789, tzinfo=zoneinfo.ZoneInfo("UTC")),
         pl.col("tz") < datetime(2026, 10, 2, tzinfo=zoneinfo.ZoneInfo("UTC")),
+        pl.col("f") < 2.0,
+        pl.col("f").is_nan(),
+        ~pl.col("f").is_nan(),
+        pl.col("f").is_null() | (pl.col("a") == 1),
     ],
 )
 def test_sink_iceberg_overwrite_filter_polars_semantics(
@@ -1074,19 +1078,12 @@ def test_sink_iceberg_overwrite_filter_polars_semantics(
 @pytest.mark.parametrize(
     ("predicate", "match"),
     [
-        (pl.col("f") > 1.0, "floating-point"),
-        (pl.col("f").is_nan(), "floating-point"),
-        (pl.col("s").str.contains("x"), "cannot be converted"),
-        (pl.col("a") + 1 == 2, "cannot be converted"),
-        (pl.col("a") == pl.col("a"), "cannot be converted"),
-        (pl.col("n").struct.field("x") == 1, "nested within an optional struct"),
-        # Polars rejects comparing different time zones.
-        (
-            pl.col("tz")
-            == datetime(2026, 10, 1, tzinfo=zoneinfo.ZoneInfo("Asia/Tokyo")),
-            "could not evaluate comparison",
-        ),
-        (pl.col("a"), "must be of type `Boolean`"),
+        (pl.col("f") > 1.0, "GreaterThan on floating-point field"),
+        (pl.col("s").str.contains("x"), "unsupported expression"),
+        (pl.col("a") + 1 == 2, "unsupported expression"),
+        (pl.col("a") == pl.col("a"), "cannot convert predicate"),
+        (pl.col("n").struct.field("x") == 1, "has an optional parent"),
+        (pl.col("a"), "must be a single boolean expression"),
     ],
 )
 def test_sink_iceberg_overwrite_filter_polars_unsupported(
@@ -1096,7 +1093,7 @@ def test_sink_iceberg_overwrite_filter_polars_unsupported(
     files_before = set(tmp_path.rglob("*.parquet"))
     target: Any = tbl if pass_table else ".".join(tbl.name())
 
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
         df.lazy().sink_iceberg(
             target, mode="overwrite", overwrite_filter=predicate, catalog=tbl.catalog
         )
@@ -1513,6 +1510,19 @@ def test_sink_iceberg_create_if_not_exists_dtypes(
             NotImplementedError,
             "floating-point",
         ),
+        (
+            IcebergSchema(
+                NestedField(
+                    1,
+                    "s",
+                    StructType(NestedField(2, "x", LongType(), required=True)),
+                    required=False,
+                )
+            ),
+            PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "x")),
+            NotImplementedError,
+            "nested within an optional struct",
+        ),
     ],
 )
 def test_sink_iceberg_dynamic_partition_overwrite_unsupported(
@@ -1528,6 +1538,17 @@ def test_sink_iceberg_dynamic_partition_overwrite_unsupported(
         lf.sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
     # Rejected before any data is written.
     assert not list((tmp_path).rglob("*.parquet"))
+
+
+def test_sink_iceberg_dynamic_partition_overwrite_timestamp_ns() -> None:
+    from polars.io.iceberg._sink import _check_dynamic_overwrite_spec
+
+    # Nanosecond timestamps require V3 tables, which PyIceberg cannot write yet.
+    with pytest.raises(NotImplementedError, match="nanosecond"):
+        _check_dynamic_overwrite_spec(
+            PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "t")),
+            IcebergSchema(NestedField(1, "t", TimestampNanoType())),
+        )
 
 
 @pytest.mark.write_disk

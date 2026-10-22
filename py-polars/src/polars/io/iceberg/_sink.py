@@ -16,7 +16,11 @@ from polars.io.iceberg._dataset import (
     IcebergCatalogConfig,
     _convert_iceberg_to_object_store_storage_options,
 )
-from polars.io.iceberg._utils import _normalize_windows_iceberg_file_uri
+from polars.io.iceberg._utils import (
+    _is_null_pushdown_safe,
+    _normalize_windows_iceberg_file_uri,
+    predicate_to_pyiceberg_delete_filter,
+)
 from polars.io.partition import _InternalPlPathProviderConfig
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -450,88 +454,6 @@ def _dynamic_overwrite_filter(
     return Or(*partition_filters)
 
 
-def _polars_expr_to_overwrite_filter(
-    expr: pl.Expr, schema: Schema
-) -> BooleanExpression:
-    """Convert a Polars predicate to an Iceberg delete filter, or raise.
-
-    The filter matches exactly the rows for which `expr` is true. Iceberg
-    predicates are not three-valued (e.g. `NotEqualTo` matches nulls), so
-    negations are pushed down to the leaves, which is valid in three-valued logic,
-    and every leaf other than a null check is guarded with `NotNull`. With only
-    `&` and `|` left, a row then matches iff `expr` is true.
-
-    Floating-point columns are rejected, as Polars orders NaN differently.
-    Columns nested within an optional struct are rejected, as PyIceberg's
-    `NotNull` only checks the leaf field.
-    """
-    from pyiceberg.expressions import (
-        AlwaysFalse,
-        AlwaysTrue,
-        And,
-        BooleanExpression,
-        IsNull,
-        NotNull,
-        Or,
-        UnboundPredicate,
-    )
-    from pyiceberg.expressions.visitors import bind, extract_field_ids, rewrite_not
-    from pyiceberg.io.pyarrow import schema_to_pyarrow
-    from pyiceberg.types import DoubleType, FloatType
-
-    import polars as pl
-    from polars.io.iceberg._utils import (
-        _convert_predicate,
-        _ensure_boolean_expression,
-        _is_null_pushdown_safe,
-        _to_ast,
-    )
-
-    def err(reason: str) -> ValueError:
-        return ValueError(f"unsupported overwrite_filter {expr}: {reason}")
-
-    empty_df = pl.DataFrame(schema_to_pyarrow(schema).empty_table())
-    # Raise the errors Polars would raise when evaluating the predicate.
-    try:
-        empty_df.filter(expr)
-    except Exception as e:
-        raise err(str(e)) from e
-
-    pyarrow_predicate = expr._pyexpr.to_pyarrow_predicate(empty_df.schema)
-
-    converted: Any = None
-    if pyarrow_predicate is not None:
-        with contextlib.suppress(Exception):
-            converted = _ensure_boolean_expression(
-                _convert_predicate(_to_ast(pyarrow_predicate), schema)
-            )
-    if not isinstance(converted, BooleanExpression):
-        msg = "cannot be converted to an Iceberg expression"
-        raise err(msg)
-
-    for field_id in extract_field_ids(bind(schema, converted, case_sensitive=True)):
-        if isinstance(schema.find_type(field_id), (FloatType, DoubleType)):
-            msg = "floating-point columns are not supported"
-            raise err(msg)
-        path = schema.find_column_name(field_id)
-        assert path is not None
-        if not _is_null_pushdown_safe(path.split("."), schema):
-            msg = f"column '{path}' is nested within an optional struct"
-            raise err(msg)
-
-    def guard_nulls(e: BooleanExpression) -> BooleanExpression:
-        if isinstance(e, (And, Or)):
-            return type(e)(guard_nulls(e.left), guard_nulls(e.right))
-        if isinstance(e, (IsNull, NotNull, AlwaysTrue, AlwaysFalse)):
-            return e
-        if isinstance(e, UnboundPredicate):
-            return And(NotNull(e.term), e)  # type: ignore[call-arg]
-        msg = f"unexpected Iceberg expression {e}"
-        raise err(msg)
-
-    return guard_nulls(rewrite_not(converted))
-
-
 def _check_dynamic_overwrite_spec(spec: PartitionSpec, schema: Schema) -> None:
     from pyiceberg.transforms import IdentityTransform
     from pyiceberg.types import DoubleType, FloatType
@@ -546,13 +468,30 @@ def _check_dynamic_overwrite_spec(spec: PartitionSpec, schema: Schema) -> None:
                 f"transforms, got {field.transform} for partition field '{field.name}'"
             )
             raise NotImplementedError(msg)
+        source_type = schema.find_field(field.source_id).field_type
         # NaN partition values cannot be matched with `EqualTo`.
-        if isinstance(
-            schema.find_field(field.source_id).field_type, (FloatType, DoubleType)
-        ):
+        if isinstance(source_type, (FloatType, DoubleType)):
             msg = (
                 "partition_overwrite='dynamic' does not support floating-point "
                 f"partition source columns (partition field '{field.name}')"
+            )
+            raise NotImplementedError(msg)
+        # PyIceberg has no nanosecond literals.
+        if type(source_type).__name__ in {"TimestampNanoType", "TimestamptzNanoType"}:
+            msg = (
+                "partition_overwrite='dynamic' does not support nanosecond "
+                f"timestamp partition source columns (partition field '{field.name}')"
+            )
+            raise NotImplementedError(msg)
+        # A null optional ancestor makes the source column null, which
+        # `IsNull` does not match.
+        source_name = schema.find_column_name(field.source_id)
+        assert source_name is not None
+        if not _is_null_pushdown_safe(source_name.split("."), schema):
+            msg = (
+                "partition_overwrite='dynamic' does not support partition source "
+                f"columns nested within an optional struct (partition field "
+                f"'{field.name}')"
             )
             raise NotImplementedError(msg)
 
@@ -979,9 +918,9 @@ class IcebergSinkState:
         import polars as pl
 
         if isinstance(overwrite_filter, pl.Expr) and not isinstance(target, str):
-            # Fail early when the schema is available.
-            overwrite_filter = _polars_expr_to_overwrite_filter(
-                overwrite_filter, target.schema()
+            # Fail early when the table is available.
+            overwrite_filter = predicate_to_pyiceberg_delete_filter(
+                overwrite_filter, target
             )
 
         if create_if_not_exists and not isinstance(target, str):
@@ -1216,8 +1155,8 @@ class IcebergSinkState:
         if self.dynamic_partition_overwrite:
             _check_dynamic_overwrite_spec(table.spec(), schema)
         if isinstance(self.overwrite_filter, pl.Expr):
-            self.overwrite_filter = _polars_expr_to_overwrite_filter(
-                self.overwrite_filter, schema
+            self.overwrite_filter = predicate_to_pyiceberg_delete_filter(
+                self.overwrite_filter, table
             )
         elif self.overwrite_filter is not None:
             from pyiceberg.expressions.visitors import bind
