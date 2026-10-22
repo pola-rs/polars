@@ -260,6 +260,7 @@ impl KneeController {
             && self.round_ticks == 2
             && !self.round_limiter_bound
             && (self.round_parked > 0 || self.round_sat_max >= 0.9)
+            && self.round_settled_bytes > 0
             && self.round_settled_bytes as f64 >= 1.25 * self.best_bw * self.round_settled_secs;
         if self.round_ticks >= self.cfg.round_ticks || grew_early {
             self.end_round(t.now);
@@ -390,7 +391,7 @@ impl KneeController {
                 }
                 let lifetime_rose =
                     ratio > 0.0 && lifetime_valid && lifetime >= ratio * self.min_lifetime;
-                let grew = bw_round >= 1.25 * self.best_bw;
+                let grew = bw_round > 0.0 && bw_round >= 1.25 * self.best_bw;
                 self.best_bw = self.best_bw.max(bw_round);
                 if lifetime_rose && self.lifetime_held {
                     // The knee comes from the rounds before the lifetime rose.
@@ -827,5 +828,20 @@ mod tests {
             full(&mut c, i, 50);
         }
         assert_eq!(c.knee(), Some(budget));
+    }
+
+    /// A stall right after the scan start (the Init round delivered in its first tick only) is
+    /// not growth.
+    #[test]
+    fn no_growth_from_a_stall_after_start() {
+        let mut c = KneeController::new(cfg());
+        let t0 = Instant::now();
+        for i in 0..12 {
+            let budget = c.budget();
+            tick(&mut c, t0, i, u64::from(i == 0), budget, 1);
+        }
+        assert_eq!(c.phase(), KneePhase::RampUp);
+        // Init doubles once on exit.
+        assert_eq!(c.budget(), 200);
     }
 }
