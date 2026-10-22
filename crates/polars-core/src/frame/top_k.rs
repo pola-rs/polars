@@ -6,12 +6,12 @@ impl DataFrame {
         &self,
         k: usize,
         by_column: Vec<Column>,
-        mut sort_options: SortMultipleOptions,
+        sort_options: SortMultipleOptions,
     ) -> PolarsResult<DataFrame> {
         let first_descending = sort_options.descending[0];
         let first_by_column = by_column[0].name().to_string();
 
-        let idx = _arg_bottom_k(k, &by_column, &mut sort_options)?;
+        let idx = _arg_bottom_k(k, &by_column, sort_options)?;
 
         let mut df = unsafe { self.take_unchecked(&idx.into_inner()) };
 

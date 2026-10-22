@@ -224,14 +224,17 @@ pub fn optimize(
     }
 
     // Must run before projection pushdown, as that can insert simple-projections between the sorts
-    // on unused columns.
+    // on unused columns. Repeated keys are removed first, so that the sort rewrites only see the
+    // keys that matter.
+    let mut sort_rules: Vec<Box<dyn OptimizationRule>> = Vec::new();
+    if opt_flags.simplify_expr() {
+        sort_rules.push(Box::new(repeated_keys::RemoveRepeatedKeys {}));
+    }
     if opt_flags.contains(OptFlags::SORT_COLLAPSE) {
-        root = opt.optimize_loop(
-            &mut [Box::new(collapse_sort::CollapseSort {}) as _],
-            expr_arena,
-            ir_arena,
-            root,
-        )?;
+        sort_rules.push(Box::new(collapse_sort::CollapseSort {}));
+    }
+    if !sort_rules.is_empty() {
+        root = opt.optimize_loop(&mut sort_rules, expr_arena, ir_arena, root)?;
     }
 
     // Gives the dataset scans the statistics that the join passes need.
@@ -287,7 +290,6 @@ pub fn optimize(
         rules.push(Box::new(SimplifyBooleanRule {
             maintain_errors: pushdown_maintain_errors,
         }));
-        rules.push(Box::new(repeated_keys::RemoveRepeatedKeys {}));
     }
 
     if !opt_flags.eager() {
