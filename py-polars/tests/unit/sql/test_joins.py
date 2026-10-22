@@ -2639,6 +2639,29 @@ def test_join_on_constant_any_condition(join_type: str) -> None:
         assert_frame_equal(res, expected, check_row_order=False)
 
 
+@pytest.mark.parametrize(
+    "join_type", ["INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL OUTER JOIN"]
+)
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.k = a.x",
+        "x = a.k",
+        "b.k = b.y",
+        "a.k = b.k AND a.k = a.x",
+    ],
+)
+def test_join_on_equality_within_one_input(join_type: str, condition: str) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3], "x": [1, 5, 3]}),
+        "b": pl.DataFrame({"k": [1, 3, 4], "y": [1, 7, 4]}),
+    }
+    query = f"SELECT a.k, a.x, b.k AS bk, b.y FROM a {join_type} b ON {condition}"
+    assert_sql_matches(
+        frames, query=query, compare_with="sqlite", check_row_order=False
+    )
+
+
 def test_join_on_constant_true_plans_cross_join() -> None:
     frames = {
         "a": pl.LazyFrame({"k": [1, 2]}),
