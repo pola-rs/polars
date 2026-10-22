@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import ClosedInterval, EngineType, PolarsIntegerType
+    from polars._typing import ClosedInterval, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
