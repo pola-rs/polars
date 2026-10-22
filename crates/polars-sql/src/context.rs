@@ -52,7 +52,7 @@ use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
     check_for_ambiguous_column_refs, collect_grouping_calls, expr_contains_scalar_subquery,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
-    expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema, statement_registers_table,
+    expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema,
 };
 use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
@@ -238,10 +238,8 @@ pub struct SQLContext {
     /// only ones a qualified column may name.
     active_relations: Vec<RelationName>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
-    /// The aliased parenthesized joins of the current statement, by alias. Only qualified
-    /// columns look them up (`get_relation_frame`), so the alias doesn't hide a table of
-    /// the same name.
-    nested_join_frames: PlHashMap<String, LazyFrame>,
+    /// The current statement's FROM items that are not tables, read only by qualified columns.
+    from_item_frames: PlHashMap<String, LazyFrame>,
     join_base: Option<JoinBase>,
     /// The values of uncorrelated `EXISTS` subqueries that were planned while lowering,
     /// taken when the `EXISTS` expression is parsed.
@@ -313,7 +311,7 @@ impl Default for SQLContext {
             table_aliases: Default::default(),
             active_relations: Default::default(),
             joined_aliases: Default::default(),
-            nested_join_frames: Default::default(),
+            from_item_frames: Default::default(),
             join_base: None,
             exists_values: Default::default(),
             named_windows: Default::default(),
@@ -556,12 +554,9 @@ impl SQLContext {
 
     /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
     ///
-    /// Neither a registered relation nor a user-defined function survives the round trip
-    /// through the DSL, so a statement that needs either runs eagerly.
+    /// A user-defined function does not survive the round trip through the DSL.
     fn can_defer(&self, stmt: &Statement) -> bool {
-        !self.custom_function_registry
-            && is_read_only_query(stmt)
-            && !statement_registers_table(stmt)
+        !self.custom_function_registry && is_read_only_query(stmt)
     }
 
     /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
@@ -657,7 +652,7 @@ impl SQLContext {
         self.catalog_spellings.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
-        self.nested_join_frames.clear();
+        self.from_item_frames.clear();
         self.join_base = None;
         self.exists_values.clear();
         self.named_windows.clear();
@@ -698,7 +693,7 @@ impl SQLContext {
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
-            nested_join_frames: self.nested_join_frames.clone(),
+            from_item_frames: self.from_item_frames.clone(),
 
             // Context-level; needs to remain visible in nested scopes.
             // (Note: shared by Arc, no need to deep-copy)
@@ -837,13 +832,15 @@ impl SQLContext {
         self.get_table_unaliased(name)
     }
 
-    /// The frame of the relation `name` that a qualified column reads: an aliased
-    /// parenthesized join, else a table in the current scope.
+    /// The frame of the relation `name` that a qualified column reads, exact names first.
     pub(crate) fn get_relation_frame(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
-        if let Some(lf) = get_ignoring_case(&self.nested_join_frames, name)? {
+        if let Some(lf) = self.from_item_frames.get(name) {
             return Ok(Some(lf.clone()));
         }
-        self.get_table_from_current_scope(name)
+        if let Some(lf) = self.get_table_from_current_scope(name)? {
+            return Ok(Some(lf));
+        }
+        Ok(get_ignoring_case(&self.from_item_frames, name)?.cloned())
     }
 
     fn get_table_unaliased(&self, name: &str) -> PolarsResult<Option<LazyFrame>> {
@@ -3917,11 +3914,8 @@ impl SQLContext {
     }
 
     fn get_table(&mut self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
-        if !self.nested_join_frames.is_empty() {
-            if let Some(name) = get_table_name(relation) {
-                self.nested_join_frames
-                    .retain(|key, _| !key.eq_ignore_ascii_case(&name));
-            }
+        if let Some(name) = get_table_name(relation) {
+            self.from_item_frames.remove(&name);
         }
         match relation {
             TableFactor::Table {
@@ -3965,14 +3959,7 @@ impl SQLContext {
                 if let Some(alias) = alias {
                     let lf = self.rename_columns_from_table_alias(lf, alias)?;
                     let name = alias.name.value.clone();
-                    {
-                        let mut table_map = self.table_map.write().unwrap();
-                        if !table_map.keys().any(|key| key.eq_ignore_ascii_case(&name)) {
-                            table_map.insert(name.clone(), lf.clone());
-                        }
-                    }
-                    // Shadows a registered table of the same name in this statement only.
-                    self.register_cte(&name, lf.clone());
+                    self.from_item_frames.insert(name.clone(), lf.clone());
                     Ok((name, lf))
                 } else {
                     Ok(("".to_string(), lf))
@@ -4034,10 +4021,7 @@ impl SQLContext {
                         polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
                     }
                     let table_name = alias.name.value.clone();
-                    self.table_map
-                        .write()
-                        .unwrap()
-                        .insert(table_name.clone(), lf.clone());
+                    self.from_item_frames.insert(table_name.clone(), lf.clone());
                     Ok((table_name, lf))
                 } else {
                     polars_bail!(SQLSyntax: "UNNEST table must have an alias");
@@ -4055,7 +4039,7 @@ impl SQLContext {
                             .execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?;
                         let lf = self.rename_columns_from_table_alias(lf, alias)?;
                         let name = alias.name.value.clone();
-                        self.nested_join_frames.insert(name.clone(), lf.clone());
+                        self.from_item_frames.insert(name.clone(), lf.clone());
                         Ok((name, lf))
                     },
                     None => Ok((
@@ -4086,11 +4070,7 @@ impl SQLContext {
             },
             None => tbl_name,
         };
-
-        self.table_map
-            .write()
-            .unwrap()
-            .insert(tbl_name.clone(), lf.clone());
+        self.from_item_frames.insert(tbl_name.clone(), lf.clone());
         Ok((tbl_name, lf))
     }
 

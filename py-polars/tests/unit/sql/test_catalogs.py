@@ -233,9 +233,11 @@ def test_catalog_tables_load_lazily(lake: CountingCatalog) -> None:
     # one load per table, also for a self-join
     assert sorted(lake.loads) == [("tpch", "lineitem"), ("tpch", "orders")]
 
-    # a query that registers a derived table is translated at `execute`
+    # also through a derived table
     lake.loads.clear()
-    ctx.execute("SELECT * FROM (SELECT * FROM orders) AS x")
+    lf = ctx.execute("SELECT * FROM (SELECT * FROM orders) AS x")
+    assert lake.loads == []
+    assert lf.collect().height == 3
     assert lake.loads == [("tpch", "orders")]
 
 
