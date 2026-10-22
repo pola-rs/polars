@@ -71,6 +71,20 @@ impl PySQLContext {
         Ok(())
     }
 
+    /// The name of the default catalog, if one is set.
+    pub fn default_catalog(&self) -> Option<String> {
+        self.context.read().default_catalog().map(str::to_string)
+    }
+
+    /// Make an attached catalog the default.
+    pub fn set_default_catalog(&self, name: &str) -> PyResult<()> {
+        self.context
+            .write()
+            .set_default_catalog(name)
+            .map_err(PyPolarsErr::from)?;
+        Ok(())
+    }
+
     /// Detach a catalog, returning the name it was attached under.
     pub fn unregister_catalog(&self, name: &str) -> Option<String> {
         self.context.write().unregister_catalog(name)

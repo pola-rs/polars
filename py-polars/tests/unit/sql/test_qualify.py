@@ -317,7 +317,10 @@ def test_qualify_with_subquery_does_not_leak_placeholder() -> None:
         QUALIFY ROW_NUMBER() OVER (PARTITION BY category ORDER BY value DESC) = 1
         ORDER BY id
         """,
-        "SELECT id FROM df QUALIFY value = MAX(value) OVER (PARTITION BY category)",
+        """
+        SELECT id FROM df QUALIFY value = MAX(value) OVER (PARTITION BY category)
+        ORDER BY id
+        """,
         # an input column comes before a SELECT alias of the same name
         "SELECT value AS id, id AS value FROM df QUALIFY id = MAX(id) OVER ()",
         # windows over grouped rows

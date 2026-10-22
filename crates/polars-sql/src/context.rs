@@ -23,8 +23,7 @@ use sqlparser::ast::{
     OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, WindowType,
-    visit_expressions, visit_expressions_mut,
+    ValueWithSpan, Values, WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -33,6 +32,7 @@ use crate::catalog::{
     CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName, name_parts, name_position,
     rewrite_catalog_names,
 };
+use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
@@ -52,7 +52,7 @@ use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
     check_for_ambiguous_column_refs, collect_grouping_calls, expr_contains_scalar_subquery,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
-    expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
+    expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema, statement_registers_table,
 };
 use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
@@ -375,8 +375,9 @@ impl SQLContext {
     /// Attach a catalog under `name`. A table name starting with `name` refers to a table of
     /// this catalog; with `default`, so does a table name that starts with no attached catalog.
     /// A table name without namespace parts gets `default_namespace`. Registered tables and
-    /// CTEs take precedence. The same name replaces the catalog; a name that differs from an
-    /// attached one only in case is an error.
+    /// CTEs take precedence. The same name replaces the catalog with the new `default_namespace`
+    /// and options, but keeps its default status: `default = false` never removes the default.
+    /// A name that differs from an attached one only in case is an error.
     ///
     /// The catalog only resolves names: the scans of its tables are passed to
     /// [`SQLContext::execute_with_catalog_tables`] (see [`SQLContext::catalog_tables`]).
@@ -387,6 +388,16 @@ impl SQLContext {
         default: bool,
     ) -> PolarsResult<()> {
         self.catalogs.register(name, default_namespace, default)
+    }
+
+    /// The name of the default catalog, if one is set.
+    pub fn default_catalog(&self) -> Option<&str> {
+        self.catalogs.default_catalog()
+    }
+
+    /// Make the attached catalog `name` (exact, else ignoring case) the default.
+    pub fn set_default_catalog(&mut self, name: &str) -> PolarsResult<()> {
+        self.catalogs.set_default(name)
     }
 
     /// Detach a catalog (exact name, else ignoring case), returning the name it had.
@@ -455,20 +466,24 @@ impl SQLContext {
 
     /// Error for a statement changing a table of an attached catalog, which SQL can't do yet.
     /// With `local_first`, the name resolves as in a read: a registered table with the whole
-    /// name is changed instead, else a table of the default catalog is also an error.
+    /// name is changed instead, else a table of the default catalog is also an error. With
+    /// `if_exists`, only a name starting with an attached catalog is, so the statement's no-op
+    /// on a missing table applies.
     fn ensure_not_catalog_table(
         &self,
         name: &ObjectName,
         statement: &str,
         local_first: bool,
+        if_exists: bool,
     ) -> PolarsResult<()> {
-        let catalog = match name_parts(name) {
-            Some(parts) if local_first => self.catalogs.resolve(&parts).map(|t| t.catalog),
-            Some(parts) => match parts.as_slice() {
-                [first, _, ..] => self.catalogs.catalog_name(first).map(str::to_string),
-                _ => None,
-            },
-            None => None,
+        let Some(parts) = name_parts(name) else {
+            return Ok(());
+        };
+        let named = self.catalogs.named_catalog(&parts);
+        let catalog = if local_first && (named.is_some() || !if_exists) {
+            self.catalogs.resolve(&parts).map(|t| t.catalog)
+        } else {
+            named.map(str::to_string)
         };
         let Some(catalog) = catalog else {
             return Ok(());
@@ -1432,21 +1447,24 @@ impl SQLContext {
             polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
             polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
             for name in names {
-                self.ensure_not_catalog_table(name, "DROP TABLE", true)?;
+                self.ensure_not_catalog_table(name, "DROP TABLE", true, *if_exists)?;
             }
 
             let mut table_map = self.table_map.write().unwrap();
+            // Resolve every name before dropping any, so an error drops nothing.
+            let mut keys = Vec::with_capacity(names.len());
             for name in names {
                 let tbl = object_name_to_string(name);
                 // `DROP TABLE IF EXISTS <tbl>` is a no-op on a missing table;
                 // otherwise dropping a table that doesn't exist is an error.
                 match key_ignoring_case(&table_map, &tbl)?.cloned() {
-                    Some(key) => {
-                        table_map.remove(&key);
-                    },
+                    Some(key) => keys.push(key),
                     None if *if_exists => {},
                     None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
                 }
+            }
+            for key in keys {
+                table_map.remove(&key);
             }
             Ok(DataFrame::empty().lazy())
         } else {
@@ -1500,7 +1518,7 @@ impl SQLContext {
             }
             self.set_active_relations(from_tables);
             if let TableFactor::Table { name, .. } = &tbl_expr.relation {
-                self.ensure_not_catalog_table(name, "DELETE", true)?;
+                self.ensure_not_catalog_table(name, "DELETE", true, false)?;
             }
             let (_, lf) = self.get_table(&tbl_expr.relation)?;
             if selection.is_none() {
@@ -1541,7 +1559,12 @@ impl SQLContext {
                     if table_names.len() != 1 {
                         polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
                     }
-                    self.ensure_not_catalog_table(&table_names[0].name, "TRUNCATE", true)?;
+                    self.ensure_not_catalog_table(
+                        &table_names[0].name,
+                        "TRUNCATE",
+                        true,
+                        *if_exists,
+                    )?;
                     let tbl = object_name_to_string(&table_names[0].name);
                     let mut table_map = self.table_map.write().unwrap();
                     match key_ignoring_case(&table_map, &tbl)?.cloned() {
@@ -1573,17 +1596,19 @@ impl SQLContext {
 
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
         if let Some(with) = &query.with {
-            if with.recursive {
-                polars_bail!(SQLInterface: "recursive CTEs are not supported")
-            }
+            let order = if with.recursive {
+                recursive_cte_order(with)?
+            } else {
+                (0..with.cte_tables.len()).collect()
+            };
             let mut reference_counts = PlHashMap::<String, usize>::new();
             let mut collector = TableIdentifierCollector::default();
-            let _ = query.visit(&mut collector);
+            let _ = dyn_visit::visit(query, &mut collector);
             for name in collector.tables {
                 *reference_counts.entry(name).or_insert(0) += 1;
             }
 
-            for cte in &with.cte_tables {
+            for cte in order.iter().map(|&idx| &with.cte_tables[idx]) {
                 // Note: isolate CTE execution to prevent context state leakage
                 let cte_name = cte.alias.name.value.clone();
                 let mut lf = self.execute_isolated(|ctx| ctx.execute_query(&cte.query))?;
@@ -3427,7 +3452,7 @@ impl SQLContext {
             reads_right: false,
             unknown: false,
         };
-        let _ = expr.visit(&mut reads);
+        let _ = dyn_visit::visit(expr, &mut reads);
         match (reads.unknown, reads.reads_left, reads.reads_right) {
             (true, _, _) => JoinInputs::Unknown,
             (false, true, true) => JoinInputs::Both,
@@ -3823,7 +3848,7 @@ impl SQLContext {
                 ..
             } = create_table;
 
-            self.ensure_not_catalog_table(name, "CREATE TABLE", false)?;
+            self.ensure_not_catalog_table(name, "CREATE TABLE", false, false)?;
             let tbl_name = object_name_to_string(name);
             let existing = self.registered_table_key(&tbl_name)?;
             if *if_not_exists && let Some(existing) = &existing {
@@ -5993,6 +6018,53 @@ pub fn extract_table_identifiers(
     })
 }
 
+/// The order to register the CTEs of a `WITH RECURSIVE` in, where a CTE may read any other.
+/// Each CTE comes after the CTEs it reads; CTEs that read themselves or each other are not
+/// supported.
+fn recursive_cte_order(with: &With) -> PolarsResult<Vec<usize>> {
+    let names: Vec<String> = with
+        .cte_tables
+        .iter()
+        .map(|cte| cte.alias.name.value.clone())
+        .collect();
+    let mut seen = PlHashSet::with_capacity(names.len());
+    if let Some(name) = names
+        .iter()
+        .find(|name| !seen.insert(name.to_ascii_lowercase()))
+    {
+        polars_bail!(SQLInterface: "CTE name '{}' is used more than once", name)
+    }
+    let deps: Vec<PlHashSet<usize>> = with
+        .cte_tables
+        .iter()
+        .map(|cte| referenced_ctes(&cte.query, &names))
+        .collect();
+    if let Some(idx) = (0..names.len()).find(|idx| deps[*idx].contains(idx)) {
+        polars_bail!(
+            SQLInterface: "recursive CTEs are not supported (CTE '{}' reads itself)", names[idx]
+        )
+    }
+    let mut order = Vec::with_capacity(names.len());
+    let mut done = vec![false; names.len()];
+    while order.len() < names.len() {
+        // Keep the written order among the CTEs that are ready.
+        let Some(next) =
+            (0..names.len()).find(|idx| !done[*idx] && deps[*idx].iter().all(|dep| done[*dep]))
+        else {
+            let cycle: Vec<&str> = (0..names.len())
+                .filter(|idx| !done[*idx])
+                .map(|idx| names[idx].as_str())
+                .collect();
+            polars_bail!(
+                SQLInterface: "mutually recursive CTEs are not supported ({})", cycle.join(", ")
+            )
+        };
+        done[next] = true;
+        order.push(next);
+    }
+    Ok(order)
+}
+
 /// Table identifiers referenced by a single parsed statement.
 fn statement_table_identifiers(
     stmt: &Statement,
@@ -6003,7 +6075,7 @@ fn statement_table_identifiers(
         include_schema,
         ..Default::default()
     };
-    let _ = stmt.visit(&mut collector);
+    let _ = dyn_visit::visit(stmt, &mut collector);
     if unique {
         collector
             .tables
