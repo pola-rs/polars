@@ -20,10 +20,11 @@ use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::Arena;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident,
-    NamedWindowDefinition, NamedWindowExpr, Query, Select, SelectItem, SetExpr, Statement,
-    TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor,
-    VisitorMut, WindowSpec, WindowType, visit_expressions, visit_expressions_mut,
+    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, Fetch, GroupByExpr, Ident,
+    LimitClause, NamedWindowDefinition, NamedWindowExpr, OrderByKind, Query, Select, SelectItem,
+    SetExpr, Statement, TableFactor, TableWithJoins, UnaryOperator as SQLUnaryOperator,
+    Value as SQLValue, ValueWithSpan, Visit, VisitMut, Visitor, VisitorMut, WindowSpec, WindowType,
+    visit_expressions, visit_expressions_mut,
 };
 
 use crate::catalog::CatalogSpellings;
@@ -33,7 +34,9 @@ use crate::context::{
 };
 use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
-use crate::sql_expr::{parse_sql_expr, reduced_subquery, sql_in_membership, sql_is_in};
+use crate::sql_expr::{
+    order_by_sort_options, parse_sql_expr, reduced_subquery, sql_in_membership, sql_is_in,
+};
 use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_subquery_expr};
 use crate::{SQLContext, unique_column_name};
 
@@ -656,6 +659,88 @@ impl SQLContext {
         Ok(Some(parse_sql_expr(sql_expr, self, Some(inner_schema))?))
     }
 
+    // `values` sorted by the `ORDER BY` of a `LIMIT 1` subquery, whose first value
+    // is then its result. The sort keys are pushed onto `row_columns`, to be
+    // computed per inner row. `None` for an order that isn't read from the inner
+    // row alone.
+    #[allow(clippy::too_many_arguments)]
+    fn try_first_row_order(
+        &mut self,
+        subquery: &Query,
+        alias: Option<&Ident>,
+        values: Expr,
+        prefix: &str,
+        inner_names: &[RelationName],
+        inner_schema: &Schema,
+        row_columns: &mut Vec<Expr>,
+    ) -> PolarsResult<Option<Expr>> {
+        let Some(order_by) = &subquery.order_by else {
+            return Ok(Some(values));
+        };
+        let OrderByKind::Expressions(exprs) = &order_by.kind else {
+            return Ok(None);
+        };
+        if order_by.interpolate.is_some() || exprs.is_empty() {
+            return Ok(None);
+        }
+        let mut by = Vec::with_capacity(exprs.len());
+        let mut descending = Vec::with_capacity(exprs.len());
+        let mut nulls_last = Vec::with_capacity(exprs.len());
+        for ob in exprs {
+            if ob.with_fill.is_some() || expr_has_window_functions(&ob.expr) {
+                return Ok(None);
+            }
+            let mut expr = &ob.expr;
+            while let SQLExpr::Nested(inner) = expr {
+                expr = inner;
+            }
+            // The output column, by name or by position.
+            let is_output = match expr {
+                SQLExpr::Identifier(ident) => alias.is_some_and(|a| a.value == ident.value),
+                SQLExpr::Value(ValueWithSpan {
+                    value: SQLValue::Number(n, _),
+                    ..
+                }) => {
+                    if n != "1" {
+                        return Ok(None);
+                    }
+                    true
+                },
+                _ => false,
+            };
+            let key = if is_output {
+                values.clone()
+            } else {
+                let Some(key) = self.marking_aggregates(|ctx| {
+                    ctx.try_parse_inner_only_expr(&ob.expr, inner_names, inner_schema)
+                })?
+                else {
+                    return Ok(None);
+                };
+                if has_marked_aggregate(&key)
+                    || has_expr(&key, |e| matches!(e, Expr::SubPlan(_, _)))
+                {
+                    return Ok(None);
+                }
+                let name = format_pl_smallstr!("{prefix}ord{}", row_columns.len());
+                row_columns.push(key.alias(name.clone()));
+                col(name)
+            };
+            let options = order_by_sort_options(&ob.options);
+            by.push(key);
+            descending.push(options.descending);
+            nulls_last.push(options.nulls_last);
+        }
+        Ok(Some(
+            values.sort_by(
+                by,
+                SortMultipleOptions::default()
+                    .with_order_descending_multi(descending)
+                    .with_nulls_last_multi(nulls_last),
+            ),
+        ))
+    }
+
     // The join tree of a block whose frame is its FROM relations joined and
     // filtered by the WHERE conjuncts that hold no subquery, and nothing more.
     // `residual` is what the early subquery rewrites left of `where_expr`: the
@@ -1128,7 +1213,10 @@ impl SQLContext {
         subquery: &Query,
         join_tree: Option<&OuterJoinTree>,
     ) -> PolarsResult<Option<(LazyFrame, PlSmallStr)>> {
-        let Some(select) = eligible_subquery_select(subquery) else {
+        let Some(first_row) = first_row_limit(subquery) else {
+            return Ok(None);
+        };
+        let Some(select) = eligible_subquery_body(subquery) else {
             return Ok(None);
         };
         let Some(selection) = &select.selection else {
@@ -1159,21 +1247,48 @@ impl SQLContext {
         let has_aggregate = has_marked_aggregate(&proj_expr);
         let proj_expr = strip_aggregate_marks(proj_expr);
         // The projection is either a scalar aggregate over the inner relation, or a
-        // value per inner row, of which each outer row may match at most one.
-        let (agg_expr, row_value) =
+        // value per inner row. Without `LIMIT 1`, each outer row may match at most
+        // one inner row. With it, the first row in the subquery's order is taken.
+        let mut row_columns: Vec<Expr> = Vec::new();
+        let (agg_expr, single_row_check) =
             if has_expr(&proj_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
-                (proj_expr, None)
+                // An aggregate within a row-expanding function gives several rows.
+                if !is_scalar_over(&proj_expr, &inner_schema) {
+                    return Ok(None);
+                }
+                (proj_expr, false)
             } else if !has_aggregate
                 && !matches!(select.distinct, Some(Distinct::On(_)))
                 && !has_expr(&proj_expr, |e| matches!(e, Expr::SubPlan(_, _)))
             {
                 let value_name = format_pl_smallstr!("{prefix}val");
                 let values = col(value_name.clone());
-                let values = match select.distinct {
-                    Some(Distinct::Distinct) => values.unique(),
-                    _ => values,
-                };
-                (values.item(true), Some(proj_expr.alias(value_name)))
+                row_columns.push(proj_expr.alias(value_name));
+                if first_row {
+                    let alias = match &select.projection[0] {
+                        SelectItem::ExprWithAlias { alias, .. } => Some(alias),
+                        _ => None,
+                    };
+                    let Some(ordered) = ctx.try_first_row_order(
+                        subquery,
+                        alias,
+                        values,
+                        &prefix,
+                        &inner_names,
+                        &inner_schema,
+                        &mut row_columns,
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    (ordered.first(), false)
+                } else {
+                    let values = match select.distinct {
+                        Some(Distinct::Distinct) => values.unique(),
+                        _ => values,
+                    };
+                    (values.item(true), true)
+                }
             } else {
                 return Ok(None);
             };
@@ -1196,9 +1311,8 @@ impl SQLContext {
         let result_name = format_pl_smallstr!("{prefix}res");
         // Without a semi join to restrict the inner groups, a value per row is taken
         // per matched outer row instead.
-        let is_row_value = row_value.is_some();
         let equality_only = corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq)
-            && (cfg!(feature = "semi_anti_join") || !is_row_value);
+            && (cfg!(feature = "semi_anti_join") || !single_row_check);
 
         // When the subquery repeats a part of the outer join tree, the outer frame
         // holds each outer row's subquery rows, each one repeated once per match
@@ -1238,8 +1352,8 @@ impl SQLContext {
         // names so they can't clash with outer columns of the same name (as in a
         // self-correlated `t1 AS x` subquery over outer `t1`).
         let mut inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
-        if let Some(row_value) = row_value {
-            inner_filtered = inner_filtered.with_column(row_value);
+        if !row_columns.is_empty() {
+            inner_filtered = inner_filtered.with_columns(row_columns);
         }
         let rename_from: Vec<PlSmallStr> = inner_schema.iter_names().cloned().collect();
         let rename_to: Vec<PlSmallStr> = rename_from
@@ -1250,7 +1364,7 @@ impl SQLContext {
         // The single-row check must only see the groups that outer rows ask for.
         let restrict = equality_only
             && group_local_aggregate(&agg_expr)
-            && (is_row_value || {
+            && (single_row_check || {
                 let inner_rows = ctx.estimated_rows(&mut inner_renamed)?;
                 let outer_rows = self.estimated_rows(&mut lf)?;
                 restriction_pays_off(outer_rows.as_ref(), inner_rows.as_ref())
@@ -2279,29 +2393,58 @@ fn exists_aggregates(
 }
 
 // Shared eligibility gate for the rewrites: bail on any clause that changes
-// which rows the subquery yields. Exhaustive destructuring (no `..`) is on
-// purpose: a new sqlparser clause must not compile until it gets an explicit
-// keep-or-bail decision here.
+// which rows the subquery yields.
 fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
+    if subquery.limit_clause.is_some() || subquery.fetch.is_some() {
+        return None;
+    }
+    eligible_subquery_body(subquery)
+}
+
+// Whether `subquery` keeps only its first row: `Some(true)` for `LIMIT 1` or
+// `FETCH FIRST 1 ROW ONLY`, `Some(false)` without a limit, `None` for any other
+// limit.
+fn first_row_limit(subquery: &Query) -> Option<bool> {
+    let is_one = |e: &SQLExpr| matches!(e, SQLExpr::Value(ValueWithSpan { value: SQLValue::Number(n, _), .. }) if n == "1");
+    match (&subquery.limit_clause, &subquery.fetch) {
+        (None, None) => Some(false),
+        (
+            Some(LimitClause::LimitOffset {
+                limit: Some(limit),
+                offset: None,
+                limit_by,
+            }),
+            None,
+        ) if limit_by.is_empty() && is_one(limit) => Some(true),
+        (
+            None,
+            Some(Fetch {
+                with_ties: false,
+                percent: false,
+                quantity,
+            }),
+        ) if quantity.as_ref().is_none_or(is_one) => Some(true),
+        _ => None,
+    }
+}
+
+// `eligible_subquery_select` without the limit check. Exhaustive destructuring
+// (no `..`) is on purpose: a new sqlparser clause must not compile until it gets
+// an explicit keep-or-bail decision here.
+fn eligible_subquery_body(subquery: &Query) -> Option<&Select> {
     let Query {
         with, // CTEs aren't resolved inside the rewrite: bail
         body,
         order_by: _,      // row order can't affect existence/membership
-        limit_clause,     // LIMIT/OFFSET change the yielded rows: bail
-        fetch,            // FETCH FIRST is LIMIT spelled differently: bail
+        limit_clause: _,  // checked by the callers
+        fetch: _,         // checked by the callers
         locks: _,         // row locking doesn't change the rows
         for_clause,       // FOR XML/JSON reshape the result: bail
         settings,         // ClickHouse SETTINGS can change results: bail
         format_clause: _, // output serialization only
         pipe_operators,   // `|>` operators transform the rows: bail
     } = subquery;
-    if with.is_some()
-        || limit_clause.is_some()
-        || fetch.is_some()
-        || for_clause.is_some()
-        || settings.is_some()
-        || !pipe_operators.is_empty()
-    {
+    if with.is_some() || for_clause.is_some() || settings.is_some() || !pipe_operators.is_empty() {
         return None;
     }
     let SetExpr::Select(select) = body.as_ref() else {
@@ -3241,6 +3384,16 @@ fn null_over_no_rows(combine: &Expr, agg_schema: &Schema, fill: &[(PlSmallStr, E
         .select([combine.clone()])
         .collect()
         .is_ok_and(|df| df.height() == 1 && df.columns()[0].null_count() == 1)
+}
+
+// Whether `expr`, over the columns of `schema`, gives a single value.
+fn is_scalar_over(expr: &Expr, schema: &Schema) -> bool {
+    let mut arena = Arena::new();
+    let mut ctx = ExprToIRContext::new(&mut arena, schema);
+    let Ok(expr) = to_expr_ir(expr.clone(), &mut ctx) else {
+        return false;
+    };
+    expr.is_scalar(&arena)
 }
 
 // Whether `combine`, over the columns of `agg_schema`, gives one value per row.
