@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
 
 import orjson
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -387,6 +388,27 @@ def test_write_ndjson_sliced_list_of_structs_30178() -> None:
             ],
             pl.List(pl.Struct({"l": pl.List(pl.Int64)})),
         ),
+        (
+            [[[1, 2], None], [None, [3]], [[4], None, []], [[5, 6]], None],
+            pl.List(pl.List(pl.Int64)),
+        ),
+        (
+            [
+                [[{"x": 1}, None]],
+                [None, [None, {"x": 2}]],
+                [[{"x": 3}]],
+                [[{"x": 4}, None]],
+            ],
+            pl.List(pl.List(pl.Struct({"x": pl.Int64}))),
+        ),
+        (
+            [[{"k": 1}, None], [None, {"k": 2, "l": None}], [{"m": 3}], [{"n": 4}]],
+            pl.List(pl.Map(pl.String, pl.Int64)),
+        ),
+        (
+            [{"l": [[1], None]}, None, {"l": [None, [2, 3]]}, {"l": [[4]]}],
+            pl.Struct({"l": pl.List(pl.List(pl.Int64))}),
+        ),
     ],
 )
 @pytest.mark.parametrize(("offset", "length"), [(1, None), (1, 1), (2, None)])
@@ -399,6 +421,31 @@ def test_write_json_sliced_nested_30178(
     assert df.write_ndjson() == "".join(f"{row}\n" for row in rows)
     assert df.write_json() == f"[{','.join(rows)}]"
     assert df.select(pl.struct("a").struct.json_encode())["a"].to_list() == rows
+
+
+def test_write_ndjson_sliced_masked_nested_list() -> None:
+    # Null rows that keep non-empty ranges of masked-out values, at both levels.
+    inner = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 4, 5, 8, 10, 10, 10], pa.int64()),
+        pa.array(range(10), pa.int64()),
+        mask=pa.array([False, True, False, False, False, True, False]),
+    )
+    outer = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 3, 5, 7, 7], pa.int64()),
+        inner,
+        mask=pa.array([False, True, False, False, True]),
+    )
+    df = pl.from_arrow(pa.table({"a": outer}))
+    assert isinstance(df, pl.DataFrame)
+
+    for offset in range(df.height):
+        for length in range(df.height - offset + 1):
+            sliced = df.slice(offset, length)
+            expected = "".join(
+                f"{json.dumps(row, separators=(',', ':'))}\n"
+                for row in sliced.rows(named=True)
+            )
+            assert sliced.write_ndjson() == expected
 
 
 def test_sink_ndjson_nested_multiple_morsels_30178(

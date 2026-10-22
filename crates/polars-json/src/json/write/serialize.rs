@@ -279,9 +279,11 @@ fn list_serializer<'a, O: Offset>(
     //  [3]
     // ]
     //
+    // Start the child at the first row we yield, so it skips the earlier values cheaply
+    // instead of the closure below formatting them.
     let offsets = array.offsets().as_slice();
-    let start = offsets[0].to_usize();
-    let end = offsets.last().unwrap().to_usize();
+    let start = offsets[offset.min(array.len())].to_usize();
+    let end = offsets[offset.saturating_add(take).min(array.len())].to_usize();
     let mut serializer = new_serializer(array.values().as_ref(), start, end - start);
 
     let mut prev_offset = start;
@@ -330,9 +332,10 @@ fn map_serializer<'a>(
         unreachable!("map entries have two fields")
     };
 
+    // Start the children at the first row we yield, as in `list_serializer`.
     let offsets = array.offsets().as_slice();
-    let start = offsets[0] as usize;
-    let end = *offsets.last().unwrap() as usize;
+    let start = offsets[offset.min(array.len())] as usize;
+    let end = offsets[offset.saturating_add(take).min(array.len())] as usize;
     // The key serializer writes each key as a JSON string.
     let mut key_serializer = new_serializer(keys.as_ref(), start, end - start);
     let mut value_serializer = new_serializer(values.as_ref(), start, end - start);
