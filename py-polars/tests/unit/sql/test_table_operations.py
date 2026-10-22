@@ -244,6 +244,8 @@ FROM_ITEMS_NAMED_LINEITEM = [
         "SELECT x FROM {from_item} WHERE EXISTS (SELECT 1 FROM t WHERE t.k = lineitem.x)",
         "SELECT x FROM {from_item} WHERE x IN (SELECT x FROM lineitem)",
         "SELECT * FROM {from_item}, lineitem AS l2",
+        "SELECT lineitem.x AS a, l2.x AS b FROM {from_item}, lineitem AS l2",
+        "SELECT l2.x AS a, lineitem.x AS b FROM lineitem AS l2, {from_item}",
         "WITH lineitem AS (SELECT 7 AS x) SELECT * FROM {from_item}, lineitem AS l2",
     ],
 )
@@ -264,6 +266,7 @@ def test_from_item_alias_is_not_a_table(from_item: str, query: str) -> None:
         "WITH D AS (SELECT 7 AS c) SELECT D.c, d.a FROM D, (SELECT 1 AS a) AS d",
         "SELECT t1.a, T1.b FROM (SELECT 1 AS a) AS t1, (SELECT 2 AS b) AS T1",
         "SELECT r.x, R.b FROM range(1, 2) AS r(x), (SELECT 2 AS b) AS R",
+        "WITH U AS (SELECT 5 AS a) SELECT u.x, U.a FROM UNNEST([1]) AS u(x), U",
     ],
 )
 def test_from_item_names_differing_in_case(query: str) -> None:

@@ -5348,7 +5348,8 @@ pub(crate) fn relation_name(factor: &TableFactor) -> Option<RelationName> {
         }),
         TableFactor::Derived { alias: a, .. }
         | TableFactor::NestedJoin { alias: a, .. }
-        | TableFactor::TableFunction { alias: a, .. } => alias(a),
+        | TableFactor::TableFunction { alias: a, .. }
+        | TableFactor::UNNEST { alias: a, .. } => alias(a),
         _ => None,
     }
 }
