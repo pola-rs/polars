@@ -993,6 +993,14 @@ fn to_graph_rec<'a>(
             )
         },
 
+        SpillFrameSource { frames, schema } => ctx.graph.add_node(
+            nodes::spill_frame_source::SpillFrameSourceNode::new(
+                vec![frames.clone()],
+                schema.clone(),
+            ),
+            [],
+        ),
+
         Recursive {
             anchor,
             externals,

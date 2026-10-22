@@ -18,6 +18,7 @@ use slotmap::{DenseSlotMap, SecondaryMap};
 
 use crate::graph::{Graph, GraphNodeKey};
 use crate::metrics::GraphMetrics;
+use crate::nodes::recursive::RecursiveInputs;
 use crate::observer_metrics::StreamingQueryMetricsSnapshotter;
 use crate::physical_plan::{
     PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext, physical_plan_to_description,
@@ -46,6 +47,7 @@ pub fn run_query(
         expr_arena,
         observer.is_some(),
         polars_config::config().max_threads(),
+        None,
     )
     .inspect_err(|err| {
         if let Some(o) = observer.as_ref() {
@@ -98,6 +100,7 @@ pub fn visualize_physical_plan(
     let ctx = StreamingLowerIRContext {
         prepare_visualization: true,
         sortedness: &sortedness,
+        recursive_inputs: None,
     };
     let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
     let (root_phys_node, _phys_to_ir) =
@@ -144,6 +147,7 @@ impl StreamingQuery {
         expr_arena: &mut Arena<AExpr>,
         observe: bool,
         num_pipelines: usize,
+        recursive_inputs: Option<&RecursiveInputs>,
     ) -> PolarsResult<Self> {
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
             let plan = IRPlan {
@@ -158,6 +162,7 @@ impl StreamingQuery {
         let ctx = StreamingLowerIRContext {
             prepare_visualization: cfg_prepare_visualization_data(),
             sortedness: &sortedness,
+            recursive_inputs,
         };
         let mut phys_sm = DenseSlotMap::with_capacity_and_key(ir_arena.len());
         let (root_phys_node, phys_to_ir) = crate::physical_plan::build_physical_plan(

@@ -13,6 +13,8 @@ from polars.exceptions import InvalidOperationError, SQLInterfaceError
 from polars.lazyframe.resolver import LazyFrameResolver
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
@@ -401,8 +403,8 @@ def test_recursive_step_input_computed_once(user_cache: bool, query: str) -> Non
 
 
 def test_recursive_step_local_cte_shared_within_round() -> None:
-    # `b` is defined in the step, so it is computed once per round, and both of its
-    # readers see the same values in a round.
+    # `b` is defined in the step but doesn't read the round before, so it is computed
+    # once, and both of its readers see the same values.
     calls: list[None] = []
 
     def stamp(df: pl.DataFrame) -> pl.DataFrame:
@@ -432,7 +434,105 @@ def test_recursive_step_local_cte_shared_within_round() -> None:
         )
         .collect()
     )
-    assert res.rows() == [(0, 0, 0), (1, 1, 1), (2, 2, 2)]
+    assert res.rows() == [(0, 0, 0), (1, 1, 1), (2, 1, 1)]
+    assert len(calls) == 1
+
+
+def test_recursive_step_table_computed_once() -> None:
+    # The step reads `edges` without the rows of the round before, so `edges` is
+    # computed once and not in every round.
+    calls: list[None] = []
+
+    def count(df: pl.DataFrame) -> pl.DataFrame:
+        calls.append(None)
+        return df
+
+    edges = pl.LazyFrame({"src": [0, 1, 2, 3], "dst": [1, 2, 3, 4]}).map_batches(
+        count, schema={"src": pl.Int64, "dst": pl.Int64}
+    )
+    query = """
+        WITH RECURSIVE t AS (
+          SELECT CAST(0 AS BIGINT) AS node
+          UNION ALL
+          SELECT edges.dst FROM t JOIN edges ON edges.src = t.node
+        )
+        SELECT node FROM t ORDER BY node
+    """
+    res = pl.SQLContext(edges=edges).execute(query).collect()
+    assert res["node"].to_list() == [0, 1, 2, 3, 4]
+    assert len(calls) == 1
+
+
+def test_recursive_step_random_part_runs_every_round() -> None:
+    # A part of the step with random draws gives other rows in every round, so it is not
+    # computed once.
+    src = pl.LazyFrame({"x": range(20)}).select(pl.col("x").shuffle())
+    query = """
+        WITH RECURSIVE t AS (
+          SELECT 0 AS n, CAST(-1 AS BIGINT) AS x
+          UNION ALL
+          SELECT t.n + 1, s.x FROM t CROSS JOIN (SELECT x FROM src LIMIT 1) s
+          WHERE t.n < 30
+        )
+        SELECT x FROM t WHERE n > 0
+    """
+    res = pl.SQLContext(src=src).execute(query).collect()
+    assert res.height == 30
+    assert res["x"].n_unique() > 1
+
+
+@pytest.mark.write_disk
+def test_recursive_step_reads_parquet(tmp_path: Path) -> None:
+    path = tmp_path / "chain.parquet"
+    pl.DataFrame({"id": range(200), "next": range(1, 201)}).write_parquet(
+        path, row_group_size=10
+    )
+    query = """
+        WITH RECURSIVE t AS (
+          SELECT CAST(0 AS BIGINT) AS id, 0 AS depth
+          UNION ALL
+          SELECT chain.next, t.depth + 1
+          FROM t JOIN chain ON chain.id = t.id
+          WHERE t.depth < 50 AND chain.next % 7 <> 3
+        )
+        SELECT max(depth) AS depth, count(*) AS n FROM t
+    """
+    res = pl.SQLContext(chain=pl.scan_parquet(path)).execute(query).collect()
+    assert res.rows() == [(2, 3)]
+    query = query.replace("AND chain.next % 7 <> 3", "")
+    res = pl.SQLContext(chain=pl.scan_parquet(path)).execute(query).collect()
+    assert res.rows() == [(50, 51)]
+
+
+@pytest.mark.write_disk
+def test_recursive_spilled(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
+    # Spill everything the memory manager can, so every round reads its inputs back.
+    plmonkeypatch.setenv("POLARS_OOC_MEMORY_BUDGET_MB", "0")
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_MIN_BYTES", "1")
+    plmonkeypatch.setenv("POLARS_OOC_DRIFT_THRESHOLD", "0")
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+
+    n = 100
+    edges = pl.DataFrame({"src": range(n), "dst": range(1, n + 1)})
+    query = """
+        WITH RECURSIVE e AS (SELECT * FROM edges WHERE src % 10 <> 9 OR src > 50),
+        t AS (
+          SELECT src AS node, 0 AS depth FROM edges WHERE src % 10 = 0
+          UNION ALL
+          SELECT e.dst, t.depth + 1 FROM t JOIN e ON e.src = t.node
+        )
+        SELECT node, depth FROM t ORDER BY node, depth
+    """
+    res = pl.SQLContext(edges=edges).execute(query).collect()
+    expected = []
+    for start in range(0, n, 10):
+        node = start
+        expected.append((node, 0))
+        while node < n and (node % 10 != 9 or node > 50):
+            node += 1
+            expected.append((node, node - start))
+    assert res.rows() == sorted(expected)
 
 
 def test_recursive_step_cache_also_read_outside(plmonkeypatch: PlMonkeyPatch) -> None:

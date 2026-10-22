@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use polars_async::executor::TaskMetricAggregator;
-use polars_core::schema::Schema;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_core::prelude::PlHashMap;
+use polars_core::schema::{Schema, SchemaRef};
+use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 use polars_plan::dsl::SinkTypeIR;
 use polars_plan::plans::{AExpr, IR};
 use polars_utils::arena::{Arena, Node};
@@ -10,8 +11,11 @@ use polars_utils::unique_id::UniqueId;
 
 use super::compute_node_prelude::*;
 use super::in_memory_sink::InMemorySinkNode;
-use super::in_memory_source::InMemorySourceNode;
+use super::spill_frame_source::SpillFrameSourceNode;
 use crate::morsel::get_ideal_morsel_size;
+
+/// The values of the working tables and caches that recursive queries hold, by id.
+pub type RecursiveInputs = PlHashMap<UniqueId, Arc<[SpillFrame]>>;
 
 /// The step of a recursive query, run as its own streaming query in every round.
 pub struct RecursiveStep {
@@ -22,6 +26,8 @@ pub struct RecursiveStep {
     /// The caches in the step that are computed once for the whole query. Their values are
     /// inputs of the node, in this order.
     pub external_caches: Vec<UniqueId>,
+    /// The inputs of the recursive queries around this one.
+    pub outer_inputs: RecursiveInputs,
 }
 
 impl std::fmt::Debug for RecursiveStep {
@@ -33,34 +39,9 @@ impl std::fmt::Debug for RecursiveStep {
 }
 
 impl RecursiveStep {
-    fn run_round(
-        &self,
-        frontier: &Arc<DataFrame>,
-        externals: &[Arc<DataFrame>],
-        num_pipelines: usize,
-    ) -> PolarsResult<DataFrame> {
+    fn run_round(&self, inputs: &RecursiveInputs, num_pipelines: usize) -> PolarsResult<DataFrame> {
         let mut ir_arena = self.ir_arena.clone();
         let mut expr_arena = self.expr_arena.clone();
-        for i in 0..ir_arena.len() {
-            let node = Node(i);
-            let df = match ir_arena.get(node) {
-                IR::WorkingTableScan { id, .. } if *id == self.id => frontier.clone(),
-                IR::Cache { id, .. } => match self.external_caches.iter().position(|c| c == id) {
-                    Some(idx) => externals[idx].clone(),
-                    None => continue,
-                },
-                _ => continue,
-            };
-            let schema = df.schema().clone();
-            ir_arena.replace(
-                node,
-                IR::DataFrameScan {
-                    df,
-                    schema,
-                    output_schema: None,
-                },
-            );
-        }
         let root = ir_arena.add(IR::Sink {
             input: self.root,
             payload: SinkTypeIR::Memory,
@@ -71,25 +52,27 @@ impl RecursiveStep {
             &mut expr_arena,
             false,
             num_pipelines,
+            Some(inputs),
         )?;
         Ok(query.execute()?.unwrap_single())
     }
 
-    /// The number of rows the step reads from memory, besides the rows of the previous round.
-    /// `None` if the step also reads other sources.
-    fn in_memory_rows(&self, externals: &[Arc<DataFrame>]) -> Option<usize> {
+    /// The number of rows a round reads from memory. `None` if it also reads other sources.
+    fn in_memory_rows(&self, inputs: &RecursiveInputs) -> Option<usize> {
         let mut rows = 0;
         let mut stack = vec![self.root];
         while let Some(node) = stack.pop() {
-            match self.ir_arena.get(node) {
-                IR::WorkingTableScan { .. } => {},
+            let ir = self.ir_arena.get(node);
+            let frames = match ir {
+                IR::WorkingTableScan { id, .. } | IR::Cache { id, .. } => inputs.get(id),
+                _ => None,
+            };
+            if let Some(frames) = frames {
+                rows += frames.iter().map(|sf| sf.height()).sum::<usize>();
+                continue;
+            }
+            match ir {
                 IR::DataFrameScan { df, .. } => rows += df.height(),
-                IR::Cache { input, id } => {
-                    match self.external_caches.iter().position(|c| c == id) {
-                        Some(idx) => rows += externals[idx].height(),
-                        None => stack.push(*input),
-                    }
-                },
                 ir => {
                     let n = stack.len();
                     stack.extend(ir.inputs());
@@ -102,30 +85,48 @@ impl RecursiveStep {
         Some(rows)
     }
 
-    /// The anchor rows followed by the rows of every round, until a round has no rows.
-    fn run(&self, anchor: DataFrame, externals: &[Arc<DataFrame>]) -> PolarsResult<DataFrame> {
+    /// Runs rounds until a round has no rows. Returns the rows of the anchor and of every round.
+    fn run(
+        &self,
+        anchor: Arc<[SpillFrame]>,
+        externals: Vec<Arc<[SpillFrame]>>,
+        spill_ctx: &LeastRecentSpillContext,
+    ) -> PolarsResult<Vec<Arc<[SpillFrame]>>> {
         // Starting the pipelines of a round has a cost per pipeline, so small rounds use fewer.
         let max_pipelines = polars_config::config().max_threads();
-        let in_memory_rows = self.in_memory_rows(externals);
-        let mut frontier = Arc::new(anchor);
-        let mut out = vec![];
-        while frontier.height() > 0 {
+        let rows_per_pipeline = get_ideal_morsel_size().min(1000);
+        let mut inputs = self.outer_inputs.clone();
+        inputs.extend(self.external_caches.iter().copied().zip(externals));
+        let mut out = vec![anchor];
+        loop {
+            let frontier = out.last().unwrap().clone();
+            if frontier.iter().all(|sf| sf.height() == 0) {
+                break;
+            }
             // The loop has no bound, so let a keyboard interrupt stop it.
             polars_error::abort::try_raise_polars_abort();
-            let num_pipelines = match in_memory_rows {
-                Some(rows) => (rows + frontier.height())
-                    .div_ceil(get_ideal_morsel_size())
-                    .clamp(1, max_pipelines),
+            inputs.insert(self.id, frontier);
+            let num_pipelines = match self.in_memory_rows(&inputs) {
+                Some(rows) => rows.div_ceil(rows_per_pipeline).clamp(1, max_pipelines),
                 None => max_pipelines,
             };
-            let next = Arc::new(self.run_round(&frontier, externals, num_pipelines)?);
-            out.push(Arc::unwrap_or_clone(std::mem::replace(&mut frontier, next)));
+            let df = self.run_round(&inputs, num_pipelines)?;
+            out.push(Arc::from([SpillFrame::new_blocking(df, spill_ctx)]));
         }
-        if out.is_empty() {
-            return Ok(Arc::unwrap_or_clone(frontier));
-        }
-        Ok(accumulate_dataframes_vertical_unchecked(out))
+        Ok(out)
     }
+}
+
+/// Moves the frames a sink collected to `spill_ctx`, which outlives the sink.
+fn take_spill_frames(
+    sink: &mut InMemorySinkNode,
+    spill_ctx: &LeastRecentSpillContext,
+) -> Arc<[SpillFrame]> {
+    let frames = sink.get_spill_frames();
+    for sf in &frames {
+        spill_ctx.register_no_spill_check(sf);
+    }
+    frames.into()
 }
 
 enum RecursiveState {
@@ -133,7 +134,11 @@ enum RecursiveState {
         anchor: InMemorySinkNode,
         externals: Vec<InMemorySinkNode>,
     },
-    Source(InMemorySourceNode),
+    Source {
+        source: SpillFrameSourceNode,
+        /// Keeps the frames of the source spillable.
+        _spill_ctx: LeastRecentSpillContext,
+    },
     Done,
 }
 
@@ -141,6 +146,8 @@ enum RecursiveState {
 pub struct RecursiveNode {
     state: RecursiveState,
     step: Arc<RecursiveStep>,
+    schema: SchemaRef,
+    task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 impl RecursiveNode {
@@ -152,13 +159,15 @@ impl RecursiveNode {
     ) -> Self {
         Self {
             state: RecursiveState::Sink {
-                anchor: InMemorySinkNode::new(anchor_schema, task_metrics.clone()),
+                anchor: InMemorySinkNode::new(anchor_schema.clone(), task_metrics.clone()),
                 externals: external_schemas
                     .into_iter()
                     .map(|schema| InMemorySinkNode::new(schema, task_metrics.clone()))
                     .collect(),
             },
             step,
+            schema: anchor_schema,
+            task_metrics,
         }
     }
 }
@@ -183,14 +192,20 @@ impl ComputeNode for RecursiveNode {
         if let RecursiveState::Sink { anchor, externals } = &mut self.state
             && recv.iter().all(|r| *r == PortState::Done)
         {
-            let anchor = anchor.get_output()?.unwrap();
+            let results_ctx =
+                LeastRecentSpillContext::new("recursive-results".into(), self.task_metrics.clone());
+            let inputs_ctx =
+                LeastRecentSpillContext::new("recursive-inputs".into(), self.task_metrics.clone());
+            let anchor = take_spill_frames(anchor, &results_ctx);
             let externals = externals
                 .iter_mut()
-                .map(|sink| Ok(Arc::new(sink.get_output()?.unwrap())))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let df = self.step.run(anchor, &externals)?;
-            self.state =
-                RecursiveState::Source(InMemorySourceNode::new(Arc::new(df), MorselSeq::default()));
+                .map(|sink| take_spill_frames(sink, &inputs_ctx))
+                .collect();
+            let groups = self.step.run(anchor, externals, &results_ctx)?;
+            self.state = RecursiveState::Source {
+                source: SpillFrameSourceNode::new(groups, self.schema.clone()),
+                _spill_ctx: results_ctx,
+            };
         }
 
         match &mut self.state {
@@ -201,7 +216,7 @@ impl ComputeNode for RecursiveNode {
                 }
                 send[0] = PortState::Blocked;
             },
-            RecursiveState::Source(source) => {
+            RecursiveState::Source { source, .. } => {
                 recv.fill(PortState::Done);
                 source.update_state(&mut [], send, state)?;
             },
@@ -216,7 +231,7 @@ impl ComputeNode for RecursiveNode {
     fn memory_usage(&self) -> NodeMemoryUsage {
         match &self.state {
             RecursiveState::Sink { .. } => NodeMemoryUsage::Accumulating,
-            RecursiveState::Source(source) => source.memory_usage(),
+            RecursiveState::Source { source, .. } => source.memory_usage(),
             RecursiveState::Done => NodeMemoryUsage::Bounded,
         }
     }
@@ -245,7 +260,7 @@ impl ComputeNode for RecursiveNode {
                     }
                 }
             },
-            RecursiveState::Source(source) => {
+            RecursiveState::Source { source, .. } => {
                 source.spawn(scope, &mut [], send_ports, state, join_handles)
             },
             RecursiveState::Done => unreachable!(),

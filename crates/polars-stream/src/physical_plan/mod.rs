@@ -589,6 +589,12 @@ pub enum PhysNodeKind {
         maintain_order: bool,
     },
 
+    /// Frames held by a recursive query, which stay spillable while they are read.
+    SpillFrameSource {
+        frames: Arc<[polars_ooc::SpillFrame]>,
+        schema: SchemaRef,
+    },
+
     /// Recursive query: collects the anchor and the caches the step reads, then runs the step
     /// as its own streaming query once per round.
     Recursive {
@@ -664,6 +670,7 @@ fn _visit_nodes_impl(
     while let Some(node) = to_visit.pop() {
         match &mut phys_sm[node].kind {
             PhysNodeKind::InMemorySource { .. }
+            | PhysNodeKind::SpillFrameSource { .. }
             | PhysNodeKind::MultiScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
             #[cfg(feature = "python")]

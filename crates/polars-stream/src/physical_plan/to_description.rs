@@ -88,6 +88,13 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::SpillFrameSource { frames, schema } => (
+            PhysicalPropsDescription::InMemorySource {
+                n_rows: frames.iter().map(|sf| sf.height()).sum(),
+                schema_names: schema.iter_names().map(ToString::to_string).collect(),
+            },
+            vec![],
+        ),
         PhysNodeKind::InputIndependentSelect { selectors, .. } => (
             PhysicalPropsDescription::InputIndependentSelect {
                 selectors: fmt_exprs(selectors, expr_arena),

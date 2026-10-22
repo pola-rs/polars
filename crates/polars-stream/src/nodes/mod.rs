@@ -48,6 +48,7 @@ pub mod simple_projection;
 pub mod sort;
 pub mod sorted_group_by;
 pub mod sorted_unique;
+pub mod spill_frame_source;
 pub mod streaming_slice;
 #[cfg(any(
     feature = "dtype-date",

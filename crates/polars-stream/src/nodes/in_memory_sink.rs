@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use polars_async::executor::TaskMetricAggregator;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext};
+use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
@@ -23,6 +23,16 @@ impl InMemorySinkNode {
             schema,
             spill_ctx: LeastRecentSpillContext::new("in-memory-sink".into(), task_metrics),
         }
+    }
+
+    /// The collected morsels in order, as frames that stay registered for spilling until they are
+    /// registered elsewhere.
+    pub fn get_spill_frames(&mut self) -> Vec<SpillFrame> {
+        let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
+        linearize(morsels_per_pipe)
+            .into_iter()
+            .map(Morsel::into_sf)
+            .collect()
     }
 }
 

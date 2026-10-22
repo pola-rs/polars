@@ -50,7 +50,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::recursive::RecursiveStep;
+use crate::nodes::recursive::{RecursiveInputs, RecursiveStep};
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{
     ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
@@ -226,6 +226,8 @@ pub(crate) fn build_top_k_stream(
 pub struct StreamingLowerIRContext<'a> {
     pub prepare_visualization: bool,
     pub sortedness: &'a IRPlanSorted,
+    /// The working tables and caches whose values a recursive query holds in this round.
+    pub recursive_inputs: Option<&'a RecursiveInputs>,
 }
 
 #[recursive::recursive]
@@ -515,8 +517,10 @@ fn lower_ir_inner(
             let anchor = *anchor;
             let step = *step;
             let id = *id;
+            let round_local_caches = round_local_caches.clone();
+            cache_round_independent_parts(step, &round_local_caches, ir_arena, expr_arena);
             let external_cache_nodes =
-                recursive_step_external_caches(step, round_local_caches.clone(), ir_arena);
+                recursive_step_external_caches(step, round_local_caches, ir_arena);
             let external_caches = external_cache_nodes
                 .iter()
                 .map(|node| match ir_arena.get(*node) {
@@ -545,12 +549,19 @@ fn lower_ir_inner(
                     ir_arena: step_plan.lp_arena,
                     expr_arena: step_plan.expr_arena,
                     external_caches,
+                    outer_inputs: ctx.recursive_inputs.cloned().unwrap_or_default(),
                 }),
             }
         },
 
-        IR::WorkingTableScan { .. } => {
-            polars_bail!(ComputeError: "working table read outside of its recursive query")
+        IR::WorkingTableScan { id, .. } => match ctx.recursive_inputs.and_then(|i| i.get(id)) {
+            Some(frames) => PhysNodeKind::SpillFrameSource {
+                frames: frames.clone(),
+                schema: output_schema.clone(),
+            },
+            None => {
+                polars_bail!(ComputeError: "working table read outside of its recursive query")
+            },
         },
 
         #[cfg(feature = "merge_sorted")]
@@ -1262,7 +1273,16 @@ fn lower_ir_inner(
                 return Ok(*cached);
             }
 
-            let phys_input = lower_ir!(*input)?;
+            let phys_input = match ctx.recursive_inputs.and_then(|i| i.get(&id)) {
+                Some(frames) => {
+                    let kind = PhysNodeKind::SpillFrameSource {
+                        frames: frames.clone(),
+                        schema: output_schema.clone(),
+                    };
+                    PhysStream::first(phys_sm.insert(PhysNode::new(output_schema, kind)))
+                },
+                None => lower_ir!(*input)?,
+            };
             cache_nodes.insert(id, phys_input);
             return Ok(phys_input);
         },
@@ -2281,6 +2301,133 @@ fn recursive_step_external_caches(
         }
     }
     out
+}
+
+/// Puts each largest part of the step that gives the same rows in every round behind a new cache.
+/// The recursive query then computes it once instead of once per round.
+fn cache_round_independent_parts(
+    step: Node,
+    round_local_caches: &[UniqueId],
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) {
+    // Whether a node must run in every round: it reads the round before, or it may give other
+    // rows when it runs again.
+    let mut per_round = PlHashMap::default();
+    let mut stack = vec![(step, false)];
+    while let Some((node, inputs_done)) = stack.pop() {
+        if per_round.contains_key(&node) {
+            continue;
+        }
+        let ir = ir_arena.get(node);
+        let value = match ir {
+            IR::WorkingTableScan { .. } | IR::Recursive { .. } => true,
+            IR::Cache { id, .. } if !round_local_caches.contains(id) => false,
+            _ if !inputs_done => {
+                stack.push((node, true));
+                stack.extend(ir.inputs().map(|input| (input, false)));
+                continue;
+            },
+            // A round-local cache may be read by parts that read the round.
+            IR::Cache { .. } => true,
+            _ => is_volatile(ir, expr_arena) || ir.inputs().any(|input| per_round[&input]),
+        };
+        per_round.insert(node, value);
+    }
+
+    let mut stack = vec![step];
+    let mut seen = PlHashSet::default();
+    while let Some(node) = stack.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+        let ir = ir_arena.get(node);
+        if per_round[&node] {
+            if !matches!(ir, IR::Recursive { .. }) {
+                stack.extend(ir.inputs());
+            }
+            continue;
+        }
+        if matches!(ir, IR::Cache { .. } | IR::DataFrameScan { .. }) {
+            continue;
+        }
+        remove_dynamic_preds_in(node, ir_arena, expr_arena);
+        let ir = ir_arena.take(node);
+        let input = ir_arena.add(ir);
+        ir_arena.replace(
+            node,
+            IR::Cache {
+                input,
+                id: UniqueId::new(),
+            },
+        );
+    }
+}
+
+/// Whether running `ir` again may give other rows, as with random draws. Like common subplan
+/// elimination, this takes user functions to give the same rows. The predicates set while the
+/// query runs don't count, as they are turned off in the parts that are computed once.
+fn is_volatile(ir: &IR, expr_arena: &Arena<AExpr>) -> bool {
+    #[cfg(feature = "python")]
+    if let IR::PythonScan { options } = ir
+        && !options.is_pure
+    {
+        return true;
+    }
+    ir.exprs().any(|e| {
+        expr_arena.iter(e.node()).any(|(_, ae)| {
+            is_inherently_nondeterministic_excluding_udfs_top_level(ae)
+                && !matches!(
+                    ae,
+                    AExpr::Function {
+                        function: IRFunctionExpr::DynamicPred { .. }
+                            | IRFunctionExpr::DynamicSkipBatch { .. },
+                        ..
+                    }
+                )
+        })
+    })
+}
+
+/// Turns off the predicates that are set while the query runs in `root` and its inputs, up to
+/// caches. Their values come from the round they are set in.
+fn remove_dynamic_preds_in(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+    let mut stack = vec![root];
+    let mut dynamic_preds = vec![];
+    while let Some(node) = stack.pop() {
+        let ir = ir_arena.get(node);
+        for e in ir.exprs() {
+            dynamic_preds.extend(expr_arena.iter(e.node()).filter_map(|(n, ae)| {
+                matches!(
+                    ae,
+                    AExpr::Function {
+                        function: IRFunctionExpr::DynamicPred { .. },
+                        ..
+                    }
+                )
+                .then_some(n)
+            }));
+        }
+        if !matches!(ir, IR::Cache { .. }) {
+            stack.extend(ir.inputs());
+        }
+        match ir_arena.get_mut(node) {
+            IR::Sort {
+                slice: Some((_, _, pred)),
+                ..
+            } => *pred = None,
+            IR::Join { options, .. } if !options.runtime_filters.is_empty() => {
+                Arc::make_mut(options).runtime_filters.clear()
+            },
+            _ => {},
+        }
+    }
+    for node in dynamic_preds {
+        expr_arena.replace(
+            node,
+            AExpr::Literal(LiteralValue::Scalar(Scalar::from(true))),
+        );
+    }
 }
 
 /// Turns off the predicates that are set while the query runs (runtime join filters and top-k

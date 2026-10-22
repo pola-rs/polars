@@ -36,6 +36,7 @@ impl NodeStyle {
             | K::ColumnarFunction { .. }
             | K::Recursive { .. } => Self::InMemoryFallback,
             K::InMemorySource { .. }
+            | K::SpillFrameSource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
             | K::InMemorySink { .. }
@@ -238,6 +239,13 @@ fn visualize_plan_rec(
         } => (
             format!("with-row-index\\nname: {name}\\noffset: {offset:?}"),
             from_ref(input),
+        ),
+        PhysNodeKind::SpillFrameSource { schema, .. } => (
+            format!(
+                "spill-frame-source\\ncols: {}",
+                schema.iter_names().cloned().collect::<Vec<_>>().join(", ")
+            ),
+            &[][..],
         ),
         PhysNodeKind::InputIndependentSelect { selectors } => (
             format!(
