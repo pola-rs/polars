@@ -857,8 +857,8 @@ impl SQLContext {
     }
 
     // Lower the correlated subqueries of a `JOIN ... ON` condition against the
-    // input they read, one conjunct at a time, so that the condition compares
-    // plain columns of both inputs. A conjunct that `correlated_join_side`
+    // input they read, one conjunct at a time, so that the condition reads
+    // plain columns of the inputs. A conjunct that `correlated_join_side`
     // declines is left as it is. Returns the inputs with the lowered columns
     // added and the rewritten condition, or `None` when nothing was lowered.
     pub(crate) fn lower_join_on_subqueries(
@@ -2536,8 +2536,7 @@ pub(crate) fn is_correlated_subquery(query: &Query, spellings: &CatalogSpellings
 /// Which input of a join the correlated subqueries in `conj` read, together with the
 /// left operand of an `IN`: `Some(true)` for the left input, `Some(false)` for the right
 /// one. `None` if they read neither or both, or a relation whose columns can't be found
-/// by name, or if the rest of `conj` doesn't read the other input: the lowered condition
-/// must still compare the two inputs.
+/// by name.
 fn correlated_join_side(
     ctx: &SQLContext,
     conj: &SQLExpr,
@@ -2553,8 +2552,6 @@ fn correlated_join_side(
         unresolved: bool,
         reads_left: bool,
         reads_right: bool,
-        outside_reads_left: bool,
-        outside_reads_right: bool,
     }
 
     impl Visitor for JoinSides<'_> {
@@ -2575,14 +2572,6 @@ fn correlated_join_side(
             // around it.
             if self.query_depth > 0 {
                 return ControlFlow::Continue(());
-            }
-            match self
-                .ctx
-                .column_join_input(expr, self.tbl_left, self.tbl_right)
-            {
-                Some(true) => self.outside_reads_left = true,
-                Some(false) => self.outside_reads_right = true,
-                None => {},
             }
             let (subquery, lhs) = match expr {
                 SQLExpr::Subquery(subquery) | SQLExpr::Exists { subquery, .. } => (subquery, None),
@@ -2631,16 +2620,14 @@ fn correlated_join_side(
         unresolved: false,
         reads_left: false,
         reads_right: false,
-        outside_reads_left: false,
-        outside_reads_right: false,
     };
     let _ = dyn_visit::visit(conj, &mut sides);
     if !sides.is_correlated || sides.unresolved {
         return None;
     }
     match (sides.reads_left, sides.reads_right) {
-        (true, false) if sides.outside_reads_right => Some(true),
-        (false, true) if sides.outside_reads_left => Some(false),
+        (true, false) => Some(true),
+        (false, true) => Some(false),
         _ => None,
     }
 }

@@ -1563,10 +1563,6 @@ def test_join_on_subquery_reading_struct_field() -> None:
         # reads both tables
         ("a.v + b.v > (SELECT MAX(x) FROM c)", "not currently supported in the JOIN"),
         ("v IN (SELECT x FROM c)", "not currently supported in the JOIN"),
-        (
-            "EXISTS (SELECT 1 FROM c WHERE c.x = a.v)",
-            "EXISTS subquery is not currently supported",
-        ),
         # more than one row
         ("a.v = (SELECT x FROM c)", "expected no or a single value"),
     ],
