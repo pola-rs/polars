@@ -352,19 +352,39 @@ def test_write_ndjson_sliced_list_of_structs_30178() -> None:
             pl.List(pl.Array(pl.Int64, 2)),
         ),
         (
-            [[{"y": {"x": 1}}, None], [None, {"y": None}], [{"y": {"x": 3}}]],
+            [
+                [{"y": {"x": 1}}, None],
+                [None, {"y": None}],
+                [{"y": {"x": 3}}],
+                [{"y": {"x": 4}}, None],
+            ],
             pl.List(pl.Struct({"y": pl.Struct({"x": pl.Int64})})),
         ),
         (
-            [[[{"x": 1}, None], None], [None, [None, {"x": 2}]], [[{"x": 3}, None]]],
+            [
+                [[{"x": 1}, None], None],
+                [None, [None, {"x": 2}]],
+                [[{"x": 3}, None]],
+                [[{"x": 4}, {"x": 5}], None],
+            ],
             pl.List(pl.Array(pl.Struct({"x": pl.Int64}), 2)),
         ),
         (
-            [[{"a": [1, 2]}, None], [None, {"a": None}], [{"a": [3, 4]}]],
+            [
+                [{"a": [1, 2]}, None],
+                [None, {"a": None}],
+                [{"a": [3, 4]}],
+                [{"a": [5, 6]}, None],
+            ],
             pl.List(pl.Struct({"a": pl.Array(pl.Int64, 2)})),
         ),
         (
-            [[{"l": [1]}, None], [None, {"l": [2, 3]}], [{"l": None}]],
+            [
+                [{"l": [1]}, None],
+                [None, {"l": [2, 3]}],
+                [{"l": None}],
+                [{"l": [4]}, None],
+            ],
             pl.List(pl.Struct({"l": pl.List(pl.Int64)})),
         ),
     ],
