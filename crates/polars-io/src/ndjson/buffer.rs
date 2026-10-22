@@ -56,6 +56,48 @@ impl Buffer<'_> {
                 }
                 Ok(())
             },
+
+            #[cfg(feature = "dtype-i8")]
+            Int8(buf) => {
+                let v = deserialize_numeric::<Int8Type>(
+                    value,
+                    value.as_i64().and_then(|v| i8::try_from(v).ok()),
+                    self.ignore_errors,
+                )?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-i16")]
+            Int16(buf) => {
+                let v = deserialize_numeric::<Int16Type>(
+                    value,
+                    value.as_i64().and_then(|v| i16::try_from(v).ok()),
+                    self.ignore_errors,
+                )?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u8")]
+            UInt8(buf) => {
+                let v = deserialize_numeric::<UInt8Type>(
+                    value,
+                    value.as_u64().and_then(|v| u8::try_from(v).ok()),
+                    self.ignore_errors,
+                )?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-u16")]
+            UInt16(buf) => {
+                let v = deserialize_numeric::<UInt16Type>(
+                    value,
+                    value.as_u64().and_then(|v| u16::try_from(v).ok()),
+                    self.ignore_errors,
+                )?;
+                buf.append_option(v);
+                Ok(())
+            },
+
             Int32(buf) => {
                 let v =
                     deserialize_numeric::<Int32Type>(value, value.as_i32(), self.ignore_errors)?;
@@ -124,6 +166,22 @@ impl Buffer<'_> {
                 buf.append_option(v);
                 Ok(())
             },
+
+            #[cfg(feature = "dtype-time")]
+            Time(buf) => {
+                let v =
+                    deserialize_numeric::<Int64Type>(value, value.as_i64(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+            #[cfg(feature = "dtype-duration")]
+            Duration(buf, _) => {
+                let v =
+                    deserialize_numeric::<Int64Type>(value, value.as_i64(), self.ignore_errors)?;
+                buf.append_option(v);
+                Ok(())
+            },
+
             All(dtype, buf) => {
                 let av = deserialize_all(value, dtype, self.ignore_errors)?;
                 buf.push(av);
@@ -137,7 +195,12 @@ impl Buffer<'_> {
                 builder.append_null();
                 Ok(())
             },
-            _ => panic!("unexpected dtype when deserializing ndjson"),
+
+            #[allow(unreachable_patterns)]
+            _ => polars_bail!(
+                ComputeError:
+                "unsupported dtype when deserializing ndjson"
+            ),
         }
     }
 

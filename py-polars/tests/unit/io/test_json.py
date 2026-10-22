@@ -894,3 +894,106 @@ def test_ndjson_large_u64_infer_25894() -> None:
         df,
         pl.DataFrame({"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}),
     )
+
+
+@pytest.mark.parametrize("reader", ["eager", "lazy"])
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        (pl.Int8, 1),
+        (pl.Int16, -123),
+        (pl.UInt8, 255),
+        (pl.UInt16, 65535),
+        (pl.Time, 1),
+        (pl.Duration("ms"), 1),
+        (pl.Duration("us"), 1),
+        (pl.Duration("ns"), 1),
+    ],
+)
+def test_ndjson_schema_small_integer_temporal_types(
+    reader: str,
+    dtype: pl.DataType,
+    value: int,
+) -> None:
+    data = io.BytesIO(f'{{"a": {value}}}\n'.encode())
+
+    if reader == "eager":
+        result = pl.read_ndjson(data, schema_overrides={"a": dtype})
+    else:
+        result = pl.scan_ndjson(data, schema_overrides={"a": dtype}).collect()
+
+    assert result.schema == {"a": dtype}
+    assert result["a"].to_physical().to_list() == [value]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        (pl.Int8, 128),
+        (pl.Int8, -129),
+        (pl.Int16, 32768),
+        (pl.UInt8, -1),
+        (pl.UInt8, 256),
+        (pl.UInt16, 65536),
+    ],
+)
+def test_ndjson_schema_small_integer_out_of_range(
+    dtype: pl.DataType,
+    value: int,
+) -> None:
+    data = io.BytesIO(f'{{"a": {value}}}\n'.encode())
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_ndjson(
+            data,
+            schema_overrides={"a": dtype},
+        ).collect()
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Int8,
+        pl.Int16,
+        pl.UInt8,
+        pl.UInt16,
+        pl.Time,
+        pl.Duration("us"),
+    ],
+)
+def test_ndjson_schema_null_values(dtype: pl.DataType) -> None:
+    result = pl.scan_ndjson(
+        io.BytesIO(b'{"a": null}\n'),
+        schema_overrides={"a": dtype},
+    ).collect()
+
+    assert result.schema == {"a": dtype}
+    assert result["a"].to_list() == [None]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        (pl.Int8, 128),
+        (pl.UInt8, -1),
+        (pl.UInt16, 65536),
+        (pl.Time, "invalid"),
+        (pl.Duration("us"), "invalid"),
+    ],
+)
+def test_ndjson_schema_ignore_invalid_values(
+    dtype: pl.DataType,
+    value: int | str,
+) -> None:
+    import json
+
+    data = io.BytesIO((json.dumps({"a": value}) + "\n").encode())
+
+    result = pl.scan_ndjson(
+        data,
+        schema_overrides={"a": dtype},
+        ignore_errors=True,
+    ).collect()
+
+    assert result.schema == {"a": dtype}
+    assert result["a"].to_list() == [None]
