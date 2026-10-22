@@ -8530,8 +8530,10 @@ class DataFrame:
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
-        how : {'inner', 'left', 'right'}
-            Join strategy.
+        how : {'inner', 'left', 'right', 'full'}
+            Join strategy. `'left'` and `'right'` also keep the rows of that input
+            without a match, and `'full'` keeps them from both inputs. The columns of
+            the other input are null in those rows.
         suffix
             Suffix to append to columns with a duplicate name.
 
