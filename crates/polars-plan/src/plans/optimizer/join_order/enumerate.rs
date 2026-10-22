@@ -5,8 +5,8 @@
 
 use polars_utils::pl_str::PlSmallStr;
 
-use super::cluster::Cluster;
-use crate::plans::{composite_key_domain, join_cardinality, key_domain};
+use super::cluster::{Bridge, Cluster};
+use crate::plans::{composite_key_domain, join_cardinality, key_domain, unique_side_rows};
 
 /// Greedy left-deep ordering of a cluster's leaves.
 ///
@@ -64,7 +64,8 @@ fn chain_from(cluster: &Cluster, anchor: usize) -> (f64, Vec<usize>) {
         let best = (0..n)
             .filter(|&i| !is_placed[i])
             .filter_map(|candidate| {
-                let denominator = key_domain_product(cluster, &is_placed, candidate)?;
+                let denominator =
+                    key_domain_product(cluster, &is_placed, placed.len() == 1, candidate)?;
                 let out =
                     join_cardinality(card, cluster.leaves[candidate].stats.filtered, denominator);
                 Some((out, candidate))
@@ -90,15 +91,25 @@ fn chain_from(cluster: &Cluster, anchor: usize) -> (f64, Vec<usize>) {
     (cost, placed)
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum DomainIdentity<'a> {
     Class(usize),
     Column(&'a PlSmallStr),
 }
 
+/// The key of `bridge`, as seen from the candidate.
+fn identity_of<'a>(bridge: &Bridge<'a>) -> Option<DomainIdentity<'a>> {
+    bridge
+        .class
+        .map(DomainIdentity::Class)
+        .or_else(|| bridge.candidate_name.map(DomainIdentity::Column))
+}
+
 struct DomainEstimate<'a> {
     identity: Option<DomainIdentity<'a>>,
     domain: f64,
+    /// The rows of a leaf the key is unique on, see [`unique_side_rows`].
+    unique_rows: Option<f64>,
 }
 
 /// Product of the key domains bridging `candidate` to the placed leaves, or `None`
@@ -110,21 +121,30 @@ struct DomainEstimate<'a> {
 /// Only keys that are actually independent multiply.
 ///
 /// A key with no output name cannot be matched up, so it counts on its own.
-fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Option<f64> {
+///
+/// A key unique on one of several placed leaves can repeat in their join, so a
+/// placed leaf only counts as unique when `single_placed`.
+fn key_domain_product(
+    cluster: &Cluster,
+    is_placed: &[bool],
+    single_placed: bool,
+    candidate: usize,
+) -> Option<f64> {
     let mut per_key: Vec<DomainEstimate<'_>> = Vec::new();
-    let mut max_rows = cluster.leaves[candidate].stats.unfiltered;
-
-    for bridge in cluster.bridging(is_placed, candidate) {
-        let domain = key_domain(
+    let candidate_stats = &cluster.leaves[candidate].stats;
+    let mut max_rows = candidate_stats.unfiltered;
+    let domain_of = |bridge: &Bridge<'_>| {
+        key_domain(
             &cluster.leaves[bridge.placed_leaf].stats,
             bridge.placed_name,
-            &cluster.leaves[candidate].stats,
+            candidate_stats,
             bridge.candidate_name,
-        );
-        let identity = bridge
-            .class
-            .map(DomainIdentity::Class)
-            .or_else(|| bridge.candidate_name.map(DomainIdentity::Column));
+        )
+    };
+
+    for bridge in cluster.bridging(is_placed, candidate) {
+        let domain = domain_of(&bridge);
+        let identity = identity_of(&bridge);
         max_rows = max_rows.max(cluster.leaves[bridge.placed_leaf].stats.unfiltered);
 
         match per_key
@@ -132,12 +152,58 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
             .find(|estimate| identity.is_some() && estimate.identity == identity)
         {
             Some(estimate) => estimate.domain = estimate.domain.min(domain),
-            None => per_key.push(DomainEstimate { identity, domain }),
+            None => per_key.push(DomainEstimate {
+                identity,
+                domain,
+                unique_rows: None,
+            }),
         }
     }
 
-    (!per_key.is_empty())
-        .then(|| composite_key_domain(per_key.iter().map(|estimate| estimate.domain), max_rows))
+    // Uniqueness only bounds a key of several parts, so it is only looked up then,
+    // from every bridge that gave a part its domain.
+    if per_key.len() > 1 {
+        let unnamed: Vec<usize> = (0..per_key.len())
+            .filter(|&i| per_key[i].identity.is_none())
+            .collect();
+        let mut unnamed = unnamed.into_iter();
+        for bridge in cluster.bridging(is_placed, candidate) {
+            let identity = identity_of(&bridge);
+            let index = match identity {
+                Some(_) => per_key
+                    .iter()
+                    .position(|estimate| estimate.identity == identity),
+                None => unnamed.next(),
+            };
+            let Some(estimate) = index.map(|i| &mut per_key[i]) else {
+                continue;
+            };
+            let domain = domain_of(&bridge);
+            if domain != estimate.domain {
+                continue;
+            }
+            let placed_stats = &cluster.leaves[bridge.placed_leaf].stats;
+            let unique_rows =
+                unique_side_rows(candidate_stats, bridge.candidate_name, placed_stats, domain)
+                    .or_else(|| {
+                        unique_side_rows(placed_stats, bridge.placed_name, candidate_stats, domain)
+                            .filter(|_| single_placed)
+                    });
+            estimate.unique_rows = match (estimate.unique_rows, unique_rows) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            };
+        }
+    }
+
+    (!per_key.is_empty()).then(|| {
+        composite_key_domain(
+            per_key
+                .iter()
+                .map(|estimate| (estimate.domain, estimate.unique_rows)),
+            max_rows,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -203,9 +269,9 @@ mod tests {
         };
 
         // Leaves 0 and 1 placed, 2 the candidate: it bridges on `k` to both.
-        let two_edges = key_domain_product(&cluster, &[true, true, false], 2).unwrap();
+        let two_edges = key_domain_product(&cluster, &[true, true, false], false, 2).unwrap();
         // Only leaf 0 placed: the same key reached once.
-        let one_edge = key_domain_product(&cluster, &[true, false, false], 2).unwrap();
+        let one_edge = key_domain_product(&cluster, &[true, false, false], true, 2).unwrap();
 
         // The smallest of the estimates of `k`'s domain, counted a single time.
         assert_eq!(two_edges, 100.0);
