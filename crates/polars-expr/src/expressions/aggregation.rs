@@ -782,65 +782,64 @@ impl PhysicalExpr for AnonymousAggregationExpr {
             ac.set_groups_for_undefined_agg_states();
         }
         if let Some(i) = self.inputs.iter().position(|e| !e.is_scalar()) {
-            let mut target = acs.remove(i);
-            for (j, ac) in acs.iter_mut().enumerate() {
-                let input = &self.inputs[if j < i { j } else { j + 1 }];
-                if input.is_scalar() && ac.broadcast_unit_groups_to(&mut target) {
+            for j in (0..acs.len()).filter(|&j| j != i && self.inputs[j].is_scalar()) {
+                let [ac, target] = acs.get_disjoint_mut([j, i]).unwrap();
+                if ac.broadcast_unit_groups_to(target) {
                     ac.normalize_values();
                 }
             }
-            acs.insert(i, target);
         }
 
-        let mut inputs: Vec<_> = acs
-            .into_iter()
-            .map(|ac| ac.get_final_aggregation())
-            .collect();
-        let resolved_groups = &inputs[0].1;
-        for (_, input_groups) in &inputs[1..] {
-            resolved_groups.check_lengths(input_groups)?;
+        let (columns, mut input_groups): (Vec<_>, Vec<_>) =
+            acs.into_iter().map(|ac| ac.get_final_aggregation()).unzip();
+        let resolved_groups = &input_groups[0];
+        for g in &input_groups[1..] {
+            resolved_groups.check_lengths(g)?;
         }
 
         let mut gr = self.grouped_reduction.new_empty();
-        gr.resize(groups.len() as IdxSize);
+        gr.resize(resolved_groups.len() as IdxSize);
 
+        let total = resolved_groups.iter().map(|g| g.len()).sum::<usize>();
         // The positions of each input's values, group after group.
         let positions = |groups: &GroupsType| -> Vec<IdxSize> {
+            let mut out = Vec::with_capacity(total);
             match groups {
-                GroupsType::Idx(idx) => idx.all().iter().flat_map(|g| g.iter().copied()).collect(),
-                GroupsType::Slice { groups, .. } => groups
-                    .iter()
-                    .flat_map(|&[start, len]| start..start + len)
-                    .collect(),
+                GroupsType::Idx(idx) => {
+                    out.extend(idx.all().iter().flat_map(|g| g.iter().copied()))
+                },
+                GroupsType::Slice { groups, .. } => {
+                    out.extend(groups.iter().flat_map(|&[start, len]| start..start + len))
+                },
             }
+            out
         };
         // `update_groups_subset` needs single chunks. Inputs with their own groups are gathered
         // into group order, so that their values line up.
         let (columns, subset): (Vec<_>, _) =
-            if inputs.iter().all(|(_, g)| g.is_same(resolved_groups)) {
-                let columns = inputs.iter().map(|(c, _)| c.rechunk()).collect();
+            if input_groups.iter().all(|g| g.is_same(resolved_groups)) {
+                let columns = columns.iter().map(Column::rechunk).collect();
                 (columns, positions(resolved_groups))
             } else {
-                let columns = inputs
+                let columns = columns
                     .iter()
+                    .zip(&input_groups)
                     .map(|(c, g)| c.take_slice(&positions(g)))
                     .collect::<PolarsResult<_>>()?;
-                let len = resolved_groups.iter().map(|g| g.len()).sum::<usize>();
-                (columns, (0..len as IdxSize).collect())
+                (columns, (0..total as IdxSize).collect())
             };
-        let group_idxs: Vec<IdxSize> = resolved_groups
-            .iter()
-            .enumerate()
-            .flat_map(|(group_idx, g)| std::iter::repeat_n(group_idx as IdxSize, g.len()))
-            .collect();
-        assert_eq!(group_idxs.len(), subset.len());
+        let mut group_idxs = Vec::with_capacity(total);
+        for (group_idx, g) in resolved_groups.iter().enumerate() {
+            group_idxs.extend(std::iter::repeat_n(group_idx as IdxSize, g.len()));
+        }
 
         // Single call so no need to resolve ordering.
         let seq_id = 0;
 
         // SAFETY:
-        // - `subset` holds positions of the groups, which are in-bounds of their columns.
-        // - `group_idxs` holds one index per group, and there are `groups.len()` of them.
+        // - `subset` holds the group positions into `columns`, or `0..total` into the gathered
+        //   columns, so it is in-bounds.
+        // - Each `group_idxs` entry is `< resolved_groups.len()`, the size passed to `gr.resize`.
         unsafe {
             gr.update_groups_subset(
                 &columns.iter().collect::<Vec<_>>(),
@@ -853,8 +852,10 @@ impl PhysicalExpr for AnonymousAggregationExpr {
         let out_series = gr.finalize()?;
         let out = AggregatedScalar(Column::new(input_column_name, out_series));
 
-        let resolved_groups = inputs.swap_remove(0).1;
-        Ok(AggregationContext::from_agg_state(out, resolved_groups))
+        Ok(AggregationContext::from_agg_state(
+            out,
+            input_groups.swap_remove(0),
+        ))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
