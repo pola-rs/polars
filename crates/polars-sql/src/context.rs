@@ -5701,6 +5701,14 @@ fn process_join_on(
                 Ok((left_i, right_i, preds_i))
             },
             SQLBinaryOperator::Eq => {
+                // Both operands read the same input: not a key pair but a condition on
+                // that input.
+                let left_input = join_operand_input(ctx, left, tbl_left, tbl_right);
+                if left_input.is_some()
+                    && left_input == join_operand_input(ctx, right, tbl_left, tbl_right)
+                {
+                    return process_join_predicate(ctx, sql_expr, tbl_left, tbl_right);
+                }
                 let join_schema = build_join_schema(tbl_left, tbl_right)?;
                 let (l, r) = determine_left_right_join_on(
                     ctx,
@@ -5716,6 +5724,33 @@ fn process_join_on(
         },
         SQLExpr::Nested(expr) => process_join_on(ctx, expr, tbl_left, tbl_right),
         _ => process_join_predicate(ctx, sql_expr, tbl_left, tbl_right),
+    }
+}
+
+/// Which input of a join `expr` reads: `Some(true)` for the left input, `Some(false)` for
+/// the right one, and `None` if it reads both, neither, or a column found in both.
+fn join_operand_input(
+    ctx: &SQLContext,
+    expr: &SQLExpr,
+    tbl_left: &TableInfo,
+    tbl_right: &TableInfo,
+) -> Option<bool> {
+    let refers_to = |tbl: &TableInfo| {
+        tbl.relations
+            .iter()
+            .any(|name| expr_refers_to_table(expr, name, &ctx.active_relations))
+    };
+    let in_schemas = match (refers_to(tbl_left), refers_to(tbl_right)) {
+        (false, false) => (
+            sql_expr_cols_all_in_schema(expr, &tbl_left.schema),
+            sql_expr_cols_all_in_schema(expr, &tbl_right.schema),
+        ),
+        refs => refs,
+    };
+    match in_schemas {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
     }
 }
 

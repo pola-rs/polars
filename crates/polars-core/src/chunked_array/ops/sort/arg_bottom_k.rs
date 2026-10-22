@@ -36,15 +36,14 @@ impl PartialOrd for CompareRow<'_> {
 pub fn _arg_bottom_k(
     k: usize,
     by_column: &[Column],
-    sort_options: &mut SortMultipleOptions,
+    sort_options: SortMultipleOptions,
 ) -> PolarsResult<NoNull<IdxCa>> {
     let from_n_rows = by_column[0].len();
-    _broadcast_bools(by_column.len(), &mut sort_options.descending);
-    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
+    let sort_options = sort_options.expand_flags(by_column.len())?;
 
     // Don't go into row encoding.
     if by_column.len() == 1 && sort_options.limit.is_some() && !sort_options.maintain_order {
-        return Ok(NoNull::new(by_column[0].arg_sort((&*sort_options).into())));
+        return Ok(NoNull::new(by_column[0].arg_sort((&sort_options).into())));
     }
 
     let encoded = _get_rows_encoded(

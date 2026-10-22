@@ -14,8 +14,11 @@ use std::sync::Arc;
 pub(crate) use cost::subplan_cost;
 #[cfg(feature = "python")]
 pub(crate) use dataset::dataset_scan_stats;
-pub use node::{NodeStats, composite_key_domain, join_cardinality, key_domain, node_stats};
+pub use node::{
+    NodeStats, composite_key_domain, join_cardinality, key_domain, node_stats, unique_side_rows,
+};
 pub(crate) use node::{StatsCache, node_stats_with_cache};
+use polars_core::prelude::Scalar;
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
@@ -136,6 +139,46 @@ pub struct ScanColumnStats {
     /// single sampled row group, so values far outside it may exist.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range_partial: bool,
+    /// The statistics each sampled row group records of this column (bounds, counts
+    /// and sizes), present only when `POLARS_SCAN_CHUNK_STATISTICS` is enabled.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
+    /// One entry per sampled row group, ordered by source file, and by row group within a
+    /// file.
+    pub sampled_row_groups: Option<Arc<[RowGroupStats]>>,
+}
+
+/// How many bytes one stored value of a parquet column takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ValueWidth {
+    /// Every value takes this many bytes, e.g. 4 for INT32 and 8 for INT64.
+    Fixed(u32),
+    /// Booleans, which are stored as bits.
+    Bits,
+    /// Byte arrays, whose values differ in length.
+    Variable,
+}
+
+/// The statistics of one parquet column in one row group.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RowGroupStats {
+    pub rows: u64,
+    pub null_count: Option<u64>,
+    /// The number of distinct values, as read from the row group's statistics. Most
+    /// writers don't write this.
+    pub distinct_count: Option<u64>,
+    /// How the column chunk stores its values, which writers choose differently for
+    /// some types, e.g. a decimal as INT32 or as a fixed-length byte array.
+    pub value_width: ValueWidth,
+    /// The size in bytes of the column chunk once decompressed.
+    pub uncompressed_size: u64,
+    /// The size in bytes of the column chunk's dictionary page as stored on disk
+    /// (compressed), if it has one.
+    pub dictionary_page_size: Option<u64>,
+    /// The minimum and maximum value, typed as the column, or as its values for a
+    /// categorical column. `None` when the row group doesn't record both exactly, or
+    /// they can't be converted to that type.
+    pub bounds: Option<(Scalar, Scalar)>,
 }
 
 impl ScanColumnStats {

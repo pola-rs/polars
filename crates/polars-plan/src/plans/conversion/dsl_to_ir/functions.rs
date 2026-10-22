@@ -1,5 +1,4 @@
 use polars_arrow::legacy::error::PolarsResult;
-use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
@@ -911,7 +910,15 @@ pub(super) fn convert_functions(
         #[cfg(feature = "top_k")]
         F::TopK { descending } => I::TopK { descending },
         #[cfg(feature = "top_k")]
-        F::TopKBy { descending } => I::TopKBy { descending },
+        F::TopKBy { descending } => {
+            // The inputs are the values, `k` and then the keys.
+            let options = SortMultipleOptions::default()
+                .with_order_descending_multi(descending)
+                .expand_flags(e.len().saturating_sub(2))?;
+            I::TopKBy {
+                descending: options.descending,
+            }
+        },
         #[cfg(feature = "cum_agg")]
         F::CumCount { reverse } => I::CumCount { reverse },
         #[cfg(feature = "cum_agg")]
@@ -1353,13 +1360,14 @@ pub(super) fn convert_functions(
                 ..
             } = &mut v
             {
-                for opts in [descending, nulls_last].into_iter().flatten() {
-                    _broadcast_bools(e.len(), opts);
-                    polars_ensure!(
-                        opts.len() == e.len(),
-                        ShapeMismatch: "row_encode: got {} columns but {} sort options", e.len(), opts.len()
-                    );
+                let options = SortMultipleOptions {
+                    descending: descending.take().unwrap_or(vec![false]),
+                    nulls_last: nulls_last.take().unwrap_or(vec![false]),
+                    ..Default::default()
                 }
+                .expand_flags(e.len())?;
+                *descending = Some(options.descending);
+                *nulls_last = Some(options.nulls_last);
             }
             I::RowEncode(dts, v)
         },

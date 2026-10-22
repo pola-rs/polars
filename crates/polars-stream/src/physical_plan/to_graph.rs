@@ -834,9 +834,17 @@ fn to_graph_rec<'a>(
 
             let k_schema = k.output_schema(ctx.phys_sm).clone();
             let input_schema = input.output_schema(ctx.phys_sm);
-            let key_schema = compute_output_schema(input_schema, by_column, ctx.expr_arena)?;
 
-            let key_selectors = by_column
+            // Keys are used by position and may have duplicate names, so give them unique names.
+            let unique_by_column = by_column
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .collect_vec();
+            let key_schema =
+                compute_output_schema(input_schema, &unique_by_column, ctx.expr_arena)?;
+
+            let key_selectors = unique_by_column
                 .iter()
                 .map(|e| create_stream_expr(e, ctx, input_schema))
                 .try_collect_vec()?;

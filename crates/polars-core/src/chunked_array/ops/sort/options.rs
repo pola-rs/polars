@@ -85,14 +85,11 @@ pub struct SortOptions {
 pub struct SortMultipleOptions {
     /// Order of the columns. Default all `false``.
     ///
-    /// If only one value is given, it will broadcast to all columns.
+    /// If only one value is given, it will broadcast to all columns. This
+    /// should happen when entering Polars - internally we store broadcast values.
     ///
     /// Use [`SortMultipleOptions::with_order_descending_multi`]
     /// or [`SortMultipleOptions::with_order_descending`] to modify.
-    ///
-    /// # Safety
-    ///
-    /// Len must match the number of columns, or equal 1.
     pub descending: Vec<bool>,
     /// Whether place null values last. Default `false`.
     pub nulls_last: Vec<bool>,
@@ -132,6 +129,25 @@ impl SortMultipleOptions {
     /// Create `SortMultipleOptions` with default values.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Expands `descending` and `nulls_last` given as a single flag for all keys to one flag per
+    /// key.
+    pub fn expand_flags(mut self, num_keys: usize) -> PolarsResult<Self> {
+        for (flags, name) in [
+            (&mut self.descending, "descending"),
+            (&mut self.nulls_last, "nulls_last"),
+        ] {
+            if flags.len() == 1 {
+                *flags = vec![flags[0]; num_keys];
+            }
+            polars_ensure!(
+                flags.len() == num_keys,
+                ComputeError: "the length of `{}` ({}) does not match the length of `by` ({})",
+                name, flags.len(), num_keys
+            );
+        }
+        Ok(self)
     }
 
     /// Specify order for each column. Defaults all `false`.
