@@ -463,6 +463,33 @@ def test_recursive_step_table_computed_once() -> None:
     assert len(calls) == 1
 
 
+def test_recursive_step_local_cte_input_computed_once() -> None:
+    # The input of a CTE in the step doesn't read the round, so it is computed once,
+    # also when one reader of the CTE filters it.
+    calls: list[None] = []
+
+    def count(df: pl.DataFrame) -> pl.DataFrame:
+        calls.append(None)
+        return df
+
+    src = pl.LazyFrame({"x": [1]}).map_batches(count, schema={"x": pl.Int64})
+    query = """
+        WITH RECURSIVE t AS (
+          SELECT 0 AS n, CAST(0 AS BIGINT) AS x, CAST(0 AS BIGINT) AS y
+          UNION ALL (
+            WITH b AS (SELECT * FROM src)
+            SELECT t.n + 1, b1.x, b2.x
+            FROM t CROSS JOIN b b1 CROSS JOIN (SELECT * FROM b WHERE x > 0) b2
+            WHERE t.n < 2
+          )
+        )
+        SELECT * FROM t ORDER BY n
+    """
+    res = pl.SQLContext(src=src).execute(query).collect()
+    assert res.rows() == [(0, 0, 0), (1, 1, 1), (2, 1, 1)]
+    assert len(calls) == 1
+
+
 def test_recursive_step_random_part_runs_every_round() -> None:
     # A part of the step with random draws gives other rows in every round, so it is not
     # computed once.

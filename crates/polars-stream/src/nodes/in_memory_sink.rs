@@ -25,13 +25,17 @@ impl InMemorySinkNode {
         }
     }
 
-    /// The collected morsels in order, as frames that stay registered for spilling until they are
-    /// registered elsewhere.
-    pub fn get_spill_frames(&mut self) -> Vec<SpillFrame> {
+    /// Takes the collected morsels in order, as frames registered in `spill_ctx`. They can be
+    /// spilled while `spill_ctx` lives.
+    pub fn take_spill_frames(&mut self, spill_ctx: &LeastRecentSpillContext) -> Arc<[SpillFrame]> {
         let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
         linearize(morsels_per_pipe)
             .into_iter()
-            .map(Morsel::into_sf)
+            .map(|morsel| {
+                let sf = morsel.into_sf();
+                spill_ctx.register_no_spill_check(&sf);
+                sf
+            })
             .collect()
     }
 }

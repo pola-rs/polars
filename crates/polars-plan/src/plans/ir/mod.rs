@@ -209,7 +209,8 @@ pub enum IR {
         /// `step` are computed once for the whole query.
         round_local_caches: Arc<[UniqueId]>,
     },
-    /// The rows of the round before, inside the `step` of the `Recursive` with this `id`.
+    /// The rows of the round before, inside the `step` of the `Recursive` with this `id`. In the
+    /// plan of a single round it also reads the value of a cache that is computed once.
     WorkingTableScan {
         id: UniqueId,
         schema: SchemaRef,

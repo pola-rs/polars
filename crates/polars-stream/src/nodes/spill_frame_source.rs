@@ -1,22 +1,21 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::schema::SchemaRef;
 use polars_ooc::SpillFrame;
 
 use super::compute_node_prelude::*;
-use crate::morsel::{MorselSeq, SourceToken, get_ideal_morsel_size};
+use super::in_memory_source::{in_memory_morsel_size, spawn_in_memory_senders};
 
-/// Sends the rows of frames that can be spilled. A frame is only loaded while it is sliced into
-/// morsels, so the frames stay spillable while the node runs.
+/// Sends the rows of frames that can be spilled. A frame is only pinned while it is sliced into a
+/// morsel, so it can be spilled again while the node runs.
 pub struct SpillFrameSourceNode {
     /// Groups of frames, sent in order.
     groups: Vec<Arc<[SpillFrame]>>,
     schema: SchemaRef,
     /// The group, frame, offset and length of every morsel.
     morsels: Vec<(usize, usize, usize, usize)>,
-    next_morsel: AtomicUsize,
+    next_morsel: AtomicU64,
     started: bool,
 }
 
@@ -26,7 +25,7 @@ impl SpillFrameSourceNode {
             groups,
             schema,
             morsels: Vec::new(),
-            next_morsel: AtomicUsize::new(0),
+            next_morsel: AtomicU64::new(0),
             started: false,
         }
     }
@@ -55,9 +54,7 @@ impl ComputeNode for SpillFrameSourceNode {
             self.started = true;
             let frames = || self.groups.iter().flat_map(|group| group.iter());
             let len: usize = frames().map(|sf| sf.height()).sum();
-            let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
-            let morsel_count = ideal_morsel_count.next_multiple_of(state.num_pipelines);
-            let morsel_size = len.div_ceil(morsel_count).max(1);
+            let morsel_size = in_memory_morsel_size(len, state.num_pipelines);
             for (g, group) in self.groups.iter().enumerate() {
                 for (f, sf) in group.iter().enumerate() {
                     for offset in (0..sf.height()).step_by(morsel_size) {
@@ -68,7 +65,7 @@ impl ComputeNode for SpillFrameSourceNode {
             }
         }
 
-        let exhausted = self.next_morsel.load(Ordering::Relaxed) >= self.num_morsels();
+        let exhausted = self.next_morsel.load(Ordering::Relaxed) as usize >= self.num_morsels();
         if send[0] == PortState::Done || exhausted {
             send[0] = PortState::Done;
             self.groups = Vec::new();
@@ -89,40 +86,25 @@ impl ComputeNode for SpillFrameSourceNode {
     ) {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);
         let senders = send_ports[0].take().unwrap().parallel();
-
-        let source_token = SourceToken::new();
-        for mut send in senders {
-            let slf = &*self;
-            let source_token = source_token.clone();
-            join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                let wait_group = WaitGroup::default();
-                loop {
-                    let i = slf.next_morsel.fetch_add(1, Ordering::Relaxed);
-                    if i >= slf.num_morsels() {
-                        break;
-                    }
-                    let df = match slf.morsels.get(i) {
-                        Some(&(g, f, offset, len)) => {
-                            slf.groups[g][f].get().await.slice(offset as i64, len)
-                        },
-                        None => DataFrame::empty_with_schema(&slf.schema),
-                    };
-
-                    let morsel_seq = MorselSeq::new(i as u64);
-                    let mut morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
-                    morsel.set_consume_token(wait_group.token());
-                    if send.send(morsel).await.is_err() {
-                        break;
-                    }
-
-                    wait_group.wait().await;
-                    if source_token.stop_requested() {
-                        break;
-                    }
+        let slf = &*self;
+        spawn_in_memory_senders(
+            scope,
+            senders,
+            &slf.next_morsel,
+            MorselSeq::default(),
+            move |i| async move {
+                let i = i as usize;
+                if i >= slf.num_morsels() {
+                    return None;
                 }
-
-                Ok(())
-            }));
-        }
+                Some(match slf.morsels.get(i) {
+                    Some(&(g, f, offset, len)) => {
+                        slf.groups[g][f].get().await.slice(offset as i64, len)
+                    },
+                    None => DataFrame::empty_with_schema(&slf.schema),
+                })
+            },
+            join_handles,
+        );
     }
 }

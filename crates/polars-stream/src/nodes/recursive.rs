@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_async::executor::TaskMetricAggregator;
 use polars_core::prelude::PlHashMap;
 use polars_core::schema::{Schema, SchemaRef};
-use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
+use polars_ooc::{LeastRecentSpillContext, SpillFrame};
 use polars_plan::dsl::SinkTypeIR;
 use polars_plan::plans::{AExpr, IR};
 use polars_utils::arena::{Arena, Node};
@@ -117,18 +117,6 @@ impl RecursiveStep {
     }
 }
 
-/// Moves the frames a sink collected to `spill_ctx`, which outlives the sink.
-fn take_spill_frames(
-    sink: &mut InMemorySinkNode,
-    spill_ctx: &LeastRecentSpillContext,
-) -> Arc<[SpillFrame]> {
-    let frames = sink.get_spill_frames();
-    for sf in &frames {
-        spill_ctx.register_no_spill_check(sf);
-    }
-    frames.into()
-}
-
 enum RecursiveState {
     Sink {
         anchor: InMemorySinkNode,
@@ -196,10 +184,10 @@ impl ComputeNode for RecursiveNode {
                 LeastRecentSpillContext::new("recursive-results".into(), self.task_metrics.clone());
             let inputs_ctx =
                 LeastRecentSpillContext::new("recursive-inputs".into(), self.task_metrics.clone());
-            let anchor = take_spill_frames(anchor, &results_ctx);
+            let anchor = anchor.take_spill_frames(&results_ctx);
             let externals = externals
                 .iter_mut()
-                .map(|sink| take_spill_frames(sink, &inputs_ctx))
+                .map(|sink| sink.take_spill_frames(&inputs_ctx))
                 .collect();
             let groups = self.step.run(anchor, externals, &results_ctx)?;
             self.state = RecursiveState::Source {

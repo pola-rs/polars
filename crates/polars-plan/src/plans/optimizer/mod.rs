@@ -413,6 +413,11 @@ pub fn optimize(
     let resolved_recursive =
         call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
 
+    // Needs the final plan, with the predicates that are set while the query runs.
+    if has_recursive {
+        recursive_caches::cache_round_independent_parts(root, ir_arena, expr_arena);
+    }
+
     prune_parquet_metadata(root, ir_arena, expr_arena);
 
     // During debug we check if the optimizations have not modified the final schema.
