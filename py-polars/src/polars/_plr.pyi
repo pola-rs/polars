@@ -569,6 +569,9 @@ class PySeries:
     # interop
     def to_numpy(self, writable: bool, allow_copy: bool) -> Any: ...
     def to_numpy_view(self) -> Any | None: ...
+    def to_numpy_masked(
+        self, writable: bool, allow_copy: bool
+    ) -> tuple[Any, Any | None]: ...
     @staticmethod
     def _import_decimal_from_iceberg_binary_repr(
         *, bytes_list: Sequence[bytes | None], precision: int, scale: int
@@ -814,6 +817,12 @@ class PyDataFrame:
         writable: bool,
         allow_copy: bool,
     ) -> Any: ...
+    def to_numpy_masked(
+        self,
+        order: IndexOrder,
+        writable: bool,
+        allow_copy: bool,
+    ) -> tuple[Any, Any | None]: ...
 
 class PyLazyFrame:
     @staticmethod
