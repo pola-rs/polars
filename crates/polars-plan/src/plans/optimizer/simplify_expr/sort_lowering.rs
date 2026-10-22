@@ -1,5 +1,3 @@
-use polars_core::chunked_array::ops::sort::_broadcast_bools;
-
 use crate::plans::*;
 
 /// Rewrites expressions that only read the first or last rows of a sort:
@@ -167,10 +165,8 @@ fn sort_by_first_last_to_min_max_by(
 
     let expr = *expr;
     let by = by.clone();
-    let mut descending = sort_options.descending.clone();
-    let mut nulls_last = sort_options.nulls_last.clone();
-    _broadcast_bools(by.len(), &mut descending);
-    _broadcast_bools(by.len(), &mut nulls_last);
+    let descending = sort_options.descending.clone();
+    let nulls_last = sort_options.nulls_last.clone();
 
     let ctx = ToFieldContext::new(arena, schema);
     let dtypes = by
