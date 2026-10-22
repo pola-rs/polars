@@ -1204,6 +1204,24 @@ def test_parquet_statistics_uint64_16683() -> None:
     assert statistics.max == u64_max
 
 
+@pytest.mark.parametrize(("dtype", "bits"), [(pl.UInt32, 32), (pl.UInt64, 64)])
+def test_parquet_statistics_unsigned_multiple_pages_30043(
+    dtype: pl.DataType, bits: int
+) -> None:
+    high = 1 << (bits - 1)
+    values = list(range(100)) + [high + i for i in range(100)]
+    df = pl.Series("a", values, dtype=dtype).to_frame()
+    file = io.BytesIO()
+    df.write_parquet(file, statistics=True, data_page_size=64)
+    file.seek(0)
+    statistics = pq.read_metadata(file).row_group(0).column(0).statistics
+
+    assert statistics.min == 0
+    assert statistics.max == high + 99
+    file.seek(0)
+    assert pl.scan_parquet(file).filter(pl.col("a") < 100).collect().height == 100
+
+
 @pytest.mark.parametrize(
     ("statistics", "expected"),
     [
