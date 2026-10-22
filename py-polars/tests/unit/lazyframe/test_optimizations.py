@@ -1604,3 +1604,13 @@ def test_repeated_keys_removed_before_sort_rewrites() -> None:
             ).collect(),
         )
 
+
+def test_scalar_window_order_by_key_removed() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4], "c": [2, None, 1, 3], "g": [1, 1, 2, 2]})
+    q = lf.select(
+        pl.col("a")
+        .cum_sum()
+        .over("g", order_by=[pl.lit(1), "c"], descending=True, nulls_last=True)
+    )
+    assert "row_encode" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 3, 7, 4]}))
