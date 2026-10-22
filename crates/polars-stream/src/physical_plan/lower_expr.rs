@@ -3130,7 +3130,7 @@ pub(crate) fn input_height_expr(input_schema: &Schema, expr_arena: &mut Arena<AE
         let function = IRFunctionExpr::Repeat;
         let options = function.function_options();
 
-        // repeat(lit({}), len()) within each morsel.
+        // repeat(lit({}), len()), where len() counts all rows of the input.
         let value = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
             DataType::Struct(vec![]),
             AnyValue::StructOwned(Box::new((vec![], vec![]))),
