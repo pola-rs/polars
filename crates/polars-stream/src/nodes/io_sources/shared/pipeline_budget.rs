@@ -11,9 +11,12 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
     LazyLock::new(|| std::env::var("POLARS_LOG_CONCURRENCY").is_ok());
 
-/// Count limit of an ordered scan's pipeline. Its window is sized in bytes; this only bounds tasks
-/// and queue slots for fetches smaller than the window / this limit.
+/// Count limit of an ordered scan's pipeline with an in-flight budget. Its window is sized in bytes;
+/// this only bounds tasks and queue slots for fetches smaller than the window / this limit.
 const ORDERED_COUNT_LIMIT: usize = 8192;
+
+/// Factor by which an ordered scan without an in-flight budget grows the default count limit.
+const ORDERED_LOCAL_COUNT_FACTOR: usize = 2;
 
 const DEFAULT_ORDERED_SLACK_MS: u64 = 100;
 
@@ -204,23 +207,28 @@ impl PipelineBudget {
         }
     }
 
-    /// Marks the scan as ordered, once per budget (shared by clones): the count limit becomes
-    /// `ORDERED_COUNT_LIMIT` unless set by an env var, and the window grows by the reorder
-    /// headroom. Call before sizing anything from `count_limit()`.
-    pub(crate) fn set_ordered(&self) {
+    /// Marks the scan as ordered, once per budget (shared by clones): unless set by an env var, the
+    /// count limit becomes `ORDERED_COUNT_LIMIT` for a scan with an in-flight budget and grows by
+    /// `ORDERED_LOCAL_COUNT_FACTOR` otherwise; the window grows by the reorder headroom. Call
+    /// before sizing anything from `count_limit()`.
+    pub(crate) fn set_ordered(&self, has_inflight: bool) {
         if self.ordered.swap(true, Ordering::AcqRel) || !self.can_grow_count {
             return;
         }
-        let prev = self
-            .count_limit
-            .fetch_max(ORDERED_COUNT_LIMIT, Ordering::AcqRel);
-        self.count
-            .add_permits(ORDERED_COUNT_LIMIT.saturating_sub(prev));
+        let count_limit = if has_inflight {
+            ORDERED_COUNT_LIMIT
+        } else {
+            self.count_limit()
+                .saturating_mul(ORDERED_LOCAL_COUNT_FACTOR)
+                .min(Self::MAX_DEFAULT_COUNT_LIMIT)
+        };
+        let prev = self.count_limit.fetch_max(count_limit, Ordering::AcqRel);
+        self.count.add_permits(count_limit.saturating_sub(prev));
 
         if config::verbose() {
             eprintln!(
                 "[PipelineBudget]: ordered scan: prefetch_limit: {prev} -> {}",
-                prev.max(ORDERED_COUNT_LIMIT)
+                prev.max(count_limit)
             );
         }
     }
