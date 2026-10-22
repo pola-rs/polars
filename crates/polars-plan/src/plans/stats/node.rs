@@ -238,7 +238,11 @@ pub(crate) fn node_stats_with_cache(
                     let left_key = left_key.plain_column(expr_arena);
                     let domain =
                         key_domain(&left, left_key, &right, right_key.plain_column(expr_arena));
-                    own_domain(left_key).map_or(domain, |own| domain.max(own))
+                    let domain = own_domain(left_key).map_or(domain, |own| domain.max(own));
+                    // Like `key_domain`, a domain reaching the smaller side's rows
+                    // means the key is unique there.
+                    let smaller_rows = left.unfiltered.min(right.unfiltered);
+                    (domain, (domain >= smaller_rows).then_some(smaller_rows))
                 }),
                 left.unfiltered.max(right.unfiltered),
             );
@@ -788,10 +792,26 @@ pub fn join_cardinality(left: f64, right: f64, key_domain_product: f64) -> f64 {
 
 /// Domain size of a composite key, from the domains of the columns making it up.
 ///
-/// The parts multiply, which holds only if they vary independently. `max_rows` bounds
+/// Each part is its domain, and the rows of a side it is unique on, if any. The
+/// parts multiply, which holds only if they vary independently. `max_rows` bounds
 /// the result, since neither side holds more distinct combinations than it has rows.
-pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> f64 {
-    parts.product::<f64>().min(max_rows).max(MIN_CARDINALITY)
+///
+/// Once one part is unique on a side, each row of the other side matches at most one
+/// row there, so the other parts cannot narrow the join further. The rows of that
+/// side then bound the result instead.
+pub fn composite_key_domain(parts: impl Iterator<Item = (f64, Option<f64>)>, max_rows: f64) -> f64 {
+    let mut product = 1.0;
+    let mut largest = MIN_CARDINALITY;
+    let mut unique_rows: Option<f64> = None;
+    for (domain, rows) in parts {
+        product *= domain;
+        largest = largest.max(domain);
+        if let Some(rows) = rows {
+            unique_rows = Some(unique_rows.map_or(rows, |r| r.max(rows)));
+        }
+    }
+    let bound = unique_rows.map_or(max_rows, |rows| rows.max(largest));
+    product.min(bound).max(MIN_CARDINALITY)
 }
 
 /// Domain size of the key joining two leaves.
@@ -1162,6 +1182,22 @@ mod tests {
             key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
             800.0
         );
+    }
+
+    /// Once one part of a composite key is unique on a side, the other parts do not
+    /// narrow the join further.
+    #[test]
+    fn composite_key_domain_stops_at_a_unique_part() {
+        // (ts, region) against a 576 row price table, unique on ts there.
+        let parts = [(576.0, Some(576.0)), (400.0, None)];
+        assert_eq!(composite_key_domain(parts.into_iter(), 46_000.0), 576.0);
+
+        let parts = [(576.0, None), (400.0, None)];
+        assert_eq!(composite_key_domain(parts.into_iter(), 46_000.0), 46_000.0);
+
+        // The bound never drops below a part's own domain.
+        let parts = [(10_000.0, Some(100.0)), (5.0, None)];
+        assert_eq!(composite_key_domain(parts.into_iter(), 1e6), 10_000.0);
     }
 
     /// A distinct count that is only a rough bound must not steer the domain.

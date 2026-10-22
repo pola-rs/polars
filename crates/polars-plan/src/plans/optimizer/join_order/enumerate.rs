@@ -99,6 +99,8 @@ enum DomainIdentity<'a> {
 struct DomainEstimate<'a> {
     identity: Option<DomainIdentity<'a>>,
     domain: f64,
+    /// The candidate's rows, if the edge that gave `domain` is unique on it.
+    unique_rows: Option<f64>,
 }
 
 /// Product of the key domains bridging `candidate` to the placed leaves, or `None`
@@ -115,29 +117,50 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
     let mut max_rows = cluster.leaves[candidate].stats.unfiltered;
 
     for bridge in cluster.bridging(is_placed, candidate) {
+        let placed_stats = &cluster.leaves[bridge.placed_leaf].stats;
+        let candidate_stats = &cluster.leaves[candidate].stats;
         let domain = key_domain(
-            &cluster.leaves[bridge.placed_leaf].stats,
+            placed_stats,
             bridge.placed_name,
-            &cluster.leaves[candidate].stats,
+            candidate_stats,
             bridge.candidate_name,
         );
+        // Only the candidate counts: a key unique on one placed leaf can repeat in
+        // the join of the placed leaves.
+        let candidate_rows = candidate_stats.unfiltered;
+        let unique_rows = (candidate_rows <= placed_stats.unfiltered && domain >= candidate_rows)
+            .then_some(candidate_rows);
         let identity = bridge
             .class
             .map(DomainIdentity::Class)
             .or_else(|| bridge.candidate_name.map(DomainIdentity::Column));
-        max_rows = max_rows.max(cluster.leaves[bridge.placed_leaf].stats.unfiltered);
+        max_rows = max_rows.max(placed_stats.unfiltered);
 
         match per_key
             .iter_mut()
             .find(|estimate| identity.is_some() && estimate.identity == identity)
         {
-            Some(estimate) => estimate.domain = estimate.domain.min(domain),
-            None => per_key.push(DomainEstimate { identity, domain }),
+            Some(estimate) if domain < estimate.domain => {
+                estimate.domain = domain;
+                estimate.unique_rows = unique_rows;
+            },
+            Some(_) => {},
+            None => per_key.push(DomainEstimate {
+                identity,
+                domain,
+                unique_rows,
+            }),
         }
     }
 
-    (!per_key.is_empty())
-        .then(|| composite_key_domain(per_key.iter().map(|estimate| estimate.domain), max_rows))
+    (!per_key.is_empty()).then(|| {
+        composite_key_domain(
+            per_key
+                .iter()
+                .map(|estimate| (estimate.domain, estimate.unique_rows)),
+            max_rows,
+        )
+    })
 }
 
 #[cfg(test)]
