@@ -5,7 +5,7 @@
 
 use polars_utils::pl_str::PlSmallStr;
 
-use super::cluster::Cluster;
+use super::cluster::{Bridge, Cluster};
 use crate::plans::{composite_key_domain, join_cardinality, key_domain, unique_side_rows};
 
 /// Greedy left-deep ordering of a cluster's leaves.
@@ -91,10 +91,18 @@ fn chain_from(cluster: &Cluster, anchor: usize) -> (f64, Vec<usize>) {
     (cost, placed)
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum DomainIdentity<'a> {
     Class(usize),
     Column(&'a PlSmallStr),
+}
+
+/// The key of `bridge`, as seen from the candidate.
+fn identity_of<'a>(bridge: &Bridge<'a>) -> Option<DomainIdentity<'a>> {
+    bridge
+        .class
+        .map(DomainIdentity::Class)
+        .or_else(|| bridge.candidate_name.map(DomainIdentity::Column))
 }
 
 struct DomainEstimate<'a> {
@@ -123,51 +131,68 @@ fn key_domain_product(
     candidate: usize,
 ) -> Option<f64> {
     let mut per_key: Vec<DomainEstimate<'_>> = Vec::new();
-    let mut max_rows = cluster.leaves[candidate].stats.unfiltered;
-
-    for bridge in cluster.bridging(is_placed, candidate) {
-        let placed_stats = &cluster.leaves[bridge.placed_leaf].stats;
-        let candidate_stats = &cluster.leaves[candidate].stats;
-        let domain = key_domain(
-            placed_stats,
+    let candidate_stats = &cluster.leaves[candidate].stats;
+    let mut max_rows = candidate_stats.unfiltered;
+    let domain_of = |bridge: &Bridge<'_>| {
+        key_domain(
+            &cluster.leaves[bridge.placed_leaf].stats,
             bridge.placed_name,
             candidate_stats,
             bridge.candidate_name,
-        );
-        let unique_rows =
-            unique_side_rows(candidate_stats, bridge.candidate_name, placed_stats, domain).or_else(
-                || {
-                    unique_side_rows(placed_stats, bridge.placed_name, candidate_stats, domain)
-                        .filter(|_| single_placed)
-                },
-            );
-        let identity = bridge
-            .class
-            .map(DomainIdentity::Class)
-            .or_else(|| bridge.candidate_name.map(DomainIdentity::Column));
-        max_rows = max_rows.max(placed_stats.unfiltered);
+        )
+    };
+
+    for bridge in cluster.bridging(is_placed, candidate) {
+        let domain = domain_of(&bridge);
+        let identity = identity_of(&bridge);
+        max_rows = max_rows.max(cluster.leaves[bridge.placed_leaf].stats.unfiltered);
 
         match per_key
             .iter_mut()
             .find(|estimate| identity.is_some() && estimate.identity == identity)
         {
-            Some(estimate) if domain < estimate.domain => {
-                estimate.domain = domain;
-                estimate.unique_rows = unique_rows;
-            },
-            // Either bridge showing the key unique is enough.
-            Some(estimate) if domain == estimate.domain => {
-                estimate.unique_rows = match (estimate.unique_rows, unique_rows) {
-                    (Some(a), Some(b)) => Some(a.max(b)),
-                    (a, b) => a.or(b),
-                };
-            },
-            Some(_) => {},
+            Some(estimate) => estimate.domain = estimate.domain.min(domain),
             None => per_key.push(DomainEstimate {
                 identity,
                 domain,
-                unique_rows,
+                unique_rows: None,
             }),
+        }
+    }
+
+    // Uniqueness only bounds a key of several parts, so it is only looked up then,
+    // from every bridge that gave a part its domain.
+    if per_key.len() > 1 {
+        let unnamed: Vec<usize> = (0..per_key.len())
+            .filter(|&i| per_key[i].identity.is_none())
+            .collect();
+        let mut unnamed = unnamed.into_iter();
+        for bridge in cluster.bridging(is_placed, candidate) {
+            let identity = identity_of(&bridge);
+            let index = match identity {
+                Some(_) => per_key
+                    .iter()
+                    .position(|estimate| estimate.identity == identity),
+                None => unnamed.next(),
+            };
+            let Some(estimate) = index.map(|i| &mut per_key[i]) else {
+                continue;
+            };
+            let domain = domain_of(&bridge);
+            if domain != estimate.domain {
+                continue;
+            }
+            let placed_stats = &cluster.leaves[bridge.placed_leaf].stats;
+            let unique_rows =
+                unique_side_rows(candidate_stats, bridge.candidate_name, placed_stats, domain)
+                    .or_else(|| {
+                        unique_side_rows(placed_stats, bridge.placed_name, candidate_stats, domain)
+                            .filter(|_| single_placed)
+                    });
+            estimate.unique_rows = match (estimate.unique_rows, unique_rows) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            };
         }
     }
 
