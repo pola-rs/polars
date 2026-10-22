@@ -76,6 +76,7 @@ pub(crate) fn dataset_scan_stats(
                 avg_byte_width: None,
                 int_range,
                 int_range_partial: false,
+                sampled_row_groups: None,
             },
         );
     }
