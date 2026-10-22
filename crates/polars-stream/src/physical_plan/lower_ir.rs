@@ -53,7 +53,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderB
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{
     ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
-    is_elementwise_rec_cached, lower_exprs,
+    input_height_expr, is_elementwise_rec_cached, lower_exprs,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::unique_column_name;
@@ -1456,18 +1456,23 @@ fn lower_ir_inner(
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
-                // So we add dummy expressions before lowering and remove them afterwards.
-
-                let mut aug_left_on = left_on.clone();
-                for name in phys_left.output_schema(phys_sm).iter_names() {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-                }
-                let mut aug_right_on = right_on.clone();
-                for name in phys_right.output_schema(phys_sm).iter_names() {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-                }
+                // So we add dummy expressions before lowering and remove them afterwards. An input
+                // without columns gets an expression that keeps its height.
+                let mut augment_keys = |on: &Vec<ExprIR>, input: PhysStream| {
+                    let mut aug_on = on.clone();
+                    let input_schema = input.output_schema(phys_sm);
+                    for name in input_schema.iter_names() {
+                        let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                        aug_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                    }
+                    if input_schema.is_empty() {
+                        let height = input_height_expr(input_schema, expr_arena);
+                        aug_on.push(ExprIR::new(height, OutputName::Alias(unique_column_name())));
+                    }
+                    aug_on
+                };
+                let aug_left_on = augment_keys(&left_on, phys_left);
+                let aug_right_on = augment_keys(&right_on, phys_right);
 
                 let (mut trans_input_left, mut trans_left_on) = lower_exprs(
                     phys_left,
