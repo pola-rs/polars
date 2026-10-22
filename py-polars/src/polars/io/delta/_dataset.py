@@ -28,6 +28,38 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
 
 
+# Not from `deltalake.table`: those describe deltalake's own readers.
+_MAX_READER_VERSION = 3
+# Reader version 2 tables may use column mapping (v3 lists it as a feature), which is
+# not supported: data files then store columns under physical names.
+_UNSUPPORTED_READER_VERSION = 2
+_SUPPORTED_FEATURES = frozenset(
+    {"deletionVectors", "timestampNtz", "variantType", "variantType-preview"}
+)
+
+
+def _check_reader_protocol(table: DeltaTable) -> None:
+    """Raise if polars cannot read a table with this reader protocol."""
+    from deltalake.exceptions import DeltaProtocolError
+
+    table_protocol = table.protocol()
+    min_reader_version = table_protocol.min_reader_version
+
+    if min_reader_version == _UNSUPPORTED_READER_VERSION:
+        msg = f"delta table requires reader version {min_reader_version} (column mapping), which polars does not support"
+        raise DeltaProtocolError(msg)
+    if min_reader_version > _MAX_READER_VERSION:
+        msg = f"delta table requires reader version {min_reader_version}, polars supports up to {_MAX_READER_VERSION}"
+        raise DeltaProtocolError(msg)
+    if min_reader_version >= 3 and table_protocol.reader_features is not None:
+        missing_features = {*table_protocol.reader_features}.difference(
+            _SUPPORTED_FEATURES
+        )
+        if len(missing_features) > 0:
+            msg = f"delta table requires reader features {sorted(missing_features)}, which polars does not support"
+            raise DeltaProtocolError(msg)
+
+
 def _table_root(table_uri: str) -> str:
     """Return the table prefix used by native scan paths."""
     # Match file_uris() for local paths and our lakefs-to-s3 rewrite.
@@ -279,24 +311,16 @@ class DeltaDataset:
     def table_uri(self) -> str:
         """Fetch the table URI."""
         if self.table_uri_ is None:
-            assert self.table_.get() is not None
-            self.table_uri_ = self.table().table_uri
+            table = self.table_.get()
+            assert table is not None
+            # Not via table(): pickling must not run the protocol check.
+            self.table_uri_ = table.table_uri
 
         return self.table_uri_
 
     def table(self) -> DeltaTable:
         """Fetch the DeltaTable object."""
-        if self.table_.get() is None:
-            from deltalake.exceptions import DeltaProtocolError
-            from deltalake.table import (
-                MAX_SUPPORTED_READER_VERSION,
-                NOT_SUPPORTED_READER_VERSION,
-                SUPPORTED_READER_FEATURES,
-            )
-
-            # Some reader features require explicit support by the engine (polars)
-            SUPPORTED_READER_FEATURES.add("deletionVectors")
-
+        if (table := self.table_.get()) is None:
             from polars.io.delta._utils import _get_delta_lake_table
 
             assert self.table_uri_ is not None
@@ -322,31 +346,11 @@ class DeltaDataset:
                 delta_table_options=self.delta_table_options,
             )
 
-            table_protocol = table.protocol()
-
-            if (
-                table_protocol.min_reader_version > MAX_SUPPORTED_READER_VERSION
-                or table_protocol.min_reader_version == NOT_SUPPORTED_READER_VERSION
-            ):
-                msg = (
-                    f"The table's minimum reader version is {table_protocol.min_reader_version} "
-                    f"but polars delta scanner only supports version 1 or {MAX_SUPPORTED_READER_VERSION} with these reader features: {SUPPORTED_READER_FEATURES}"
-                )
-                raise DeltaProtocolError(msg)
-            if (
-                table_protocol.min_reader_version >= 3
-                and table_protocol.reader_features is not None
-            ):
-                missing_features = {*table_protocol.reader_features}.difference(
-                    SUPPORTED_READER_FEATURES
-                )
-                if len(missing_features) > 0:
-                    msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
-                    raise DeltaProtocolError(msg)
-
             self.table_.set(table)
 
-        return self.table_.get()  # type: ignore[return-value]
+        # Also checks a user-supplied DeltaTable.
+        _check_reader_protocol(table)
+        return table
 
     def __getstate__(self) -> dict[str, Any]:
         self.table_uri()
