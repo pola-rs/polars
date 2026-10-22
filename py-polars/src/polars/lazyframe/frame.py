@@ -6333,7 +6333,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
-        how : {'inner', 'left', 'right'}
+        how : {'inner', 'left', 'right', 'full'}
             Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.

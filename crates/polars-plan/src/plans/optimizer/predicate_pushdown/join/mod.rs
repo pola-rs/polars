@@ -689,7 +689,7 @@ fn downgradable_outer_join_below(
         let schema_left = lp_arena.get(*input_left).schema(lp_arena);
         let schema_right = lp_arena.get(*input_right).schema(lp_arena);
         let origin = non_null_side_for_column(&name, &schema_left, &schema_right, options);
-        if options.is_pure_equi() && downgraded_join_type(how, origin).is_some() {
+        if join_type_rewritable(options) && downgraded_join_type(how, origin).is_some() {
             return Ok(true);
         }
         // Only the side whose rows the join keeps can take the predicate.

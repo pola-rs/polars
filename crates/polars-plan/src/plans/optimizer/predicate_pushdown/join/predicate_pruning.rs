@@ -508,6 +508,13 @@ pub(super) fn non_null_side_for_column(
     }
 }
 
+/// Whether `try_rewrite_join_type` may change the type of this join. With a non-equality
+/// component, `left_on`/`right_on` are not equality keys, so the coalesced key columns
+/// can't be mapped to the new join type.
+pub(super) fn join_type_rewritable(options: &JoinOptionsIR) -> bool {
+    options.is_pure_equi() || !options.args.should_coalesce()
+}
+
 /// The stricter join an outer join becomes when a filter above it drops rows that are null
 /// on `non_null_side`.
 pub(super) fn downgraded_join_type(how: &JoinType, non_null_side: ExprOrigin) -> Option<JoinType> {
@@ -576,8 +583,10 @@ pub fn try_rewrite_join_type(
     // to return any post-select (inserted inner joins will use JoinCoalesce::KeepColumns).
     (|| {
         // Outer ON conditions must be fully captured by the selected join algorithm.
-        let is_outer_non_equi =
-            matches!(options.args.how, JoinType::Left | JoinType::Right) && options.is_non_equi();
+        let is_outer_non_equi = matches!(
+            options.args.how,
+            JoinType::Left | JoinType::Right | JoinType::Full
+        ) && options.is_non_equi();
 
         if is_outer_non_equi {
             if !try_rewrite_outer_equi_join(
@@ -816,16 +825,15 @@ pub fn try_rewrite_join_type(
         Ok(())
     })()?;
 
-    // The rewrites below reason about `left_on`/`right_on` as equality keys, which does
-    // not hold when the match condition has a non-equality component.
-    if options.is_non_equi() {
+    if !join_type_rewritable(options) {
         return Ok(None);
     }
-
-    // Only equality keys reach here; the non-equi paths install their own condition above.
-    Arc::make_mut(options)
-        .options
-        .set_keys(left_on.clone(), right_on.clone());
+    if options.is_pure_equi() {
+        // Only equality keys reach here; the non-equi paths install their own condition above.
+        Arc::make_mut(options)
+            .options
+            .set_keys(left_on.clone(), right_on.clone());
+    }
 
     if !matches!(
         &options.args.how,

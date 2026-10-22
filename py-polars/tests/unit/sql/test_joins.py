@@ -539,14 +539,37 @@ def test_non_equi_right_join_pure() -> None:
     ]
 
 
+@pytest.mark.parametrize("join_type", ["RIGHT", "FULL"])
 @pytest.mark.parametrize(
-    "join_type",
-    ["RIGHT", "FULL", "LEFT SEMI", "LEFT ANTI"],
+    "condition",
+    [
+        "s.key = v.key AND s.t > v.lo AND s.t <= v.hi",
+        "s.t > v.lo AND s.t <= v.hi",
+        "v.hi > 5",
+        "s.key IS NOT NULL",
+    ],
 )
+def test_non_equi_right_and_full_join(join_type: str, condition: str) -> None:
+    assert_sql_matches(
+        frames={
+            "v": pl.DataFrame(
+                {
+                    "key": ["A", "B", "C", None],
+                    "lo": [0, 0, 6, 1],
+                    "hi": [10, 10, 10, 4],
+                }
+            ),
+            "s": pl.DataFrame({"key": ["A", "A", "B", None], "t": [5, 7, 50, 3]}),
+        },
+        query=f"SELECT v.key, v.lo, s.key AS s_key, s.t FROM v {join_type} JOIN s ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("join_type", ["LEFT SEMI", "LEFT ANTI"])
 def test_non_equi_outer_joins_unsupported(join_type: str) -> None:
-    # A non-equi ON clause routes through `join_where`. LEFT is implemented
-    # (see test_non_equi_left_join above); the others are not yet.
-    # See https://github.com/pola-rs/polars/issues/28875
+    # A non-equi ON clause routes through `join_where`, which has no semi or anti join.
     ctx = pl.SQLContext(
         v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),
         s=pl.LazyFrame({"key": ["A", "A", "B"], "t": [5, 7, 50]}),

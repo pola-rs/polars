@@ -492,7 +492,102 @@ def test_join_where_how_right() -> None:
     assert_frame_equal(got.collect(), expected.collect())
 
 
-@pytest.mark.parametrize("how", ["full", "semi", "anti", "cross"])
+def test_join_where_how_full() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"b": [2, 5]})
+
+    got = left.join_where(right, pl.col("a") > pl.col("b"), how="full")
+    expected = pl.LazyFrame({"a": [1, 2, 3, None], "b": [None, None, 2, 5]})
+    assert_frame_equal(got.collect(), expected.collect(), check_row_order=False)
+
+
+def _outer_join_where_reference(
+    left: pl.DataFrame, right: pl.DataFrame, predicate: pl.Expr, how: str
+) -> pl.DataFrame:
+    left = left.with_row_index("__l")
+    right = right.with_row_index("__r")
+    matched = left.join(right, how="cross").filter(predicate)
+    parts = [matched]
+    if how in ("left", "full"):
+        parts.append(left.join(matched.select("__l"), on="__l", how="anti"))
+    if how in ("right", "full"):
+        parts.append(right.join(matched.select("__r"), on="__r", how="anti"))
+    return pl.concat(parts, how="diagonal").select("a", "b", "c", "d")
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("a") > 2,
+        pl.col("c").is_not_null(),
+        pl.col("a") < pl.col("c"),
+        (pl.col("a") < pl.col("c")) & (pl.col("b") > pl.col("d")),
+        pl.col("a") == pl.col("c"),
+        (pl.col("a") == pl.col("c")) & (pl.col("b") < pl.col("d")),
+        ((pl.col("a") + pl.col("c")) > 5) | pl.col("d").is_null(),
+    ],
+)
+def test_outer_join_where_matches_reference(
+    engine: EngineType, how: Literal["left", "right", "full"], predicate: pl.Expr
+) -> None:
+    left = pl.DataFrame({"a": [1, 2, 3, None, 5, 2], "b": [10, 20, None, 40, 50, 25]})
+    right = pl.DataFrame({"c": [2, 3, 7, None, 1], "d": [15, None, 45, 5, 30]})
+    for lhs, rhs in [(left, right), (left.clear(), right), (left, right.clear())]:
+        got = (
+            lhs.lazy().join_where(rhs.lazy(), predicate, how=how).collect(engine=engine)
+        )
+        expected = _outer_join_where_reference(lhs, rhs, predicate, how)
+        assert_frame_equal(got, expected, check_row_order=False)
+
+
+def test_full_join_where_slice() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3, None], "b": [10, 20, 30, 40]})
+    right = pl.DataFrame({"c": [2, 3, 7], "d": [15, 5, 45]})
+    predicate = (pl.col("a") < pl.col("c")) & (pl.col("b") > pl.col("d"))
+    expected = _outer_join_where_reference(left, right, predicate, "full")
+    for offset, length in [(0, 2), (2, 3), (4, 10)]:
+        got = (
+            left.lazy()
+            .join_where(right.lazy(), predicate, how="full")
+            .slice(offset, length)
+            .collect()
+        )
+        assert got.height == expected.slice(offset, length).height
+        assert set(got.iter_rows()) <= set(expected.iter_rows())
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "non_null",
+    [
+        pl.col("a").is_not_null(),
+        pl.col("c").is_not_null(),
+        pl.col("a").is_not_null() & pl.col("c").is_not_null(),
+    ],
+)
+@pytest.mark.parametrize(
+    "predicate",
+    [pl.col("c") > 2, pl.col("a") < pl.col("c"), pl.col("a") + pl.col("c") > 4],
+)
+def test_full_join_where_downgraded_by_filter(
+    engine: EngineType, non_null: pl.Expr, predicate: pl.Expr
+) -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3, None], "b": [10, 20, 30, 40]})
+    right = pl.LazyFrame({"c": [0, 2, 5, None], "d": [1, 2, 3, 4]})
+    query = left.join_where(right, predicate, how="full").filter(non_null)
+    assert "FULL" not in query.explain()
+    disabled = pl.QueryOptFlags(predicate_pushdown=False)
+    assert "FULL" in query.explain(optimizations=disabled)
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(engine=engine, optimizations=disabled),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("how", ["semi", "anti", "cross"])
 def test_join_where_how_unsupported(how: str) -> None:
     left = pl.LazyFrame({"a": [1, 2, 3]})
     right = pl.LazyFrame({"b": [2]})
