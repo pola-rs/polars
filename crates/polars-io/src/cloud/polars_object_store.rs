@@ -414,7 +414,14 @@ impl PolarsObjectStore {
                                 {
                                     collect_body(response.into_stream(), len, controller).await?
                                 },
-                                _ => response.bytes().await?,
+                                _ => {
+                                    let out = response.bytes().await?;
+                                    // Not streamed (local files): the bytes arrive at completion.
+                                    if let Some(controller) = controller_ref {
+                                        controller.record_arrived(out.len() as u64);
+                                    }
+                                    out
+                                },
                             };
 
                             Ok((out, ttfb))

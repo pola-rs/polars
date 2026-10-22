@@ -90,6 +90,12 @@ impl Default for ControllerConfig {
         let target_chunk_size = get_random_access_chunk_size() as u64;
         let init_byte_budget = get_init_byte_budget(target_chunk_size);
         let request_budget = get_inflight_request_budget();
+        let knee_max_bytes = get_knee_max_byte_budget(
+            init_byte_budget,
+            target_chunk_size,
+            request_budget.saturating_mul(target_chunk_size),
+        );
+        let init_byte_budget = init_byte_budget.min(knee_max_bytes);
         Self {
             window: Duration::from_millis(1000),
 
@@ -122,10 +128,7 @@ impl Default for ControllerConfig {
             knee_gain: 1.0,
             knee_round_ticks: get_knee_round_ticks(),
             knee_ramp_lifetime_ratio: 2.0,
-            knee_max_bytes: get_knee_max_byte_budget(
-                init_byte_budget,
-                request_budget.saturating_mul(target_chunk_size),
-            ),
+            knee_max_bytes,
         }
     }
 }
@@ -141,8 +144,13 @@ fn get_knee_round_ticks() -> u32 {
 
 /// Ceiling for the knee's in-flight byte budget: total memory / 16 (cgroup-aware), at most what the
 /// request budget can hold (`max_inflight_bytes` = request budget x max request size), at least the
-/// initial budget.
-fn get_knee_max_byte_budget(init_byte_budget: u64, max_inflight_bytes: u64) -> u64 {
+/// initial budget. `POLARS_INFLIGHT_MAX_BYTE_BUDGET` sets it, at least one chunk; the initial budget
+/// is then at most this.
+fn get_knee_max_byte_budget(
+    init_byte_budget: u64,
+    target_chunk_size: u64,
+    max_inflight_bytes: u64,
+) -> u64 {
     std::env::var("POLARS_INFLIGHT_MAX_BYTE_BUDGET").map_or_else(
         |_| {
             (polars_utils::sys::total_memory() / 16)
@@ -155,6 +163,7 @@ fn get_knee_max_byte_budget(init_byte_budget: u64, max_inflight_bytes: u64) -> u
                     panic!("invalid value for POLARS_INFLIGHT_MAX_BYTE_BUDGET: {x}")
                 })
                 .get()
+                .max(target_chunk_size)
         },
     )
 }
