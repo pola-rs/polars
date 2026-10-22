@@ -122,7 +122,8 @@ make test
 
 This will do a number of things:
 
-- Use Python to create a virtual environment in the `.venv` folder.
+- Use Python to create a virtual environment in the `.venv` folder. This uses `python3` from your
+  `PATH`; set `PYTHON` to use another interpreter, e.g. `PYTHON=python3.13 make test`.
 - Use [pip](https://pip.pypa.io/) and [uv](https://github.com/astral-sh/uv) to install all Python
   dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is

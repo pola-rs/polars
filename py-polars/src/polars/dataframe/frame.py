@@ -3838,16 +3838,16 @@ class DataFrame:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
                 df_original, column_widths, expand_keys=True, expand_values=False
             )
-        column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
+        widths: dict[str, int] = _unpack_multi_column_dict(column_widths or {})
 
         for column in df.columns:
             options = {"hidden": True} if column in hidden else {}
             col_idx = table_start[1] + df.get_column_index(column)
-            if column in column_widths:  # type: ignore[operator]
+            if column in widths:
                 ws.set_column_pixels(
                     col_idx,
                     col_idx,
-                    column_widths[column],  # type: ignore[index]
+                    widths[column],
                     None,
                     options,
                 )
