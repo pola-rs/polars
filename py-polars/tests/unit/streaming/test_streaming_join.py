@@ -1071,3 +1071,18 @@ def test_streaming_join_unmatched_repeated_key_morsels(
     assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
     # At most a morsel per pipeline, there is one pipeline per thread.
     assert out.n_chunks() <= pl.thread_pool_size()
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+def test_streaming_join_keeps_height_of_input_without_columns(
+    how: Literal["inner", "left", "right", "full"],
+) -> None:
+    # Only `id` is selected, so the left input keeps no columns.
+    left = pl.LazyFrame({"x": [10, 20, 30, 40]})
+    right = pl.LazyFrame({"id": [1, 2], "f": [True, False]})
+    q = left.join_where(right, pl.col("f"), how=how).select("id")
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
