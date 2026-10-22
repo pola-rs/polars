@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -109,6 +109,31 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
         raise TypeError(msg)
 
 
+def _widen_truncated_timestamp_max(s: Series) -> Series:
+    """
+    Widen the max statistics of timestamp columns (including struct fields) by 1ms.
+
+    The Delta protocol truncates timestamp min/max statistics down to milliseconds,
+    so the real max of a file can lie up to (but excluding) 1ms above the recorded max.
+    """
+    import polars as pl
+
+    dtype = s.dtype
+
+    if isinstance(dtype, pl.Datetime):
+        return s + timedelta(milliseconds=1)
+
+    if isinstance(dtype, pl.Struct):
+        fields = [
+            _widen_truncated_timestamp_max(f) for f in s.struct.unnest().iter_columns()
+        ]
+        return pl.select(
+            pl.when(s.is_not_null()).then(pl.struct(fields)).alias(s.name)
+        ).to_series()
+
+    return s
+
+
 def _extract_table_statistics_from_delta_add_actions(
     add_actions_df: DataFrame,
     *,
@@ -183,6 +208,10 @@ def _extract_table_statistics_from_delta_add_actions(
             stats[f"{col_name}_max"] = (
                 col_max if col_max is not None else null_col(dtype)
             )
+
+        stats[f"{col_name}_max"] = _widen_truncated_timestamp_max(
+            stats[f"{col_name}_max"]
+        )
 
         return stats
 

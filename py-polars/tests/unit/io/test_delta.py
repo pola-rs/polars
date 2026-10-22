@@ -1092,7 +1092,7 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
                 pl.Series('date_max', [datetime.date(2020, 1, 2), datetime.date(2020, 1, 6), datetime.date(2020, 1, 4)], dtype=pl.Date),
                 pl.Series('datetime_nc', [0, 0, 0], dtype=get_index_type()),
                 pl.Series('datetime_min', [datetime.datetime(2020, 1, 1, 0, 0), datetime.datetime(2020, 1, 5, 0, 0), datetime.datetime(2020, 1, 3, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
-                pl.Series('datetime_max', [datetime.datetime(2020, 1, 2, 0, 0), datetime.datetime(2020, 1, 6, 0, 0), datetime.datetime(2020, 1, 4, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
+                pl.Series('datetime_max', [datetime.datetime(2020, 1, 2, 0, 0, 0, 1000), datetime.datetime(2020, 1, 6, 0, 0, 0, 1000), datetime.datetime(2020, 1, 4, 0, 0, 0, 1000)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
             ]
         ),
         check_row_order=False
@@ -1463,6 +1463,32 @@ def test_scan_delta_predicate_pushdown_struct_column_27857(tmp_path: Path) -> No
         {"error_flags": pl.Series([{"length_issue": True, "incomplete": True}])}
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_filter_truncated_timestamp_max_statistics_30147(
+    tmp_path: Path,
+) -> None:
+    # The Delta protocol truncates timestamp min/max statistics to milliseconds, so
+    # the max in the log can be below the real max of the file.
+    first = datetime(2026, 1, 1, 0, 0, 0, 999)
+    second = datetime(2026, 1, 1, 1, 0, 0)
+
+    pl.DataFrame({"ts": [first], "s": [{"ts": first}]}).write_delta(tmp_path)
+    pl.DataFrame({"ts": [second], "s": [{"ts": second}]}).write_delta(
+        tmp_path, mode="append"
+    )
+
+    q = pl.scan_delta(tmp_path)
+    ts = pl.col("ts")
+    s_ts = pl.col("s").struct.field("ts")
+
+    assert q.filter(ts == first).collect().height == 1
+    assert q.filter(ts >= first).collect().height == 2
+    assert q.filter(ts > first).collect().height == 1
+    assert q.filter(ts.is_in([first])).collect().height == 1
+    assert q.filter(s_ts == first).collect().height == 1
+    assert q.filter(s_ts >= first).collect().height == 2
 
 
 @pytest.mark.write_disk
