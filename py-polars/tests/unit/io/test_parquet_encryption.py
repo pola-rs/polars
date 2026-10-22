@@ -803,18 +803,23 @@ def test_write_read_with_wrong_column_key(tmp_path: Path) -> None:
         pl.read_parquet(path, decryption=decryption_properties)
 
 
-def test_write_column_key_not_in_schema(tmp_path: Path) -> None:
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_write_column_key_not_in_schema(tmp_path: Path, partitioned: bool) -> None:
     encryption_properties = pl.ParquetEncryptionProperties(
         footer_key=FOOTER_KEY,
         column_keys={"secret": COLUMN_KEY, "missing": COLUMN_KEY_2},
     )
+    path = tmp_path / "out"
+    target: Any = pl.PartitionBy(path, key="part") if partitioned else path
     with pytest.raises(
         pl.exceptions.ComputeError,
         match="columns with encryption keys specified were not found in the schema: missing",
     ):
-        basic_data().write_parquet(
-            tmp_path / "out.parquet", encryption=encryption_properties
+        basic_data().lazy().sink_parquet(
+            target, encryption=encryption_properties, mkdir=True
         )
+    # The keys are checked before any file is opened
+    assert not path.exists()
 
 
 @pytest.mark.parametrize(

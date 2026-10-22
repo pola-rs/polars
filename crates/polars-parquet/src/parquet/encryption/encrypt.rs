@@ -119,10 +119,7 @@ impl FileEncryptionProperties {
     }
 
     /// Checks if columns that are to be encrypted are present in schema
-    pub(crate) fn validate_encrypted_column_names(
-        &self,
-        schema: &SchemaDescriptor,
-    ) -> ParquetResult<()> {
+    pub fn validate_encrypted_column_names(&self, schema: &SchemaDescriptor) -> ParquetResult<()> {
         let column_paths = schema
             .columns()
             .iter()
