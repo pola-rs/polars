@@ -9,29 +9,15 @@ use std::io::Cursor;
 use ::zstd::zstd_safe::{self, CCtx, CParameter, DCtx, InBuffer, OutBuffer, ResetDirective};
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
 
-/// Upper bound on the zstd state kept per thread between calls. Contexts for
-/// high compression levels or large windows exceed it and are not kept, but
-/// for those the cost of creating a context is small relative to the work.
-const MAX_CACHED_BYTES: usize = 2 << 20;
-
-struct Cache {
-    cctx: Option<CCtx<'static>>,
-    dctx: Option<DCtx<'static>>,
-}
-
-impl Cache {
-    fn size(&self) -> usize {
-        self.cctx.as_ref().map_or(0, |c| c.sizeof()) + self.dctx.as_ref().map_or(0, |d| d.sizeof())
-    }
-}
+/// Upper bound on the size of each zstd context kept per thread between calls.
+/// Contexts for high compression levels or large windows exceed it and are not
+/// kept, but for those the cost of creating a context is small relative to the
+/// work.
+const MAX_CACHED_CONTEXT_BYTES: usize = 2 * 1000 * 1000;
 
 thread_local! {
-    static CACHE: RefCell<Cache> = const {
-        RefCell::new(Cache {
-            cctx: None,
-            dctx: None,
-        })
-    };
+    static CCTX: RefCell<Option<CCtx<'static>>> = const { RefCell::new(None) };
+    static DCTX: RefCell<Option<DCtx<'static>>> = const { RefCell::new(None) };
 }
 
 fn zstd_err(code: zstd_safe::ErrorCode) -> PolarsError {
@@ -47,27 +33,30 @@ fn with_cctx<R>(
             .map_err(zstd_err)?;
         f(ctx)
     };
-    CACHE.with(|cell| {
-        let Ok(mut cache) = cell.try_borrow_mut() else {
+    CCTX.with(|cell| {
+        let Ok(mut cached) = cell.try_borrow_mut() else {
             // Re-entrant use.
             return run(&mut CCtx::create());
         };
-        let out = run(cache.cctx.get_or_insert_with(CCtx::create));
-        if cache.size() > MAX_CACHED_BYTES {
-            cache.cctx = None;
+        let ctx = cached.get_or_insert_with(CCtx::create);
+        let out = run(ctx);
+        if ctx.sizeof() > MAX_CACHED_CONTEXT_BYTES {
+            *cached = None;
         }
         out
     })
 }
 
 fn with_dctx<R>(f: impl FnOnce(&mut DCtx<'static>) -> PolarsResult<R>) -> PolarsResult<R> {
-    CACHE.with(|cell| {
-        let Ok(mut cache) = cell.try_borrow_mut() else {
+    DCTX.with(|cell| {
+        let Ok(mut cached) = cell.try_borrow_mut() else {
+            // Re-entrant use.
             return f(&mut DCtx::create());
         };
-        let out = f(cache.dctx.get_or_insert_with(DCtx::create));
-        if cache.size() > MAX_CACHED_BYTES {
-            cache.dctx = None;
+        let ctx = cached.get_or_insert_with(DCtx::create);
+        let out = f(ctx);
+        if ctx.sizeof() > MAX_CACHED_CONTEXT_BYTES {
+            *cached = None;
         }
         out
     })

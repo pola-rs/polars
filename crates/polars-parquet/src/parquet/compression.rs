@@ -103,9 +103,8 @@ pub fn compress(
         #[cfg(feature = "zstd")]
         CompressionOptions::Zstd(level) => {
             let level = level.map(|v| v.compression_level()).unwrap_or_default();
-            Ok(polars_utils::compression::zstd::compress(
-                input_buf, output_buf, level,
-            )?)
+            polars_utils::compression::zstd::compress(input_buf, output_buf, level)
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))
         },
         #[cfg(not(feature = "zstd"))]
         CompressionOptions::Zstd(_) => Err(ParquetError::FeatureNotActive(
@@ -141,7 +140,8 @@ pub fn decompress(
         Compression::Zstd => {
             output_buf.truncate(start);
             output_buf.reserve(output_len);
-            let written = polars_utils::compression::zstd::decompress(input_buf, output_buf)?;
+            let written = polars_utils::compression::zstd::decompress(input_buf, output_buf)
+                .map_err(|e| ParquetError::oos(e.to_string()))?;
             if written != output_len {
                 return Err(ParquetError::oos(
                     "zstd decompressed size does not match the page size",

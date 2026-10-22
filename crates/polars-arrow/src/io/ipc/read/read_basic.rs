@@ -436,9 +436,7 @@ mod tests {
         );
         let compression = BodyCompressionRef::read_as_root(compression).unwrap();
 
-        // An uncompressed length of -1 means the data that follows is not compressed. The
-        // values start 8 bytes into `scratch`, so they are misaligned for `i128` whenever
-        // `scratch` is 16-byte aligned.
+        // An uncompressed length of -1 means the data that follows is not compressed.
         let values = [i128::MIN, -1, 0, i128::MAX];
         let mut data = (-1i64).to_le_bytes().to_vec();
         data.extend_from_slice(bytemuck::cast_slice(&values));
@@ -458,7 +456,7 @@ mod tests {
                 &mut scratch,
             )
             .unwrap();
-            assert_eq!(out, expected);
+            assert_eq!(out, bytemuck::cast_slice::<i128, u8>(expected));
         }
     }
 }
