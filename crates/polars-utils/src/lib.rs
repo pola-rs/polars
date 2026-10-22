@@ -32,7 +32,6 @@ pub mod cpuid;
 pub mod error;
 pub mod f2_sketch;
 pub mod file;
-pub mod fixedringbuffer;
 pub mod float;
 pub mod float16;
 pub mod floor_divmod;
