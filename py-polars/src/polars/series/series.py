@@ -5042,6 +5042,33 @@ class Series(metaclass=_Meta):
             )
         ).to_series()
 
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: Literal[False] = ...,
+    ) -> np.ndarray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: Literal[True],
+    ) -> np.ma.MaskedArray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: bool,
+    ) -> np.ndarray[Any, Any]: ...
+
     @removed_parameters(
         RemovedParameter(
             name="use_pyarrow",
@@ -5063,6 +5090,7 @@ class Series(metaclass=_Meta):
         *,
         writable: bool = False,
         allow_copy: bool = True,
+        masked: bool = False,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
@@ -5084,6 +5112,12 @@ class Series(metaclass=_Meta):
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+        masked
+            Return a `numpy.ma.MaskedArray` in which null values are masked. The data
+            keeps the type it would have without nulls, and the values under the mask
+            are unspecified. Nulls inside nested values are converted as they are
+            without `masked`, except for `Array` and `Struct` values. `writable` and
+            `allow_copy` only apply to the data, not the mask.
 
         Examples
         --------
@@ -5123,7 +5157,22 @@ class Series(metaclass=_Meta):
         >>> s.to_numpy()
         array([[1, 2, 3],
                [4, 5, 6]])
+
+        Set `masked=True` to represent null values with a mask instead, which preserves
+        the data type.
+
+        >>> s = pl.Series([1, 2, None], dtype=pl.UInt16)
+        >>> arr = s.to_numpy(masked=True)
+        >>> arr.dtype
+        dtype('uint16')
+        >>> arr.mask
+        array([False, False,  True])
         """  # noqa: W505
+        if masked:
+            data, mask = self._s.to_numpy_masked(
+                writable=writable, allow_copy=allow_copy
+            )
+            return np.ma.MaskedArray(data, mask=np.ma.nomask if mask is None else mask)
         return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
     @unstable()
