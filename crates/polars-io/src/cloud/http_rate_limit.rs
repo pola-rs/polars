@@ -538,6 +538,7 @@ impl AdaptiveRateController {
         let epoch = Instant::now();
 
         let regime = initial_regime(
+            config.follow_factor.is_some(),
             shared.throttled.load(Relaxed),
             shared.get_last_max(),
             shared.get_rate(),
@@ -633,7 +634,7 @@ impl AdaptiveRateController {
 
         // Calculate anchor rate, which is our (conservative) estimate for the unknown rate-limit enforced
         // by the back-end.
-        // Without an EWMA (no settled tick yet): the goodput so far.
+        // Reads, without an EWMA (no settled tick yet): the goodput so far.
         let goodput = state.window_start.and_then(|start| {
             let elapsed = now.duration_since(start);
             let successes = self
@@ -641,7 +642,9 @@ impl AdaptiveRateController {
                 .resp_succeeded
                 .load(Relaxed)
                 .saturating_sub(state.prev_resp_succeeded);
-            (elapsed >= FIRST_CUT_MIN_ELAPSED && successes >= FIRST_CUT_MIN_SUCCESSES)
+            (self.config.follow_factor.is_some()
+                && elapsed >= FIRST_CUT_MIN_ELAPSED
+                && successes >= FIRST_CUT_MIN_SUCCESSES)
                 .then(|| successes as f64 / elapsed.as_secs_f64())
         });
         let (anchor, beta) = cut_anchor(
@@ -911,15 +914,16 @@ fn cut_anchor(
     }
 }
 
-/// A controller built after a cut (store rebuild) tracks the learned ceiling, or the inherited
-/// rate without one; otherwise it searches.
-fn initial_regime(throttled: bool, last_max: Option<f64>, rate: f64) -> Regime {
-    if throttled {
-        Regime::Track {
+/// A read controller (`follows`) built after a cut (store rebuild) tracks the learned ceiling, or
+/// the inherited rate without one; otherwise it searches. A write controller tracks the learned
+/// ceiling if there is one.
+fn initial_regime(follows: bool, throttled: bool, last_max: Option<f64>, rate: f64) -> Regime {
+    match last_max {
+        _ if follows && throttled => Regime::Track {
             anchor: last_max.unwrap_or(rate),
-        }
-    } else {
-        Regime::Search
+        },
+        Some(anchor) if !follows => Regime::Track { anchor },
+        _ => Regime::Search,
     }
 }
 
@@ -1207,16 +1211,24 @@ mod tests {
         );
         assert_eq!(cut(None, None, None, 5000.0), (5000.0, BETA_NO_SIGNAL));
 
-        // After a cut, also before the first settled tick (no learned ceiling): Track.
+        // Reads after a cut, also before the first settled tick (no learned ceiling): Track.
         assert!(
-            matches!(initial_regime(true, None, 2500.0), Regime::Track { anchor } if anchor == 2500.0)
+            matches!(initial_regime(true, true, None, 2500.0), Regime::Track { anchor } if anchor == 2500.0)
         );
         assert!(
-            matches!(initial_regime(true, Some(900.0), 630.0), Regime::Track { anchor } if anchor == 900.0)
+            matches!(initial_regime(true, true, Some(900.0), 630.0), Regime::Track { anchor } if anchor == 900.0)
         );
         assert!(matches!(
-            initial_regime(false, Some(900.0), 7200.0),
+            initial_regime(true, false, Some(900.0), 7200.0),
             Regime::Search
         ));
+        // Writes: Track on a learned ceiling only.
+        assert!(matches!(
+            initial_regime(false, true, None, 2500.0),
+            Regime::Search
+        ));
+        assert!(
+            matches!(initial_regime(false, false, Some(900.0), 7200.0), Regime::Track { anchor } if anchor == 900.0)
+        );
     }
 }
