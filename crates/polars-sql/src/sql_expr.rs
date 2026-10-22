@@ -30,7 +30,7 @@ use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, OrderByOptions,
     Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
-    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan, visit_expressions,
+    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords;
@@ -38,6 +38,7 @@ use sqlparser::parser::{Parser, ParserOptions};
 use sqlparser::tokenizer::Token;
 
 use crate::context::join_idents;
+use crate::dyn_visit::visit_expressions;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{

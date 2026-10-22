@@ -900,6 +900,14 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
                 InvalidOperation: "division of {} with {} is not allowed", left, right,
             )
         },
+        #[cfg(feature = "dtype-decimal")]
+        (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_primitive_numeric() => {
+            if dtype.is_float() {
+                Float64
+            } else {
+                Decimal(DEC128_MAX_PREC, *scale)
+            }
+        },
         #[cfg(feature = "dtype-struct")]
         (Struct(a), Struct(b)) => {
             polars_ensure!(a.len() == b.len() || b.len() == 1,
@@ -977,14 +985,6 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, scale_left), Decimal(_, scale_right)) => {
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
-        },
-        #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_primitive_numeric() => {
-            if dtype.is_float() {
-                Float64
-            } else {
-                Decimal(DEC128_MAX_PREC, *scale)
-            }
         },
         #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]
         (UInt8 | Int8, Float16) => Float16,

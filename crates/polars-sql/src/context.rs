@@ -23,8 +23,7 @@ use sqlparser::ast::{
     OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, WindowType, With,
-    visit_expressions, visit_expressions_mut,
+    ValueWithSpan, Values, WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -33,6 +32,7 @@ use crate::catalog::{
     CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName, name_parts, name_position,
     rewrite_catalog_names,
 };
+use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
@@ -1603,7 +1603,7 @@ impl SQLContext {
             };
             let mut reference_counts = PlHashMap::<String, usize>::new();
             let mut collector = TableIdentifierCollector::default();
-            let _ = query.visit(&mut collector);
+            let _ = dyn_visit::visit(query, &mut collector);
             for name in collector.tables {
                 *reference_counts.entry(name).or_insert(0) += 1;
             }
@@ -3452,7 +3452,7 @@ impl SQLContext {
             reads_right: false,
             unknown: false,
         };
-        let _ = expr.visit(&mut reads);
+        let _ = dyn_visit::visit(expr, &mut reads);
         match (reads.unknown, reads.reads_left, reads.reads_right) {
             (true, _, _) => JoinInputs::Unknown,
             (false, true, true) => JoinInputs::Both,
@@ -6075,7 +6075,7 @@ fn statement_table_identifiers(
         include_schema,
         ..Default::default()
     };
-    let _ = stmt.visit(&mut collector);
+    let _ = dyn_visit::visit(stmt, &mut collector);
     if unique {
         collector
             .tables
