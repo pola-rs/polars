@@ -1293,12 +1293,13 @@ def test_correlated_membership_in_join_on(query: str) -> None:
         "a.id = (SELECT MAX(b.b_id) FROM c AS b WHERE b.b_id = a.id)",
     ],
 )
+@pytest.mark.parametrize("columns", ["a.id, b.w", "b.w"])
 def test_correlated_one_input_condition_in_join_on(
-    join_type: str, condition: str
+    join_type: str, condition: str, columns: str
 ) -> None:
     assert_sql_matches(
         frames=_join_on_frames(),
-        query=f"SELECT a.id, b.w FROM a {join_type} b ON {condition}",
+        query=f"SELECT {columns} FROM a {join_type} b ON {condition}",
         compare_with="sqlite",
         check_row_order=False,
         engines=ENGINES,
