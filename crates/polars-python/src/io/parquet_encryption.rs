@@ -6,17 +6,20 @@ use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
 
+/// Determines how to decrypt Parquet files.
+///
+/// Constructed from explicit keys here, or with keys from a KMS in `parquet_kms`.
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
-pub struct PyFileDecryptionProperties {
+pub struct PyParquetDecryption {
     pub inner: ParquetDecryption,
 }
 
 #[pymethods]
-impl PyFileDecryptionProperties {
-    #[new]
+impl PyParquetDecryption {
+    #[staticmethod]
     #[pyo3(signature = (footer_key, column_keys, aad_prefix, verify_footer_signature))]
-    fn new(
+    fn from_keys(
         footer_key: Vec<u8>,
         column_keys: Vec<(String, Vec<u8>)>,
         aad_prefix: Option<Vec<u8>>,
@@ -41,17 +44,20 @@ impl PyFileDecryptionProperties {
     }
 }
 
+/// Determines how to encrypt Parquet files.
+///
+/// Constructed from explicit keys here, or with keys from a KMS in `parquet_kms`.
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
-pub struct PyFileEncryptionProperties {
+pub struct PyParquetEncryption {
     pub inner: ParquetEncryption,
 }
 
 #[pymethods]
-impl PyFileEncryptionProperties {
-    #[new]
+impl PyParquetEncryption {
+    #[staticmethod]
     #[pyo3(signature = (footer_key, column_keys, plaintext_footer, aad_prefix, store_aad_prefix))]
-    fn new(
+    fn from_keys(
         footer_key: Vec<u8>,
         column_keys: Vec<(String, Vec<u8>)>,
         plaintext_footer: bool,

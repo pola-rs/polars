@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from polars._utils.various import qualified_type_name
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import PyFileDecryptionProperties
+    from polars._plr import PyParquetDecryption
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -58,7 +58,7 @@ class ParquetDecryptionProperties:
         if aad_prefix is not None:
             _check_bytes(aad_prefix, "aad_prefix")
 
-        self._pydecryption = PyFileDecryptionProperties(
+        self._pydecryption = PyParquetDecryption.from_keys(
             footer_key,
             column_keys_list,
             aad_prefix,

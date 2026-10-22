@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from polars.io.parquet.decryption import _check_bytes
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import PyFileEncryptionProperties
+    from polars._plr import PyParquetEncryption
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -75,7 +75,7 @@ class ParquetEncryptionProperties:
             msg = "store_aad_prefix requires aad_prefix to be set"
             raise ValueError(msg)
 
-        self._pyencryption = PyFileEncryptionProperties(
+        self._pyencryption = PyParquetEncryption.from_keys(
             footer_key,
             column_keys_list,
             plaintext_footer,

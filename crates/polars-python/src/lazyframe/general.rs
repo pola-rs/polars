@@ -35,7 +35,7 @@ use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
 #[cfg(feature = "parquet")]
-use crate::io::parquet_encryption::{PyFileDecryptionProperties, PyFileEncryptionProperties};
+use crate::io::parquet_encryption::{PyParquetDecryption, PyParquetEncryption};
 use crate::io::scan_options::PyScanOptions;
 use crate::io::sink_options::PySinkOptions;
 use crate::io::sink_output::PyFileSinkDestination;
@@ -322,7 +322,7 @@ impl PyLazyFrame {
         parallel: Wrap<ParallelStrategy>,
         low_memory: bool,
         use_statistics: bool,
-        decryption: Option<PyFileDecryptionProperties>,
+        decryption: Option<PyParquetDecryption>,
     ) -> PyResult<Self> {
         use crate::utils::to_py_err;
 
@@ -807,7 +807,7 @@ impl PyLazyFrame {
         data_page_size: Option<usize>,
         metadata: Wrap<Option<KeyValueMetadata>>,
         arrow_schema: Option<Wrap<ArrowSchema>>,
-        encryption: Option<PyFileEncryptionProperties>,
+        encryption: Option<PyParquetEncryption>,
     ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
