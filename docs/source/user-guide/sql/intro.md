@@ -96,9 +96,8 @@ Catalogs attached inside a `with SQLContext()` block are detached on exit, like 
 registered there. If that detaches the default catalog, the default catalog on entry is restored.
 `CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet. For
 `CREATE TABLE` that includes a name the default catalog applies to, such as `tpch.t`, even if a
-table of that name is registered.
-`DROP TABLE IF EXISTS` and `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
-catalog only act on a registered table.
+table of that name is registered. `DROP TABLE IF EXISTS` and `TRUNCATE TABLE IF EXISTS` of a name
+that does not start with an attached catalog only act on a registered table.
 
 !!! warning "Serialized plans"
 
