@@ -3516,6 +3516,54 @@ def test_parquet_roundtrip_types_from_arrow_schema(s: pl.Series) -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
+def test_parquet_map_with_custom_field_names_keeps_arrow_types() -> None:
+    # The writer renames the key and value to `key` and `value` in Parquet.
+    t = datetime(2020, 1, 1, 12, tzinfo=UTC)
+    tbl = pa.table(
+        {
+            "m": pa.array(
+                [[(t, t)], None, [(t, None)]],
+                pa.map_(
+                    pa.field("k", pa.timestamp("ms", "Asia/Tokyo"), nullable=False),
+                    pa.field("v", pa.timestamp("us", "Europe/Amsterdam")),
+                ),
+            ),
+            "l": pa.array(
+                [[[("a", t)]], None, []],
+                pa.list_(
+                    pa.map_(
+                        pa.field("kk", pa.string(), nullable=False),
+                        pa.field("vv", pa.timestamp("ns", "America/New_York")),
+                    )
+                ),
+            ),
+        }
+    )
+    f = io.BytesIO()
+    pq.write_table(tbl, f)
+
+    expected = pl.Schema(
+        {
+            "m": pl.Map(
+                pl.Datetime("ms", "Asia/Tokyo"), pl.Datetime("us", "Europe/Amsterdam")
+            ),
+            "l": pl.List(pl.Map(pl.String, pl.Datetime("ns", "America/New_York"))),
+        }
+    )
+    f.seek(0)
+    assert pl.read_parquet_schema(f) == expected
+    f.seek(0)
+    df = pl.read_parquet(f)
+    assert df.schema == expected
+    assert df.to_dicts() == [
+        {"m": {t: t}, "l": [{"a": t}]},
+        {"m": None, "l": None},
+        {"m": {t: None}, "l": []},
+    ]
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
 def test_parquet_incompatible_arrow_schema_uses_parquet_types() -> None:
     df = pl.DataFrame(
         {

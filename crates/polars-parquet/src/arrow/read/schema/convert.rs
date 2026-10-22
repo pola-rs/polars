@@ -380,18 +380,19 @@ fn struct_arrow_hints(arrow_hint: Option<&Field>) -> &[Field] {
     }
 }
 
-/// A list of elements named `name`. It is a fixed-size list if the list `hint` is one, as Parquet
-/// does not record the width.
+/// A list of elements named `name`, or the element name of the list `hint` if there is one, as
+/// writers rename the element in Parquet. It is a fixed-size list if the list `hint` is one, as
+/// Parquet does not record the width.
 fn list_of(
     name: PlSmallStr,
     dtype: ArrowDataType,
     is_nullable: bool,
     arrow_hint: Option<&Field>,
 ) -> ArrowDataType {
-    let element = with_arrow_hint_metadata(
-        Field::new(name, dtype, is_nullable),
-        list_arrow_hint(arrow_hint),
-    );
+    let element_arrow_hint = list_arrow_hint(arrow_hint);
+    let name = element_arrow_hint.map_or(name, |h| h.name.clone());
+    let element =
+        with_arrow_hint_metadata(Field::new(name, dtype, is_nullable), element_arrow_hint);
     match arrow_hint.map(|h| &h.dtype) {
         Some(ArrowDataType::FixedSizeList(_, width)) => {
             ArrowDataType::FixedSizeList(Box::new(element), *width)
@@ -570,17 +571,36 @@ fn to_map(
         Some(ArrowDataType::Map(entries, keys_sorted)) => (Some(entries.as_ref()), *keys_sorted),
         _ => (None, false),
     };
-    let Some(entries_dtype) =
-        to_struct(kv_fields, options, struct_arrow_hints(entries_arrow_hint))?
-    else {
-        invalid_map!("its `{}` child has no columns", field_info.name)
+    // Writers rename the key and value in Parquet, so their hints are matched by position and
+    // keep their names.
+    let kv_arrow_hints = match struct_arrow_hints(entries_arrow_hint) {
+        kv_arrow_hints @ [_, _] => kv_arrow_hints,
+        _ => &[],
     };
-    // `to_struct` drops column-less children, so recheck that both survived.
-    if !matches!(&entries_dtype, ArrowDataType::Struct(fields) if fields.len() == 2) {
-        invalid_map!("its key or value field has no columns")
+    let kv = kv_fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let arrow_hint = kv_arrow_hints.get(i);
+            let field = to_field(f, options, arrow_hint)?;
+            Ok(field.map(|field| match arrow_hint {
+                Some(arrow_hint) => Field {
+                    name: arrow_hint.name.clone(),
+                    ..field
+                },
+                None => field,
+            }))
+        })
+        .collect::<PolarsResult<Vec<Option<Field>>>>()?;
+    match kv.iter().flatten().count() {
+        0 => invalid_map!("its `{}` child has no columns", field_info.name),
+        1 => invalid_map!("its key or value field has no columns"),
+        _ => {},
     }
+    let entries_dtype = ArrowDataType::Struct(kv.into_iter().flatten().collect());
 
-    let entry = Field::new(field_info.name.clone(), entries_dtype, false);
+    let name = entries_arrow_hint.map_or_else(|| field_info.name.clone(), |h| h.name.clone());
+    let entry = Field::new(name, entries_dtype, false);
     let entry = with_arrow_hint_metadata(entry, entries_arrow_hint);
     Ok(Some(ArrowDataType::Map(Box::new(entry), keys_sorted)))
 }
