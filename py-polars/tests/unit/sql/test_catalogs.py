@@ -171,6 +171,9 @@ def test_register_catalog_names(lake: CountingCatalog) -> None:
     # the same name replaces the catalog
     ctx.register_catalog("lake", lake, default_namespace="CH0010", default=True)
     assert ctx.execute("SELECT v FROM lineitem", eager=True).item() == "upper"
+    # ... with the new settings, and keeps its default status
+    ctx.register_catalog("lake", lake, default_namespace="tpch", default=False)
+    assert ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item() == 2
 
     with pytest.raises(pl.exceptions.InvalidOperationError, match="only in case"):
         ctx.register_catalog("LAKE", lake)
@@ -179,8 +182,10 @@ def test_register_catalog_names(lake: CountingCatalog) -> None:
         with pytest.raises(TypeError, match="PyIceberg catalog"):
             ctx.register_catalog("other", obj)  # type: ignore[arg-type]
 
-    # a later default replaces the earlier one; unregistering the default leaves none
+    # a later default replaces the earlier one; re-registering a catalog that is not
+    # the default leaves the default alone; unregistering the default leaves none
     ctx.register_catalog("other", lake, default_namespace="tpch", default=True)
+    ctx.register_catalog("lake", lake, default_namespace="CH0010")
     assert ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item() == 2
     ctx.unregister_catalog("OTHER")
     with pytest.raises(SQLInterfaceError, match="relation 'lineitem' was not found"):
@@ -269,9 +274,11 @@ def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
     [
         "CREATE TABLE lake.tpch.t AS SELECT 1 AS x",
         "DROP TABLE lake.tpch.lineitem",
-        "DROP TABLE IF EXISTS lineitem",
+        "DROP TABLE lineitem",
+        "DROP TABLE IF EXISTS lake.tpch.lineitem",
         "TRUNCATE TABLE lake.tpch.lineitem",
-        "TRUNCATE TABLE IF EXISTS tpch.lineitem",
+        "TRUNCATE TABLE tpch.lineitem",
+        "TRUNCATE TABLE IF EXISTS lake.tpch.lineitem",
         "DELETE FROM lineitem WHERE k = 1",
         "DELETE FROM lake.tpch.lineitem",
     ],
@@ -281,6 +288,76 @@ def test_catalog_ddl_is_not_supported(lake: CountingCatalog, statement: str) -> 
         SQLInterfaceError, match="attached catalog 'lake' is not supported"
     ):
         lake_ctx(lake).execute(statement)
+
+
+@pytest.mark.write_disk
+def test_if_exists_without_catalog_name_acts_on_registered_tables(
+    lake: CountingCatalog,
+) -> None:
+    # a cleanup script keeps working once a default catalog is attached
+    ctx = lake_ctx(lake)
+    ctx.register("tmp", pl.LazyFrame({"x": [1]}))
+    ctx.register("staged", pl.LazyFrame({"x": [1]}))
+    for statement in (
+        "DROP TABLE IF EXISTS tmp",
+        "DROP TABLE IF EXISTS tmp",
+        "DROP TABLE IF EXISTS lineitem",
+        "TRUNCATE TABLE IF EXISTS staged",
+        "TRUNCATE TABLE IF EXISTS tpch.lineitem",
+    ):
+        ctx.execute(statement)
+    assert ctx.tables() == ["staged"]
+    assert ctx.execute("SELECT * FROM staged", eager=True).is_empty()
+    assert lake.loads == []
+    assert ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item() == 2
+
+    # a name that fails leaves the other names of the statement in place
+    ctx.register_many(Foo=pl.LazyFrame({"x": [1]}), FOO=pl.LazyFrame({"x": [1]}))
+    with pytest.raises(SQLInterfaceError, match="more than one table ignoring case"):
+        ctx.execute("DROP TABLE IF EXISTS staged, foo")
+    assert sorted(ctx.tables()) == ["FOO", "Foo", "staged"]
+
+
+@pytest.mark.write_disk
+def test_catalogs_attached_in_scope_are_detached(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake, default=False)
+
+    def count(name: str) -> int:
+        return int(ctx.execute(f"SELECT COUNT(*) FROM {name}", eager=True).item())
+
+    with ctx:
+        ctx.register_catalog("other", lake)
+        with ctx:
+            ctx.register_catalog("inner", lake)
+            assert count("inner.tpch.lineitem") == 2
+        assert count("other.tpch.lineitem") == 2
+        with pytest.raises(SQLInterfaceError, match=r"'inner\.tpch\.lineitem' was not"):
+            count("inner.tpch.lineitem")
+    with pytest.raises(SQLInterfaceError, match=r"'other\.tpch\.lineitem' was not"):
+        count("other.tpch.lineitem")
+    # attached before the scope: kept
+    assert count("lake.tpch.lineitem") == 2
+
+
+@pytest.mark.write_disk
+def test_scope_exit_restores_default_catalog(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+
+    def lineitem_rows() -> int:
+        return int(ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item())
+
+    with ctx:
+        ctx.register_catalog("tmp", lake, default_namespace="CH0010", default=True)
+        with ctx:
+            ctx.register_catalog("inner", lake, default_namespace="tpch", default=True)
+        assert lineitem_rows() == 1
+    assert lineitem_rows() == 2
+
+    # a default moved to a catalog attached before the scope stays
+    ctx.register_catalog("other", lake, default_namespace="CH0010")
+    with ctx:
+        ctx.register_catalog("other", lake, default_namespace="CH0010", default=True)
+    assert lineitem_rows() == 1
 
 
 @pytest.mark.write_disk

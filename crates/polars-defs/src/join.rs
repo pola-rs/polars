@@ -377,7 +377,10 @@ impl JoinType {
 
     /// Joins supported in join where with non-equi conditions
     pub fn supports_non_equi(&self) -> bool {
-        matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
+        matches!(
+            self,
+            JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full
+        )
     }
 }
 
