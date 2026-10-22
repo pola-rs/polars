@@ -124,7 +124,7 @@ See the [Narwhals ecosystem](https://narwhals-dev.github.io/narwhals/ecosystem/)
 
 #### polars-anta
 
-[polars-anta](https://github.com/huuan26/polars-anta) is an open-source technical analysis and
-alpha factor library implemented natively with Polars expressions (`pl.Expr`). It provides over 100
+[polars-anta](https://github.com/huuan26/polars-anta) is an open-source technical analysis and alpha
+factor library implemented natively with Polars expressions (`pl.Expr`). It provides over 100
 vectorized indicators and statistical transforms that execute within Polars' multi-threaded query
 engine, supporting zero-copy evaluation and parallel multi-asset computation via `.over("ticker")`.
