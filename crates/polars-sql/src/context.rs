@@ -29,8 +29,8 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
-    CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName, name_parts, name_position,
-    rewrite_catalog_names,
+    CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName, display_name, name_parts,
+    name_position, rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -465,8 +465,9 @@ impl SQLContext {
     }
 
     /// Error for a statement changing a table of an attached catalog, which SQL can't do yet.
-    /// With `local_first`, the name resolves as in a read: a registered table with the whole
-    /// name is changed instead, else a table of the default catalog is also an error. With
+    /// The name resolves as in a read, so a table of the default catalog is also an error.
+    /// With `local_first`, a registered table with the whole name is changed instead, and a
+    /// name starting with an attached catalog that resolves to no table is left to it. With
     /// `if_exists`, only a name starting with an attached catalog is, so the statement's no-op
     /// on a missing table applies.
     fn ensure_not_catalog_table(
@@ -480,13 +481,18 @@ impl SQLContext {
             return Ok(());
         };
         let named = self.catalogs.named_catalog(&parts);
-        let catalog = if local_first && (named.is_some() || !if_exists) {
-            self.catalogs.resolve(&parts).map(|t| t.catalog)
-        } else {
-            named.map(str::to_string)
+        let table = match (named, if_exists) {
+            (None, true) => None,
+            _ => self.catalogs.resolve(&parts),
         };
-        let Some(catalog) = catalog else {
-            return Ok(());
+        let Some(table) = table else {
+            return match named {
+                Some(catalog) if !local_first => polars_bail!(
+                    SQLInterface: "{} on a table of attached catalog '{}' is not supported{}",
+                    statement, catalog, self.catalogs.unresolved_hint(&parts).unwrap_or_default()
+                ),
+                _ => Ok(()),
+            };
         };
         if local_first
             && self
@@ -495,9 +501,17 @@ impl SQLContext {
         {
             return Ok(());
         }
+        let resolved = match named {
+            Some(_) => String::new(),
+            None => format!(
+                " ('{}' is '{}')",
+                display_name(&parts),
+                display_name(&table.full_name())
+            ),
+        };
         polars_bail!(
-            SQLInterface: "{} on a table of attached catalog '{}' is not supported",
-            statement, catalog
+            SQLInterface: "{} on a table of attached catalog '{}' is not supported{}",
+            statement, table.catalog, resolved
         )
     }
 

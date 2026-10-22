@@ -273,6 +273,9 @@ def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
     "statement",
     [
         "CREATE TABLE lake.tpch.t AS SELECT 1 AS x",
+        "CREATE TABLE tpch.t AS SELECT 1 AS x",
+        "CREATE TABLE t AS SELECT 1 AS x",
+        "CREATE TABLE IF NOT EXISTS tpch.t (x INT)",
         "DROP TABLE lake.tpch.lineitem",
         "DROP TABLE lineitem",
         "DROP TABLE IF EXISTS lake.tpch.lineitem",
@@ -288,6 +291,29 @@ def test_catalog_ddl_is_not_supported(lake: CountingCatalog, statement: str) -> 
         SQLInterfaceError, match="attached catalog 'lake' is not supported"
     ):
         lake_ctx(lake).execute(statement)
+
+
+@pytest.mark.write_disk
+def test_create_table_resolves_like_a_read(lake: CountingCatalog) -> None:
+    # #29892: a name of the default catalog doesn't silently create a registered table
+    ctx = lake_ctx(lake)
+    ctx.register("t", pl.LazyFrame({"x": [1]}))
+    for statement, name in (
+        ("CREATE TABLE sales.t2 (id BIGINT)", "'sales.t2' is 'lake.sales.t2'"),
+        ("CREATE TABLE t AS SELECT * FROM lineitem", "'t' is 'lake.tpch.t'"),
+    ):
+        with pytest.raises(SQLInterfaceError, match=name):
+            ctx.execute(statement)
+    assert ctx.tables() == ["t"]
+
+    # a name that no catalog applies to creates a registered table
+    ctx = lake_ctx(lake, default_namespace=None)
+    ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
+    with pytest.raises(SQLInterfaceError, match="'lake' has no default namespace"):
+        ctx.execute("CREATE TABLE lake.t (x INT)")
+    ctx = lake_ctx(lake, default=False)
+    ctx.execute("CREATE TABLE tpch.t AS SELECT 1 AS x")
+    assert ctx.execute("SELECT x FROM tpch.t", eager=True).item() == 1
 
 
 @pytest.mark.write_disk
