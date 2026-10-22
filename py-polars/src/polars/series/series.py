@@ -5119,6 +5119,10 @@ class Series(metaclass=_Meta):
             without `masked`, except for `Array` and `Struct` values. `writable` and
             `allow_copy` only apply to the data, not the mask.
 
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         Examples
         --------
         Numeric data without nulls can be converted without copying data.
@@ -5169,6 +5173,10 @@ class Series(metaclass=_Meta):
         array([False, False,  True])
         """  # noqa: W505
         if masked:
+            msg = (
+                "the `masked` parameter of `Series.to_numpy()` is considered unstable."
+            )
+            issue_unstable_warning(msg)
             data, mask = self._s.to_numpy_masked(
                 writable=writable, allow_copy=allow_copy
             )

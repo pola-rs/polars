@@ -1995,6 +1995,10 @@ class DataFrame:
             without `masked`, except for `Struct` columns when `structured=True`.
             `writable` and `allow_copy` only apply to the data, not the mask.
 
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
         Examples
         --------
         Numeric data without nulls can be converted without copying data in some cases.
@@ -2071,6 +2075,9 @@ class DataFrame:
                [False,  True],
                [ True, False]])
         """  # noqa: W505
+        if masked:
+            msg = "the `masked` parameter of `DataFrame.to_numpy()` is considered unstable."
+            issue_unstable_warning(msg)
         if structured:
             if not allow_copy and not self.is_empty():
                 msg = "copy not allowed: cannot create structured array without copying data"
