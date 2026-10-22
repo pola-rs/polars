@@ -118,6 +118,11 @@ impl FileEncryptionProperties {
         self.store_aad_prefix && self.aad_prefix.is_some()
     }
 
+    /// The names of the columns encrypted with column keys
+    pub fn encrypted_column_names(&self) -> impl Iterator<Item = &str> {
+        self.column_keys.keys().map(String::as_str)
+    }
+
     /// Checks if columns that are to be encrypted are present in schema
     pub fn validate_encrypted_column_names(&self, schema: &SchemaDescriptor) -> ParquetResult<()> {
         let column_paths = schema

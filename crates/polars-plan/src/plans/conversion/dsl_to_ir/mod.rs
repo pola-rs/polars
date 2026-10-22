@@ -1561,6 +1561,21 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                             *Arc::make_mut(arrow_schema) = new_schema;
                         }
+
+                        if let FileWriteFormat::Parquet(parquet_options) = &options.file_format
+                            && let Some(encryption_properties) =
+                                &parquet_options.encryption_properties
+                            && let PartitionStrategyIR::Keyed {
+                                keys,
+                                include_keys: _,
+                                keys_pre_grouped: _,
+                            } = &options.partition_strategy
+                        {
+                            validate_encrypted_partition_keys(
+                                &encryption_properties.0,
+                                keys.iter().map(|e| e.output_name().as_str()),
+                            )?;
+                        }
                     }
 
                     ctxt.conversion_optimizer
@@ -1841,4 +1856,39 @@ pub(crate) fn maybe_init_projection_excluding_hive(
                     .collect::<Arc<[_]>>()
             }),
     }
+}
+
+/// Rejects column keys for partition key columns, as partition key values are written
+/// unencrypted in the file paths.
+#[cfg(feature = "parquet")]
+fn validate_encrypted_partition_keys<'a>(
+    encryption_properties: &polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties,
+    key_names: impl Iterator<Item = &'a str>,
+) -> PolarsResult<()> {
+    for key_name in key_names {
+        // Column keys are for Parquet column paths, which are nested under the key name
+        // for a struct key.
+        if let Some(column) = encryption_properties
+            .encrypted_column_names()
+            .find(|column| {
+                *column == key_name
+                    || column
+                        .strip_prefix(key_name)
+                        .is_some_and(|rest| rest.starts_with('.'))
+            })
+        {
+            let reason = if column == key_name {
+                "it is a partition key".to_string()
+            } else {
+                format!("it is in partition key '{key_name}'")
+            };
+            polars_bail!(
+                InvalidOperation:
+                "cannot encrypt column '{}' as {}, and partition key values are written \
+                unencrypted in the file paths",
+                column, reason
+            );
+        }
+    }
+    Ok(())
 }

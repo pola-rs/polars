@@ -2587,6 +2587,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Properties for writing Parquet files encrypted with Parquet modular
             encryption. See :class:`ParquetEncryptionProperties`.
 
+            When partitioning, the partition key values are written unencrypted in
+            the file paths. Columns with their own encryption key can't be used as
+            partition keys.
+
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.

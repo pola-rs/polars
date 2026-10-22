@@ -822,6 +822,38 @@ def test_write_column_key_not_in_schema(tmp_path: Path, partitioned: bool) -> No
     assert not path.exists()
 
 
+@pytest.mark.parametrize("include_key", [True, False])
+def test_write_encrypted_partition_key(tmp_path: Path, include_key: bool) -> None:
+    encryption_properties = pl.ParquetEncryptionProperties(
+        footer_key=FOOTER_KEY, column_keys={"part": COLUMN_KEY}
+    )
+    path = tmp_path / "out"
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="cannot encrypt column 'part' as it is a partition key,",
+    ):
+        basic_data().lazy().sink_parquet(
+            pl.PartitionBy(path, key="part", include_key=include_key),
+            encryption=encryption_properties,
+            mkdir=True,
+        )
+    assert not path.exists()
+
+
+def test_write_encrypted_struct_partition_key(tmp_path: Path) -> None:
+    df = pl.DataFrame({"s": [{"x": 1, "y": 2}], "a": [1]})
+    encryption_properties = pl.ParquetEncryptionProperties(
+        footer_key=FOOTER_KEY, column_keys={"s.x": COLUMN_KEY}
+    )
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=re.escape("cannot encrypt column 's.x' as it is in partition key 's'"),
+    ):
+        df.write_parquet(
+            tmp_path / "out", partition_by="s", encryption=encryption_properties
+        )
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
