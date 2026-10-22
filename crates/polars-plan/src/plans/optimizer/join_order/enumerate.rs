@@ -6,7 +6,7 @@
 use polars_utils::pl_str::PlSmallStr;
 
 use super::cluster::Cluster;
-use crate::plans::{composite_key_domain, join_cardinality, key_domain};
+use crate::plans::{composite_key_domain, join_cardinality, key_domain, unique_side_rows};
 
 /// Greedy left-deep ordering of a cluster's leaves.
 ///
@@ -99,7 +99,7 @@ enum DomainIdentity<'a> {
 struct DomainEstimate<'a> {
     identity: Option<DomainIdentity<'a>>,
     domain: f64,
-    /// The candidate's rows, if the edge that gave `domain` is unique on it.
+    /// The rows of a leaf the key is unique on, see [`unique_side_rows`].
     unique_rows: Option<f64>,
 }
 
@@ -115,6 +115,9 @@ struct DomainEstimate<'a> {
 fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Option<f64> {
     let mut per_key: Vec<DomainEstimate<'_>> = Vec::new();
     let mut max_rows = cluster.leaves[candidate].stats.unfiltered;
+    // A key unique on one of several placed leaves can repeat in their join, so a
+    // placed leaf only counts when it is the only one.
+    let single_placed = is_placed.iter().filter(|&&placed| placed).count() == 1;
 
     for bridge in cluster.bridging(is_placed, candidate) {
         let placed_stats = &cluster.leaves[bridge.placed_leaf].stats;
@@ -125,11 +128,13 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
             candidate_stats,
             bridge.candidate_name,
         );
-        // Only the candidate counts: a key unique on one placed leaf can repeat in
-        // the join of the placed leaves.
-        let candidate_rows = candidate_stats.unfiltered;
-        let unique_rows = (candidate_rows <= placed_stats.unfiltered && domain >= candidate_rows)
-            .then_some(candidate_rows);
+        let unique_rows =
+            unique_side_rows(candidate_stats, bridge.candidate_name, placed_stats, domain).or_else(
+                || {
+                    unique_side_rows(placed_stats, bridge.placed_name, candidate_stats, domain)
+                        .filter(|_| single_placed)
+                },
+            );
         let identity = bridge
             .class
             .map(DomainIdentity::Class)
@@ -143,6 +148,13 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
             Some(estimate) if domain < estimate.domain => {
                 estimate.domain = domain;
                 estimate.unique_rows = unique_rows;
+            },
+            // Either bridge showing the key unique is enough.
+            Some(estimate) if domain == estimate.domain => {
+                estimate.unique_rows = match (estimate.unique_rows, unique_rows) {
+                    (Some(a), Some(b)) => Some(a.max(b)),
+                    (a, b) => a.or(b),
+                };
             },
             Some(_) => {},
             None => per_key.push(DomainEstimate {

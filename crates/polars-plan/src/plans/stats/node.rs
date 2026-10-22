@@ -236,13 +236,12 @@ pub(crate) fn node_stats_with_cache(
             let key_domains = composite_key_domain(
                 on.iter().map(|(left_key, right_key)| {
                     let left_key = left_key.plain_column(expr_arena);
-                    let domain =
-                        key_domain(&left, left_key, &right, right_key.plain_column(expr_arena));
+                    let right_key = right_key.plain_column(expr_arena);
+                    let domain = key_domain(&left, left_key, &right, right_key);
                     let domain = own_domain(left_key).map_or(domain, |own| domain.max(own));
-                    // Like `key_domain`, a domain reaching the smaller side's rows
-                    // means the key is unique there.
-                    let smaller_rows = left.unfiltered.min(right.unfiltered);
-                    (domain, (domain >= smaller_rows).then_some(smaller_rows))
+                    let unique_rows = unique_side_rows(&left, left_key, &right, domain)
+                        .or_else(|| unique_side_rows(&right, right_key, &left, domain));
+                    (domain, unique_rows)
                 }),
                 left.unfiltered.max(right.unfiltered),
             );
@@ -814,6 +813,24 @@ pub fn composite_key_domain(parts: impl Iterator<Item = (f64, Option<f64>)>, max
     product.min(bound).max(MIN_CARDINALITY)
 }
 
+/// The rows of `side`, if the key joining it to `other` is unique on it.
+///
+/// Only the smaller side counts. Its own distinct count or range must reach its
+/// rows. Without either, [`key_domain`] guessed the key unique on the smaller side,
+/// and the shared `domain` reaching its rows says so.
+pub fn unique_side_rows(
+    side: &NodeStats,
+    key: Option<&PlSmallStr>,
+    other: &NodeStats,
+    domain: f64,
+) -> Option<f64> {
+    let rows = side.unfiltered;
+    let distinct = key
+        .and_then(|name| side.key_distinct_estimate(name))
+        .unwrap_or(domain);
+    (rows <= other.unfiltered && distinct >= rows).then_some(rows)
+}
+
 /// Domain size of the key joining two leaves.
 ///
 /// With distinct counts on both sides the domain is the larger of the two: every
@@ -1198,6 +1215,28 @@ mod tests {
         // The bound never drops below a part's own domain.
         let parts = [(10_000.0, Some(100.0)), (5.0, None)];
         assert_eq!(composite_key_domain(parts.into_iter(), 1e6), 10_000.0);
+    }
+
+    /// A key is unique on the smaller side only by that side's own statistics, not
+    /// by a domain the larger side set.
+    #[test]
+    fn unique_side_rows_reads_the_smaller_side() {
+        let k = key("k");
+        let large = leaf_with_range(1_000_000.0, (0, 9_999));
+        // 2000 rows over 10 values.
+        let small = leaf_with_range(2_000.0, (0, 9));
+        let domain = key_domain(&large, Some(&k), &small, Some(&k));
+        assert!(domain >= 2_000.0);
+        assert_eq!(unique_side_rows(&small, Some(&k), &large, domain), None);
+
+        // Without statistics the key is guessed unique on the smaller side.
+        let opaque = leaf(2_000.0, 2_000.0);
+        let domain = key_domain(&large, Some(&k), &opaque, Some(&k));
+        assert_eq!(
+            unique_side_rows(&opaque, Some(&k), &large, domain),
+            Some(2_000.0)
+        );
+        assert_eq!(unique_side_rows(&large, Some(&k), &opaque, domain), None);
     }
 
     /// A distinct count that is only a rough bound must not steer the domain.
