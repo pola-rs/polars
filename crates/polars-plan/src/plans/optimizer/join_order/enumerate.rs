@@ -219,6 +219,8 @@ struct GuessedKeys<'a> {
     adjacent: Vec<bool>,
     /// Per leaf, its most fact-like partner and the keys reaching it.
     kept: Vec<Option<(usize, Vec<DomainIdentity<'a>>)>>,
+    /// Whether any guess in the cluster is dropped at all.
+    any_dropped: bool,
 }
 
 impl<'a> GuessedKeys<'a> {
@@ -269,27 +271,49 @@ impl<'a> GuessedKeys<'a> {
             })
             .collect();
 
-        Self { n, adjacent, kept }
+        let mut guessed = Self {
+            n,
+            adjacent,
+            kept,
+            any_dropped: false,
+        };
+        guessed.any_dropped = (0..n).any(|leaf| {
+            key_pairs(cluster, leaf).any(|pair| {
+                guessed.dropped(leaf, pair.identity, pair.partner)
+                    && guessed_unique(
+                        &cluster.leaves[leaf].stats,
+                        pair.key,
+                        &cluster.leaves[pair.partner].stats,
+                        pair.partner_key,
+                    )
+            })
+        });
+        guessed
     }
 
     /// Whether `bridge`, joining `candidate` to a placed leaf, rests on a dropped
     /// guess.
     fn drops(&self, cluster: &Cluster, bridge: &Bridge<'_>, candidate: usize) -> bool {
+        if !self.any_dropped {
+            return false;
+        }
         let (candidate_identity, placed_identity) = identities(bridge);
         let candidate_stats = &cluster.leaves[candidate].stats;
         let placed_stats = &cluster.leaves[bridge.placed_leaf].stats;
-        (guessed_unique(
-            candidate_stats,
-            bridge.candidate_name,
-            placed_stats,
-            bridge.placed_name,
-        ) && self.dropped(candidate, candidate_identity, bridge.placed_leaf))
-            || (guessed_unique(
-                placed_stats,
-                bridge.placed_name,
+        (self.dropped(candidate, candidate_identity, bridge.placed_leaf)
+            && guessed_unique(
                 candidate_stats,
                 bridge.candidate_name,
-            ) && self.dropped(bridge.placed_leaf, placed_identity, candidate))
+                placed_stats,
+                bridge.placed_name,
+            ))
+            || (self.dropped(bridge.placed_leaf, placed_identity, candidate)
+                && guessed_unique(
+                    placed_stats,
+                    bridge.placed_name,
+                    candidate_stats,
+                    bridge.candidate_name,
+                ))
     }
 
     /// Whether the guess that `identity` is unique on `leaf`, joined to `partner`, is
