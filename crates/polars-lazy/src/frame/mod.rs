@@ -522,11 +522,12 @@ impl LazyFrame {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Node> {
         self.optimize_with_scratch(lp_arena, expr_arena, &mut vec![])
+            .map(|(node, _)| node)
     }
 
     pub fn to_alp_optimized(mut self) -> PolarsResult<IRPlan> {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
-        let node = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])?;
+        let (node, _) = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])?;
 
         Ok(IRPlan::new(node, lp_arena, expr_arena))
     }
@@ -543,12 +544,13 @@ impl LazyFrame {
         Ok(plan)
     }
 
+    /// Returns the optimized root and whether the plan contains a recursive query.
     pub(crate) fn optimize_with_scratch(
         self,
         ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
-    ) -> PolarsResult<Node> {
+    ) -> PolarsResult<(Node, bool)> {
         let mut opt_flags = self.opt_state;
         // Unset CSE
         // This can be turned on again during ir-conversion.
@@ -558,19 +560,7 @@ impl LazyFrame {
             opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
         }
         let root = to_alp(self.logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
-
-        // A recursive query always runs on the streaming engine. This must be known before
-        // optimizing, as some optimizations depend on the engine.
-        if contains_recursive(root, ir_arena) {
-            polars_ensure!(
-                cfg!(feature = "streaming"),
-                InvalidOperation: "recursive queries require the `streaming` feature"
-            );
-            opt_flags |= OptFlags::STREAMING;
-            opt_flags &= !OptFlags::GPU;
-        }
-
-        let lp_top = optimize(
+        let (lp_top, has_recursive) = optimize(
             root,
             opt_flags,
             ir_arena,
@@ -581,14 +571,12 @@ impl LazyFrame {
                 hive_join,
             },
         )?;
-
-        // A resolver can add a recursive query after the plan was optimized for another engine.
         polars_ensure!(
-            opt_flags.streaming() || !contains_recursive(lp_top, ir_arena),
-            InvalidOperation: "a recursive query added by a resolver must be collected with the streaming engine"
+            !has_recursive || cfg!(feature = "streaming"),
+            InvalidOperation: "recursive queries require the `streaming` feature"
         );
 
-        Ok(lp_top)
+        Ok((lp_top, has_recursive))
     }
 
     fn prepare_collect_post_opt<P>(
@@ -602,7 +590,8 @@ impl LazyFrame {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
 
         let mut scratch = vec![];
-        let lp_top = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
+        let (lp_top, has_recursive) =
+            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
         post_opt(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         // sink should be replaced
@@ -617,7 +606,7 @@ impl LazyFrame {
         } else {
             true
         };
-        let physical_plan = if contains_recursive(lp_top, &lp_arena) {
+        let physical_plan = if has_recursive {
             let build_streaming_executor = BUILD_STREAMING_EXECUTOR
                 .ok_or_else(|| polars_err!(InvalidOperation: "recursive queries require the `streaming` feature"))?;
             build_streaming_executor(lp_top, &mut lp_arena, &mut expr_arena)?
@@ -696,14 +685,18 @@ impl LazyFrame {
             o.on_query_started()
         }
 
-        let mut ir_plan = self.to_alp_optimized().inspect_err(|err| {
-            if let Some(o) = observer.as_ref() {
-                o.on_query_failed(err)
-            }
-        })?;
+        let (mut lp_arena, mut expr_arena) = self.get_arenas();
+        let (lp_top, has_recursive) = self
+            .optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])
+            .inspect_err(|err| {
+                if let Some(o) = observer.as_ref() {
+                    o.on_query_failed(err)
+                }
+            })?;
+        let mut ir_plan = IRPlan::new(lp_top, lp_arena, expr_arena);
         ir_plan.ensure_root_node_is_sink();
 
-        let engine = if contains_recursive(ir_plan.lp_top, &ir_plan.lp_arena) {
+        let engine = if has_recursive {
             Engine::Streaming
         } else {
             engine
@@ -2488,18 +2481,4 @@ impl Iterator for CollectBatches {
         self.start();
         self.recv.recv().ok()
     }
-}
-
-/// Whether the plan contains a recursive query.
-fn contains_recursive(root: Node, ir_arena: &Arena<IR>) -> bool {
-    let mut stack = vec![root];
-    let mut seen_caches = PlHashSet::new();
-    while let Some(node) = stack.pop() {
-        match ir_arena.get(node) {
-            IR::Recursive { .. } => return true,
-            IR::Cache { id, .. } if !seen_caches.insert(*id) => continue,
-            ir => stack.extend(ir.inputs()),
-        }
-    }
-    false
 }

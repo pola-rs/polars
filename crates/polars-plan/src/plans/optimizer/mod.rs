@@ -107,15 +107,16 @@ pub struct ExecutionHooks {
     pub hive_join: HiveJoinFn,
 }
 
+/// Returns the optimized root and whether the plan contains a recursive query.
 #[recursive::recursive]
 pub fn optimize(
     mut root: Node,
-    opt_flags: OptFlags,
+    mut opt_flags: OptFlags,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
     hooks: ExecutionHooks,
-) -> PolarsResult<Node> {
+) -> PolarsResult<(Node, bool)> {
     #[allow(dead_code)]
     let verbose = verbose();
 
@@ -152,6 +153,14 @@ pub fn optimize(
         };
     }
 
+    // A recursive query always runs on the streaming engine, and some optimizations depend on
+    // the engine.
+    let has_recursive = get_or_init_members!().has_recursive;
+    if has_recursive {
+        opt_flags |= OptFlags::STREAMING;
+        opt_flags &= !OptFlags::GPU;
+    }
+
     // Run before slice pushdown
     if opt_flags.simplify_expr() {
         #[cfg(feature = "fused")]
@@ -186,7 +195,7 @@ pub fn optimize(
     // Caches block predicate pushdown. A recursive query keeps caches that have one reader in
     // its step, so their inputs must be optimized by the cache pass.
     #[cfg(feature = "cse")]
-    if get_or_init_members!().has_recursive {
+    if has_recursive {
         run_set_cache_states = true;
     }
 
@@ -401,7 +410,8 @@ pub fn optimize(
         hooks.apply_scan_predicate_to_scan_ir,
     )?;
 
-    call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
+    let resolved_recursive =
+        call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
 
     prune_parquet_metadata(root, ir_arena, expr_arena);
 
@@ -426,7 +436,7 @@ pub fn optimize(
         }
     };
 
-    Ok(root)
+    Ok((root, has_recursive || resolved_recursive))
 }
 
 fn _get_or_init_members<'a>(

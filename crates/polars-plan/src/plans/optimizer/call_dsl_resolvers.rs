@@ -33,7 +33,7 @@ pub(super) fn call_dsl_resolvers(
     expr_arena: &mut Arena<AExpr>,
     opt_flags: OptFlags,
     hooks: ExecutionHooks,
-) -> PolarsResult<()> {
+) -> PolarsResult<bool> {
     let mut resolve_tasks: FuturesUnordered<Pin<Box<dyn Future<Output = _>>>> =
         FuturesUnordered::new();
     // We can have same args pointing to same cache. This means the same resolver was referenced
@@ -165,6 +165,7 @@ pub(super) fn call_dsl_resolvers(
         eprintln!("call_dsl_resolvers: split shared memory caches (n = {deshared_cache_count})")
     }
 
+    let mut has_recursive = false;
     if !resolve_tasks.is_empty() {
         if verbose {
             let n = resolve_tasks.len();
@@ -343,7 +344,8 @@ pub(super) fn call_dsl_resolvers(
                     }
                 }
 
-                ir_node = optimize(
+                let resolved_recursive;
+                (ir_node, resolved_recursive) = optimize(
                     ir_node,
                     opt_flags,
                     ir_arena,
@@ -351,6 +353,12 @@ pub(super) fn call_dsl_resolvers(
                     optimize_scratch.get(),
                     hooks,
                 )?;
+                // The plan around the resolver was already optimized for its engine.
+                polars_ensure!(
+                    opt_flags.streaming() || !resolved_recursive,
+                    InvalidOperation: "a recursive query added by a resolver must be collected with the streaming engine"
+                );
+                has_recursive |= resolved_recursive;
 
                 let IR::Resolver { resolved_ir, .. } = ir_arena.get_mut(node) else {
                     unreachable!()
@@ -363,5 +371,5 @@ pub(super) fn call_dsl_resolvers(
         })?;
     }
 
-    Ok(())
+    Ok(has_recursive)
 }
