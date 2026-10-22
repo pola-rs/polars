@@ -1618,7 +1618,7 @@ impl SQLContext {
             {
                 let name = &cte.alias.name.value;
                 let mut collector = TableIdentifierCollector::default();
-                let _ = cte.query.visit(&mut collector);
+                let _ = dyn_visit::visit(&*cte.query, &mut collector);
                 let n_self = collector.tables.iter().filter(|t| *t == name).count();
                 if let Some(count) = reference_counts.get_mut(name) {
                     *count = count.saturating_sub(n_self);
@@ -1688,7 +1688,7 @@ impl SQLContext {
 
         // The step runs once per round, so a CTE it reads is cached to compute it only once.
         let mut collector = TableIdentifierCollector::default();
-        let _ = step_query.visit(&mut collector);
+        let _ = dyn_visit::visit(&step_query, &mut collector);
         for (cte_name, lf) in self.cte_map.iter_mut() {
             let read_by_step = collector
                 .tables
