@@ -6,7 +6,8 @@ use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
-    scratch: Vec<(Node, usize)>,
+    /// (expression, schema index, is filter predicate if in a filter)
+    scratch: Vec<(Node, usize, bool)>,
     schemas: Vec<Schema>,
 
     simplify: Option<SimplifyExprRule>,
@@ -21,13 +22,16 @@ pub struct ConversionOptimizer {
 }
 
 struct ExtendVec<'a> {
-    out: &'a mut Vec<(Node, usize)>,
+    out: &'a mut Vec<(Node, usize, bool)>,
     schema_idx: usize,
+    is_filter_predicate: bool,
 }
 impl Extend<Node> for ExtendVec<'_> {
     fn extend<T: IntoIterator<Item = Node>>(&mut self, iter: T) {
-        self.out
-            .extend(iter.into_iter().map(|n| (n, self.schema_idx)))
+        self.out.extend(
+            iter.into_iter()
+                .map(|n| (n, self.schema_idx, self.is_filter_predicate)),
+        )
     }
 }
 
@@ -62,13 +66,14 @@ impl ConversionOptimizer {
     }
 
     pub fn push_scratch(&mut self, expr: Node, expr_arena: &Arena<AExpr>) {
-        self.scratch.push((expr, 0));
+        self.scratch.push((expr, 0, true));
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
 
         expr.inputs_rev_strict(&mut ExtendVec {
             out: &mut self.scratch,
             schema_idx: 0,
+            is_filter_predicate: passes_on_filter_predicate(expr),
         });
     }
 
@@ -108,8 +113,8 @@ impl ConversionOptimizer {
             get_input_schema(ir_arena, current_ir_node)
         };
         let plan = ir_arena.get(current_ir_node);
+        let is_filter = matches!(plan, IR::Filter { .. });
         let mut ctx = OptimizeExprContext {
-            in_filter: matches!(plan, IR::Filter { .. }),
             has_inputs: !get_input(ir_arena, current_ir_node).is_empty(),
             ..Default::default()
         };
@@ -121,7 +126,8 @@ impl ConversionOptimizer {
         };
 
         self.schemas.clear();
-        while let Some((current_expr_node, schema_idx)) = self.scratch.pop() {
+        while let Some((current_expr_node, schema_idx, is_filter_predicate)) = self.scratch.pop() {
+            ctx.is_filter_predicate = is_filter && is_filter_predicate;
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
 
             if expr.is_leaf() {
@@ -149,13 +155,16 @@ impl ConversionOptimizer {
                 let mut schema = schema.clone();
                 schema.insert(get_pl_element_name(), element_dtype.clone());
                 self.schemas.push(schema);
-                self.scratch.push((*evaluation, self.schemas.len()));
+                self.scratch.push((*evaluation, self.schemas.len(), false));
             }
 
             // Similar for StructEval
             // Effectively, we are mimicking in-order processing traversal logic (left > parent > right).
             #[cfg(feature = "dtype-struct")]
-            if let AExpr::StructEval { expr, evaluation } = expr {
+            if let AExpr::StructEval {
+                expr, evaluation, ..
+            } = expr
+            {
                 let schema = if schema_idx == 0 {
                     &schema
                 } else {
@@ -169,7 +178,7 @@ impl ConversionOptimizer {
                 schema.insert(get_pl_structfields_name(), struct_dtype);
                 self.schemas.push(schema);
                 for e in evaluation {
-                    self.scratch.push((e.node(), self.schemas.len()))
+                    self.scratch.push((e.node(), self.schemas.len(), false))
                 }
             }
 
@@ -199,6 +208,7 @@ impl ConversionOptimizer {
             expr.inputs_rev_strict(&mut ExtendVec {
                 out: &mut self.scratch,
                 schema_idx,
+                is_filter_predicate: is_filter_predicate && passes_on_filter_predicate(expr),
             });
         }
 

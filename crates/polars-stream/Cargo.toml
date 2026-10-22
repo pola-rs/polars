@@ -23,6 +23,7 @@ num-traits = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 schemars = { workspace = true, optional = true }
@@ -30,7 +31,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
 strum_macros = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "macros"] }
 uuid = { workspace = true }
 
 polars-arrow = { workspace = true }
@@ -51,8 +52,13 @@ polars-ooc = { workspace = true }
 polars-ops = { workspace = true, features = ["rle", "peaks", "unique_counts", "dtype-struct", "search_sorted"] }
 polars-parquet = { workspace = true }
 polars-plan = { workspace = true, features = ["cse", "rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
+polars-row = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true, features = ["async-utils"] }
+
+[dev-dependencies]
+libc = { workspace = true }
+tempfile = "3"
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -78,11 +84,13 @@ dynamic_group_by = [
   "polars-arrow/timezones",
 ]
 strings = ["polars-expr/strings", "polars-plan/strings"]
+# The IPC sink writes categoricals as dictionaries, so it needs categorical support.
 ipc = [
   "polars-mem-engine/ipc",
   "polars-plan/ipc",
   "polars-io/ipc",
   "dep:serde_json",
+  "dtype-categorical",
 ]
 index_of = ["polars-plan/index_of", "polars-expr/index_of"]
 parquet = ["polars-mem-engine/parquet", "polars-plan/parquet", "cloud"]
@@ -131,12 +139,13 @@ dtype-categorical = [
   "polars-ops/dtype-categorical",
   "polars-plan/dtype-categorical",
 ]
-dtype-decimal = ["polars-core/dtype-decimal", "polars-expr/dtype-decimal", "polars-plan/dtype-decimal"]
+dtype-decimal = ["dtype-i128", "polars-core/dtype-decimal", "polars-expr/dtype-decimal", "polars-plan/dtype-decimal"]
 dtype-extension = ["polars-core/dtype-extension", "polars-expr/dtype-extension", "polars-plan/dtype-extension"]
 dtype-map = ["polars-core/dtype-map", "polars-expr/dtype-map", "polars-plan/dtype-map"]
 ewma = ["polars-expr/ewma", "polars-plan/ewma"]
 mode = ["polars-expr/mode", "polars-plan/mode"]
 moment = ["polars-expr/moment", "polars-plan/moment"]
+rolling_window = ["polars-expr/rolling_window", "polars-plan/rolling_window"]
 object = ["polars-ops/object"]
 physical_plan_visualization_schema = [
   "dep:schemars",

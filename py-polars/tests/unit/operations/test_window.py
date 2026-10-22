@@ -12,7 +12,7 @@ from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import TimeUnit, WindowMappingStrategy
+    from polars._typing import EngineType, TimeUnit, WindowMappingStrategy
 
 
 def test_over_args() -> None:
@@ -1041,10 +1041,23 @@ def test_shape_mismatch_group_by_unique_slice() -> None:
     ).select(pl.col.t.unique().over(pl.col("x").rle_id()))
 
     with pytest.raises(
-        ShapeError,
-        match="the length of the window expression did not match that of the group",
+        ShapeError, match="expressions must have matching group lengths"
     ):
         q.collect()
+
+
+@pytest.mark.parametrize("sorted", [True, False])
+def test_explode_over_group_length_mismatch(sorted: bool) -> None:
+    # The total length matches the frame, but the group lengths differ.
+    lf = pl.LazyFrame({"k": [0, 0, 1, 1], "a": [[1, 2], [3], [4], []]})
+    if sorted:
+        lf = lf.set_sorted("k")
+    engines: list[EngineType] = ["in-memory", "streaming"]
+    for engine in engines:
+        with pytest.raises(ShapeError, match="group"):
+            lf.select(pl.col("a").explode().over("k")).collect(engine=engine)
+    out = lf.select(pl.col("a").explode().over("k", mapping_strategy="explode"))
+    assert out.collect().to_series().to_list() == [1, 2, 3, 4]
 
 
 def test_over_literal_cum_sum_26800() -> None:
@@ -1059,3 +1072,47 @@ def test_over_literal_cum_sum_26800() -> None:
     out = q.collect()
 
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_window_order_by_multiple_keys_nulls_last_29390(
+    descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["x", "x", "x", "y", "y", "y"],
+            "a": [20.0, None, 10.0, None, 40.0, 30.0],
+            "b": [1, 2, 3, 4, 5, 6],
+        }
+    )
+    out = df.select(
+        pl.int_range(1, pl.len() + 1)
+        .over(
+            pl.lit(1),
+            order_by=["a", "grp"],
+            descending=descending,
+            nulls_last=nulls_last,
+        )
+        .alias("rn")
+    )
+    expected = (
+        df.sort(["a", "grp"], descending=descending, nulls_last=nulls_last)
+        .with_row_index("rn", offset=1)
+        .sort("b")
+        .select(pl.col("rn").cast(pl.Int64))
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("key", [pl.lit(0), pl.len(), pl.lit(None)])
+def test_window_order_by_multiple_keys_scalar(key: pl.Expr) -> None:
+    df = pl.DataFrame({"a": [3, 1, 2]})
+    out = df.select(rn=pl.int_range(pl.len()).over(pl.lit(1), order_by=["a", key]))
+    assert out["rn"].to_list() == [2, 0, 1]
+    assert (
+        df.clear()
+        .select(rn=pl.int_range(pl.len()).over(pl.lit(1), order_by=["a", key]))
+        .height
+        == 0
+    )

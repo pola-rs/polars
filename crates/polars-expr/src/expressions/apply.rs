@@ -348,6 +348,8 @@ impl ApplyExpr {
         let mut container = vec![Default::default(); acs.len()];
         let schema = self.get_input_schema(df);
         let field = self.to_field(&schema)?;
+        // Without groups there is no output to take the dtype of a dynamic literal from.
+        let dtype = field.dtype.clone().materialize_unknown(true)?;
 
         // Aggregate representation of the aggregation contexts,
         // then unpack the lists and finally create iterators from this list chunked arrays.
@@ -359,8 +361,8 @@ impl ApplyExpr {
         // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
-        let ca = if field.dtype().is_known() {
-            let mut builder = get_list_builder(&field.dtype, len * 5, len, field.name);
+        let ca = if dtype.is_known() {
+            let mut builder = get_list_builder(&dtype, len * 5, len, field.name);
             for _ in 0..len {
                 container.clear();
                 for iter in &mut iters {
@@ -402,8 +404,8 @@ impl ApplyExpr {
         #[cfg(debug_assertions)]
         {
             let inner = ca.dtype().inner_dtype().unwrap();
-            if field.dtype.is_known() {
-                assert_eq!(inner, &field.dtype);
+            if dtype.is_known() {
+                assert_eq!(inner, &dtype);
             }
         }
 

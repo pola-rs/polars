@@ -1,10 +1,10 @@
-use num_traits::{AsPrimitive, Float, NumCast};
+use num_traits::NumCast;
 use polars_arrow::array::*;
 use polars_arrow::datatypes::ArrowDataType;
 use polars_arrow::types::NativeType;
 use polars_error::PolarsResult;
 
-use crate::decimal::{dec128_fits, dec128_rescale, dec128_to_f64, dec128_to_i128};
+use crate::decimal::{dec128_fits, dec128_rescale, dec128_to_i128};
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values become null on overflow.
 pub fn decimal_to_decimal(
@@ -50,11 +50,13 @@ pub(super) fn decimal_to_decimal_dyn(
     Ok(Box::new(decimal_to_decimal(from, to_precision, to_scale)))
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
-pub fn decimal_to_float<T>(from: &PrimitiveArray<i128>) -> PrimitiveArray<T>
+/// Returns a [`PrimitiveArray`] of the nearest floats.
+pub fn decimal_to_float<T>(
+    from: &PrimitiveArray<i128>,
+    convert: impl Fn(i128, usize) -> T,
+) -> PrimitiveArray<T>
 where
-    T: NativeType + Float,
-    f64: AsPrimitive<T>,
+    T: NativeType,
 {
     let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_storage() {
         (*p, *s)
@@ -64,17 +66,19 @@ where
 
     let it = from
         .iter()
-        .map(|opt_x| Some(dec128_to_f64(*(opt_x?), from_scale).as_()));
+        .map(|opt_x| Some(convert(*(opt_x?), from_scale)));
     PrimitiveArray::<T>::from_trusted_len_iter(it)
 }
 
-pub(super) fn decimal_to_float_dyn<T>(from: &dyn Array) -> PolarsResult<Box<dyn Array>>
+pub(super) fn decimal_to_float_dyn<T>(
+    from: &dyn Array,
+    convert: impl Fn(i128, usize) -> T,
+) -> PolarsResult<Box<dyn Array>>
 where
-    T: NativeType + Float,
-    f64: AsPrimitive<T>,
+    T: NativeType,
 {
     let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(decimal_to_float::<T>(from)))
+    Ok(Box::new(decimal_to_float::<T>(from, convert)))
 }
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow

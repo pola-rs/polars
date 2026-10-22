@@ -52,13 +52,30 @@ impl BinviewHashGrouper {
     /// # Safety
     /// The view must be valid for the given buffer set.
     #[inline(always)]
+    unsafe fn group_idx(
+        &self,
+        hash: u64,
+        view: &View,
+        buffers: &Buffer<Buffer<u8>>,
+    ) -> Option<IdxSize> {
+        unsafe { self.idx_map.get_index_of_view(hash, view, buffers) }
+    }
+
+    #[inline(always)]
+    fn null_group_idx(&self) -> Option<IdxSize> {
+        (self.null_idx < IdxSize::MAX).then_some(self.null_idx)
+    }
+
+    /// # Safety
+    /// The view must be valid for the given buffer set.
+    #[inline(always)]
     unsafe fn contains_key(&self, hash: u64, view: &View, buffers: &Buffer<Buffer<u8>>) -> bool {
-        unsafe { self.idx_map.get_view(hash, view, buffers).is_some() }
+        unsafe { self.group_idx(hash, view, buffers).is_some() }
     }
 
     #[inline(always)]
     fn contains_null(&self) -> bool {
-        self.null_idx < IdxSize::MAX
+        self.null_group_idx().is_some()
     }
 
     /// # Safety
@@ -217,11 +234,13 @@ impl Grouper for BinviewHashGrouper {
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     let view = views.get_unchecked(idx as usize);
                     grouper.contains_key(h, view, buffers)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 if has_group != invert {
@@ -258,14 +277,61 @@ impl Grouper for BinviewHashGrouper {
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     let view = views.get_unchecked(idx as usize);
                     grouper.contains_key(h, view, buffers)
-                } else {
+                } else if hash_keys.null_is_valid {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
                     grouper.contains_null()
+                } else {
+                    false
                 };
 
                 contains_key.push(has_group != invert);
+            });
+        }
+    }
+
+    /// # Safety
+    /// All groupers must be a BinviewHashGrouper.
+    unsafe fn mark_groups_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        hash_keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        marks: &mut [MutableBitmap],
+    ) {
+        let HashKeys::Binview(hash_keys) = hash_keys else {
+            unreachable!()
+        };
+        assert!(partitioner.num_partitions() == groupers.len());
+        assert!(marks.len() == groupers.len());
+
+        unsafe {
+            let null_p = partitioner.null_partition();
+            let buffers = hash_keys.keys.data_buffers();
+            let views = hash_keys.keys.views().as_slice();
+            hash_keys.for_each_hash(|idx, opt_h| {
+                let (p, group_idx) = if let Some(h) = opt_h {
+                    let p = partitioner.hash_to_partition(h);
+                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
+                    let grouper =
+                        &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
+                    let view = views.get_unchecked(idx as usize);
+                    (p, grouper.group_idx(h, view, buffers))
+                } else if hash_keys.null_is_valid {
+                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
+                    let grouper =
+                        &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
+                    (null_p, grouper.null_group_idx())
+                } else {
+                    (null_p, None)
+                };
+
+                if let Some(group_idx) = group_idx {
+                    marks
+                        .get_unchecked_mut(p)
+                        .set_unchecked(group_idx as usize, true);
+                }
             });
         }
     }

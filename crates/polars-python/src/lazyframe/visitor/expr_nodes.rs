@@ -7,20 +7,20 @@ use polars_core::chunked_array::ops::FillNullStrategy;
 use polars_defs::expr::UnicodeForm;
 use polars_defs::expr::{ClosedInterval, InterpolationMethod, RankMethod};
 use polars_defs::time::duration::Duration;
-use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, RollingGroupOptions};
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptionsIR, RollingGroupOptionsIR};
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_plan::dsl::DateRangeArgs;
+use polars_plan::dsl::{DateRangeArgs, StructEvalVariant};
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
     IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
-    IRStructFunction, IRTemporalFunction,
+    IRStructFunction, IRTemporalFunction, MinMaxByOrder,
 };
 #[cfg(feature = "cutqcut")]
 use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
-    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
+    AExpr, GroupbyOptionsIR, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
@@ -71,6 +71,7 @@ pub enum PyOperator {
     Divide,
     TrueDivide,
     FloorDivide,
+    TruncDivide,
     Modulus,
     And,
     Or,
@@ -107,6 +108,7 @@ impl<'py> IntoPyObject<'py> for Wrap<Operator> {
             Operator::RustDivide => PyOperator::Divide,
             Operator::TrueDivide => PyOperator::TrueDivide,
             Operator::FloorDivide => PyOperator::FloorDivide,
+            Operator::TruncDivide => PyOperator::TruncDivide,
             Operator::Modulus => PyOperator::Modulus,
             Operator::And => PyOperator::And,
             Operator::Or => PyOperator::Or,
@@ -592,6 +594,9 @@ pub struct StructEval {
     expr: usize,
     #[pyo3(get)]
     evaluation: Vec<PyExprIR>,
+    /// Either "with_fields" or "select".
+    #[pyo3(get)]
+    variant: &'static str,
 }
 
 #[pyclass(frozen)]
@@ -682,7 +687,7 @@ impl<'py> IntoPyObject<'py> for Wrap<ClosedWindow> {
 
 #[pyclass(name = "RollingGroupOptions", frozen)]
 pub struct PyRollingGroupOptions {
-    inner: RollingGroupOptions,
+    inner: RollingGroupOptionsIR,
 }
 
 #[pymethods]
@@ -710,7 +715,7 @@ impl PyRollingGroupOptions {
 
 #[pyclass(name = "DynamicGroupOptions", frozen)]
 pub struct PyDynamicGroupOptions {
-    inner: DynamicGroupOptions,
+    inner: DynamicGroupOptionsIR,
 }
 
 #[pymethods]
@@ -757,11 +762,11 @@ impl PyDynamicGroupOptions {
 
 #[pyclass(name = "GroupbyOptions", frozen)]
 pub struct PyGroupbyOptions {
-    inner: GroupbyOptions,
+    inner: GroupbyOptionsIR,
 }
 
 impl PyGroupbyOptions {
-    pub(crate) fn new(inner: GroupbyOptions) -> Self {
+    pub(crate) fn new(inner: GroupbyOptionsIR) -> Self {
         Self { inner }
     }
 }
@@ -952,16 +957,26 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Agg(aggexpr) => match aggexpr {
             IRAggExpr::Min {
+                propagate_nulls: true,
+                ..
+            } => return Err(PyNotImplementedError::new_err("min with propagate_nulls")),
+            IRAggExpr::Min {
                 input,
                 propagate_nans,
+                propagate_nulls: false,
             } => Agg {
                 name: "min".into_py_any(py)?,
                 arguments: vec![input.0],
                 options: propagate_nans.into_py_any(py)?,
             },
             IRAggExpr::Max {
+                propagate_nulls: true,
+                ..
+            } => return Err(PyNotImplementedError::new_err("max with propagate_nulls")),
+            IRAggExpr::Max {
                 input,
                 propagate_nans,
+                propagate_nulls: false,
             } => Agg {
                 name: "max".into_py_any(py)?,
                 arguments: vec![input.0],
@@ -1018,10 +1033,13 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: maintain_order.into_py_any(py)?,
             },
-            IRAggExpr::Sum(n) => Agg {
+            IRAggExpr::Sum {
+                input: n,
+                null_on_empty,
+            } => Agg {
                 name: "sum".into_py_any(py)?,
                 arguments: vec![n.0],
-                options: py.None(),
+                options: null_on_empty.into_py_any(py)?,
             },
             IRAggExpr::Count {
                 input: n,
@@ -1057,6 +1075,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         AExpr::AnonymousAgg { .. } => {
             Err(PyNotImplementedError::new_err("anonymous_streaming_agg"))
         },
+        AExpr::Function { function, .. } if function.membership_needle_cast().is_some() => {
+            // The visitor has no field for a needle that is cast as the function runs.
+            Err(PyNotImplementedError::new_err(format!("{function}")))
+        },
         AExpr::Function {
             input,
             function,
@@ -1091,7 +1113,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         (PyArrayFunction::Join, *ignore_nulls).into_py_any(py)
                     },
                     #[cfg(feature = "is_in")]
-                    IRArrayFunction::Contains { nulls_equal } => {
+                    IRArrayFunction::Contains { nulls_equal, .. } => {
                         (PyArrayFunction::Contains, *nulls_equal).into_py_any(py)
                     },
                     #[cfg(feature = "array_count")]
@@ -1132,7 +1154,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ListExpr(listfun) => match listfun {
                     IRListFunction::Concat => (PyListFunction::Concat,).into_py_any(py),
                     #[cfg(feature = "is_in")]
-                    IRListFunction::Contains { nulls_equal } => {
+                    IRListFunction::Contains { nulls_equal, .. } => {
                         (PyListFunction::Contains, nulls_equal).into_py_any(py)
                     },
                     #[cfg(feature = "list_drop_nulls")]
@@ -1580,7 +1602,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         (PyBooleanFunction::IsBetween, Into::<&str>::into(closed)).into_py_any(py)
                     },
                     #[cfg(feature = "is_in")]
-                    IRBooleanFunction::IsIn { nulls_equal } => {
+                    IRBooleanFunction::IsIn { nulls_equal, .. } => {
                         (PyBooleanFunction::IsIn, nulls_equal).into_py_any(py)
                     },
                     IRBooleanFunction::IsClose {
@@ -1615,6 +1637,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRPowFunction::Cbrt => ("cbrt",).into_py_any(py),
                 },
                 IRFunctionExpr::Hash(seed) => ("hash", seed).into_py_any(py),
+                IRFunctionExpr::Mm3Hash => ("mm3_hash",).into_py_any(py),
                 IRFunctionExpr::ArgWhere => ("argwhere",).into_py_any(py),
                 #[cfg(feature = "index_of")]
                 IRFunctionExpr::IndexOf => ("index_of",).into_py_any(py),
@@ -1856,8 +1879,15 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ArgUnique => ("arg_unique",).into_py_any(py),
                 IRFunctionExpr::ArgMin => ("arg_min",).into_py_any(py),
                 IRFunctionExpr::ArgMax => ("arg_max",).into_py_any(py),
-                IRFunctionExpr::MinBy => ("min_by",).into_py_any(py),
-                IRFunctionExpr::MaxBy => ("max_by",).into_py_any(py),
+                IRFunctionExpr::MinBy {
+                    order: MinMaxByOrder::SkipNulls,
+                } => ("min_by",).into_py_any(py),
+                IRFunctionExpr::MaxBy {
+                    order: MinMaxByOrder::SkipNulls,
+                } => ("max_by",).into_py_any(py),
+                IRFunctionExpr::MinBy { .. } | IRFunctionExpr::MaxBy { .. } => {
+                    return Err(PyNotImplementedError::new_err("total order min_by/max_by"));
+                },
                 IRFunctionExpr::ArgSort {
                     descending,
                     nulls_last,
@@ -1922,12 +1952,16 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Log => ("log",).into_py_any(py),
                 IRFunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 IRFunctionExpr::Exp => ("exp",).into_py_any(py),
+                IRFunctionExpr::Erf => ("erf",).into_py_any(py),
+                IRFunctionExpr::Erfc => ("erfc",).into_py_any(py),
                 IRFunctionExpr::Unique(maintain_order) => {
                     ("unique", maintain_order).into_py_any(py)
                 },
                 IRFunctionExpr::Round { decimals, mode } => {
                     ("round", decimals, Into::<&str>::into(mode)).into_py_any(py)
                 },
+                IRFunctionExpr::DecimalArith { op, scale } => (op.name(), scale).into_py_any(py),
+                IRFunctionExpr::TruncArith(op) => (op.name(),).into_py_any(py),
                 IRFunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 IRFunctionExpr::Truncate { decimals } => ("truncate", decimals).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
@@ -2063,6 +2097,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 #[cfg(feature = "ffi_plugin")]
                 IRFunctionExpr::FfiPlugin {
                     flags,
+                    is_deterministic: _,
                     lib,
                     symbol,
                     kwargs,
@@ -2255,9 +2290,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
         AExpr::Eval { .. } => Err(PyNotImplementedError::new_err("list.eval")),
-        AExpr::StructEval { expr, evaluation } => StructEval {
+        AExpr::StructEval {
+            expr,
+            evaluation,
+            variant,
+        } => StructEval {
             expr: expr.0,
             evaluation: evaluation.iter().map(|e| e.into()).collect(),
+            variant: match variant {
+                StructEvalVariant::WithFields => "with_fields",
+                StructEvalVariant::Select => "select",
+            },
         }
         .into_py_any(py),
     }

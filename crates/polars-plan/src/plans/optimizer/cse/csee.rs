@@ -9,7 +9,10 @@ use polars_utils::scratch_vec::ScratchVec;
 
 use crate::constants::CSE_REPLACED;
 use crate::plans::aexpr::is_inherently_nondeterministic_excluding_udfs_top_level;
-use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
+use crate::plans::projection_height::{
+    ExprHeightOptions, ExprProjectionHeight, aexpr_projection_height_rec,
+    aexpr_projection_height_rec_with,
+};
 use crate::plans::visitor::{
     IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
     Visitor,
@@ -100,6 +103,8 @@ struct ExprCandidateVisitor<'a> {
     is_group_by: bool,
     //
     element_wise_only: bool,
+    nodes_scratch: &'a mut ScratchVec<Node>,
+    heights_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
 }
 
 impl ExprCandidateVisitor<'_> {
@@ -109,6 +114,8 @@ impl ExprCandidateVisitor<'_> {
         validity_stack: &'a mut ValidityStack,
         is_group_by: bool,
         element_wise_select_only: bool,
+        nodes_scratch: &'a mut ScratchVec<Node>,
+        heights_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
     ) -> ExprCandidateVisitor<'a> {
         ExprCandidateVisitor {
             canonical_map,
@@ -116,7 +123,27 @@ impl ExprCandidateVisitor<'_> {
             validity_stack,
             is_group_by,
             element_wise_only: element_wise_select_only,
+            nodes_scratch,
+            heights_scratch,
         }
+    }
+
+    /// Group-by temporaries are computed on the full frame before aggregation, so a candidate
+    /// that does not have the height of the frame (e.g. a scalar) would be broadcast.
+    fn has_frame_height(&mut self, node: Node, arena: &Arena<AExpr>) -> bool {
+        matches!(
+            aexpr_projection_height_rec_with(
+                node,
+                arena,
+                self.nodes_scratch,
+                self.heights_scratch,
+                ExprHeightOptions {
+                    structural_unknowns_only: true,
+                    ..Default::default()
+                },
+            ),
+            ExprProjectionHeight::Column
+        )
     }
 
     /// Invalidates the enclosing node, if any.
@@ -216,7 +243,10 @@ impl Visitor for ExprCandidateVisitor<'_> {
             self.invalidate_parent();
         }
 
-        if subtree_is_valid && role == NodeRole::Candidate {
+        if subtree_is_valid
+            && role == NodeRole::Candidate
+            && (!self.is_group_by || self.has_frame_height(node.node(), arena))
+        {
             let id = self.canonical_map.resolve(node.node(), arena);
             *self.se_count.entry(id).or_insert(0) += 1;
         }
@@ -381,6 +411,8 @@ impl CommonSubExprOptimizer {
             &mut self.validity_stack,
             is_group_by,
             self.element_wise_select_only,
+            &mut self.nodes_scratch,
+            &mut self.heights_scratch,
         );
         ae_node.visit(&mut visitor, expr_arena).map(|_| ())
     }

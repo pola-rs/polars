@@ -183,7 +183,7 @@ fn dictionary_utf8view_serializer<'a, K: DictionaryKey>(
     offset: usize,
     take: usize,
 ) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
-    let iter = array.iter_typed::<Utf8ViewArray>().unwrap().skip(offset);
+    let iter = array.iter_typed::<Utf8ViewArray>().unwrap();
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             utf8::write_str(buf, x).unwrap();
@@ -305,6 +305,58 @@ fn list_serializer<'a, O: Offset>(
             }
             buf.push(b']');
             prev_offset = offset[1].to_usize();
+        } else {
+            buf.extend(b"null");
+        }
+    };
+
+    let iter =
+        ZipValidity::new_with_validity(array.offsets().buffer().windows(2), array.validity());
+    materialize_serializer(f, iter, offset, take)
+}
+
+/// Serializes each row as a JSON object. Keys must be strings or dictionary-encoded strings.
+fn map_serializer<'a>(
+    array: &'a MapArray,
+    offset: usize,
+    take: usize,
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
+    let entries = array
+        .field()
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .expect("map entries are a struct");
+    let [keys, values] = entries.values() else {
+        unreachable!("map entries have two fields")
+    };
+
+    let offsets = array.offsets().as_slice();
+    let start = offsets[0] as usize;
+    let end = *offsets.last().unwrap() as usize;
+    // The key serializer writes each key as a JSON string.
+    let mut key_serializer = new_serializer(keys.as_ref(), start, end - start);
+    let mut value_serializer = new_serializer(values.as_ref(), start, end - start);
+
+    let mut prev_offset = start;
+    let f = move |offset: Option<&[i32]>, buf: &mut Vec<u8>| {
+        if let Some(offset) = offset {
+            let (row_start, row_end) = (offset[0] as usize, offset[1] as usize);
+            for _ in prev_offset..row_start {
+                key_serializer.next().unwrap();
+                value_serializer.next().unwrap();
+            }
+
+            buf.push(b'{');
+            for i in row_start..row_end {
+                if i != row_start {
+                    buf.push(b',');
+                }
+                buf.extend(key_serializer.next().unwrap());
+                buf.push(b':');
+                buf.extend(value_serializer.next().unwrap());
+            }
+            buf.push(b'}');
+            prev_offset = row_end;
         } else {
             buf.extend(b"null");
         }
@@ -549,6 +601,9 @@ pub fn new_serializer<'a>(
         },
         ArrowDataType::LargeList(_) => {
             list_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::Map(_, _) => {
+            map_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Dictionary(k, v, _) => match (k, &**v) {
             (IntegerType::UInt8, ArrowDataType::Utf8View) => {

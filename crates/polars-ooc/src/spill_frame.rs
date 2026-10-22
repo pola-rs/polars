@@ -20,7 +20,7 @@ impl Spillable for DataFrame {
     type Spilled = Arc<SpillFile>;
 
     fn estimate_byte_size(&self) -> usize {
-        self.estimated_size()
+        self.estimated_size(false)
     }
 
     async fn spill(&self, context_id: &str) -> Self::Spilled {

@@ -1,21 +1,34 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
+use polars_arrow::array::builder::ShareStrategy;
 use polars_arrow::array::{
     Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array,
 };
 use polars_arrow::bitmap::Bitmap;
+use polars_arrow::compute::aggregate::estimated_bytes_size;
 use polars_arrow::compute::utils::combine_validities_and_many;
 use polars_core::frame::DataFrame;
+use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
 use polars_core::series::Series;
+use polars_ooc::Spillable;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
+use polars_utils::f2_sketch::F2Sketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
 use polars_utils::vec::PushUnchecked;
+
+pub use crate::key_rows::KeyRowKeys;
+use crate::key_rows::KeyRowLayout;
+
+/// Keys are hashed and prefetched in blocks of this many.
+pub(crate) const BLOCK_SIZE: usize = 256;
+/// Smaller tables fit in the cache and aren't prefetched.
+pub(crate) const MIN_PREFETCH_BUCKETS: usize = 1 << 15;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum HashKeysVariant {
@@ -101,6 +114,7 @@ macro_rules! downcast_single_key_ca {
 #[derive(Clone, Debug)]
 pub enum HashKeys {
     RowEncoded(RowEncodedKeys),
+    KeyRows(KeyRowKeys),
     Binview(BinviewKeys),
     Single(SingleKeys),
 }
@@ -112,6 +126,17 @@ impl HashKeys {
         null_is_valid: bool,
         force_row_encoding: bool,
     ) -> Self {
+        if !force_row_encoding
+            && let Some(layout) = KeyRowLayout::new(df.columns().iter().map(|c| c.dtype()))
+        {
+            return Self::KeyRows(KeyRowKeys::from_columns(
+                df.columns(),
+                Arc::new(layout),
+                &random_state,
+                null_is_valid,
+            ));
+        }
+
         let first_col_variant = hash_keys_variant_for_dtype(df[0].dtype());
         let use_row_encoding = force_row_encoding
             || df.width() > 1
@@ -149,14 +174,27 @@ impl HashKeys {
             };
             let keys = keys.rechunk().downcast_as_array().clone();
 
-            let hashes = if keys.has_nulls() {
-                keys.iter()
-                    .map(|opt_k| opt_k.map(|k| random_state.hash_one(k)).unwrap_or(0))
-                    .collect()
-            } else {
-                keys.values_iter()
-                    .map(|k| random_state.hash_one(k))
-                    .collect()
+            let views = keys.views();
+            let buffers = keys.data_buffers();
+            let hashes = unsafe {
+                if keys.has_nulls() {
+                    views
+                        .iter()
+                        .zip(keys.validity().unwrap())
+                        .map(|(v, is_valid)| {
+                            if is_valid {
+                                v.hash_with_buffers_unchecked(buffers, &random_state)
+                            } else {
+                                0
+                            }
+                        })
+                        .collect()
+                } else {
+                    views
+                        .iter()
+                        .map(|v| v.hash_with_buffers_unchecked(buffers, &random_state))
+                        .collect()
+                }
             };
 
             Self::Binview(BinviewKeys {
@@ -176,6 +214,7 @@ impl HashKeys {
     pub fn len(&self) -> usize {
         match self {
             HashKeys::RowEncoded(s) => s.keys.len(),
+            HashKeys::KeyRows(s) => s.len(),
             HashKeys::Single(s) => s.keys.len(),
             HashKeys::Binview(s) => s.keys.len(),
         }
@@ -185,9 +224,26 @@ impl HashKeys {
         self.len() == 0
     }
 
+    /// Estimated memory of the keys and stored hashes, in bytes.
+    pub fn estimated_size(&self) -> usize {
+        match self {
+            HashKeys::RowEncoded(s) => {
+                estimated_bytes_size(&s.hashes) + estimated_bytes_size(&s.keys)
+            },
+            HashKeys::KeyRows(s) => s.estimated_size(),
+            HashKeys::Single(s) => s.keys.estimated_size(),
+            HashKeys::Binview(s) => {
+                size_of_val(s.hashes.values().as_slice())
+                    + size_of_val(s.keys.views().as_slice())
+                    + s.keys.total_bytes_len()
+            },
+        }
+    }
+
     pub fn validity(&self) -> Option<&Bitmap> {
         match self {
             HashKeys::RowEncoded(s) => s.keys.validity(),
+            HashKeys::KeyRows(s) => s.validity.as_ref(),
             HashKeys::Single(s) => s.keys.chunks()[0].validity(),
             HashKeys::Binview(s) => s.keys.validity(),
         }
@@ -195,7 +251,7 @@ impl HashKeys {
 
     pub fn null_is_valid(&self) -> bool {
         match self {
-            HashKeys::RowEncoded(_) => false,
+            HashKeys::RowEncoded(_) | HashKeys::KeyRows(_) => false,
             HashKeys::Single(s) => s.null_is_valid,
             HashKeys::Binview(s) => s.null_is_valid,
         }
@@ -208,6 +264,7 @@ impl HashKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
         match self {
             HashKeys::RowEncoded(s) => s.for_each_hash(f),
+            HashKeys::KeyRows(s) => s.for_each_hash(f),
             HashKeys::Single(s) => s.for_each_hash(f),
             HashKeys::Binview(s) => s.for_each_hash(f),
         }
@@ -228,6 +285,7 @@ impl HashKeys {
     ) {
         match self {
             HashKeys::RowEncoded(s) => s.for_each_hash_subset(subset, f),
+            HashKeys::KeyRows(s) => s.for_each_hash_subset(subset, f),
             HashKeys::Single(s) => s.for_each_hash_subset(subset, f),
             HashKeys::Binview(s) => s.for_each_hash_subset(subset, f),
         }
@@ -261,28 +319,40 @@ impl HashKeys {
 
     /// After this call partition_idxs[p] will be extended with the indices of
     /// hashes that belong to partition p, and the cardinality sketches are
-    /// updated accordingly.
+    /// updated accordingly. If given, every non-null hash is also inserted into
+    /// `f2_sketch`, which requires the cardinality sketches to be built as well.
     pub fn gen_idxs_per_partition(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        f2_sketch: Option<&mut F2Sketch>,
         partition_nulls: bool,
     ) {
-        if sketches.is_empty() {
-            self.gen_idxs_per_partition_impl::<false>(
+        let partition_nulls = partition_nulls | self.null_is_valid();
+        match (sketches.is_empty(), f2_sketch.is_some()) {
+            (true, false) => self.gen_idxs_per_partition_impl::<false, false>(
                 partitioner,
                 partition_idxs,
                 sketches,
-                partition_nulls | self.null_is_valid(),
-            );
-        } else {
-            self.gen_idxs_per_partition_impl::<true>(
+                f2_sketch,
+                partition_nulls,
+            ),
+            (false, false) => self.gen_idxs_per_partition_impl::<true, false>(
                 partitioner,
                 partition_idxs,
                 sketches,
-                partition_nulls | self.null_is_valid(),
-            );
+                f2_sketch,
+                partition_nulls,
+            ),
+            (false, true) => self.gen_idxs_per_partition_impl::<true, true>(
+                partitioner,
+                partition_idxs,
+                sketches,
+                f2_sketch,
+                partition_nulls,
+            ),
+            (true, true) => panic!("the F2 sketch requires the cardinality sketches"),
         }
     }
 
@@ -296,38 +366,52 @@ impl HashKeys {
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        f2_sketch: Option<&mut F2Sketch>,
         partition_nulls: bool,
     ) {
+        let partition_nulls = partition_nulls | self.null_is_valid();
         unsafe {
-            if sketches.is_empty() {
-                self.gen_idxs_per_partition_subset_impl::<false>(
+            match (sketches.is_empty(), f2_sketch.is_some()) {
+                (true, false) => self.gen_idxs_per_partition_subset_impl::<false, false>(
                     subset,
                     partitioner,
                     partition_idxs,
                     sketches,
-                    partition_nulls | self.null_is_valid(),
-                );
-            } else {
-                self.gen_idxs_per_partition_subset_impl::<true>(
+                    f2_sketch,
+                    partition_nulls,
+                ),
+                (false, false) => self.gen_idxs_per_partition_subset_impl::<true, false>(
                     subset,
                     partitioner,
                     partition_idxs,
                     sketches,
-                    partition_nulls | self.null_is_valid(),
-                );
+                    f2_sketch,
+                    partition_nulls,
+                ),
+                (false, true) => self.gen_idxs_per_partition_subset_impl::<true, true>(
+                    subset,
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    f2_sketch,
+                    partition_nulls,
+                ),
+                (true, true) => panic!("the F2 sketch requires the cardinality sketches"),
             }
         }
     }
 
-    fn gen_idxs_per_partition_impl<const BUILD_SKETCHES: bool>(
+    fn gen_idxs_per_partition_impl<const BUILD_SKETCHES: bool, const BUILD_F2: bool>(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        mut f2_sketch: Option<&mut F2Sketch>,
         partition_nulls: bool,
     ) {
         assert!(partition_idxs.len() == partitioner.num_partitions());
         assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
+        assert!(BUILD_F2 == f2_sketch.is_some());
 
         let null_p = partitioner.null_partition();
         self.for_each_hash(|idx, opt_h| {
@@ -338,6 +422,10 @@ impl HashKeys {
                     partition_idxs.get_unchecked_mut(p).push(idx);
                     if BUILD_SKETCHES {
                         sketches.get_unchecked_mut(p).insert(h);
+                    }
+                    if BUILD_F2 {
+                        // SAFETY: we assured the F2 sketch exists.
+                        f2_sketch.as_mut().unwrap_unchecked().insert(h);
                     }
                 }
             } else if partition_nulls {
@@ -350,16 +438,21 @@ impl HashKeys {
 
     /// # Safety
     /// The subset indices must be in-bounds.
-    unsafe fn gen_idxs_per_partition_subset_impl<const BUILD_SKETCHES: bool>(
+    unsafe fn gen_idxs_per_partition_subset_impl<
+        const BUILD_SKETCHES: bool,
+        const BUILD_F2: bool,
+    >(
         &self,
         subset: &[IdxSize],
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
         sketches: &mut [CardinalitySketch],
+        mut f2_sketch: Option<&mut F2Sketch>,
         partition_nulls: bool,
     ) {
         assert!(partition_idxs.len() == partitioner.num_partitions());
         assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
+        assert!(BUILD_F2 == f2_sketch.is_some());
 
         let null_p = partitioner.null_partition();
         unsafe {
@@ -370,6 +463,10 @@ impl HashKeys {
                     partition_idxs.get_unchecked_mut(p).push(idx);
                     if BUILD_SKETCHES {
                         sketches.get_unchecked_mut(p).insert(h);
+                    }
+                    if BUILD_F2 {
+                        // SAFETY: we assured the F2 sketch exists.
+                        f2_sketch.as_mut().unwrap_unchecked().insert(h);
                     }
                 } else if partition_nulls {
                     partition_idxs.get_unchecked_mut(null_p).push(idx);
@@ -389,9 +486,178 @@ impl HashKeys {
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         match self {
             HashKeys::RowEncoded(s) => Self::RowEncoded(s.gather_unchecked(idxs)),
+            HashKeys::KeyRows(s) => Self::KeyRows(s.gather_unchecked(idxs)),
             HashKeys::Single(s) => Self::Single(s.gather_unchecked(idxs)),
             HashKeys::Binview(s) => Self::Binview(s.gather_unchecked(idxs)),
         }
+    }
+
+    /// The key data and stored hashes as a frame, with what is needed besides the frame to
+    /// rebuild these keys.
+    fn to_frame(&self) -> (DataFrame, FrameKind) {
+        match self {
+            HashKeys::RowEncoded(s) => {
+                let keys = BinaryOffsetChunked::with_chunk(
+                    PlSmallStr::from_static("keys"),
+                    s.keys.clone(),
+                );
+                let columns = vec![
+                    array_column("hashes", s.hashes.clone().boxed()),
+                    keys.into_column(),
+                ];
+                let df = DataFrame::new(s.keys.len(), columns).unwrap();
+                (df, FrameKind::RowEncoded)
+            },
+            HashKeys::KeyRows(s) => (s.to_frame(), FrameKind::KeyRows(s.layout.clone())),
+            HashKeys::Single(s) => {
+                let df = s.keys.to_physical_repr().into_owned().into_frame();
+                let kind = FrameKind::Single {
+                    random_state: s.random_state.clone(),
+                    dtype: s.keys.dtype().clone(),
+                    null_is_valid: s.null_is_valid,
+                };
+                (df, kind)
+            },
+            HashKeys::Binview(s) => {
+                let columns = vec![
+                    array_column("hashes", s.hashes.clone().boxed()),
+                    array_column("keys", s.keys.clone().boxed()),
+                ];
+                let df = DataFrame::new(s.keys.len(), columns).unwrap();
+                let kind = FrameKind::Binview {
+                    null_is_valid: s.null_is_valid,
+                };
+                (df, kind)
+            },
+        }
+    }
+
+    fn from_frame(df: &DataFrame, kind: &FrameKind) -> Self {
+        match kind {
+            FrameKind::RowEncoded => Self::RowEncoded(RowEncodedKeys {
+                hashes: column_array(df, "hashes"),
+                keys: column_array(df, "keys"),
+            }),
+            FrameKind::KeyRows(layout) => Self::KeyRows(KeyRowKeys::from_frame(layout.clone(), df)),
+            FrameKind::Single {
+                random_state,
+                dtype,
+                null_is_valid,
+            } => {
+                let keys = df.columns()[0].as_materialized_series().rechunk();
+                Self::Single(SingleKeys {
+                    random_state: random_state.clone(),
+                    // SAFETY: these are the physical values of keys of this dtype.
+                    keys: unsafe { keys.from_physical_unchecked(dtype) }.unwrap(),
+                    null_is_valid: *null_is_valid,
+                })
+            },
+            FrameKind::Binview { null_is_valid } => Self::Binview(BinviewKeys {
+                hashes: column_array(df, "hashes"),
+                keys: column_array(df, "keys"),
+                null_is_valid: *null_is_valid,
+            }),
+        }
+    }
+}
+
+/// What is needed besides the frame of `HashKeys::to_frame` to rebuild `HashKeys` of the same
+/// kind without hashing again.
+enum FrameKind {
+    RowEncoded,
+    KeyRows(Arc<KeyRowLayout>),
+    Single {
+        random_state: PlRandomState,
+        dtype: DataType,
+        null_is_valid: bool,
+    },
+    Binview {
+        null_is_valid: bool,
+    },
+}
+
+/// Spilled `HashKeys`: the key data and stored hashes as one spilled frame, plus what is needed
+/// to rebuild the same kind without hashing again.
+pub struct SpilledHashKeys {
+    frame: <DataFrame as Spillable>::Spilled,
+    kind: FrameKind,
+}
+
+impl Spillable for HashKeys {
+    type Spilled = SpilledHashKeys;
+
+    fn estimate_byte_size(&self) -> usize {
+        self.estimated_size()
+    }
+
+    async fn spill(&self, context_id: &str) -> SpilledHashKeys {
+        let (frame, kind) = self.to_frame();
+        SpilledHashKeys {
+            frame: frame.spill(context_id).await,
+            kind,
+        }
+    }
+
+    async fn unspill(spilled: &SpilledHashKeys) -> Self {
+        let frame = DataFrame::unspill(&spilled.frame).await;
+        Self::from_frame(&frame, &spilled.kind)
+    }
+}
+
+/// A column holding one array.
+pub(crate) fn array_column(name: &str, array: Box<dyn Array>) -> Column {
+    Series::from_arrow(PlSmallStr::from_str(name), array)
+        .unwrap()
+        .into_column()
+}
+
+/// The column `name` of a frame, as one array.
+pub(crate) fn column_array<A: Array + Clone>(df: &DataFrame, name: &str) -> A {
+    let s = df.column(name).unwrap().as_materialized_series().rechunk();
+    s.chunks()[0].as_any().downcast_ref::<A>().unwrap().clone()
+}
+
+/// Builds one `HashKeys` from rows of others of the same kind and key schema, keeping their
+/// hashes. The rows are gathered in the frame form of `HashKeys::to_frame`.
+pub struct HashKeysBuilder {
+    frame: DataFrameBuilder,
+    kind: FrameKind,
+}
+
+impl HashKeysBuilder {
+    /// A builder for keys of the same kind and key schema as `like`.
+    pub fn new(like: &HashKeys) -> Self {
+        let (df, kind) = like.to_frame();
+        Self {
+            frame: DataFrameBuilder::new(df.schema().clone()),
+            kind,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.frame.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.frame.is_empty()
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        self.frame.reserve(additional);
+    }
+
+    /// Appends the rows `rows` of `keys`, copying the bytes of strings and binary values.
+    ///
+    /// # Safety
+    /// The rows must be in-bounds. The keys must have the key schema of this builder.
+    pub unsafe fn gather_extend(&mut self, keys: &HashKeys, rows: &[IdxSize]) {
+        let (df, _) = keys.to_frame();
+        self.frame.gather_extend(&df, rows, ShareStrategy::Never);
+    }
+
+    /// Takes the appended rows as one `HashKeys`, leaving the builder empty.
+    pub fn freeze_reset(&mut self) -> HashKeys {
+        HashKeys::from_frame(&self.frame.freeze_reset(), &self.kind)
     }
 }
 
@@ -516,7 +782,7 @@ impl BinviewKeys {
     }
 }
 
-fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
+pub(crate) fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
     hashes: &[u64],
     opt_v: Option<&Bitmap>,
     mut f: F,
@@ -538,7 +804,7 @@ fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
 
 /// # Safety
 /// The indices must be in-bounds.
-unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
+pub(crate) unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
     hashes: &[u64],
     opt_v: Option<&Bitmap>,
     subset: &[IdxSize],

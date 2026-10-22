@@ -5,18 +5,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Collection
 
     import pyarrow.compute
 
     import polars as pl
     from polars._typing import SchemaDict
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 class LazyFrameResolver(abc.ABC):
@@ -75,7 +69,7 @@ class LazyFrameResolver(abc.ABC):
             re-resolving.
         """
 
-    def cse_eq(self, other: Self) -> bool:  # noqa: ARG002
+    def cse_eq(self, other: object) -> bool:  # noqa: ARG002
         """
         Equality evaluation of `self` with `other` for common subplan elimination.
 

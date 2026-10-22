@@ -11,10 +11,9 @@ use async_trait::async_trait;
 use chunk_reader::ChunkReader;
 use futures::FutureExt;
 use line_batch_source::{LineBatch, LineBatchSource};
-use polars_async::executor::{AbortOnDropHandle, spawn};
+use polars_async::executor::{AbortOnDropHandle, TaskMetricAggregator, spawn};
 use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::oneshot_channel;
-use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
@@ -22,8 +21,8 @@ use polars_io::metrics::OptIOMetrics;
 use polars_io::prelude::_csv_read_internal::CountLines;
 use polars_io::prelude::CsvReadOptions;
 use polars_io::prelude::streaming::read_until_start_and_infer_schema;
-use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
-use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
+use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
+use polars_io::utils::compression::ByteSourceReader;
 use polars_io::utils::stream_buf_reader::{ReaderSource, StreamBufReader};
 use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
@@ -33,6 +32,7 @@ use polars_utils::slice_enum::Slice;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
 use super::shared::chunk_data_fetch::ChunkDataFetcher;
+use super::shared::file_init::{ChunkPrefetchSync, InitializedState};
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::morsel::SourceToken;
 use crate::nodes::TaskPriority;
@@ -56,24 +56,7 @@ struct CsvFileReader {
     pub chunk_prefetch_sync: ChunkPrefetchSync,
     pub init_data: Option<InitializedState>,
     pub io_metrics: OptIOMetrics,
-}
-
-pub(crate) struct ChunkPrefetchSync {
-    pub(crate) prefetch_limit: usize,
-    pub(crate) prefetch_semaphore: Arc<tokio::sync::Semaphore>,
-    pub(crate) shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
-
-    /// Waits for the previous reader to finish spawning prefetches.
-    pub(crate) prev_all_spawned: Option<WaitGroup>,
-    /// Dropped once the current reader has finished spawning prefetches.
-    pub(crate) current_all_spawned: Option<WaitToken>,
-}
-
-#[derive(Clone)]
-pub struct InitializedState {
-    file_size: usize,
-    compression: Option<SupportedCompression>,
-    byte_source: Arc<DynByteSource>,
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
 #[async_trait]
@@ -83,69 +66,27 @@ impl FileReader for CsvFileReader {
             return Ok(());
         }
 
-        let scan_source = self.scan_source.clone();
-        let byte_source_builder = self.byte_source_builder.clone();
-        let cloud_options = self.cloud_options.clone();
-        let io_metrics = self.io_metrics.clone();
+        self.init_data = Some(
+            InitializedState::initialize(
+                self.scan_source.clone(),
+                self.byte_source_builder.clone(),
+                self.cloud_options.clone(),
+                self.io_metrics.clone(),
+            )
+            .await?,
+        );
 
-        let byte_source = ASYNC
-            .spawn(async move {
-                scan_source
-                    .as_scan_source_ref()
-                    .to_dyn_byte_source(
-                        &byte_source_builder,
-                        cloud_options.as_deref(),
-                        io_metrics.0,
-                    )
-                    .await
-            })
-            .await
-            .unwrap()?;
-        let byte_source = Arc::new(byte_source);
-
-        // @TODO: Refactor FileInfo so we can re-use the file_size value from the planning stage.
-        let file_size = {
-            let byte_source = byte_source.clone();
-            ASYNC
-                .spawn(async move { byte_source.get_size().await })
-                .await
-                .unwrap()?
-        };
-
-        let compression = if file_size >= 4 {
-            let byte_source = byte_source.clone();
-            let magic_range = 0..4;
-            let magic_bytes = ASYNC
-                .spawn(async move { byte_source.get_range(magic_range).await })
-                .await
-                .unwrap()?;
-            SupportedCompression::check(&magic_bytes)
-        } else {
-            None
-        };
-
-        self.init_data = Some(InitializedState {
-            file_size,
-            compression,
-            byte_source,
-        });
         Ok(())
     }
 
     fn prepare_read(&mut self) -> PolarsResult<()> {
-        let wait_group_this_reader = WaitGroup::default();
-        let prefetch_all_spawned_token = wait_group_this_reader.token();
-
-        let prev_wait_group: Option<WaitGroup> = self
-            .chunk_prefetch_sync
-            .shared_prefetch_wait_group_slot
-            .try_lock()
-            .unwrap()
-            .replace(wait_group_this_reader);
-
-        self.chunk_prefetch_sync.prev_all_spawned = prev_wait_group;
-        self.chunk_prefetch_sync.current_all_spawned = Some(prefetch_all_spawned_token);
+        self.chunk_prefetch_sync
+            .prepare_read(self.init_data.as_ref().unwrap());
         Ok(())
+    }
+
+    fn local_read_size(&self) -> Option<usize> {
+        self.init_data.as_ref()?.local_read_size()
     }
 
     fn begin_read(
@@ -159,6 +100,7 @@ impl FileReader for CsvFileReader {
             file_size,
             compression,
             byte_source,
+            prefix,
         } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
@@ -172,6 +114,7 @@ impl FileReader for CsvFileReader {
             missing_columns_policy,
             num_pipelines,
             disable_morsel_split: _,
+            maintain_order: _,
             last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
@@ -202,11 +145,12 @@ impl FileReader for CsvFileReader {
         }
 
         // There are two byte sourcing strategies `ReaderSource`: (a) async parallel prefetch using a
-        // streaming pipeline, or (b) memory-mapped, only to be used for uncompressed local files.
+        // streaming pipeline, or (b) an in-memory buffer, only to be used for uncompressed data
+        // that is memory-mapped (local files) or fully fetched during initialization (small cloud
+        // files).
         // The `compressed_reader` (of type `ByteSourceReader`) abstracts these source types.
         // The `use_async_prefetch` flag controls the optional pipeline startup behavior.
-        let use_async_prefetch =
-            !(matches!(byte_source.as_ref(), &DynByteSource::Buffer(_)) && compression.is_none());
+        let use_async_prefetch = self.init_data.as_ref().unwrap().uses_async_prefetch();
 
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let decompressed_file_size_hint = match compression {
@@ -214,7 +158,7 @@ impl FileReader for CsvFileReader {
             Some(_) => Some(file_size * ASSUMED_COMPRESSION_RATIO),
         };
 
-        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with
+        // Unify the two source options (uncompressed in-memory buffer, or streaming async with
         // transparent decompression), into one unified reader source.
         let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
@@ -253,6 +197,7 @@ impl FileReader for CsvFileReader {
                         byte_source,
                         file_size,
                         chunk_size,
+                        prefix,
                         prefetch_send,
                         prefetch_semaphore,
                         prefetch_current_all_spawned,
@@ -271,12 +216,11 @@ impl FileReader for CsvFileReader {
             let stream_buf_reader = StreamBufReader::new(prefetch_recv, prefetch_task);
             ReaderSource::Streaming(stream_buf_reader)
         } else {
-            let memslice = self
-                .scan_source
-                .as_scan_source_ref()
-                .to_buffer_async_assume_latest(self.scan_source.run_async())?;
+            let DynByteSource::Buffer(buffer) = byte_source.as_ref() else {
+                unreachable!()
+            };
 
-            ReaderSource::Memory(Cursor::new(memslice))
+            ReaderSource::Memory(Cursor::new(buffer.0.clone()))
         };
 
         let options = self.options.clone();
@@ -297,7 +241,13 @@ impl FileReader for CsvFileReader {
         // Because StreamBufReader uses `blocking_recv`, this runs on tokio's elastic blocking pool.
         let infer_schema_handle =
             tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
-                let mut reader = ByteSourceReader::try_new(reader_source, compression)?;
+                let mut reader = match reader_source {
+                    // Zero-copy fast-path for uncompressed in-memory data.
+                    ReaderSource::Memory(cursor) => {
+                        ByteSourceReader::from_memory(cursor.into_inner())?
+                    },
+                    reader_source => ByteSourceReader::try_new(reader_source, compression)?,
+                };
                 let result = read_until_start_and_infer_schema(
                     &options,
                     Some(projected_schema.clone()),
@@ -320,10 +270,13 @@ impl FileReader for CsvFileReader {
                 PolarsResult::Ok(())
             }));
 
+        let task_metrics = self.task_metrics.as_deref();
+        let line_batch_task_metrics = self.task_metrics.clone();
+
         // Task: Line batch source.
         // Create and send newline-aligned batches. Create chunk_reader for decoder.
         let line_batch_source_handle =
-            AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
+            AbortOnDropHandle::new(spawn(TaskPriority::Low, task_metrics, async move {
                 let pre_read_result = infer_schema_rx.recv().await.map_err(
                     |_| polars_err!(ComputeError: "CSV pre-read task panicked or was dropped"),
                 )?;
@@ -385,7 +338,8 @@ impl FileReader for CsvFileReader {
                             line_batch_tx,
                             pre_slice,
                             needs_full_row_count,
-                            use_async_prefetch,
+                            num_pipelines,
+                            task_metrics: line_batch_task_metrics,
                             verbose,
                         }
                         .run()
@@ -411,7 +365,7 @@ impl FileReader for CsvFileReader {
                 // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
                 let source_token = SourceToken::new();
 
-                AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
+                AbortOnDropHandle::new(spawn(TaskPriority::Low, task_metrics, async move {
                     let chunk_reader = chunk_reader_shared.await.map_err(
                         |_| polars_err!(ComputeError: "CSV pipeline dropped unexpectedly"),
                     )??;
@@ -478,7 +432,7 @@ impl FileReader for CsvFileReader {
 
         Ok((
             rx,
-            spawn(TaskPriority::Low, async move {
+            spawn(TaskPriority::Low, task_metrics, async move {
                 let mut row_position: usize = 0;
 
                 for handle in line_batch_decode_handles {

@@ -26,8 +26,11 @@ mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
+mod extract_window;
+pub use expand_datasets::attach_dataset_scan_statistics;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
+pub use extract_window::is_scalar_window_reduction;
 mod collapse_sort;
 pub mod deep_copy;
 mod filter_constraint;
@@ -54,7 +57,9 @@ use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{
     AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
 };
-pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
+pub use stack_opt::{
+    OptimizationRule, OptimizeExprContext, StackOptimizer, passes_on_filter_predicate,
+};
 
 #[cfg(feature = "merge_sorted")]
 use self::flatten_merge_sorted::FlattenMergeSortedRule;
@@ -157,7 +162,7 @@ pub fn optimize(
     if comm_subplan_elim {
         feature_gated!("cse", {
             let members = get_or_init_members!();
-            if ((members.has_sink_multiple || members.has_joins_or_unions)
+            if ((members.has_sink_multiple || members.has_joins || members.has_unions)
                 && members.has_duplicate_scans())
                 || members.has_cse_equivalent_resolvers()
             {
@@ -170,6 +175,7 @@ pub fn optimize(
                     ir_arena,
                     expr_arena,
                     polars_config::config().allow_nested_cspe(),
+                    !opt_flags.streaming(),
                 );
             }
         });
@@ -227,18 +233,29 @@ pub fn optimize(
         )?;
     }
 
+    // Gives the dataset scans the statistics that the join passes need.
+    #[cfg(feature = "python")]
+    if opt_flags.join_order() && get_or_init_members!().has_joins {
+        expand_datasets::expand_datasets_early(
+            root,
+            ir_arena,
+            expr_arena,
+            expand_datasets::EarlyExpansion::ForJoinOrder,
+        )?;
+    }
+
     // Needs the filters that predicate pushdown places on the scans, and must come
     // before projection pushdown so projections follow the final join order.
     if opt_flags.join_order() && get_or_init_members!().has_preserving_join {
         root = join_pushthrough::push_through_outer_joins(root, ir_arena, expr_arena);
     }
-    if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
+    if opt_flags.join_order() && get_or_init_members!().has_joins {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
     }
 
     // After join ordering, and before projection pushdown drops what only the fused predicate
     // reads.
-    if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins_or_unions {
+    if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins {
         join_predicate_fusion::fuse_predicates(root, ir_arena, expr_arena)?;
     }
 
@@ -287,7 +304,7 @@ pub fn optimize(
     }
 
     // Needs the final join order and the pushed-down projections.
-    if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins_or_unions {
+    if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins {
         join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
         if opt_flags.streaming() {
             join_runtime_filter::attach_join_runtime_filters(root, ir_arena, expr_arena);
@@ -312,9 +329,14 @@ pub fn optimize(
         })?;
     }
 
+    if opt_flags.streaming() && !opt_flags.gpu() {
+        extract_window::extract_windows(root, ir_arena, expr_arena);
+    }
+
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         match ir_arena.get(root) {
             IR::SinkMultiple { inputs } => {
+                let inputs = inputs.clone();
                 let mut roots = inputs.clone();
                 for root in &mut roots {
                     if !matches!(ir_arena.get(*root), IR::Sink { .. }) {
@@ -325,6 +347,21 @@ pub fn optimize(
                     }
                 }
                 simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
+                // The pass may have unlinked the input of a temporary sink.
+                let new_inputs = roots
+                    .iter()
+                    .zip(inputs)
+                    .map(|(&tmp_top, input)| match ir_arena.get(tmp_top) {
+                        IR::Sink {
+                            input: new_input, ..
+                        } if tmp_top != input => *new_input,
+                        _ => input,
+                    })
+                    .collect();
+                let IR::SinkMultiple { inputs } = ir_arena.get_mut(root) else {
+                    unreachable!()
+                };
+                *inputs = new_inputs;
             },
             ir => {
                 let mut tmp_top = root;
@@ -335,6 +372,13 @@ pub fn optimize(
                     });
                 }
                 simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
+                // The pass may have unlinked the input of the temporary sink.
+                if tmp_top != root {
+                    let IR::Sink { input, .. } = ir_arena.get(tmp_top) else {
+                        unreachable!()
+                    };
+                    root = *input;
+                }
             },
         }
     }
@@ -343,6 +387,7 @@ pub fn optimize(
         root,
         ir_arena,
         expr_arena,
+        opt_flags.predicate_pushdown() && !pushdown_maintain_errors,
         hooks.apply_scan_predicate_to_scan_ir,
     )?;
 

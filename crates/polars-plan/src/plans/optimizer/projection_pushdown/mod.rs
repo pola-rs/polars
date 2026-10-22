@@ -13,12 +13,12 @@ use polars_io::RowIndex;
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
-use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools as _;
 use polars_utils::itertools::iters_eq::iters_eq;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
+use polars_utils::{UnitVec, format_pl_smallstr, unitvec};
 
 use crate::constants::get_len_name;
 use crate::dsl::{FileScanIR, PredicateFileSkip, UnionOptions};
@@ -53,7 +53,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     );
 
     #[allow(clippy::disallowed_types)]
-    let mut cache_inputs = PlHashMap::default();
+    let mut optimized_cache_nodes = PlHashMap::default();
 
     ir_graph_traversal(
         optimize_root,
@@ -67,7 +67,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             names_set_scratch3: &mut ScratchIndexSet::default(),
             names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
-            cache_inputs: &mut cache_inputs,
+            optimized_cache_nodes: &mut optimized_cache_nodes,
             default_edge: Edge::new(
                 Projection::All,
                 None,
@@ -82,13 +82,6 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     .continue_value()
     .unwrap();
 
-    // Assign optimized plan back to root node.
-    let IR::SimpleProjection { input, columns: _ } = ir_arena.take(root) else {
-        unreachable!()
-    };
-
-    ir_arena.swap(root, input);
-
     // Ensure cache nodes for an ID all point to same input Node.
     let cache_nodes = Vec::from_iter(
         ir_arena
@@ -97,13 +90,27 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     );
 
     for node in cache_nodes {
-        let IR::Cache { input, id } = ir_arena.get_mut(node) else {
+        let IR::Cache { id, .. } = ir_arena.get(node) else {
             unreachable!()
         };
-        if let Some(optimized_cache) = cache_inputs.get(id) {
-            *input = *optimized_cache;
+        if let Some(optimized_cache) = optimized_cache_nodes.get(id) {
+            let IR::Cache { input, .. } = ir_arena.get(*optimized_cache) else {
+                unreachable!()
+            };
+            let optimized_input = *input;
+            let IR::Cache { input, .. } = ir_arena.get_mut(node) else {
+                unreachable!()
+            };
+            *input = optimized_input;
         }
     }
+
+    // Assign optimized plan back to root node after resolving the recorded cache node keys.
+    let IR::SimpleProjection { input, columns: _ } = ir_arena.take(root) else {
+        unreachable!()
+    };
+
+    ir_arena.swap(root, input);
 }
 
 pub struct ProjectionPushdownVisitor<'a, 'arena> {
@@ -118,7 +125,7 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     names_vec_scratch: &'a mut ScratchVec<PlSmallStr>,
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
     #[allow(clippy::disallowed_types)] // We don't iterate over cache.
-    cache_inputs: &'a mut PlHashMap<UniqueId, Node>,
+    optimized_cache_nodes: &'a mut PlHashMap<UniqueId, Node>,
     default_edge: Edge,
     maintain_errors: bool,
 }
@@ -178,8 +185,9 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
                 debug_assert_eq!(inputs.len(), edges.inputs().len());
             },
 
-            IR::Cache { input, id } => {
-                self.cache_inputs.insert(*id, *input);
+            IR::Cache { id, .. } => {
+                // Nested caches can still modify this cache's input after post_visit.
+                self.optimized_cache_nodes.insert(*id, key);
             },
 
             _ => {},
@@ -503,104 +511,154 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     }
                 }
 
-                let IR::Select { expr: exprs, .. } = storage.get_mut(key) else {
-                    unreachable!()
-                };
+                'select_len_pushdown: {
+                    let IR::Select { expr: exprs, .. } = storage.get(key) else {
+                        unreachable!()
+                    };
 
-                if exprs.len() == 1
-                    && match self.expr_arena.get(exprs[0].node()) {
-                        AExpr::Len => true,
-                        // select(col(a).len()) -> select(len().alias(a))
-                        AExpr::Agg(IRAggExpr::Count {
-                            input,
-                            include_nulls: true,
-                        }) if matches!(
+                    let mut len_nodes: Vec<Node> = Vec::new();
+
+                    for e in exprs.iter() {
+                        if !matches!(
                             aexpr_projection_height_rec(
-                                *input,
+                                e.node(),
                                 self.expr_arena,
                                 self.ae_nodes_scratch,
                                 self.ae_height_scratch
                             ),
-                            EH::Column
-                        ) =>
-                        {
-                            self.expr_arena.replace(exprs[0].node(), AExpr::Len);
-                            true
-                        },
-                        _ => false,
-                    }
-                {
-                    let name = exprs[0].output_name().clone();
-                    // Force alias, this way downstream doesn't need to handle name when mutating
-                    // the AExpr node.
-                    exprs[0].set_alias(name);
-                    *edges.inputs()[0].projection_mut() = Projection::Len;
-                    reuse_names_alloc(edges);
-                } else {
-                    // Determine names referenced by exprs as the projection to pushdown.
-                    let input_names_projection = self.names_set_scratch.get();
-                    let mut has_non_simple_projection = false;
-                    let mut has_window_expr = false;
-
-                    for e in exprs {
-                        input_names_projection
-                            .extend(aexpr_to_leaf_names_iter(e.node(), self.expr_arena).cloned());
-
-                        has_window_expr = has_window_expr
-                            || self
-                                .expr_arena
-                                .iter(e.node())
-                                .any(|(_, e)| matches!(e, AExpr::Over { .. }));
-
-                        match self.expr_arena.get(e.node()) {
-                            AExpr::Column(name) if name == e.output_name() => {},
-                            _ => has_non_simple_projection = true,
+                            EH::Scalar
+                        ) || !extract_len_nodes(
+                            e.node(),
+                            self.expr_arena,
+                            &mut len_nodes,
+                            self.ae_nodes_scratch,
+                            self.ae_height_scratch,
+                        ) {
+                            break 'select_len_pushdown;
                         }
                     }
 
-                    let input_schema =
-                        IR::schema_with_cache(input_node, storage, self.schema_cache);
-
-                    // E.g. `select(<literal>.sum().over(<literal>))`, we must project at least 1 input
-                    // column for height.
-                    if has_window_expr && input_names_projection.is_empty() {
-                        input_names_projection
-                            .extend(min_dtype_size_col(input_schema.iter()).cloned())
+                    if len_nodes.is_empty() {
+                        break 'select_len_pushdown;
                     }
 
-                    let prune = !has_non_simple_projection;
+                    let insert_select_len_ir =
+                        if exprs.len() != 1 || len_nodes[0] != exprs[0].node() {
+                            for node in len_nodes {
+                                self.expr_arena.replace(node, AExpr::Column(get_len_name()));
+                            }
 
-                    if input_names_projection.len() != input_schema.len()
-                        || (prune
-                            && !iters_eq(input_names_projection.iter(), input_schema.iter_names()))
-                    {
-                        mem::swap(out_edge.names_mut(), input_names_projection);
-                        let names = out_edge.take_names();
-                        *edges.inputs()[0].projection_state_mut() = ProjectionState {
-                            projection: Projection::Names,
-                            names,
+                            Some(storage.add(IR::Select {
+                                input: input_node,
+                                expr: vec![ExprIR::new(
+                                    self.expr_arena.add(AExpr::Len),
+                                    OutputName::Alias(get_len_name()),
+                                )],
+                                schema: Arc::new(Schema::from_iter([(
+                                    get_len_name(),
+                                    DataType::IDX_DTYPE,
+                                )])),
+                                options: ProjectionOptions::default(),
+                            }))
+                        } else {
+                            // select(col(a).len()) -> select(len().alias(a))
+                            self.expr_arena.replace(len_nodes[0], AExpr::Len);
+
+                            None
                         };
-                    } else {
-                        reuse_names_alloc(edges)
+
+                    let IR::Select {
+                        input, expr: exprs, ..
+                    } = storage.get_mut(key)
+                    else {
+                        unreachable!()
+                    };
+
+                    // Force alias, this way downstream doesn't need to handle name when mutating
+                    // the AExpr nodes.
+                    for e in exprs.iter_mut() {
+                        let name = e.output_name().clone();
+                        e.set_alias(name);
                     }
 
-                    // All column-projections; unlink this `select()`.
-                    if prune {
-                        let out_edge = &mut edges.outputs()[0];
-                        let parent_key_and_port = out_edge.parent_key_and_port().clone();
+                    let in_edge = &mut edges.inputs()[0];
 
-                        *storage
-                            .get_mut(parent_key_and_port.node)
-                            .inputs_mut()
-                            .nth(parent_key_and_port.idx)
-                            .unwrap() = input_node;
-
-                        let in_edge = &mut edges.inputs()[0];
-                        *in_edge.parent_key_and_port_mut() = parent_key_and_port;
-                        edges.outputs()[0]
-                            .parent_key_and_port_mut()
-                            .set_deleted(true);
+                    if let Some(node) = insert_select_len_ir {
+                        *input = node;
+                        *in_edge.parent_key_and_port_mut() = ParentKeyAndPort { node, idx: 0 };
                     }
+
+                    *in_edge.projection_mut() = Projection::Len;
+                    reuse_names_alloc(edges);
+
+                    return;
+                }
+
+                let IR::Select { expr: exprs, .. } = storage.get_mut(key) else {
+                    unreachable!()
+                };
+
+                // Determine names referenced by exprs as the projection to pushdown.
+                let input_names_projection = self.names_set_scratch.get();
+                let mut has_non_simple_projection = false;
+                let mut has_window_expr = false;
+
+                for e in exprs {
+                    input_names_projection
+                        .extend(aexpr_to_leaf_names_iter(e.node(), self.expr_arena).cloned());
+
+                    has_window_expr = has_window_expr
+                        || self
+                            .expr_arena
+                            .iter(e.node())
+                            .any(|(_, e)| matches!(e, AExpr::Over { .. }));
+
+                    match self.expr_arena.get(e.node()) {
+                        AExpr::Column(name) if name == e.output_name() => {},
+                        _ => has_non_simple_projection = true,
+                    }
+                }
+
+                let input_schema = IR::schema_with_cache(input_node, storage, self.schema_cache);
+
+                // E.g. `select(<literal>.sum().over(<literal>))`, we must project at least 1 input
+                // column for height.
+                if has_window_expr && input_names_projection.is_empty() {
+                    input_names_projection.extend(min_dtype_size_col(input_schema.iter()).cloned())
+                }
+
+                let prune = !has_non_simple_projection;
+
+                if input_names_projection.len() != input_schema.len()
+                    || (prune
+                        && !iters_eq(input_names_projection.iter(), input_schema.iter_names()))
+                {
+                    mem::swap(out_edge.names_mut(), input_names_projection);
+                    let names = out_edge.take_names();
+                    *edges.inputs()[0].projection_state_mut() = ProjectionState {
+                        projection: Projection::Names,
+                        names,
+                    };
+                } else {
+                    reuse_names_alloc(edges)
+                }
+
+                // All column-projections; unlink this `select()`.
+                if prune {
+                    let out_edge = &mut edges.outputs()[0];
+                    let parent_key_and_port = out_edge.parent_key_and_port().clone();
+
+                    *storage
+                        .get_mut(parent_key_and_port.node)
+                        .inputs_mut()
+                        .nth(parent_key_and_port.idx)
+                        .unwrap() = input_node;
+
+                    let in_edge = &mut edges.inputs()[0];
+                    *in_edge.parent_key_and_port_mut() = parent_key_and_port;
+                    edges.outputs()[0]
+                        .parent_key_and_port_mut()
+                        .set_deleted(true);
                 }
             },
 
@@ -774,7 +832,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                     self.expr_arena.replace(
                         select_len_ae_node,
-                        AExpr::Agg(IRAggExpr::Sum(predicate_node)),
+                        AExpr::Agg(IRAggExpr::Sum {
+                            input: predicate_node,
+                            null_on_empty: false,
+                        }),
                     );
 
                     *out_edge.projection_mut() = Projection::Names;
@@ -1156,7 +1217,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::GroupBy { apply: Some(_), .. } => {
+            // Windows are created after projection pushdown.
+            IR::GroupBy { apply: Some(_), .. } | IR::Window { .. } => {
                 post_project_and_return!()
             },
 
@@ -1285,7 +1347,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 inputs,
                 options:
                     UnionOptions {
-                        slice: _,
+                        slice,
                         rows: _,
                         parallel: _,
                         from_partitioned_ds: _,
@@ -1296,7 +1358,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
             } => {
                 // concat(a, b, ..).select(len())
                 //   -> concat(a.select(len()), b.select(len()), ..).select(col('len').cast(UInt128).sum().cast(IDX_DTYPE))
-                if out_edge.projection() == Projection::Len && !inputs.is_empty() {
+                // A slice of the union would apply to the per-input lengths instead of the rows.
+                if out_edge.projection() == Projection::Len && !inputs.is_empty() && slice.is_none()
+                {
                     *rechunk = false;
                     *maintain_order = false;
                     let len_schema =
@@ -1337,7 +1401,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             dtype: DataType::UInt128,
                             options: CastOptions::Overflowing,
                         };
-                        e = AExpr::Agg(IRAggExpr::Sum(self.expr_arena.add(e)));
+                        e = AExpr::Agg(IRAggExpr::Sum {
+                            input: self.expr_arena.add(e),
+                            null_on_empty: false,
+                        });
                         e = AExpr::Cast {
                             expr: self.expr_arena.add(e),
                             dtype: DataType::IDX_DTYPE,
@@ -1397,8 +1464,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 // concat_horizontal([lf, ..]).select(len())
                 // -> concat_horizontal([lf.select(len().alias(i)) for i, lf in enumerate(..)]).select(max_horizontal('*'))
+                // When unit-length inputs are broadcast, the height is not the max: a height of
+                // 0 and a height of 1 give 0.
                 if out_edge.projection() == Projection::Len
                     && !strict
+                    && !options.broadcast_unit_length
                     && let Some(select_len_ae_node) =
                         extract_select_len_expr(parent_ir, self.expr_arena).map(|eir| eir.node())
                 {
@@ -2248,6 +2318,77 @@ fn small_dummy_column(name: PlSmallStr, height: usize) -> Column {
     let dtype = DataType::Null;
 
     Column::full_null(name, height, &dtype)
+}
+
+/// Extends `len_nodes` with the arena nodes of the sub-expressions of `node` that evaluate to the
+/// height of the input frame, returning `false` if the expression references the input frame in
+/// any other way.
+///
+/// Note that this says nothing about the projection height of the expression itself.
+fn extract_len_nodes(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    len_nodes: &mut Vec<Node>,
+    ae_nodes_scratch: &mut ScratchVec<Node>,
+    ae_height_scratch: &mut ScratchVec<ExprProjectionHeight>,
+) -> bool {
+    let mut stack: UnitVec<Node> = unitvec![node];
+
+    while let Some(node) = stack.pop() {
+        match expr_arena.get(node) {
+            AExpr::Len => len_nodes.push(node),
+
+            // select(col(a).len()) -> select(len().alias(a))
+            //
+            // Note: `col(a)` is only used for its height, so we don't traverse into it.
+            AExpr::Agg(IRAggExpr::Count {
+                input,
+                include_nulls: true,
+            }) if matches!(
+                aexpr_projection_height_rec(
+                    *input,
+                    expr_arena,
+                    ae_nodes_scratch,
+                    ae_height_scratch
+                ),
+                ExprProjectionHeight::Column
+            ) =>
+            {
+                len_nodes.push(node)
+            },
+
+            // References the data of the input frame.
+            AExpr::Column(_) | AExpr::Element => return false,
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructField(_) => return false,
+
+            // Nested contexts, within which `len()` does not refer to the height of the input
+            // frame.
+            AExpr::Eval { .. } | AExpr::Over { .. } => return false,
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructEval { .. } => return false,
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => return false,
+
+            // Evaluated against the same frame, so a nested `len()` keeps its meaning.
+            ae @ (AExpr::Literal(_)
+            | AExpr::Explode { .. }
+            | AExpr::BinaryExpr { .. }
+            | AExpr::Cast { .. }
+            | AExpr::Sort { .. }
+            | AExpr::Gather { .. }
+            | AExpr::SortBy { .. }
+            | AExpr::Filter { .. }
+            | AExpr::Agg(_)
+            | AExpr::Ternary { .. }
+            | AExpr::AnonymousAgg { .. }
+            | AExpr::AnonymousFunction { .. }
+            | AExpr::Function { .. }
+            | AExpr::Slice { .. }) => ae.children_rev(&mut stack),
+        }
+    }
+
+    true
 }
 
 /// Returns `Some(ExprIR)` if `ir` is `select(len())`.

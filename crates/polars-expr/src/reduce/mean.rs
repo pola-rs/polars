@@ -18,7 +18,7 @@ pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduct
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
+        Decimal(_, _) => Box::new(VGR::new(dtype, DecimalMeanReducer)),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),
@@ -47,15 +47,6 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
             let ca: Float64Chunked = values
                 .into_iter()
                 .map(|(s, c)| (c != 0).then(|| s / c as f64))
-                .collect_ca(PlSmallStr::EMPTY);
-            ca.into_series()
-        },
-        #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_prec, scale) => {
-            let scale_factor = 10u128.pow(*scale as u32) as f64;
-            let ca: Float64Chunked = values
-                .into_iter()
-                .map(|(s, c)| (c != 0).then(|| s / c as f64 / scale_factor))
                 .collect_ca(PlSmallStr::EMPTY);
             ca.into_series()
         },
@@ -93,6 +84,7 @@ where
 {
     type Dtype = T;
     type Value = (f64, usize);
+    const ORDER_INDEPENDENT: bool = true;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
@@ -128,6 +120,79 @@ where
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
         Ok(finish_output(v, dtype))
+    }
+}
+
+/// Accumulates Decimal128 values in i128, spilling into an f64 when a group's
+/// sum would overflow. A sum past i128 can still have a mean that f64 holds.
+#[cfg(feature = "dtype-decimal")]
+#[derive(Clone)]
+struct DecimalMeanReducer;
+
+#[cfg(feature = "dtype-decimal")]
+#[inline(always)]
+fn add_to_sum(a: &mut (i128, f64, usize), x: i128) {
+    match a.0.checked_add(x) {
+        Some(v) => a.0 = v,
+        None => {
+            a.1 += a.0 as f64;
+            a.0 = x;
+        },
+    }
+}
+
+#[cfg(feature = "dtype-decimal")]
+impl Reducer for DecimalMeanReducer {
+    type Dtype = Int128Type;
+    type Value = (i128, f64, usize);
+    const ORDER_INDEPENDENT: bool = true;
+
+    #[inline(always)]
+    fn init(&self) -> Self::Value {
+        (0, 0.0, 0)
+    }
+
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        s.to_physical_repr()
+    }
+
+    #[inline(always)]
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        add_to_sum(a, b.0);
+        a.1 += b.1;
+        a.2 += b.2;
+    }
+
+    #[inline(always)]
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
+        add_to_sum(a, b.unwrap_or(0));
+        a.2 += b.is_some() as usize;
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
+        for x in ca.iter().flatten() {
+            self.reduce_one(v, Some(x), 0);
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        assert!(m.is_none());
+        let DataType::Decimal(_, scale) = dtype else {
+            unreachable!()
+        };
+        let scale_factor = 10u128.pow(*scale as u32) as f64;
+        let ca: Float64Chunked = v
+            .into_iter()
+            .map(|(acc, spilled, c)| {
+                (c != 0).then(|| (spilled + acc as f64) / c as f64 / scale_factor)
+            })
+            .collect_ca(PlSmallStr::EMPTY);
+        Ok(ca.into_series())
     }
 }
 

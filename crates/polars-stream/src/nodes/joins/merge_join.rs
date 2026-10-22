@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::RangeBounds;
 
-use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::executor::{JoinHandle, TaskMetricAggregator, TaskPriority, TaskScope};
 use polars_async::primitives::distributor_channel::{self, distributor_channel};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::builder::DataFrameBuilder;
@@ -18,9 +18,9 @@ use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
-use crate::nodes::ComputeNode;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 use crate::nodes::joins::utils::SpillFrameSearchBuffer;
+use crate::nodes::{ComputeNode, NodeMemoryUsage};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 #[derive(Clone, Copy, Debug)]
@@ -127,6 +127,7 @@ impl MergeJoinNode {
         nulls_last: bool,
         keys_row_encoded: bool,
         args: JoinArgs,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<Self> {
         let left_key_col = tmp_left_key_col.as_ref().unwrap_or(&left_on[0]);
         let right_key_col = tmp_right_key_col.as_ref().unwrap_or(&right_on[0]);
@@ -161,11 +162,11 @@ impl MergeJoinNode {
         };
         let build_unmerged = SpillFrameSearchBuffer::empty_with_schema(
             build_schema.clone(),
-            RandomSpillContext::new("merge-join-build-buffer".into()),
+            RandomSpillContext::new("merge-join-build-buffer".into(), task_metrics.clone()),
         );
         let probe_unmerged = SpillFrameSearchBuffer::empty_with_schema(
             probe_schema.clone(),
-            RandomSpillContext::new("merge-join-probe-buffer".into()),
+            RandomSpillContext::new("merge-join-probe-buffer".into(), task_metrics),
         );
         Ok(MergeJoinNode {
             state,
@@ -262,6 +263,21 @@ impl ComputeNode for MergeJoinNode {
         }
 
         Ok(())
+    }
+
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        // Unmatched probe rows are buffered until the end to emit them in order.
+        let buffers_unmatched = self.params.args.maintain_order != MaintainOrderJoin::None
+            && self.params.probe_params().emit_unmatched;
+        match &self.state {
+            MergeJoinState::Running if buffers_unmatched => NodeMemoryUsage::Unbounded,
+            MergeJoinState::FlushInputBuffers if buffers_unmatched => {
+                NodeMemoryUsage::HoldingUntilDone
+            },
+            MergeJoinState::Running | MergeJoinState::FlushInputBuffers => NodeMemoryUsage::Bounded,
+            MergeJoinState::EmitUnmatched(src) => src.memory_usage(),
+            MergeJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

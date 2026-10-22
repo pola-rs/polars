@@ -119,7 +119,11 @@ pub fn resolve_join(
             match (&asof_options.left_by, &asof_options.right_by) {
                 (None, None) => {},
                 (Some(l), Some(r)) => {
-                    polars_ensure!(l.len() == r.len(), InvalidOperation: "expected equal number of columns in 'by_left' and 'by_right' in 'asof_join'");
+                    polars_ensure!(
+                        l.len() == r.len(),
+                        InvalidOperation: "expected equal number of columns in `by_left` ({}) and `by_right` ({}) in `asof_join`",
+                        l.len(), r.len()
+                    );
                     validate_columns_in_input(l, &schema_left, "asof_join")?;
                     validate_columns_in_input(r, &schema_right, "asof_join")?;
                 },
@@ -361,6 +365,12 @@ pub fn resolve_join(
     if let JoinType::AsOf(options) = &mut options.args.how {
         use polars_core::utils::polars_arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 
+        let key_dtype = || {
+            ctxt.expr_arena
+                .get(left_on[0].node())
+                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))
+        };
+
         // prepare the tolerance
         // we must ensure that we use the right units
         if let Some(tol) = &options.tolerance_str {
@@ -371,17 +381,9 @@ pub fn resolve_join(
                 consider using 4 weeks"
             );
             use DataType::*;
-            match ctxt
-                .expr_arena
-                .get(left_on[0].node())
-                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))?
-            {
+            match key_dtype()? {
                 Datetime(tu, _) | Duration(tu) => {
-                    let tolerance = match tu {
-                        TimeUnit::Nanoseconds => duration.duration_ns(),
-                        TimeUnit::Microseconds => duration.duration_us(),
-                        TimeUnit::Milliseconds => duration.duration_ms(),
-                    };
+                    let tolerance = duration.duration(tu);
                     options.tolerance = Some(Scalar::from(tolerance))
                 },
                 Date => {
@@ -399,11 +401,36 @@ pub fn resolve_join(
                 },
             }
         }
+
+        if let Some(tolerance) = &options.tolerance
+            && let Some(normalized) = normalize_asof_tolerance(tolerance, &key_dtype()?)
+        {
+            options.tolerance = Some(normalized);
+        }
     }
 
+    // The coalesced key columns are replaced by their upcast versions.
+    if !as_with_columns_l.is_empty() {
+        input_left = IRBuilder::new(input_left, ctxt.expr_arena, ctxt.lp_arena)
+            .with_columns(as_with_columns_l, ProjectionOptions::default())
+            .node();
+    }
+    if !as_with_columns_r.is_empty() {
+        input_right = IRBuilder::new(input_right, ctxt.expr_arena, ctxt.lp_arena)
+            .with_columns(as_with_columns_r, ProjectionOptions::default())
+            .node();
+    }
     // These are Arc<Schema>, into_owned is free.
-    let schema_left = schema_left.into_owned();
-    let schema_right = schema_right.into_owned();
+    let schema_left = ctxt
+        .lp_arena
+        .get(input_left)
+        .schema(ctxt.lp_arena)
+        .into_owned();
+    let schema_right = ctxt
+        .lp_arena
+        .get(input_right)
+        .schema(ctxt.lp_arena)
+        .into_owned();
 
     options.options = {
         let on = left_on.into_iter().zip(right_on).collect();
@@ -419,30 +446,6 @@ pub fn resolve_join(
 
     let join_schema = det_join_schema(&schema_left, &schema_right, &options)
         .context(failed_here!(join schema resolving))?;
-
-    if key_cols_coalesced {
-        input_left = if as_with_columns_l.is_empty() {
-            input_left
-        } else {
-            ctxt.lp_arena.add(IR::HStack {
-                input: input_left,
-                exprs: as_with_columns_l,
-                schema: schema_left,
-                options: ProjectionOptions::default(),
-            })
-        };
-
-        input_right = if as_with_columns_r.is_empty() {
-            input_right
-        } else {
-            ctxt.lp_arena.add(IR::HStack {
-                input: input_right,
-                exprs: as_with_columns_r,
-                schema: schema_right,
-                options: ProjectionOptions::default(),
-            })
-        };
-    }
 
     let ir = IR::Join {
         input_left,
@@ -706,7 +709,13 @@ fn build_upcast_node_list(
                             left.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         let dtype_right =
                             right.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
-                        if dtype_left != dtype_right {
+                        // A decimal compares exactly with another decimal or an integer, and
+                        // a cast to a common decimal type can overflow.
+                        let is_exact = |dt: &DataType| dt.is_decimal() || dt.is_integer();
+                        let decimal_compare = (dtype_left.is_decimal() || dtype_right.is_decimal())
+                            && is_exact(&dtype_left)
+                            && is_exact(&dtype_right);
+                        if dtype_left != dtype_right && !decimal_compare {
                             // Ensure that we have a lossless cast between the two types.
                             // Decimal has no lossless numeric upcast.
                             let either_decimal =
@@ -747,4 +756,24 @@ fn build_upcast_node_list(
         _ => ExprOrigin::None,
     };
     Ok(expr_origin)
+}
+
+/// The tolerance of an asof join on integer keys (by physical type) as the largest distance
+/// two matching keys may have: an unsigned value, capped at the largest distance two keys of
+/// that type can have. The asof engines accept this form, and the optimizer relies on it.
+#[cfg(feature = "asof_join")]
+fn normalize_asof_tolerance(tolerance: &Scalar, key_dtype: &DataType) -> Option<Scalar> {
+    let max_distance = match key_dtype.to_physical() {
+        DataType::Int8 | DataType::UInt8 => u8::MAX as u128,
+        DataType::Int16 | DataType::UInt16 => u16::MAX as u128,
+        DataType::Int32 | DataType::UInt32 => u32::MAX as u128,
+        DataType::Int64 | DataType::UInt64 => u64::MAX as u128,
+        _ => return None,
+    };
+    let value = tolerance.as_any_value();
+    let distance = match value.extract::<i128>() {
+        Some(v) => v.unsigned_abs(),
+        None => value.extract::<u128>()?,
+    };
+    Some(Scalar::from(distance.min(max_distance) as u64))
 }

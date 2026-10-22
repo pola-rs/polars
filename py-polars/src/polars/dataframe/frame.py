@@ -127,7 +127,6 @@ if TYPE_CHECKING:
         Callable,
         Collection,
         Iterator,
-        Mapping,
     )
     from datetime import timedelta
     from io import IOBase
@@ -247,6 +246,8 @@ class DataFrame:
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
         this does not yield conclusive results, column orientation is used.
+        A flat sequence of scalar values is treated as one column unless
+        `orient="row"` is specified, in which case it is treated as one row.
     infer_schema_length : int or None
         The maximum number of rows to scan for schema inference. If set to `None`, the
         full data may be scanned *(this can be slow)*. This parameter only applies if
@@ -389,18 +390,22 @@ class DataFrame:
         if height is not None:
             msg = "the `height` parameter of `DataFrame` is considered unstable."
             issue_unstable_warning(msg)
+        if orient is not None and orient not in ("col", "row"):
+            msg = f"orient must be one of {{'col', 'row'}}, got {orient!r}"
+            raise ValueError(msg)
 
         if data is None:
             self._df = dict_to_pydf(
-                {}, schema=schema, schema_overrides=schema_overrides
+                data={},
+                schema=schema,
+                schema_overrides=schema_overrides,
             )
-
             if height is not None and self.width == 0:
                 self._df = PyDataFrame.empty_with_height(height)
 
-        elif isinstance(data, dict):
+        elif isinstance(data, Mapping):
             self._df = dict_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -409,7 +414,7 @@ class DataFrame:
 
         elif isinstance(data, (list, tuple, Sequence)):
             self._df = sequence_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -420,12 +425,15 @@ class DataFrame:
 
         elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_numpy(data) and isinstance(data, np.ndarray):
             self._df = numpy_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -435,17 +443,23 @@ class DataFrame:
 
         elif _check_for_pyarrow(data) and isinstance(data, pa.Table):
             self._df = arrow_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif _check_for_torch(data) and isinstance(data, torch.Tensor):
             self._df = numpy_to_pydf(
-                data.numpy(force=False),
+                data=data.numpy(force=False),
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -459,7 +473,7 @@ class DataFrame:
             and isinstance(data, (Generator, Iterable))
         ):
             self._df = iterable_to_pydf(
-                data,
+                data=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
                 strict=strict,
@@ -469,12 +483,15 @@ class DataFrame:
 
         elif isinstance(data, pl.DataFrame):
             self._df = dataframe_to_pydf(
-                data, schema=schema, schema_overrides=schema_overrides, strict=strict
+                data=data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
             )
 
         elif is_pycapsule(data):
             self._df = pycapsule_to_frame(
-                data,
+                obj=data,
                 schema=schema,
                 schema_overrides=schema_overrides,
             )._df
@@ -2824,6 +2841,11 @@ class DataFrame:
         --------
         DataFrame.write_ndjson
 
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2915,6 +2937,11 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+
+        Notes
+        -----
+        A :class:`Map` column is written as a JSON object, so its keys must be of type
+        String, Categorical or Enum.
 
         Examples
         --------
@@ -11640,7 +11667,6 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        - Int8 + String = String
         - Float32 + Int64 = Float32
         - Float32 + Float64 = Float64
 
@@ -11685,7 +11711,7 @@ class DataFrame:
         ...         "c": [1.0, 2.0, 3.0],
         ...     }
         ... )
-        >>> df.fold(lambda s1, s2: s1 + s2)
+        >>> df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
         shape: (3,)
         Series: 'a' [str]
         [
@@ -12081,7 +12107,13 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
-        zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
+        if values.width == 0:
+            data_rows: Iterable[Any] = (
+                ({} if named else ()) for _ in range(self.height)
+            )
+        else:
+            data_rows = values.iter_rows(named=named)  # type: ignore[call-overload]
+        zipped = zip(keys, data_rows, strict=True)
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.

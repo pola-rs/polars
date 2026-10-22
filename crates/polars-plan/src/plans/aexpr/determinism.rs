@@ -119,6 +119,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Pow(_) => false,
         #[cfg(feature = "row_hash")]
         F::Hash(..) => false,
+        F::Mm3Hash => false,
         #[cfg(feature = "arg_where")]
         F::ArgWhere => false,
         #[cfg(feature = "index_of")]
@@ -157,7 +158,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::ArgUnique => false,
         F::ArgMin | F::ArgMax => false,
         F::ArgSort { .. } => false,
-        F::MinBy | F::MaxBy => false,
+        F::MinBy { .. } | F::MaxBy { .. } => false,
         F::Product => false,
         // Only the `Random` tie-breaker is inherently non-deterministic.
         // The other `RankMethod` variants (Average, Min, Max, Dense,
@@ -207,10 +208,13 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "log")]
         F::Entropy { .. } => false,
         #[cfg(feature = "log")]
-        F::Log | F::Log1p | F::Exp => false,
+        F::Log | F::Log1p | F::Exp | F::Erf | F::Erfc => false,
         F::Unique(_) => false,
         #[cfg(feature = "round_series")]
         F::Round { .. } | F::RoundSF { .. } | F::Truncate { .. } | F::Floor | F::Ceil => false,
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { .. } => false,
+        F::TruncArith(_) => false,
         #[cfg(feature = "fused")]
         F::Fused(_) => false,
         F::ConcatExpr { .. } => false,
@@ -244,7 +248,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Random { .. } => true,
 
         #[cfg(feature = "ffi_plugin")]
-        F::FfiPlugin { .. } => true,
+        F::FfiPlugin {
+            is_deterministic, ..
+        } => !is_deterministic,
         F::FoldHorizontal { .. } | F::ReduceHorizontal { .. } => true,
         #[cfg(feature = "dtype-struct")]
         F::CumFoldHorizontal { .. } | F::CumReduceHorizontal { .. } => true,

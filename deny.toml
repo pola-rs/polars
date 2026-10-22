@@ -47,4 +47,5 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 unknown-git = "deny"
 allow-git = [
   "https://github.com/pola-rs/jemallocator",
+  "https://github.com/pola-rs/hashbrown",
 ]

@@ -9,6 +9,8 @@ use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
 use polars_core::runtime::ASYNC;
+#[cfg(feature = "dynamic_group_by")]
+use polars_defs::time::group_by::dynamic_boundary_dtype;
 use polars_error::feature_gated;
 use polars_io::ExternalCompression;
 use polars_utils::format_pl_smallstr;
@@ -34,11 +36,14 @@ mod expr_to_ir;
 mod functions;
 mod join;
 mod scans;
+mod sinks;
+mod sql;
 mod utils;
 pub(crate) use expr_expansion::needs_expansion;
 pub use expr_expansion::{expand_expression, is_regex_projection, prepare_projection};
 pub use expr_to_ir::{ExprToIRContext, to_expr_ir};
 use expr_to_ir::{to_expr_ir_materialized_lit, to_expr_irs};
+use sinks::validate_sinks;
 use utils::DslConversionContext;
 
 macro_rules! failed_here {
@@ -74,7 +79,10 @@ pub fn to_alp(
     };
 
     match to_alp_impl(lp, &mut ctxt) {
-        Ok(out) => Ok(out),
+        Ok(root) => {
+            validate_sinks(root, ctxt.lp_arena)?;
+            Ok(root)
+        },
         Err(err) => {
             if opt_flags.contains(OptFlags::EAGER) {
                 // If we dispatched to the lazy engine from the eager API, we don't want to resolve
@@ -119,7 +127,7 @@ async fn fetch_metadata(
     use futures::stream::StreamExt;
     #[cfg(feature = "python")]
     let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
-        (|| Arc::new(PyScanResolveThreadPool::new())) as fn() -> _,
+        (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
     ));
 
     let mut futures = lp
@@ -683,7 +691,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     schema,
                     apply,
                     maintain_order,
-                    options,
+                    options: Arc::new(GroupbyOptionsIR::from(Arc::unwrap_or_clone(options))),
                 }
             };
 
@@ -713,9 +721,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(gather))?;
             let idxs = to_alp_impl(owned(idxs), ctxt).context(failed_here!(gather))?;
             let idxs_schema = ctxt.lp_arena.get(idxs).schema(ctxt.lp_arena);
-            polars_ensure!(idxs_schema.len() == 1, InvalidOperation: "'gather' indices DataFrame should have a single column");
+            polars_ensure!(
+                idxs_schema.len() == 1,
+                InvalidOperation: "`gather` indices DataFrame should have a single column, got {} columns", idxs_schema.len()
+            );
             let idx_dtype = &idxs_schema.get_at_index(0).unwrap().1;
-            polars_ensure!(idx_dtype.is_integer(), InvalidOperation: "'gather' indices must have integer dtype");
+            polars_ensure!(
+                idx_dtype.is_integer(),
+                InvalidOperation: "`gather` indices must have integer dtype, got `{}`", idx_dtype
+            );
             IR::Gather {
                 input,
                 idxs,
@@ -877,6 +891,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::SQL {
             query,
             relations,
+            catalog_tables,
             cached_stmt,
         } => {
             let resolver = crate::dsl::get_sql_resolver().ok_or_else(|| {
@@ -889,6 +904,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let resolved = resolver.resolve(
                 &query,
                 relations,
+                catalog_tables,
                 cached_stmt.get(),
                 ctxt.lp_arena,
                 ctxt.expr_arena,
@@ -1714,8 +1730,9 @@ fn resolve_group_by(
             pop_keys = true;
             let dtype = input_schema.try_get(name.as_str())?;
             if options.include_boundaries {
-                output_schema.with_column("_lower_boundary".into(), dtype.clone());
-                output_schema.with_column("_upper_boundary".into(), dtype.clone());
+                let bound_dtype = dynamic_boundary_dtype(dtype);
+                output_schema.with_column("_lower_boundary".into(), bound_dtype.clone());
+                output_schema.with_column("_upper_boundary".into(), bound_dtype);
             }
             output_schema.with_column(name.clone(), dtype.clone());
         }

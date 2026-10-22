@@ -9,9 +9,9 @@ use polars_io::metrics::IOMetrics;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{ComputeNode, PortState};
+use super::{ComputeNode, NodeMemoryUsage, PortState};
 use crate::execute::StreamingExecutionState;
-use crate::metrics::NodeMetricsRegistrator;
+use crate::metrics::NodeMetricsRegistry;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::TaskPriority;
 use crate::nodes::io_sinks::components::partitioner::Partitioner;
@@ -27,19 +27,23 @@ pub mod writers;
 pub struct IOSinkNode {
     name: PlSmallStr,
     state: IOSinkNodeState,
-    metrics_registrator: Option<NodeMetricsRegistrator>,
+    io_metrics: Option<Arc<IOMetrics>>,
     verbose: bool,
+    partitioned_by_key: bool,
 }
 
 impl IOSinkNode {
-    pub fn new(config: impl Into<Box<IOSinkNodeConfig>>) -> Self {
+    pub fn new(
+        config: impl Into<Box<IOSinkNodeConfig>>,
+        metrics_registry: NodeMetricsRegistry,
+    ) -> Self {
         let config = config.into();
 
-        let target_type = match &config.target {
-            IOSinkTarget::File(_) => "single-file",
+        let (target_type, partitioned_by_key) = match &config.target {
+            IOSinkTarget::File(_) => ("single-file", false),
             IOSinkTarget::Partitioned(p) => match &p.partitioner {
-                Partitioner::Keyed(_) => "partition-keyed",
-                Partitioner::FileSize => "partition-file-size",
+                Partitioner::Keyed(_) => ("partition-keyed", true),
+                Partitioner::FileSize => ("partition-file-size", false),
             },
         };
 
@@ -51,8 +55,9 @@ impl IOSinkNode {
         IOSinkNode {
             name,
             state: IOSinkNodeState::Uninitialized { config },
-            metrics_registrator: None,
+            io_metrics: metrics_registry.new_io_metrics(),
             verbose,
+            partitioned_by_key,
         }
     }
 }
@@ -60,10 +65,6 @@ impl IOSinkNode {
 impl ComputeNode for IOSinkNode {
     fn name(&self) -> &str {
         &self.name
-    }
-
-    fn set_phase_metrics_registrator(&mut self, metrics_registrator: NodeMetricsRegistrator) {
-        self.metrics_registrator = Some(metrics_registrator);
     }
 
     fn update_state(
@@ -77,17 +78,13 @@ impl ComputeNode for IOSinkNode {
 
         recv[0] = if recv[0] == PortState::Done {
             // Ensure initialize / writes empty file for empty output.
-            self.state.initialize(
-                &self.name,
-                execution_state,
-                self.metrics_registrator.is_some(),
-            )?;
+            self.state
+                .initialize(&self.name, execution_state, self.io_metrics.clone())?;
 
             match std::mem::replace(&mut self.state, IOSinkNodeState::Finished) {
                 IOSinkNodeState::Initialized {
                     phase_channel_tx,
                     task_handle,
-                    io_metrics: _,
                 } => {
                     if self.verbose {
                         eprintln!(
@@ -117,6 +114,19 @@ impl ComputeNode for IOSinkNode {
         Ok(())
     }
 
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            IOSinkNodeState::Uninitialized { .. } | IOSinkNodeState::Initialized { .. } => {
+                if self.partitioned_by_key {
+                    NodeMemoryUsage::Unbounded
+                } else {
+                    NodeMemoryUsage::Bounded
+                }
+            },
+            IOSinkNodeState::Finished => NodeMemoryUsage::Bounded,
+        }
+    }
+
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s executor::TaskScope<'s, 'env>,
@@ -131,30 +141,20 @@ impl ComputeNode for IOSinkNode {
         let phase_morsel_rx = recv_ports[0].take().unwrap().serial();
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-            self.state.initialize(
-                &self.name,
-                execution_state,
-                self.metrics_registrator.is_some(),
-            )?;
+            self.state
+                .initialize(&self.name, execution_state, self.io_metrics.clone())?;
 
             let IOSinkNodeState::Initialized {
-                phase_channel_tx,
-                io_metrics,
-                ..
+                phase_channel_tx, ..
             } = &mut self.state
             else {
                 unreachable!()
             };
 
-            if let Some(metrics_registrator) = &self.metrics_registrator {
-                metrics_registrator.register_io_metrics(io_metrics.clone().unwrap());
-            }
-
             if phase_channel_tx.send(phase_morsel_rx).await.is_err() {
                 let IOSinkNodeState::Initialized {
                     phase_channel_tx,
                     task_handle,
-                    io_metrics: _,
                 } = std::mem::replace(&mut self.state, IOSinkNodeState::Finished)
                 else {
                     unreachable!()
@@ -186,7 +186,6 @@ enum IOSinkNodeState {
         phase_channel_tx: connector::Sender<PortReceiver>,
         /// Join handle for all background tasks.
         task_handle: AbortOnDropHandle<PolarsResult<()>>,
-        io_metrics: Option<Arc<IOMetrics>>,
     },
 
     Finished,
@@ -198,7 +197,7 @@ impl IOSinkNodeState {
         &mut self,
         node_name: &PlSmallStr,
         execution_state: &StreamingExecutionState,
-        track_io_metrics: bool,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<()> {
         use IOSinkNodeState::*;
 
@@ -210,8 +209,6 @@ impl IOSinkNodeState {
             unreachable!()
         };
 
-        let io_metrics: Option<Arc<IOMetrics>> = track_io_metrics.then(Default::default);
-
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();
 
@@ -221,7 +218,8 @@ impl IOSinkNodeState {
             SourceToken::default(),
         ));
 
-        executor::spawn(TaskPriority::High, async move {
+        let task_metrics = execution_state.task_metrics();
+        executor::spawn(TaskPriority::High, task_metrics, async move {
             let mut morsel_seq: u64 = 1;
 
             while let Ok(mut phase_rx) = phase_channel_rx.recv().await {
@@ -242,7 +240,7 @@ impl IOSinkNodeState {
                 multi_phase_rx,
                 *config,
                 execution_state,
-                io_metrics.clone(),
+                io_metrics,
             )?,
 
             IOSinkTarget::Partitioned { .. } => start_partition_sink_pipeline(
@@ -250,14 +248,13 @@ impl IOSinkNodeState {
                 multi_phase_rx,
                 *config,
                 execution_state,
-                io_metrics.clone(),
+                io_metrics,
             )?,
         };
 
         *self = Initialized {
             phase_channel_tx,
             task_handle,
-            io_metrics,
         };
 
         Ok(())

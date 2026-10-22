@@ -1,9 +1,11 @@
 //! Polars SQL
 //! This crate provides a SQL interface for Polars DataFrames
 #![deny(missing_docs)]
+mod catalog;
 mod context;
 pub mod function_registry;
 mod functions;
+mod group_context;
 mod grouping_sets;
 pub mod keywords;
 mod literal_folding;
@@ -11,9 +13,20 @@ mod resolver;
 mod sql_expr;
 mod sql_visitors;
 mod subquery;
+#[cfg(any(
+    feature = "csv",
+    feature = "json",
+    feature = "parquet",
+    feature = "ipc"
+))]
+mod table_function_args;
 mod table_functions;
 mod types;
+mod window_frames;
 
+pub use catalog::CatalogTable;
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;
+
+polars_utils::define_unique_column_name!("SQL");

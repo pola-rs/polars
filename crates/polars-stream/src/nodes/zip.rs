@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_core::functions::concat_df_horizontal;
 use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
@@ -133,7 +134,11 @@ pub struct ZipNode {
 }
 
 impl ZipNode {
-    pub fn new(zip_behavior: ZipBehavior, schemas: Vec<Arc<Schema>>) -> Self {
+    pub fn new(
+        zip_behavior: ZipBehavior,
+        schemas: Vec<Arc<Schema>>,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
+    ) -> Self {
         let input_heads = schemas
             .into_iter()
             .map(|s| InputHead::new(s, zip_behavior))
@@ -142,7 +147,7 @@ impl ZipNode {
             zip_behavior,
             out_seq: MorselSeq::new(0),
             input_heads,
-            spill_ctx: MostRecentSpillContext::new("zip".into()),
+            spill_ctx: MostRecentSpillContext::new("zip".into(), task_metrics),
         }
     }
 }

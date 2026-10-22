@@ -1,3 +1,14 @@
+#[cfg(feature = "temporal")]
+use chrono::NaiveDateTime;
+#[cfg(feature = "temporal")]
+use polars_arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+
+#[cfg(feature = "temporal")]
+use crate::chunked_array::temporal::{
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
+};
 use crate::prelude::ArrowTimeUnit;
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
@@ -55,6 +66,88 @@ impl TimeUnit {
             TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
             TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
+        }
+    }
+
+    /// `ns` nanoseconds expressed in this unit, truncated towards zero.
+    #[inline(always)]
+    pub const fn from_nsecs(self, ns: i64) -> i64 {
+        match self {
+            TimeUnit::Nanoseconds => ns,
+            TimeUnit::Microseconds => ns / 1_000,
+            TimeUnit::Milliseconds => ns / 1_000_000,
+        }
+    }
+
+    /// How integer values in this unit are rescaled to `to`.
+    pub const fn rescale_to(self, to: TimeUnit) -> TimeUnitRescale {
+        use TimeUnit::*;
+        match (self, to) {
+            (Nanoseconds, Microseconds) | (Microseconds, Milliseconds) => {
+                TimeUnitRescale::Divide(1_000)
+            },
+            (Nanoseconds, Milliseconds) => TimeUnitRescale::Divide(1_000_000),
+            (Microseconds, Nanoseconds) | (Milliseconds, Microseconds) => {
+                TimeUnitRescale::Multiply(1_000)
+            },
+            (Milliseconds, Nanoseconds) => TimeUnitRescale::Multiply(1_000_000),
+            (Nanoseconds, Nanoseconds)
+            | (Microseconds, Microseconds)
+            | (Milliseconds, Milliseconds) => TimeUnitRescale::Unchanged,
+        }
+    }
+}
+
+/// How integer values in one [`TimeUnit`] are rescaled to another.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TimeUnitRescale {
+    Unchanged,
+    Multiply(i64),
+    Divide(i64),
+}
+
+impl TimeUnitRescale {
+    /// Rescales a datetime timestamp, rounding down.
+    #[inline]
+    pub fn datetime_value(self, v: i64) -> i64 {
+        use polars_utils::floor_divmod::FloorDivMod;
+        match self {
+            TimeUnitRescale::Unchanged => v,
+            TimeUnitRescale::Multiply(k) => v.wrapping_mul(k),
+            TimeUnitRescale::Divide(k) => v.wrapping_floor_div_mod(k).0,
+        }
+    }
+
+    /// Rescales a duration, rounding towards zero.
+    #[inline]
+    pub fn duration_value(self, v: i64) -> i64 {
+        match self {
+            TimeUnitRescale::Unchanged => v,
+            TimeUnitRescale::Multiply(k) => v.wrapping_mul(k),
+            TimeUnitRescale::Divide(k) => v.wrapping_div(k),
+        }
+    }
+}
+
+#[cfg(feature = "temporal")]
+impl TimeUnit {
+    /// The naive UTC datetime of the timestamp `t` in this unit.
+    #[inline]
+    pub fn timestamp_to_datetime(self, t: i64) -> NaiveDateTime {
+        match self {
+            TimeUnit::Nanoseconds => timestamp_ns_to_datetime(t),
+            TimeUnit::Microseconds => timestamp_us_to_datetime(t),
+            TimeUnit::Milliseconds => timestamp_ms_to_datetime(t),
+        }
+    }
+
+    /// The naive UTC datetime `dt` as a timestamp in this unit.
+    #[inline]
+    pub fn datetime_to_timestamp(self, dt: NaiveDateTime) -> i64 {
+        match self {
+            TimeUnit::Nanoseconds => datetime_to_timestamp_ns(dt),
+            TimeUnit::Microseconds => datetime_to_timestamp_us(dt),
+            TimeUnit::Milliseconds => datetime_to_timestamp_ms(dt),
         }
     }
 }

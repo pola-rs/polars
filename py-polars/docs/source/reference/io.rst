@@ -80,6 +80,15 @@ Iceberg
    scan_iceberg
    DataFrame.write_iceberg
    LazyFrame.sink_iceberg
+   delete_iceberg
+
+Lance
+~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_lance
+
 
 JSON
 ~~~~
@@ -131,6 +140,24 @@ Parquet
    scan_parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
+
+External
+~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_external_reader
+
+.. currentmodule:: polars.io.external_reader
+
+.. autosummary::
+   :toctree: api/
+
+   FileReader
+   FileReaderBuilder
+   ReaderCapabilities
+
+.. currentmodule:: polars
 
 Arrow Datasets
 ~~~~~~~~~~~~~~~~

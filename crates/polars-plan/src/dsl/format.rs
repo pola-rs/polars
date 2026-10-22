@@ -264,8 +264,10 @@ impl fmt::Debug for Expr {
             StructEval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
-                write!(f, "{input:?}.struct.eval({evaluation:?}")
+                let name = variant.to_name();
+                write!(f, "{input:?}.{name}({evaluation:?})")
             },
             Slice {
                 input,
@@ -292,6 +294,10 @@ impl fmt::Debug for Expr {
                     f,
                     "{expr:?}.replace(\"{pattern}\", \"{value}\", literal=true)"
                 ),
+            },
+            PipeWithDtype { input, .. } => match input.as_slice() {
+                [input] => write!(f, "{input:?}.pipe_with_dtype()"),
+                input => write!(f, "pipe_with_dtype({input:?})"),
             },
             Selector(s) => fmt::Display::fmt(s, f),
             #[cfg(feature = "dtype-struct")]

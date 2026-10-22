@@ -174,6 +174,7 @@ pub enum Expr {
     StructEval {
         expr: Arc<Expr>,
         evaluation: Vec<Expr>,
+        variant: StructEvalVariant,
     },
     /// SQL SubQueries
     /// Plan,
@@ -182,6 +183,13 @@ pub enum Expr {
     RenameAlias {
         function: RenameAliasFn,
         expr: Arc<Expr>,
+    },
+    /// Call `callback` with the inputs and their resolved dtypes,
+    /// and replace this node with the expression it returns.
+    /// Resolved during expression expansion.
+    PipeWithDtype {
+        input: Vec<Expr>,
+        callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>,
     },
     /// Not a real expression. This is meant
     /// as catch-all for IR expressions that
@@ -407,10 +415,13 @@ impl Hash for Expr {
             Expr::StructEval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
                 input.hash(state);
                 evaluation.hash(state);
+                variant.hash(state);
             },
+            Expr::PipeWithDtype { input: _, callback } => callback.hash_location(state),
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
             Expr::Field(names) => names.hash(state),
@@ -595,6 +606,29 @@ impl Expr {
     }
 }
 
+/// Determines what happens to the fields of the input struct that are not part of the
+/// `evaluation` of an [`Expr::StructEval`].
+#[cfg(feature = "dtype-struct")]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum StructEvalVariant {
+    /// `struct.with_fields`: retain the input fields, overwriting on name collision.
+    WithFields,
+    /// `struct.eval`: drop the input fields that are not selected.
+    Select,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl StructEvalVariant {
+    pub fn to_name(&self) -> &'static str {
+        match self {
+            Self::WithFields => "struct.with_fields",
+            Self::Select => "struct.eval",
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -728,6 +762,8 @@ pub enum Operator {
     TrueDivide,
     /// Floor division semantics, this is what python `//` dispatches to
     FloorDivide,
+    /// Division with the quotient rounded toward zero, the counterpart of `FloorDivide`.
+    TruncDivide,
     Modulus,
     And,
     Or,
@@ -754,6 +790,7 @@ impl Display for Operator {
             RustDivide => "rust_div",
             TrueDivide => "/",
             FloorDivide => "//",
+            TruncDivide => "trunc_div",
             Modulus => "%",
             And | LogicalAnd => "&",
             Or | LogicalOr => "|",
@@ -820,6 +857,7 @@ impl Operator {
             | Self::RustDivide
             | Self::TrueDivide
             | Self::FloorDivide
+            | Self::TruncDivide
             | Self::Modulus => return None,
         })
     }
@@ -849,6 +887,7 @@ impl Operator {
             | Self::RustDivide
             | Self::TrueDivide
             | Self::FloorDivide
+            | Self::TruncDivide
             | Self::Modulus => None,
         }
     }

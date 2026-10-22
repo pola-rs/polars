@@ -194,16 +194,13 @@ pub trait DatetimeMethods: AsDatetime {
         fmt: &str,
         tu: TimeUnit,
     ) -> DatetimeChunked {
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
-
         Int64Chunked::from_iter_options(
             name,
-            v.iter()
-                .map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func)),
+            v.iter().map(|s| {
+                NaiveDateTime::parse_from_str(s, fmt)
+                    .ok()
+                    .map(|dt| tu.datetime_to_timestamp(dt))
+            }),
         )
         .into_datetime(tu, None)
     }

@@ -995,11 +995,7 @@ fn fmt_datetime(
     tu: TimeUnit,
     tz: Option<&self::datatypes::TimeZone>,
 ) -> fmt::Result {
-    let ndt = match tu {
-        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(v),
-        TimeUnit::Microseconds => timestamp_us_to_datetime(v),
-        TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
-    };
+    let ndt = tu.timestamp_to_datetime(v);
     match tz {
         None => std::fmt::Display::fmt(&ndt, f),
         Some(tz) => PlTzAware::new(ndt, tz).fmt(f),

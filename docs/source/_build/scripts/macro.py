@@ -1,11 +1,10 @@
 from collections import OrderedDict
 import os
-from typing import List, Optional, Set
+from typing import Any, List, Optional, Set
 import yaml
 import logging
 
-
-from mkdocs_macros.plugin import MacrosPlugin
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 # Supported Languages and their metadata
 LANGUAGES = OrderedDict(
@@ -132,7 +131,7 @@ def code_tab(
     """
 
 
-def define_env(env: MacrosPlugin) -> None:
+def define_env(env: Any) -> None:
     @env.macro
     def code_header(
         language: str, section: str = [], api_functions: List[str] = []

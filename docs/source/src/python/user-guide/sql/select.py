@@ -104,3 +104,47 @@ result = ctx.execute(
 )
 print(result)
 # --8<-- [end:tablefunctions]
+
+# --8<-- [start:tablefunctionoptions]
+result = ctx.execute(
+    """
+        SELECT *
+        FROM read_csv('docs/assets/data/iris.csv', infer_schema => false, skip_rows_after_header => 147)
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionoptions]
+
+# --8<-- [start:tablefunctionndjson]
+result = ctx.execute(
+    """
+        SELECT *
+        FROM read_ndjson('docs/assets/data/orders.ndjson', schema_overrides => {'date': 'DATE'})
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionndjson]
+
+# --8<-- [start:tablefunctionparquet]
+result = ctx.execute(
+    """
+        SELECT id, bool_col, path
+        FROM read_parquet('docs/assets/data/alltypes_plain.parquet', include_file_paths => 'path')
+        LIMIT 3
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionparquet]
+
+# --8<-- [start:tablefunctionipc]
+pl.read_csv("docs/assets/data/iris.csv").write_ipc("docs/assets/data/iris.feather")
+
+result = ctx.execute(
+    """
+        SELECT species, sepal_length, path
+        FROM read_ipc('docs/assets/data/iris.feather', include_file_paths => 'path')
+        LIMIT 3
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionipc]

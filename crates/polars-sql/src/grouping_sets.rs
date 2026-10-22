@@ -6,10 +6,11 @@ use polars_plan::plans::typed_lit;
 use polars_plan::plans::visitor::{RewriteRecursion, RewritingVisitor, TreeWalker};
 use polars_plan::utils::has_expr;
 use polars_utils::aliases::PlIndexSet;
-use polars_utils::{format_pl_smallstr, unique_column_name};
+use polars_utils::format_pl_smallstr;
 use sqlparser::ast::Expr as SQLExpr;
 
 use crate::context::strip_outer_alias;
+use crate::unique_column_name;
 
 /// Cap on the number of grouping sets a single `GROUP BY` may expand to.
 const MAX_GROUPING_SETS: usize = 4096;
@@ -219,43 +220,14 @@ impl GroupingSets {
         contains_grouping_placeholder(expr, self.placeholders())
     }
 
-    /// Point computed grouping expressions in a post-aggregation expression at the
-    /// columns holding their grouped values. A key is matched as a whole before its
-    /// children are visited, and aggregate arguments keep reading the original input.
-    pub(crate) fn bind_stored_keys(&self, expr: Expr, key_schema: &Schema) -> Expr {
-        struct Binder<'a> {
-            keys: Vec<(Expr, &'a PlSmallStr)>,
-        }
-        impl RewritingVisitor for Binder<'_> {
-            type Node = Expr;
-            type Arena = ();
-
-            fn pre_visit(&mut self, node: &Expr, _: &mut ()) -> PolarsResult<RewriteRecursion> {
-                Ok(match node {
-                    Expr::Agg(_) | Expr::Len => RewriteRecursion::Stop,
-                    _ if self.keys.iter().any(|(k, _)| k == node) => {
-                        RewriteRecursion::MutateAndStop
-                    },
-                    _ => RewriteRecursion::NoMutateAndContinue,
-                })
-            }
-
-            fn mutate(&mut self, node: Expr, _: &mut ()) -> PolarsResult<Expr> {
-                let (_, name) = self.keys.iter().find(|(k, _)| *k == node).unwrap();
-                Ok(col((*name).clone()))
-            }
-        }
-        let keys = self
-            .stripped_keys
+    /// The computed keys, each with the name of the column that holds its grouped values.
+    pub(crate) fn stored_keys(&self, key_schema: &Schema) -> Vec<(Expr, PlSmallStr)> {
+        self.stripped_keys
             .iter()
             .zip(key_schema.iter_names())
-            .map(|(key, name)| (key.clone(), name))
             .filter(|(key, _)| !matches!(key, Expr::Column(_)))
-            .collect::<Vec<_>>();
-        if keys.is_empty() {
-            return expr;
-        }
-        expr.rewrite(&mut Binder { keys }, &mut ()).unwrap()
+            .map(|(key, name)| (key.clone(), name.clone()))
+            .collect()
     }
 
     /// The `GROUPING()` bits of a call within one set: an argument the set omits
@@ -268,15 +240,11 @@ impl GroupingSets {
     /// Run the ordinary aggregation once per grouping set over one shared input and
     /// concatenate the branches onto a common schema of canonical keys (NULL where a
     /// set omits them), aggregate outputs and `GROUPING()` values.
-    ///
-    /// `group_aggs` run in `group_by().agg()`; `global_aggs` are the same aggregates
-    /// as they run in `select()` for the empty set.
     pub(crate) fn aggregate(
         &self,
         lf: LazyFrame,
         key_schema: &Schema,
-        group_aggs: &[Expr],
-        global_aggs: &[Expr],
+        aggs: &[Expr],
         agg_names: &[PlSmallStr],
     ) -> PolarsResult<LazyFrame> {
         // Compute non-column keys once, before the input is shared.
@@ -311,14 +279,14 @@ impl GroupingSets {
             .iter()
             .map(|set| {
                 let branch = if set.is_empty() {
-                    let mut aggs = global_aggs.to_vec();
-                    if aggs.is_empty() {
-                        aggs.push(len().alias(GLOBAL_COUNT_COL));
+                    let mut global_aggs = aggs.to_vec();
+                    if global_aggs.is_empty() {
+                        global_aggs.push(len().alias(GLOBAL_COUNT_COL));
                     }
-                    shared.clone().select(aggs)
+                    shared.clone().select(global_aggs)
                 } else {
                     let keys: Vec<Expr> = set.iter().map(|&i| group_keys[i].clone()).collect();
-                    shared.clone().group_by(keys).agg(group_aggs)
+                    shared.clone().group_by(keys).agg(aggs)
                 };
 
                 let mut out: Vec<Expr> =
@@ -353,4 +321,34 @@ impl GroupingSets {
             )
         }
     }
+}
+
+/// Point computed group keys in a post-aggregation expression at the columns holding
+/// their grouped values. A key is matched as a whole before its children are visited,
+/// and aggregate arguments keep reading the original input.
+pub(crate) fn bind_stored_keys(expr: Expr, keys: &[(Expr, PlSmallStr)]) -> Expr {
+    struct Binder<'a> {
+        keys: &'a [(Expr, PlSmallStr)],
+    }
+    impl RewritingVisitor for Binder<'_> {
+        type Node = Expr;
+        type Arena = ();
+
+        fn pre_visit(&mut self, node: &Expr, _: &mut ()) -> PolarsResult<RewriteRecursion> {
+            Ok(match node {
+                Expr::Agg(_) | Expr::Len => RewriteRecursion::Stop,
+                _ if self.keys.iter().any(|(k, _)| k == node) => RewriteRecursion::MutateAndStop,
+                _ => RewriteRecursion::NoMutateAndContinue,
+            })
+        }
+
+        fn mutate(&mut self, node: Expr, _: &mut ()) -> PolarsResult<Expr> {
+            let (_, name) = self.keys.iter().find(|(k, _)| *k == node).unwrap();
+            Ok(col(name.clone()))
+        }
+    }
+    if keys.is_empty() {
+        return expr;
+    }
+    expr.rewrite(&mut Binder { keys }, &mut ()).unwrap()
 }

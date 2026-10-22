@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 from typing import (
     TYPE_CHECKING,
     Generic,
@@ -25,15 +26,15 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PySQLContext
 
 if TYPE_CHECKING:
-    import sys
-    from collections.abc import Callable, Collection, Mapping
+    from collections.abc import Callable, Collection, Mapping, Sequence
     from types import TracebackType
-    from typing import Any, Final, Literal, TypeAlias
+    from typing import Any, Final, Literal, Self, TypeAlias
 
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
+    import pyiceberg.catalog
+
+    from polars._plr import PyLazyFrame
+    from polars._typing import StorageOptionsDict
+    from polars.io.iceberg import IcebergCatalogConfig
 
     CompatibleFrameType: TypeAlias = (
         DataFrame
@@ -101,6 +102,17 @@ class SQLContext(Generic[FrameType]):
     _ctxt: PySQLContext
     _eager_execution: Final[bool]
     _tables_scope_stack: list[set[str]]
+    # Attached catalogs and the default catalog on scope entry.
+    _catalogs_scope_stack: list[tuple[set[str], str | None]]
+    # Attached catalogs by name: config, instance (if known) and storage options.
+    _catalogs: dict[
+        str,
+        tuple[
+            IcebergCatalogConfig,
+            pyiceberg.catalog.Catalog | None,
+            StorageOptionsDict | None,
+        ],
+    ]
 
     # note: the type-overloaded methods are required to support accurate typing
     # of the frame return from "execute" (which may be DataFrame or LazyFrame),
@@ -197,6 +209,7 @@ class SQLContext(Generic[FrameType]):
         )
         self._ctxt = PySQLContext.new()
         self._eager_execution = eager
+        self._catalogs = {}
 
         frames = dict(frames or {})
         if register_globals:
@@ -286,9 +299,13 @@ class SQLContext(Generic[FrameType]):
             return ctx.execute(query=query, eager=eager)
 
     def __enter__(self) -> SQLContext[FrameType]:
-        """Track currently registered tables on scope entry; supports nested scopes."""
+        """Track tables and catalogs on scope entry; supports nested scopes."""
         self._tables_scope_stack = getattr(self, "_tables_scope_stack", [])
         self._tables_scope_stack.append(set(self.tables()))
+        self._catalogs_scope_stack = getattr(self, "_catalogs_scope_stack", [])
+        self._catalogs_scope_stack.append(
+            (set(self._catalogs), self._ctxt.default_catalog())
+        )
         return self
 
     def __exit__(
@@ -298,15 +315,26 @@ class SQLContext(Generic[FrameType]):
         exc_tb: TracebackType | None,
     ) -> None:
         """
-        Unregister any tables created within the given scope on context exit.
+        Unregister any tables and catalogs created within the given scope on exit.
+
+        If that detaches the default catalog, the default on scope entry is restored.
 
         See Also
         --------
         unregister
+        unregister_catalog
         """
         self.unregister(
             names=(set(self.tables()) - self._tables_scope_stack.pop()),
         )
+        attached, entry_default = self._catalogs_scope_stack.pop()
+        detached = set(self._catalogs) - attached
+        detaches_default = self._ctxt.default_catalog() in detached
+        for name in detached:
+            self._ctxt.unregister_catalog(name)
+            del self._catalogs[name]
+        if detaches_default and entry_default in self._catalogs:
+            self._ctxt.set_default_catalog(entry_default)
 
     def __repr__(self) -> str:
         n_tables = len(self.tables())
@@ -432,8 +460,151 @@ class SQLContext(Generic[FrameType]):
         │ 1970   ┆ 134821952   ┆ 1       │
         └────────┴─────────────┴─────────┘
         """
-        res = wrap_ldf(self._ctxt.execute(query))
+        if self._catalogs:
+            res = wrap_ldf(self._execute_with_catalogs(query))
+        else:
+            res = wrap_ldf(self._ctxt.execute(query))
         return res.collect() if eager or self._eager_execution else res
+
+    def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
+        from polars.io.iceberg.functions import _scan_catalog_table
+
+        tables = []
+        identifier: list[str]
+        for catalog_name, identifier in self._ctxt.catalog_tables(query):
+            config, instance, storage_options = self._catalogs[catalog_name]
+            full_name = [catalog_name, *identifier]
+            lf = _scan_catalog_table(
+                tuple(identifier),
+                config,
+                instance,
+                storage_options=storage_options,
+                display_name=".".join(full_name),
+            )
+            tables.append((full_name, lf._ldf))
+        return self._ctxt.execute_with_catalog_tables(query, tables)
+
+    def register_catalog(
+        self,
+        name: str,
+        catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig,
+        *,
+        default_namespace: str | Sequence[str] | None = None,
+        default: bool = False,
+        storage_options: StorageOptionsDict | None = None,
+    ) -> Self:
+        """
+        Attach an Iceberg catalog, so that queries can read its tables by name.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        A table name that starts with `name` refers to a table of this catalog
+        (`name.namespace.table`). With `default=True`, so does a table name that
+        starts with no attached catalog (`namespace.table`). A table name without a
+        namespace gets `default_namespace`. Registered tables and CTEs take
+        precedence over catalog tables, and an attached catalog takes precedence
+        over a namespace of the same name in the default catalog.
+
+        Catalog tables are scanned lazily, as with :func:`scan_iceberg`: a table is
+        loaded when the query's schema is first needed, and a table that does not
+        exist raises then. The rest of the table name is passed to the catalog as
+        written; catalog identifiers are case-sensitive.
+
+        Parameters
+        ----------
+        name
+            The catalog's name in SQL. Registering the same name again replaces
+            the catalog: `catalog`, `default_namespace` and `storage_options` take
+            the new values, including their defaults when omitted, while the
+            catalog stays the default if it was (see `default`). A name that
+            differs from an attached catalog's only in case is an error.
+        catalog
+            A PyIceberg catalog, or an `IcebergCatalogConfig`.
+        default_namespace
+            The namespace of table names without one: a string (split on ".") or a
+            sequence of namespace parts.
+        default
+            Make this catalog the default: table names that start with no attached
+            catalog refer to it. At most one catalog is the default; a later default
+            replaces it. `False` never removes the default: re-registering the
+            default catalog keeps it the default, and re-registering another
+            catalog leaves it. Only `unregister_catalog` leaves no default.
+        storage_options
+            Options for the storage of the catalog's tables, as for
+            :func:`scan_iceberg`. Pass the storage credentials here when a plan is
+            serialized after its tables loaded: the serialized plan then reads the
+            tables' metadata directly, with these options rather than the catalog's
+            properties.
+
+        Notes
+        -----
+        A serialized query plan over catalog tables can contain the catalog's
+        properties and the storage options, which may include credentials: treat
+        serialized plans as secret.
+
+        `CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on a table of an
+        attached catalog are not supported. `DROP TABLE IF EXISTS` and
+        `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
+        catalog only act on a registered table, and are a no-op otherwise.
+
+        Catalogs attached inside a `with SQLContext()` block are detached on exit,
+        like the tables registered there. If that detaches the default catalog, the
+        default catalog on entry is restored.
+
+        `SQLContext` is not thread-safe: do not register catalogs or tables while
+        another thread executes a query on the same context.
+
+        Examples
+        --------
+        >>> from pyiceberg.catalog import load_catalog  # doctest: +SKIP
+        >>> ctx = pl.SQLContext()  # doctest: +SKIP
+        >>> ctx.register_catalog(
+        ...     "lake", load_catalog("lake"), default_namespace="tpch", default=True
+        ... )  # doctest: +SKIP
+        >>> ctx.execute("SELECT COUNT(*) FROM lineitem")  # doctest: +SKIP
+        """
+        from polars.io.iceberg import IcebergCatalogConfig
+
+        issue_unstable_warning("`SQLContext.register_catalog` is considered unstable.")
+        pyiceberg_catalog = _pyiceberg_catalog_class()
+        if not isinstance(catalog, IcebergCatalogConfig) and not (
+            pyiceberg_catalog is not None and isinstance(catalog, pyiceberg_catalog)
+        ):
+            msg = (
+                "`register_catalog` takes a PyIceberg catalog or an "
+                f"`IcebergCatalogConfig`; found {qualified_type_name(catalog)!r}"
+            )
+            raise TypeError(msg)
+        config, instance = (
+            IcebergCatalogConfig._from_api_parameter_or_environment_default(
+                catalog, fn_name="register_catalog"
+            )
+        )
+        self._ctxt.register_catalog(name, _namespace_parts(default_namespace), default)
+        self._catalogs[name] = (config, instance, storage_options)
+        return self
+
+    def unregister_catalog(self, name: str) -> Self:
+        """
+        Detach a catalog attached with :meth:`register_catalog`.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        name
+            The catalog's name (matched ignoring case if no name matches exactly).
+        """
+        issue_unstable_warning(
+            "`SQLContext.unregister_catalog` is considered unstable."
+        )
+        if (removed := self._ctxt.unregister_catalog(name)) is not None:
+            del self._catalogs[removed]
+        return self
 
     def register(self, name: str, frame: CompatibleFrameType | None) -> Self:
         """
@@ -667,3 +838,23 @@ class SQLContext(Generic[FrameType]):
         ['foo_bar', 'hello_data']
         """
         return sorted(self._ctxt.get_tables())
+
+
+def _pyiceberg_catalog_class() -> type | None:
+    """The PyIceberg catalog base class, if PyIceberg is installed."""
+    if importlib.util.find_spec("pyiceberg") is None:
+        return None
+    import pyiceberg.catalog
+
+    return pyiceberg.catalog.Catalog
+
+
+def _namespace_parts(namespace: str | Sequence[str] | None) -> list[str] | None:
+    """The parts of a namespace given as a dotted string or a sequence of parts."""
+    if namespace is None:
+        return None
+    parts = namespace.split(".") if isinstance(namespace, str) else list(namespace)
+    if not parts or not all(parts):
+        msg = f"invalid `default_namespace`: {namespace!r}"
+        raise ValueError(msg)
+    return parts

@@ -127,6 +127,7 @@ if TYPE_CHECKING:
     from builtins import set as set_
     from builtins import str as str_
     from collections.abc import Callable, Collection, Generator, Mapping
+    from typing import Self
 
     import jax
 
@@ -156,11 +157,6 @@ if TYPE_CHECKING:
         TemporalLiteral,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
 
 
 elif BUILDING_SPHINX_DOCS:
@@ -1053,9 +1049,8 @@ class Series(metaclass=_Meta):
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
-        elif (
-            isinstance(other, (float, date, datetime, str))
-            and not self.dtype.is_float()
+        elif isinstance(other, str) or (
+            isinstance(other, (float, date, datetime)) and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -1156,6 +1151,7 @@ class Series(metaclass=_Meta):
             if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
+                or self.dtype == String
                 or isinstance(self.dtype, (List, Array, Duration))
                 or (
                     isinstance(other, Series) and isinstance(other.dtype, (List, Array))
@@ -1257,7 +1253,9 @@ class Series(metaclass=_Meta):
 
         if isinstance(other, int):
             other = float(other)
-        return self.cast(Float64).__rfloordiv__(other)
+        if self.dtype != String:
+            self = self.cast(Float64)
+        return self.__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.dtype.is_temporal():
@@ -1900,6 +1898,44 @@ class Series(metaclass=_Meta):
             2.718282
             7.389056
             20.085537
+        ]
+        """
+
+    def erf(self) -> Series:
+        """
+        Compute the error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erf()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            -0.842701
+            0.0
+            0.842701
+        ]
+        """
+
+    def erfc(self) -> Series:
+        """
+        Compute the complementary error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 0, 1])
+        >>> s.erfc()
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.842701
+            1.0
+            0.157299
         ]
         """
 
@@ -6337,7 +6373,12 @@ class Series(metaclass=_Meta):
             pl_return_dtype = parse_into_dtype(return_dtype)
 
         if not _disable_inefficient_map_warning:
-            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+            warn_on_inefficient_map(
+                function,
+                columns=[self.name],
+                map_target="series",
+                dtype=self.dtype,
+            )
 
         return self._from_pyseries(
             self._s.map_elements(
@@ -8380,10 +8421,14 @@ class Series(metaclass=_Meta):
         dtype: type[int | float] | PolarsDataType | None = None,
     ) -> Series:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed between numeric types of the same size. To
+        convert between types of different sizes, use :meth:`cast` instead.
+
+        A `Decimal` can also be reinterpreted to and from `Int128`, its unscaled integer
+        representation: `1.23` as `Decimal(5, 2)` becomes `123`. Reinterpreting an
+        `Int128` raises if the value doesn't fit the precision of the target `Decimal`.
 
         Exactly one of `signed` or `dtype` must be specified.
 
@@ -9916,8 +9961,8 @@ class Series(metaclass=_Meta):
 
         Notes
         -----
-        * As long as your data can fit in RAM, it is always more efficient to use the
-          regular :meth:`quantile` function instead.
+        * If the series has fewer than 100 million items, it is generally more efficient
+          to use the regular :meth:`quantile` function instead.
 
         * NaN values are regarded as larger than any finite number (and equal to one
           another). As a result, ``NaN`` values are treated as the largest values when

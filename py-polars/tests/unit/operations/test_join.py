@@ -34,10 +34,11 @@ if TYPE_CHECKING:
 
 def test_semi_anti_join() -> None:
     df_a = pl.DataFrame({"key": [1, 2, 3], "payload": ["f", "i", None]})
-
     df_b = pl.DataFrame({"key": [3, 4, 5, None]})
 
-    assert df_a.join(df_b, on="key", how="anti").to_dict(as_series=False) == {
+    assert df_a.join(df_b, on="key", how="anti", maintain_order="left").to_dict(
+        as_series=False
+    ) == {
         "key": [1, 2],
         "payload": ["f", "i"],
     }
@@ -47,7 +48,11 @@ def test_semi_anti_join() -> None:
     }
 
     # lazy
-    result = df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect()
+    result = (
+        df_a.lazy()
+        .join(df_b.lazy(), on="key", how="anti", maintain_order="left")
+        .collect()
+    )
     expected_values = {"key": [1, 2], "payload": ["f", "i"]}
     assert result.to_dict(as_series=False) == expected_values
 
@@ -58,10 +63,11 @@ def test_semi_anti_join() -> None:
     df_a = pl.DataFrame(
         {"a": [1, 2, 3, 1], "b": ["a", "b", "c", "a"], "payload": [10, 20, 30, 40]}
     )
-
     df_b = pl.DataFrame({"a": [3, 3, 4, 5], "b": ["c", "c", "d", "e"]})
 
-    assert df_a.join(df_b, on=["a", "b"], how="anti").to_dict(as_series=False) == {
+    assert df_a.join(df_b, on=["a", "b"], how="anti", maintain_order="left").to_dict(
+        as_series=False
+    ) == {
         "a": [1, 2, 1],
         "b": ["a", "b", "a"],
         "payload": [10, 20, 40],
@@ -480,7 +486,7 @@ def test_semi_join_projection_pushdown_6455() -> None:
 
     latest = df.group_by("id").agg(pl.col("timestamp").max())
     df = df.join(latest, on=["id", "timestamp"], how="semi")
-    assert df.select(["id", "value"]).collect().to_dict(as_series=False) == {
+    assert df.select(["id", "value"]).sort("id").collect().to_dict(as_series=False) == {
         "id": [1, 2],
         "value": [2, 4],
     }
@@ -502,7 +508,6 @@ def test_update() -> None:
             ],
         }
     )
-
     df2 = pl.DataFrame(
         {
             "key1": [1, 2, 3, 4],
@@ -1664,7 +1669,10 @@ def test_join_preserve_order_left() -> None:
     ]
 
     right_left = left.join(right, on="a", how="right", maintain_order="left").collect()
-    assert right_left.get_column("a").cast(pl.UInt32).to_list() == [2, 1, 1, None, 6]
+    right_left_a = right_left.get_column("a").cast(pl.UInt32).to_list()
+    assert right_left_a[:3] == [2, 1, 1]
+    # The unmatched right rows come last, in any order.
+    assert set(right_left_a[3:]) == {None, 6}
 
     right_right = left.join(
         right, on="a", how="right", maintain_order="right"
@@ -1786,7 +1794,6 @@ def test_join_preserve_order_full() -> None:
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
-@pytest.mark.may_fail_lazy_schema  # TODO: upcast
 def test_join_numeric_key_upcast_15338(
     dtypes: tuple[str, str, str], swap: bool
 ) -> None:
@@ -3830,9 +3837,10 @@ def test_join_filter_pushdown_asof_join() -> None:
     assert 'col("a") >= 2' in extract[2]
     assert 'col("b") >= 3' in extract[2]
 
+    # `a >= 2` on the left key also bounds the right key: `b >= 2 - 99`.
     assert extract[3:] == [
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER col("a") >= 3',
+        'FILTER (col("a") >= 3) & (col("b") >= -97)',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -4492,7 +4500,6 @@ def test_join_i128_23688(
     rhs = rhs.collect().sort("a").lazy() if sort_right else rhs
 
     q = lhs.join(rhs, on="a", how=how, coalesce=False)  # type: ignore[arg-type]
-
     assert_frame_equal(
         q.collect().sort(pl.all()),
         expected,
@@ -4508,7 +4515,6 @@ def test_join_i128_23688(
         )
         .select(expected.columns)
     )
-
     assert_frame_equal(
         q.collect().sort(pl.all()),
         expected,
@@ -4550,7 +4556,6 @@ def test_join_lazyframe_with_itself_after_sort_25395() -> None:
     assert_frame_equal(result, pl.DataFrame({"a": [1]}))
 
 
-@pytest.mark.may_fail_lazy_schema  # TODO: pushdown
 def test_join_right_with_cast_predicate_pushdown() -> None:
     lhs = pl.LazyFrame({"x": [0, 1], "z": [4, 5]})
     rhs = pl.LazyFrame({"y": [2, 3]}).cast(pl.Int32)
@@ -4566,7 +4571,7 @@ def test_join_right_with_cast_predicate_pushdown() -> None:
             "z": [],
             "y": [],
         },
-        schema={"z": pl.Int64, "y": pl.Int64},
+        schema={"z": pl.Int64, "y": pl.Int32},
     )
     assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
 
@@ -4852,3 +4857,183 @@ def test_computed_join_key_uses_own_input_schema(
         }
     )
     assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("outer_how", "next_how", "key", "expected_outer"),
+    [
+        # A key that must be non-null on the outer join's nullable side tightens it.
+        ("left", "inner", "reason", "INNER"),
+        ("left", "semi", "reason", "INNER"),
+        ("left", "right", "reason", "INNER"),
+        ("full", "inner", "reason", "RIGHT"),
+        ("full", "inner", "amount", "LEFT"),
+        # The preserved side may keep NULL keys; an anti join drops nothing on its left.
+        ("left", "inner", "amount", "LEFT"),
+        ("left", "inner", "ticket", "LEFT"),
+        ("left", "anti", "reason", "LEFT"),
+    ],
+)
+def test_join_key_downgrades_outer_join_below(
+    outer_how: JoinStrategy, next_how: JoinStrategy, key: str, expected_outer: str
+) -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+    returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
+    lookup = pl.LazyFrame({key: [7, 10], "desc": ["x", "y"]})
+
+    q = sales.join(returns, on="ticket", how=outer_how, coalesce=True).join(
+        lookup, on=key, how=next_how
+    )
+
+    plan = q.explain()
+    assert f"{expected_outer} JOIN:" in plan
+    if expected_outer != outer_how.upper():
+        assert f"{outer_how.upper()} JOIN:" not in plan
+    else:
+        assert "is_not_null" not in plan
+
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_join_key_downgrade_follows_pushdown_through_projections() -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3, 4], "amount": [10, 20, 30, 40]})
+    returns = pl.LazyFrame({"ticket": [2, 4, 5], "reason": [7, None, 7]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+    joined = sales.join(returns, on="ticket", how="left", coalesce=True)
+
+    def check(q: pl.LazyFrame, *, downgraded: bool) -> None:
+        plan = q.explain()
+        assert ("LEFT JOIN:" in plan) != downgraded
+        assert ("is_not_null" in plan) == downgraded
+        expect = q.collect(optimizations=pl.QueryOptFlags.none())
+        assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+    # The key is recomputed in between, so the predicate stays above it.
+    q = joined.with_columns(pl.col("reason").fill_null(7)).join(lookup, on="reason")
+    check(q, downgraded=False)
+
+    # A filter that blocks pushdown stops the walk as well.
+    q = joined.filter(pl.col("amount") > pl.col("amount").mean()).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=False)
+
+    # A window filter keeps itself local but lets a predicate on its partition key pass.
+    q = joined.filter(pl.col("amount") >= pl.col("amount").mean().over("reason")).join(
+        lookup, on="reason"
+    )
+    check(q, downgraded=True)
+
+    # A plain filter is passed.
+    q = joined.filter(pl.col("amount") > 15).join(lookup, on="reason")
+    check(q, downgraded=True)
+
+    # A rename is followed down.
+    q = joined.rename({"reason": "r"}).join(lookup.rename({"reason": "r"}), on="r")
+    check(q, downgraded=True)
+    assert 'FILTER col("reason").is_not_null()' in q.explain()
+
+
+def test_join_key_downgrade_ignores_the_unreachable_join_side() -> None:
+    sales = pl.LazyFrame(
+        {"ticket": [1, 2, 3], "amount": [10, 20, 30], "reason": [7, None, 7]}
+    )
+    a = pl.LazyFrame({"ticket": [2, 3], "x": [1, 2]})
+    b = pl.LazyFrame({"ticket": [2], "reason": [9]})
+    lookup = pl.LazyFrame({"reason": [7, 10], "desc": ["x", "y"]})
+
+    # The key is the left `reason`; the right input holds another `reason`.
+    returns = a.join(b, on="ticket", how="left")
+    q = sales.join(returns, on="ticket", how="left").join(lookup, on="reason")
+
+    plan = q.explain()
+    assert plan.count("LEFT JOIN:") == 2
+    assert "is_not_null" not in plan
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_join_key_keeps_outer_join_when_nulls_match() -> None:
+    sales = pl.LazyFrame({"ticket": [1, 2, 3], "amount": [10, 20, 30]})
+    returns = pl.LazyFrame({"ticket": [2, 4], "reason": [7, None]})
+    reasons = pl.LazyFrame({"reason": [7, None]})
+
+    q = sales.join(returns, on="ticket", how="left", coalesce=True).join(
+        reasons, on="reason", how="inner", nulls_equal=True
+    )
+
+    assert "LEFT JOIN:" in q.explain()
+    expect = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_coalesce_full_join_upcast_key_schema_29903() -> None:
+    left = pl.LazyFrame({"k": pl.Series([2, 1], dtype=pl.Int32), "s": ["a", "b"]})
+    right = pl.LazyFrame({"k": pl.Series([1], dtype=pl.Int64), "x": ["c"]})
+
+    q = left.join(right, on="k", how="full", coalesce=True)
+    assert q.collect_schema() == {"k": pl.Int64, "s": pl.String, "x": pl.String}
+
+    expected = pl.DataFrame(
+        {"k": [1, 2], "s": ["b", "a"], "x": ["c", None]},
+        schema={"k": pl.Int64, "s": pl.String, "x": pl.String},
+    )
+    assert_frame_equal(q.unique().collect(), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("swap", [False, True])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_right_join_to_inner_keeps_right_key_dtype(
+    swap: bool, engine: EngineType
+) -> None:
+    ltype, rtype = (pl.Int64, pl.Int32) if swap else (pl.Int32, pl.Int64)
+    left = pl.LazyFrame({"k": pl.Series([1, 2], dtype=ltype), "l": ["a", None]})
+    right = pl.LazyFrame({"k": pl.Series([1, 2, 3], dtype=rtype)})
+
+    q = left.join(right, on="k", how="right", coalesce=True).filter(
+        pl.col("l").is_not_null()
+    )
+
+    assert "INNER JOIN" in q.explain()
+    expected = pl.DataFrame({"l": ["a"], "k": pl.Series([1], dtype=rtype)})
+    assert_frame_equal(q.collect(engine=engine), expected)
+    assert_frame_equal(
+        q.collect(engine=engine, optimizations=pl.QueryOptFlags.none()), expected
+    )
+
+
+@pytest.mark.parametrize("how", ["inner", "right"])
+@pytest.mark.parametrize("swap", [False, True])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_key_predicate_keeps_key_dtype(
+    how: JoinStrategy, swap: bool, engine: EngineType
+) -> None:
+    # `+ 1` wraps for Int8 but not for Int64.
+    ltype, rtype = (pl.Int64, pl.Int8) if swap else (pl.Int8, pl.Int64)
+    left = pl.LazyFrame(
+        {"x": pl.Series([127], dtype=ltype), "z": [1]},
+    )
+    right = pl.LazyFrame({"y": pl.Series([127], dtype=rtype), "w": [1]})
+
+    key = "x" if how == "inner" else "y"
+    q = left.join(right, left_on="x", right_on="y", how=how).filter(
+        pl.col("z").is_not_null(), pl.col("w").is_not_null(), (pl.col(key) + 1) < 0
+    )
+
+    expected = q.collect(engine=engine, optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(engine=engine), expected)
+    assert expected.height == int(q.collect_schema()[key] == pl.Int8)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_asof_by_key_predicate_other_time_unit(engine: EngineType) -> None:
+    left = pl.LazyFrame({"t": [1], "x": pl.Series([1000], dtype=pl.Datetime("ms"))})
+    right = pl.LazyFrame(
+        {"t": [1], "y": pl.Series([1000], dtype=pl.Datetime("us")), "v": [42]}
+    )
+    q = left.join_asof(
+        right, on="t", by_left="x", by_right="y", check_sortedness=False
+    ).filter(pl.col("x").cast(pl.Int64) == 1000)
+
+    assert q.collect(engine=engine)["v"].to_list() == [42]

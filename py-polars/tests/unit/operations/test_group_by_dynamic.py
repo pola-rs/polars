@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import AttributeRemovedError, ComputeError, InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, EngineType, Label, StartBy
@@ -855,24 +855,53 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
 
 
 # https://github.com/pola-rs/polars/issues/11339
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
 @pytest.mark.parametrize("include_boundaries", [True, False])
-def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
-    lf = pl.LazyFrame(
-        {
-            "dt": pl.datetime_range(
-                start=datetime(2022, 2, 10),
-                end=datetime(2022, 2, 12),
-                eager=True,
-            ),
-            "n": range(3),
-        }
-    )
+@pytest.mark.parametrize(
+    ("index", "every"),
+    [
+        (
+            pl.datetime_range(datetime(2022, 2, 10), datetime(2022, 2, 12), eager=True),
+            "2d",
+        ),
+        (pl.date_range(date(2022, 2, 10), date(2022, 2, 12), eager=True), "2d"),
+        # A sub-day window on a Date index: the boundaries cannot be Dates.
+        (pl.date_range(date(2022, 2, 10), date(2022, 2, 12), eager=True), "12h"),
+        (pl.Series([1, 2, 3]), "2i"),
+    ],
+)
+def test_group_by_dynamic_lazy_schema(
+    engine: EngineType, include_boundaries: bool, index: pl.Series, every: str
+) -> None:
+    lf = pl.LazyFrame({"dt": index, "n": range(3)})
 
     result = lf.group_by_dynamic(
-        "dt", every="2d", closed="right", include_boundaries=include_boundaries
+        "dt", every=every, closed="right", include_boundaries=include_boundaries
     ).agg(pl.col("dt").min().alias("dt_min"))
 
-    assert result.collect_schema() == result.collect().schema
+    assert result.collect_schema() == result.collect(engine=engine).schema
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("every", ["1d", "12h"])
+def test_group_by_dynamic_date_index_boundaries_are_datetime(
+    engine: EngineType, every: str
+) -> None:
+    # A window bound of a Date index is not a Date: `every`, `period` and `offset`
+    # may be sub-day.
+    lf = pl.LazyFrame({"t": [date(2024, 1, 1), date(2024, 1, 2)], "v": [1, 2]})
+    q = lf.group_by_dynamic(
+        "t", every=every, period=every, include_boundaries=True
+    ).agg(pl.col("v").sum())
+
+    expected = pl.Datetime(time_unit="us")
+    assert q.collect_schema()["_lower_boundary"] == expected
+    assert q.collect_schema()["_upper_boundary"] == expected
+    result = q.collect(engine=engine)
+    assert result.schema["_lower_boundary"] == expected
+    assert result.schema["_upper_boundary"] == expected
+    # The index column keeps its own dtype.
+    assert result.schema["t"] == pl.Date
 
 
 def test_group_by_dynamic_12414() -> None:
@@ -964,10 +993,10 @@ def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> 
         data={
             "t": pl.Series(
                 [
-                    datetime(2024, 3, 22, 3, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 4, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 6, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 3, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 4, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 5, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 6, 0, tzinfo=UTC),
                 ]
             ),
             "v": [1, 10, 100, 1000],
@@ -982,8 +1011,8 @@ def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> 
     expected = pl.DataFrame(
         {
             "t": [
-                datetime(2024, 3, 21, 5, 0, tzinfo=timezone.utc),
-                datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
+                datetime(2024, 3, 21, 5, 0, tzinfo=UTC),
+                datetime(2024, 3, 22, 5, 0, tzinfo=UTC),
             ],
             "v": [[1, 10], [100, 1000]],
         }
@@ -1512,3 +1541,140 @@ def test_group_by_dynamic_dst_non_monotonic_upper_bound_29190(
     ).alias("t")
 
     _assert_rows_within_own_window(ts, "30m", "1d", engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("index", "every"),
+    [
+        (pl.Series("t", [datetime(2024, 1, 1)]), "1h"),
+        (pl.Series("t", [0], dtype=pl.Int64), "1i"),
+        (pl.Series("t", [date(2024, 1, 1)]), "1d"),
+    ],
+)
+def test_group_by_dynamic_empty_include_boundaries_columns(
+    engine: EngineType, index: pl.Series, every: str
+) -> None:
+    def group_by(lf: pl.LazyFrame) -> pl.DataFrame:
+        return (
+            lf.group_by_dynamic("t", every=every, period=every, include_boundaries=True)
+            .agg(pl.col("v").sum())
+            .collect(engine=engine)
+        )
+
+    lf = pl.LazyFrame({"t": index, "v": [1]})
+    result = group_by(lf.clear())
+    expected = group_by(lf)
+
+    assert result.height == 0
+    assert result.schema == expected.schema
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("start", "every", "time_zone"),
+    [
+        # Month-end start: clamping to a short month must not carry over.
+        (datetime(2024, 1, 31), "1mo", None),
+        (datetime(2024, 1, 31), "2mo", None),
+        (datetime(2024, 1, 31, 12), "1q", None),
+        (datetime(2024, 2, 29), "1y", None),
+        # Start on a local time that is skipped once by daylight saving.
+        (datetime(2021, 3, 10, 2, 30), "1d", "America/New_York"),
+        (datetime(2021, 3, 7, 2, 30), "1w", "America/New_York"),
+    ],
+)
+def test_group_by_dynamic_calendar_grid_matches_datetime_range(
+    engine: EngineType, start: datetime, every: str, time_zone: str | None
+) -> None:
+    end = start + timedelta(days=730)
+    t = pl.datetime_range(
+        start, end, "1d", time_zone=time_zone, eager=True, time_unit="us"
+    ).alias("t")
+    expected = pl.datetime_range(
+        start, end, every, time_zone=time_zone, eager=True, time_unit="us"
+    ).alias("_lower_boundary")
+
+    lf = pl.LazyFrame({"t": t})
+    out = (
+        lf.group_by_dynamic(
+            "t",
+            every=every,
+            period="1h",
+            start_by="datapoint",
+            include_boundaries=True,
+        )
+        .agg(pl.len())
+        .collect(engine=engine)
+    )
+    assert_series_equal(out["_lower_boundary"], expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("closed", ["left", "right", "both", "none"])
+@pytest.mark.parametrize("every", ["1mo", "2mo"])
+@pytest.mark.parametrize("period", ["1d", "2d", "3d"])
+def test_group_by_dynamic_calendar_sparse_matches_dense(
+    engine: EngineType, closed: ClosedInterval, every: str, period: str
+) -> None:
+    dense = pl.datetime_range(
+        datetime(2024, 1, 31), datetime(2025, 12, 31), "1d", eager=True, time_unit="us"
+    ).alias("t")
+    rng = np.random.default_rng(0)
+
+    def windows(t: pl.Series) -> pl.DataFrame:
+        return (
+            pl.LazyFrame({"t": t, "v": t})
+            .group_by_dynamic(
+                "t",
+                every=every,
+                period=period,
+                closed=closed,
+                start_by="datapoint",
+                include_boundaries=True,
+            )
+            .agg(pl.col("v"))
+            .collect(engine=engine)
+        )
+
+    expected = windows(dense)
+    for _ in range(10):
+        mask = rng.random(dense.len()) < 0.05
+        mask[0] = True
+        sparse = dense.filter(pl.Series(mask))
+        result = windows(sparse)
+
+        expected_sparse = (
+            expected.with_columns(pl.col("v").list.set_intersection(sparse.implode()))
+            .filter(pl.col("v").list.len() > 0)
+            .with_columns(pl.col("v").list.sort())
+        )
+        assert_frame_equal(result, expected_sparse)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_group_by_dynamic_calendar_sparse_skip(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"t": [datetime(2024, 1, 31), datetime(2024, 7, 9), datetime(2024, 8, 1)]}
+    )
+    out = (
+        lf.group_by_dynamic(
+            "t",
+            every="1mo",
+            period="2d",
+            start_by="datapoint",
+            closed="right",
+            include_boundaries=True,
+        )
+        .agg(pl.len())
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {
+            "_lower_boundary": [datetime(2024, 7, 31)],
+            "_upper_boundary": [datetime(2024, 8, 2)],
+            "t": [datetime(2024, 7, 31)],
+            "len": pl.Series([1], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)

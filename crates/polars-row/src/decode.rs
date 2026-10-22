@@ -10,7 +10,7 @@ use self::encode::fixed_size;
 use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;
-use crate::fixed::numeric::{FixedLengthEncoding, FromSlice};
+use crate::fixed::numeric::FixedLengthEncoding;
 use crate::fixed::{boolean, decimal, numeric};
 use crate::variable::{binary, no_order, utf8};
 
@@ -27,11 +27,20 @@ pub unsafe fn decode_rows_from_binary<'a>(
 ) -> Vec<ArrayRef> {
     assert_eq!(arr.null_count(), 0);
     rows.clear();
-    rows.extend(arr.values_iter());
+    let values = arr.values().as_slice();
+    let offsets = arr.offsets();
+    rows.extend(
+        offsets[..offsets.len() - 1]
+            .iter()
+            .map(|&start| values.get_unchecked(start as usize..)),
+    );
     decode_rows(rows, opts, dicts, dtypes)
 }
 
 /// Decode `rows` into a arrow format
+///
+/// A row slice may extend past the end of that row.
+///
 /// # Safety
 /// This will not do any bound checks. Caller must ensure the `rows` are valid
 /// encodings.
@@ -206,10 +215,7 @@ unsafe fn decode_cat<T: NativeType + FixedLengthEncoding + CatNative>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
     ctx: &RowEncodingCategoricalContext,
-) -> PrimitiveArray<T>
-where
-    T::Encoded: FromSlice,
-{
+) -> PrimitiveArray<T> {
     if ctx.is_enum || !opt.is_ordered() {
         numeric::decode_primitive::<T>(rows, opt)
     } else {

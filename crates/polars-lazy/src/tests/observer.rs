@@ -25,7 +25,19 @@ struct Snapshot {
     rows: usize,
     total_rows_sent: u64,
     any_done: bool,
+    custom: Vec<(String, Option<i64>)>,
 }
+
+impl Snapshot {
+    fn reading(&self, key: &str) -> Option<i64> {
+        self.custom
+            .iter()
+            .find(|(k, _)| k == key)
+            .unwrap_or_else(|| panic!("no `{key}` in {:?}", self.custom))
+            .1
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum Event {
     Started,
@@ -89,11 +101,16 @@ struct CloseGuard {
 impl Drop for CloseGuard {
     fn drop(&mut self) {
         if let Some(metrics) = self.metrics.as_ref() {
-            let snap = metrics.snapshot();
+            let nodes = metrics.snapshot().nodes;
             self.log.lock().unwrap().push(Event::Snapshot(Snapshot {
-                rows: snap.len(),
-                total_rows_sent: snap.iter().map(|r| r.rows_sent).sum(),
-                any_done: snap.iter().any(|r| r.done),
+                rows: nodes.len(),
+                total_rows_sent: nodes.iter().map(|r| r.rows_sent).sum(),
+                any_done: nodes.iter().any(|r| r.done),
+                custom: nodes
+                    .iter()
+                    .flat_map(|r| r.custom.iter())
+                    .map(|metric| (metric.key.clone(), metric.value))
+                    .collect(),
             }));
         }
         self.log.lock().unwrap().push(Event::Closed);
@@ -189,6 +206,33 @@ mod tests {
     }
 
     #[test]
+    fn observer_snapshot_carries_a_nodes_custom_metrics() {
+        let lf = load_df().lazy().group_by([col("b")]).agg([col("a").sum()]);
+        let (res, events) = run_observed_on(lf, true, Engine::Streaming);
+        assert!(res.is_ok());
+
+        let snapshot = events
+            .iter()
+            .find_map(|e| match e {
+                Event::Snapshot(snapshot) => Some(snapshot),
+                _ => None,
+            })
+            .expect("no Snapshot event");
+
+        // `b` holds "a", "b" and "c".
+        assert_eq!(snapshot.reading("group_by.actual_groups"), Some(3));
+
+        // The sketch is approximate, and its hashing is randomly seeded.
+        let estimated = snapshot
+            .reading("group_by.estimated_groups")
+            .expect("estimated on combine");
+        assert!(
+            estimated.abs_diff(3) <= 1,
+            "estimated {estimated} groups for 3"
+        );
+    }
+
+    #[test]
     fn observer_failed_on_execution_error() {
         // Strict cast overflow: builds fine, errors during streaming execution.
         let df = df!("a" => [1000i64, 2000, 3000]).unwrap();
@@ -271,7 +315,11 @@ mod tests {
 
     #[test]
     fn noop_metrics_snapshot_empty() {
-        assert!(NoopQueryMetrics.snapshot().is_empty());
+        let snap = NoopQueryMetrics.snapshot();
+        assert!(snap.nodes.is_empty());
+        assert_eq!(snap.query.io_total_active_ns, 0);
+        assert_eq!(snap.query.io_rx_active_ns, 0);
+        assert_eq!(snap.query.io_tx_active_ns, 0);
     }
 
     /// Build a `PythonScan` `LazyFrame` directly from the DSL with the given

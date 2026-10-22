@@ -92,6 +92,7 @@ if TYPE_CHECKING:
     from builtins import str as str_
     from collections.abc import Callable, Iterable
     from io import IOBase
+    from typing import Concatenate, ParamSpec
 
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
@@ -116,13 +117,7 @@ if TYPE_CHECKING:
         WindowMappingStrategy,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 11):
-        from typing import Concatenate, ParamSpec
-    else:
-        from typing import Concatenate
-
-        from typing_extensions import ParamSpec
+    from polars.datatypes import DataType
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -962,6 +957,56 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.exp())
 
+    def erf(self) -> Expr:
+        """
+        Compute the error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df.select(pl.col("a").erf())
+        shape: (3, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ f64       │
+        ╞═══════════╡
+        │ -0.842701 │
+        │ 0.0       │
+        │ 0.842701  │
+        └───────────┘
+        """
+        return wrap_expr(self._pyexpr.erf())
+
+    def erfc(self) -> Expr:
+        """
+        Compute the complementary error function, element-wise.
+
+        See `Wikipedia <https://en.wikipedia.org/wiki/Error_function>`__.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 0, 1]})
+        >>> df.select(pl.col("a").erfc())
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.842701 │
+        │ 1.0      │
+        │ 0.157299 │
+        └──────────┘
+        """
+        return wrap_expr(self._pyexpr.erfc())
+
     def alias(self, name: str_) -> Expr:
         """
         Rename the expression.
@@ -1160,6 +1205,70 @@ class Expr(metaclass=_Meta):
         └──────┴──────┘
         '''
         return function(self, *args, **kwargs)
+
+    @unstable()
+    def pipe_with_dtype(
+        self,
+        function: Callable[[Expr, DataType], IntoExpr],
+    ) -> Expr:
+        """
+        Converts to another expression by calling `function`.
+
+        Runs during the plan stage (unlike `pipe_with_schema`),
+        which means that the dytype of this expression is known.
+        This allows choosing a different expression depending on the dtype of the input,
+        including the metadata of extension types. This also means that any
+        exceptions raised by `function` will only be emitted during the plan stage.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed at any
+            point without it being considered a breaking change.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        function
+            Callable; will receive the expression as the first parameter and its
+            resolved dtype as the second parameter. The returned expression takes the
+            place of this expression, including its output name.
+
+        See Also
+        --------
+        pipe
+        polars.pipe_with_dtype : Pass multiple expressions to a single function.
+        LazyFrame.pipe_with_schema
+
+        Examples
+        --------
+        Cast integer and string columns to float,
+        but leave the other columns as-is.
+
+        >>> def to_float_if_possible(expr: pl.Expr, dtype: pl.DataType) -> pl.Expr:
+        ...     if dtype.is_integer() or dtype == pl.String:
+        ...         return expr.cast(pl.Float64)
+        ...     return expr
+        >>> df = pl.DataFrame(
+        ...     {"a": [1, 2], "b": ["1.0", "2.5"], "c": [2.0, 3.0], "d": [[1], [2, 3]]},
+        ...     schema={
+        ...         "a": pl.Int64,
+        ...         "b": pl.String,
+        ...         "c": pl.Float32,
+        ...         "d": pl.List(pl.Int64),
+        ...     },
+        ... )
+        >>> df.select(pl.all().pipe_with_dtype(to_float_if_possible))
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ c   ┆ d         │
+        │ --- ┆ --- ┆ --- ┆ ---       │
+        │ f64 ┆ f64 ┆ f32 ┆ list[i64] │
+        ╞═════╪═════╪═════╪═══════════╡
+        │ 1.0 ┆ 1.0 ┆ 2.0 ┆ [1]       │
+        │ 2.0 ┆ 2.5 ┆ 3.0 ┆ [2, 3]    │
+        └─────┴─────┴─────┴───────────┘
+        """
+        return F.pipe_with_dtype([self], lambda inputs: function(*inputs[0]))
 
     def not_(self) -> Expr:
         """
@@ -3881,8 +3990,8 @@ class Expr(metaclass=_Meta):
 
         Notes
         -----
-        * As long as your data can fit in RAM, it is always more efficient to use the
-          regular :meth:`quantile` function instead.
+        * If the Expr has fewer than 100 million items, it is generally more efficient
+          to use the regular :meth:`quantile` function instead.
 
         * NaN values are regarded as larger than any finite number (and equal to one
           another). As a result, ``NaN`` values are treated as the largest values when
@@ -6568,6 +6677,7 @@ class Expr(metaclass=_Meta):
         See Also
         --------
         truediv
+        truncdiv
 
         Examples
         --------
@@ -6642,6 +6752,47 @@ class Expr(metaclass=_Meta):
         └──────┴────────┘
         """
         return self.__floordiv__(other)
+
+    def truncdiv(self, other: Any) -> Expr:
+        """
+        Divide, rounding the quotient toward zero.
+
+        Unlike :meth:`floordiv`, which rounds down, this rounds a negative quotient up,
+        as integer division does in C and Rust. The result has the same data type
+        as `floordiv`'s.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        See Also
+        --------
+        floordiv
+        truediv
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [-5, -4, 4, 5]})
+        >>> df.with_columns(
+        ...     pl.col("x").floordiv(2).alias("x//2"),
+        ...     pl.col("x").truncdiv(2).alias("truncdiv(x, 2)"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬──────┬────────────────┐
+        │ x   ┆ x//2 ┆ truncdiv(x, 2) │
+        │ --- ┆ ---  ┆ ---            │
+        │ i64 ┆ i64  ┆ i64            │
+        ╞═════╪══════╪════════════════╡
+        │ -5  ┆ -3   ┆ -2             │
+        │ -4  ┆ -2   ┆ -2             │
+        │ 4   ┆ 2    ┆ 2              │
+        │ 5   ┆ 2    ┆ 2              │
+        └─────┴──────┴────────────────┘
+        """
+        return wrap_expr(self._pyexpr.trunc_div(parse_into_expression(other)))
 
     def mod(self, other: Any) -> Expr:
         """
@@ -6944,11 +7095,19 @@ class Expr(metaclass=_Meta):
             Series or sequence of primitive type.
         nulls_equal : bool, default False
             If True, treat null as a distinct value. Null values will not propagate.
+            Note that :meth:`Expr.list.contains` and :meth:`Expr.arr.contains` default
+            to `True`.
 
         Returns
         -------
         Expr
             Expression of data type :class:`Boolean`.
+
+        Notes
+        -----
+        For supported dtype pairs, lossy conversions do not create matches. Values that
+        would overflow or require rounding match nothing. Cast explicitly to compare
+        integers and floats.
 
         Examples
         --------
@@ -7313,6 +7472,14 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.hash(seed))
 
+    def _mm3_hash(self) -> Expr:
+        """
+        Compute the 32-bit MurmurHash3 of the values, as specified by Iceberg.
+
+        This is the hash used by the Iceberg `bucket` partition transform.
+        """
+        return wrap_expr(self._pyexpr.mm3_hash())
+
     def reinterpret(
         self,
         *,
@@ -7320,10 +7487,14 @@ class Expr(metaclass=_Meta):
         dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed between numeric types of the same size. To
+        convert between types of different sizes, use :meth:`cast` instead.
+
+        A `Decimal` can also be reinterpreted to and from `Int128`, its unscaled integer
+        representation: `1.23` as `Decimal(5, 2)` becomes `123`. Reinterpreting an
+        `Int128` raises if the value doesn't fit the precision of the target `Decimal`.
 
         Exactly one of `signed` or `dtype` must be specified.
 
@@ -8858,7 +9029,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -8970,7 +9141,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9083,7 +9254,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9196,7 +9367,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9310,7 +9481,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9428,7 +9599,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9544,7 +9715,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9658,7 +9829,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -9807,7 +9978,9 @@ class Expr(metaclass=_Meta):
         parameter. The resulting values will be the rank of the value that is
         at the end of the sliding window.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, partially-streaming
+            :partially-streaming: Falls back to in-memory for
+                ``method="random"`` with a ``seed``.
 
         Parameters
         ----------
@@ -9889,7 +10062,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -9955,7 +10128,7 @@ class Expr(metaclass=_Meta):
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -10023,7 +10196,7 @@ class Expr(metaclass=_Meta):
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------

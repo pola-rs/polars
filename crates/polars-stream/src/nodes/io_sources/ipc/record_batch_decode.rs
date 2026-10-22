@@ -31,10 +31,11 @@ impl RecordBatchDecoder {
     pub(super) async fn record_batch_data_to_df(
         &self,
         record_batch_data: RecordBatchData,
-        // Rows as requested, relative to the start of the Record Batch.
-        slice_offset: usize,
-        slice_len: usize,
     ) -> PolarsResult<DataFrame> {
+        // Rows as requested, relative to the start of the Record Batch.
+        let (slice_offset, slice_len) = record_batch_data
+            .slice
+            .unwrap_or((0, record_batch_data.num_rows as usize));
         let file_metadata = self.file_metadata.clone();
         let pl_schema = self.pl_schema.clone();
         let projection_info = self.projection_info.as_ref().clone();

@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{RwLock, Weak};
 
-use polars_io::predicates::{RuntimeRange, RuntimeRangeSource};
+use polars_io::predicates::{DynamicPredicateSource, ReadOrder, RuntimeRange};
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -31,16 +31,33 @@ pub trait PredicateExpr: Send + Sync + Any {
         Ok(None)
     }
 
-    // The range of values that can match, for a reader that skips batches by
-    // their statistics. Only a predicate that is exactly a range gives one.
+    // A range every matching value lies in, for a reader that skips batches by
+    // their statistics. `Disabled` when the predicate gives none.
     fn runtime_range(&self) -> RuntimeRange {
         RuntimeRange::Disabled
+    }
+
+    // Whether `evaluate` can reject rows. A predicate that cannot is not
+    // evaluated per row.
+    fn filters_rows(&self) -> bool {
+        true
+    }
+
+    // Whether a reader may stop evaluating the predicate when it rejects too
+    // little: the predicate stays as it is once set, and its producer checks
+    // every row again. A predicate that tightens over time must be kept.
+    fn can_bypass(&self) -> bool {
+        false
     }
 }
 
 pub struct TrivialPredicateExpr;
 
-impl PredicateExpr for TrivialPredicateExpr {}
+impl PredicateExpr for TrivialPredicateExpr {
+    fn filters_rows(&self) -> bool {
+        false
+    }
+}
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 struct Inner {
@@ -49,6 +66,8 @@ struct Inner {
     #[cfg_attr(feature = "ir_serde", serde(skip))]
     is_set: AtomicBool,
     id: UniqueId,
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    read_order: Option<ReadOrder>,
 }
 
 #[derive(Clone)]
@@ -98,17 +117,18 @@ impl Hash for DynamicPred {
 }
 
 impl DynamicPred {
-    fn new() -> Self {
+    fn new(read_order: Option<ReadOrder>) -> Self {
         Self {
             inner: Arc::new(Inner {
                 pred: Default::default(),
                 is_set: Default::default(),
                 id: UniqueId::new(),
+                read_order,
             }),
         }
     }
 
-    fn downgrade(&self) -> DynamicPredWeakRef {
+    pub fn downgrade(&self) -> DynamicPredWeakRef {
         DynamicPredWeakRef {
             inner: Arc::downgrade(&self.inner),
         }
@@ -172,7 +192,7 @@ impl DynamicPredWeakRef {
     }
 }
 
-impl RuntimeRangeSource for DynamicPredWeakRef {
+impl DynamicPredicateSource for DynamicPredWeakRef {
     fn runtime_range(&self) -> RuntimeRange {
         let Some(inner) = self.inner.upgrade() else {
             return RuntimeRange::Disabled;
@@ -183,6 +203,32 @@ impl RuntimeRangeSource for DynamicPredWeakRef {
         let guard = inner.pred.read().unwrap();
         guard.as_ref().unwrap().runtime_range()
     }
+
+    fn read_order(&self) -> Option<ReadOrder> {
+        self.inner.upgrade()?.read_order
+    }
+
+    fn filters_rows(&self) -> bool {
+        self.with_set(|pred| pred.filters_rows())
+    }
+
+    fn can_bypass(&self) -> bool {
+        self.with_set(|pred| pred.can_bypass())
+    }
+}
+
+impl DynamicPredWeakRef {
+    /// `f` on the predicate once it is set, `false` before.
+    fn with_set(&self, f: impl FnOnce(&dyn PredicateExpr) -> bool) -> bool {
+        let Some(inner) = self.inner.upgrade() else {
+            return false;
+        };
+        if !inner.is_set.load(Ordering::Acquire) {
+            return false;
+        }
+        let guard = inner.pred.read().unwrap();
+        f(guard.as_ref().unwrap().as_ref())
+    }
 }
 
 fn all_of(name: PlSmallStr, len: usize, value: bool) -> Column {
@@ -190,26 +236,15 @@ fn all_of(name: PlSmallStr, len: usize, value: bool) -> Column {
 }
 
 /// A predicate over `node` whose value a producer sets at run time, evaluated
-/// per row wherever it lands.
-pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
-    dynamic_pred_node(node, false, arena)
-}
-
-/// A predicate over `node` whose value a producer sets at run time, which a scan
-/// only uses to skip batches by their statistics and never evaluates per row.
-pub fn new_batch_only_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
-    dynamic_pred_node(node, true, arena)
-}
-
-fn dynamic_pred_node(
+/// per row wherever it lands. A reader reads in `read_order` when it can.
+pub fn new_dynamic_pred(
     node: Node,
-    batch_only: bool,
     arena: &mut Arena<AExpr>,
+    read_order: Option<ReadOrder>,
 ) -> (Node, DynamicPred) {
-    let pred = DynamicPred::new();
+    let pred = DynamicPred::new(read_order);
     let function = IRFunctionExpr::DynamicPred {
         pred: pred.downgrade(),
-        batch_only,
     };
     let options = function.function_options();
     let aexpr = AExpr::Function {

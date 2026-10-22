@@ -2395,7 +2395,7 @@ pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorB
     }
 };
 
-fn run_in_memory_query(
+pub(crate) fn run_in_memory_query(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,

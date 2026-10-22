@@ -58,6 +58,15 @@ impl std::fmt::Write for IgnoreFmt {
     }
 }
 
+/// Lets `fmt::Write` users, like chrono's `write_to`, write straight into a byte buffer.
+struct VecFmt<'a>(&'a mut Vec<u8>);
+impl std::fmt::Write for VecFmt<'_> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.extend_from_slice(s.as_bytes());
+        Ok(())
+    }
+}
+
 pub(super) trait Serializer<'a> {
     fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions);
 }
@@ -395,7 +404,7 @@ fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
             let callback = move |item, buf: &mut Vec<u8>| {
                 let item = convert(item);
                 // We checked the format is valid above.
-                let _ = write!(buf, "{}", format_fn(&item, format.iter()));
+                let _ = format_fn(&item, format.iter()).write_to(&mut VecFmt(buf));
             };
             date_and_time_final_serializer(array, callback, options)
         },
@@ -830,37 +839,32 @@ pub(super) fn serializer_for<'a>(
 
             let array = array.as_any().downcast_ref().unwrap();
 
-            macro_rules! time_unit_serializer {
-                ($convert:ident) => {
-                    match _time_zone {
-                        #[cfg(feature = "timezones")]
-                        Some(time_zone) => {
-                            let callback = move |item, buf: &mut Vec<u8>| {
-                                let item = polars_arrow::temporal_conversions::$convert(item);
-                                let item = time_zone.from_utc_datetime(&item);
-                                // We checked the format is valid above.
-                                let _ = write!(buf, "{}", item.format_with_items(format.iter()));
-                            };
-                            date_and_time_final_serializer(array, callback, options)
-                        },
-                        #[cfg(not(feature = "timezones"))]
-                        Some(_) => panic!("activate 'timezones' feature"),
-                        None => {
-                            let callback = move |item, buf: &mut Vec<u8>| {
-                                let item = polars_arrow::temporal_conversions::$convert(item);
-                                // We checked the format is valid above.
-                                let _ = write!(buf, "{}", item.format_with_items(format.iter()));
-                            };
-                            date_and_time_final_serializer(array, callback, options)
-                        },
-                    }
-                };
-            }
-
-            match time_unit {
-                TimeUnit::Nanoseconds => time_unit_serializer!(timestamp_ns_to_datetime),
-                TimeUnit::Microseconds => time_unit_serializer!(timestamp_us_to_datetime),
-                TimeUnit::Milliseconds => time_unit_serializer!(timestamp_ms_to_datetime),
+            let time_unit = *time_unit;
+            match _time_zone {
+                #[cfg(feature = "timezones")]
+                Some(time_zone) => {
+                    let callback = move |item, buf: &mut Vec<u8>| {
+                        let item = time_unit.timestamp_to_datetime(item);
+                        let item = time_zone.from_utc_datetime(&item);
+                        // We checked the format is valid above.
+                        let _ = item
+                            .format_with_items(format.iter())
+                            .write_to(&mut VecFmt(buf));
+                    };
+                    date_and_time_final_serializer(array, callback, options)
+                },
+                #[cfg(not(feature = "timezones"))]
+                Some(_) => panic!("activate 'timezones' feature"),
+                None => {
+                    let callback = move |item, buf: &mut Vec<u8>| {
+                        let item = time_unit.timestamp_to_datetime(item);
+                        // We checked the format is valid above.
+                        let _ = item
+                            .format_with_items(format.iter())
+                            .write_to(&mut VecFmt(buf));
+                    };
+                    date_and_time_final_serializer(array, callback, options)
+                },
             }
         },
         DataType::String => string_serializer(

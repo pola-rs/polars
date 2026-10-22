@@ -12,6 +12,7 @@ use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::ChunkedArray;
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
@@ -449,6 +450,7 @@ impl StructChunked {
         }
 
         self.compute_len();
+        self.set_flags(self.get_flags() - StatisticsFlags::HAS_PROPAGATED_NULLS);
         self.propagate_nulls_mut();
     }
 
@@ -472,12 +474,29 @@ impl StructChunked {
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
-        assert_eq!(self.chunks().len(), 1);
+        if let Some(v) = &validity {
+            assert_eq!(self.len(), v.len());
+        }
+
+        let validity = validity.filter(|v| v.unset_bits() > 0);
+
+        // SAFETY: We keep length and dtypes the same.
         unsafe {
-            let arr = self.chunks_mut().iter_mut().next().unwrap();
-            *arr = arr.with_validity(validity);
+            let chunks = self.chunks_mut();
+            if chunks.len() == 1 {
+                chunks[0] = chunks[0].with_validity(validity);
+            } else {
+                let mut offset = 0;
+                for arr in chunks {
+                    let len = arr.len();
+                    *arr =
+                        arr.with_validity(validity.as_ref().map(|v| v.clone().sliced(offset, len)));
+                    offset += len;
+                }
+            }
         }
         self.compute_len();
+        self.set_flags(self.get_flags() - StatisticsFlags::HAS_PROPAGATED_NULLS);
         self.propagate_nulls_mut();
     }
 

@@ -5,7 +5,9 @@ use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, RowEncodingVariant};
+use super::{
+    AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, MinMaxByOrder, RowEncodingVariant,
+};
 use crate::dsl::Operator;
 use crate::plans::{ExprIR, LiteralValue, OutputName};
 
@@ -126,6 +128,7 @@ impl AExprBuilder {
             IRAggExpr::Min {
                 input: self.node(),
                 propagate_nans: false,
+                propagate_nulls: false,
             },
             arena,
         )
@@ -136,6 +139,7 @@ impl AExprBuilder {
             IRAggExpr::Max {
                 input: self.node(),
                 propagate_nans: false,
+                propagate_nulls: false,
             },
             arena,
         )
@@ -146,6 +150,7 @@ impl AExprBuilder {
             IRAggExpr::Min {
                 input: self.node(),
                 propagate_nans: true,
+                propagate_nulls: false,
             },
             arena,
         )
@@ -156,31 +161,48 @@ impl AExprBuilder {
             IRAggExpr::Max {
                 input: self.node(),
                 propagate_nans: true,
+                propagate_nulls: false,
             },
             arena,
         )
     }
 
-    pub fn min_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+    pub fn min_by(
+        self,
+        by: impl IntoAExprBuilder,
+        order: MinMaxByOrder,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
         let by = by.into_aexpr_builder().expr_ir_retain_name(arena);
         Self::function(
             vec![self.expr_ir_retain_name(arena), by],
-            IRFunctionExpr::MinBy,
+            IRFunctionExpr::MinBy { order },
             arena,
         )
     }
 
-    pub fn max_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+    pub fn max_by(
+        self,
+        by: impl IntoAExprBuilder,
+        order: MinMaxByOrder,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
         let by = by.into_aexpr_builder().expr_ir_retain_name(arena);
         Self::function(
             vec![self.expr_ir_retain_name(arena), by],
-            IRFunctionExpr::MaxBy,
+            IRFunctionExpr::MaxBy { order },
             arena,
         )
     }
 
     pub fn sum(self, arena: &mut Arena<AExpr>) -> Self {
-        Self::agg(IRAggExpr::Sum(self.node()), arena)
+        Self::agg(
+            IRAggExpr::Sum {
+                input: self.node(),
+                null_on_empty: false,
+            },
+            arena,
+        )
     }
 
     pub fn len(self, arena: &mut Arena<AExpr>) -> Self {
@@ -339,7 +361,10 @@ impl AExprBuilder {
                 self.expr_ir_unnamed(),
                 other.into_aexpr_builder().expr_ir_unnamed(),
             ],
-            IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                nulls_equal,
+                needle_cast: None,
+            }),
             arena,
         )
     }
@@ -517,6 +542,10 @@ impl AExprBuilder {
 
     pub fn floor_divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
         self.binary_op(other, Operator::FloorDivide, arena)
+    }
+
+    pub fn trunc_divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        self.binary_op(other, Operator::TruncDivide, arena)
     }
 
     pub fn modulus(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {

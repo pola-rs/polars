@@ -17,6 +17,7 @@ use polars_arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::{ArrowDataType, Field};
 use polars_arrow::offset::Offsets;
+pub(crate) use primitive::convert_i128;
 use simple::page_iter_to_array;
 pub(crate) use simple::unify_timestamp_unit;
 

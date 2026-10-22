@@ -69,9 +69,8 @@ if TYPE_CHECKING:
 
 
 # note: reversed views don't match as instances of MappingView
-if sys.version_info >= (3, 11):
-    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
-    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
+_views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
+_reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 
 def _process_null_values(
@@ -85,12 +84,8 @@ def _process_null_values(
 
 def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
     return (
-        (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
-        or isinstance(val, MappingView)
-        or (
-            sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views)  # pyrefly: ignore[unknown-name]
-        )
-    )
+        isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized)
+    ) or isinstance(val, (MappingView, *_reverse_mapping_views))
 
 
 def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> bool:
@@ -266,7 +261,12 @@ def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
     """Simple version parser; split into a tuple of ints for comparison."""
     if isinstance(version, str):
         version = version.split(".")
-    return tuple(int(re.sub(r"\D", "", str(v))) for v in version)
+    # Take the first run of digits in each component: stripping every non-digit
+    # instead would splice a pre-release suffix onto the number before it, making
+    # "1.2.3rc1" read as (1, 2, 31), and a component carrying no digit at all
+    # would raise rather than compare.
+    parts = (re.search(r"\d+", str(v)) for v in version)
+    return tuple(int(p.group()) if p is not None else 0 for p in parts)
 
 
 def ordered_unique(values: Sequence[Any]) -> list[Any]:

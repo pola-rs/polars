@@ -19,6 +19,7 @@ pub(super) enum NumericOp {
     Div,
     Rem,
     FloorDiv,
+    TruncDiv,
 }
 
 impl NumericOp {
@@ -30,6 +31,7 @@ impl NumericOp {
             Self::Div => "div",
             Self::Rem => "rem",
             Self::FloorDiv => "floor_div",
+            Self::TruncDiv => "trunc_div",
         }
     }
 
@@ -66,7 +68,7 @@ impl NumericOp {
     {
         if !T::Native::is_float() {
             match self {
-                Self::Div | Self::Rem | Self::FloorDiv => {
+                Self::Div | Self::Rem | Self::FloorDiv | Self::TruncDiv => {
                     let target = if swapped { lhs } else { rhs };
                     let ne_0 = target.tot_ne_kernel_broadcast(&T::Native::zero());
                     let validity = combine_validities_and(target.validity(), Some(&ne_0));
@@ -111,6 +113,7 @@ impl NumericOp {
             Self::Div => ArithmeticKernel::legacy_div(lhs, rhs),
             Self::Rem => ArithmeticKernel::wrapping_mod(lhs, rhs),
             Self::FloorDiv => ArithmeticKernel::wrapping_floor_div(lhs, rhs),
+            Self::TruncDiv => ArithmeticKernel::wrapping_trunc_div(lhs, rhs),
         }
     }
 
@@ -154,6 +157,13 @@ impl NumericOp {
                     ArithmeticKernel::wrapping_floor_div_scalar(arr_lhs, r)
                 }
             },
+            Self::TruncDiv => {
+                if swapped {
+                    ArithmeticKernel::wrapping_trunc_div_scalar_lhs(r, arr_lhs)
+                } else {
+                    ArithmeticKernel::wrapping_trunc_div_scalar(arr_lhs, r)
+                }
+            },
         }
     }
 }
@@ -191,6 +201,13 @@ macro_rules! with_match_pl_num_arith {
                     __with_func__! { (|b, a| PlNumArithmetic::wrapping_floor_div(a, b)) }
                 } else {
                     __with_func__! { (PlNumArithmetic::wrapping_floor_div) }
+                }
+            },
+            NumericOp::TruncDiv => {
+                if $swapped {
+                    __with_func__! { (|b, a| PlNumArithmetic::wrapping_trunc_div(a, b)) }
+                } else {
+                    __with_func__! { (PlNumArithmetic::wrapping_trunc_div) }
                 }
             },
         }

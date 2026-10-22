@@ -1,17 +1,22 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor::TaskMetricAggregator;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_buffer::Buffer;
 use polars_core::config;
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
-use polars_io::cloud::concurrency::get_request_budget;
+use polars_io::cloud::concurrency::get_inflight_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
-use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
+use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
+use polars_utils::pl_str::PlSmallStr;
 
-use super::super::shared::pipeline_budget::PipelineBudget;
+use super::super::shared::pipeline_budget::{
+    PipelineBudget, prefetch_kbytes_limit_from_env_or_default,
+};
 use super::{FileReader, ParquetFileReader};
 use crate::metrics::{IOMetrics, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
@@ -27,6 +32,7 @@ pub struct ParquetReaderBuilder {
     /// Shared with every file in the scan. Only relevant for `DynByteSourceBuilder::FilePread`.
     pub file_read_context: std::sync::OnceLock<FileReadContext>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
+    pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
 }
 
 impl std::fmt::Debug for ParquetReaderBuilder {
@@ -42,18 +48,19 @@ impl std::fmt::Debug for ParquetReaderBuilder {
 }
 
 impl FileReaderBuilder for ParquetReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "parquet"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("parquet"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
         use ReaderCapabilities as RC;
 
         let mut capabilities = RC::ROW_INDEX
             | RC::PRE_SLICE
             | RC::NEGATIVE_PRE_SLICE
             | RC::PARTIAL_FILTER
-            | RC::MAPPED_COLUMN_PROJECTION;
+            | RC::MAPPED_COLUMN_PROJECTION
+            | RC::UNORDERED_FILES;
 
         if matches!(
             self.options.parallel,
@@ -61,10 +68,15 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         ) {
             capabilities |= RC::FULL_FILTER;
         }
-        capabilities
+
+        Ok(capabilities)
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        if let Some(task_metrics) = execution_state.task_metrics.clone() {
+            let _ = self.task_metrics.set(task_metrics);
+        }
+
         // Bound the number of fetches in the pipeline.
         // This bound goes together with the `prefetch_kbytes_limit` bound. In most
         // large-dataset use cases, the kbytes memory bound will kick in first.
@@ -81,34 +93,15 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 execution_state
                     .num_pipelines
                     .saturating_mul(2)
-                    .max(get_request_budget() as usize)
+                    .max(get_inflight_request_budget() as usize)
                     .clamp(16, 2048),
             )
             .max(1);
 
-        // Bound the max memory in use for the pipeline.
-        // This should be large enough to be non-blocking, but small enough to avoid
-        // excessive memory use from a run-away prefetch pipeline.
-        // "Correct" formula: (a) max effective in-flight bdp-based bytes budget + (b) decode pipeline.
-        // Since we do not know (a) at startup, we use  '3 * (b) + buffer' as a proxy for (a), where the
-        // multiplier reflects the max gain factor for in-flight control.
-        // TODO: Dynamically adapt the max memory to the observed BDP.
-        // NOTE: This does not account for the decompression multiplier, so actual memory
-        // usage can be substantially larger.
-        let prefetch_kbytes_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET")
-            .map(|x| {
-                x.parse::<NonZeroUsize>()
-                    .unwrap_or_else(|_| {
-                        panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET: {x}")
-                    })
-                    .get()
-            })
-            .unwrap_or({
-                let target_chunk_size_kb = FetchConfig::random_access().chunk_size.div_ceil(1024);
-                4 * execution_state.num_pipelines * target_chunk_size_kb
-            })
-            // Avoid deadlock.
-            .max(polars_io::cloud::concurrency_config::get_download_chunk_size().div_ceil(1024));
+        let prefetch_kbytes_limit = prefetch_kbytes_limit_from_env_or_default(
+            "POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET",
+            execution_state.num_pipelines,
+        );
 
         if config::verbose() {
             eprintln!(
@@ -131,7 +124,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::nodes::io_sources::parquet::RowGroupPrefetchSync;
 
         let scan_source = source;
@@ -144,31 +137,9 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
             } else {
-                let read_context = self.file_read_context.get_or_init(|| {
-                    let cfg = polars_config::config();
-                    let enable_o_direct = cfg.direct_io();
-                    let concurrency = cfg.file_read_concurrency().max(1) as usize;
-
-                    // TODO: Posix_fadv should follow the access-pattern, which varies
-                    // by file type and projection.
-                    let fadv = cfg.file_posix_fadv();
-
-                    if config::verbose() {
-                        eprintln!(
-                            "[ParquetReaderBuilder]: file read_context as configured: \
-                                read_concurrency: {concurrency}, \
-                                posix_fadv: {fadv}, \
-                                o_direct: {enable_o_direct}"
-                        );
-                    }
-
-                    FileReadContext {
-                        enable_o_direct,
-                        concurrency,
-                        permits: byte_source::global_read_permits(),
-                        advice: fadv,
-                    }
-                });
+                let read_context = self
+                    .file_read_context
+                    .get_or_init(|| FileReadContext::from_config("ParquetReaderBuilder"));
                 DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
@@ -199,11 +170,12 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 current_all_spawned: None,
             },
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
+            task_metrics: self.task_metrics.get().cloned(),
             verbose,
 
             init_data: None,
         };
 
-        Box::new(reader) as Box<dyn FileReader>
+        Ok(Box::new(reader) as Box<dyn FileReader>)
     }
 }

@@ -99,84 +99,108 @@ pub fn to_rust_df(
         return Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) });
     }
 
-    let dfs = rb
-        .iter()
-        .map(|rb| {
-            let mut run_parallel = false;
+    // Importing the arrays over FFI needs the GIL, but it is zero-copy and cheap; do it
+    // for every batch up front so the (potentially expensive) conversion below can run
+    // with the GIL released.
+    let mut run_parallel = false;
+    let mut batches: Vec<Vec<ArrayRef>> = Vec::with_capacity(rb.len());
+    for rb in rb.iter() {
+        let arrays = (0..schema.len())
+            .map(|i| {
+                let array = rb.call_method1("column", (i,))?;
+                let mut arr = array_to_rust(&array)?;
 
-            let columns = (0..schema.len())
-                .map(|i| {
-                    let array = rb.call_method1("column", (i,))?;
-                    let mut arr = array_to_rust(&array)?;
-
-                    // Only the schema contains extension type info, restore.
-                    // TODO: nested?
-                    let dtype = schema.get_at_index(i).unwrap().1.dtype();
-                    if let ArrowDataType::Extension(ext) = dtype {
-                        if *arr.dtype() == ext.inner {
-                            *arr.dtype_mut() = dtype.clone();
-                        }
+                // Only the schema contains extension type info, restore.
+                // TODO: nested?
+                let dtype = schema.get_at_index(i).unwrap().1.dtype();
+                if let ArrowDataType::Extension(ext) = dtype {
+                    if *arr.dtype() == ext.inner {
+                        *arr.dtype_mut() = dtype.clone();
                     }
+                }
 
-                    run_parallel |= matches!(
-                        arr.dtype(),
-                        ArrowDataType::Utf8 | ArrowDataType::Dictionary(_, _, _)
-                    );
-                    Ok(arr)
-                })
-                .collect::<PyResult<Vec<_>>>()?;
+                run_parallel |= !is_zero_copy_to_polars(arr.dtype());
+                Ok(arr)
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        batches.push(arrays);
+    }
 
-            // we parallelize this part because we can have dtypes that are not zero copy
-            // for instance string -> large-utf8
-            // dict encoded to categorical
-            let columns = if run_parallel {
-                py.enter_polars(|| {
-                    RAYON.install(|| {
-                        columns
-                            .into_par_iter()
-                            .enumerate()
-                            .map(|(i, arr)| {
-                                let (_, field) = schema.get_at_index(i).unwrap();
-                                let s = unsafe {
-                                    Series::_try_from_arrow_unchecked_with_md(
-                                        field.name.clone(),
-                                        vec![arr],
-                                        field.dtype(),
-                                        field.metadata.as_deref(),
-                                    )
-                                }
-                                .map_err(PyPolarsErr::from)?
-                                .into_column();
-                                Ok(s)
-                            })
-                            .collect::<PyResult<Vec<_>>>()
-                    })
-                })
-            } else {
-                columns
+    let column = |i: usize, arr: ArrayRef| -> PolarsResult<Column> {
+        let (_, field) = schema.get_at_index(i).unwrap();
+        let s = unsafe {
+            Series::_try_from_arrow_unchecked_with_md(
+                field.name.clone(),
+                vec![arr],
+                field.dtype(),
+                field.metadata.as_deref(),
+            )
+        }?;
+        Ok(s.into_column())
+    };
+
+    // Every dtype here is zero copy, so the conversion is just shuffling pointers around.
+    // Releasing the GIL for that would cost more than it saves.
+    if !run_parallel {
+        let dfs = batches
+            .into_iter()
+            .map(|arrays| {
+                let columns = arrays
                     .into_iter()
                     .enumerate()
-                    .map(|(i, arr)| {
-                        let (_, field) = schema.get_at_index(i).unwrap();
-                        let s = unsafe {
-                            Series::_try_from_arrow_unchecked_with_md(
-                                field.name.clone(),
-                                vec![arr],
-                                field.dtype(),
-                                field.metadata.as_deref(),
-                            )
-                        }
-                        .map_err(PyPolarsErr::from)?
-                        .into_column();
-                        Ok(s)
-                    })
-                    .collect::<PyResult<Vec<_>>>()
-            }?;
+                    .map(|(i, arr)| column(i, arr))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                // no need to check as a record batch has the same guarantees
+                Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) })
+            })
+            .collect::<PolarsResult<Vec<_>>>()
+            .map_err(PyPolarsErr::from)?;
 
-            // no need to check as a record batch has the same guarantees
-            Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) })
-        })
-        .collect::<PyResult<Vec<_>>>()?;
+        return Ok(accumulate_dataframes_vertical_unchecked(dfs));
+    }
 
-    Ok(accumulate_dataframes_vertical_unchecked(dfs))
+    // Otherwise the conversion is not zero copy - for instance string -> view, binary ->
+    // binview, dict encoded -> categorical, and nested types get rebuilt - so it must not
+    // hold the GIL, otherwise concurrent Python threads serialize on this call.
+    py.enter_polars(move || {
+        let dfs = RAYON.install(|| {
+            batches
+                .into_par_iter()
+                .map(|arrays| {
+                    let columns = arrays
+                        .into_par_iter()
+                        .enumerate()
+                        .map(|(i, arr)| column(i, arr))
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    // no need to check as a record batch has the same guarantees
+                    Ok(unsafe { DataFrame::new_unchecked_infer_height(columns) })
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
+
+        PolarsResult::Ok(accumulate_dataframes_vertical_unchecked(dfs))
+    })
+}
+
+/// Whether `Series::_try_from_arrow_unchecked_with_md` is pure pointer shuffling for this
+/// dtype. Conservative: anything not listed here is assumed to do real work.
+fn is_zero_copy_to_polars(dtype: &ArrowDataType) -> bool {
+    use ArrowDataType as D;
+    matches!(
+        dtype,
+        D::Null
+            | D::Boolean
+            | D::Utf8View
+            | D::BinaryView
+            | D::Int8
+            | D::Int16
+            | D::Int32
+            | D::Int64
+            | D::UInt8
+            | D::UInt16
+            | D::UInt32
+            | D::UInt64
+            | D::Float32
+            | D::Float64
+    )
 }

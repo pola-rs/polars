@@ -25,8 +25,15 @@ pub(crate) enum IsInHaystack {
 }
 
 #[cfg(feature = "is_in")]
-pub(crate) fn needle_isin_haystack(lv: &LiteralValue, nulls_equal: bool) -> Option<IsInHaystack> {
-    if !lv.get_datatype().is_list() {
+pub(crate) fn needle_isin_haystack(
+    function: &IRFunctionExpr,
+    needle: &DataType,
+    lv: &LiteralValue,
+    nulls_equal: bool,
+) -> Option<IsInHaystack> {
+    let haystack = lv.get_datatype();
+    // Otherwise pyarrow would compare by its own coercion rules.
+    if !haystack.is_list() || !function.membership_compares_in_needle_dtype(needle, &haystack) {
         return None;
     }
 
@@ -93,6 +100,38 @@ fn sanitize(name: &str) -> Option<&str> {
     }
 }
 
+/// `AnyValue::dtype`, which panics for categorical values (their mapping is not
+/// a data type).
+fn any_value_dtype(av: &AnyValue<'_>) -> Option<DataType> {
+    match av {
+        #[cfg(feature = "dtype-categorical")]
+        AnyValue::Categorical(..)
+        | AnyValue::CategoricalOwned(..)
+        | AnyValue::Enum(..)
+        | AnyValue::EnumOwned(..) => None,
+        av => Some(av.dtype()),
+    }
+}
+
+/// `pl.col('a').struct.field('b')` -> `["a", "b"]`. `None` if not a plain
+/// column rooting a `.struct.field(...)` chain.
+#[cfg(feature = "dtype-struct")]
+fn struct_field_path(node: Node, expr_arena: &Arena<AExpr>) -> Option<Vec<PlSmallStr>> {
+    match expr_arena.get(node) {
+        AExpr::Column(name) => Some(vec![name.clone()]),
+        AExpr::Function {
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(field_name)),
+            input,
+            ..
+        } => {
+            let mut path = struct_field_path(input.first()?.node(), expr_arena)?;
+            path.push(field_name.clone());
+            Some(path)
+        },
+        _ => None,
+    }
+}
+
 /// Render a flat `Series` as a Python list literal, e.g. `[1,2,3]`.
 ///
 /// Returns `None` for values we cannot faithfully (or safely) write out as
@@ -126,9 +165,28 @@ fn series_to_pyarrow_list(s: &Series) -> Option<String> {
             AnyValue::Array(_, _) => return None,
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(_, _, _) => return None,
-            _ => {
-                write!(list_repr, "{av},").unwrap();
+            // The `Display` impls round (floats to ~6 significant digits,
+            // decimals through `f64` on the Python side), so a value in the
+            // list would no longer match itself.
+            #[cfg(feature = "dtype-decimal")]
+            AnyValue::Decimal(_, _, _) => return None,
+            av if any_value_dtype(&av).is_some_and(|dt| dt.is_float()) => {
+                // Same rendering as a scalar literal; NaN and inf have no
+                // Python literal.
+                let v = av.extract::<f64>()?;
+                if !v.is_finite() {
+                    return None;
+                }
+                // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
+                write!(list_repr, "{v:?},").unwrap();
             },
+            av if any_value_dtype(&av).is_some_and(|dt| dt.is_integer()) => {
+                // Not `{av}`: `AnyValue`'s `Display` inserts the configured
+                // thousands separator (`1,000`).
+                let v = av.extract::<i128>()?;
+                write!(list_repr, "{v},").unwrap();
+            },
+            _ => return None,
         }
     }
     // pop last comma
@@ -190,7 +248,7 @@ pub fn predicate_to_pa(
         AExpr::Literal(LiteralValue::Series(_)) => None,
         AExpr::Literal(lv) => {
             let av = lv.to_any_value()?;
-            let dtype = av.dtype();
+            let dtype = any_value_dtype(&av)?;
             match av.as_borrowed() {
                 AnyValue::String(s) => {
                     let s = sanitize(s)?;
@@ -215,7 +273,13 @@ pub fn predicate_to_pa(
                 av => {
                     if dtype.is_float() {
                         let val = av.extract::<f64>()?;
-                        Some(format!("{val}"))
+                        // `inf` is not a Python literal (NaN is special-cased by
+                        // the consumers as a comparison operand).
+                        if val.is_infinite() {
+                            return None;
+                        }
+                        // `Debug` keeps the float a Python float literal (`1.0`, `1e20`).
+                        Some(format!("{val:?}"))
                     } else if dtype.is_integer() {
                         let val = av.extract::<i64>()?;
                         Some(format!("{val}"))
@@ -227,7 +291,8 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             input,
             ..
         } => {
@@ -236,8 +301,8 @@ pub fn predicate_to_pa(
             let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
                 return None;
             };
-
-            match needle_isin_haystack(lv, *nulls_equal)? {
+            let needle = input[0].dtype(schema, expr_arena).ok()?;
+            match needle_isin_haystack(function, needle, lv, *nulls_equal)? {
                 IsInHaystack::Empty => Some("pa.compute.scalar(False)".to_string()),
                 IsInHaystack::Series(s) => {
                     let values = series_to_pyarrow_list(&s)?;
@@ -272,11 +337,45 @@ pub fn predicate_to_pa(
                 ))
             }
         },
+        #[cfg(feature = "strings")]
+        AExpr::Function {
+            function: IRFunctionExpr::StringExpr(IRStringFunction::StartsWith),
+            input,
+            ..
+        } => {
+            let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
+            let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
+                return None;
+            };
+            let prefix = sanitize(lv.extract_str()?)?;
+            Some(format!("pa.compute.starts_with({col}, pattern='{prefix}')"))
+        },
+        #[cfg(feature = "dtype-struct")]
+        AExpr::Function {
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(_)),
+            ..
+        } => {
+            let path = struct_field_path(predicate, expr_arena)?;
+            let quoted = path
+                .iter()
+                .map(|name| Some(format!("'{}'", sanitize(name)?)))
+                .collect::<Option<Vec<_>>>()?;
+            Some(format!("pa.compute.field({})", quoted.join(", ")))
+        },
         AExpr::Function {
             function, input, ..
         } => {
-            let input = input.first().unwrap().node();
-            let input = predicate_to_pa(input, expr_arena, schema)?;
+            let input = input.first()?;
+            if matches!(
+                function, // note: only applies to primitive (non-decimal) numeric types
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan | IRBooleanFunction::IsNotNan)
+            ) {
+                let dtype = input.dtype(schema, expr_arena).ok()?;
+                if !dtype.is_primitive_numeric() && !dtype.is_null() {
+                    return None;
+                }
+            }
+            let input = predicate_to_pa(input.node(), expr_arena, schema)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => Some(format!("~({input})")),
@@ -285,6 +384,12 @@ pub fn predicate_to_pa(
                 },
                 IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => {
                     Some(format!("~({input}).is_null()"))
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan) => {
+                    Some(format!("({input}).is_nan()"))
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan) => {
+                    Some(format!("~({input}).is_nan()"))
                 },
                 _ => None,
             }
@@ -493,7 +598,7 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
 fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, PyAny>> {
     use pyo3::IntoPyObjectExt;
 
-    let dtype = av.dtype();
+    let dtype = any_value_dtype(&av)?;
     match av.as_borrowed() {
         AnyValue::Null => Some(py.None().into_bound(py)),
         AnyValue::Boolean(v) => v.into_bound_py_any(py).ok(),
@@ -613,7 +718,8 @@ pub fn aexpr_to_pyarrow<'py>(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            function:
+                function @ IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             input,
             ..
         } => {
@@ -623,7 +729,8 @@ pub fn aexpr_to_pyarrow<'py>(
             let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
                 return None;
             };
-            let values_list = match needle_isin_haystack(lv, *nulls_equal)? {
+            let needle = input[0].dtype(schema, expr_arena).ok()?;
+            let values_list = match needle_isin_haystack(function, needle, lv, *nulls_equal)? {
                 IsInHaystack::Empty => return pc.call_method1("scalar", (false,)).ok(),
                 IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
             };
@@ -659,8 +766,17 @@ pub fn aexpr_to_pyarrow<'py>(
         AExpr::Function {
             function, input, ..
         } => {
-            let input = input.first().unwrap().node();
-            let input = aexpr_to_pyarrow(py, pc, input, expr_arena, schema)?;
+            let input = input.first()?;
+            if matches!(
+                function, // note: only applies to primitive (non-decimal) numeric types
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan | IRBooleanFunction::IsNotNan)
+            ) {
+                let dtype = input.dtype(schema, expr_arena).ok()?;
+                if !dtype.is_primitive_numeric() && !dtype.is_null() {
+                    return None;
+                }
+            }
+            let input = aexpr_to_pyarrow(py, pc, input.node(), expr_arena, schema)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
@@ -672,6 +788,14 @@ pub fn aexpr_to_pyarrow<'py>(
                 },
                 IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => input
                     .call_method0("is_null")
+                    .ok()?
+                    .call_method0("__invert__")
+                    .ok(),
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNan) => {
+                    input.call_method0("is_nan").ok()
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan) => input
+                    .call_method0("is_nan")
                     .ok()?
                     .call_method0("__invert__")
                     .ok(),

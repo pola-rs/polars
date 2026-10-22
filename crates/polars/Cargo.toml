@@ -200,7 +200,7 @@ approx_quantile = [
   "polars-sql?/approx_quantile",
 ]
 arg_where = ["polars-lazy?/arg_where"]
-asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
+asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join", "polars-sql?/asof_join"]
 iejoin = ["polars-lazy?/iejoin", "polars-ops/iejoin"]
 binary_encoding = [
   "polars-ops/binary_encoding",
@@ -308,7 +308,7 @@ reinterpret = [
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
 rle = ["polars-lazy?/rle"]
-rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window"]
+rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window", "polars-sql?/rolling_window"]
 rolling_window_by = [
   "polars-core/rolling_window_by",
   "polars-lazy?/rolling_window_by",
@@ -522,6 +522,7 @@ dtype-map = [
   "polars-lazy?/dtype-map",
   "polars-ops/dtype-map",
   "polars-plan?/dtype-map",
+  "polars-sql?/dtype-map",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 

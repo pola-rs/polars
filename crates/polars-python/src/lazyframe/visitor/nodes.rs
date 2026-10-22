@@ -10,6 +10,7 @@ use polars_defs::join::AsofStrategy;
 use polars_defs::join::JoinType;
 use polars_io::HiveOptions;
 use polars_io::cloud::CloudOptions;
+use polars_io::external_reader::ExternalReaderBuilder;
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
@@ -61,6 +62,12 @@ fn scan_type_to_pyobject(
         FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
         FileScanIR::ExpandedPaths { name } => {
             Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
+        FileScanIR::ExternalReaderBuilder { external } => match external {
+            ExternalReaderBuilder::Python(object) => {
+                Ok(("external-reader", object).into_py_any(py)?)
+            },
+            ExternalReaderBuilder::Rust(()) => unreachable!(),
         },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
@@ -173,7 +180,7 @@ impl PyFileOptions {
 
                             position_deletes.set_item(*k, py_paths)?;
                         },
-                        IcebergDeletes::DeletionVector(path) => {
+                        IcebergDeletes::DeletionVector { path, .. } => {
                             deletion_vectors.set_item(*k, path.as_str())?
                         },
                     }
@@ -201,7 +208,7 @@ impl PyFileOptions {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
-            Some(ColumnMapping::Iceberg(schema)) => (
+            Some(ColumnMapping::Iceberg { schema, .. }) => (
                 "iceberg-column-mapping",
                 iceberg_schema_to_pyobject(py, schema)?,
             )
@@ -229,6 +236,7 @@ impl PyFileOptions {
             Some(DefaultFieldValues::Iceberg(default_values)) => {
                 let IcebergDefaultFieldValues {
                     identity_transformed_partition_fields,
+                    identity_partition_present: _,
                     initial_defaults,
                 } = default_values.as_ref();
 
@@ -305,6 +313,7 @@ fn iceberg_column_to_pyobject(py: Python<'_>, column: &IcebergColumn) -> PyResul
         name,
         physical_id,
         type_,
+        mapped_names: _,
     } = column;
 
     let type_ = match type_ {
@@ -588,6 +597,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             output_schema: _,
             scan_type,
             unified_scan_args,
+            maintain_order: _,
         } => {
             Scan {
                 paths: {
@@ -705,19 +715,34 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             apply,
             maintain_order,
             options,
-        } => GroupBy {
-            input: input.0,
-            keys: keys.iter().map(|e| e.into()).collect(),
-            aggs: aggs.iter().map(|e| e.into()).collect(),
-            apply: apply.as_ref().map_or(Ok(()), |_| {
-                Err(PyNotImplementedError::new_err(format!(
-                    "apply inside GroupBy {plan:?}"
-                )))
-            })?,
-            maintain_order: *maintain_order,
-            options: PyGroupbyOptions::new(options.as_ref().clone()).into_py_any(py)?,
-        }
-        .into_py_any(py),
+        } => {
+            if options
+                .dynamic
+                .as_ref()
+                .is_some_and(|dynamic| dynamic.placement.is_some())
+                || options
+                    .rolling
+                    .as_ref()
+                    .is_some_and(|rolling| rolling.placement.is_some())
+            {
+                return Err(PyNotImplementedError::new_err(
+                    "Not expecting to see a window placement in a user query",
+                ));
+            }
+            GroupBy {
+                input: input.0,
+                keys: keys.iter().map(|e| e.into()).collect(),
+                aggs: aggs.iter().map(|e| e.into()).collect(),
+                apply: apply.as_ref().map_or(Ok(()), |_| {
+                    Err(PyNotImplementedError::new_err(format!(
+                        "apply inside GroupBy {plan:?}"
+                    )))
+                })?,
+                maintain_order: *maintain_order,
+                options: PyGroupbyOptions::new(options.as_ref().clone()).into_py_any(py)?,
+            }
+            .into_py_any(py)
+        },
         IR::Join {
             input_left,
             input_right,
@@ -820,6 +845,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input: input.0,
             exprs: exprs.iter().map(|e| e.into()).collect(),
             should_broadcast: options.should_broadcast,
+        }
+        .into_py_any(py),
+        IR::Window { input, exprs, .. } => HStack {
+            input: input.0,
+            exprs: exprs.iter().map(|e| e.into()).collect(),
+            should_broadcast: true,
         }
         .into_py_any(py),
         IR::Distinct { input, options } => Distinct {

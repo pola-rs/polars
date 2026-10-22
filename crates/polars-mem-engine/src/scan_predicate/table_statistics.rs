@@ -1,11 +1,42 @@
 use std::borrow::Cow;
 
 use polars_core::prelude::*;
+use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::format_pl_smallstr;
+
+/// Add the statistics of `live_columns` that `statistics` lacks, as nulls. A null
+/// statistic is unknown, so no file is skipped by it.
+pub(super) fn fill_missing_statistics<'a>(
+    statistics: &'a DataFrame,
+    live_columns: &PlIndexSet<PlSmallStr>,
+    schema: &Schema,
+) -> PolarsResult<Cow<'a, DataFrame>> {
+    let height = statistics.height();
+    let mut out = Cow::Borrowed(statistics);
+    let mut fill = |name: PlSmallStr, dtype: &DataType| -> PolarsResult<()> {
+        if !statistics.schema().contains(&name) {
+            out.to_mut()
+                .with_column(Column::full_null(name, height, dtype))?;
+        }
+        Ok(())
+    };
+
+    fill(PlSmallStr::from_static("len"), &IDX_DTYPE)?;
+    for name in live_columns.iter() {
+        let Some(dtype) = schema.get(name) else {
+            continue;
+        };
+        fill(format_pl_smallstr!("{name}_min"), dtype)?;
+        fill(format_pl_smallstr!("{name}_max"), dtype)?;
+        fill(format_pl_smallstr!("{name}_nc"), &null_count_dtype(dtype))?;
+    }
+    Ok(out)
+}
 
 /// Supplied string bounds use lexical order (including Parquet ENUM statistics),
 /// whereas enum bounds use declaration order. Normalize before evaluating a
 /// skip-batch predicate, whose statistics schema uses the scan's logical dtypes.
+#[cfg(feature = "dtype-categorical")]
 pub(super) fn normalize_enum_statistics<'a>(
     statistics: &'a DataFrame,
     schema: &Schema,
@@ -33,6 +64,7 @@ pub(super) fn normalize_enum_statistics<'a>(
     Ok(out)
 }
 
+#[cfg(feature = "dtype-categorical")]
 fn normalize_bounds(
     min: &Series,
     max: &Series,

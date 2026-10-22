@@ -1,7 +1,8 @@
 use std::num::{NonZeroU64, NonZeroUsize};
+use std::sync::Arc;
 
 use futures::FutureExt;
-use polars_async::executor;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::connector;
 use polars_error::PolarsResult;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
@@ -27,6 +28,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: NonZeroUsize,
+        task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>>;
 }
 

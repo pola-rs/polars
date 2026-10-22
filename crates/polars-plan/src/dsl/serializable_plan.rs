@@ -18,6 +18,9 @@ new_key_type! {
     pub(crate) struct DslPlanKey;
 }
 
+/// A catalog table of a deferred SQL query (see `SqlCatalogTable`), with its plan as a key.
+type SerializableSqlCatalogTable = (Arc<[PlSmallStr]>, Arc<[PlSmallStr]>, DslPlanKey);
+
 /// A representation of DslPlan that does not contain any `Arc` pointers, and
 /// instead uses indices to refer to DataFrames and other DslPlan nodes.
 ///
@@ -154,6 +157,7 @@ pub(crate) enum SerializableDslPlanNode {
     SQL {
         query: Arc<String>,
         relations: Vec<(PlSmallStr, DslPlanKey)>,
+        catalog_tables: Vec<SerializableSqlCatalogTable>,
     },
     IR {
         dsl: DslPlanKey,
@@ -380,12 +384,20 @@ fn convert_dsl_plan_to_serializable_plan(
         DP::SQL {
             query,
             relations,
+            catalog_tables,
             cached_stmt: _,
         } => SP::SQL {
             query: query.clone(),
             relations: relations
                 .iter()
                 .map(|(name, plan)| (name.clone(), dsl_plan_key_from_ref(plan, arenas)))
+                .collect(),
+            catalog_tables: catalog_tables
+                .iter()
+                .map(|(name, full_name, plan)| {
+                    let key = dsl_plan_key_from_ref(plan, arenas);
+                    (name.clone(), full_name.clone(), key)
+                })
                 .collect(),
         },
         DP::IR {
@@ -645,13 +657,24 @@ fn try_convert_serializable_plan_to_dsl_plan(
             key: key.clone(),
             maintain_order: *maintain_order,
         }),
-        SP::SQL { query, relations } => Ok(DP::SQL {
+        SP::SQL {
+            query,
+            relations,
+            catalog_tables,
+        } => Ok(DP::SQL {
             query: query.clone(),
             relations: relations
                 .iter()
                 .map(|(name, key)| {
                     let plan = get_dsl_plan(*key, ser_dsl_plan, arenas)?;
                     Ok((name.clone(), Arc::unwrap_or_clone(plan)))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?,
+            catalog_tables: catalog_tables
+                .iter()
+                .map(|(name, full_name, key)| {
+                    let plan = get_dsl_plan(*key, ser_dsl_plan, arenas)?;
+                    Ok((name.clone(), full_name.clone(), Arc::unwrap_or_clone(plan)))
                 })
                 .collect::<PolarsResult<Vec<_>>>()?,
             cached_stmt: Default::default(),

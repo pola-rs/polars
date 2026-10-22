@@ -15,6 +15,7 @@ from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
+    from pathlib import Path
 
     from polars._typing import IntoExpr
 
@@ -670,3 +671,24 @@ def test_top_k_bottom_k_categorical_lexical_28344() -> None:
         pl.Series("c", ["1", "3"], dtype=pl.Categorical),
         check_order=False,
     )
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_top_k_decimal_single_row_row_group(descending: bool, tmp_path: Path) -> None:
+    from decimal import Decimal
+
+    # The last row group has only the maximum value.
+    df = pl.DataFrame(
+        {"x": [Decimal(i) / 4 + 5 for i in range(130)]},
+        schema={"x": pl.Decimal(9, 2)},
+    )
+    path = f"{tmp_path}/data.parquet"
+    df.write_parquet(path, row_group_size=3)
+
+    lf = pl.scan_parquet(path)
+    for _ in range(5):
+        assert_frame_equal(
+            lf.top_k(3, by="x", reverse=descending).collect(engine="streaming"),
+            df.top_k(3, by="x", reverse=descending),
+            check_row_order=False,
+        )

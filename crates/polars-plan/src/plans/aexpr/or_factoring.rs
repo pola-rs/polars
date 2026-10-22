@@ -47,7 +47,7 @@ pub(crate) fn factor_or_in_aexpr(node: Node, expr_arena: &mut Arena<AExpr>) {
 
     // Iterate in post-order
     for &n in pre_order.iter().rev() {
-        if is_or(n, expr_arena) {
+        if expr_arena.get(n).is_or() {
             if let Some(factored) = try_factor_or(n, &mut canonical_exprs, expr_arena) {
                 // Fine to remove because we have not visited the parent of `n` yet
                 canonical_exprs.remove(n, expr_arena);
@@ -58,7 +58,7 @@ pub(crate) fn factor_or_in_aexpr(node: Node, expr_arena: &mut Arena<AExpr>) {
 }
 
 /// Collect an expression's OR-tree branches into `out` (dual of `MintermIter`).
-fn collect_or_branches(root: Node, expr_arena: &Arena<AExpr>, out: &mut Vec<Node>) {
+pub(crate) fn collect_or_branches(root: Node, expr_arena: &Arena<AExpr>, out: &mut Vec<Node>) {
     let mut stack = vec![root];
     while let Some(top) = stack.pop() {
         match expr_arena.get(top) {
@@ -216,21 +216,11 @@ pub(crate) fn or_implied_predicates(predicate: Node, expr_arena: &mut Arena<AExp
     let mut derived = Vec::new();
     let minterms: Vec<Node> = MintermIter::new(predicate, expr_arena).collect();
     for minterm in minterms {
-        if is_or(minterm, expr_arena) {
+        if expr_arena.get(minterm).is_or() {
             derive_from_or(minterm, expr_arena, &mut derived);
         }
     }
     derived
-}
-
-fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    matches!(
-        expr_arena.get(node),
-        AExpr::BinaryExpr {
-            op: Operator::Or | Operator::LogicalOr,
-            ..
-        }
-    )
 }
 
 type ColumnSet = Vec<PlSmallStr>;

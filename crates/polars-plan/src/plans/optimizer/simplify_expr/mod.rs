@@ -1,10 +1,14 @@
 mod simplify_functions;
+mod sort_lowering;
 
 use num_traits::Zero;
+use polars_core::chunked_array::cast::CastOptions;
+use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
+use sort_lowering::lower_sort_reads;
 mod arity;
 
 use crate::plans::*;
@@ -29,6 +33,172 @@ fn integer_literal_value(ae: &AExpr) -> Option<i64> {
 enum CountCmpInput {
     Len(Node),
     NullCount(Node),
+}
+
+/// `when(x.count() > 0).then(x.sum()).otherwise(null)` -> `x.sum(null_on_empty=true)`
+fn sum_null_on_empty(
+    predicate: Node,
+    truthy: Node,
+    falsy: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<AExpr> {
+    if let AExpr::Literal(falsy) = expr_arena.get(falsy)
+        && falsy.is_null()
+        && let AExpr::Agg(IRAggExpr::Sum {
+            input,
+            null_on_empty: false,
+        }) = expr_arena.get(truthy)
+        && let AExpr::BinaryExpr {
+            left,
+            op: Operator::Gt,
+            right,
+        } = expr_arena.get(predicate)
+        && integer_literal_value(expr_arena.get(*right)) == Some(0)
+        && let AExpr::Agg(IRAggExpr::Count {
+            input: count_input,
+            include_nulls: false,
+        }) = expr_arena.get(*left)
+        && expr_arena
+            .get(*input)
+            .is_expr_equal_to(expr_arena.get(*count_input), expr_arena)
+    {
+        return Some(AExpr::Agg(IRAggExpr::Sum {
+            input: *input,
+            null_on_empty: true,
+        }));
+    }
+    None
+}
+
+/// For `x + c`, `x - c` or `c - x` with a column `x` and a literal `c`, the nodes of `x` and `c`
+/// and the dtype of the result. `x` and `c` must already have that dtype, or a cast to it that
+/// keeps all values, so that `x + c` is null only where `x` is null.
+fn column_with_literal(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> Option<(Node, Node, DataType)> {
+    let AExpr::BinaryExpr {
+        left,
+        op: Operator::Plus | Operator::Minus,
+        right,
+    } = expr_arena.get(node)
+    else {
+        return None;
+    };
+    let is_column = |node: Node| match expr_arena.get(node) {
+        AExpr::Column(_) => true,
+        AExpr::Cast { expr, .. } => matches!(expr_arena.get(*expr), AExpr::Column(_)),
+        _ => false,
+    };
+    let is_literal = |node: Node| matches!(expr_arena.get(node), AExpr::Literal(lv) if lv.is_scalar() && !lv.is_null());
+    let (column, literal) = if is_column(*left) && is_literal(*right) {
+        (*left, *right)
+    } else if is_literal(*left) && is_column(*right) {
+        (*right, *left)
+    } else {
+        return None;
+    };
+
+    let ctx = ToFieldContext::new(expr_arena, schema);
+    let dtype_of = |node: Node| expr_arena.get(node).to_dtype(&ctx).ok();
+    let dtype = dtype_of(node)?;
+    if !dtype.is_primitive_numeric() || dtype_of(column)? != dtype {
+        return None;
+    }
+    if let AExpr::Cast { expr, .. } = expr_arena.get(column) {
+        let from = dtype_of(*expr)?;
+        if from != dtype
+            && get_numeric_upcast_supertype_lossless(&from, &dtype).as_ref() != Some(&dtype)
+        {
+            return None;
+        }
+    }
+    if dtype.is_integer() {
+        let value = integer_literal_value(expr_arena.get(literal))?;
+        if !dtype.value_within_range(AnyValue::Int64(value)) {
+            return None;
+        }
+    }
+    Some((column, literal, dtype))
+}
+
+/// `(x + c).count()` -> `x.count()` for a numeric column `x` and a literal `c`. The same for
+/// `x - c` and `c - x`.
+fn count_of_column_with_literal(
+    expr_node: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> Option<AExpr> {
+    let AExpr::Agg(IRAggExpr::Count {
+        input,
+        include_nulls,
+    }) = expr_arena.get(expr_node)
+    else {
+        return None;
+    };
+    let (column, _, _) = column_with_literal(*input, expr_arena, schema)?;
+    Some(AExpr::Agg(IRAggExpr::Count {
+        input: column,
+        include_nulls: *include_nulls,
+    }))
+}
+
+/// `(x + c).sum()` -> `x.sum() + c * x.count()` for an integer column `x` and a literal `c`, so
+/// sums with different literals share one sum. The same for `x - c` and `c - x`.
+fn sum_of_column_with_literal(
+    expr_node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Schema,
+) -> Option<AExpr> {
+    let AExpr::Agg(IRAggExpr::Sum {
+        input,
+        null_on_empty,
+    }) = expr_arena.get(expr_node)
+    else {
+        return None;
+    };
+    let (input, null_on_empty) = (*input, *null_on_empty);
+    let (column, literal, dtype) = column_with_literal(input, expr_arena, schema)?;
+    let AExpr::BinaryExpr { left, op, .. } = expr_arena.get(input) else {
+        unreachable!()
+    };
+    let (left, op) = (*left, *op);
+
+    let ctx = ToFieldContext::new(expr_arena, schema);
+    let out_dtype = expr_arena.get(expr_node).to_dtype(&ctx).ok()?;
+    if !dtype.is_integer() || !out_dtype.is_integer() {
+        return None;
+    }
+
+    let cast = |expr, dtype: &DataType, expr_arena: &mut Arena<AExpr>| {
+        expr_arena.add(AExpr::Cast {
+            expr,
+            dtype: dtype.clone(),
+            options: CastOptions::Overflowing,
+        })
+    };
+    let literal = cast(literal, &out_dtype, expr_arena);
+    let count = expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+        input: column,
+        include_nulls: false,
+    }));
+    let count = cast(count, &out_dtype, expr_arena);
+    let count_times_literal = expr_arena.add(AExpr::BinaryExpr {
+        left: count,
+        op: Operator::Multiply,
+        right: literal,
+    });
+    let sum = expr_arena.add(AExpr::Agg(IRAggExpr::Sum {
+        input: column,
+        null_on_empty,
+    }));
+    let (left, right) = if column == left {
+        (sum, count_times_literal)
+    } else {
+        (count_times_literal, sum)
+    };
+    Some(AExpr::BinaryExpr { left, op, right })
 }
 
 fn maybe_negate(ae: AExpr, negate: bool, expr_arena: &mut Arena<AExpr>) -> AExpr {
@@ -187,6 +357,26 @@ macro_rules! eval_binary_same_type {
                     }
                     .into()
                 },
+                (
+                    LiteralValue::Dyn(DynLiteralValue::Float($l)),
+                    LiteralValue::Dyn(DynLiteralValue::Float($r)),
+                ) => {
+                    let $l = *$l;
+                    let $r = *$r;
+                    Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(
+                        $ret,
+                    ))))
+                },
+                (
+                    LiteralValue::Dyn(DynLiteralValue::Int($l)),
+                    LiteralValue::Dyn(DynLiteralValue::Int($r)),
+                ) => {
+                    let $l = *$l;
+                    let $r = *$r;
+                    Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(
+                        $ret,
+                    ))))
+                },
                 _ => None,
             }
         } else {
@@ -342,7 +532,11 @@ fn eval_negate(ae: &AExpr) -> Option<AExpr> {
                 _ => return None,
             }
             .into(),
-            LiteralValue::Dyn(d) => LiteralValue::Dyn(fold_dyn_negate(d)?),
+            LiteralValue::Dyn(d) => LiteralValue::Dyn(match d {
+                DynLiteralValue::Int(v) => DynLiteralValue::Int(v.checked_neg()?),
+                DynLiteralValue::Float(v) => DynLiteralValue::Float(v.neg()),
+                _ => return None,
+            }),
             _ => return None,
         },
         _ => return None,
@@ -504,6 +698,16 @@ impl OptimizationRule for SimplifyExprRule {
         schema: &Schema,
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
+        if let Some(out) = lower_sort_reads(expr_node, expr_arena, schema) {
+            return Ok(Some(out));
+        }
+
+        if let Some(out) = sum_of_column_with_literal(expr_node, expr_arena, schema)
+            .or_else(|| count_of_column_with_literal(expr_node, expr_arena, schema))
+        {
+            return Ok(Some(out));
+        }
+
         let expr = expr_arena.get(expr_node);
 
         if let AExpr::BinaryExpr { left, op, right } = expr {
@@ -517,6 +721,11 @@ impl OptimizationRule for SimplifyExprRule {
 
         let out = match &expr {
             AExpr::SortBy { expr, by, .. } if by.is_empty() => Some(expr_arena.get(*expr).clone()),
+            AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => sum_null_on_empty(*predicate, *truthy, *falsy, expr_arena),
             // drop_nulls().len() -> len() - null_count()
             // drop_nulls().count() -> len() - null_count()
             AExpr::Agg(IRAggExpr::Count {
@@ -554,7 +763,10 @@ impl OptimizationRule for SimplifyExprRule {
             },
             // is_null().sum() -> null_count()
             // is_not_null().sum() -> len() - null_count()
-            AExpr::Agg(IRAggExpr::Sum(input)) => {
+            AExpr::Agg(IRAggExpr::Sum {
+                input,
+                null_on_empty: false,
+            }) => {
                 let input_expr = expr_arena.get(*input);
                 match input_expr {
                     AExpr::Function {
@@ -618,13 +830,6 @@ impl OptimizationRule for SimplifyExprRule {
             AExpr::BinaryExpr { left, op, right } => {
                 let left_aexpr = expr_arena.get(*left);
                 let right_aexpr = expr_arena.get(*right);
-
-                if let (AExpr::Literal(LiteralValue::Dyn(l)), AExpr::Literal(LiteralValue::Dyn(r))) =
-                    (left_aexpr, right_aexpr)
-                    && let Some(v) = fold_dyn_binary(l, r, *op)
-                {
-                    return Ok(Some(AExpr::Literal(LiteralValue::Dyn(v))));
-                }
 
                 // Inline dynamic value casts
                 // Ensure that dynamic values upcast in lined
@@ -786,6 +991,12 @@ impl OptimizationRule for SimplifyExprRule {
                                 ) => {
                                     Some(AExpr::Literal(<Scalar as From<f64>>::from(x / y).into()))
                                 },
+                                (
+                                    LiteralValue::Dyn(DynLiteralValue::Int(x)),
+                                    LiteralValue::Dyn(DynLiteralValue::Int(y)),
+                                ) => Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(
+                                    x.wrapping_floor_div_mod(*y).0,
+                                )))),
                                 _ => None,
                             }
                         } else {
@@ -904,6 +1115,7 @@ impl OptimizationRule for SimplifyExprRule {
 
                         l.wrapping_floor_div_mod(r).0
                     }),
+                    TruncDivide => None,
                 };
                 if out.is_some() {
                     return Ok(out);

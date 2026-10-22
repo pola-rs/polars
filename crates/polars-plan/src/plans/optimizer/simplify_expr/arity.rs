@@ -9,7 +9,9 @@ pub(super) fn simplify_binary(
     maintain_errors: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<AExpr> {
-    let in_filter = ctx.in_filter;
+    // These rewrites may turn `null` into `false` or a column into a scalar, see
+    // `OptimizeExprContext::is_filter_predicate`.
+    let is_filter_predicate = ctx.is_filter_predicate;
 
     use Operator as O;
     match op {
@@ -21,7 +23,7 @@ pub(super) fn simplify_binary(
             if matches!(
                 left_ae,
                 AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && in_filter
+            ) && is_filter_predicate
             {
                 // Only in filter as we might change the name from "literal"
                 // to whatever lhs columns is.
@@ -40,7 +42,7 @@ pub(super) fn simplify_binary(
             // TODO: we need an optimizer redesign to allow x & false to be optimized
             // in general as we can forget the length of a series otherwise.
             // In filter we allow it as the length is not important there.
-            if (is_scalar_ae(left, expr_arena) | in_filter)
+            if (is_scalar_ae(left, expr_arena) | is_filter_predicate)
                 && matches!(
                     right_ae,
                     AExpr::Literal(lv) if lv.bool() == Some(false)
@@ -49,7 +51,7 @@ pub(super) fn simplify_binary(
                 return Some(AExpr::Literal(Scalar::from(false).into()));
             }
 
-            if in_filter {
+            if is_filter_predicate {
                 // `A AND NOT(A)` is always false (either operand may be the
                 // `NOT`). Catches cases the earlier rewrites left alone, like
                 // `NOT(col)` on a bool column or `NOT(is_in(col, values))`.
@@ -98,7 +100,7 @@ pub(super) fn simplify_binary(
             if matches!(
                 left_ae,
                 AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) && in_filter
+            ) && is_filter_predicate
             {
                 // Only in filter as we might change the name from "literal"
                 // to whatever lhs columns is.
@@ -116,7 +118,7 @@ pub(super) fn simplify_binary(
             // TODO: we need an optimizer redesign to allow true | x to be optimized
             // in general as we can forget the length of a series otherwise.
             // In filter we allow it as the length is not important there.
-            if (is_scalar_ae(left, expr_arena) | in_filter)
+            if (is_scalar_ae(left, expr_arena) | is_filter_predicate)
                 && matches!(
                     right_ae,
                     AExpr::Literal(lv) if lv.bool() == Some(true)
@@ -132,7 +134,7 @@ pub(super) fn simplify_binary(
             if matches!(
                 left_ae,
                     AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && (is_scalar_ae(right, expr_arena) | in_filter)
+            ) && (is_scalar_ae(right, expr_arena) | is_filter_predicate)
             {
                 return Some(AExpr::Literal(Scalar::from(true).into()));
             }
@@ -151,33 +153,21 @@ pub(super) fn simplify_ternary(
 ) -> Option<AExpr> {
     let predicate = expr_arena.get(predicate);
 
-    if let AExpr::Literal(lv) = predicate {
-        match lv.bool() {
-            None => {},
-            Some(true) => {
-                // Only replace if both are scalar or both are not scalar and are the same length,
-                // the latter is tested by checking if they are elementwise.
-                let t_is_scalar = is_scalar_ae(truthy, expr_arena);
-                let f_is_scalar = is_scalar_ae(falsy, expr_arena);
+    if let AExpr::Literal(lv) = predicate
+        && let Some(predicate) = lv.bool()
+    {
+        // Only replace if both are scalar or both are not scalar and are the same length,
+        // the latter is tested by checking if they are elementwise.
+        let t_is_scalar = is_scalar_ae(truthy, expr_arena);
+        let f_is_scalar = is_scalar_ae(falsy, expr_arena);
 
-                if t_is_scalar == f_is_scalar
-                    && is_elementwise_rec(truthy, expr_arena)
-                    && is_elementwise_rec(falsy, expr_arena)
-                {
-                    return Some(expr_arena.get(truthy).clone());
-                }
-            },
-            Some(false) => {
-                let t_is_scalar = is_scalar_ae(truthy, expr_arena);
-                let f_is_scalar = is_scalar_ae(falsy, expr_arena);
-
-                if t_is_scalar == f_is_scalar
-                    && is_elementwise_rec(truthy, expr_arena)
-                    && is_elementwise_rec(falsy, expr_arena)
-                {
-                    return Some(expr_arena.get(falsy).clone());
-                }
-            },
+        if t_is_scalar == f_is_scalar
+            && (t_is_scalar
+                || (is_elementwise_rec(truthy, expr_arena)
+                    && is_elementwise_rec(falsy, expr_arena)))
+        {
+            let branch = if predicate { truthy } else { falsy };
+            return Some(expr_arena.get(branch).clone());
         }
     }
 
@@ -233,7 +223,9 @@ fn comparison_cases(op: Operator) -> Option<u8> {
         Eq => CMP_EQ,
         NotEq => CMP_LT | CMP_GT,
         EqValidity | NotEqValidity | And | Or | Xor | LogicalAnd | LogicalOr | Plus | Minus
-        | Multiply | RustDivide | TrueDivide | FloorDivide | Modulus => return None,
+        | Multiply | RustDivide | TrueDivide | FloorDivide | TruncDivide | Modulus => {
+            return None;
+        },
     })
 }
 

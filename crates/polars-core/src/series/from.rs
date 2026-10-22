@@ -509,7 +509,10 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Struct(_) => {
+            ArrowDataType::Struct(fields) => {
+                let names = fields.iter().map(|field| field.name.as_str()).collect_vec();
+                crate::frame::validation::ensure_names_unique(&names)?;
+
                 let (chunks, dtype) = to_physical_and_dtype(chunks, md)?;
 
                 unsafe {
@@ -869,18 +872,11 @@ unsafe fn import_arrow_dictionary_array(
         macro_rules! unpack_categorical_chunked {
             ($dt:ty) => {{
                 let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
-                let keys = arr.keys();
-                let values = arr.values();
-                let values = cast(&**values, &ArrowDataType::Utf8View)?;
-                let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
                 with_match_categorical_physical_type!(polars_dtype.cat_physical().unwrap(), |$C| {
-                    let ca = CategoricalChunked::<$C>::from_str_iter(
+                    let ca = CategoricalChunked::<$C>::from_str_dictionary(
                         name,
                         polars_dtype.clone(),
-                        keys.iter().map(|k| {
-                            let k: usize = (*k?).try_into().ok()?;
-                            values.get(k)
-                        }),
+                        arr,
                     )?;
                     Ok(ca.into_series())
                 })

@@ -1,5 +1,7 @@
 use std::cell::RefCell;
+use std::sync::Arc;
 
+use regex::bytes::Regex as BytesRegex;
 use regex::{Regex, RegexBuilder};
 
 use crate::cache::LruCache;
@@ -22,6 +24,7 @@ fn get_size_limit() -> Option<usize> {
 /// A cache for compiled regular expressions.
 pub struct RegexCache {
     cache: LruCache<String, Regex>,
+    bytes_cache: LruCache<usize, (Arc<BytesRegex>, BytesRegex)>,
     size_limit: Option<usize>,
 }
 
@@ -29,33 +32,55 @@ impl RegexCache {
     fn new() -> Self {
         Self {
             cache: LruCache::with_capacity(32),
+            bytes_cache: LruCache::with_capacity(32),
             size_limit: get_size_limit(),
         }
     }
 
     pub fn compile(&mut self, re: &str) -> Result<&Regex, regex::Error> {
+        let size_limit = &mut self.size_limit;
         let r = self.cache.try_get_or_insert_with(re, |re| {
-            // We do this little loop to only check POLARS_REGEX_SIZE_LIMIT when
-            // a regex fails to compile due to the size limit.
-            loop {
+            build_within_size_limit(size_limit, |limit| {
                 let mut builder = RegexBuilder::new(re);
-                if let Some(bytes) = self.size_limit {
+                if let Some(bytes) = limit {
                     builder.size_limit(bytes);
                 }
-                match builder.build() {
-                    err @ Err(regex::Error::CompiledTooBig(_)) => {
-                        let new_size_limit = get_size_limit();
-                        if new_size_limit != self.size_limit {
-                            self.size_limit = new_size_limit;
-                            continue; // Try to compile again.
-                        }
-                        break err;
-                    },
-                    r => break r,
-                };
-            }
+                builder.build()
+            })
         });
         Ok(&*r?)
+    }
+
+    /// Borrows a cached clone of the supplied regex, keyed by its Arc pointer.
+    pub fn get_or_insert_bytes(&mut self, re: &Arc<BytesRegex>) -> &BytesRegex {
+        // Retain the original Arc so its address cannot be reused while cached.
+        &self
+            .bytes_cache
+            .get_or_insert_with(&(Arc::as_ptr(re) as usize), |_| {
+                (re.clone(), re.as_ref().clone())
+            })
+            .1
+    }
+}
+
+// We do this little loop to only check POLARS_REGEX_SIZE_LIMIT when a regex
+// fails to compile due to the size limit.
+fn build_within_size_limit<R>(
+    size_limit: &mut Option<usize>,
+    build: impl Fn(Option<usize>) -> Result<R, regex::Error>,
+) -> Result<R, regex::Error> {
+    loop {
+        match build(*size_limit) {
+            err @ Err(regex::Error::CompiledTooBig(_)) => {
+                let new_size_limit = get_size_limit();
+                if new_size_limit != *size_limit {
+                    *size_limit = new_size_limit;
+                    continue; // Try to compile again.
+                }
+                break err;
+            },
+            r => break r,
+        }
     }
 }
 
@@ -82,3 +107,58 @@ macro_rules! cached_regex {
     };
 }
 pub use cached_regex;
+
+#[cfg(test)]
+mod tests {
+    use regex::bytes::RegexBuilder as BytesRegexBuilder;
+
+    use super::*;
+
+    #[test]
+    fn bytes_cache_preserves_builder_options() {
+        let mut cache = RegexCache::new();
+        let sensitive = Arc::new(BytesRegexBuilder::new("abc").build().unwrap());
+        let insensitive = Arc::new(
+            BytesRegexBuilder::new("abc")
+                .case_insensitive(true)
+                .build()
+                .unwrap(),
+        );
+
+        for _ in 0..2 {
+            assert!(!cache.get_or_insert_bytes(&sensitive).is_match(b"ABC"));
+            assert!(cache.get_or_insert_bytes(&insensitive).is_match(b"ABC"));
+        }
+    }
+
+    #[test]
+    fn bytes_cache_reuses_cloned_arc() {
+        let mut cache = RegexCache::new();
+        let re = Arc::new(BytesRegexBuilder::new("abc").build().unwrap());
+        let cloned = re.clone();
+        let cached = std::ptr::from_ref(cache.get_or_insert_bytes(&re));
+
+        assert_eq!(
+            cached,
+            std::ptr::from_ref(cache.get_or_insert_bytes(&cloned))
+        );
+        assert_ne!(cached, Arc::as_ptr(&re));
+    }
+
+    #[test]
+    fn bytes_cache_retains_arc_until_eviction() {
+        let mut cache = RegexCache::new();
+        let regex = BytesRegexBuilder::new("abc").build().unwrap();
+        let re = Arc::new(regex.clone());
+        let weak = Arc::downgrade(&re);
+        cache.get_or_insert_bytes(&re);
+        drop(re);
+        assert!(weak.upgrade().is_some());
+
+        for _ in 0..32 {
+            let re = Arc::new(regex.clone());
+            cache.get_or_insert_bytes(&re);
+        }
+        assert!(weak.upgrade().is_none());
+    }
+}

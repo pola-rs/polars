@@ -37,7 +37,12 @@ pub enum DeletionFilesList {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IcebergDeletes {
     PositionDeletes(Buffer<PlRefPath>),
-    DeletionVector(PlRefPath),
+    DeletionVector {
+        path: PlRefPath,
+        /// Offset of the blob in the Puffin file. Without it, the blob is found by its
+        /// referenced data file, which must then be unique in the Puffin file.
+        content_offset: Option<u64>,
+    },
 }
 
 impl IcebergDeletes {
@@ -48,7 +53,7 @@ impl IcebergDeletes {
     pub fn len(&self) -> usize {
         match self {
             IcebergDeletes::PositionDeletes(x) => x.len(),
-            IcebergDeletes::DeletionVector(_) => 1,
+            IcebergDeletes::DeletionVector { .. } => 1,
         }
     }
 }

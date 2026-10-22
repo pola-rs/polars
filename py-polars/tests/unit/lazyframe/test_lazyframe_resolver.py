@@ -75,7 +75,8 @@ class InMemoryLazyFrameResolver(LazyFrameResolver):  # noqa: D101
 
         return lf
 
-    def cse_eq(self, other: InMemoryLazyFrameResolver) -> bool:
+    def cse_eq(self, other: object) -> bool:
+        assert isinstance(other, InMemoryLazyFrameResolver)
         return self.cse_eq_f(self, other)
 
 
@@ -533,3 +534,22 @@ def test_lazyframe_versioned_resolver_incorrect_returns() -> None:
     )
 
     assert q.collect().shape == (1, 0)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lazyframe_resolver_returns_sink_29910(engine: Any) -> None:
+    sink = pl.LazyFrame({"a": [1]}).sink_parquet("a.parquet", lazy=True)
+
+    class SinkResolver(LazyFrameResolver):
+        def schema(self) -> SchemaDict:
+            return {}
+
+        def resolve_lazyframe(self, **kwargs: Any) -> pl.LazyFrame:
+            return sink
+
+    for q in [SinkResolver().lazy(), SinkResolver().lazy().select(pl.len())]:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match="resolver cannot return a sink",
+        ):
+            q.collect(engine=engine)

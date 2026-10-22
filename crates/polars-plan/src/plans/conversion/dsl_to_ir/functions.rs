@@ -1,4 +1,5 @@
 use polars_arrow::legacy::error::PolarsResult;
+use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
@@ -49,7 +50,10 @@ pub(super) fn convert_functions(
                 A::Get(v) => IA::Get(v),
                 A::Join(v) => IA::Join(v),
                 #[cfg(feature = "is_in")]
-                A::Contains { nulls_equal } => IA::Contains { nulls_equal },
+                A::Contains { nulls_equal } => IA::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "array_count")]
                 A::CountMatches => IA::CountMatches,
                 A::Shift => IA::Shift,
@@ -156,8 +160,8 @@ pub(super) fn convert_functions(
                 M::Keys => IM::Keys,
                 M::Values => IM::Values,
                 M::Length => IM::Length,
-                M::ContainsKey => IM::ContainsKey,
-                M::Get => IM::Get,
+                M::ContainsKey => IM::ContainsKey { needle_cast: None },
+                M::Get => IM::Get { needle_cast: None },
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -181,7 +185,10 @@ pub(super) fn convert_functions(
             I::ListExpr(match list_function {
                 L::Concat => IL::Concat,
                 #[cfg(feature = "is_in")]
-                L::Contains { nulls_equal } => IL::Contains { nulls_equal },
+                L::Contains { nulls_equal } => IL::Contains {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "list_drop_nulls")]
                 L::DropNulls => IL::DropNulls,
                 #[cfg(feature = "list_sample")]
@@ -506,7 +513,10 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "is_between")]
                 B::IsBetween { closed } => IB::IsBetween { closed },
                 #[cfg(feature = "is_in")]
-                B::IsIn { nulls_equal } => IB::IsIn { nulls_equal },
+                B::IsIn { nulls_equal } => IB::IsIn {
+                    nulls_equal,
+                    needle_cast: None,
+                },
                 #[cfg(feature = "is_close")]
                 B::IsClose {
                     abs_tol,
@@ -619,6 +629,7 @@ pub(super) fn convert_functions(
         }),
         #[cfg(feature = "row_hash")]
         F::Hash(seed) => I::Hash(seed),
+        F::Mm3Hash => I::Mm3Hash,
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -878,8 +889,12 @@ pub(super) fn convert_functions(
             descending,
             nulls_last,
         },
-        F::MinBy => I::MinBy,
-        F::MaxBy => I::MaxBy,
+        F::MinBy => I::MinBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
+        F::MaxBy => I::MaxBy {
+            order: MinMaxByOrder::SkipNulls,
+        },
         F::Product => I::Product,
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => I::Rank { options, seed },
@@ -992,9 +1007,23 @@ pub(super) fn convert_functions(
         F::Log1p => I::Log1p,
         #[cfg(feature = "log")]
         F::Exp => I::Exp,
+        #[cfg(feature = "log")]
+        F::Erf => I::Erf,
+        #[cfg(feature = "log")]
+        F::Erfc => I::Erfc,
         F::Unique(v) => I::Unique(v),
         #[cfg(feature = "round_series")]
         F::Round { decimals, mode } => I::Round { decimals, mode },
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { op, scale } => I::DecimalArith { op, scale },
+        F::Sql(function) => {
+            let output_name = e[0].output_name().clone();
+            return Ok((
+                super::sql::lower_sql_function(function, e, ctx)?,
+                output_name,
+            ));
+        },
+        F::TruncArith(op) => I::TruncArith(op),
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => I::RoundSF { digits },
         #[cfg(feature = "round_series")]
@@ -1162,11 +1191,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
         } => I::FfiPlugin {
             flags,
+            is_deterministic,
             lib,
             symbol,
             kwargs,
@@ -1282,6 +1313,12 @@ pub(super) fn convert_functions(
                     target_dtype.numeric_to_unsigned_bit_repr(),
                 ) {
                     (Some(l), Some(r)) if l == r => {},
+                    #[cfg(feature = "dtype-decimal")]
+                    _ if matches!(
+                        (&input_dtype, &target_dtype),
+                        (DataType::Int128, DataType::Decimal(_, _))
+                            | (DataType::Decimal(_, _), DataType::Int128)
+                    ) => {},
                     _ => polars_bail!(
                         InvalidOperation:
                         "cannot reinterpret from {input_dtype:?} to {target_dtype:?}"
@@ -1301,11 +1338,29 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(v) => {
+        F::RowEncode(mut v) => {
             let dts = e
                 .iter()
-                .map(|e| Ok(e.dtype(ctx.schema, ctx.arena)?.clone()))
+                .map(|e| {
+                    e.dtype(ctx.schema, ctx.arena)?
+                        .clone()
+                        .materialize_unknown(false)
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
+            if let RowEncodingVariant::Ordered {
+                descending,
+                nulls_last,
+                ..
+            } = &mut v
+            {
+                for opts in [descending, nulls_last].into_iter().flatten() {
+                    _broadcast_bools(e.len(), opts);
+                    polars_ensure!(
+                        opts.len() == e.len(),
+                        ShapeMismatch: "row_encode: got {} columns but {} sort options", e.len(), opts.len()
+                    );
+                }
+            }
             I::RowEncode(dts, v)
         },
         #[cfg(feature = "dtype-struct")]

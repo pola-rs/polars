@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
-use polars_async::executor;
+use polars_async::executor::{self, TaskMetricAggregator};
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -13,8 +13,10 @@ use polars_utils::vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
+use crate::execution_order::choose_accumulating_node;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
-use crate::metrics::{GraphMetrics, NodeMetricsRegistrator};
+use crate::metrics::GraphMetrics;
+use crate::nodes::NodeMemoryUsage;
 use crate::pipe::PhysicalPipe;
 
 #[derive(Clone)]
@@ -25,11 +27,19 @@ pub struct StreamingExecutionState {
     /// The ExecutionState passed to any non-streaming operations.
     pub in_memory_exec_state: ExecutionState,
 
+    /// The aggregator for the metrics of tasks spawned by the node this state
+    /// belongs to.
+    pub task_metrics: Option<Arc<TaskMetricAggregator>>,
+
     query_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
     subphase_tasks_send: Sender<JoinHandle<PolarsResult<()>>>,
 }
 
 impl StreamingExecutionState {
+    pub fn task_metrics(&self) -> Option<&TaskMetricAggregator> {
+        self.task_metrics.as_deref()
+    }
+
     /// Spawns a task which is awaited at the end of the query.
     #[allow(unused)]
     pub fn spawn_query_task<F: Future<Output = PolarsResult<()>> + Send + 'static>(&self, fut: F) {
@@ -48,11 +58,11 @@ impl StreamingExecutionState {
     }
 }
 
-/// Finds all runnable pipeline blockers in the graph, that is, nodes which:
+/// Finds all runnable phase sinks, that is, nodes which:
 ///  - Only have blocked output ports.
 ///  - Have at least one ready input port connected to a ready output port.
-fn find_runnable_pipeline_blockers(graph: &Graph) -> Vec<GraphNodeKey> {
-    let mut blockers = Vec::new();
+fn find_runnable_phase_sinks(graph: &Graph) -> Vec<GraphNodeKey> {
+    let mut phase_sinks = Vec::new();
     for (node_key, node) in graph.nodes.iter() {
         // TODO: how does the multiplexer fit into this?
         let only_has_blocked_outputs = node
@@ -68,10 +78,10 @@ fn find_runnable_pipeline_blockers(graph: &Graph) -> Vec<GraphNodeKey> {
                 && graph.pipes[*i].recv_state == PortState::Ready
         });
         if has_input_ready {
-            blockers.push(node_key);
+            phase_sinks.push(node_key);
         }
     }
-    blockers
+    phase_sinks
 }
 
 /// Given a set of nodes expand this set with all nodes which are inputs to the
@@ -104,38 +114,23 @@ fn expand_ready_subgraph(
 
 /// Finds a part of the graph which we can run.
 fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<LogicalPipeKey>) {
-    // Find pipeline blockers, choose a subset with at most one memory intensive
-    // pipeline blocker, and return the subgraph needed to feed them.
-    let blockers = find_runnable_pipeline_blockers(graph);
-    let (expensive, cheap): (Vec<_>, Vec<_>) = blockers.into_iter().partition(|b| {
-        graph.nodes[*b]
-            .compute
-            .is_memory_intensive_pipeline_blocker()
-    });
+    // Find phase sinks, choose a subset with at most one accumulating node, and
+    // return the subgraph needed to feed them.
+    let phase_sinks = find_runnable_phase_sinks(graph);
+    let (accumulating, mut to_run): (Vec<_>, Vec<_>) = phase_sinks
+        .into_iter()
+        .partition(|n| graph.nodes[*n].compute.memory_usage() == NodeMemoryUsage::Accumulating);
 
-    // If all expensive pipeline blockers left are sinks (InMemorySink), we're not
-    // gaining anything by only running a subset.
-    let only_expensive_sinks_left = expensive
+    // If all accumulating nodes left are sinks (InMemorySink), we're not gaining
+    // anything by only running a subset.
+    let only_accumulating_sinks_left = accumulating
         .iter()
         .all(|node_key| graph.nodes[*node_key].outputs.is_empty());
 
-    let mut to_run = cheap;
-    if only_expensive_sinks_left {
-        to_run.extend(expensive);
+    if only_accumulating_sinks_left {
+        to_run.extend(accumulating);
     } else {
-        // TODO: choose which expensive pipeline blocker(s) to run more intelligently.
-        let best = expensive.into_iter().max_by_key(|node_key| {
-            // Prefer to run nodes whose outputs are ready to be consumed. Also
-            // prefer to run nodes which have outputs over in-memory sinks.
-            let num_outputs = graph.nodes[*node_key].outputs.len();
-            let num_outputs_ready_to_recv = graph.nodes[*node_key]
-                .outputs
-                .iter()
-                .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
-                .count();
-            (num_outputs_ready_to_recv, num_outputs)
-        });
-        to_run.extend(best);
+        to_run.push(choose_accumulating_node(graph, &accumulating));
     }
 
     expand_ready_subgraph(graph, to_run)
@@ -148,6 +143,7 @@ fn run_subgraph(
     pipes: &[LogicalPipeKey],
     pipe_seq_offsets: &mut SecondaryMap<LogicalPipeKey, Arc<RelaxedCell<u64>>>,
     state: &StreamingExecutionState,
+    node_states: &SecondaryMap<GraphNodeKey, StreamingExecutionState>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
@@ -183,7 +179,7 @@ fn run_subgraph(
         }
     }
 
-    executor::task_scope(|scope| {
+    executor::task_scope(None, |scope| {
         // Using SlotMap::iter_mut we can get simultaneous mutable references. By storing them and
         // removing the references from the secondary map as we do our topological sort we ensure
         // they are unique.
@@ -217,29 +213,15 @@ fn run_subgraph(
             }
 
             // Spawn the tasks.
-            let pre_spawn_offset = join_handles.len();
-
-            if let Some(graph_metrics) = metrics.clone() {
-                node.compute
-                    .set_phase_metrics_registrator(NodeMetricsRegistrator {
-                        graph_key: node_key,
-                        graph_metrics,
-                    });
-            }
-
+            let node_state = &node_states[node_key];
+            scope.set_task_metrics(node_state.task_metrics());
             node.compute.spawn(
                 scope,
                 &mut recv_ports[..],
                 &mut send_ports[..],
-                state,
+                node_state,
                 &mut join_handles,
             );
-            if let Some(lock) = metrics.as_ref() {
-                let mut m = lock.lock();
-                for handle in &join_handles[pre_spawn_offset..] {
-                    m.add_task(node_key, handle.metrics().unwrap().clone());
-                }
-            }
 
             // Ensure the ports were consumed.
             assert!(recv_ports.iter().all(|p| p.is_none()));
@@ -282,7 +264,9 @@ fn run_subgraph(
 
         // Spawn tasks for all the physical pipes (no-op on most, but needed for
         // those with distributors or linearizers).
-        for pipe in physical_pipes.values_mut() {
+        for (pipe_key, pipe) in physical_pipes.iter_mut() {
+            let receiver = graph.pipes[pipe_key].receiver;
+            scope.set_task_metrics(node_states[receiver].task_metrics());
             pipe.spawn(scope, &mut join_handles);
         }
 
@@ -310,7 +294,17 @@ pub fn execute_graph(
         in_memory_exec_state: ExecutionState::default(),
         query_tasks_send,
         subphase_tasks_send,
+        task_metrics: None,
     };
+    let node_states: SecondaryMap<GraphNodeKey, StreamingExecutionState> = graph
+        .nodes
+        .keys()
+        .map(|key| {
+            let mut node_state = state.clone();
+            node_state.task_metrics = metrics.as_ref().map(|m| m.lock().node_task_metrics(key));
+            (key, node_state)
+        })
+        .collect();
 
     // Ensure everything is properly connected.
     for (node_key, node) in &graph.nodes {
@@ -330,7 +324,7 @@ pub fn execute_graph(
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states(&state, metrics.as_deref())?;
+        graph.update_all_states(&node_states, metrics.as_deref())?;
 
         if let Some(m) = metrics.as_ref() {
             m.lock().flush(&graph.pipes);
@@ -366,6 +360,7 @@ pub fn execute_graph(
             &pipes,
             &mut pipe_seq_offsets,
             &state,
+            &node_states,
             metrics.clone(),
         )?;
         ASYNC.block_in_place_on(async {

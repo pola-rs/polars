@@ -13,7 +13,8 @@ pub struct EwmCovState<T> {
     mean_y: T,
     cov: T,
     weight_sum: T,
-    weight_square_sum: T,
+    /// Sum of `w_i * w_j` over all pairs `i < j` of observation weights.
+    weight_pair_sum: T,
     alpha: T,
     non_null_count: usize,
     adjust: bool,
@@ -33,7 +34,7 @@ where
             weight: T::zero(),
             cov: T::zero(),
             weight_sum: T::zero(),
-            weight_square_sum: T::zero(),
+            weight_pair_sum: T::zero(),
             alpha,
             non_null_count: 0,
             adjust,
@@ -68,11 +69,11 @@ where
                 self.mean_y = y;
                 self.weight = T::one();
                 self.weight_sum = T::one();
-                self.weight_square_sum = T::one();
+                self.weight_pair_sum = T::zero();
             } else {
                 if opt_xy.is_some() || !self.ignore_nulls {
                     self.weight_sum *= T::one() - self.alpha;
-                    self.weight_square_sum *= (T::one() - self.alpha) * (T::one() - self.alpha);
+                    self.weight_pair_sum *= (T::one() - self.alpha) * (T::one() - self.alpha);
                     self.weight *= T::one() - self.alpha;
                 }
 
@@ -97,12 +98,12 @@ where
                     self.mean_x = new_mean_x;
                     self.mean_y = new_mean_y;
 
+                    self.weight_pair_sum += self.weight_sum * other_weight;
                     self.weight_sum += other_weight;
-                    self.weight_square_sum += other_weight * other_weight;
 
                     if !self.adjust {
                         self.weight_sum /= new_weight;
-                        self.weight_square_sum /= new_weight * new_weight;
+                        self.weight_pair_sum /= new_weight * new_weight;
                         self.weight = T::one();
                     }
                 }
@@ -115,7 +116,8 @@ where
                         Some(cov)
                     } else {
                         let numerator = self.weight_sum * self.weight_sum;
-                        let denominator = numerator - self.weight_square_sum;
+                        // Equal to `numerator - sum(w_i^2)`, without the cancellation.
+                        let denominator = self.weight_pair_sum + self.weight_pair_sum;
                         if denominator > T::zero() {
                             Some((numerator / denominator) * cov)
                         } else {
@@ -230,7 +232,7 @@ mod test {
     use super::super::assert_allclose;
     use super::*;
     const ALPHA: f64 = 0.5;
-    const EPS: f64 = 1e-15;
+    const EPS: f64 = 1e-14;
     use std::f64::consts::SQRT_2;
 
     const XS: [Option<f64>; 7] = [

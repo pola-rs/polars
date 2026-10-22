@@ -14,13 +14,11 @@ use polars_arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_arrow::legacy::kernels::take_agg::*;
 use polars_arrow::legacy::trusted_len::TrustedLenPush;
 use polars_arrow::types::NativeType;
-use polars_compute::rolling::no_nulls::{
-    MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
-};
+use polars_compute::rolling::no_nulls::{MomentWindow, QuantileWindow, RollingAggWindowNoNulls};
 use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
-    self, ArgMaxWindow, ArgMinWindow, MeanWindow, QuantileMethod, RollingFnParams,
+    self, ArgMinMaxWindow, MeanWindow, MinMaxWindow, QuantileMethod, RollingFnParams,
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
     rolling_argmin_by,
 };
@@ -30,7 +28,7 @@ use polars_utils::float::IsFloat;
 use polars_utils::float16::pf16;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::kahan_sum::KahanSum;
-use polars_utils::min_max::MinMax;
+use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMax};
 use rayon::prelude::*;
 
 use crate::chunked_array::cast::CastOptions;
@@ -50,6 +48,12 @@ use crate::utils::{Container, NoNull};
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }
+
+// Unlike `rolling_min` and `rolling_max`, group aggregations ignore NaN.
+type MinWindow<'a, T> = MinMaxWindow<'a, T, MinIgnoreNan>;
+type MaxWindow<'a, T> = MinMaxWindow<'a, T, MaxIgnoreNan>;
+type ArgMinWindow<'a, T> = ArgMinMaxWindow<'a, T, MinIgnoreNan>;
+type ArgMaxWindow<'a, T> = ArgMinMaxWindow<'a, T, MaxIgnoreNan>;
 
 // if the windows overlap, we can use the rolling_<agg> kernels
 // they maintain state, which saves a lot of compute by not naively traversing all elements every
@@ -84,9 +88,6 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
         "rolling_numeric_minmax_by requires a numeric by column, got {dtype}",
     );
 
-    let starts: Vec<IdxSize> = slices.iter().map(|s| s[0]).collect();
-    let ends: Vec<IdxSize> = slices.iter().map(|s| s[0] + s[1]).collect();
-
     let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
@@ -94,9 +95,9 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
         let validity = arr.validity();
 
         if is_max_by {
-            rolling_argmax_by(values, validity, &starts, &ends, 1)
+            rolling_argmax_by(values, validity, slices, 1)
         } else {
-            rolling_argmin_by(values, validity, &starts, &ends, 1)
+            rolling_argmin_by(values, validity, slices, 1)
         }
     });
 
@@ -545,14 +546,12 @@ where
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::MinWindow<_>, _, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<MinWindow<_>, _, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            None,
+                        ),
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -613,15 +612,15 @@ where
                         }
                         Some(best_pos)
                     } else {
-                        let (start_pos, mut best_val) = idx
-                            .iter()
-                            .enumerate()
-                            .find_map(|(pos, &i)| arr.get(i as usize).map(|v| (pos, v)))?;
+                        let (start_pos, mut best_val) =
+                            idx.iter().enumerate().find_map(|(pos, &i)| {
+                                unsafe { arr.get_unchecked(i as usize) }.map(|v| (pos, v))
+                            })?;
 
                         let mut best_pos: IdxSize = start_pos as IdxSize;
 
                         for (pos, &i) in idx.iter().enumerate().skip(start_pos + 1) {
-                            if let Some(v) = arr.get(i as usize) {
+                            if let Some(v) = unsafe { arr.get_unchecked(i as usize) } {
                                 if v.nan_max_lt(&best_val) {
                                     best_val = v;
                                     best_pos = pos as IdxSize;
@@ -666,7 +665,7 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => Some(0 as IdxSize),
+                            1 => unsafe { self.get_unchecked(first as usize) }.map(|_| 0),
                             _ => {
                                 let group_ca = _slice_from_offsets(self, first, len);
                                 let pos_in_group: Option<usize> = arg_min_numeric(&group_ca);
@@ -730,14 +729,12 @@ where
                             offset_iter,
                             None,
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::MaxWindow<_>, _, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<MaxWindow<_>, _, _, _>(
+                            values,
+                            validity,
+                            offset_iter,
+                            None,
+                        ),
                     };
                     Self::from(arr).into_series()
                 } else {
@@ -761,7 +758,10 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        // Skipped for floats for the same reason as in `agg_max`.
+        if (!self.has_nulls() || matches!(groups, GroupsType::Slice { .. }))
+            && !T::Native::is_float()
+        {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);
@@ -799,15 +799,15 @@ where
 
                         Some(best_pos)
                     } else {
-                        let (start_pos, mut best_val) = idx
-                            .iter()
-                            .enumerate()
-                            .find_map(|(pos, &i)| arr.get(i as usize).map(|v| (pos, v)))?;
+                        let (start_pos, mut best_val) =
+                            idx.iter().enumerate().find_map(|(pos, &i)| {
+                                unsafe { arr.get_unchecked(i as usize) }.map(|v| (pos, v))
+                            })?;
 
                         let mut best_pos: IdxSize = start_pos as IdxSize;
 
                         for (pos, &i) in idx.iter().enumerate().skip(start_pos + 1) {
-                            if let Some(v) = arr.get(i as usize) {
+                            if let Some(v) = unsafe { arr.get_unchecked(i as usize) } {
                                 if v.nan_min_gt(&best_val) {
                                     best_val = v;
                                     best_pos = pos as IdxSize;
@@ -852,7 +852,7 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => Some(0 as IdxSize),
+                            1 => unsafe { self.get_unchecked(first as usize) }.map(|_| 0),
                             _ => {
                                 let group_ca = _slice_from_offsets(self, first, len);
                                 let pos_in_group: Option<usize> = arg_max_numeric(&group_ca);

@@ -3,22 +3,14 @@ use polars_arrow::legacy::time_zone::Tz;
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::{try_localize_datetime, unlocalize_datetime};
 use polars_core::prelude::*;
-use polars_core::utils::polars_arrow::temporal_conversions::{
-    MILLISECONDS, SECONDS_IN_DAY, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_us_to_datetime,
-};
+use polars_core::utils::polars_arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 
 // roll backward to the first day of the month
-pub(crate) fn roll_backward(
-    t: i64,
-    tz: Option<&Tz>,
-    timestamp_to_datetime: fn(i64) -> NaiveDateTime,
-    datetime_to_timestamp: fn(NaiveDateTime) -> i64,
-) -> PolarsResult<i64> {
+pub(crate) fn roll_backward(t: i64, tz: Option<&Tz>, tu: TimeUnit) -> PolarsResult<i64> {
     let ts = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
-        _ => timestamp_to_datetime(t),
+        Some(tz) => unlocalize_datetime(tu.timestamp_to_datetime(t), tz),
+        _ => tu.timestamp_to_datetime(t),
     };
     let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).ok_or_else(|| {
         polars_err!(
@@ -44,11 +36,11 @@ pub(crate) fn roll_backward(
     let ndt = NaiveDateTime::new(date, time);
     let t = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => datetime_to_timestamp(
+        Some(tz) => tu.datetime_to_timestamp(
             try_localize_datetime(ndt, tz, Ambiguous::Raise, NonExistent::Raise)?
                 .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
         ),
-        _ => datetime_to_timestamp(ndt),
+        _ => tu.datetime_to_timestamp(ndt),
     };
     Ok(t)
 }
@@ -61,27 +53,9 @@ pub trait PolarsMonthStart {
 
 impl PolarsMonthStart for DatetimeChunked {
     fn month_start(&self, tz: Option<&Tz>) -> PolarsResult<Self> {
-        let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
-        let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
-        match self.time_unit() {
-            TimeUnit::Nanoseconds => {
-                timestamp_to_datetime = timestamp_ns_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_ns;
-            },
-            TimeUnit::Microseconds => {
-                timestamp_to_datetime = timestamp_us_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_us;
-            },
-            TimeUnit::Milliseconds => {
-                timestamp_to_datetime = timestamp_ms_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_ms;
-            },
-        };
         Ok(self
             .phys
-            .try_apply_nonnull_values_generic(|t| {
-                roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)
-            })?
+            .try_apply_nonnull_values_generic(|t| roll_backward(t, tz, self.time_unit()))?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }
@@ -90,12 +64,7 @@ impl PolarsMonthStart for DateChunked {
     fn month_start(&self, _tz: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         let ret = self.phys.try_apply_nonnull_values_generic(|t| {
-            let bwd = roll_backward(
-                MSECS_IN_DAY * t as i64,
-                None,
-                timestamp_ms_to_datetime,
-                datetime_to_timestamp_ms,
-            )?;
+            let bwd = roll_backward(MSECS_IN_DAY * t as i64, None, TimeUnit::Milliseconds)?;
             PolarsResult::Ok((bwd / MSECS_IN_DAY) as i32)
         })?;
         Ok(ret.into_date())

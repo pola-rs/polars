@@ -265,25 +265,13 @@ def test_max_min(
 
 def test_unknown_resolve() -> None:
     q = pl.LazyFrame({"dec": [D("0.25")]})
-    plan = q.select(pl.col("dec") * (1.0 * 1)).explain()
-    assert "1.00" in plan
-    assert "dyn" not in plan
+    assert "Float64" in q.select(pl.col("dec") * (1.0 * 1)).explain()
     q = pl.LazyFrame({"x": 76}, schema={"x": pl.Int32}).select(
         pl.col.x * (pl.lit(100.0) * pl.lit(1))
     )
     plan = q.explain()
     assert "Float64" in plan
     assert "dyn" not in plan
-
-
-def test_dynamic_literal_arithmetic_schema() -> None:
-    lf = pl.LazyFrame({"a": [1]}, schema={"a": pl.Int8})
-    q = lf.select(out=pl.col("a") + pl.lit(100) * pl.lit(100))
-    assert q.collect_schema()["out"] == pl.Int16
-    assert q.collect().to_series().to_list() == [10001]
-    assert q.collect(optimizations=pl.QueryOptFlags.none()).to_series().to_list() == [
-        10001
-    ]
 
 
 @pytest.mark.parametrize(

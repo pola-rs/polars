@@ -7,7 +7,7 @@ import math
 import re
 import zlib
 from collections import OrderedDict
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal as D
 from io import BytesIO
 from typing import TYPE_CHECKING
@@ -19,6 +19,8 @@ from polars.datatypes.group import FLOAT_DTYPES
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from polars._typing import TimeUnit
 
 import orjson
 import pytest
@@ -101,6 +103,11 @@ def test_write_json_categoricals() -> None:
         '[{"column":"test1"},{"column":"test2"},{"column":"test3"},{"column":"test4"}]'
     )
     assert df.write_json() == expected
+
+
+def test_write_json_sliced_list_of_categoricals() -> None:
+    s = pl.Series("l", [["a", "b"], ["c"], ["d", "e"]], dtype=pl.List(pl.Categorical))
+    assert s[1:].to_frame().write_ndjson() == '{"l":["c"]}\n{"l":["d","e"]}\n'
 
 
 def test_write_json_duration() -> None:
@@ -733,6 +740,67 @@ def test_nested_datetime_ndjson() -> None:
             ]
         ],
     }
+
+
+DATETIME_CASES_29262 = [
+    ("2020-01-01T12:34:56", datetime(2020, 1, 1, 12, 34, 56)),
+    ("2020-01-01T12:34", datetime(2020, 1, 1, 12, 34)),
+    ("2020-01-01T12:34+05:00", datetime(2020, 1, 1, 7, 34)),
+    ("2020-01-01T12:34+06:00", datetime(2020, 1, 1, 6, 34)),
+    ("2020-01-01T12:34:56-01:00", datetime(2020, 1, 1, 13, 34, 56)),
+    ("2020-01-01T01:00+05:00", datetime(2019, 12, 31, 20, 0)),
+    ("2020-01-01T23:00-05:00", datetime(2020, 1, 2, 4, 0)),
+    ("2020-01-01T12:34:56Z", datetime(2020, 1, 1, 12, 34, 56)),
+    ("2020-01-01 12:34+05:00", datetime(2020, 1, 1, 7, 34)),
+    ("2020-01-01t12:34:56.123456+05:00", datetime(2020, 1, 1, 7, 34, 56, 123456)),
+    ("2020-01-01T12:34:56+05", datetime(2020, 1, 1, 7, 34, 56)),
+    ("2020-01-01T12:34+05:00x", None),
+    ("not a datetime", None),
+    (None, None),
+]
+
+
+@pytest.mark.parametrize("time_zone", [None, "UTC", "Europe/Amsterdam"])
+def test_read_json_datetime_offset_29262(time_zone: str | None) -> None:
+    dtype = pl.Datetime("us", time_zone)
+    data = json.dumps([{"a": s} for s, _ in DATETIME_CASES_29262])
+    result = pl.read_json(io.StringIO(data), schema={"a": dtype})
+    expected_values = [
+        v if v is None or time_zone is None else v.replace(tzinfo=UTC)
+        for _, v in DATETIME_CASES_29262
+    ]
+    expected = pl.DataFrame({"a": pl.Series(expected_values, dtype=dtype)})
+    assert_frame_equal(result, expected)
+
+
+def test_json_decode_datetime_offset_29262() -> None:
+    s = pl.Series([json.dumps({"a": s}) for s, _ in DATETIME_CASES_29262])
+    result = s.str.json_decode(pl.Struct({"a": pl.Datetime("us")}))
+    expected = pl.Series(
+        [{"a": v} for _, v in DATETIME_CASES_29262],
+        dtype=pl.Struct({"a": pl.Datetime("us")}),
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "expected_values"),
+    [
+        ("ms", [datetime(2020, 1, 1, 7, 34, 56, 123000), datetime(2300, 1, 1)]),
+        ("us", [datetime(2020, 1, 1, 7, 34, 56, 123456), datetime(2300, 1, 1)]),
+        ("ns", [datetime(2020, 1, 1, 7, 34, 56, 123456), None]),
+    ],
+)
+def test_read_json_datetime_time_unit_29262(
+    time_unit: TimeUnit, expected_values: list[datetime | None]
+) -> None:
+    dtype = pl.Datetime(time_unit)
+    data = json.dumps(
+        [{"a": "2020-01-01T12:34:56.123456+05:00"}, {"a": "2300-01-01T00:00"}]
+    )
+    result = pl.read_json(io.StringIO(data), schema={"a": dtype})
+    expected = pl.DataFrame({"a": pl.Series(expected_values, dtype=dtype)})
+    assert_frame_equal(result, expected)
 
 
 def test_ndjson_22229() -> None:

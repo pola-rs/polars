@@ -7,6 +7,9 @@ use crate::{PredicateFileSkipDescription, PythonPredicateDescription, SortColumn
 pub struct PhysicalNodeDescription {
     pub id: u64,
     pub input_ids: Vec<u64>,
+    /// `id` of the [`IrNodeDescription`](crate::IrNodeDescription) whose lowering created this
+    /// node. Optional only for backwards compatibility with old polars clients.
+    pub ir_node_id: Option<usize>,
     pub properties: PhysicalPropsDescription,
 }
 
@@ -65,7 +68,15 @@ pub enum PhysicalPropsDescription {
     InMemoryMap {
         format_str: String,
     },
+    Window {
+        partition_by: Vec<String>,
+        order_by: Option<String>,
+        exprs: Vec<String>,
+        ordered_eval: bool,
+        maintain_order: bool,
+    },
     InMemorySink,
+    Reverse,
     InMemorySource {
         n_rows: usize,
         schema_names: Vec<String>,
@@ -296,6 +307,11 @@ pub enum PhysicalPropsDescription {
     ColumnarFunction {
         num_inputs: usize,
         name: Option<String>,
+    },
+    RollingFixedWindowFunction {
+        name: String,
+        offset: i64,
+        length: u64,
     },
     IsSorted {
         descending: Option<bool>,

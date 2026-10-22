@@ -83,7 +83,9 @@ use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
-pub use sql::{CachedSqlStatement, SqlResolver, get_sql_resolver, set_sql_resolver};
+pub use sql::{
+    CachedSqlStatement, SqlCatalogTable, SqlResolver, get_sql_resolver, set_sql_resolver,
+};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -644,6 +646,11 @@ impl Expr {
         self.map_ternary(FunctionExpr::ShiftAndFill, n.into(), fill_value.into())
     }
 
+    /// Single-input version of [`functions::pipe_with_dtype`].
+    pub fn pipe_with_dtype(self, callback: PlanCallback<(Vec<Expr>, Vec<DataType>), Expr>) -> Self {
+        functions::pipe_with_dtype([self], callback)
+    }
+
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
     pub fn cumulative_eval(self, evaluation: Expr, min_samples: usize) -> Self {
@@ -850,15 +857,23 @@ impl Expr {
             if e.is_empty() {
                 return None;
             }
-            let e = if e.len() == 1 {
-                Arc::new(e[0].clone().into())
-            } else {
-                feature_gated!["dtype-struct", {
-                    let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
-                    Arc::new(functions::as_struct(e))
-                }]
-            };
-            Some((e, options))
+            if e.len() == 1 {
+                return Some((Arc::new(e[0].clone().into()), options));
+            }
+            // Row-encode the keys so the sort options apply to every key.
+            let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
+            let encoded = Expr::n_ary(
+                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
+                    descending: Some(vec![options.descending]),
+                    nulls_last: Some(vec![options.nulls_last]),
+                    broadcast_nulls: None,
+                }),
+                e,
+            );
+            Some((
+                Arc::new(encoded),
+                SortOptions::default().with_maintain_order(options.maintain_order),
+            ))
         });
 
         Ok(Expr::Over {
@@ -1626,6 +1641,18 @@ impl Expr {
     }
 
     #[cfg(feature = "log")]
+    /// Compute the error function of all elements in the input array.
+    pub fn erf(self) -> Self {
+        self.map_unary(FunctionExpr::Erf)
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the complementary error function of all elements in the input array.
+    pub fn erfc(self) -> Self {
+        self.map_unary(FunctionExpr::Erfc)
+    }
+
+    #[cfg(feature = "log")]
     /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
@@ -1650,6 +1677,11 @@ impl Expr {
     /// Compute the hash of every element.
     pub fn hash(self, seed: u64) -> Expr {
         self.map_unary(FunctionExpr::Hash(seed))
+    }
+
+    /// Compute the 32-bit MurmurHash3 of the values as defined by the Iceberg specification.
+    pub fn mm3_hash(self) -> Expr {
+        self.map_unary(FunctionExpr::Mm3Hash)
     }
 
     pub fn to_physical(self) -> Expr {

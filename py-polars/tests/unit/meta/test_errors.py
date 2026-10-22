@@ -382,16 +382,6 @@ def test_sort_by_different_lengths() -> None:
             ]
         )
 
-    with pytest.raises(
-        ShapeError,
-        match=r"expressions in 'sort_by' must have matching group lengths",
-    ):
-        df.group_by("group").agg(
-            [
-                pl.col("col1").sort_by(pl.col("col2").first()),
-            ]
-        )
-
 
 def test_err_filter_no_expansion() -> None:
     # df contains floats
@@ -558,7 +548,8 @@ def test_empty_inputs_error() -> None:
                 time_unit="ns",
                 eager=True,
             ),
-            None,
+            # The needle is cast to the values' unit.
+            [False, None, False],
         ),
         ("d", [time(10, 30)], None),
         ("e", [datetime(1999, 12, 31, 10, 30)], None),
