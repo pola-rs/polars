@@ -6,7 +6,9 @@
 use polars_utils::pl_str::PlSmallStr;
 
 use super::cluster::{Bridge, Cluster};
-use crate::plans::{composite_key_domain, join_cardinality, key_domain, unique_side_rows};
+use crate::plans::{
+    NodeStats, composite_key_domain, join_cardinality, key_domain, unique_side_rows,
+};
 
 /// Greedy left-deep ordering of a cluster's leaves.
 ///
@@ -34,14 +36,18 @@ pub(super) fn order(cluster: &Cluster) -> Vec<usize> {
     } else {
         Box::new(0..n)
     };
+    let guessed = GuessedKeys::new(cluster);
     starts
-        .map(|anchor| chain_from(cluster, anchor))
+        .map(|anchor| chain_from(cluster, &guessed, anchor))
         .min_by(|(a, _), (b, _)| a.total_cmp(b))
         .map_or_else(Vec::new, |(_, order)| order)
 }
 
 /// Leaves above which every-anchor search is skipped.
 const MAX_STARTS: usize = 24;
+
+/// Domain of a key that does not narrow the join.
+const MIN_DOMAIN: f64 = 1.0;
 
 /// One greedy left-deep chain starting at `anchor`, with the total of the
 /// intermediate results it materialises.
@@ -50,7 +56,7 @@ const MAX_STARTS: usize = 24;
 /// adds a cross product that the plan did not have. The base relation's own rows
 /// are not counted: it is read whichever leaf it is, and charging for it would
 /// always favour the smallest leaf as the base.
-fn chain_from(cluster: &Cluster, anchor: usize) -> (f64, Vec<usize>) {
+fn chain_from(cluster: &Cluster, guessed: &GuessedKeys<'_>, anchor: usize) -> (f64, Vec<usize>) {
     let n = cluster.leaves.len();
     let mut is_placed = vec![false; n];
     let mut placed = Vec::with_capacity(n);
@@ -65,7 +71,7 @@ fn chain_from(cluster: &Cluster, anchor: usize) -> (f64, Vec<usize>) {
             .filter(|&i| !is_placed[i])
             .filter_map(|candidate| {
                 let denominator =
-                    key_domain_product(cluster, &is_placed, placed.len() == 1, candidate)?;
+                    key_domain_product(cluster, guessed, &is_placed, placed.len() == 1, candidate)?;
                 let out =
                     join_cardinality(card, cluster.leaves[candidate].stats.filtered, denominator);
                 Some((out, candidate))
@@ -112,6 +118,141 @@ struct DomainEstimate<'a> {
     unique_rows: Option<f64>,
 }
 
+/// Whether the key joining `leaf` to `other` is only guessed to be unique on `leaf`.
+///
+/// With no distinct count or range on either side, [`key_domain`] takes the key to
+/// be unique on the smaller side.
+fn guessed_unique(
+    leaf: &NodeStats,
+    leaf_key: Option<&PlSmallStr>,
+    other: &NodeStats,
+    other_key: Option<&PlSmallStr>,
+) -> bool {
+    let has_stats = |stats: &NodeStats, key: Option<&PlSmallStr>| {
+        key.is_some_and(|name| stats.key_distinct_estimate(name).is_some())
+    };
+    leaf.unfiltered <= other.unfiltered
+        && !has_stats(leaf, leaf_key)
+        && !has_stats(other, other_key)
+}
+
+/// The keys of `bridge` as seen from the candidate and from the placed leaf.
+fn identities<'a>(bridge: &Bridge<'a>) -> (Option<DomainIdentity<'a>>, Option<DomainIdentity<'a>>) {
+    let class = bridge.class.map(DomainIdentity::Class);
+    (
+        class.or_else(|| bridge.candidate_name.map(DomainIdentity::Column)),
+        class.or_else(|| bridge.placed_name.map(DomainIdentity::Column)),
+    )
+}
+
+/// Keys guessed unique on a leaf that are taken not to narrow a join.
+///
+/// A leaf can be the smaller side of several edges, on different keys, and is then
+/// guessed unique on each of them. That is rarely true: a dimension is unique on the
+/// key the fact refers to, not on its attributes. So each leaf keeps the guess on the
+/// keys reaching its most fact-like partner: the one joined to the most smaller
+/// leaves, then the largest.
+///
+/// A guess on another key is dropped only when its partner also joins the kept one.
+/// That edge closes a triangle, and mostly restates what the kept partner already
+/// ties together, like a region shared by a fact's unit and its price.
+struct GuessedKeys<'a> {
+    n: usize,
+    /// `n * n` flags, set where two leaves share a key.
+    adjacent: Vec<bool>,
+    /// Per leaf, its most fact-like partner and the keys reaching it.
+    kept: Vec<Option<(usize, Vec<DomainIdentity<'a>>)>>,
+}
+
+impl<'a> GuessedKeys<'a> {
+    fn new(cluster: &'a Cluster) -> Self {
+        let n = cluster.leaves.len();
+        let rows = |leaf: usize| cluster.leaves[leaf].stats.unfiltered;
+        let mut is_placed = vec![false; n];
+        let mut adjacent = vec![false; n * n];
+        for leaf in 0..n {
+            for other in 0..n {
+                is_placed[other] = true;
+                adjacent[leaf * n + other] =
+                    other != leaf && cluster.bridging(&is_placed, leaf).next().is_some();
+                is_placed[other] = false;
+            }
+        }
+        let smaller_neighbours: Vec<usize> = (0..n)
+            .map(|leaf| {
+                (0..n)
+                    .filter(|&other| adjacent[leaf * n + other] && rows(other) <= rows(leaf))
+                    .count()
+            })
+            .collect();
+
+        let kept = (0..n)
+            .map(|leaf| {
+                let mut kept: Option<(usize, Vec<DomainIdentity<'a>>)> = None;
+                for partner in (0..n).filter(|&partner| adjacent[leaf * n + partner]) {
+                    is_placed[partner] = true;
+                    for bridge in cluster.bridging(&is_placed, leaf) {
+                        let (Some(identity), _) = identities(&bridge) else {
+                            continue;
+                        };
+                        if !guessed_unique(
+                            &cluster.leaves[leaf].stats,
+                            bridge.candidate_name,
+                            &cluster.leaves[partner].stats,
+                            bridge.placed_name,
+                        ) {
+                            continue;
+                        }
+                        let score = |leaf: usize| (smaller_neighbours[leaf], rows(leaf));
+                        match &mut kept {
+                            Some((best, keys)) if *best == partner => {
+                                if !keys.contains(&identity) {
+                                    keys.push(identity);
+                                }
+                            },
+                            Some((best, _)) if score(partner) <= score(*best) => {},
+                            _ => kept = Some((partner, vec![identity])),
+                        }
+                    }
+                    is_placed[partner] = false;
+                }
+                kept
+            })
+            .collect();
+
+        Self { n, adjacent, kept }
+    }
+
+    /// Whether `bridge`, joining `candidate` to a placed leaf, rests on a dropped
+    /// guess.
+    fn drops(&self, cluster: &Cluster, bridge: &Bridge<'_>, candidate: usize) -> bool {
+        let (candidate_identity, placed_identity) = identities(bridge);
+        let candidate_stats = &cluster.leaves[candidate].stats;
+        let placed_stats = &cluster.leaves[bridge.placed_leaf].stats;
+        (guessed_unique(
+            candidate_stats,
+            bridge.candidate_name,
+            placed_stats,
+            bridge.placed_name,
+        ) && self.dropped(candidate, candidate_identity, bridge.placed_leaf))
+            || (guessed_unique(
+                placed_stats,
+                bridge.placed_name,
+                candidate_stats,
+                bridge.candidate_name,
+            ) && self.dropped(bridge.placed_leaf, placed_identity, candidate))
+    }
+
+    /// Whether the guess that `identity` is unique on `leaf`, joined to `partner`, is
+    /// dropped.
+    fn dropped(&self, leaf: usize, identity: Option<DomainIdentity<'_>>, partner: usize) -> bool {
+        let (Some(identity), Some((kept_partner, keys))) = (identity, &self.kept[leaf]) else {
+            return false;
+        };
+        !keys.contains(&identity) && self.adjacent[partner * self.n + kept_partner]
+    }
+}
+
 /// Product of the key domains bridging `candidate` to the placed leaves, or `None`
 /// if it is not connected to them at all.
 ///
@@ -124,8 +265,11 @@ struct DomainEstimate<'a> {
 ///
 /// A key unique on one of several placed leaves can repeat in their join, so a
 /// placed leaf only counts as unique when `single_placed`.
+///
+/// A key in [`GuessedKeys`] is taken not to narrow the join.
 fn key_domain_product(
     cluster: &Cluster,
+    guessed: &GuessedKeys<'_>,
     is_placed: &[bool],
     single_placed: bool,
     candidate: usize,
@@ -134,12 +278,16 @@ fn key_domain_product(
     let candidate_stats = &cluster.leaves[candidate].stats;
     let mut max_rows = candidate_stats.unfiltered;
     let domain_of = |bridge: &Bridge<'_>| {
-        key_domain(
-            &cluster.leaves[bridge.placed_leaf].stats,
-            bridge.placed_name,
-            candidate_stats,
-            bridge.candidate_name,
-        )
+        if guessed.drops(cluster, bridge, candidate) {
+            MIN_DOMAIN
+        } else {
+            key_domain(
+                &cluster.leaves[bridge.placed_leaf].stats,
+                bridge.placed_name,
+                candidate_stats,
+                bridge.candidate_name,
+            )
+        }
     };
 
     for bridge in cluster.bridging(is_placed, candidate) {
@@ -269,9 +417,12 @@ mod tests {
         };
 
         // Leaves 0 and 1 placed, 2 the candidate: it bridges on `k` to both.
-        let two_edges = key_domain_product(&cluster, &[true, true, false], false, 2).unwrap();
+        let guessed = GuessedKeys::new(&cluster);
+        let two_edges =
+            key_domain_product(&cluster, &guessed, &[true, true, false], false, 2).unwrap();
         // Only leaf 0 placed: the same key reached once.
-        let one_edge = key_domain_product(&cluster, &[true, false, false], true, 2).unwrap();
+        let one_edge =
+            key_domain_product(&cluster, &guessed, &[true, false, false], true, 2).unwrap();
 
         // The smallest of the estimates of `k`'s domain, counted a single time.
         assert_eq!(two_edges, 100.0);
