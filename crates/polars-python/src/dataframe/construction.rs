@@ -119,6 +119,7 @@ impl PyDataFrame {
             Some(n) => n.max(1),
             None => usize::MAX,
         };
+        let check_extra_keys = schema.is_none();
         let mut records = data.try_iter()?;
         let leading = records
             .by_ref()
@@ -142,7 +143,9 @@ impl PyDataFrame {
             .map(|name| PyString::intern(py, name))
             .collect();
         let hints: Vec<Option<DataType>> = names.iter().map(|name| dtype_hint(name)).collect();
-        let read = |record: &Record, i: usize| record.value(&keys[i], hints[i].as_ref(), strict);
+        let read = |record: &Record, i: usize| {
+            to_any_value(record.get(&keys[i])?, hints[i].as_ref(), strict)
+        };
         let rows = leading
             .iter()
             .map(|record| {
@@ -172,8 +175,25 @@ impl PyDataFrame {
         }
         for record in records {
             let record = Record::new(record?)?;
+            let mut n_present = 0;
             for (i, buffer) in buffers.iter_mut().enumerate() {
-                push(py, buffer, read(&record, i)?, || read(&record, i))?;
+                let value = record.get(&keys[i])?;
+                n_present += value.is_some() as usize;
+                let value = to_any_value(value, hints[i].as_ref(), strict)?;
+                push(py, buffer, value, || read(&record, i))?;
+            }
+            if check_extra_keys && record.len()? > n_present {
+                let mut all_names: PlIndexSet<String> = names.iter().cloned().collect();
+                record.add_names(&mut all_names)?;
+                if let Some(key) = all_names.get_index(names.len()) {
+                    return Err(PyPolarsErr::from(polars_err!(
+                        ComputeError:
+                        "extra key in dict {height}: {key:?}, consider increasing \
+                        infer_schema_length, or manually specifying the full schema to ignore \
+                        extra keys"
+                    ))
+                    .into());
+                }
             }
             height += 1;
         }
@@ -298,24 +318,35 @@ impl<'py> Record<'py> {
         Ok(())
     }
 
+    fn len(&self) -> PyResult<usize> {
+        match self {
+            Self::Null => Ok(0),
+            Self::Dict(dict) => Ok(dict.len()),
+            Self::Mapping(mapping) => mapping.len(),
+        }
+    }
+
     #[inline]
-    fn value(
-        &self,
-        key: &Bound<'py, PyString>,
-        dtype: Option<&DataType>,
-        strict: bool,
-    ) -> PyResult<AnyValue<'static>> {
-        let value = match self {
+    fn get(&self, key: &Bound<'py, PyString>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        Ok(match self {
             Self::Null => None,
             Self::Dict(dict) => dict.get_item(key)?,
             Self::Mapping(mapping) => match mapping.get_item(key) {
                 Err(err) if err.is_instance_of::<PyKeyError>(mapping.py()) => None,
                 value => Some(value?),
             },
-        };
-        match value {
-            Some(value) if !value.is_none() => py_object_to_any_value(&value, strict, true, dtype),
-            _ => Ok(AnyValue::Null),
-        }
+        })
+    }
+}
+
+#[inline]
+fn to_any_value(
+    value: Option<Bound<'_, PyAny>>,
+    dtype: Option<&DataType>,
+    strict: bool,
+) -> PyResult<AnyValue<'static>> {
+    match value {
+        Some(value) if !value.is_none() => py_object_to_any_value(&value, strict, true, dtype),
+        _ => Ok(AnyValue::Null),
     }
 }
