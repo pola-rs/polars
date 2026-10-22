@@ -95,6 +95,7 @@ fn process_list_numeric_arithmetic(
         Operator::Multiply => NumericListOp::mul(),
         Operator::TrueDivide | Operator::RustDivide => NumericListOp::div(),
         Operator::FloorDivide => NumericListOp::floor_div(),
+        Operator::TruncDivide => NumericListOp::trunc_div(),
         Operator::Modulus => NumericListOp::rem(),
         _ => return Ok(None),
     };
@@ -215,7 +216,7 @@ pub(super) fn coerced_binop_dtype(
         match (&type_left, &type_right) {
             (Duration(_), Duration(_)) => return Ok(None),
             (Duration(_), r) if r.is_primitive_numeric() => return Ok(None),
-            (String, a) | (a, String) if a.is_primitive_numeric() => {
+            (String, a) | (a, String) if a.is_primitive_numeric() || a.is_decimal() => {
                 let fmt_side = |node: Node, ae: &AExpr| -> std::string::String {
                     if let AExpr::Column(name) = ae {
                         format!(" column '{name}'")
@@ -287,6 +288,7 @@ fn process_decimal_binary(
                 | Operator::TrueDivide
                 | Operator::RustDivide
                 | Operator::FloorDivide
+                | Operator::TruncDivide
                 | Operator::Modulus
         );
     let is_int =

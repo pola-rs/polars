@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime
 from functools import lru_cache, partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
@@ -150,6 +150,108 @@ def test_node_traverse_sink(tmp_path: Path) -> None:
     q.collect(  # pyrefly: ignore[no-matching-overload]
         post_opt_callback=callback  # type: ignore[call-overload]
     )
+
+
+def _collect_join_nodes(query: pl.LazyFrame) -> list[tuple[Any, Any, list[Any]]]:
+    """
+    Return each Join node of the optimized plan with a view of its predicate.
+
+    The third element holds views of the operands of a binary predicate.
+    """
+    results: list[tuple[Any, Any, list[Any]]] = []
+
+    def callback(node_traverser: Any) -> None:
+        current = node_traverser.get_node()
+        node = node_traverser.view_current_node()
+        if isinstance(node, _ir_nodes.Join):
+            predicate = None
+            operands = []
+            if node.predicate is not None:
+                predicate = node_traverser.view_expression(node.predicate.node)
+            if isinstance(predicate, _expr_nodes.BinaryExpr):
+                operands = [
+                    node_traverser.view_expression(predicate.left),
+                    node_traverser.view_expression(predicate.right),
+                ]
+            results.append((node, predicate, operands))
+        for inp in node_traverser.get_inputs():
+            node_traverser.set_node(inp)
+            callback(node_traverser)
+        node_traverser.set_node(current)
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+def test_join_visitor_equi_join_has_no_predicate() -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3], "x": ["A", "B", "A"]})
+    right = pl.LazyFrame({"k": [1, 2, 3], "y": ["B", "A", "A"]})
+    [(join, predicate, _)] = _collect_join_nodes(left.join(right, on="k"))
+    assert join.options[0] == "Inner"
+    assert [e.output_name for e in join.left_on] == ["k"]
+    assert [e.output_name for e in join.right_on] == ["k"]
+    assert join.predicate is None
+    assert predicate is None
+
+
+def test_join_visitor_fused_predicate() -> None:
+    left = pl.LazyFrame({"k": [1, 2, 3], "x": ["A", "B", "A"]})
+    right = pl.LazyFrame({"k": [1, 2, 3], "x": ["B", "A", "A"]})
+    q = left.join(right, on="k").filter(pl.col("x") != pl.col("x_right"))
+    [(join, predicate, operands)] = _collect_join_nodes(q)
+    assert join.options[0] == ("Inner", "fused_predicate")
+    assert [e.output_name for e in join.left_on] == ["k"]
+    assert [e.output_name for e in join.right_on] == ["k"]
+    assert isinstance(predicate, _expr_nodes.BinaryExpr)
+    assert predicate.op == _expr_nodes.Operator.NotEq
+    # The predicate is in the join's output namespace, so it sees the suffix.
+    assert [operand.name for operand in operands] == ["x", "x_right"]
+
+
+def test_join_visitor_nested_loop_join() -> None:
+    partsupp = pl.LazyFrame({"ps_suppkey": [1, 2, 3, 4]})
+    supplier = pl.LazyFrame({"s_suppkey": [2, 4]})
+    q = pl.SQLContext(partsupp=partsupp, supplier=supplier).execute(
+        "SELECT * FROM partsupp WHERE ps_suppkey NOT IN (SELECT s_suppkey FROM supplier)"
+    )
+    nested_loop_joins = [
+        (join, predicate)
+        for join, predicate, _ in _collect_join_nodes(q)
+        if join.predicate is not None
+    ]
+    assert len(nested_loop_joins) == 1
+    join, predicate = nested_loop_joins[0]
+    assert join.options[0] == ("Cross", "cross_and_filter")
+    assert join.left_on == []
+    assert join.right_on == []
+    assert isinstance(predicate, _expr_nodes.Ternary)
+
+
+def test_join_visitor_left_nested_loop_join() -> None:
+    left = pl.LazyFrame({"a": [1, 5, 10], "s": ["x", "y", "z"]})
+    right = pl.LazyFrame({"b": [3, 7], "t": ["x", "z"]})
+    q = left.join_where(right, pl.col("s") != pl.col("t"), how="left")
+    [(join, predicate, _)] = _collect_join_nodes(q)
+    assert join.options[0] == ("Left", "cross_and_filter")
+    assert join.left_on == []
+    assert join.right_on == []
+    assert isinstance(predicate, _expr_nodes.BinaryExpr)
+    assert predicate.op == _expr_nodes.Operator.NotEq
+
+
+@pytest.mark.parametrize("how", ["left", "right"])
+def test_join_visitor_outer_inequality_join(how: Literal["left", "right"]) -> None:
+    left = pl.LazyFrame({"a": [1, 5, 10], "s": ["x", "y", "z"]})
+    right = pl.LazyFrame({"b": [3, 7], "t": ["x", "z"]})
+    q = left.join_where(right, pl.col("a") < pl.col("b"), how=how)
+    [(join, predicate, _)] = _collect_join_nodes(q)
+    assert join.options[0] == (how.capitalize(), _expr_nodes.Operator.Lt, None)
+    assert [e.output_name for e in join.left_on] == ["a"]
+    assert [e.output_name for e in join.right_on] == ["b"]
+    assert join.predicate is None
+    assert predicate is None
 
 
 def _collect_rolling_function_data(

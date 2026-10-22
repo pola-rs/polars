@@ -11,8 +11,10 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_plan::dsl::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
 use polars_plan::plans::python::pyarrow::predicate_to_pa;
+#[cfg(feature = "is_in")]
+use polars_plan::plans::{AExpr, ArenaExprIter, IRBooleanFunction, IRFunctionExpr};
 use polars_plan::plans::{
-    AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
+    AExprSorted, ExprToIRContext, IR, RowEncodingVariant, node_to_expr, to_expr_ir,
 };
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
@@ -62,6 +64,9 @@ impl PyExpr {
     }
     fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
+    }
+    fn trunc_div(&self, rhs: Self) -> PyResult<Self> {
+        Ok(self.inner.clone().trunc_div(rhs.inner).into())
     }
     fn __neg__(&self) -> PyResult<Self> {
         Ok(self.inner.clone().neg().into())
@@ -1118,6 +1123,9 @@ impl PyExpr {
     fn hash(&self, seed: u64) -> Self {
         self.inner.clone().hash(seed).into()
     }
+    fn mm3_hash(&self) -> Self {
+        self.inner.clone().mm3_hash().into()
+    }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()
             .with_desc(Some(descending))
@@ -1182,19 +1190,50 @@ impl PyExpr {
         })
     }
 
-    /// Convert a predicate to a PyArrow expression string. Returns `None` if any
-    /// part of the predicate cannot be converted.
+    /// The filter predicate as a PyArrow compute expression string, or `None`
+    /// if (any part of) it cannot be converted.
+    ///
+    /// The predicate is type-coerced as in a Polars filter, so that operands
+    /// Polars casts (e.g. a `Float32` column compared to a `Float64` literal)
+    /// show up as casts, which are not converted.
     #[pyo3(signature = (schema))]
-    fn _to_pyarrow_predicate(
+    fn to_pyarrow_predicate(
         &self,
         py: Python<'_>,
         schema: Wrap<Schema>,
     ) -> PyResult<Option<String>> {
-        let mut aexpr_arena = Arena::new();
         py.enter_polars(|| {
-            let mut ctx = ExprToIRContext::new(&mut aexpr_arena, &schema.0);
-            let node = to_expr_ir(self.inner.clone(), &mut ctx)?.node();
-            PolarsResult::Ok(predicate_to_pa(node, &aexpr_arena, &schema.0))
+            let plan = DataFrame::empty_with_schema(&schema.0)
+                .lazy()
+                .filter(self.inner.clone())
+                .logical_plan
+                .to_alp()?;
+            let IR::Filter { predicate, .. } = plan.root() else {
+                polars_bail!(ComputeError: "expected a filter plan");
+            };
+            // The PyArrow `isin` only keeps `nulls_equal` through the haystack's
+            // nulls, but e.g. PyIceberg evaluates membership as null for null
+            // needles.
+            #[cfg(feature = "is_in")]
+            if plan.expr_arena.iter(predicate.node()).any(|(_, ae)| {
+                matches!(
+                    ae,
+                    AExpr::Function {
+                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                            nulls_equal: true,
+                            ..
+                        }),
+                        ..
+                    }
+                )
+            }) {
+                return Ok(None);
+            }
+            PolarsResult::Ok(predicate_to_pa(
+                predicate.node(),
+                &plan.expr_arena,
+                &schema.0,
+            ))
         })
     }
 

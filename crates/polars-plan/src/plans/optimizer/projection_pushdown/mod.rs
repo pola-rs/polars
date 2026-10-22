@@ -951,33 +951,26 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     }))
                 }
 
-                let mut pred_used_names_iter = None;
-                let mut has_cross_filter = false;
+                let has_cross_filter =
+                    matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. });
 
-                if let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options {
-                    pred_used_names_iter =
-                        Some(aexpr_to_leaf_names_iter(predicate.node(), self.expr_arena));
-                    has_cross_filter = true;
+                // A join predicate reads output columns the final projection may not ask for.
+                let predicate_names: Vec<PlSmallStr> = match &options.options {
+                    JoinTypeOptionsIR::CrossAndFilter { predicate } => Some(predicate),
+                    options => options.fused_predicate(),
                 }
-
-                // A fused predicate reads output columns the final projection may not ask for.
-                let fused_predicate_names: Vec<PlSmallStr> = options
-                    .options
-                    .fused_predicate()
-                    .map(|fused_predicate| {
-                        aexpr_to_leaf_names_iter(fused_predicate.node(), self.expr_arena)
-                            .cloned()
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let reads_in_fused_predicate =
-                    |name: &PlSmallStr| fused_predicate_names.contains(name);
+                .map(|predicate| {
+                    aexpr_to_leaf_names_iter(predicate.node(), self.expr_arena)
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default();
+                let reads_in_predicate = |name: &PlSmallStr| predicate_names.contains(name);
 
                 // Add accumulated projections
                 for output_name in output_schema_arc
                     .iter_names()
-                    .filter(|name| is_projected_in_output(name) || reads_in_fused_predicate(name))
-                    .chain(pred_used_names_iter.into_iter().flatten())
+                    .filter(|name| is_projected_in_output(name) || reads_in_predicate(name))
                 {
                     match ExprOrigin::get_column_origin(
                         output_name,
@@ -1049,13 +1042,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             return false;
                         };
 
-                        // Coalescing drops the right key, so a fused predicate reading it counts
+                        // Coalescing drops the right key, so a predicate reading it counts
                         // as a use.
                         let projected = if input_schema_left.contains(name.as_str()) {
                             let name = format_pl_smallstr!("{}{}", name, options.args.suffix());
-                            is_projected_in_output(&name) || reads_in_fused_predicate(&name)
+                            is_projected_in_output(&name) || reads_in_predicate(&name)
                         } else {
-                            is_projected_in_output(name) || reads_in_fused_predicate(name)
+                            is_projected_in_output(name) || reads_in_predicate(name)
                         };
 
                         !projected
@@ -1105,11 +1098,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 // Narrowing an input can remove a name collision, dropping the suffix
                 // from the right column. The map below covers only projected names, so a
-                // column read solely by the fused predicate is renamed here.
-                if !fused_predicate_names.is_empty() {
+                // column read solely by the predicate is renamed here.
+                if !predicate_names.is_empty() {
                     let mut renames: PlIndexMap<PlSmallStr, PlSmallStr> = PlIndexMap::default();
 
-                    for name in fused_predicate_names.iter() {
+                    for name in predicate_names.iter() {
                         if output_schema_arc.contains(name) {
                             continue;
                         }
@@ -1121,16 +1114,17 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     }
 
                     if !renames.is_empty() {
-                        let JoinTypeOptionsIR::Equi {
-                            fused_predicate: Some(fused_predicate),
-                            ..
-                        } = &mut Arc::make_mut(options).options
-                        else {
-                            unreachable!()
+                        let predicate = match &mut Arc::make_mut(options).options {
+                            JoinTypeOptionsIR::Equi {
+                                fused_predicate: Some(predicate),
+                                ..
+                            }
+                            | JoinTypeOptionsIR::CrossAndFilter { predicate } => predicate,
+                            _ => unreachable!(),
                         };
 
-                        fused_predicate.set_node(rename_columns(
-                            fused_predicate.node(),
+                        predicate.set_node(rename_columns(
+                            predicate.node(),
                             self.expr_arena,
                             &renames,
                         ));
@@ -1347,7 +1341,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 inputs,
                 options:
                     UnionOptions {
-                        slice: _,
+                        slice,
                         rows: _,
                         parallel: _,
                         from_partitioned_ds: _,
@@ -1358,7 +1352,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
             } => {
                 // concat(a, b, ..).select(len())
                 //   -> concat(a.select(len()), b.select(len()), ..).select(col('len').cast(UInt128).sum().cast(IDX_DTYPE))
-                if out_edge.projection() == Projection::Len && !inputs.is_empty() {
+                // A slice of the union would apply to the per-input lengths instead of the rows.
+                if out_edge.projection() == Projection::Len && !inputs.is_empty() && slice.is_none()
+                {
                     *rechunk = false;
                     *maintain_order = false;
                     let len_schema =

@@ -25,6 +25,7 @@ pub struct IcebergSinkState {
     pub overwrite_filter: Option<PythonObject>, // pyiceberg.expressions.BooleanExpression
     pub dynamic_partition_overwrite: bool,
     pub create_if_not_exists: bool,
+    pub create_namespace_if_not_exists: bool,
     pub snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub iceberg_storage_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub compression: PlSmallStr,

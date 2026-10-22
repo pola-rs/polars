@@ -16,13 +16,14 @@ use serde::{Deserialize, Serialize};
 use crate::dsl::Operator;
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::plans::IRStringFunction;
+#[cfg(feature = "round_series")]
+#[cfg(feature = "round_series")]
+use crate::plans::int_literal;
 use crate::plans::schema::join_right_output_names;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
-#[cfg(feature = "round_series")]
-use crate::plans::{DynLiteralValue, LiteralValue};
 use crate::prelude::{JoinType, MaintainOrderJoin};
 
 /// Container for sortedness state at each stage in an IR plan.
@@ -398,30 +399,18 @@ fn is_sorted_rec(
             slice: _,
             sort_options,
         } => {
-            let mut s = by_column
+            let s = by_column
                 .iter()
-                .map_while(|e| {
+                .zip(&sort_options.descending)
+                .zip(&sort_options.nulls_last)
+                .map_while(|((e, &d), &nl)| {
                     into_column(e.node(), expr_arena).map(|c| Sorted {
                         column: c.clone(),
-                        descending: Some(false),
-                        nulls_last: Some(false),
+                        descending: Some(d),
+                        nulls_last: Some(nl),
                     })
                 })
                 .collect::<Vec<_>>();
-            if sort_options.descending.len() != 1 {
-                s.iter_mut()
-                    .zip(sort_options.descending.iter())
-                    .for_each(|(s, &d)| s.descending = Some(d));
-            } else if sort_options.descending[0] {
-                s.iter_mut().for_each(|s| s.descending = Some(true));
-            }
-            if sort_options.nulls_last.len() != 1 {
-                s.iter_mut()
-                    .zip(sort_options.nulls_last.iter())
-                    .for_each(|(s, &d)| s.nulls_last = Some(d));
-            } else if sort_options.nulls_last[0] {
-                s.iter_mut().for_each(|s| s.nulls_last = Some(true));
-            }
 
             Some(IRSorted(s.into()))
         },
@@ -970,16 +959,6 @@ pub fn function_expr_sortedness(
             rec_ae!(e.node())
         },
 
-        _ => None,
-    }
-}
-
-/// The value of an integer scalar literal.
-#[cfg(feature = "round_series")]
-fn int_literal(node: Node, arena: &Arena<AExpr>) -> Option<i128> {
-    match arena.get(node) {
-        AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))) => Some(*v),
-        AExpr::Literal(LiteralValue::Scalar(sc)) if sc.dtype().is_integer() => sc.value().extract(),
         _ => None,
     }
 }

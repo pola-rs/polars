@@ -982,6 +982,7 @@ fn classify_comparison(
         | Operator::RustDivide
         | Operator::TrueDivide
         | Operator::FloorDivide
+        | Operator::TruncDivide
         | Operator::Modulus => return Classification::Opaque,
     }
     if cc.unsat {
@@ -1271,7 +1272,7 @@ fn collect_column_comparisons<'a>(
 }
 
 // Builds a `col op value` node.
-fn comparison_node(
+pub(crate) fn comparison_node(
     name: &PlSmallStr,
     op: Operator,
     value: Scalar,

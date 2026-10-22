@@ -1669,7 +1669,10 @@ def test_join_preserve_order_left() -> None:
     ]
 
     right_left = left.join(right, on="a", how="right", maintain_order="left").collect()
-    assert right_left.get_column("a").cast(pl.UInt32).to_list() == [2, 1, 1, None, 6]
+    right_left_a = right_left.get_column("a").cast(pl.UInt32).to_list()
+    assert right_left_a[:3] == [2, 1, 1]
+    # The unmatched right rows come last, in any order.
+    assert set(right_left_a[3:]) == {None, 6}
 
     right_right = left.join(
         right, on="a", how="right", maintain_order="right"
@@ -3834,9 +3837,10 @@ def test_join_filter_pushdown_asof_join() -> None:
     assert 'col("a") >= 2' in extract[2]
     assert 'col("b") >= 3' in extract[2]
 
+    # `a >= 2` on the left key also bounds the right key: `b >= 2 - 99`.
     assert extract[3:] == [
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER col("a") >= 3',
+        'FILTER (col("a") >= 3) & (col("b") >= -97)',
     ]
 
     assert_frame_equal(q.collect(), expect)

@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use matched_rows::{MARKED, MatchedRows};
 use polars_core::prelude::*;
 use polars_utils::IdxSize;
 
@@ -8,6 +9,7 @@ use crate::key_rows::KeyRowLayout;
 
 mod binview;
 mod key_rows;
+mod matched_rows;
 mod row_encoded;
 mod single_key;
 

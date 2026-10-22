@@ -83,6 +83,10 @@ impl FileReader for NDJsonFileReader {
         Ok(())
     }
 
+    fn local_read_size(&self) -> Option<usize> {
+        self.init_data.as_ref()?.local_read_size()
+    }
+
     fn begin_read(
         &mut self,
         args: BeginReadArgs,

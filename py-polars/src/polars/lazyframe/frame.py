@@ -3032,6 +3032,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = None,
         partition_overwrite: Literal["dynamic"] | None = None,
         create_if_not_exists: bool = False,
+        create_namespace_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
@@ -3115,6 +3116,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             The table is created before the query runs, so it remains (empty)
             if the query fails.
+        create_namespace_if_not_exists
+            Create the table's namespace, and any missing parent namespaces, if
+            they do not exist when the table is created. Requires
+            `create_if_not_exists=True`.
         snapshot_properties
             Custom properties to add to the Iceberg snapshot summary.
         catalog
@@ -3147,12 +3152,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        Partitioned writes support identity, year, month, day, hour, and truncate
-        transforms. Truncation is supported for integer, long, string, and binary
-        source columns, including fields nested within structs. Top-level partition
-        source columns must use an Iceberg metrics mode that records lower and upper
-        bounds (``full`` or ``truncate``). Bucket, void, and decimal truncation are
-        not supported.
+        Partitioned writes support identity, year, month, day, hour, truncate, and
+        bucket transforms, including on fields nested within structs. Truncation is
+        supported for integer, long, string, and binary source columns. Void and
+        decimal truncation are not supported.
 
         ``mode="overwrite"`` replaces all table data, unless ``overwrite_filter`` or
         ``partition_overwrite`` is given. The delete and the append are committed
@@ -3164,9 +3167,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The table's default sort order is applied to incoming rows and recorded on
         each new data file. Existing files are not rewritten. Sorting materializes
-        the incoming data in memory. Bucket sort transforms require
-        ``pyiceberg-core``; their sort keys are computed in batches while Parquet
-        I/O remains native. This does not guarantee a globally sorted table scan.
+        the incoming data in memory. This does not guarantee a globally sorted table
+        scan.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
@@ -3177,6 +3179,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             overwrite_filter=overwrite_filter,
             partition_overwrite=partition_overwrite,
             create_if_not_exists=create_if_not_exists,
+            create_namespace_if_not_exists=create_namespace_if_not_exists,
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
@@ -6370,8 +6373,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
-        how : {'inner', 'left', 'right'}
-            Join strategy.
+        how : {'inner', 'left', 'right', 'full'}
+            Join strategy. `'left'` and `'right'` also keep the rows of that input
+            without a match, and `'full'` keeps them from both inputs. The columns of
+            the other input are null in those rows.
         suffix
             Suffix to append to columns with a duplicate name.
 

@@ -4,7 +4,6 @@ use parking_lot::Mutex;
 use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
-use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet, SortMultipleOptions};
 use polars_core::scalar::Scalar;
@@ -53,7 +52,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderB
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{
     ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
-    is_elementwise_rec_cached, lower_exprs,
+    input_height_expr, is_elementwise_rec_cached, lower_exprs,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::unique_column_name;
@@ -174,8 +173,6 @@ pub(crate) fn add_row_idx_sort_key(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
-    _broadcast_bools(by_column.len(), &mut sort_options.descending);
-    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
     let row_idx_name = unique_column_name();
     let stream = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
 
@@ -667,13 +664,27 @@ fn lower_ir_inner(
 
             // See if we can insert a top k.
             let mut limit = u64::MAX;
-            if let Some((0, l, _)) = slice {
-                limit = limit.min(l as u64);
+            let mut is_from_end = false;
+            match slice {
+                Some((offset, len, _)) if offset >= 0 => {
+                    limit = (offset as u64).saturating_add(len as u64);
+                },
+                // The limit applies before the slice, so it does not commute with keeping the tail.
+                Some((offset, _, _)) if sort_options.limit.is_none() => {
+                    limit = offset.unsigned_abs();
+                    is_from_end = true;
+                },
+                _ => {},
             }
             #[allow(clippy::unnecessary_cast)]
             if let Some(l) = sort_options.limit {
                 limit = limit.min(l as u64);
             };
+            // Such a top k keeps every row, e.g. for open-ended slices.
+            #[allow(clippy::unnecessary_cast)]
+            if limit >= IdxSize::MAX as u64 {
+                limit = u64::MAX;
+            }
 
             let mut stream = phys_input;
 
@@ -713,10 +724,15 @@ fn lower_ir_inner(
             };
 
             if limit < u64::MAX {
+                let mut top_k_options = sort_options.clone();
+                if is_from_end {
+                    top_k_options = top_k_options.with_order_reversed();
+                    top_k_options.nulls_last.iter_mut().for_each(|x| *x = !*x);
+                }
                 stream = build_top_k_stream(
                     stream,
                     trans_by_column.clone(),
-                    &sort_options,
+                    &top_k_options,
                     limit,
                     slice.as_ref().and_then(|t| t.2.clone()),
                     expr_arena,
@@ -1437,18 +1453,23 @@ fn lower_ir_inner(
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
-                // So we add dummy expressions before lowering and remove them afterwards.
-
-                let mut aug_left_on = left_on.clone();
-                for name in phys_left.output_schema(phys_sm).iter_names() {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-                }
-                let mut aug_right_on = right_on.clone();
-                for name in phys_right.output_schema(phys_sm).iter_names() {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-                }
+                // So we add dummy expressions before lowering and remove them afterwards. An input
+                // without columns gets an expression that keeps its height.
+                let mut augment_keys = |on: &Vec<ExprIR>, input: PhysStream| {
+                    let mut aug_on = on.clone();
+                    let input_schema = input.output_schema(phys_sm);
+                    for name in input_schema.iter_names() {
+                        let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                        aug_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                    }
+                    if input_schema.is_empty() {
+                        let height = input_height_expr(input_schema, expr_arena);
+                        aug_on.push(ExprIR::new(height, OutputName::Alias(unique_column_name())));
+                    }
+                    aug_on
+                };
+                let aug_left_on = augment_keys(&left_on, phys_left);
+                let aug_right_on = augment_keys(&right_on, phys_right);
 
                 let (mut trans_input_left, mut trans_left_on) = lower_exprs(
                     phys_left,
@@ -1550,15 +1571,32 @@ fn lower_ir_inner(
                     #[cfg(feature = "asof_join")]
                     _ if use_streaming_asof_join => {
                         assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
+                        let tmp_right_key_col = tmp_right_col_names.pop().unwrap();
+                        // Right rows with a null key never match, and the binary searches in
+                        // the node rely on a key without nulls.
+                        let right_key = tmp_right_key_col
+                            .clone()
+                            .unwrap_or_else(|| right_on_names[0].clone());
+                        let predicate = AExprBuilder::col(right_key, expr_arena)
+                            .is_not_null(expr_arena)
+                            .expr_ir_unnamed();
+                        let input_right = build_filter_stream(
+                            trans_input_right,
+                            predicate,
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        )?;
                         phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::AsOfJoin {
                                 input_left: trans_input_left,
-                                input_right: trans_input_right,
+                                input_right,
                                 left_on: left_on_names[0].clone(),
                                 right_on: right_on_names[0].clone(),
                                 tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
-                                tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
+                                tmp_right_key_col,
                                 by_descending,
                                 by_nulls_last,
                                 args: args.clone(),

@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 
 use default::*;
 pub use groups::AsofJoinBy;
+use num_traits::NumCast;
 use polars_core::prelude::*;
 use polars_defs::join::AsofStrategy;
 use polars_utils::pl_str::PlSmallStr;
@@ -30,6 +31,20 @@ fn lt_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
         Ordering::Less => true,
         Ordering::Greater => false,
     }
+}
+
+/// The largest key distance a match may have. For integer keys this is the size of the
+/// tolerance, capped at the largest distance two keys can have; the planner stores the tolerance
+/// in this form.
+fn abs_tolerance<T: NumericNative>(tolerance: &AnyValue) -> PolarsResult<T::Abs> {
+    if T::is_float() {
+        return Ok(tolerance.try_extract::<T>()?.abs_diff(T::zero()));
+    }
+    let distance = match tolerance.extract::<i128>() {
+        Some(v) => v.unsigned_abs(),
+        None => tolerance.try_extract::<u128>()?,
+    };
+    Ok(NumCast::from(distance).unwrap_or_else(T::max_abs_diff))
 }
 
 trait AsofJoinState<T> {
@@ -110,24 +125,27 @@ impl<T: TotalOrd> AsofJoinState<T> for AsofJoinBackwardState {
     }
 }
 
-#[derive(Default)]
 struct AsofJoinNearestState {
     /// The last value that is strictly smaller than the current
     /// left value.
-    strictly_smaller: Option<IdxSize>,
+    strictly_smaller: NullableIdxSize,
     /// If `allow_eq == false`: the first value strictly greater than the
     /// current left value.
     /// If `allow_eq == true`: the last value of the first chunk of equal
     /// values that are strictly greater than the current left value.
     upper_candidate: IdxSize,
+    /// The last non-null value that is <= the current left value.
+    last_non_null_lower: NullableIdxSize,
     allow_eq: bool,
 }
 
 impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     fn new(allow_eq: bool) -> Self {
         AsofJoinNearestState {
+            strictly_smaller: NullableIdxSize::null(),
+            upper_candidate: 0,
+            last_non_null_lower: NullableIdxSize::null(),
             allow_eq,
-            ..Default::default()
         }
     }
     #[inline]
@@ -147,14 +165,15 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
             if scan_right_val > *left_val {
                 break;
             }
+            self.last_non_null_lower = self.upper_candidate.into();
             self.upper_candidate += 1;
         }
 
         if self.allow_eq
-            && self.upper_candidate > 0
-            && right(self.upper_candidate - 1) == Some(*left_val)
+            && let Some(idx) = self.last_non_null_lower.to_opt()
+            && right(idx) == Some(*left_val)
         {
-            return Some(self.upper_candidate - 1);
+            return Some(idx);
         }
 
         // It is possible there are later elements equal to our
@@ -165,7 +184,7 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
             self.upper_candidate += 1;
         }
 
-        let mut cursor = self.strictly_smaller.unwrap_or(0);
+        let mut cursor = self.strictly_smaller.to_opt().unwrap_or(0);
         while cursor < self.upper_candidate {
             let Some(scan_right_val) = right(cursor) else {
                 cursor += 1;
@@ -174,16 +193,17 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
             if scan_right_val >= *left_val {
                 break;
             }
-            self.strictly_smaller = Some(cursor);
+            self.strictly_smaller = cursor.into();
             cursor += 1;
         }
 
         let mut right_get = |idx: IdxSize| (idx < n_right).then(|| right(idx)).flatten();
-        let lower = self.strictly_smaller.and_then(&mut right_get);
+        let strictly_smaller = self.strictly_smaller.to_opt();
+        let lower = strictly_smaller.and_then(&mut right_get);
         let upper = right_get(self.upper_candidate);
         match (lower, upper) {
             (None, None) => None,
-            (Some(_), None) => self.strictly_smaller,
+            (Some(_), None) => strictly_smaller,
             (None, Some(_)) => Some(self.upper_candidate),
             (Some(lo), Some(hi)) => {
                 let lo_diff = left_val.abs_diff(lo);
@@ -191,7 +211,7 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
                 if hi_diff <= lo_diff {
                     Some(self.upper_candidate)
                 } else {
-                    self.strictly_smaller
+                    strictly_smaller
                 }
             },
         }
@@ -361,3 +381,28 @@ pub fn _join_asof_dispatch(
 }
 
 impl AsofJoin for DataFrame {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_abs_tolerance() {
+        // The same rule as the planner, so raw and planned tolerances give the same distance.
+        assert_eq!(
+            abs_tolerance::<i32>(&AnyValue::Int64(1 << 40)).unwrap(),
+            u32::MAX
+        );
+        assert_eq!(abs_tolerance::<u32>(&AnyValue::Int32(-1)).unwrap(), 1);
+        assert_eq!(abs_tolerance::<i32>(&AnyValue::Float64(-2.7)).unwrap(), 2);
+        assert_eq!(
+            abs_tolerance::<i64>(&AnyValue::Int64(i64::MIN)).unwrap(),
+            1 << 63
+        );
+        assert_eq!(
+            abs_tolerance::<i64>(&AnyValue::UInt64(1 << 63)).unwrap(),
+            1 << 63
+        );
+        assert_eq!(abs_tolerance::<f64>(&AnyValue::Float64(-2.5)).unwrap(), 2.5);
+    }
+}

@@ -30,6 +30,7 @@ mod extract_window;
 pub use expand_datasets::attach_dataset_scan_statistics;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
+pub use extract_window::is_scalar_window_reduction;
 mod collapse_sort;
 pub mod deep_copy;
 mod filter_constraint;
@@ -37,6 +38,7 @@ mod ir_traversal;
 mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod repeated_keys;
 mod simplify_expr;
 pub mod simplify_ordering;
 mod slice_pushdown_expr;
@@ -285,6 +287,7 @@ pub fn optimize(
         rules.push(Box::new(SimplifyBooleanRule {
             maintain_errors: pushdown_maintain_errors,
         }));
+        rules.push(Box::new(repeated_keys::RemoveRepeatedKeys {}));
     }
 
     if !opt_flags.eager() {
@@ -335,6 +338,7 @@ pub fn optimize(
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         match ir_arena.get(root) {
             IR::SinkMultiple { inputs } => {
+                let inputs = inputs.clone();
                 let mut roots = inputs.clone();
                 for root in &mut roots {
                     if !matches!(ir_arena.get(*root), IR::Sink { .. }) {
@@ -345,6 +349,21 @@ pub fn optimize(
                     }
                 }
                 simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
+                // The pass may have unlinked the input of a temporary sink.
+                let new_inputs = roots
+                    .iter()
+                    .zip(inputs)
+                    .map(|(&tmp_top, input)| match ir_arena.get(tmp_top) {
+                        IR::Sink {
+                            input: new_input, ..
+                        } if tmp_top != input => *new_input,
+                        _ => input,
+                    })
+                    .collect();
+                let IR::SinkMultiple { inputs } = ir_arena.get_mut(root) else {
+                    unreachable!()
+                };
+                *inputs = new_inputs;
             },
             ir => {
                 let mut tmp_top = root;
@@ -355,6 +374,13 @@ pub fn optimize(
                     });
                 }
                 simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
+                // The pass may have unlinked the input of the temporary sink.
+                if tmp_top != root {
+                    let IR::Sink { input, .. } = ir_arena.get(tmp_top) else {
+                        unreachable!()
+                    };
+                    root = *input;
+                }
             },
         }
     }

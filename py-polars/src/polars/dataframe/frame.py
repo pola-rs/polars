@@ -3838,16 +3838,16 @@ class DataFrame:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
                 df_original, column_widths, expand_keys=True, expand_values=False
             )
-        column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
+        widths: dict[str, int] = _unpack_multi_column_dict(column_widths or {})
 
         for column in df.columns:
             options = {"hidden": True} if column in hidden else {}
             col_idx = table_start[1] + df.get_column_index(column)
-            if column in column_widths:  # type: ignore[operator]
+            if column in widths:
                 ws.set_column_pixels(
                     col_idx,
                     col_idx,
-                    column_widths[column],  # type: ignore[index]
+                    widths[column],
                     None,
                     options,
                 )
@@ -8530,8 +8530,10 @@ class DataFrame:
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
-        how : {'inner', 'left', 'right'}
-            Join strategy.
+        how : {'inner', 'left', 'right', 'full'}
+            Join strategy. `'left'` and `'right'` also keep the rows of that input
+            without a match, and `'full'` keeps them from both inputs. The columns of
+            the other input are null in those rows.
         suffix
             Suffix to append to columns with a duplicate name.
 
@@ -11667,7 +11669,6 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        - Int8 + String = String
         - Float32 + Int64 = Float32
         - Float32 + Float64 = Float64
 
@@ -11712,7 +11713,7 @@ class DataFrame:
         ...         "c": [1.0, 2.0, 3.0],
         ...     }
         ... )
-        >>> df.fold(lambda s1, s2: s1 + s2)
+        >>> df.fold(lambda s1, s2: s1 + s2.cast(pl.String))
         shape: (3,)
         Series: 'a' [str]
         [

@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 use std::fmt::Display;
-use std::ops::Div;
+use std::ops::{ControlFlow, Div};
 
 use polars_compute::cast::temporal::{
     MICROSECONDS_IN_DAY, MILLISECONDS_IN_DAY, NANOSECONDS_IN_DAY,
@@ -37,6 +37,8 @@ use sqlparser::keywords;
 use sqlparser::parser::{Parser, ParserOptions};
 use sqlparser::tokenizer::Token;
 
+use crate::context::join_idents;
+use crate::dyn_visit::visit_expressions;
 use crate::functions::{PolarsSQLFunctions, SQLFunctionVisitor};
 use crate::group_context::{has_marked_aggregate, mark_aggregate};
 use crate::literal_folding::{
@@ -77,12 +79,13 @@ pub(crate) fn sql_unknown() -> Expr {
 // A correlated subquery here would be evaluated against its own scope, where an
 // outer column resolves to a like-named table.
 fn quantified_subquery_unsupported(
+    ctx: &SQLContext,
     compare_op: &SQLBinaryOperator,
     right: &SQLExpr,
 ) -> PolarsResult<()> {
     if let SQLExpr::Subquery(query) = right {
         polars_ensure!(
-            !is_correlated_subquery(query),
+            !is_correlated_subquery(query, ctx.catalog_spellings()),
             SQLInterface: "ANY/ALL with `{}` and a correlated subquery is not currently supported",
             compare_op
         );
@@ -110,7 +113,7 @@ pub(crate) fn sql_is_in(needle: Expr, set: Expr) -> Expr {
 }
 
 /// `reduce_expr`, which must give one row, over the column of the subquery `lf`.
-fn reduced_subquery(lf: LazyFrame, reduce_expr: Expr) -> Expr {
+pub(crate) fn reduced_subquery(lf: LazyFrame, reduce_expr: Expr) -> Expr {
     let new_name = unique_column_name();
     Expr::SubPlan(
         SpecialEq::new(Arc::new(lf.logical_plan)),
@@ -388,6 +391,8 @@ impl SQLExprVisitor<'_> {
         }
         let mut s = series_from_literals(PlSmallStr::EMPTY, &array_elements)?;
         if let Some(dtype) = resolve_common_dtype(&cast_dtypes, Some("array literal "))? {
+            // Checked on the assembled series, whose elements share one type.
+            ensure_nested_cast_source("CAST", &dtype, s.dtype())?;
             s = cast_literal_series(&s, &dtype)?;
         }
         Ok(s)
@@ -619,13 +624,82 @@ impl SQLExprVisitor<'_> {
         self.ctx.execute_isolated(|ctx| ctx.execute_query(subquery))
     }
 
-    /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed,
-    /// which is to say one in a position that doesn't support it.
-    fn visit_exists(&mut self, subquery: &Subquery, _negated: bool) -> PolarsResult<Expr> {
-        polars_bail!(
-            SQLInterface:
-            "EXISTS subquery is not currently supported in this position: {:?}", subquery
-        )
+    /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed. An
+    /// uncorrelated subquery becomes one value, a correlated one is not supported here.
+    fn visit_exists(&mut self, subquery: &Subquery, negated: bool) -> PolarsResult<Expr> {
+        let exists = match self
+            .ctx
+            .exists_values
+            .iter()
+            .position(|(query, _)| query == subquery)
+        {
+            Some(i) => self.ctx.exists_values.swap_remove(i).1,
+            None => self.evaluate_exists(subquery)?,
+        };
+        Ok(if negated { exists.not() } else { exists })
+    }
+
+    /// The value of an uncorrelated `EXISTS (subquery)` that lowering did not plan.
+    fn evaluate_exists(&mut self, subquery: &Subquery) -> PolarsResult<Expr> {
+        let unsupported = || {
+            polars_err!(
+                SQLInterface:
+                "EXISTS subquery is not currently supported in this position: {:?}", subquery
+            )
+        };
+        if is_correlated_subquery(subquery, self.ctx.catalog_spellings())
+            || self.has_unnest(subquery)
+        {
+            return Err(unsupported());
+        }
+        // An unqualified outer column makes the subquery correlated.
+        let outer_err = |e, this: &Self| {
+            if this.reads_outer_column(subquery) {
+                unsupported()
+            } else {
+                e
+            }
+        };
+        if self
+            .ctx
+            .exists_over_aggregate(subquery)
+            .map_err(|e| outer_err(e, self))?
+        {
+            return Ok(lit(true));
+        }
+        let lf = self
+            .execute_subquery(subquery)
+            .map_err(|e| outer_err(e, self))?;
+        let lf = lf.select([len().gt(lit(0))]);
+        Ok(reduced_subquery(lf, first().as_expr().item(true)))
+    }
+
+    /// Whether `subquery` names a column of the outer query without a qualifier.
+    fn reads_outer_column(&self, subquery: &Subquery) -> bool {
+        let Some(schema) = self.active_schema else {
+            return false;
+        };
+        visit_expressions(subquery, |e: &SQLExpr| match e {
+            SQLExpr::Identifier(ident) if schema.contains(&ident.value) => ControlFlow::Break(()),
+            _ => ControlFlow::Continue(()),
+        })
+        .is_break()
+    }
+
+    /// Whether `subquery` calls `UNNEST`, which can return no rows for an aggregate.
+    fn has_unnest(&self, subquery: &Subquery) -> bool {
+        visit_expressions(subquery, |e: &SQLExpr| match e {
+            SQLExpr::Function(function)
+                if matches!(
+                    PolarsSQLFunctions::try_from_sql(function, self.ctx),
+                    Ok(PolarsSQLFunctions::Explode)
+                ) =>
+            {
+                ControlFlow::Break(())
+            },
+            _ => ControlFlow::Continue(()),
+        })
+        .is_break()
     }
 
     /// Visit a single SQL identifier.
@@ -856,6 +930,34 @@ impl SQLExprVisitor<'_> {
         if let Some(folded) = try_fold_decimal_arithmetic(left, op, right)? {
             return Ok(folded);
         }
+        // "x ~~ y", "x !~~ y", "x ~~* y" and "x !~~* y" are LIKE and ILIKE.
+        let like = match op {
+            SQLBinaryOperator::PGLikeMatch => Some((false, false)),
+            SQLBinaryOperator::PGNotLikeMatch => Some((true, false)),
+            SQLBinaryOperator::PGILikeMatch => Some((false, true)),
+            SQLBinaryOperator::PGNotILikeMatch => Some((true, true)),
+            _ => None,
+        };
+        if let Some((negated, case_insensitive)) = like {
+            let (expr, pattern) = (Box::new(left.clone()), Box::new(right.clone()));
+            return self.visit_expr(&if case_insensitive {
+                SQLExpr::ILike {
+                    negated,
+                    any: false,
+                    expr,
+                    pattern,
+                    escape_char: None,
+                }
+            } else {
+                SQLExpr::Like {
+                    negated,
+                    any: false,
+                    expr,
+                    pattern,
+                    escape_char: None,
+                }
+            });
+        }
         // need special handling for interval offsets and comparisons
         let (mut lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
@@ -933,65 +1035,91 @@ impl SQLExprVisitor<'_> {
             // ----
             // Bitwise operators
             // ----
-            SQLBinaryOperator::BitwiseAnd => lhs.and(rhs),  // "x & y"
-            SQLBinaryOperator::BitwiseOr => lhs.or(rhs),  // "x | y"
-            SQLBinaryOperator::Xor => lhs.xor(rhs),  // "x XOR y"
+            SQLBinaryOperator::BitwiseAnd => lhs.and(rhs), // "x & y"
+            SQLBinaryOperator::BitwiseOr => lhs.or(rhs),   // "x | y"
+            SQLBinaryOperator::Xor => lhs.xor(rhs),        // "x XOR y"
 
             // ----
             // Comparison operators
             // ----
-            SQLBinaryOperator::Eq if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Eq, rhs),
-            SQLBinaryOperator::Gt if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Gt, rhs),
-            SQLBinaryOperator::GtEq if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::GtEq, rhs),
-            SQLBinaryOperator::Lt if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Lt, rhs),
-            SQLBinaryOperator::LtEq if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::LtEq, rhs),
-            SQLBinaryOperator::NotEq if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Eq, rhs).not(),
-            SQLBinaryOperator::Spaceship if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::EqMissing, rhs),
-            SQLBinaryOperator::Eq => lhs.eq(rhs),  // "x = y"
-            SQLBinaryOperator::Gt => lhs.gt(rhs),  // "x > y"
-            SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),  // "x >= y"
-            SQLBinaryOperator::Lt => lhs.lt(rhs),  // "x < y"
-            SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),  // "x <= y"
-            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),  // "x != y"
-            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),  // "x <=> y"
+            SQLBinaryOperator::Eq if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Eq, rhs)
+            },
+            SQLBinaryOperator::Gt if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Gt, rhs)
+            },
+            SQLBinaryOperator::GtEq if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::GtEq, rhs)
+            },
+            SQLBinaryOperator::Lt if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Lt, rhs)
+            },
+            SQLBinaryOperator::LtEq if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::LtEq, rhs)
+            },
+            SQLBinaryOperator::NotEq if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Eq, rhs).not()
+            },
+            SQLBinaryOperator::Spaceship if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::EqMissing, rhs)
+            },
+            SQLBinaryOperator::Eq => lhs.eq(rhs), // "x = y"
+            SQLBinaryOperator::Gt => lhs.gt(rhs), // "x > y"
+            SQLBinaryOperator::GtEq => lhs.gt_eq(rhs), // "x >= y"
+            SQLBinaryOperator::Lt => lhs.lt(rhs), // "x < y"
+            SQLBinaryOperator::LtEq => lhs.lt_eq(rhs), // "x <= y"
+            SQLBinaryOperator::NotEq => lhs.eq(rhs).not(), // "x != y"
+            SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs), // "x <=> y"
 
             // ----
             // Logical operators
             // ----
-            SQLBinaryOperator::And => lhs.and(rhs),  // "x AND y"
-            SQLBinaryOperator::Or => lhs.or(rhs),  // "x OR y"
+            SQLBinaryOperator::And => lhs.and(rhs), // "x AND y"
+            SQLBinaryOperator::Or => lhs.or(rhs),   // "x OR y"
 
             // ----
             // Mathematical operators
             // ----
-            SQLBinaryOperator::Divide => sql_binary(lhs, SqlBinaryOp::Div, rhs),  // "x / y"
-            SQLBinaryOperator::DuckIntegerDivide => sql_binary(lhs, SqlBinaryOp::IntDiv, rhs),  // "x // y"
-            SQLBinaryOperator::Minus if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Minus, rhs),
-            SQLBinaryOperator::Minus => lhs - rhs,  // "x - y"
-            SQLBinaryOperator::Modulo => sql_binary(lhs, SqlBinaryOp::Rem, rhs),  // "x % y"
-            SQLBinaryOperator::Multiply => sql_binary(lhs, SqlBinaryOp::Mul, rhs),  // "x * y"
-            SQLBinaryOperator::Plus if decimal_literal_operand => sql_binary(lhs, SqlBinaryOp::Plus, rhs),
-            SQLBinaryOperator::Plus => lhs + rhs,  // "x + y"
+            SQLBinaryOperator::Divide => sql_binary(lhs, SqlBinaryOp::Div, rhs), // "x / y"
+            SQLBinaryOperator::DuckIntegerDivide => sql_binary(lhs, SqlBinaryOp::IntDiv, rhs), // "x // y"
+            SQLBinaryOperator::Minus if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Minus, rhs)
+            },
+            SQLBinaryOperator::Minus => lhs - rhs, // "x - y"
+            SQLBinaryOperator::Modulo => sql_binary(lhs, SqlBinaryOp::Rem, rhs), // "x % y"
+            SQLBinaryOperator::Multiply => sql_binary(lhs, SqlBinaryOp::Mul, rhs), // "x * y"
+            SQLBinaryOperator::Plus if decimal_literal_operand => {
+                sql_binary(lhs, SqlBinaryOp::Plus, rhs)
+            },
+            SQLBinaryOperator::Plus => lhs + rhs, // "x + y"
 
             // ----
             // Regular expression operators
             // ----
-            SQLBinaryOperator::PGRegexMatch => match rhs {  // "x ~ y"
-                Expr::Literal(ref lv) if lv.extract_str().is_some() => lhs.str().contains(rhs, true),
+            SQLBinaryOperator::PGRegexMatch => match rhs {
+                // "x ~ y"
+                Expr::Literal(ref lv) if lv.extract_str().is_some() => {
+                    lhs.str().contains(rhs, true)
+                },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexNotMatch => match rhs {  // "x !~ y"
-                Expr::Literal(ref lv) if lv.extract_str().is_some() => lhs.str().contains(rhs, true).not(),
+            SQLBinaryOperator::PGRegexNotMatch => match rhs {
+                // "x !~ y"
+                Expr::Literal(ref lv) if lv.extract_str().is_some() => {
+                    lhs.str().contains(rhs, true).not()
+                },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '!~' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexIMatch => match rhs {  // "x ~* y"
+            SQLBinaryOperator::PGRegexIMatch => match rhs {
+                // "x ~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
                     lhs.str().contains(lit(format!("(?i){pat}")), true)
                 },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", rhs),
             },
-            SQLBinaryOperator::PGRegexNotIMatch => match rhs {  // "x !~* y"
+            SQLBinaryOperator::PGRegexNotIMatch => match rhs {
+                // "x !~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
                     lhs.str().contains(lit(format!("(?i){pat}")), true).not()
@@ -1001,45 +1129,18 @@ impl SQLExprVisitor<'_> {
                 },
             },
             // ----
-            // LIKE/ILIKE operators
-            // ----
-            SQLBinaryOperator::PGLikeMatch  // "x ~~ y"
-            | SQLBinaryOperator::PGNotLikeMatch  // "x !~~ y"
-            | SQLBinaryOperator::PGILikeMatch  // "x ~~* y"
-            | SQLBinaryOperator::PGNotILikeMatch => {  // "x !~~* y"
-                let expr = if matches!(
-                    op,
-                    SQLBinaryOperator::PGLikeMatch | SQLBinaryOperator::PGNotLikeMatch
-                ) {
-                    SQLExpr::Like {
-                        negated: matches!(op, SQLBinaryOperator::PGNotLikeMatch),
-                        any: false,
-                        expr: Box::new(left.clone()),
-                        pattern: Box::new(right.clone()),
-                        escape_char: None,
-                    }
-                } else {
-                    SQLExpr::ILike {
-                        negated: matches!(op, SQLBinaryOperator::PGNotILikeMatch),
-                        any: false,
-                        expr: Box::new(left.clone()),
-                        pattern: Box::new(right.clone()),
-                        escape_char: None,
-                    }
-                };
-                self.visit_expr(&expr)?
-            },
-            // ----
             // String operators
             // ----
-            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs),  // "x ^@ y"
-            SQLBinaryOperator::StringConcat => {  // "x || y"
+            SQLBinaryOperator::PGStartsWith => lhs.str().starts_with(rhs), // "x ^@ y"
+            SQLBinaryOperator::StringConcat => {
+                // "x || y"
                 lhs.cast(DataType::String) + rhs.cast(DataType::String)
             },
             // ----
             // Nested (JSON) field access operators
             // ----
-            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {  // "x -> y", "x ->> y"
+            SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {
+                // "x -> y", "x ->> y"
                 Expr::Literal(lv) if lv.extract_str().is_some() => {
                     let path = lv.extract_str().unwrap();
                     let mut expr = self.struct_field_access_expr(&lhs, path, false)?;
@@ -1059,7 +1160,8 @@ impl SQLExprVisitor<'_> {
                     polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", right)
                 },
             },
-            SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {  // "x #> y", "x #>> y"
+            SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {
+                // "x #> y", "x #>> y"
                 match rhs {
                     Expr::Literal(lv) if lv.extract_str().is_some() => {
                         let path = lv.extract_str().unwrap();
@@ -1071,7 +1173,7 @@ impl SQLExprVisitor<'_> {
                     },
                     _ => {
                         polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", rhs)
-                    }
+                    },
                 }
             },
             other => {
@@ -1173,7 +1275,7 @@ impl SQLExprVisitor<'_> {
         compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        quantified_subquery_unsupported(compare_op, right)?;
+        quantified_subquery_unsupported(self.ctx, compare_op, right)?;
         if let SQLExpr::Subquery(subquery) = right {
             // `x > ALL (S)` is `NOT (x <= ANY (S))`.
             let any_op = match compare_op {
@@ -1210,7 +1312,7 @@ impl SQLExprVisitor<'_> {
         compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        quantified_subquery_unsupported(compare_op, right)?;
+        quantified_subquery_unsupported(self.ctx, compare_op, right)?;
         if let SQLExpr::Subquery(subquery) = right {
             return self.visit_any_subquery(left, compare_op, subquery);
         }
@@ -1412,6 +1514,25 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
+        if nested_target_name(&polars_type).is_some() {
+            // A scalar subquery only gets a type from its plan, and a window has the type of its
+            // function (`OVER ()` partitions by a column that isn't in the schema).
+            let typed = self
+                .ctx
+                .with_typed_subqueries(&expr)?
+                .map_expr(|e| match e {
+                    Expr::Over { function, .. } => Arc::unwrap_or_clone(function),
+                    e => e,
+                });
+            if let Some(source) = self.cast_or_expr_dtype(&typed) {
+                let kind = match cast_kind {
+                    CastKind::TryCast => "TRY_CAST",
+                    CastKind::SafeCast => "SAFE_CAST",
+                    CastKind::Cast | CastKind::DoubleColon => "CAST",
+                };
+                ensure_nested_cast_source(kind, &polars_type, &source)?;
+            }
+        }
         let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
 
         // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
@@ -1779,25 +1900,27 @@ impl SQLExprVisitor<'_> {
                 None => lit(LiteralValue::untyped_null()), // ELSE clause is optional; when omitted, it is implicitly NULL
             };
             if let Some(operand_expr) = operand {
-                let first_operand_expr = self.visit_expr(operand_expr)?;
+                let operand_expr = self.visit_expr(operand_expr)?;
 
                 let first = first.unwrap();
-                let first_cond = first_operand_expr.eq(self.visit_expr(&first.condition)?);
+                let first_cond = operand_expr.clone().eq(self.visit_expr(&first.condition)?);
                 let first_then = self.visit_expr(&first.result)?;
                 let expr = when(first_cond).then(first_then);
                 let next = when_thens.next();
 
                 let mut when_then = if let Some(case_when) = next {
-                    let second_operand_expr = self.visit_expr(operand_expr)?;
-                    let cond = second_operand_expr.eq(self.visit_expr(&case_when.condition)?);
+                    let cond = operand_expr
+                        .clone()
+                        .eq(self.visit_expr(&case_when.condition)?);
                     let res = self.visit_expr(&case_when.result)?;
                     expr.when(cond).then(res)
                 } else {
                     return Ok(expr.otherwise(else_res));
                 };
                 for case_when in when_thens {
-                    let new_operand_expr = self.visit_expr(operand_expr)?;
-                    let cond = new_operand_expr.eq(self.visit_expr(&case_when.condition)?);
+                    let cond = operand_expr
+                        .clone()
+                        .eq(self.visit_expr(&case_when.condition)?);
                     let res = self.visit_expr(&case_when.result)?;
                     when_then = when_then.when(cond).then(res);
                 }
@@ -2100,11 +2223,11 @@ pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
 
 fn resolve_column<'a>(
     ctx: &'a mut SQLContext,
-    ident_root: &'a Ident,
+    relation: &'a str,
     name: &'a str,
     dtype: &'a DataType,
 ) -> PolarsResult<(Expr, Option<&'a DataType>)> {
-    let resolved = ctx.resolve_name(&ident_root.value, name);
+    let resolved = ctx.resolve_name(relation, name);
     let resolved = resolved.as_str();
     Ok((
         if name != resolved {
@@ -2121,14 +2244,16 @@ pub(crate) fn resolve_compound_identifier(
     idents: &[Ident],
     active_schema: Option<&Schema>,
 ) -> PolarsResult<Vec<Expr>> {
-    // inference priority: table > struct > column
+    // inference priority: table > struct > column; the longest qualifier naming a table wins
     let ident_root = &idents[0];
-    let mut remaining_idents = idents.iter().skip(1);
-    let mut lf = if ctx.relation_in_scope(&ident_root.value) {
-        ctx.get_table_from_current_scope(&ident_root.value)
-    } else {
-        None
+    let (relation, mut lf, qualifier_len) = match ctx.resolve_qualifier(idents)? {
+        Some((name, len)) => match ctx.get_relation_frame(&name)? {
+            Some(lf) => (Some(name), Some(lf), len),
+            None => (None, None, 1),
+        },
+        None => (None, None, 1),
     };
+    let mut remaining_idents = idents.iter().skip(qualifier_len);
 
     // get schema from table (or the active/default schema)
     let schema = if let Some(ref mut lf) = lf {
@@ -2174,7 +2299,9 @@ pub(crate) fn resolve_compound_identifier(
     if lf.is_some() && name == "*" {
         return schema
             .iter_names_and_dtypes()
-            .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).map(|(expr, _)| expr))
+            .map(|(name, dtype)| {
+                resolve_column(ctx, relation.as_deref().unwrap(), name, dtype).map(|(expr, _)| expr)
+            })
             .collect();
     }
 
@@ -2188,19 +2315,24 @@ pub(crate) fn resolve_compound_identifier(
             },
             // root is not in schema and no table found
             (true, None) => {
+                let hint = (1..idents.len())
+                    .rev()
+                    .find_map(|len| ctx.hidden_by_alias_hint(&join_idents(&idents[..len])))
+                    .unwrap_or_default();
                 polars_bail!(
-                    SQLInterface: "no table or struct column named '{}' found",
-                    ident_root
+                    SQLInterface: "no table or struct column named '{}' found{}",
+                    ident_root, hint
                 )
             },
             // root is a table, resolve column from table schema
             (false, _) => {
+                let relation = relation.as_deref().unwrap();
                 if let Some((_, col_name, dtype)) = schema.get_full(name) {
-                    resolve_column(ctx, ident_root, col_name, dtype)
+                    resolve_column(ctx, relation, col_name, dtype)
                 } else {
                     polars_bail!(
                         SQLInterface: "no column named '{}' found in table '{}'",
-                        name, ident_root
+                        name, relation
                     )
                 }
             },
@@ -2322,4 +2454,97 @@ pub(crate) fn resolve_expr_dtype(expr: &Expr, schema: Option<&Schema>) -> Option
     expr.to_field(schema.unwrap_or(&empty))
         .ok()
         .map(|fld| fld.dtype)
+}
+
+/// The SQL name of a `STRUCT` or `MAP` cast target, possibly inside lists (`STRUCT[]`).
+fn nested_target_name(dtype: &DataType) -> Option<String> {
+    match dtype {
+        DataType::List(inner) | DataType::Array(inner, _) => {
+            nested_target_name(inner).map(|name| format!("{name}[]"))
+        },
+        DataType::Struct(_) => Some("STRUCT".to_string()),
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(..) => Some("MAP".to_string()),
+        _ => None,
+    }
+}
+
+/// Only a `STRUCT` (`MAP`) value or `NULL` casts to `STRUCT` (`MAP`), at any depth, as in
+/// PostgreSQL. Polars' cast would wrap a value into a 1-field struct (`1` -> `{1}`), and strings
+/// stay free for parsing later. A source of unknown type (no schema) still uses Polars' cast.
+fn ensure_nested_cast_source(
+    cast_kind: &str,
+    target: &DataType,
+    source: &DataType,
+) -> PolarsResult<()> {
+    let Some(mismatch) = nested_cast_mismatch(target, source) else {
+        return Ok(());
+    };
+    // A literal's dynamic type (`dyn int`) is shown as the type it becomes.
+    let source = source.clone().materialize_unknown(true)?;
+    let name = mismatch.target;
+    if mismatch.path.is_empty() {
+        polars_bail!(
+            SQLInterface: "{} from {} to {} is not supported; only {} values or NULL can be cast to {}",
+            cast_kind, source, name, name, name
+        )
+    }
+    polars_bail!(
+        SQLInterface: "{} from {} to {} is not supported: {} is {}; only {} values or NULL can be cast to {}",
+        cast_kind, source, nested_target_name(target).unwrap_or_default(),
+        mismatch.path.join(" of "), mismatch.source.materialize_unknown(true)?, name, name
+    )
+}
+
+/// Where a cast source doesn't fit a `STRUCT` or `MAP` in the target.
+struct NestedCastMismatch {
+    source: DataType,
+    target: String,
+    /// Where in the cast it is, innermost first: `["list element", "field 'a'"]`.
+    path: Vec<String>,
+}
+
+fn nested_cast_mismatch(target: &DataType, source: &DataType) -> Option<NestedCastMismatch> {
+    let within = |segment: String, mismatch: Option<NestedCastMismatch>| {
+        mismatch.map(|mut mismatch| {
+            mismatch.path.push(segment);
+            mismatch
+        })
+    };
+    match (target, source) {
+        (_, DataType::Null | DataType::Unknown(UnknownKind::Any)) => None,
+        (
+            DataType::List(target) | DataType::Array(target, _),
+            DataType::List(source) | DataType::Array(source, _),
+        ) => within("list element".into(), nested_cast_mismatch(target, source)),
+        (DataType::Struct(target_fields), DataType::Struct(source_fields)) => {
+            target_fields.iter().find_map(|field| {
+                let source_field = source_fields.iter().find(|f| f.name == field.name)?;
+                within(
+                    format!("field '{}'", field.name),
+                    nested_cast_mismatch(&field.dtype, &source_field.dtype),
+                )
+            })
+        },
+        #[cfg(feature = "dtype-map")]
+        (DataType::Map(key, value), DataType::Map(source_key, source_value)) => {
+            within("map key".into(), nested_cast_mismatch(key, source_key)).or_else(|| {
+                within(
+                    "map value".into(),
+                    nested_cast_mismatch(value, source_value),
+                )
+            })
+        },
+        // A map is stored as a list of `{key, value}` structs, which a list target can take.
+        #[cfg(feature = "dtype-map")]
+        (DataType::List(target) | DataType::Array(target, _), DataType::Map(..)) => within(
+            "map entry".into(),
+            nested_cast_mismatch(target, &source.map_entries_dtype()?),
+        ),
+        _ => nested_target_name(target).map(|target| NestedCastMismatch {
+            source: source.clone(),
+            target,
+            path: Vec::new(),
+        }),
+    }
 }

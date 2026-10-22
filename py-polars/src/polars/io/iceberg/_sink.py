@@ -23,7 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
 
     import pyarrow as pa
     import pyiceberg.catalog
@@ -65,6 +65,39 @@ class _AlreadyCommitted(Exception):
 
     def __init__(self, table: pyiceberg.table.Table) -> None:
         self.table = table
+
+
+def _create_namespace_if_not_exists(
+    catalog: pyiceberg.catalog.Catalog,
+    namespace: tuple[str, ...],
+    *,
+    create_parents: bool = True,
+) -> None:
+    """Create `namespace`, and any missing parent namespaces."""
+    try:
+        # Tolerates a concurrent create of the same namespace.
+        catalog.create_namespace_if_not_exists(namespace)
+    except Exception:
+        # The create may have landed with its response lost.
+        with contextlib.suppress(Exception):
+            if catalog.namespace_exists(namespace):
+                return
+
+        # The parent namespace may be missing. Catalogs report this differently
+        # (e.g. REST raises a `RESTError` rather than `NoSuchNamespaceError`), so
+        # check for it directly.
+        parent_missing = False
+        if create_parents and len(namespace) > 1:
+            with contextlib.suppress(Exception):
+                parent_missing = not catalog.namespace_exists(namespace[:-1])
+
+        if not parent_missing:
+            raise
+    else:
+        return
+
+    _create_namespace_if_not_exists(catalog, namespace[:-1])
+    _create_namespace_if_not_exists(catalog, namespace, create_parents=False)
 
 
 def _copy_table_state(src: pyiceberg.table.Table, dst: pyiceberg.table.Table) -> None:
@@ -245,6 +278,49 @@ def _temporal_transform_expr(
     return expr.dt.epoch("us") // 3_600_000_000
 
 
+def _bucket_transform_expr(
+    expr: pl.Expr, source_type: IcebergType, num_buckets: int
+) -> pl.Expr | None:
+    """Iceberg `bucket[num_buckets]` transform, or None for an unsupported type."""
+    from pyiceberg.types import (
+        BinaryType,
+        DateType,
+        DecimalType,
+        FixedType,
+        IntegerType,
+        LongType,
+        StringType,
+        TimeType,
+        UUIDType,
+    )
+
+    import polars as pl
+
+    # The hash depends on the representation, so first cast to the source type.
+    if isinstance(source_type, (IntegerType, LongType)):
+        expr = expr.cast(pl.Int64)
+    elif isinstance(source_type, DateType):
+        expr = expr.cast(pl.Date)
+    elif isinstance(source_type, TimeType):
+        expr = expr.cast(pl.Time)
+    elif isinstance(source_type, DecimalType):
+        expr = expr.cast(pl.Decimal(source_type.precision, source_type.scale))
+    elif isinstance(source_type, StringType):
+        expr = expr.cast(pl.String)
+    elif isinstance(source_type, (BinaryType, FixedType, UUIDType)):
+        expr = expr.cast(pl.Binary)
+    elif type(source_type).__name__ not in {
+        "TimestampType",
+        "TimestamptzType",
+        "TimestampNanoType",
+        "TimestamptzNanoType",
+    }:
+        # Timestamps of any time unit are hashed as microseconds since the epoch.
+        return None
+
+    return (expr._mm3_hash() & 0x7FFFFFFF) % num_buckets
+
+
 def _data_files_from_sink_metadata(
     table_metadata: TableMetadata,
     sinked_files: list[_IcebergSinkedFile],
@@ -421,7 +497,7 @@ def _polars_expr_to_overwrite_filter(
     except Exception as e:
         raise err(str(e)) from e
 
-    pyarrow_predicate = expr._pyexpr._to_pyarrow_predicate(empty_df.schema)
+    pyarrow_predicate = expr._pyexpr.to_pyarrow_predicate(empty_df.schema)
 
     converted: Any = None
     if pyarrow_predicate is not None:
@@ -504,14 +580,14 @@ def _add_files(
 
 
 def _partition_key_exprs(
-    table: pyiceberg.table.Table, source_schema: pa.Schema | None = None
+    spec: PartitionSpec, schema: Schema, source_schema: pa.Schema | None = None
 ) -> list[pl.Expr] | None:
-    spec = table.spec()
-
+    """Partition keys of the data, written with `schema`."""
     if not spec.fields:
         return None
 
     from pyiceberg.transforms import (
+        BucketTransform,
         DayTransform,
         HourTransform,
         IdentityTransform,
@@ -532,7 +608,6 @@ def _partition_key_exprs(
 
     import polars as pl
 
-    schema = table.schema()
     reserved_names = {field.name for field in schema.fields}
     if source_schema is not None:
         reserved_names.update(source_schema.names)
@@ -586,6 +661,15 @@ def _partition_key_exprs(
                     f"'{transform}' partition transform on '{source_type}'"
                 )
                 raise NotImplementedError(msg)
+        elif isinstance(transform, BucketTransform):
+            bucket = _bucket_transform_expr(expr, source_type, transform.num_buckets)
+            if bucket is None:
+                msg = (
+                    "sink to Iceberg table with "
+                    f"'{transform}' partition transform on '{source_type}'"
+                )
+                raise NotImplementedError(msg)
+            expr = bucket
         else:
             msg = f"sink to Iceberg table with '{transform}' partition transform"
             raise NotImplementedError(msg)
@@ -712,34 +796,6 @@ def _create_table_schema(
     return Schema(*fields), casts
 
 
-class _SortTransform:
-    """Apply an Iceberg sort transform without pickling its cached callable."""
-
-    def __init__(
-        self, transform: Transform[Any, Any], source_type: IcebergType
-    ) -> None:
-        self.transform = transform
-        self.source_type = source_type
-        self.resolved: NoPickleOption[
-            tuple[Callable[[pa.Array], pa.Array], pa.DataType]
-        ] = NoPickleOption()
-
-    def __call__(self, series: pl.Series) -> pl.Series:
-        import polars as pl
-
-        if (resolved := self.resolved.get()) is None:
-            from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-            resolved = (
-                self.transform.pyarrow_transform(self.source_type),
-                schema_to_pyarrow(self.source_type),
-            )
-            self.resolved.set(resolved)
-
-        transform, dtype = resolved
-        return pl.Series(series.name, transform(series.to_arrow().cast(dtype)))
-
-
 def _sort_key_exprs(
     schema: Schema, sort_order: SortOrder, input_schema: pl.Schema
 ) -> tuple[list[pl.Expr], list[bool], list[bool]]:
@@ -822,11 +878,11 @@ def _sort_key_exprs(
                 msg = f"Iceberg sort transform '{transform}' on '{source_type}'"
                 raise NotImplementedError(msg)
         elif isinstance(transform, BucketTransform):
-            expr = expr.map_batches(
-                _SortTransform(transform, source_type),
-                return_dtype=pl.Int32,
-                is_elementwise=True,
-            )
+            bucket = _bucket_transform_expr(expr, source_type, transform.num_buckets)
+            if bucket is None:
+                msg = f"Iceberg sort transform '{transform}' on '{source_type}'"
+                raise NotImplementedError(msg)
+            expr = bucket
         elif isinstance(transform, VoidTransform):
             continue
         else:
@@ -856,6 +912,7 @@ class IcebergSinkState:
     overwrite_filter: BooleanExpression | pl.Expr | None
     dynamic_partition_overwrite: bool
     create_if_not_exists: bool
+    create_namespace_if_not_exists: bool
     snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
     compression: ParquetCompression
@@ -881,6 +938,7 @@ class IcebergSinkState:
         overwrite_filter: pl.Expr | BooleanExpression | str | None = None,
         partition_overwrite: Literal["dynamic"] | None = None,
         create_if_not_exists: bool = False,
+        create_namespace_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
@@ -930,6 +988,12 @@ class IcebergSinkState:
             msg = "create_if_not_exists=True requires a table identifier as `target`"
             raise TypeError(msg)
 
+        if create_namespace_if_not_exists and not create_if_not_exists:
+            msg = (
+                "create_namespace_if_not_exists=True requires create_if_not_exists=True"
+            )
+            raise ValueError(msg)
+
         catalog_config = (
             (
                 IcebergCatalogConfig._from_api_parameter_or_environment_default(
@@ -967,6 +1031,7 @@ class IcebergSinkState:
             overwrite_filter=overwrite_filter,
             dynamic_partition_overwrite=partition_overwrite == "dynamic",
             create_if_not_exists=create_if_not_exists,
+            create_namespace_if_not_exists=create_namespace_if_not_exists,
             snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
             compression=compression,
@@ -1012,10 +1077,7 @@ class IcebergSinkState:
                 raise
 
         try:
-            # Tolerates a concurrent create of the same table.
-            return catalog.create_table_if_not_exists(
-                self.table_name, schema=self._get_source_schema()
-            )
+            return self._create_table(catalog)
         except Exception:
             # The create may have landed with its response lost.
             try:
@@ -1023,6 +1085,28 @@ class IcebergSinkState:
             except NoSuchTableError:
                 pass
             raise
+
+    def _create_table(
+        self, catalog: pyiceberg.catalog.Catalog
+    ) -> pyiceberg.table.Table:
+        from pyiceberg.exceptions import NoSuchNamespaceError
+
+        # Tolerates a concurrent create of the same table.
+        try:
+            return catalog.create_table_if_not_exists(
+                self.table_name, schema=self._get_source_schema()
+            )
+        except NoSuchNamespaceError:
+            if not self.create_namespace_if_not_exists:
+                raise
+
+        _create_namespace_if_not_exists(
+            catalog, catalog.namespace_from(self.table_name)
+        )
+
+        return catalog.create_table_if_not_exists(
+            self.table_name, schema=self._get_source_schema()
+        )
 
     def _get_converted_storage_options(self) -> dict[str, str]:
         return _convert_iceberg_to_object_store_storage_options(
@@ -1092,13 +1176,17 @@ class IcebergSinkState:
             msg = "schema_mode='overwrite' is not supported for partitioned Iceberg tables"
             raise NotImplementedError(msg)
 
-        partition_key_exprs = _partition_key_exprs(table, self.source_schema)
-        self.partition_spec_id = table.spec().spec_id
-
         sort_order = table.sort_order()
         if sort_order.fields and self.schema_mode == "overwrite":
             msg = "schema_mode='overwrite' is not supported for Iceberg tables with a sort order"
             raise NotImplementedError(msg)
+
+        # Under schema evolution, the keys are of the data as written.
+        schema, arrow_schema = self._schemas_for_write(table)
+        partition_key_exprs = _partition_key_exprs(
+            table.spec(), schema, self.source_schema
+        )
+        self.partition_spec_id = table.spec().spec_id
 
         if location_provider_impl := table_properties.get(
             TableProperties.WRITE_PY_LOCATION_PROVIDER_IMPL
@@ -1123,8 +1211,6 @@ class IcebergSinkState:
             if object_storage_enabled
             else None
         )
-
-        schema, arrow_schema = self._schemas_for_write(table)
 
         # Fail before writing any data.
         if self.dynamic_partition_overwrite:

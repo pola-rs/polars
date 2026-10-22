@@ -3502,3 +3502,21 @@ def test_moment_agg_unsupported_dtype_raises_27309(
             InvalidOperationError, match=f"`{op}` operation not supported"
         ):
             q.collect()
+
+
+def test_sliced_group_by_maintain_order_30079() -> None:
+    df = pl.DataFrame({"k": [5, 3, 9, 1, 7, 2, 8, 4, 6, 0] * 100, "v": range(1000)})
+
+    q = df.lazy().group_by("k", maintain_order=True).agg(pl.col("v").sum())
+    for _ in range(5):
+        assert q.head(3).sort("k").collect()["k"].to_list() == [3, 5, 9]
+        assert q.slice(1, 1).sort("k").collect()["k"].to_list() == [3]
+
+    q = (
+        df.lazy()
+        .sort("v", descending=True)
+        .group_by("k", maintain_order=True)
+        .agg(pl.col("v").sum())
+    )
+    for _ in range(5):
+        assert q.head(3).sort("k").collect()["k"].to_list() == [0, 4, 6]

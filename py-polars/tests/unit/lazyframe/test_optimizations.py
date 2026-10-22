@@ -221,6 +221,51 @@ def test_count_guarded_sum_not_rewritten() -> None:
         assert "null_on_empty" not in lf.select(e).explain()
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("dtype", [pl.Int16, pl.Int64, pl.UInt32])
+def test_sum_of_column_with_literal(engine: EngineType, dtype: pl.DataType) -> None:
+    x = pl.col("x")
+    lf = pl.LazyFrame({"g": [1, 1, 2, 2, 3], "x": [1, None, 3, 4, None]}).with_columns(
+        x.cast(dtype)
+    )
+    exprs = [
+        x.sum(),
+        (x + 5).sum().alias("a"),
+        (x - 1).sum().alias("b"),
+        (7 - x).sum().alias("c"),
+        (x + pl.lit(2, pl.Int64)).sum().alias("d"),
+        (x + 3).count().alias("e"),
+        (x + 1.5).sum().alias("f"),
+    ]
+    no_simplify = QueryOptFlags(simplify_expression=False)
+    assert '(col("x") + 5)' in lf.select(exprs).explain(optimizations=no_simplify)
+    assert '(col("x") + 5)' not in lf.select(exprs).explain()
+
+    for q in [
+        lf.select(exprs),
+        lf.group_by("g").agg(exprs),
+        lf.select(e.over("g") for e in exprs),
+        lf.clear().select(exprs),
+        lf.sql("SELECT SUM(x + 1) AS a, SUM(9 - x) AS b FROM self"),
+        lf.filter(g=3).sql("SELECT SUM(x + 1) AS a, SUM(9 - x) AS b FROM self"),
+    ]:
+        expected = q.collect(optimizations=no_simplify)
+        assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
+
+
+def test_sum_of_column_with_literal_that_changes_dtype() -> None:
+    x = pl.col("x")
+    lf = pl.LazyFrame({"x": pl.Series([2**63, 1], dtype=pl.UInt64)})
+    q = lf.select(
+        a=(x + -1).count() + 1,
+        b=(x + -1).sum() + 1,
+        c=(x.cast(pl.Int64, strict=False) + 1).sum(),
+        d=(x + 2**64).count(),
+    )
+    no_simplify = QueryOptFlags(simplify_expression=False)
+    assert_frame_equal(q.collect(), q.collect(optimizations=no_simplify))
+
+
 def test_drop_nulls_followed_by_len() -> None:
     lf = pl.LazyFrame({"group": [0, 0, 0, 1, 2], "val": [6, 0, None, None, 5]})
 
@@ -1499,3 +1544,42 @@ def test_literal_select_skips_input(engine: EngineType) -> None:
         ),
     )
     assert calls == []
+
+
+def test_repeated_keys_removed() -> None:
+    lf = pl.LazyFrame(
+        {"a": [3, 1, 2, 0, 3], "b": ["x", "y", "z", "w", "x"], "c": [1, 2, 3, 4, 5]}
+    )
+    for q in [
+        lf.sort("a", "b", "a"),
+        lf.top_k(2, by=["a", "b", "a"]),
+        lf.select(pl.col("b").sort_by("a", "b", "a")),
+        lf.select(pl.col("b").top_k_by(["a", "b", "a"], 2)),
+        lf.select(pl.col("c").sum().over("a", "b", "a")),
+    ]:
+        assert 'col("a"), col("b"), col("a")' not in q.explain()
+
+    q = lf.unique(subset=["a", "a"], maintain_order=True)
+    assert 'BY Some(["a"])' in q.explain()
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [3, 1, 2, 0], "b": ["x", "y", "z", "w"], "c": [1, 2, 3, 4]}),
+    )
+
+    q = lf.select(pl.col("c").sum().over("a", "a"))
+    assert 'over([col("a")])' in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"c": [6, 2, 3, 4, 6]}))
+
+    q = lf.select(
+        pl.col("a").cum_sum().over(order_by=["c", "c"], descending=True),
+    )
+    assert 'order_by: col("c"))' in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [9, 6, 5, 3, 3]}))
+
+    left = lf.sort("a")
+    right = left.rename({"b": "d", "c": "e"})
+    q = left.join_asof(right, on="a", by_left=["b", "b"], by_right=["d", "d"])
+    assert_frame_equal(
+        q.collect(),
+        left.join_asof(right, on="a", by_left="b", by_right="d").collect(),
+    )

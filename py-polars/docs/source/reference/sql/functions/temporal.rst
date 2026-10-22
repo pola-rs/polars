@@ -8,6 +8,12 @@ Temporal
    * - Function
      - Description
 
+   * - :ref:`CURRENT_DATE <current_date>`
+     - Returns the local date at the start of the statement.
+   * - :ref:`CURRENT_TIME <current_time>`
+     - Returns the local time at the start of the statement.
+   * - :ref:`CURRENT_TIMESTAMP <current_timestamp>`
+     - Returns the local date and time at the start of the statement.
    * - :ref:`DATE_PART <date_part>`
      - Extracts a part of a date (or datetime) such as 'year', 'month', etc.
    * - :ref:`DATE_TRUNC <date_trunc>`
@@ -17,6 +23,55 @@ Temporal
    * - :ref:`STRFTIME <strftime>`
      - Formats a temporal value (Datetime, Date, or Time) as a string.
 
+
+.. _current_date:
+
+CURRENT_DATE
+------------
+Returns the local date at the start of the statement, as a Date. All calls in a statement,
+including its subqueries, return the same value. A lazy query reads the clock when its SQL is
+translated, which can be before it is collected (for example, when its schema is read). A
+table that is itself a lazy SQL query reads the clock separately.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"dt": [date(2020, 1, 1), date(2999, 1, 1)]})
+    df.sql("SELECT dt FROM self WHERE dt <= CURRENT_DATE - INTERVAL '1 year'")
+    # shape: (1, 1)
+    # ┌────────────┐
+    # │ dt         │
+    # │ ---        │
+    # │ date       │
+    # ╞════════════╡
+    # │ 2020-01-01 │
+    # └────────────┘
+
+.. _current_time:
+
+CURRENT_TIME
+------------
+Returns the local time at the start of the statement, as a Time. `LOCALTIME` is an alias.
+
+**Example:**
+
+.. code-block:: python
+
+    df.sql("SELECT CURRENT_TIME AS now FROM self")
+
+.. _current_timestamp:
+
+CURRENT_TIMESTAMP
+-----------------
+Returns the local date and time at the start of the statement, as a Datetime with
+microsecond precision and no time zone. `LOCALTIMESTAMP` and `NOW()` are aliases.
+
+**Example:**
+
+.. code-block:: python
+
+    df.sql("SELECT CURRENT_TIMESTAMP AS ts, NOW() AS ts_now FROM self")
 
 .. _date_part:
 

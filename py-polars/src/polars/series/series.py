@@ -1049,9 +1049,8 @@ class Series(metaclass=_Meta):
                 return self._from_pyseries(getattr(_s, op_s)(self._s))
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
-        elif (
-            isinstance(other, (float, date, datetime, str))
-            and not self.dtype.is_float()
+        elif isinstance(other, str) or (
+            isinstance(other, (float, date, datetime)) and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -1152,6 +1151,7 @@ class Series(metaclass=_Meta):
             if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
+                or self.dtype == String
                 or isinstance(self.dtype, (List, Array, Duration))
                 or (
                     isinstance(other, Series) and isinstance(other.dtype, (List, Array))
@@ -1253,7 +1253,9 @@ class Series(metaclass=_Meta):
 
         if isinstance(other, int):
             other = float(other)
-        return self.cast(Float64).__rfloordiv__(other)
+        if self.dtype != String:
+            self = self.cast(Float64)
+        return self.__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.dtype.is_temporal():
@@ -8419,10 +8421,14 @@ class Series(metaclass=_Meta):
         dtype: type[int | float] | PolarsDataType | None = None,
     ) -> Series:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed between numeric types of the same size. To
+        convert between types of different sizes, use :meth:`cast` instead.
+
+        A `Decimal` can also be reinterpreted to and from `Int128`, its unscaled integer
+        representation: `1.23` as `Decimal(5, 2)` becomes `123`. Reinterpreting an
+        `Int128` raises if the value doesn't fit the precision of the target `Decimal`.
 
         Exactly one of `signed` or `dtype` must be specified.
 

@@ -284,6 +284,35 @@ fn prepare_schemas(
     })
 }
 
+/// Whether a (decompressed) slice from progressive schema inference holds the rest of the file:
+/// everything was fetched, and when compressed, the decompressor gave less than was asked for.
+#[cfg(any(feature = "json", feature = "csv"))]
+fn slice_reaches_eof(
+    offset: usize,
+    file_size: usize,
+    compression: Option<SupportedCompression>,
+    bytes_read: usize,
+    read_size: usize,
+) -> bool {
+    offset >= file_size && (compression.is_none() || bytes_read < read_size)
+}
+
+/// Before EOF a slice from progressive schema inference may end inside a row. Keep only the
+/// complete rows, so that we neither count nor infer from an incomplete row. `complete_len`
+/// returns the length of the complete rows in the given bytes.
+#[cfg(any(feature = "json", feature = "csv"))]
+fn complete_rows(
+    slice: Buffer<u8>,
+    at_eof: bool,
+    complete_len: impl FnOnce(&[u8]) -> usize,
+) -> Buffer<u8> {
+    if at_eof {
+        return slice;
+    }
+    let complete_len = complete_len(&slice);
+    slice.sliced(..complete_len)
+}
+
 #[cfg(feature = "parquet")]
 pub(super) async fn parquet_file_info(
     sources: &ScanSources,
@@ -571,6 +600,8 @@ pub(super) async fn parquet_file_info(
         parquet_column_stats(
             resolved.metadata_per_source.resolved_metadata(),
             resolved.metadata_per_source.is_full(),
+            &resolved.reader_schema,
+            polars_config::config().scan_chunk_statistics(),
         )
     } else {
         ScanColumnStatsMap::default()
@@ -598,11 +629,15 @@ const CHUNK_BUDGET: usize = 8192;
 /// Row groups beyond [`CHUNK_BUDGET`] chunks are sampled, which turns the
 /// per-column counts and ranges into estimates.
 ///
-/// `complete` says whether the footers cover every source.
+/// `complete` says whether the footers cover every source. With `keep_row_groups`,
+/// each column's stats also hold the statistics of every sampled row group. Their
+/// bounds are decoded to the column's type in `reader_schema`.
 #[cfg(feature = "parquet")]
 fn parquet_column_stats(
     metadata: &[polars_io::parquet::metadata::FileMetadataRef],
     complete: bool,
+    reader_schema: &ArrowSchema,
+    keep_row_groups: bool,
 ) -> ScanColumnStatsMap {
     /// accumulated statistics over one root column (parquet leaf columns are excluded).
     #[derive(Default)]
@@ -620,6 +655,9 @@ fn parquet_column_stats(
         /// Set once a chunk carried no range, so part of the column is missing
         /// from the fold.
         int_range_incomplete: bool,
+        /// The statistics of this column in each sampled row group, in the order the
+        /// row groups are visited, collected only with `keep_row_groups`.
+        row_groups: Option<Vec<RowGroupStats>>,
     }
 
     let resolved_rows: u64 = metadata.iter().map(|m| m.num_rows as u64).sum();
@@ -646,22 +684,26 @@ fn parquet_column_stats(
     let mut sampled_rows: u64 = 0;
     let mut sampled_groups: u64 = 0;
 
-    for (footer_buf, rg) in metadata
+    for (m, rg) in metadata
         .iter()
-        .flat_map(|m| m.row_groups.iter().map(move |rg| (&m.footer_buf, rg)))
+        .flat_map(|m| m.row_groups.iter().map(move |rg| (m, rg)))
         .step_by(stride)
     {
+        let footer_buf = &m.footer_buf;
         sampled_rows += rg.num_rows() as u64;
         sampled_groups += 1;
 
-        for chunk in rg.parquet_columns() {
+        for (leaf, chunk) in rg.parquet_columns().iter().enumerate() {
             let path = &chunk.descriptor().path_in_schema;
             let Some(root) = path.first() else {
                 continue;
             };
             let a = match acc.get_mut(root) {
                 Some(a) => a,
-                None => acc.entry(root.clone()).or_default(),
+                None => acc.entry(root.clone()).or_insert_with(|| Acc {
+                    row_groups: keep_row_groups.then(Vec::new),
+                    ..Default::default()
+                }),
             };
 
             a.nested |= path.len() > 1;
@@ -672,9 +714,27 @@ fn parquet_column_stats(
             else {
                 a.nulls_unknown = true;
                 a.int_range_incomplete = true;
+                // Without this row group, the others would no longer stand for the
+                // sample's rows.
+                a.row_groups = None;
                 continue;
             };
 
+            // A nested column is stored as several parquet leaf columns, whose bounds
+            // don't add up to bounds of the column, so it gets no per-row-group
+            // statistics.
+            if a.nested {
+                a.row_groups = None;
+            }
+            if let Some(row_groups) = &mut a.row_groups {
+                match reader_schema
+                    .get(root.as_str())
+                    .and_then(|field| row_group_stats(field, m, rg, leaf))
+                {
+                    Some(stats) => row_groups.push(stats),
+                    None => a.row_groups = None,
+                }
+            }
             a.uncompressed = a
                 .uncompressed
                 .saturating_add(uncompressed_size.max(0) as u64);
@@ -740,10 +800,109 @@ fn parquet_column_stats(
                     a.int_range
                 },
                 int_range_partial: !complete || (sampled && !widen_range),
+                sampled_row_groups: a.row_groups.map(Arc::from),
             };
             (name, stats)
         })
         .collect()
+}
+
+/// The statistics of one column in one sampled row group, or `None` if the footer
+/// doesn't hold the column chunk's sizes, as for an encrypted column without its key.
+/// `leaf` is the index of the column's chunk within `row_group`, `metadata` is the
+/// footer of the file that holds the row group, and `field` is the arrow field the
+/// bounds are decoded as.
+#[cfg(feature = "parquet")]
+fn row_group_stats(
+    field: &ArrowField,
+    metadata: &polars_io::parquet::metadata::FileMetadata,
+    row_group: &polars_parquet::read::RowGroupMetadata,
+    leaf: usize,
+) -> Option<RowGroupStats> {
+    use polars_parquet::parquet::schema::types::PhysicalType;
+
+    let chunk = &row_group.parquet_columns()[leaf];
+    let non_negative = |v: i64| u64::try_from(v).ok();
+    let value_width = match chunk.physical_type() {
+        PhysicalType::Int32 | PhysicalType::Float => ValueWidth::Fixed(4),
+        PhysicalType::Int64 | PhysicalType::Double => ValueWidth::Fixed(8),
+        PhysicalType::Int96 => ValueWidth::Fixed(12),
+        PhysicalType::FixedLenByteArray(width) => {
+            ValueWidth::Fixed(u32::try_from(width).unwrap_or(u32::MAX))
+        },
+        PhysicalType::Boolean => ValueWidth::Bits,
+        PhysicalType::ByteArray => ValueWidth::Variable,
+    };
+    // The dictionary page runs from its own offset up to the first data page.
+    let compressed_size = chunk.compressed_size().ok()?;
+    let dictionary_page_size = match chunk.dictionary_page_offset().ok()? {
+        Some(dict) => Some(chunk.data_page_offset().ok()? - dict),
+        None => None,
+    }
+    .filter(|&size| size > 0 && size <= compressed_size)
+    .and_then(non_negative);
+    // A categorical column is stored as its values, which its bounds are, so they are
+    // read as those.
+    let values_field;
+    let field = match field.dtype() {
+        ArrowDataType::Dictionary(_, values, _) => {
+            values_field = ArrowField::new(field.name.clone(), values.as_ref().clone(), true);
+            &values_field
+        },
+        _ => field,
+    };
+    let dtype = DataType::from_arrow_field(field);
+    let bounds = polars_parquet::read::statistics::deserialize_all(
+        field,
+        std::slice::from_ref(row_group),
+        leaf,
+        metadata.column_order(leaf),
+        &metadata.footer_buf,
+    )
+    .ok()
+    .flatten()
+    .and_then(|s| {
+        Some((
+            bound_as(s.min_value, &dtype)?,
+            bound_as(s.max_value, &dtype)?,
+        ))
+    });
+    Some(RowGroupStats {
+        rows: row_group.num_rows() as u64,
+        null_count: chunk.null_count().and_then(non_negative),
+        distinct_count: chunk.distinct_count().and_then(non_negative),
+        value_width,
+        uncompressed_size: non_negative(chunk.uncompressed_size().ok()?).unwrap_or(0),
+        dictionary_page_size,
+        bounds,
+    })
+}
+
+/// Converts a minimum or maximum read from the footer statistics, a single-value
+/// array, to a value of `dtype`. `None` if the footer doesn't record it exactly.
+///
+/// Parquet stores a decimal as its unscaled integer, so a decimal bound is given the
+/// column's precision and scale rather than cast: a cast would read 150 as 150.00
+/// instead of 1.50.
+#[cfg(feature = "parquet")]
+fn bound_as(array: Box<dyn polars_arrow::array::Array>, dtype: &DataType) -> Option<Scalar> {
+    let raw = Series::from_arrow(PlSmallStr::EMPTY, array).ok()?;
+    let typed = match dtype {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) if raw.dtype().is_integer() => Some(
+            raw.cast(&DataType::Int128)
+                .ok()?
+                .i128()
+                .ok()?
+                .clone()
+                .into_decimal(*precision, *scale)
+                .ok()?
+                .into_series(),
+        ),
+        _ => raw.cast(dtype).ok(),
+    }?;
+    let value = typed.get(0).ok()?.into_static();
+    (!value.is_null()).then(|| Scalar::new(typed.dtype().clone(), value))
 }
 
 /// Widen a range folded over `groups` (at least two) evenly spaced sampled row
@@ -1016,7 +1175,9 @@ pub async fn csv_file_info(
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
         let source = sources.at(i);
 
-        let (mem_slice_raw, file_size, decompressed_slice_size_hint) = if run_async
+        // Whether the whole file is read, rather than a prefix for schema inference.
+        let mut read_whole_file = true;
+        let (mut reader, file_size, decompressed_slice_size_hint, compression) = if run_async
             && let Some(infer_schema_length) = infer_schema_length
         {
             // Only download what we need for schema inference.
@@ -1059,8 +1220,18 @@ pub async fn csv_file_info(
             let mut truncated_bytes: Vec<u8> = Vec::with_capacity(INITIAL_FETCH);
             let mut reached_eof = false;
 
+            // With a header and `infer_schema_length == 0` only the complete header is needed. An
+            // incomplete one gives no columns, so positional dtype overrides are only checked
+            // against the complete header, after the loop.
+            let header_only_options =
+                (infer_schema_length == 0 && csv_options.has_header).then(|| CsvReadOptions {
+                    raise_if_empty: false,
+                    dtype_overwrite: None,
+                    ..csv_options.clone()
+                });
+
             // Collect enough rows to satisfy infer_schema_length.
-            let (mem_slice_raw, decompressed_slice_size_hint) = loop {
+            let decompressed_slice = loop {
                 let range = offset..std::cmp::min(file_size, offset + fetch_size);
 
                 if range.is_empty() {
@@ -1095,26 +1266,60 @@ pub async fn csv_file_info(
                     {
                         Ok(v) => v,
                         // We assume that unexpected EOF indicates that we lack sufficient data.
-                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                        // Once all of it is fetched, the compressed file is cut off.
+                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !reached_eof => {
                             fetch_size *= 2;
                             continue;
                         },
                         Err(e) => Err(e)?,
                     };
 
-                let row_count = polars_io::csv::read::count_rows_from_slice_par(
-                    slice.clone(),
-                    csv_options.parse_options.quote_char,
-                    csv_options.parse_options.comment_prefix.as_ref(),
-                    csv_options.parse_options.eol_char,
-                    csv_options.has_header,
-                    csv_options.skip_lines,
-                    csv_options.skip_rows,
-                    csv_options.skip_rows_after_header,
-                    csv_options.raise_if_empty,
-                )?;
+                let at_eof =
+                    slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
+                // Quoted fields, including in the header, may contain line breaks.
+                let parse_options = &csv_options.parse_options;
+                let slice = complete_rows(slice, at_eof, |bytes| {
+                    polars_io::csv::read::complete_rows_len(
+                        bytes,
+                        parse_options.quote_char,
+                        parse_options.comment_prefix.as_ref(),
+                        parse_options.eol_char,
+                        csv_options.skip_lines,
+                    )
+                });
 
-                if row_count < infer_schema_length && !reached_eof {
+                let enough_rows = if let Some(options) = &header_only_options {
+                    // The header is incomplete if none is found.
+                    let (header_schema, _) = read_until_start_and_infer_schema(
+                        options,
+                        None,
+                        extra_columns_policy == ExtraColumnsPolicy::Ignore,
+                        missing_columns_policy == MissingColumnsPolicy::Insert,
+                        Some(slice.len()),
+                        None,
+                        &mut ByteSourceReader::from_uncompressed_memory(slice.clone()),
+                    )?;
+                    !header_schema.is_empty()
+                } else {
+                    // Before EOF too few lines (e.g. to skip) only means we need more data, so
+                    // don't let the row counter raise on that.
+                    let row_count = polars_io::csv::read::count_rows_from_reader_par(
+                        ByteSourceReader::from_uncompressed_memory(slice.clone()),
+                        csv_options.parse_options.quote_char,
+                        csv_options.parse_options.comment_prefix.as_ref(),
+                        csv_options.parse_options.eol_char,
+                        csv_options.has_header,
+                        csv_options.skip_lines,
+                        csv_options.skip_rows,
+                        csv_options.skip_rows_after_header,
+                        csv_options.raise_if_empty && at_eof,
+                        Some(slice.len()),
+                    )?;
+                    // Without a header, the first row determines the columns.
+                    row_count >= infer_schema_length.max(1)
+                };
+
+                if !enough_rows && !at_eof {
                     if compression.is_some() && bytes_read == read_size {
                         // Decompressor had more to give — read_size too small
                         try_read_size *= 2;
@@ -1126,23 +1331,31 @@ pub async fn csv_file_info(
                     continue;
                 }
 
-                break (Buffer::from_owner(truncated_bytes), Some(bytes_read));
+                read_whole_file = at_eof;
+                break slice;
             };
-            (mem_slice_raw, file_size, decompressed_slice_size_hint)
+
+            // Infer from the already decompressed complete rows: decompressing the truncated
+            // compressed bytes again can run into their end while looking for a line ending.
+            let decompressed_slice_size_hint = Some(decompressed_slice.len());
+            (
+                ByteSourceReader::from_uncompressed_memory(decompressed_slice),
+                file_size,
+                decompressed_slice_size_hint,
+                compression,
+            )
         } else {
             let mem_slice_raw =
                 source.to_buffer_possibly_async(run_async, cache_entries.as_ref(), i)?;
             let file_size = mem_slice_raw.len();
-            let compression = SupportedCompression::check(&mem_slice_raw);
+            let reader = ByteSourceReader::from_memory(mem_slice_raw)?;
+            let compression = reader.compression();
             let decompressed_slice_size_hint = Some(match compression {
                 None => file_size,
                 Some(_) => file_size * ASSUMED_COMPRESSION_RATIO,
             });
-            (mem_slice_raw, file_size, decompressed_slice_size_hint)
+            (reader, file_size, decompressed_slice_size_hint, compression)
         };
-
-        let mut reader = ByteSourceReader::from_memory(mem_slice_raw)?;
-        let compression = reader.compression();
 
         let mut first_row_len = 0;
         let (schema, _) = read_until_start_and_infer_schema(
@@ -1164,8 +1377,17 @@ pub async fn csv_file_info(
 
         // TODO. We can do (much) better by collect statistics as part of row count and/or schema
         // inference, including observed average row_length and compression ratio.
-        let estimated_rows =
-            (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize;
+        let estimated_rows = if first_row_len > 0 {
+            (decompressed_file_size_hint as f64 / first_row_len as f64).round() as usize
+        } else if read_whole_file {
+            // The file has no data rows.
+            0
+        } else {
+            // Only the header was needed and fetched, so estimate from the length up to and
+            // including the header instead.
+            let header_len = decompressed_slice_size_hint.unwrap_or(1).max(1);
+            (decompressed_file_size_hint as f64 / header_len as f64).round() as usize
+        };
 
         Ok((schema, estimated_rows))
     };
@@ -1361,14 +1583,18 @@ pub async fn ndjson_file_info(
                 match reader.read_next_slice(&Buffer::new(), read_size, uncompressed_size_hint) {
                     Ok(v) => v,
                     // We assume that unexpected EOF indicates that we lack sufficient data.
-                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    // Once all of it is fetched, the compressed file is cut off.
+                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !reached_eof => {
                         fetch_size *= 2;
                         continue;
                     },
                     Err(e) => Err(e)?,
                 };
 
-            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !reached_eof {
+            let at_eof = slice_reaches_eof(offset, file_size, compression, bytes_read, read_size);
+            let slice = complete_rows(slice, at_eof, polars_io::ndjson::complete_rows_len);
+
+            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !at_eof {
                 if compression.is_some() && bytes_read == read_size {
                     // Decompressor had more to give — read_size too small
                     try_read_size *= 2;
@@ -1887,5 +2113,117 @@ impl SourcesToFileInfo {
             self.inner.write().unwrap().insert(k, v.clone());
             Ok(v)
         }
+    }
+}
+
+#[cfg(all(test, feature = "parquet"))]
+mod tests {
+    use std::io::Cursor;
+    use std::sync::Arc;
+
+    use polars_core::df;
+    use polars_core::prelude::*;
+    use polars_io::prelude::ParquetWriter;
+
+    use super::parquet_column_stats;
+    use crate::plans::ValueWidth;
+
+    /// The footer and the schema of a file of `df` in row groups of `rows_per_group`.
+    fn footer(
+        mut df: DataFrame,
+        rows_per_group: usize,
+    ) -> (polars_io::parquet::metadata::FileMetadataRef, ArrowSchema) {
+        let mut buf = Vec::new();
+        ParquetWriter::new(&mut buf)
+            .with_row_group_size(Some(rows_per_group))
+            .finish(&mut df)
+            .unwrap();
+        let metadata = polars_parquet::read::read_metadata(&mut Cursor::new(buf)).unwrap();
+        let schema = polars_parquet::read::infer_schema(&metadata).unwrap();
+        (Arc::new(metadata), schema)
+    }
+
+    #[test]
+    fn row_groups_hold_their_statistics() {
+        let df = df![
+            "a" => (0..300i64).collect::<Vec<_>>(),
+            "s" => (0..300).map(|i| format!("v{:03}", i / 100)).collect::<Vec<_>>(),
+        ]
+        .unwrap();
+        let (metadata, schema) = footer(df, 100);
+
+        let stats = parquet_column_stats(std::slice::from_ref(&metadata), true, &schema, true);
+        let a = stats["a"].sampled_row_groups.as_deref().unwrap();
+        assert!(a.iter().all(|rg| rg.value_width == ValueWidth::Fixed(8)));
+        let rows: Vec<_> = a.iter().map(|rg| rg.rows).collect();
+        assert_eq!(rows, [100, 100, 100]);
+        let nulls: Vec<_> = a.iter().map(|rg| rg.null_count).collect();
+        assert_eq!(nulls, [Some(0), Some(0), Some(0)]);
+        let bounds: Vec<_> = a.iter().map(|rg| rg.bounds.clone()).collect();
+        let int = |v: i64| Scalar::from(v);
+        assert_eq!(
+            bounds,
+            [
+                Some((int(0), int(99))),
+                Some((int(100), int(199))),
+                Some((int(200), int(299))),
+            ]
+        );
+
+        let s = stats["s"].sampled_row_groups.as_deref().unwrap();
+        assert!(s.iter().all(|rg| rg.value_width == ValueWidth::Variable));
+        let str = |v: &str| Scalar::from(PlSmallStr::from(v));
+        let bounds: Vec<_> = s.iter().map(|rg| rg.bounds.clone()).collect();
+        assert_eq!(
+            bounds,
+            [
+                Some((str("v000"), str("v000"))),
+                Some((str("v001"), str("v001"))),
+                Some((str("v002"), str("v002"))),
+            ]
+        );
+
+        let without = parquet_column_stats(&[metadata], true, &schema, false);
+        assert!(without["a"].sampled_row_groups.is_none());
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    #[test]
+    fn categorical_bounds_are_their_values() {
+        let c = Series::new("c".into(), ["b", "a", "c", "b"])
+            .cast(&DataType::from_categories(Categories::global()))
+            .unwrap();
+        let (metadata, schema) = footer(DataFrame::new_infer_height(vec![c.into()]).unwrap(), 2);
+
+        let stats = parquet_column_stats(&[metadata], true, &schema, true);
+        let row_groups = stats["c"].sampled_row_groups.as_deref().unwrap();
+        let str = |v: &str| Scalar::from(PlSmallStr::from(v));
+        let bounds: Vec<_> = row_groups.iter().map(|rg| rg.bounds.clone()).collect();
+        assert_eq!(
+            bounds,
+            [Some((str("a"), str("b"))), Some((str("b"), str("c")))]
+        );
+    }
+
+    #[cfg(feature = "dtype-decimal")]
+    #[test]
+    fn decimal_bounds_keep_their_scale() {
+        let d = Int128Chunked::from_slice("d".into(), &[150, 250, 1999, 2001])
+            .into_decimal(10, 2)
+            .unwrap()
+            .into_series();
+        let (metadata, schema) = footer(DataFrame::new_infer_height(vec![d.into()]).unwrap(), 2);
+
+        let stats = parquet_column_stats(&[metadata], true, &schema, true);
+        let row_groups = stats["d"].sampled_row_groups.as_deref().unwrap();
+        let decimal = |v: i128| Scalar::new(DataType::Decimal(10, 2), AnyValue::Decimal(v, 10, 2));
+        let bounds: Vec<_> = row_groups.iter().map(|rg| rg.bounds.clone()).collect();
+        assert_eq!(
+            bounds,
+            [
+                Some((decimal(150), decimal(250))),
+                Some((decimal(1999), decimal(2001))),
+            ]
+        );
     }
 }
