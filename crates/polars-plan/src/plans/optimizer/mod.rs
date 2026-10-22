@@ -236,6 +236,7 @@ pub fn optimize(
             opt_flags.streaming(),
             opt_flags.partition_hive(),
             opt_flags.row_estimate(),
+            has_recursive,
             hooks,
         )?;
     }
@@ -278,7 +279,7 @@ pub fn optimize(
     }
 
     if opt_flags.projection_pushdown() {
-        projection_pushdown(root, ir_arena, expr_arena);
+        projection_pushdown(root, ir_arena, expr_arena, has_recursive);
     }
 
     if opt_flags.fast_projection() {

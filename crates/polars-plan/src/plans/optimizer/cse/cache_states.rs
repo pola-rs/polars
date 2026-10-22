@@ -146,6 +146,7 @@ pub(crate) fn set_cache_states(
     streaming: bool,
     partition_hive: bool,
     row_estimate: bool,
+    has_recursive: bool,
     hooks: ExecutionHooks,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
@@ -315,7 +316,11 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let caches_in_recursive_steps = caches_in_recursive_steps(root, lp_arena);
+        let caches_in_recursive_steps = if has_recursive {
+            caches_in_recursive_steps(root, lp_arena)
+        } else {
+            Default::default()
+        };
         let mut pred_pd =
             PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive, hooks);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,

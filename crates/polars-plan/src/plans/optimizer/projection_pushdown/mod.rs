@@ -38,7 +38,12 @@ use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
-pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+pub fn projection_pushdown(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    has_recursive: bool,
+) {
     let schema_cache = &mut Default::default();
 
     // Put a simple projection on top so that the root node has a valid ParentKeyAndPort to point to.
@@ -55,7 +60,11 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
 
     #[allow(clippy::disallowed_types)]
     let mut optimized_cache_nodes = PlHashMap::default();
-    let caches_shared_across_rounds = caches_shared_across_rounds(optimize_root, ir_arena);
+    let caches_shared_across_rounds = if has_recursive {
+        caches_shared_across_rounds(optimize_root, ir_arena)
+    } else {
+        Default::default()
+    };
 
     ir_graph_traversal(
         optimize_root,
