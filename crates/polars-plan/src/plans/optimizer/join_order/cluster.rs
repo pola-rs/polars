@@ -103,11 +103,11 @@ impl Cluster {
     /// An empty iterator means joining the candidate would be a cross product.
     /// Costing considers every implied equality; rebuilding emits a spanning tree
     /// from the same classes.
-    pub(super) fn bridging<'a, 'p>(
+    pub(super) fn bridging<'a>(
         &'a self,
-        is_placed: &'p [bool],
+        is_placed: &'a [bool],
         candidate: usize,
-    ) -> impl Iterator<Item = Bridge<'a>> + use<'a, 'p> {
+    ) -> impl Iterator<Item = Bridge<'a>> + 'a {
         let classes = self.classes_by_leaf[candidate]
             .iter()
             .flat_map(move |&class| {
@@ -130,11 +130,11 @@ impl Cluster {
         classes.chain(self.direct_bridging(is_placed, candidate))
     }
 
-    pub(super) fn direct_bridging<'a, 'p>(
+    pub(super) fn direct_bridging<'a>(
         &'a self,
-        is_placed: &'p [bool],
+        is_placed: &'a [bool],
         candidate: usize,
-    ) -> impl Iterator<Item = Bridge<'a>> + use<'a, 'p> {
+    ) -> impl Iterator<Item = Bridge<'a>> + 'a {
         self.edges.iter().filter_map(move |edge| {
             if edge.right_leaf == candidate && is_placed[edge.left_leaf] {
                 Some(Bridge {

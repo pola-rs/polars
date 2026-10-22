@@ -145,6 +145,63 @@ fn identities<'a>(bridge: &Bridge<'a>) -> (Option<DomainIdentity<'a>>, Option<Do
     )
 }
 
+/// A key pair seen from one leaf.
+struct KeyPair<'a> {
+    partner: usize,
+    identity: Option<DomainIdentity<'a>>,
+    /// Column names of the key on the leaf and on the partner, when plain columns.
+    key: Option<&'a PlSmallStr>,
+    partner_key: Option<&'a PlSmallStr>,
+}
+
+/// Every key pair joining `leaf` to another leaf.
+///
+/// Read from the classes and edges directly, so all leaves together cost the size
+/// of the key graph rather than a [`Cluster::bridging`] scan per pair of leaves.
+fn key_pairs(cluster: &Cluster, leaf: usize) -> impl Iterator<Item = KeyPair<'_>> {
+    let classes = cluster.classes_by_leaf[leaf]
+        .iter()
+        .flat_map(move |&class| {
+            let keys = &cluster.key_classes[class];
+            keys.iter()
+                .filter(move |own| own.leaf == leaf)
+                .flat_map(move |own| {
+                    keys.iter()
+                        .filter(move |other| other.leaf != leaf)
+                        .map(move |other| KeyPair {
+                            partner: other.leaf,
+                            identity: Some(DomainIdentity::Class(class)),
+                            key: Some(own.key.output_name()),
+                            partner_key: Some(other.key.output_name()),
+                        })
+                })
+        });
+    let edges = cluster.edges.iter().filter_map(move |edge| {
+        let (key, partner, partner_key) = if edge.left_leaf == leaf {
+            (
+                edge.left_name.as_ref(),
+                edge.right_leaf,
+                edge.right_name.as_ref(),
+            )
+        } else if edge.right_leaf == leaf {
+            (
+                edge.right_name.as_ref(),
+                edge.left_leaf,
+                edge.left_name.as_ref(),
+            )
+        } else {
+            return None;
+        };
+        (partner != leaf).then(|| KeyPair {
+            partner,
+            identity: key.map(DomainIdentity::Column),
+            key,
+            partner_key,
+        })
+    });
+    classes.chain(edges)
+}
+
 /// Keys guessed unique on a leaf that are taken not to narrow a join.
 ///
 /// A leaf can be the smaller side of several edges, on different keys, and is then
@@ -168,14 +225,10 @@ impl<'a> GuessedKeys<'a> {
     fn new(cluster: &'a Cluster) -> Self {
         let n = cluster.leaves.len();
         let rows = |leaf: usize| cluster.leaves[leaf].stats.unfiltered;
-        let mut is_placed = vec![false; n];
         let mut adjacent = vec![false; n * n];
         for leaf in 0..n {
-            for other in 0..n {
-                is_placed[other] = true;
-                adjacent[leaf * n + other] =
-                    other != leaf && cluster.bridging(&is_placed, leaf).next().is_some();
-                is_placed[other] = false;
+            for pair in key_pairs(cluster, leaf) {
+                adjacent[leaf * n + pair.partner] = true;
             }
         }
         let smaller_neighbours: Vec<usize> = (0..n)
@@ -185,36 +238,32 @@ impl<'a> GuessedKeys<'a> {
                     .count()
             })
             .collect();
+        let score = |leaf: usize| (smaller_neighbours[leaf], rows(leaf));
 
         let kept = (0..n)
             .map(|leaf| {
                 let mut kept: Option<(usize, Vec<DomainIdentity<'a>>)> = None;
-                for partner in (0..n).filter(|&partner| adjacent[leaf * n + partner]) {
-                    is_placed[partner] = true;
-                    for bridge in cluster.bridging(&is_placed, leaf) {
-                        let (Some(identity), _) = identities(&bridge) else {
-                            continue;
-                        };
-                        if !guessed_unique(
-                            &cluster.leaves[leaf].stats,
-                            bridge.candidate_name,
-                            &cluster.leaves[partner].stats,
-                            bridge.placed_name,
-                        ) {
-                            continue;
-                        }
-                        let score = |leaf: usize| (smaller_neighbours[leaf], rows(leaf));
-                        match &mut kept {
-                            Some((best, keys)) if *best == partner => {
-                                if !keys.contains(&identity) {
-                                    keys.push(identity);
-                                }
-                            },
-                            Some((best, _)) if score(partner) <= score(*best) => {},
-                            _ => kept = Some((partner, vec![identity])),
-                        }
+                for pair in key_pairs(cluster, leaf) {
+                    let Some(identity) = pair.identity else {
+                        continue;
+                    };
+                    if !guessed_unique(
+                        &cluster.leaves[leaf].stats,
+                        pair.key,
+                        &cluster.leaves[pair.partner].stats,
+                        pair.partner_key,
+                    ) {
+                        continue;
                     }
-                    is_placed[partner] = false;
+                    match &mut kept {
+                        Some((best, keys)) if *best == pair.partner => {
+                            if !keys.contains(&identity) {
+                                keys.push(identity);
+                            }
+                        },
+                        Some((best, _)) if score(pair.partner) <= score(*best) => {},
+                        _ => kept = Some((pair.partner, vec![identity])),
+                    }
                 }
                 kept
             })
