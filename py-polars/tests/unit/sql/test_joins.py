@@ -2641,18 +2641,24 @@ def test_join_on_constant_any_condition(join_type: str) -> None:
 @pytest.mark.parametrize(
     "condition",
     [
-        "a.k = a.x",
+        "a.k = a.v",
         "x = a.k",
-        "b.k = b.y",
-        "a.k = b.k AND a.k = a.x",
+        "b.k = b.v",
+        "a.k = b.k AND a.k = a.v",
     ],
 )
-def test_join_on_equality_within_one_input(join_type: str, condition: str) -> None:
+@pytest.mark.parametrize(
+    "columns", ["a.k, a.v, a.x, b.k AS bk, b.v AS bv", "a.k, b.k AS bk"]
+)
+def test_join_on_equality_within_one_input(
+    join_type: str, condition: str, columns: str
+) -> None:
+    # `v` is in both inputs.
     frames = {
-        "a": pl.DataFrame({"k": [1, 2, 3], "x": [1, 5, 3]}),
-        "b": pl.DataFrame({"k": [1, 3, 4], "y": [1, 7, 4]}),
+        "a": pl.DataFrame({"k": [1, 2, 3], "v": [1, 5, 3], "x": [1, 2, 4]}),
+        "b": pl.DataFrame({"k": [1, 3, 4], "v": [1, 7, 4]}),
     }
-    query = f"SELECT a.k, a.x, b.k AS bk, b.y FROM a {join_type} b ON {condition}"
+    query = f"SELECT {columns} FROM a {join_type} b ON {condition}"
     assert_sql_matches(
         frames, query=query, compare_with="sqlite", check_row_order=False
     )
