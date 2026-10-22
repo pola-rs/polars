@@ -160,14 +160,14 @@ fn retain_row_encode_keys(
     Some((expr_arena.add(encode), options))
 }
 
-fn retain_sort_keys<T: Clone>(by: &mut Vec<T>, options: &mut SortMultipleOptions, keep: &[usize]) {
+pub(super) fn retain_sort_keys<T: Clone>(by: &mut Vec<T>, options: &mut SortMultipleOptions, keep: &[usize]) {
     *by = gather(by, keep);
     options.descending = gather(&options.descending, keep);
     options.nulls_last = gather(&options.nulls_last, keep);
 }
 
 /// Like [`first_occurrences`] for expressions. Non-deterministic expressions are never repeats.
-fn first_expr_occurrences(
+pub(super) fn first_expr_occurrences(
     nodes: impl IntoIterator<Item = Node>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<Vec<usize>> {

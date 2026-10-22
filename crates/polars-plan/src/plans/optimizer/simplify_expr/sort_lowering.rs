@@ -1,3 +1,4 @@
+use crate::plans::optimizer::repeated_keys::{first_expr_occurrences, retain_sort_keys};
 use crate::plans::*;
 
 /// Rewrites expressions that only read the first or last rows of a sort:
@@ -164,9 +165,17 @@ fn sort_by_first_last_to_min_max_by(
     }
 
     let expr = *expr;
-    let by = by.clone();
-    let descending = sort_options.descending.clone();
-    let nulls_last = sort_options.nulls_last.clone();
+    let mut by = by.clone();
+    let mut sort_options = sort_options.clone();
+    // This runs during conversion, before the optimizer removes repeated keys.
+    if let Some(keep) = first_expr_occurrences(by.iter().copied(), arena) {
+        retain_sort_keys(&mut by, &mut sort_options, &keep);
+    }
+    let SortMultipleOptions {
+        descending,
+        nulls_last,
+        ..
+    } = sort_options;
 
     let ctx = ToFieldContext::new(arena, schema);
     let dtypes = by

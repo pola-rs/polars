@@ -1583,3 +1583,24 @@ def test_repeated_keys_removed() -> None:
         q.collect(),
         left.join_asof(right, on="a", by_left="b", by_right="d").collect(),
     )
+
+
+def test_repeated_keys_removed_before_sort_rewrites() -> None:
+    lf = pl.LazyFrame({"a": [3, 1, None, 2], "b": ["x", "y", "z", "w"]})
+
+    q = pl.LazyFrame({"a": [1, 2, 3]}).set_sorted("a").sort(["a", "a"])
+    assert "SORT" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
+    for agg in ["first", "last"]:
+        q = lf.select(
+            getattr(pl.col("b").sort_by("a", "a", descending=[True, False]), agg)()
+        )
+        assert "row_encode" not in q.explain()
+        assert_frame_equal(
+            q.collect(),
+            lf.select(
+                getattr(pl.col("b").sort_by("a", descending=True), agg)()
+            ).collect(),
+        )
+
