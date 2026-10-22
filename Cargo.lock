@@ -3121,7 +3121,6 @@ dependencies = [
  "strum_macros 0.28.0",
  "tokio",
  "version_check",
- "zstd",
 ]
 
 [[package]]
@@ -3614,7 +3613,6 @@ dependencies = [
  "snap",
  "streaming-decompression",
  "xxhash-rust",
- "zstd",
 ]
 
 [[package]]
@@ -3942,6 +3940,7 @@ dependencies = [
  "tokio",
  "uuid",
  "version_check",
+ "zstd",
 ]
 
 [[package]]
