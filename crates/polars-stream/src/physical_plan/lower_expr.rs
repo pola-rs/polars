@@ -77,6 +77,7 @@ impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
         Self {
             prepare_visualization: value.prepare_visualization,
             sortedness: value.sortedness,
+            recursive_inputs: None,
         }
     }
 }
@@ -85,6 +86,7 @@ impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
         Self {
             prepare_visualization: value.prepare_visualization,
             sortedness: value.sortedness,
+            recursive_inputs: None,
         }
     }
 }
@@ -893,6 +895,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                         sortedness: ctx.sortedness,
+                        recursive_inputs: None,
                     },
                     false,
                 )?;
@@ -957,6 +960,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                         sortedness: ctx.sortedness,
+                        recursive_inputs: None,
                     },
                     false,
                 )?;

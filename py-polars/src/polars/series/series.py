@@ -1044,9 +1044,16 @@ class Series(metaclass=_Meta):
             other = pl.Series("", [None])
 
         if isinstance(other, Series):
-            return self._from_pyseries(getattr(self._s, op_s)(other._s))
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(other._s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(other._s))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
-            return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
+            _s = Series(self.name, other)._s
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(_s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(_s))
         elif isinstance(other, timedelta):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -1250,8 +1257,6 @@ class Series(metaclass=_Meta):
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        if self.dtype.is_float():
-            self.__rfloordiv__(other)
         if isinstance(other, (int, float)) and self.dtype.is_decimal():
             return self.to_frame().select(other / F.col(self.name)).to_series()
 
@@ -1281,6 +1286,8 @@ class Series(metaclass=_Meta):
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
+        if isinstance(other, Series):
+            return other.pow(self)
         return (
             self.to_frame()
             .select_seq((other ** F.col(self.name)).alias(self.name))

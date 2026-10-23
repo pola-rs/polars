@@ -613,6 +613,8 @@ impl SimplifyIRNodeOrder<'_> {
             IR::Scan { .. }
             | IR::DataFrameScan { .. }
             | IR::UnoptimizedDispatch { .. }
+            | IR::Recursive { .. }
+            | IR::WorkingTableScan { .. }
             | IR::Resolver { .. } => {},
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         };

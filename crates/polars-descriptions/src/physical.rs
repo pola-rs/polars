@@ -190,6 +190,9 @@ pub enum PhysicalPropsDescription {
     OrderedUnion {
         num_inputs: usize,
     },
+    Recursive {
+        num_external_inputs: usize,
+    },
     UnorderedUnion {
         num_inputs: usize,
     },

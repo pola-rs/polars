@@ -11,7 +11,10 @@ mod tests;
 
 /// Integer type used to store levels. `u8` is enough for almost all schemas and halves the
 /// memory of the level buffers.
-pub trait Level: Copy + Default + std::ops::Add<Output = Self> + From<bool> + Into<u32> {}
+pub trait Level:
+    Copy + Default + PartialEq + std::ops::Add<Output = Self> + From<bool> + Into<u64>
+{
+}
 
 impl Level for u8 {}
 impl Level for u16 {}
