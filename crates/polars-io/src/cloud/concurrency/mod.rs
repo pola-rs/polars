@@ -28,7 +28,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
 pub use admission::{
-    AdmissionOrder, InFlightBudget, InFlightPermit, InFlightStats, next_issue_seq, with_issue_seq,
+    AdmissionOrder, InFlightBudget, InFlightPermit, InFlightStats, in_issue_order,
 };
 use crossbeam_queue::ArrayQueue;
 use knee::{BOUND_FRACTION, KneeConfig, KneeController, KneeTick, LimiterTick};
