@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 import polars as pl
 from polars._utils.logging import eprint
 from polars._utils.various import parse_version
+from polars.exceptions import ComputeError
 from polars.io.cloud.credential_provider._providers import (
     _get_credentials_from_provider_expiry_aware,
 )
@@ -210,6 +212,8 @@ class DeltaDataset:
         load_statistics = filter_columns is not None or bool(
             best_effort_statistics_columns
         )
+        # Partition values come from the log, as paths need not be hive-style, so
+        # partitioned tables load the add actions even when statistics are not needed.
         add_actions = (
             pl.DataFrame(table.get_add_actions())
             if load_statistics or partition_columns
@@ -226,12 +230,17 @@ class DeltaDataset:
             if add_actions is not None and load_statistics
             else None
         )
-        # The log holds the partition values, paths need not be hive-style.
-        hive_partitions = (
-            add_actions.select(pl.col("partition").struct.field(*hive_schema))
-            if add_actions is not None and partition_columns
-            else None
-        )
+        hive_partitions = None
+        if add_actions is not None and partition_columns:
+            if not all(
+                path.endswith(unquote(add_path))
+                for path, add_path in zip(paths, add_actions["path"], strict=True)
+            ):
+                msg = "delta add actions are not in file_uris() order"
+                raise ComputeError(msg)
+            hive_partitions = add_actions.select(
+                pl.col("partition").struct.field(*hive_schema)
+            ).cast(hive_schema)
 
         reader_features = table.protocol().reader_features
         has_deletion_vectors = (

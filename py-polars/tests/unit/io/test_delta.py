@@ -4,7 +4,7 @@ import os
 import pickle
 import re
 import warnings
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -1819,14 +1819,25 @@ def test_scan_delta_runtime_join_filter_with_partition_predicate(
 @pytest.mark.write_disk
 def test_scan_delta_partition_values_from_log(tmp_path: Path) -> None:
     root = tmp_path / "version=1"
-    pl.DataFrame({"x": [0, 1], "p": [0, 1]}).write_delta(
-        root, delta_write_options={"partition_by": "p"}
+    df = pl.DataFrame(
+        {
+            "x": [0, 1, 2],
+            "p": [0, 1, None],
+            "s": ["a=b/c", "sp ace", None],
+            "d": [date(2020, 1, 1), date(2020, 1, 2), None],
+            "t": [
+                datetime(2020, 1, 1, tzinfo=UTC),
+                datetime(2020, 1, 2, tzinfo=UTC),
+                None,
+            ],
+        }
     )
+    df.write_delta(root, delta_write_options={"partition_by": ["p", "s", "d", "t"]})
 
-    assert_frame_equal(
-        pl.scan_delta(root).filter(pl.col("p") == 1).collect(),
-        pl.DataFrame({"x": [1], "p": [1]}),
-    )
+    lf = pl.scan_delta(root)
+    assert_frame_equal(lf.collect(), df, check_row_order=False)
+    assert_frame_equal(lf.filter(pl.col("s") == "a=b/c").collect(), df[:1])
+    assert_frame_equal(lf.filter(pl.col("t").is_null()).collect(), df[2:])
 
 
 @pytest.mark.write_disk
