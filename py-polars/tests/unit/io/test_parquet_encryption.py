@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -803,23 +804,68 @@ def test_write_read_with_wrong_column_key(tmp_path: Path) -> None:
         pl.read_parquet(path, decryption=decryption_properties)
 
 
-@pytest.mark.parametrize("partitioned", [False, True])
-def test_write_column_key_not_in_schema(tmp_path: Path, partitioned: bool) -> None:
+@pytest.mark.parametrize(
+    "column",
+    [
+        "missing",
+        # Column keys are for Parquet leaf column paths, not top-level columns
+        "l",
+        "s",
+        "l.element",
+        # Paths are case sensitive
+        "S.x",
+    ],
+)
+@pytest.mark.parametrize(
+    "method", ["write_parquet", "sink_parquet", "sink_parquet_partitioned"]
+)
+def test_write_column_key_not_in_schema(
+    tmp_path: Path, column: str, method: str
+) -> None:
+    # Only columns with keys are encrypted, so a column key that doesn't match a
+    # column must be an error rather than leaving the intended column unencrypted.
     encryption_properties = pl.ParquetEncryptionProperties(
         footer_key=FOOTER_KEY,
-        column_keys={"secret": COLUMN_KEY, "missing": COLUMN_KEY_2},
+        column_keys={"a": COLUMN_KEY, column: COLUMN_KEY_2},
     )
+    df = roundtrip_data()
     path = tmp_path / "out"
-    target: Any = pl.PartitionBy(path, key="part") if partitioned else path
+    write: Callable[[], None]
+    if method == "write_parquet":
+        write = partial(df.write_parquet, path, encryption=encryption_properties)
+    elif method == "sink_parquet":
+        write = partial(df.lazy().sink_parquet, path, encryption=encryption_properties)
+    else:
+        write = partial(
+            df.lazy().sink_parquet,
+            pl.PartitionBy(path, max_rows_per_file=400),
+            encryption=encryption_properties,
+            mkdir=True,
+        )
     with pytest.raises(
         pl.exceptions.ComputeError,
-        match="columns with encryption keys specified were not found in the schema: missing",
+        match=re.escape(
+            "columns with encryption keys specified were not found in the schema: "
+            + column
+        ),
     ):
-        basic_data().lazy().sink_parquet(
-            target, encryption=encryption_properties, mkdir=True
-        )
+        write()
     # The keys are checked before any file is opened
     assert not path.exists()
+
+
+def test_write_multiple_column_keys_not_in_schema(tmp_path: Path) -> None:
+    encryption_properties = pl.ParquetEncryptionProperties(
+        footer_key=FOOTER_KEY,
+        column_keys={"secret": COLUMN_KEY, "y": COLUMN_KEY_2, "x": COLUMN_KEY_2},
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="columns with encryption keys specified were not found in the schema: x, y",
+    ):
+        basic_data().write_parquet(
+            tmp_path / "out.parquet", encryption=encryption_properties
+        )
 
 
 @pytest.mark.parametrize("include_key", [True, False])

@@ -17,7 +17,7 @@ use super::encrypt::FileEncryptionProperties;
 use super::modules::{ModuleType, create_module_aad};
 use crate::arrow::write::{
     CompressionOptions, Encoding, FileWriter, RowGroupIterator, StatisticsOptions, Version,
-    WriteOptions,
+    WriteOptions, to_parquet_schema,
 };
 use crate::parquet::metadata::{ColumnChunkMetadata, FileMetadata};
 use crate::parquet::read::read_metadata_with_decryption;
@@ -123,6 +123,80 @@ fn test_no_plaintext_metadata_for_encrypted_file() {
                 .is_none()
         );
     }
+}
+
+#[test]
+fn test_validate_encrypted_column_names() {
+    let schema = ArrowSchema::from_iter([
+        Field::new("a".into(), ArrowDataType::Int64, true),
+        Field::new(
+            "s".into(),
+            ArrowDataType::Struct(vec![Field::new("x".into(), ArrowDataType::Int64, true)]),
+            true,
+        ),
+        Field::new(
+            "l".into(),
+            ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int64,
+                true,
+            ))),
+            true,
+        ),
+    ]);
+    let parquet_schema = to_parquet_schema(&schema).unwrap();
+    let validate = |columns: &[&str]| {
+        let mut builder = FileEncryptionProperties::builder(FOOTER_KEY.to_vec());
+        for column in columns {
+            builder = builder.with_column_key(column, COLUMN_KEY.to_vec());
+        }
+        builder
+            .build()
+            .unwrap()
+            .validate_encrypted_column_names(&parquet_schema)
+            .map_err(|e| e.to_string())
+    };
+
+    assert_eq!(validate(&[]), Ok(()));
+    assert_eq!(validate(&["a", "s.x", "l.list.element"]), Ok(()));
+    // Only leaf column paths match, and matching is case sensitive. Missing columns
+    // are listed in sorted order.
+    for (columns, missing) in [
+        (&["a", "missing"][..], "missing"),
+        (&["s"], "s"),
+        (&["l"], "l"),
+        (&["l.element"], "l.element"),
+        (&["A"], "A"),
+        (&["z", "a", "s"], "s, z"),
+    ] {
+        let err = validate(columns).unwrap_err();
+        assert!(
+            err.ends_with(&format!(
+                "columns with encryption keys specified were not found in the schema: {missing}"
+            )),
+            "{err}"
+        );
+    }
+
+    // The writer validates the columns
+    let properties = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+        .with_column_key("missing", COLUMN_KEY.to_vec())
+        .build()
+        .unwrap();
+    assert!(
+        FileWriter::try_new(
+            Cursor::new(vec![]),
+            schema,
+            WriteOptions {
+                statistics: StatisticsOptions::full(),
+                compression: CompressionOptions::Uncompressed,
+                version: Version::V1,
+                data_page_size: None,
+            },
+            Some(properties),
+        )
+        .is_err()
+    );
 }
 
 #[test]
