@@ -20,7 +20,7 @@ mod knee;
 mod model;
 mod regime;
 
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
@@ -69,11 +69,8 @@ pub struct ControllerConfig {
     budget_resize_threshold: f64,
     // Which model sets the byte budget (`POLARS_INFLIGHT_BYTE_BUDGET_MODEL`).
     bdp_model: BdpModel,
-    knee_gain: f64,
-    knee_round_ticks: u32,
     // Ceiling for the knee's in-flight byte budget (per controller, i.e. per object store).
     knee_max_bytes: u64,
-    knee_ramp_lifetime_ratio: f64,
 }
 
 /// Which model sets the in-flight byte budget. `Knee` (default) is the knee-based controller;
@@ -125,21 +122,9 @@ impl Default for ControllerConfig {
                 Ok("ttfb") => BdpModel::Ttfb,
                 Ok(v) => panic!("invalid value for POLARS_INFLIGHT_BYTE_BUDGET_MODEL: {v}"),
             },
-            knee_gain: 1.0,
-            knee_round_ticks: get_knee_round_ticks(),
-            knee_ramp_lifetime_ratio: 2.0,
             knee_max_bytes,
         }
     }
-}
-
-/// Knee round length in control ticks.
-fn get_knee_round_ticks() -> u32 {
-    std::env::var("POLARS_INFLIGHT_KNEE_ROUND_TICKS").map_or(3, |x| {
-        x.parse::<NonZeroU32>()
-            .unwrap_or_else(|_| panic!("invalid value for POLARS_INFLIGHT_KNEE_ROUND_TICKS: {x}"))
-            .get()
-    })
 }
 
 /// Ceiling for the knee's in-flight byte budget: total memory / 16 (cgroup-aware), at most what the
@@ -400,13 +385,7 @@ impl ConcurrencyController {
                 KneeController::new(KneeConfig {
                     init_budget: config.init_byte_budget,
                     max_budget: config.knee_max_bytes,
-                    gain: config.knee_gain,
-                    round_ticks: config.knee_round_ticks,
                     tick: config.control_interval,
-                    probe_interval: Duration::from_millis(3000),
-                    idle_grace: Duration::from_millis(5000),
-                    idle_reset: Duration::from_secs(30),
-                    ramp_lifetime_ratio: config.knee_ramp_lifetime_ratio,
                 })
             });
 
