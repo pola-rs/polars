@@ -590,7 +590,8 @@ class SQLContext(Generic[FrameType]):
         `CREATE TABLE`, `TRUNCATE` and `DELETE` on a table of an attached catalog are
         not supported. For `CREATE TABLE` that includes a name the default catalog
         applies to, even if a table of that name is registered: with a default
-        catalog, `CREATE TABLE tpch.t` does not create a registered table.
+        catalog, `CREATE TABLE tpch.t` does not create a registered table; use
+        `CREATE TEMP TABLE tpch.t` for that.
         `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
         catalog only acts on a registered table, and is a no-op otherwise.
 

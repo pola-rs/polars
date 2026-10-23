@@ -388,6 +388,55 @@ def test_create_table_if_not_exists() -> None:
         assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
 
 
+@pytest.mark.parametrize("temp", ["TEMP", "TEMPORARY"])
+def test_create_temp_table(temp: str) -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute(f"CREATE {temp} TABLE frame AS SELECT 1 AS x")
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+        # an existing table (matched ignoring case) is an error, unlike CREATE TABLE
+        for sql in (
+            f"CREATE {temp} TABLE frame AS SELECT 2 AS x",
+            f"CREATE {temp} TABLE FRAME (x INT)",
+        ):
+            with pytest.raises(SQLInterfaceError, match="table 'frame' already exists"):
+                ctx.execute(sql)
+        # the query of a no-op does not run
+        ctx.execute(f"CREATE {temp} TABLE IF NOT EXISTS Frame AS SELECT * FROM nosuch")
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+        ctx.execute(f"CREATE OR REPLACE {temp} TABLE FRAME AS SELECT 4 AS x")
+        assert ctx.tables() == ["frame"]
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 4
+
+        ctx.execute(f"CREATE {temp} TABLE other LIKE frame")
+        assert ctx.execute("SELECT * FROM other", eager=True).columns == ["x"]
+        ctx.execute(f"CREATE OR REPLACE {temp} TABLE new AS SELECT 5 AS x")
+        assert sorted(ctx.tables()) == ["frame", "new", "other"]
+
+
+@pytest.mark.parametrize(
+    ("sql", "error"),
+    [
+        (
+            "CREATE OR REPLACE TABLE t AS SELECT 1 AS x",
+            "`CREATE OR REPLACE TABLE` is not supported",
+        ),
+        (
+            "CREATE OR REPLACE TEMP TABLE IF NOT EXISTS t AS SELECT 1 AS x",
+            "cannot be combined",
+        ),
+        (
+            "CREATE GLOBAL TEMPORARY TABLE t (x INT)",
+            "`CREATE GLOBAL/LOCAL TABLE` is not supported",
+        ),
+    ],
+)
+def test_create_temp_table_errors(sql: str, error: str) -> None:
+    with pytest.raises(SQLInterfaceError, match=error):
+        pl.SQLContext().execute(sql)
+
+
 def test_qualified_table_name_delete() -> None:
     # the WHERE of a DELETE qualifies by a trailing part, as in SELECT
     lf = pl.LazyFrame({"k": [1, 2]})

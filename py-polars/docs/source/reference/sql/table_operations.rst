@@ -50,6 +50,16 @@ an empty table from the schema of an existing table.
 
     CREATE TABLE new_table LIKE existing_table
 
+``CREATE TEMP TABLE`` (or ``TEMPORARY``) always registers the table in the context,
+also when a default catalog is attached; its name cannot start with an attached
+catalog. Unlike ``CREATE TABLE``, it raises an error if the table already exists,
+unless ``IF NOT EXISTS`` (leave it as it is) or ``OR REPLACE`` (replace it) is given.
+
+.. code-block:: sql
+
+    CREATE OR REPLACE TEMP TABLE staging AS
+    SELECT * FROM existing_table WHERE value > 42
+
 .. _delete_from_table:
 
 DELETE

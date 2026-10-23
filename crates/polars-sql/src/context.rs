@@ -2182,7 +2182,9 @@ impl SQLContext {
             columns: _,
             query: _,
             like: _,
-            if_not_exists: _, // our CREATE is idempotent-friendly already
+            ref if_not_exists,
+            ref or_replace,
+            ref temporary,
 
             // Unsupported `CREATE [...] TABLE` modifiers
             ref copy_grants,
@@ -2190,11 +2192,9 @@ impl SQLContext {
             ref external,
             ref global,
             ref iceberg,
-            ref or_replace,
             ref require_user,
             ref snapshot,
             ref strict,
-            ref temporary,
             ref transient,
             ref volatile,
             ref without_rowid,
@@ -2247,11 +2247,11 @@ impl SQLContext {
         polars_ensure!(!dynamic, SQLInterface: "`CREATE DYNAMIC TABLE` is not supported");
         polars_ensure!(!external, SQLInterface: "`CREATE EXTERNAL TABLE` is not supported");
         polars_ensure!(!iceberg, SQLInterface: "`CREATE ICEBERG TABLE` is not supported");
-        polars_ensure!(!or_replace, SQLInterface: "`CREATE OR REPLACE TABLE` is not supported");
+        polars_ensure!(!*or_replace || *temporary, SQLInterface: "`CREATE OR REPLACE TABLE` is not supported");
+        polars_ensure!(!(*or_replace && *if_not_exists), SQLInterface: "`OR REPLACE` and `IF NOT EXISTS` cannot be combined");
         polars_ensure!(!require_user, SQLInterface: "`REQUIRE USER` is not supported");
         polars_ensure!(!snapshot, SQLInterface: "`CREATE SNAPSHOT TABLE` is not supported");
         polars_ensure!(!strict, SQLInterface: "`STRICT` tables are not supported");
-        polars_ensure!(!temporary, SQLInterface: "`CREATE TEMPORARY TABLE` is not supported");
         polars_ensure!(!transient, SQLInterface: "`CREATE TRANSIENT TABLE` is not supported");
         polars_ensure!(!volatile, SQLInterface: "`CREATE VOLATILE TABLE` is not supported");
         polars_ensure!(!without_rowid, SQLInterface: "`WITHOUT ROWID` is not supported");
@@ -4059,6 +4059,8 @@ impl SQLContext {
             self.validate_create_table(create_table)?;
             let CreateTable {
                 if_not_exists,
+                or_replace,
+                temporary,
                 name,
                 query,
                 columns,
@@ -4066,12 +4068,27 @@ impl SQLContext {
                 ..
             } = create_table;
 
-            self.ensure_not_catalog_table(name, "CREATE TABLE", false, false)?;
+            if *temporary {
+                // A temporary table is always a registered table.
+                let named = name_parts(name).and_then(|parts| self.catalogs.named_catalog(&parts));
+                if let Some(catalog) = named {
+                    polars_bail!(SQLInterface: "temporary tables cannot be created in catalog '{}'", catalog);
+                }
+            } else {
+                self.ensure_not_catalog_table(name, "CREATE TABLE", false, false)?;
+            }
             let tbl_name = object_name_to_string(name);
             let existing = self.registered_table_key(&tbl_name)?;
-            if *if_not_exists && let Some(existing) = &existing {
-                // `IF NOT EXISTS` leaves the existing table as it is.
-                return Ok(df! { "Response" => [format!("CREATE TABLE {existing}")] }?.lazy());
+            if let Some(existing) = &existing {
+                if *if_not_exists {
+                    // `IF NOT EXISTS` leaves the existing table as it is.
+                    return Ok(df! { "Response" => [format!("CREATE TABLE {existing}")] }?.lazy());
+                }
+                polars_ensure!(
+                    !*temporary || *or_replace,
+                    SQLInterface: "table '{}' already exists; use `CREATE OR REPLACE TEMP TABLE`, or `IF NOT EXISTS`",
+                    existing
+                );
             }
             // A table matching ignoring case is replaced under its existing name.
             let tbl_name = existing.unwrap_or(tbl_name);
@@ -4079,13 +4096,13 @@ impl SQLContext {
             let lf = match (query, columns.is_empty(), like) {
                 (Some(query), true, None) => {
                     // ----------------------------------------------------
-                    // CREATE TABLE [IF NOT EXISTS] <name> AS <query>
+                    // CREATE [OR REPLACE] [TEMP] TABLE [IF NOT EXISTS] <name> AS <query>
                     // ----------------------------------------------------
                     self.execute_query(query)?
                 },
                 (None, false, None) => {
                     // ----------------------------------------------------
-                    // CREATE TABLE [IF NOT EXISTS] <name> (<coldef>, ...)
+                    // CREATE [OR REPLACE] [TEMP] TABLE [IF NOT EXISTS] <name> (<coldef>, ...)
                     // ----------------------------------------------------
                     let mut schema = Schema::with_capacity(columns.len());
                     for col in columns {
@@ -4097,7 +4114,7 @@ impl SQLContext {
                 },
                 (None, true, Some(like_kind)) => {
                     // ----------------------------------------------------
-                    // CREATE TABLE [IF NOT EXISTS] <name> LIKE <table>
+                    // CREATE [OR REPLACE] [TEMP] TABLE [IF NOT EXISTS] <name> LIKE <table>
                     // ----------------------------------------------------
                     let like_name = match like_kind {
                         CreateTableLikeKind::Plain(like)
