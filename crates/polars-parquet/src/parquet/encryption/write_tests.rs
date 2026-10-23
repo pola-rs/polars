@@ -125,6 +125,19 @@ fn test_no_plaintext_metadata_for_encrypted_file() {
     }
 }
 
+/// Validate column keys for `columns` against `schema`, returning any error message.
+fn validate_column_names(schema: &ArrowSchema, columns: &[&str]) -> Result<(), String> {
+    let mut builder = FileEncryptionProperties::builder(FOOTER_KEY.to_vec());
+    for column in columns {
+        builder = builder.with_column_key(column, COLUMN_KEY.to_vec());
+    }
+    builder
+        .build()
+        .unwrap()
+        .validate_encrypted_column_names(&to_parquet_schema(schema).unwrap())
+        .map_err(|e| e.to_string())
+}
+
 #[test]
 fn test_validate_encrypted_column_names() {
     let schema = ArrowSchema::from_iter([
@@ -144,18 +157,7 @@ fn test_validate_encrypted_column_names() {
             true,
         ),
     ]);
-    let parquet_schema = to_parquet_schema(&schema).unwrap();
-    let validate = |columns: &[&str]| {
-        let mut builder = FileEncryptionProperties::builder(FOOTER_KEY.to_vec());
-        for column in columns {
-            builder = builder.with_column_key(column, COLUMN_KEY.to_vec());
-        }
-        builder
-            .build()
-            .unwrap()
-            .validate_encrypted_column_names(&parquet_schema)
-            .map_err(|e| e.to_string())
-    };
+    let validate = |columns: &[&str]| validate_column_names(&schema, columns);
 
     assert_eq!(validate(&[]), Ok(()));
     assert_eq!(validate(&["a", "s.x", "l.list.element"]), Ok(()));
@@ -197,6 +199,36 @@ fn test_validate_encrypted_column_names() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn test_validate_ambiguous_column_names() {
+    // A top-level column named `a.b` and field `b` of struct `a` have the same path
+    let schema = ArrowSchema::from_iter([
+        Field::new("a.b".into(), ArrowDataType::Int64, true),
+        Field::new(
+            "a".into(),
+            ArrowDataType::Struct(vec![
+                Field::new("b".into(), ArrowDataType::Int64, true),
+                Field::new("c".into(), ArrowDataType::Int64, true),
+            ]),
+            true,
+        ),
+        Field::new("d".into(), ArrowDataType::Int64, true),
+    ]);
+    let ambiguous_err = "columns with encryption keys specified match multiple columns with the \
+        same dot-separated path, so can't be encrypted separately: a.b";
+
+    let err = validate_column_names(&schema, &["a.b"]).unwrap_err();
+    assert!(err.ends_with(ambiguous_err), "{err}");
+    let err = validate_column_names(&schema, &["a.b", "d"]).unwrap_err();
+    assert!(err.ends_with(ambiguous_err), "{err}");
+    // Missing columns are reported first
+    let err = validate_column_names(&schema, &["a.b", "missing"]).unwrap_err();
+    assert!(err.ends_with("not found in the schema: missing"), "{err}");
+    // Columns without keys may have the same path
+    assert_eq!(validate_column_names(&schema, &[]), Ok(()));
+    assert_eq!(validate_column_names(&schema, &["a.c", "d"]), Ok(()));
 }
 
 #[test]

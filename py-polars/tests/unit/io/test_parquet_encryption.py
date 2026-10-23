@@ -868,6 +868,37 @@ def test_write_multiple_column_keys_not_in_schema(tmp_path: Path) -> None:
         )
 
 
+def test_write_ambiguous_column_key(tmp_path: Path) -> None:
+    # The top-level column `a.b` and field `b` of struct `a` have the same path
+    df = pl.DataFrame({"a.b": [1, 2], "a": [{"b": 3}, {"b": 4}], "c": [5, 6]})
+    path = tmp_path / "out.parquet"
+    encryption_properties = pl.ParquetEncryptionProperties(
+        footer_key=FOOTER_KEY, column_keys={"a.b": COLUMN_KEY}
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=re.escape(
+            "match multiple columns with the same dot-separated path, "
+            "so can't be encrypted separately: a.b"
+        ),
+    ):
+        df.write_parquet(path, encryption=encryption_properties)
+    assert not path.exists()
+
+    # Other columns can still be encrypted
+    for column_keys in [None, {"c": COLUMN_KEY}]:
+        df.write_parquet(
+            path,
+            encryption=pl.ParquetEncryptionProperties(
+                footer_key=FOOTER_KEY, column_keys=column_keys
+            ),
+        )
+        decryption = pl.ParquetDecryptionProperties(
+            footer_key=FOOTER_KEY, column_keys=column_keys
+        )
+        assert_frame_equal(pl.read_parquet(path, decryption=decryption), df)
+
+
 @pytest.mark.parametrize("include_key", [True, False])
 def test_write_encrypted_partition_key(tmp_path: Path, include_key: bool) -> None:
     encryption_properties = pl.ParquetEncryptionProperties(

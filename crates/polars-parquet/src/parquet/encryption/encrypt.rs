@@ -6,7 +6,7 @@ use polars_parquet_format::{
     AesGcmV1, ColumnCryptoMetaData, EncryptionAlgorithm, EncryptionWithColumnKey,
     EncryptionWithFooterKey, FileCryptoMetaData,
 };
-use polars_utils::aliases::{PlHashMap, PlHashSet};
+use polars_utils::aliases::PlHashMap;
 
 use super::ciphers::{
     AesGcmBlockEncryptor, BlockEncryptor, NONCE_LEN, SIZE_LEN, TAG_LEN, aes_gcm_algorithm,
@@ -123,27 +123,43 @@ impl FileEncryptionProperties {
         self.column_keys.keys().map(String::as_str)
     }
 
-    /// Checks if columns that are to be encrypted are present in schema
+    /// Checks that each column that is to be encrypted is present in the schema exactly once
     pub fn validate_encrypted_column_names(&self, schema: &SchemaDescriptor) -> ParquetResult<()> {
-        let column_paths = schema
-            .columns()
-            .iter()
-            .map(|column| column_path_string(column).into_owned())
-            .collect::<PlHashSet<_>>();
-        let encryption_columns = self
+        // Different columns can have the same dot-separated path, e.g. a top-level column
+        // named `a.b` and field `b` of struct column `a`.
+        let mut column_path_counts = PlHashMap::<Cow<'_, str>, usize>::default();
+        for column in schema.columns() {
+            *column_path_counts
+                .entry(column_path_string(column))
+                .or_default() += 1;
+        }
+
+        let mut columns_missing_in_schema = self
             .column_keys
             .keys()
-            .cloned()
-            .collect::<PlHashSet<String>>();
-        if !encryption_columns.is_subset(&column_paths) {
-            let mut columns_missing_in_schema = encryption_columns
-                .difference(&column_paths)
-                .cloned()
-                .collect::<Vec<String>>();
+            .filter(|column| !column_path_counts.contains_key(column.as_str()))
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        if !columns_missing_in_schema.is_empty() {
             columns_missing_in_schema.sort();
             return Err(encryption_err!(
                 "The following columns with encryption keys specified were not found in the schema: {}",
                 columns_missing_in_schema.join(", ")
+            ));
+        }
+
+        let mut ambiguous_columns = self
+            .column_keys
+            .keys()
+            .filter(|column| column_path_counts[column.as_str()] > 1)
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        if !ambiguous_columns.is_empty() {
+            ambiguous_columns.sort();
+            return Err(encryption_err!(
+                "The following columns with encryption keys specified match multiple columns \
+                with the same dot-separated path, so can't be encrypted separately: {}",
+                ambiguous_columns.join(", ")
             ));
         }
         Ok(())
@@ -189,7 +205,8 @@ impl EncryptionPropertiesBuilder {
     /// all columns will be encrypted with the footer key.
     /// If any column keys are configured then only the columns with a key will be encrypted.
     /// The column name is the column's dot-separated path in the Parquet schema,
-    /// e.g. `a.b.c` for a nested column.
+    /// e.g. `a.b.c` for a nested column. If the path matches more than one column, for example
+    /// a top-level column named `a.b` and field `b` of struct column `a`, writing will fail.
     pub fn with_column_key(mut self, column_name: &str, key: Vec<u8>) -> Self {
         self.column_keys
             .insert(column_name.to_string(), EncryptionKey::new(key));
