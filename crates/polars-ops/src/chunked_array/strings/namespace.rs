@@ -423,7 +423,7 @@ pub trait StringNameSpaceImpl: AsString {
                         broadcast_try_binary_elementwise(ca, pat, |opt_src, opt_pat| {
                             match (opt_src, opt_pat) {
                                 (Some(src), Some(pat)) => {
-                                    let reg = reg_cache.compile(pat)?;
+                                    let reg = reg_cache.compile_is_match(pat)?;
                                     Ok(Some(reg.is_match(src)))
                                 },
                                 _ => Ok(None),
@@ -436,7 +436,7 @@ pub trait StringNameSpaceImpl: AsString {
                             ca,
                             pat,
                             infer_re_match(|src, pat| {
-                                let reg = reg_cache.compile(pat?).ok()?;
+                                let reg = reg_cache.compile_is_match(pat?).ok()?;
                                 Some(reg.is_match(src?))
                             }),
                         ))
@@ -559,7 +559,7 @@ pub trait StringNameSpaceImpl: AsString {
                 chain.is_match(s.as_bytes())
             }));
         }
-        let res_reg = polars_utils::regex_cache::compile_regex(pat);
+        let res_reg = polars_utils::regex_cache::compile_is_match_regex(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
         let out: BooleanChunked = if let Some(reg) = opt_reg {
             unary_elementwise_values(ca, |s| reg.is_match(s))
