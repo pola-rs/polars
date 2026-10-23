@@ -299,7 +299,7 @@ InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
     "inner", "left", "right", "full", "semi", "anti", "cross"
 ]  # JoinType
-JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
+JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right", "full"]  # JoinType
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side

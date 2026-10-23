@@ -10,6 +10,7 @@ from hypothesis import given
 from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import series
 
@@ -305,3 +306,71 @@ def test_to_numpy_array_shape_23426() -> None:
     )
 
     assert_frame_equal(df, pl.from_numpy(df.to_numpy(structured=True)))
+
+
+@pytest.mark.parametrize("order", ["c", "fortran"])
+def test_to_numpy_df_masked_16398(order: IndexOrder) -> None:
+    df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+    result = df.to_numpy(masked=True, order=order)
+    assert isinstance(result, np.ma.MaskedArray)
+    assert result.dtype == np.int64
+    assert_array_equal(result.mask, [[False, False], [False, True], [True, False]])
+    assert_array_equal(result.compressed(), [1, 4, 2, 6])
+
+    df = pl.DataFrame({"a": [1, None], "b": [True, None], "c": ["x", None]})
+    result = df.to_numpy(masked=True, order=order)
+    assert result.dtype == np.object_
+    assert_array_equal(result.mask, [[False, False, False], [True, True, True]])
+    assert result.compressed().tolist() == [1, True, "x"]
+
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    result = df.to_numpy(masked=True, order=order)
+    assert result.mask is np.ma.nomask
+    assert_array_equal(result.data, [[1, 3], [2, 4]])
+
+
+def test_to_numpy_df_masked_column_names_16398() -> None:
+    df = pl.DataFrame({"*": [1, None], "^a.*$": [None, 2.5], "ab": [True, None]})
+    result = df.to_numpy(masked=True)
+    assert result.dtype == np.float64
+    assert_array_equal(result.mask, [[False, True, False], [True, False, True]])
+    assert_array_equal(result.compressed(), [1.0, 1.0, 2.5])
+
+
+def test_to_numpy_df_masked_zero_copy_16398() -> None:
+    df = pl.DataFrame({"a": [1, None, 3]})
+    result = df.to_numpy(masked=True, allow_copy=False)
+    assert np.shares_memory(result.data, df.to_series().to_numpy(masked=True).data)
+    assert_array_equal(result.mask, [[False], [True], [False]])
+
+    df = pl.DataFrame({"a": [1, None], "b": [3, 4]})
+    with pytest.raises(RuntimeError, match="copy not allowed"):
+        df.to_numpy(masked=True, allow_copy=False)
+
+
+@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
+def test_to_numpy_df_128_bit_integers(dtype: PolarsDataType) -> None:
+    df = pl.DataFrame({"a": pl.Series([1, 2], dtype=dtype), "b": [3, 4]})
+    with pytest.raises(InvalidOperationError, match="no 128-bit integer types"):
+        df.to_numpy()
+    with pytest.raises(InvalidOperationError, match="no 128-bit integer types"):
+        df.to_numpy(masked=True)
+
+
+def test_to_numpy_df_masked_structured_16398() -> None:
+    df = pl.DataFrame(
+        {"a": [1, None], "s": ["x", None], "t": [{"x": 1, "y": None}, None]},
+        schema_overrides={"t": pl.Struct({"x": pl.Int64, "y": pl.Int64})},
+    )
+    result = df.to_numpy(masked=True, structured=True)
+    assert isinstance(result, np.ma.MaskedArray)
+    assert result.dtype == np.dtype(
+        [("a", "<i8"), ("s", "<U1"), ("t", [("x", "<i8"), ("y", "<i8")])]
+    )
+    assert_array_equal(result["a"].mask, [False, True])
+    assert_array_equal(result["s"].mask, [False, True])
+    assert_array_equal(result["t"]["x"].mask, [False, True])
+    assert_array_equal(result["t"]["y"].mask, [True, True])
+    assert result["a"][0] == 1
+    assert result["s"][0] == "x"
+    assert result["t"]["x"][0] == 1

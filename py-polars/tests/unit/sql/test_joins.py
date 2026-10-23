@@ -539,14 +539,37 @@ def test_non_equi_right_join_pure() -> None:
     ]
 
 
+@pytest.mark.parametrize("join_type", ["RIGHT", "FULL"])
 @pytest.mark.parametrize(
-    "join_type",
-    ["RIGHT", "FULL", "LEFT SEMI", "LEFT ANTI"],
+    "condition",
+    [
+        "s.key = v.key AND s.t > v.lo AND s.t <= v.hi",
+        "s.t > v.lo AND s.t <= v.hi",
+        "v.hi > 5",
+        "s.key IS NOT NULL",
+    ],
 )
-def test_non_equi_outer_joins_unsupported(join_type: str) -> None:
-    # A non-equi ON clause routes through `join_where`. LEFT is implemented
-    # (see test_non_equi_left_join above); the others are not yet.
-    # See https://github.com/pola-rs/polars/issues/28875
+def test_non_equi_right_and_full_join(join_type: str, condition: str) -> None:
+    assert_sql_matches(
+        frames={
+            "v": pl.DataFrame(
+                {
+                    "key": ["A", "B", "C", None],
+                    "lo": [0, 0, 6, 1],
+                    "hi": [10, 10, 10, 4],
+                }
+            ),
+            "s": pl.DataFrame({"key": ["A", "A", "B", None], "t": [5, 7, 50, 3]}),
+        },
+        query=f"SELECT v.key, v.lo, s.key AS s_key, s.t FROM v {join_type} JOIN s ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("join_type", ["LEFT SEMI", "LEFT ANTI"])
+def test_non_equi_semi_anti_joins_unsupported(join_type: str) -> None:
+    # A non-equi ON clause routes through `join_where`, which has no semi or anti join.
     ctx = pl.SQLContext(
         v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),
         s=pl.LazyFrame({"key": ["A", "A", "B"], "t": [5, 7, 50]}),
@@ -1540,10 +1563,6 @@ def test_join_on_subquery_reading_struct_field() -> None:
         # reads both tables
         ("a.v + b.v > (SELECT MAX(x) FROM c)", "not currently supported in the JOIN"),
         ("v IN (SELECT x FROM c)", "not currently supported in the JOIN"),
-        (
-            "EXISTS (SELECT 1 FROM c WHERE c.x = a.v)",
-            "EXISTS subquery is not currently supported",
-        ),
         # more than one row
         ("a.v = (SELECT x FROM c)", "expected no or a single value"),
     ],
@@ -2614,6 +2633,35 @@ def test_join_on_constant_any_condition(join_type: str) -> None:
         res = ctx.execute(f"SELECT * FROM a {join_type} b ON {condition}").collect()
         expected = ctx.execute(f"SELECT * FROM a {join_type} b ON {verdict}").collect()
         assert_frame_equal(res, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "join_type", ["INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL OUTER JOIN"]
+)
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.k = a.v",
+        "x = a.k",
+        "b.k = b.v",
+        "a.k = b.k AND a.k = a.v",
+    ],
+)
+@pytest.mark.parametrize(
+    "columns", ["a.k, a.v, a.x, b.k AS bk, b.v AS bv", "a.k, b.k AS bk"]
+)
+def test_join_on_equality_within_one_input(
+    join_type: str, condition: str, columns: str
+) -> None:
+    # `v` is in both inputs.
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3], "v": [1, 5, 3], "x": [1, 2, 4]}),
+        "b": pl.DataFrame({"k": [1, 3, 4], "v": [1, 7, 4]}),
+    }
+    query = f"SELECT {columns} FROM a {join_type} b ON {condition}"
+    assert_sql_matches(
+        frames, query=query, compare_with="sqlite", check_row_order=False
+    )
 
 
 def test_join_on_constant_true_plans_cross_join() -> None:

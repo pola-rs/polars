@@ -1904,6 +1904,39 @@ class DataFrame:
         """
         return self.rows(named=True)
 
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: Literal[False] = ...,
+    ) -> np.ndarray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: Literal[True],
+    ) -> np.ma.MaskedArray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        order: IndexOrder = ...,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        structured: bool = ...,
+        masked: bool,
+    ) -> np.ndarray[Any, Any]: ...
+
     @removed_parameters(
         RemovedParameter(
             name="use_pyarrow",
@@ -1920,6 +1953,7 @@ class DataFrame:
         writable: bool = False,
         allow_copy: bool = True,
         structured: bool = False,
+        masked: bool = False,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -1955,6 +1989,16 @@ class DataFrame:
             returned instead.
 
             .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
+        masked
+            Return a `numpy.ma.MaskedArray` in which null values are masked. The data
+            keeps the type it would have without nulls, and the values under the mask
+            are unspecified. Nulls inside nested columns are converted as they are
+            without `masked`, except for `Struct` columns when `structured=True`.
+            `writable` and `allow_copy` only apply to the data, not the mask.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -2019,7 +2063,22 @@ class DataFrame:
         >>> df.to_numpy(structured=True)
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
+
+        Set `masked=True` to represent null values with a mask instead, which preserves
+        the data type.
+
+        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> arr = df.to_numpy(masked=True)
+        >>> arr.dtype
+        dtype('int64')
+        >>> arr.mask
+        array([[False, False],
+               [False,  True],
+               [ True, False]])
         """  # noqa: W505
+        if masked:
+            msg = "the `masked` parameter of `DataFrame.to_numpy()` is considered unstable."
+            issue_unstable_warning(msg)
         if structured:
             if not allow_copy and not self.is_empty():
                 msg = "copy not allowed: cannot create structured array without copying data"
@@ -2032,19 +2091,33 @@ class DataFrame:
                     arr = s.struct.unnest().to_numpy(
                         structured=True,
                         allow_copy=True,
+                        masked=masked,
+                    )
+                    if masked and s.has_nulls():
+                        arr[s.is_null().to_numpy()] = np.ma.masked
+                elif masked and s.dtype == String and s.has_nulls():
+                    arr = np.ma.MaskedArray(
+                        s.fill_null("").to_numpy().astype(str),
+                        mask=s.is_null().to_numpy(),
                     )
                 else:
-                    arr = s.to_numpy()
+                    arr = s.to_numpy(masked=masked)
 
                 if s.dtype == String and not s.has_nulls():
                     arr = arr.astype(str, copy=False)
                 arrays.append(arr)
                 struct_dtype.append((s.name, arr.dtype, arr.shape[1:]))
 
-            out = np.empty(self.height, dtype=struct_dtype)
+            out = (np.ma.empty if masked else np.empty)(self.height, dtype=struct_dtype)
             for idx, c in enumerate(self.columns):
                 out[c] = arrays[idx]
             return out
+
+        if masked:
+            data, mask = self._df.to_numpy_masked(
+                order, writable=writable, allow_copy=allow_copy
+            )
+            return np.ma.MaskedArray(data, mask=np.ma.nomask if mask is None else mask)
 
         return self._df.to_numpy(order, writable=writable, allow_copy=allow_copy)
 
@@ -3839,16 +3912,16 @@ class DataFrame:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
                 df_original, column_widths, expand_keys=True, expand_values=False
             )
-        column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
+        widths: dict[str, int] = _unpack_multi_column_dict(column_widths or {})
 
         for column in df.columns:
             options = {"hidden": True} if column in hidden else {}
             col_idx = table_start[1] + df.get_column_index(column)
-            if column in column_widths:  # type: ignore[operator]
+            if column in widths:
                 ws.set_column_pixels(
                     col_idx,
                     col_idx,
-                    column_widths[column],  # type: ignore[index]
+                    widths[column],
                     None,
                     options,
                 )
@@ -8547,8 +8620,10 @@ class DataFrame:
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
-        how : {'inner', 'left', 'right'}
-            Join strategy.
+        how : {'inner', 'left', 'right', 'full'}
+            Join strategy. `'left'` and `'right'` also keep the rows of that input
+            without a match, and `'full'` keeps them from both inputs. The columns of
+            the other input are null in those rows.
         suffix
             Suffix to append to columns with a duplicate name.
 

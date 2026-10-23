@@ -399,30 +399,18 @@ fn is_sorted_rec(
             slice: _,
             sort_options,
         } => {
-            let mut s = by_column
+            let s = by_column
                 .iter()
-                .map_while(|e| {
+                .zip(&sort_options.descending)
+                .zip(&sort_options.nulls_last)
+                .map_while(|((e, &d), &nl)| {
                     into_column(e.node(), expr_arena).map(|c| Sorted {
                         column: c.clone(),
-                        descending: Some(false),
-                        nulls_last: Some(false),
+                        descending: Some(d),
+                        nulls_last: Some(nl),
                     })
                 })
                 .collect::<Vec<_>>();
-            if sort_options.descending.len() != 1 {
-                s.iter_mut()
-                    .zip(sort_options.descending.iter())
-                    .for_each(|(s, &d)| s.descending = Some(d));
-            } else if sort_options.descending[0] {
-                s.iter_mut().for_each(|s| s.descending = Some(true));
-            }
-            if sort_options.nulls_last.len() != 1 {
-                s.iter_mut()
-                    .zip(sort_options.nulls_last.iter())
-                    .for_each(|(s, &d)| s.nulls_last = Some(d));
-            } else if sort_options.nulls_last[0] {
-                s.iter_mut().for_each(|s| s.nulls_last = Some(true));
-            }
 
             Some(IRSorted(s.into()))
         },

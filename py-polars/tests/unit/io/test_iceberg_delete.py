@@ -118,6 +118,9 @@ def read(table: pyiceberg.table.Table) -> pl.DataFrame:
         pl.col("f").is_not_null(),
         ~pl.col("f").is_not_null(),
         (pl.col("f") < 2.0) | (pl.col("x") == 1),
+        # Top-level conjunctions are split into multiple filters.
+        (pl.col("x") == 1) & (pl.col("s") == "apple"),
+        (pl.col("x") > 1) & (pl.col("y") == 2) & pl.col("d").is_not_null(),
         pl.lit(True),
         pytest.param(
             pl.lit(False),

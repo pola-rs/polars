@@ -65,6 +65,7 @@ impl RowGroupEncoder {
                             let arrow_schema = Arc::clone(&arrow_schema);
                             let schema_descriptor = Arc::clone(&schema_descriptor);
                             let encodings = Buffer::clone(&encodings);
+                            let leaf_task_metrics = column_task_metrics.clone();
 
                             async move {
                                 let parquet_type = &schema_descriptor.fields()[i];
@@ -76,30 +77,38 @@ impl RowGroupEncoder {
                                         true,
                                     )?;
 
-                                let mut data: UnitVec<Vec<CompressedPage>> =
-                                    UnitVec::with_capacity(num_leaf_columns);
-
-                                for encode_page_iter in array_to_columns(
+                                let encode_page_iters = array_to_columns(
                                     array,
                                     parquet_type.clone(),
                                     write_options,
                                     encodings,
-                                )? {
-                                    let compressed_pages: Vec<CompressedPage> =
-                                        Compressor::new_from_vec(
-                                            encode_page_iter.map(|result| {
-                                                result.map_err(|e| {
-                                                    ParquetError::FeatureNotSupported(format!(
-                                                        "reraised in polars: {e}",
-                                                    ))
-                                                })
-                                            }),
-                                            write_options.compression,
-                                            vec![],
-                                        )
-                                        .collect::<ParquetResult<_>>()?;
+                                )?;
 
-                                    data.push(compressed_pages)
+                                let mut data: UnitVec<Vec<CompressedPage>> =
+                                    UnitVec::with_capacity(encode_page_iters.len());
+
+                                // Nested columns can have many leaves, encode those in parallel.
+                                for fut in parallelize_first_to_local(
+                                    TaskPriority::High,
+                                    leaf_task_metrics.as_deref(),
+                                    encode_page_iters.into_iter().map(
+                                        |encode_page_iter| async move {
+                                            Compressor::new_from_vec(
+                                                encode_page_iter.map(|result| {
+                                                    result.map_err(|e| {
+                                                        ParquetError::FeatureNotSupported(format!(
+                                                            "reraised in polars: {e}",
+                                                        ))
+                                                    })
+                                                }),
+                                                write_options.compression,
+                                                vec![],
+                                            )
+                                            .collect::<ParquetResult<Vec<CompressedPage>>>()
+                                        },
+                                    ),
+                                ) {
+                                    data.push(fut.await?);
                                 }
 
                                 PolarsResult::Ok(data)
