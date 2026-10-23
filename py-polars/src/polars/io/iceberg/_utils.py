@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
     from datetime import date, datetime
 
+    import pyarrow as pa
     import pyiceberg
     import pyiceberg.schema
     from pyiceberg.manifest import DataFile
@@ -1570,3 +1571,19 @@ def predicate_to_pyiceberg_delete_filter(
         raise error(msg)
 
     return out
+
+
+def with_table_nullability(data: pa.Table, table_schema: pa.Schema) -> pa.Table:
+    """`data` with the table's required top-level columns marked non-nullable."""
+    import pyarrow as pa
+
+    required = {f.name for f in table_schema if not f.nullable}
+    fields = []
+    for field, column in zip(data.schema, data.columns, strict=True):
+        if field.name in required:
+            if column.null_count:
+                msg = f"column '{field.name}' contains nulls, but the Iceberg table requires a value"
+                raise ValueError(msg)
+            field = field.with_nullable(False)
+        fields.append(field)
+    return data.cast(pa.schema(fields)) if required else data

@@ -3877,6 +3877,40 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_write_iceberg_required_columns(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default", uri="sqlite:///:memory:", warehouse=format_file_uri_iceberg(tmp_path)
+    )
+    catalog.create_namespace("ns")
+    tbl = catalog.create_table(
+        "ns.t",
+        IcebergSchema(
+            NestedField(1, "id", LongType(), required=True),
+            NestedField(2, "v", LongType(), required=False),
+        ),
+    )
+
+    pl.DataFrame({"id": [1, 2], "v": [None, 2]}).write_iceberg(tbl, mode="append")
+    # the null is outside the slice
+    pl.DataFrame({"id": [None, 3], "v": [3, 3]}).slice(1).write_iceberg(
+        tbl, mode="append"
+    )
+    pl.DataFrame({"id": [4]}).write_iceberg(tbl, mode="append")
+    with pytest.raises(ValueError, match="column 'id' contains nulls"):
+        pl.DataFrame({"id": [None, 5]}).write_iceberg(tbl, mode="append")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("id"),
+        pl.DataFrame({"id": [1, 2, 3, 4], "v": [None, 2, 3, None]}),
+    )
+
+    pl.DataFrame({"id": [6], "v": [6]}).write_iceberg(tbl, mode="overwrite")
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(), pl.DataFrame({"id": [6], "v": [6]})
+    )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_row_index_renamed(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
