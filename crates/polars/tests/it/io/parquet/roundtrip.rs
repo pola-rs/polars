@@ -44,7 +44,7 @@ fn round_trip(
     )?;
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
+    let mut writer = FileWriter::try_new(writer, schema.clone(), options, None)?;
 
     for group in row_groups {
         writer.write(u64::MAX, group?)?;

@@ -1,15 +1,38 @@
 use std::fmt::Debug;
 
-use aws_lc_rs::aead::{AES_128_GCM, AES_256_GCM, Aad, LessSafeKey, NonceSequence, UnboundKey};
+use aws_lc_rs::aead::{
+    AES_128_GCM, AES_256_GCM, Aad, Algorithm, LessSafeKey, NonceSequence, UnboundKey,
+};
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 
 use crate::parquet::error::ParquetResult;
 
-#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 const RIGHT_TWELVE: u128 = 0x0000_0000_ffff_ffff_ffff_ffff_ffff_ffff;
 pub(crate) const NONCE_LEN: usize = 12;
 pub(crate) const TAG_LEN: usize = 16;
 pub(crate) const SIZE_LEN: usize = 4;
+
+/// Get the AES-GCM algorithm for a key, checking that the key length is supported.
+///
+/// `key_name` describes the key in the error message, e.g. "footer key".
+pub(crate) fn aes_gcm_algorithm(
+    key_bytes: &[u8],
+    key_name: &str,
+) -> ParquetResult<&'static Algorithm> {
+    if key_bytes.len() == AES_128_GCM.key_len() {
+        Ok(&AES_128_GCM)
+    } else if key_bytes.len() == AES_256_GCM.key_len() {
+        Ok(&AES_256_GCM)
+    } else {
+        Err(encryption_err!(
+            "{}: unsupported key length: {}, expected {} or {} bytes",
+            key_name,
+            key_bytes.len(),
+            AES_128_GCM.key_len(),
+            AES_256_GCM.key_len()
+        ))
+    }
+}
 
 pub(crate) trait BlockDecryptor: Debug + Send + Sync {
     fn decrypt(&self, length_and_ciphertext: &[u8], aad: &[u8]) -> ParquetResult<Vec<u8>>;
@@ -25,16 +48,7 @@ pub(crate) struct AesGcmBlockDecryptor {
 impl AesGcmBlockDecryptor {
     /// Create a new `AesGcmBlockDecryptor` with a given key.
     pub(crate) fn new(key_bytes: &[u8]) -> ParquetResult<Self> {
-        let algorithm = if key_bytes.len() == AES_128_GCM.key_len() {
-            &AES_128_GCM
-        } else if key_bytes.len() == AES_256_GCM.key_len() {
-            &AES_256_GCM
-        } else {
-            return Err(encryption_err!(
-                "Error creating AesGcmBlockDecryptor with unsupported key length: {}",
-                key_bytes.len()
-            ));
-        };
+        let algorithm = aes_gcm_algorithm(key_bytes, "decryption key")?;
         let key = UnboundKey::new(algorithm, key_bytes)
             .map_err(|_| encryption_err!("Failed to create {:?} key", algorithm))?;
 
@@ -80,12 +94,10 @@ impl BlockDecryptor for AesGcmBlockDecryptor {
     }
 }
 
-#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 pub(crate) trait BlockEncryptor: Debug + Send + Sync {
     fn encrypt(&mut self, plaintext: &[u8], aad: &[u8]) -> ParquetResult<Vec<u8>>;
 }
 
-#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 #[derive(Debug, Clone)]
 struct CounterNonce {
     start: u128,
@@ -106,7 +118,6 @@ impl CounterNonce {
     }
 
     /// One accessor for the nonce bytes to avoid potentially flipping endianness
-    #[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
     #[inline]
     pub fn get_bytes(&self) -> [u8; NONCE_LEN] {
         self.counter.to_le_bytes()[0..NONCE_LEN].try_into().unwrap()
@@ -127,7 +138,6 @@ impl NonceSequence for CounterNonce {
     }
 }
 
-#[allow(dead_code)] // TODO: Remove once encrypted writing is implemented.
 #[derive(Debug)]
 pub(crate) struct AesGcmBlockEncryptor {
     key: LessSafeKey,
@@ -140,17 +150,7 @@ impl AesGcmBlockEncryptor {
     /// return an error if it wraps around.
     pub(crate) fn new(key_bytes: &[u8]) -> ParquetResult<Self> {
         let rng = SystemRandom::new();
-        let algorithm = if key_bytes.len() == AES_128_GCM.key_len() {
-            &AES_128_GCM
-        } else if key_bytes.len() == AES_256_GCM.key_len() {
-            &AES_256_GCM
-        } else {
-            return Err(encryption_err!(
-                "Error creating AesGcmBlockEncryptor with unsupported key length: {}",
-                key_bytes.len()
-            ));
-        };
-
+        let algorithm = aes_gcm_algorithm(key_bytes, "encryption key")?;
         let key = UnboundKey::new(algorithm, key_bytes)
             .map_err(|e| encryption_err!("Error creating {:?} key: {}", algorithm, e))?;
         let nonce = CounterNonce::new(&rng)?;
