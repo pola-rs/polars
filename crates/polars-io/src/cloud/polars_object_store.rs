@@ -311,40 +311,25 @@ pub use inner::PolarsObjectStore;
 /// `GetResult::bytes` for a streamed body that reports arrived bytes to the controller as they
 /// come in, per `ARRIVAL_FLUSH_BYTES`.
 async fn collect_body(
-    mut stream: futures::stream::BoxStream<'static, object_store::Result<bytes::Bytes>>,
+    stream: futures::stream::BoxStream<'static, object_store::Result<bytes::Bytes>>,
     len: usize,
     controller: &ConcurrencyController,
 ) -> object_store::Result<bytes::Bytes> {
     const ARRIVAL_FLUSH_BYTES: u64 = 64 * 1024;
 
     let mut pending = 0;
-    let mut first: Option<bytes::Bytes> = None;
-    let mut buf: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = match chunk {
-            Ok(chunk) => chunk,
-            Err(err) => {
-                controller.record_arrived(pending);
-                return Err(err);
-            },
-        };
-        pending += chunk.len() as u64;
-        if pending >= ARRIVAL_FLUSH_BYTES {
-            controller.record_arrived(std::mem::take(&mut pending));
-        }
-        // No copy for a single chunk.
-        match first.take() {
-            Some(f) => {
-                buf.reserve_exact(len);
-                buf.extend_from_slice(&f);
-                buf.extend_from_slice(&chunk);
-            },
-            None if buf.is_empty() => first = Some(chunk),
-            None => buf.extend_from_slice(&chunk),
-        }
-    }
+    let out = object_store::collect_bytes(
+        stream.inspect_ok(|chunk| {
+            pending += chunk.len() as u64;
+            if pending >= ARRIVAL_FLUSH_BYTES {
+                controller.record_arrived(std::mem::take(&mut pending));
+            }
+        }),
+        Some(len as u64),
+    )
+    .await;
     controller.record_arrived(pending);
-    Ok(first.unwrap_or_else(|| buf.into()))
+    out
 }
 
 pub type ObjectStorePath = object_store::path::Path;
@@ -769,6 +754,7 @@ impl PolarsObjectStore {
                 let bytes = response.bytes().await?;
 
                 if let Some(controller) = controller {
+                    controller.record_arrived(bytes.len() as u64);
                     controller.record_io(IoSample {
                         n_bytes: bytes.len() as u64,
                         ttfb,
