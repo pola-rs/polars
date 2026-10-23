@@ -9,7 +9,7 @@ use tokio::sync::{Notify, oneshot};
 /// Order in which parked acquires of the in-flight byte budget are admitted.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AdmissionOrder {
-    /// Lowest issue number first (`with_issue_seq`); requests without one go first.
+    /// Lowest issue number first (`in_issue_order`); requests without one go first.
     Issue,
     /// Whichever waiter wins the race after a release; new arrivals may pass parked waiters.
     Arrival,
@@ -21,14 +21,10 @@ tokio::task_local! {
     static ISSUE_SEQ: u64;
 }
 
-/// Next issue number. Take it where fetches are issued in order, not where their tasks start.
-pub fn next_issue_seq() -> u64 {
-    NEXT_ISSUE_SEQ.fetch_add(1, Relaxed)
-}
-
-/// Runs `fut` with `seq` as the issue number of its in-flight byte budget acquires.
-pub async fn with_issue_seq<F: Future>(seq: u64, fut: F) -> F::Output {
-    ISSUE_SEQ.scope(seq, fut).await
+/// Runs `fut` with the next issue number, taken now, for its in-flight byte budget acquires. Call
+/// it where fetches are issued in order, not where their tasks start.
+pub fn in_issue_order<F: Future>(fut: F) -> impl Future<Output = F::Output> {
+    ISSUE_SEQ.scope(NEXT_ISSUE_SEQ.fetch_add(1, Relaxed), fut)
 }
 
 /// Issue number of the current task, 0 if none.
@@ -51,9 +47,9 @@ struct IssueQueue {
 
 /// Byte-granularity budget with dynamic resize.
 ///
-/// Uses an atomic counter + Notify rather than tokio::Semaphore because
-/// we need instant shrink semantics (tokio::Semaphore requires "stealing"
-/// permits by acquiring them, which blocks under saturation).
+/// Uses atomic counters with a Notify (arrival order) or a queue of grants (issue order) rather
+/// than tokio::Semaphore because we need instant shrink semantics (tokio::Semaphore requires
+/// "stealing" permits by acquiring them, which blocks under saturation).
 #[derive(Debug)]
 pub(super) struct ByteBudget {
     // Current budget, measured in number of bytes, reflecting the maximum
@@ -139,9 +135,9 @@ impl ByteBudget {
         }
     }
 
-    /// Waits behind every parked acquire with a lower issue number; passes the queue only if it
-    /// fits and none waits. Returns whether it parked because the bytes did not fit; a wait
-    /// behind a lower issue number while the bytes fit does not count.
+    /// Waits behind every parked acquire with a lower issue number; passes parked acquires with an
+    /// equal or higher issue number if the bytes fit. Returns whether it parked because the bytes
+    /// did not fit; a wait behind a lower issue number while the bytes fit does not count.
     async fn acquire_in_issue_order(&self, n_bytes: u64, issue_seq: u64) -> bool {
         if self.queued.load(SeqCst) == 0 && self.try_take(n_bytes) {
             return false;
