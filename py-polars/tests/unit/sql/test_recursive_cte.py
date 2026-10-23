@@ -298,9 +298,8 @@ def test_recursive_shared_cte_computed_once() -> None:
               )
             SELECT count(*) AS n, sum(CASE WHEN t.x = b.x THEN 1 ELSE 0 END) AS same
             FROM t JOIN base b ON b.i = t.i
-            """,
-            eager=True,
-        )
+            """
+        ).collect(engine="streaming")
     assert res.rows() == [(5, 5)]
 
 
@@ -397,7 +396,7 @@ def test_recursive_step_input_computed_once(user_cache: bool, query: str) -> Non
     src = pl.LazyFrame({"x": [0]}).map_batches(stamp, schema={"x": pl.Int64})
     if user_cache:
         src = src.cache()
-    res = pl.SQLContext(src=src).execute(query).collect()
+    res = pl.SQLContext(src=src).execute(query).collect(engine="streaming")
     assert res.rows() == [(0, 0), (1, 1), (2, 1)]
     assert len(calls) == 1
 
