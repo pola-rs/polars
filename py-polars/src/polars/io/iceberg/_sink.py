@@ -7,6 +7,7 @@ import sys
 from dataclasses import dataclass
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from urllib.parse import urlparse
 
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_ldf
@@ -33,11 +34,17 @@ if TYPE_CHECKING:
     import pyiceberg.catalog
     import pyiceberg.table
     from pyiceberg.expressions import BooleanExpression
+    from pyiceberg.io import FileIO
     from pyiceberg.io.pyarrow import StatisticsCollector
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
-    from pyiceberg.table import CommitTableResponse, Transaction
+    from pyiceberg.table import (
+        CommitTableResponse,
+        CreateTableTransaction,
+        StagedTable,
+        Transaction,
+    )
     from pyiceberg.table.metadata import TableMetadata
     from pyiceberg.table.sorting import SortOrder
     from pyiceberg.table.update import TableRequirement, TableUpdate
@@ -518,6 +525,33 @@ def _add_files(
             append_files.append_data_file(data_file)
 
 
+def _delete_dir(io: FileIO, location: str) -> None:
+    """Delete the directory `location` and everything under it, if it exists."""
+    from pyiceberg.io.pyarrow import PyArrowFileIO
+
+    if isinstance(io, PyArrowFileIO):
+        from pyarrow.fs import FileType
+
+        scheme, netloc, path = io.parse_location(location)
+        path = path.rstrip("/")
+        fs = io.fs_by_scheme(scheme, netloc)
+        if fs.get_file_info(path).type != FileType.NotFound:
+            fs.delete_dir(path)
+        return
+
+    from pyiceberg.io.fsspec import FsspecFileIO
+
+    if isinstance(io, FsspecFileIO):
+        uri = urlparse(location)
+        fs = io.get_fs(uri.scheme or "file", uri.hostname)
+        with contextlib.suppress(FileNotFoundError):
+            fs.rm(location, recursive=True)
+        return
+
+    msg = f"deleting a directory with {type(io).__name__}"
+    raise NotImplementedError(msg)
+
+
 def _partition_key_exprs(
     spec: PartitionSpec, schema: Schema, source_schema: pa.Schema | None = None
 ) -> list[pl.Expr] | None:
@@ -866,6 +900,7 @@ class IcebergSinkState:
 
     sink_uuid_str: str
 
+    # A `StagedTable` is created by the commit, with the written data.
     table_: NoPickleOption[pyiceberg.table.Table]
     source_schema: pa.Schema | None
     sort_order_id: int | None
@@ -988,6 +1023,21 @@ class IcebergSinkState:
             sort_order_id=None,
             partition_spec_id=None,
             commit_result_df=NoPickleOption(),
+        )
+
+    @staticmethod
+    def new_create(
+        transaction: CreateTableTransaction,
+        *,
+        storage_options: StorageOptionsDict | None = None,
+    ) -> IcebergSinkState:
+        """A sink that creates the staged table of `transaction` with the data.
+
+        The create commits the data as the table's first snapshot, so a failed write
+        leaves no table, and the data is never added to a table created meanwhile.
+        """
+        return IcebergSinkState.new(
+            transaction._table, mode="append", storage_options=storage_options
         )
 
     def table(self) -> pyiceberg.table.Table:
@@ -1259,7 +1309,7 @@ class IcebergSinkState:
         *,
         verbose: bool,
     ) -> None:
-        from pyiceberg.table import Table
+        from pyiceberg.table import StagedTable, Table
 
         if _already_committed(table.metadata, self.sink_uuid_str):
             if verbose:
@@ -1279,6 +1329,12 @@ class IcebergSinkState:
                 )
                 for path, *rest in sinked_files
             ]
+
+        if isinstance(table, StagedTable):
+            self._commit_create(
+                table, sinked_files, snapshot_properties, verbose=verbose
+            )
+            return
 
         wrapped = Table(
             table.name(),
@@ -1371,6 +1427,123 @@ class IcebergSinkState:
         _copy_table_state(wrapped, table)
 
         assert table.metadata_location != original_metadata_location
+
+    def _commit_create(
+        self,
+        table: StagedTable,
+        sinked_files: list[_IcebergSinkedFile],
+        snapshot_properties: dict[str, str],
+        *,
+        verbose: bool,
+    ) -> None:
+        """Create the staged table, with the sinked files as its first snapshot.
+
+        Raises `CommitStateUnknownException` when the create may have landed: its
+        data files must then be kept.
+        """
+        from pyiceberg.exceptions import (
+            CommitFailedException,
+            CommitStateUnknownException,
+            NoSuchTableError,
+        )
+        from pyiceberg.table import CreateTableTransaction
+
+        # Same initial changes as the transaction that staged the table.
+        transaction = CreateTableTransaction(table)
+        data_files = _data_files_for_commit(
+            transaction, sinked_files, self.sort_order_id
+        )
+        _add_files(transaction, data_files, snapshot_properties)
+
+        if verbose:
+            eprint("IcebergSinkState[commit]: begin create table")
+
+        start_instant = perf_counter()
+        try:
+            transaction.commit_transaction()
+        except Exception as error:
+            try:
+                current = table.catalog.load_table(table.name())
+            except NoSuchTableError:
+                current = None
+            except Exception:
+                msg = "could not verify the outcome of a failed Iceberg create"
+                raise CommitStateUnknownException(msg) from error
+            if current is not None and _already_committed(
+                current.metadata, self.sink_uuid_str
+            ):
+                if verbose:
+                    eprint("IcebergSinkState[commit]: recovered lost commit response")
+                _copy_table_state(current, table)
+                return
+            if current is None and isinstance(error, CommitStateUnknownException):
+                raise
+            for producer in transaction._snapshot_producers:
+                producer._clean_all_uncommitted()
+            # Another writer's table means this create did not land.
+            if isinstance(error, CommitStateUnknownException):
+                msg = "the Iceberg table was created by another writer"
+                raise CommitFailedException(msg) from error
+            raise
+
+        if verbose:
+            elapsed = perf_counter() - start_instant
+            eprint(f"IcebergSinkState[commit]: finish create table ({elapsed:.3f}s)")
+
+    def written_files_dir(self) -> tuple[str, bool]:
+        """The directory of this sink's data files, and whether it is the sink's own.
+
+        The object-storage layout puts them next to other writers' files.
+        """
+        from pyiceberg.table import TableProperties
+        from pyiceberg.utils.properties import property_as_bool
+
+        object_storage_enabled = property_as_bool(
+            self.table().metadata.properties,
+            TableProperties.OBJECT_STORE_ENABLED,
+            TableProperties.OBJECT_STORE_ENABLED_DEFAULT,
+        )
+        location = self.sink_base_path(object_storage_enabled=object_storage_enabled)
+        return location, not object_storage_enabled
+
+    def remove_written_files(self) -> str | None:
+        """Delete the data files of a sink whose commit did not land, best effort.
+
+        Returns the directory where data files may remain: files outside a directory
+        of the sink's own, or that a landed commit references, are left in place.
+        """
+        from pyiceberg.exceptions import NoSuchTableError
+
+        location, own = self.written_files_dir()
+        if not own:
+            return location
+        table = self.table()
+        try:
+            if _already_committed(
+                table.catalog.load_table(table.name()).metadata, self.sink_uuid_str
+            ):
+                return location
+        except NoSuchTableError:
+            pass
+        except Exception:
+            return location
+        try:
+            _delete_dir(self.storage_file_io(), location)
+        except Exception:
+            return location
+        return None
+
+    def storage_file_io(self) -> FileIO:
+        """The table's FileIO, with the storage options the data was written with."""
+        from pyiceberg.io import load_file_io
+
+        table = self.table()
+        if not self.iceberg_storage_properties:
+            return table.io
+        return load_file_io(
+            {**table.io.properties, **self.iceberg_storage_properties},
+            location=table.location(),
+        )
 
     def sink_base_path(self, *, object_storage_enabled: bool) -> str:
         from pyiceberg.table import TableProperties
