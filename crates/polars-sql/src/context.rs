@@ -30,8 +30,9 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
-    CatalogDdl, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName, display_name,
-    name_parts, name_position, rewrite_catalog_names,
+    CatalogDdl, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName,
+    create_table_columns, create_table_options, display_name, name_parts, name_position,
+    rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -424,14 +425,15 @@ impl SQLContext {
     /// rejects it.
     pub fn catalog_ddl(&self, query: &str) -> PolarsResult<Option<CatalogDdl>> {
         let stmt = parse_single_statement(query)?;
-        if !matches!(
-            stmt,
+        match &stmt {
             Statement::Drop {
                 object_type: ObjectType::Table,
                 ..
-            }
-        ) {
-            return Ok(None);
+            } => {},
+            Statement::CreateTable(create_table) if !create_table.temporary => {
+                return self.catalog_create_table(create_table);
+            },
+            _ => return Ok(None),
         }
         let (names, if_exists, purge) = drop_table_parts(&stmt)?;
         Ok(self
@@ -442,6 +444,86 @@ impl SQLContext {
                 if_exists,
                 purge,
             }))
+    }
+
+    /// The catalog table that a `CREATE TABLE` of `name` creates, resolved as in a read; `None`
+    /// for a registered table. A name that a catalog applies to but gives no namespace is an
+    /// error, so it doesn't silently create a registered table.
+    fn catalog_create_target(&self, name: &ObjectName) -> PolarsResult<Option<CatalogTable>> {
+        let Some(parts) = name_parts(name) else {
+            return Ok(None);
+        };
+        let named = self.catalogs.named_catalog(&parts);
+        let Some(catalog) = named.or(self.catalogs.default_catalog()) else {
+            return Ok(None);
+        };
+        if let Some(table) = self.catalogs.resolve(&parts) {
+            return Ok(Some(table));
+        }
+        let temp_hint = match named {
+            Some(_) => "",
+            None => ", or use `CREATE TEMP TABLE` for a local table",
+        };
+        polars_bail!(
+            SQLInterface: "table '{}' has no namespace: catalog '{}' has no default namespace; write '{}.<namespace>.{}'{}",
+            display_name(&parts), catalog, catalog, parts.last().unwrap(), temp_hint
+        )
+    }
+
+    /// The catalog DDL of a `CREATE TABLE`, if its name resolves to a catalog table.
+    fn catalog_create_table(&self, create_table: &CreateTable) -> PolarsResult<Option<CatalogDdl>> {
+        let Some(table) = self.catalog_create_target(&create_table.name)? else {
+            return Ok(None);
+        };
+        self.validate_create_table(create_table, true)?;
+        let CreateTable {
+            name,
+            if_not_exists,
+            columns,
+            query,
+            like,
+            table_options,
+            hive_formats,
+            ..
+        } = create_table;
+        polars_ensure!(like.is_none(), SQLInterface: "`CREATE TABLE ... LIKE` is not supported for catalog tables");
+        polars_ensure!(query.is_none(), SQLInterface: "`CREATE TABLE ... AS SELECT` is not yet supported for catalog tables");
+        polars_ensure!(!columns.is_empty(), SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause");
+        let (schema, required) = create_table_columns(columns)?;
+        let location = hive_formats.as_ref().and_then(|f| f.location.as_deref());
+        let (location, properties) = create_table_options(table_options, location)?;
+
+        // A registered table of the written or the full name would hide the new table from reads.
+        let tbl_name = object_name_to_string(name);
+        let full_name = table.full_name();
+        if let Some(registered) = self.registered_table_key(&tbl_name)? {
+            let hint = match name.0.len() == full_name.len() {
+                true => "unregister it".to_string(),
+                false => format!(
+                    "write the full name '{}', or unregister it",
+                    display_name(&full_name)
+                ),
+            };
+            polars_bail!(
+                SQLInterface: "table '{}' would be hidden by registered table '{}'; {}",
+                tbl_name, registered, hint
+            );
+        }
+        if let Some(registered) = self.registered_table_key(&full_name.join("."))? {
+            polars_bail!(
+                SQLInterface: "table '{}' would be hidden by registered table '{}'; unregister it",
+                tbl_name, registered
+            );
+        }
+        Ok(Some(CatalogDdl::CreateTable {
+            name: tbl_name,
+            table,
+            if_not_exists: *if_not_exists,
+            schema,
+            required,
+            location,
+            properties,
+        }))
     }
 
     /// Execute `query` with the scans of the catalog tables it reads, by full name (see
@@ -2172,8 +2254,13 @@ impl SQLContext {
         Ok(())
     }
 
-    /// Check that a CREATE TABLE statement only carries supported clauses.
-    fn validate_create_table(&self, create_table: &CreateTable) -> PolarsResult<()> {
+    /// Check that a CREATE TABLE statement only carries supported clauses. A catalog table also
+    /// takes `LOCATION` and `WITH (...)`, which `create_table_options` checks.
+    fn validate_create_table(
+        &self,
+        create_table: &CreateTable,
+        for_catalog: bool,
+    ) -> PolarsResult<()> {
         // Destructure exhaustively; that way if/when new fields are added in future
         // sqlparser versions, we'll get a compilation error and can handle them
         let CreateTable {
@@ -2247,6 +2334,7 @@ impl SQLContext {
         polars_ensure!(!dynamic, SQLInterface: "`CREATE DYNAMIC TABLE` is not supported");
         polars_ensure!(!external, SQLInterface: "`CREATE EXTERNAL TABLE` is not supported");
         polars_ensure!(!iceberg, SQLInterface: "`CREATE ICEBERG TABLE` is not supported");
+        polars_ensure!(!*or_replace || *temporary || !for_catalog, SQLInterface: "`CREATE OR REPLACE TABLE` is not supported for catalog tables");
         polars_ensure!(!*or_replace || *temporary, SQLInterface: "`CREATE OR REPLACE TABLE` is not supported");
         polars_ensure!(!(*or_replace && *if_not_exists), SQLInterface: "`OR REPLACE` and `IF NOT EXISTS` cannot be combined");
         polars_ensure!(!require_user, SQLInterface: "`REQUIRE USER` is not supported");
@@ -2264,6 +2352,7 @@ impl SQLContext {
         polars_ensure!(cluster_by.is_none(), SQLInterface: "table `CLUSTER BY` clauses are not supported");
         polars_ensure!(clustered_by.is_none(), SQLInterface: "table `CLUSTERED BY` clauses are not supported");
         polars_ensure!(comment.is_none(), SQLInterface: "table `COMMENT` clauses are not supported");
+        polars_ensure!(constraints.is_empty() || !for_catalog, SQLInterface: "only NOT NULL constraints are supported for catalog tables");
         polars_ensure!(constraints.is_empty(), SQLInterface: "table constraints are not supported");
         polars_ensure!(data_retention_time_in_days.is_none(), SQLInterface: "`DATA_RETENTION_TIME_IN_DAYS` is not supported");
         polars_ensure!(default_ddl_collation.is_none(), SQLInterface: "`DEFAULT_DDL_COLLATION` is not supported");
@@ -2274,16 +2363,27 @@ impl SQLContext {
         polars_ensure!(file_format.is_none(), SQLInterface: "table `STORED AS` clauses are not supported");
         polars_ensure!(for_values.is_none(), SQLInterface: "`FOR VALUES` clauses are not supported");
         polars_ensure!(global.is_none(), SQLInterface: "`CREATE GLOBAL/LOCAL TABLE` is not supported");
-        polars_ensure!(hive_formats.as_ref().is_none_or(|f| *f == HiveFormat::default()), SQLInterface: "Hive table format clauses are not supported");
+        // sqlparser keeps `LOCATION` in the Hive format.
+        let hive_format = |f: &HiveFormat| match for_catalog {
+            true => HiveFormat {
+                location: None,
+                ..f.clone()
+            },
+            false => f.clone(),
+        };
+        polars_ensure!(hive_formats.as_ref().is_none_or(|f| hive_format(f) == HiveFormat::default()), SQLInterface: "Hive table format clauses are not supported");
         polars_ensure!(inherits.is_none(), SQLInterface: "table `INHERITS` clauses are not supported");
         polars_ensure!(initialize.is_none(), SQLInterface: "`INITIALIZE` is not supported");
         polars_ensure!(location.is_none(), SQLInterface: "table `LOCATION` clauses are not supported");
+        let partitioned = matches!(hive_distribution, HiveDistributionStyle::PARTITIONED { .. });
+        polars_ensure!(!partitioned || !for_catalog, SQLInterface: "`PARTITIONED BY` is not yet supported for catalog tables; create the table unpartitioned, then add a partition spec with PyIceberg's update_spec");
         polars_ensure!(matches!(hive_distribution, HiveDistributionStyle::NONE), SQLInterface: "Hive table distribution clauses are not supported");
-        polars_ensure!(matches!(table_options, CreateTableOptions::None), SQLInterface: "table `WITH`/`OPTIONS` clauses are not supported");
+        polars_ensure!(for_catalog || matches!(table_options, CreateTableOptions::None), SQLInterface: "table `WITH`/`OPTIONS` clauses are not supported");
         polars_ensure!(max_data_extension_time_in_days.is_none(), SQLInterface: "`MAX_DATA_EXTENSION_TIME_IN_DAYS` is not supported");
         polars_ensure!(on_cluster.is_none(), SQLInterface: "`ON CLUSTER` clauses are not supported");
         polars_ensure!(on_commit.is_none(), SQLInterface: "`ON COMMIT` clauses are not supported");
         polars_ensure!(order_by.is_none(), SQLInterface: "table `ORDER BY` clauses are not supported");
+        polars_ensure!(partition_by.is_none() || !for_catalog, SQLInterface: "`PARTITION BY` is not yet supported for catalog tables; create the table unpartitioned, then add a partition spec with PyIceberg's update_spec");
         polars_ensure!(partition_by.is_none(), SQLInterface: "table `PARTITION BY` clauses are not supported");
         polars_ensure!(partition_of.is_none(), SQLInterface: "`PARTITION OF` clauses are not supported");
         polars_ensure!(primary_key.is_none(), SQLInterface: "inline `PRIMARY KEY` clauses are not supported");
@@ -4056,7 +4156,7 @@ impl SQLContext {
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         if let Statement::CreateTable(create_table) = stmt {
-            self.validate_create_table(create_table)?;
+            self.validate_create_table(create_table, false)?;
             let CreateTable {
                 if_not_exists,
                 or_replace,
@@ -4075,6 +4175,8 @@ impl SQLContext {
                     polars_bail!(SQLInterface: "temporary tables cannot be created in catalog '{}'", catalog);
                 }
             } else {
+                // The caller creates catalog tables (see `catalog_ddl`); here they are an error.
+                self.catalog_create_target(name)?;
                 self.ensure_not_catalog_table(name, "CREATE TABLE", false, false)?;
             }
             let tbl_name = object_name_to_string(name);
@@ -4124,6 +4226,9 @@ impl SQLContext {
                     match get_ignoring_case(&self.table_map.read().unwrap(), &like_table)? {
                         Some(table) => table.clone().clear(),
                         None => {
+                            let catalog_table = name_parts(like_name)
+                                .is_some_and(|parts| self.catalogs.resolve(&parts).is_some());
+                            polars_ensure!(!catalog_table, SQLInterface: "`CREATE TABLE ... LIKE` is not supported for catalog tables");
                             polars_bail!(SQLInterface: "table given in LIKE does not exist: {}", like_table)
                         },
                     }

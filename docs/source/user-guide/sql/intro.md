@@ -101,11 +101,14 @@ registered table matches, `DROP TABLE IF EXISTS` of a name reaches the catalog. 
 permanent and runs at `execute()`. `PURGE` also asks the catalog to delete the table's data files,
 and only applies to catalog tables. A `DROP TABLE` of a catalog table takes one name.
 
-`CREATE TABLE`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet. For `CREATE TABLE`
-that includes a name the default catalog applies to, such as `tpch.t`, even if a table of that name
-is registered. `CREATE TEMP TABLE` always creates a registered table; its name cannot start with an
-attached catalog. `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached catalog
-only acts on a registered table.
+`CREATE TABLE <name> (<column>, ...)` resolves the name as a query does and creates an empty table
+in the catalog it resolves to, at `execute()`. With a default catalog, that includes names such as
+`tpch.t`; `CREATE TEMP TABLE` always creates a registered table instead, and its name cannot start
+with an attached catalog. `NOT NULL` makes a column a required field, and `LOCATION '...'` or
+`WITH ('location' = '...', 'format-version' = 2)` sets the table's location and properties.
+`CREATE TABLE ... AS SELECT`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet.
+`TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached catalog only acts on a
+registered table.
 
 !!! warning "Serialized plans"
 
