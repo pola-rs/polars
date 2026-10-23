@@ -912,9 +912,9 @@ pub(super) fn convert_functions(
         #[cfg(feature = "top_k")]
         F::TopKBy { descending } => {
             // The inputs are the values, `k` and then the keys.
-            let mut options =
-                SortMultipleOptions::default().with_order_descending_multi(descending);
-            options.expand_flags(e.len().saturating_sub(2))?;
+            let options = SortMultipleOptions::default()
+                .with_order_descending_multi(descending)
+                .expand_flags(e.len().saturating_sub(2))?;
             I::TopKBy {
                 descending: options.descending,
             }
@@ -1360,12 +1360,12 @@ pub(super) fn convert_functions(
                 ..
             } = &mut v
             {
-                let mut options = SortMultipleOptions {
+                let options = SortMultipleOptions {
                     descending: descending.take().unwrap_or(vec![false]),
                     nulls_last: nulls_last.take().unwrap_or(vec![false]),
                     ..Default::default()
-                };
-                options.expand_flags(e.len())?;
+                }
+                .expand_flags(e.len())?;
                 *descending = Some(options.descending);
                 *nulls_last = Some(options.nulls_last);
             }

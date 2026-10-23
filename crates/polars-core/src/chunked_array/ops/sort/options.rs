@@ -133,7 +133,7 @@ impl SortMultipleOptions {
 
     /// Expands `descending` and `nulls_last` given as a single flag for all keys to one flag per
     /// key.
-    pub fn expand_flags(&mut self, num_keys: usize) -> PolarsResult<()> {
+    pub fn expand_flags(mut self, num_keys: usize) -> PolarsResult<Self> {
         for (flags, name) in [
             (&mut self.descending, "descending"),
             (&mut self.nulls_last, "nulls_last"),
@@ -147,7 +147,7 @@ impl SortMultipleOptions {
                 name, flags.len(), num_keys
             );
         }
-        Ok(())
+        Ok(self)
     }
 
     /// Specify order for each column. Defaults all `false`.

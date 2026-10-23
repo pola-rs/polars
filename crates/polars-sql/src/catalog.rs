@@ -23,6 +23,23 @@ pub struct CatalogTable {
     pub identifier: Vec<String>,
 }
 
+/// A statement changing a catalog table, for the caller to perform (see
+/// [`SQLContext::catalog_ddl`](crate::SQLContext::catalog_ddl)).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CatalogDdl {
+    /// `DROP TABLE [IF EXISTS] <name> [PURGE]`.
+    DropTable {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table it resolves to.
+        table: CatalogTable,
+        /// `IF EXISTS`.
+        if_exists: bool,
+        /// `PURGE`: also delete the data files.
+        purge: bool,
+    },
+}
+
 impl CatalogTable {
     /// The catalog name followed by the identifier, the name the table is known by in SQL.
     pub fn full_name(&self) -> Vec<String> {
@@ -444,7 +461,7 @@ fn select_star_from(parts: &[String], span: Span) -> SetExpr {
 }
 
 /// A table name for messages, with parts containing dots quoted.
-fn display_name(parts: &[String]) -> String {
+pub(crate) fn display_name(parts: &[String]) -> String {
     let parts: Vec<String> = parts
         .iter()
         .map(|part| match part.contains('.') {

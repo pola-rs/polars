@@ -83,8 +83,7 @@ pub(crate) fn argsort_multiple_row_fmt(
     by: &[Column],
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
-    let mut options = options.clone();
-    options.expand_flags(by.len())?;
+    let options = options.clone().expand_flags(by.len())?;
 
     let rows_encoded = _get_rows_encoded(by, &options.descending, &options.nulls_last)?;
     let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();

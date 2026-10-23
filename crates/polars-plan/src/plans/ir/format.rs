@@ -358,6 +358,17 @@ impl<'a> IRDisplay<'a> {
                     ._format(f, sub_indent, seen_caches)?;
                 write!(f, "\n{:indent$}END MERGE_SORTED", "")
             },
+            Recursive { anchor, step, .. } => {
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
+                write!(f, ":")?;
+
+                write!(f, "\n{:indent$}ANCHOR:", "")?;
+                self.with_root(*anchor)
+                    ._format(f, sub_indent, seen_caches)?;
+                write!(f, "\n{:indent$}STEP:", "")?;
+                self.with_root(*step)._format(f, sub_indent, seen_caches)?;
+                write!(f, "\n{:indent$}END RECURSIVE", "")
+            },
             ir_node => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 for input in ir_node.inputs() {
@@ -1229,6 +1240,8 @@ pub fn write_ir_non_recursive(
                 .collect::<Vec<_>>()
                 .join(", "),
         ),
+        IR::Recursive { id, .. } => write!(f, "{:indent$}RECURSIVE[id: {id}]", ""),
+        IR::WorkingTableScan { id, .. } => write!(f, "{:indent$}WORKING TABLE[id: {id}]", ""),
         IR::UnoptimizedDispatch {
             inputs: _,
             arg_map: _,

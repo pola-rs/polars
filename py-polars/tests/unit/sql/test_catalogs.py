@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import io
 import pickle
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -10,12 +11,10 @@ import polars as pl
 from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 pytest.importorskip("pyiceberg.catalog.sql")
 
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.exceptions import NoSuchTableError
 
 
 class CountingCatalog(SqlCatalog):  # type: ignore[misc]
@@ -233,9 +232,11 @@ def test_catalog_tables_load_lazily(lake: CountingCatalog) -> None:
     # one load per table, also for a self-join
     assert sorted(lake.loads) == [("tpch", "lineitem"), ("tpch", "orders")]
 
-    # a query that registers a derived table is translated at `execute`
+    # also through a derived table
     lake.loads.clear()
-    ctx.execute("SELECT * FROM (SELECT * FROM orders) AS x")
+    lf = ctx.execute("SELECT * FROM (SELECT * FROM orders) AS x")
+    assert lake.loads == []
+    assert lf.collect().height == 3
     assert lake.loads == [("tpch", "orders")]
 
 
@@ -273,9 +274,9 @@ def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
     "statement",
     [
         "CREATE TABLE lake.tpch.t AS SELECT 1 AS x",
-        "DROP TABLE lake.tpch.lineitem",
-        "DROP TABLE lineitem",
-        "DROP TABLE IF EXISTS lake.tpch.lineitem",
+        "CREATE TABLE tpch.t AS SELECT 1 AS x",
+        "CREATE TABLE t AS SELECT 1 AS x",
+        "CREATE TABLE IF NOT EXISTS tpch.t (x INT)",
         "TRUNCATE TABLE lake.tpch.lineitem",
         "TRUNCATE TABLE tpch.lineitem",
         "TRUNCATE TABLE IF EXISTS lake.tpch.lineitem",
@@ -291,6 +292,49 @@ def test_catalog_ddl_is_not_supported(lake: CountingCatalog, statement: str) -> 
 
 
 @pytest.mark.write_disk
+def test_create_table_resolves_like_a_read(lake: CountingCatalog) -> None:
+    # #29892: a name of the default catalog doesn't silently create a registered table
+    ctx = lake_ctx(lake)
+    ctx.register("t", pl.LazyFrame({"x": [1]}))
+    for statement, name in (
+        ("CREATE TABLE sales.t2 (id BIGINT)", "'sales.t2' is 'lake.sales.t2'"),
+        ("CREATE TABLE t AS SELECT * FROM lineitem", "'t' is 'lake.tpch.t'"),
+    ):
+        with pytest.raises(SQLInterfaceError, match=name):
+            ctx.execute(statement)
+    assert ctx.tables() == ["t"]
+
+    # a name that no catalog applies to creates a registered table
+    ctx = lake_ctx(lake, default_namespace=None)
+    ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
+    with pytest.raises(SQLInterfaceError, match="'lake' has no default namespace"):
+        ctx.execute("CREATE TABLE lake.t (x INT)")
+    ctx = lake_ctx(lake, default=False)
+    ctx.execute("CREATE TABLE tpch.t AS SELECT 1 AS x")
+    assert ctx.execute("SELECT x FROM tpch.t", eager=True).item() == 1
+
+
+@pytest.mark.write_disk
+def test_create_temp_table_with_catalogs(lake: CountingCatalog) -> None:
+    # a temporary table is a registered table, also where the default catalog applies
+    ctx = lake_ctx(lake)
+    for name in ("t", "tpch.t", "lineitem"):
+        ctx.execute(f"CREATE TEMP TABLE {name} AS SELECT 1 AS x")
+    assert sorted(ctx.tables()) == ["lineitem", "t", "tpch.t"]
+    assert ctx.execute("SELECT x FROM lineitem", eager=True).item() == 1
+    assert not lake.table_exists(("tpch", "t"))
+    res = ctx.execute("SELECT * FROM lake.tpch.lineitem", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+    for name in ("lake.tpch.t2", "LAKE.t2"):
+        with pytest.raises(
+            SQLInterfaceError,
+            match="temporary tables cannot be created in catalog 'lake'",
+        ):
+            ctx.execute(f"CREATE TEMP TABLE {name} AS SELECT 1 AS x")
+
+
+@pytest.mark.write_disk
 def test_if_exists_without_catalog_name_acts_on_registered_tables(
     lake: CountingCatalog,
 ) -> None:
@@ -301,7 +345,6 @@ def test_if_exists_without_catalog_name_acts_on_registered_tables(
     for statement in (
         "DROP TABLE IF EXISTS tmp",
         "DROP TABLE IF EXISTS tmp",
-        "DROP TABLE IF EXISTS lineitem",
         "TRUNCATE TABLE IF EXISTS staged",
         "TRUNCATE TABLE IF EXISTS tpch.lineitem",
     ):
@@ -369,6 +412,105 @@ def test_ddl_on_local_table_named_like_catalog(lake: CountingCatalog) -> None:
     ctx.execute("DROP TABLE lake.tpch.mine")
     ctx.execute("DROP TABLE lineitem")
     assert ctx.tables() == []
+    assert lake.table_exists(("tpch", "lineitem"))
+
+
+def data_files(catalog: CountingCatalog, *identifier: str) -> list[Path]:
+    location = catalog.load_table(identifier).location().removeprefix("file://")
+    return list(Path(location).rglob("*.parquet"))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("name", ["lake.tpch.lineitem", "tpch.lineitem", "lineitem"])
+def test_drop_catalog_table(lake: CountingCatalog, name: str) -> None:
+    # #29896
+    ctx = lake_ctx(lake)
+    files = data_files(lake, "tpch", "lineitem")
+    assert files
+    res = ctx.execute(f"DROP TABLE {name}", eager=True)
+    assert res.item() == "DROP TABLE lake.tpch.lineitem"
+    assert not lake.table_exists(("tpch", "lineitem"))
+    assert lake.table_exists(("tpch", "orders"))
+    assert all(file.exists() for file in files)
+
+    ctx.execute(f"DROP TABLE IF EXISTS {name}")
+    with pytest.raises(NoSuchTableError, match=f"table '{name}' does not exist"):
+        ctx.execute(f"DROP TABLE {name}")
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_table_purge(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    files = data_files(lake, "tpch", "orders")
+    assert files
+    res = ctx.execute("DROP TABLE orders PURGE", eager=True)
+    assert res.item() == "DROP TABLE lake.tpch.orders PURGE"
+    assert not lake.table_exists(("tpch", "orders"))
+    assert not any(file.exists() for file in files)
+    res = ctx.execute("DROP TABLE IF EXISTS orders PURGE", eager=True)
+    assert res.item() == "DROP TABLE lake.tpch.orders PURGE"
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_table_from_catalog_config(lake: CountingCatalog) -> None:
+    from polars.io.iceberg import IcebergCatalogConfig
+
+    config = IcebergCatalogConfig.from_catalog(lake)
+    ctx = pl.SQLContext().register_catalog(
+        "lake", config, default_namespace="tpch", default=True
+    )
+    ctx.execute("DROP TABLE orders")
+    assert not lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
+def test_drop_registered_table_differing_in_case(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.register("LINEITEM", pl.LazyFrame({"x": [1]}))
+    ctx.execute("DROP TABLE IF EXISTS lineitem")
+    assert ctx.tables() == []
+    assert lake.table_exists(("tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("DROP TABLE lineitem, orders", "takes one table name"),
+        ("DROP TABLE tmp, lineitem", "takes one table name"),
+        ("DROP TABLE tmp PURGE", "PURGE` only applies to catalog tables"),
+        ("DROP TABLE lineitem CASCADE", "CASCADE` is not supported"),
+    ],
+)
+def test_drop_catalog_table_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.register("tmp", pl.LazyFrame({"x": [1]}))
+    with pytest.raises(SQLInterfaceError, match=error):
+        ctx.execute(statement)
+    assert ctx.tables() == ["tmp"]
+    assert lake.table_exists(("tpch", "lineitem"))
+    assert lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
+def test_drop_errors_in_name_order(lake: CountingCatalog) -> None:
+    # names that no catalog resolves report their errors in statement order
+    ctx = lake_ctx(lake, default=False)
+    ctx.register_many({"Foo.x": pl.LazyFrame(), "FOO.X": pl.LazyFrame()})
+    with pytest.raises(SQLInterfaceError, match="table 'missing' does not exist"):
+        ctx.execute("DROP TABLE missing, foo.x")
+
+
+@pytest.mark.write_disk
+def test_drop_missing_catalog_table(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    for name in ("nope", "nope.t", "LINEITEM"):
+        ctx.execute(f"DROP TABLE IF EXISTS {name}")
+    with pytest.raises(NoSuchTableError, match="identifiers are case-sensitive"):
+        ctx.execute("DROP TABLE LINEITEM")
+    assert lake.table_exists(("tpch", "lineitem"))
 
 
 @pytest.mark.write_disk

@@ -1563,10 +1563,6 @@ def test_join_on_subquery_reading_struct_field() -> None:
         # reads both tables
         ("a.v + b.v > (SELECT MAX(x) FROM c)", "not currently supported in the JOIN"),
         ("v IN (SELECT x FROM c)", "not currently supported in the JOIN"),
-        (
-            "EXISTS (SELECT 1 FROM c WHERE c.x = a.v)",
-            "EXISTS subquery is not currently supported",
-        ),
         # more than one row
         ("a.v = (SELECT x FROM c)", "expected no or a single value"),
     ],
@@ -2637,6 +2633,35 @@ def test_join_on_constant_any_condition(join_type: str) -> None:
         res = ctx.execute(f"SELECT * FROM a {join_type} b ON {condition}").collect()
         expected = ctx.execute(f"SELECT * FROM a {join_type} b ON {verdict}").collect()
         assert_frame_equal(res, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "join_type", ["INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL OUTER JOIN"]
+)
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.k = a.v",
+        "x = a.k",
+        "b.k = b.v",
+        "a.k = b.k AND a.k = a.v",
+    ],
+)
+@pytest.mark.parametrize(
+    "columns", ["a.k, a.v, a.x, b.k AS bk, b.v AS bv", "a.k, b.k AS bk"]
+)
+def test_join_on_equality_within_one_input(
+    join_type: str, condition: str, columns: str
+) -> None:
+    # `v` is in both inputs.
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3], "v": [1, 5, 3], "x": [1, 2, 4]}),
+        "b": pl.DataFrame({"k": [1, 3, 4], "v": [1, 7, 4]}),
+    }
+    query = f"SELECT {columns} FROM a {join_type} b ON {condition}"
+    assert_sql_matches(
+        frames, query=query, compare_with="sqlite", check_row_order=False
+    )
 
 
 def test_join_on_constant_true_plans_cross_join() -> None:

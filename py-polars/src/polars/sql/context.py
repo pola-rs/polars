@@ -469,6 +469,9 @@ class SQLContext(Generic[FrameType]):
     def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
         from polars.io.iceberg.functions import _scan_catalog_table
 
+        if (ddl := self._ctxt.catalog_ddl(query)) is not None:
+            return self._execute_catalog_ddl(ddl)._ldf
+
         tables = []
         identifier: list[str]
         for catalog_name, identifier in self._ctxt.catalog_tables(query):
@@ -483,6 +486,38 @@ class SQLContext(Generic[FrameType]):
             )
             tables.append((full_name, lf._ldf))
         return self._ctxt.execute_with_catalog_tables(query, tables)
+
+    def _execute_catalog_ddl(self, ddl: dict[str, Any]) -> LazyFrame:
+        """Perform the catalog DDL that `catalog_ddl` returned."""
+        from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+        if ddl["kind"] != "drop_table":
+            msg = f"unsupported catalog statement {ddl['kind']!r}"
+            raise NotImplementedError(msg)
+        config, instance, _ = self._catalogs[ddl["catalog"]]
+        catalog = (
+            instance
+            if instance is not None
+            else config.class_(config.name, **config.properties)
+        )
+        identifier: tuple[str, ...] = tuple(ddl["identifier"])
+        purge = ddl["purge"]
+        full_name = _display_name([ddl["catalog"], *identifier])
+        response = f"DROP TABLE {full_name}" + (" PURGE" if purge else "")
+        try:
+            if purge:
+                catalog.purge_table(identifier)
+            else:
+                catalog.drop_table(identifier)
+        except (NoSuchTableError, NoSuchNamespaceError) as error:
+            if not ddl["if_exists"]:
+                msg = (
+                    f"table '{ddl['name']}' does not exist: catalog table "
+                    f"'{_display_name(identifier)}' could not be dropped ({error}); "
+                    "catalog identifiers are case-sensitive"
+                )
+                raise NoSuchTableError(msg) from error
+        return DataFrame({"Response": [response]}).lazy()
 
     def register_catalog(
         self,
@@ -536,7 +571,8 @@ class SQLContext(Generic[FrameType]):
             :func:`scan_iceberg`. Pass the storage credentials here when a plan is
             serialized after its tables loaded: the serialized plan then reads the
             tables' metadata directly, with these options rather than the catalog's
-            properties.
+            properties. `DROP TABLE ... PURGE` does not use them: the catalog
+            deletes the files with its own properties.
 
         Notes
         -----
@@ -544,10 +580,20 @@ class SQLContext(Generic[FrameType]):
         properties and the storage options, which may include credentials: treat
         serialized plans as secret.
 
-        `CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on a table of an
-        attached catalog are not supported. `DROP TABLE IF EXISTS` and
+        `DROP TABLE [IF EXISTS] <name> [PURGE]` resolves the name as a query does: a
+        registered table of that name is dropped from the context, else the catalog
+        table is dropped from its catalog, permanently. Once no registered table
+        matches, `DROP TABLE IF EXISTS` of a name reaches the catalog. `PURGE` also
+        asks the catalog to delete the table's data files, and only applies to
+        catalog tables. A `DROP TABLE` of a catalog table takes one name.
+
+        `CREATE TABLE`, `TRUNCATE` and `DELETE` on a table of an attached catalog are
+        not supported. For `CREATE TABLE` that includes a name the default catalog
+        applies to, even if a table of that name is registered: with a default
+        catalog, `CREATE TABLE tpch.t` does not create a registered table; use
+        `CREATE TEMP TABLE tpch.t` for that.
         `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
-        catalog only act on a registered table, and are a no-op otherwise.
+        catalog only acts on a registered table, and is a no-op otherwise.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
         like the tables registered there. If that detaches the default catalog, the
@@ -847,6 +893,11 @@ def _pyiceberg_catalog_class() -> type | None:
     import pyiceberg.catalog
 
     return pyiceberg.catalog.Catalog
+
+
+def _display_name(parts: Sequence[str]) -> str:
+    """A table name for messages, with parts containing dots quoted."""
+    return ".".join(f'"{part}"' if "." in part else part for part in parts)
 
 
 def _namespace_parts(namespace: str | Sequence[str] | None) -> list[str] | None:

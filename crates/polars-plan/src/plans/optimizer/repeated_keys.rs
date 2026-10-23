@@ -101,7 +101,10 @@ impl OptimizationRule for RemoveRepeatedKeys {
                     changed = true;
                 }
                 if let Some((node, options)) = order_by
-                    && let Some(new_order_by) = retain_row_encode_keys(*node, *options, expr_arena)
+                    && let Some(new_order_by) =
+                        retain_row_encode_keys(*node, *options, expr_arena, |keys, arena| {
+                            first_expr_occurrences(keys.iter().map(|e| e.node()), arena)
+                        })
                 {
                     *order_by = Some(new_order_by);
                     changed = true;
@@ -114,12 +117,13 @@ impl OptimizationRule for RemoveRepeatedKeys {
     }
 }
 
-/// Removes repeated keys from an ordered row encoding, which is how a window combines several
-/// `order_by` keys.
-fn retain_row_encode_keys(
+/// Keeps the keys of an ordered row encoding, which is how a window combines several `order_by`
+/// keys, at the positions `select` returns. `None` if nothing changes.
+pub(super) fn retain_row_encode_keys(
     node: Node,
     options: SortOptions,
     expr_arena: &mut Arena<AExpr>,
+    select: impl FnOnce(&[ExprIR], &Arena<AExpr>) -> Option<Vec<usize>>,
 ) -> Option<(Node, SortOptions)> {
     let mut encode = expr_arena.get(node).clone();
     let AExpr::Function {
@@ -138,7 +142,7 @@ fn retain_row_encode_keys(
     else {
         return None;
     };
-    let keep = first_expr_occurrences(input.iter().map(|e| e.node()), expr_arena)?;
+    let keep = select(input, expr_arena).filter(|keep| !keep.is_empty())?;
     *input = gather(input, &keep);
     *dtypes = gather(dtypes, &keep);
     for flags in [&mut *descending, &mut *nulls_last].into_iter().flatten() {
@@ -160,14 +164,18 @@ fn retain_row_encode_keys(
     Some((expr_arena.add(encode), options))
 }
 
-fn retain_sort_keys<T: Clone>(by: &mut Vec<T>, options: &mut SortMultipleOptions, keep: &[usize]) {
+pub(super) fn retain_sort_keys<T: Clone>(
+    by: &mut Vec<T>,
+    options: &mut SortMultipleOptions,
+    keep: &[usize],
+) {
     *by = gather(by, keep);
     options.descending = gather(&options.descending, keep);
     options.nulls_last = gather(&options.nulls_last, keep);
 }
 
 /// Like [`first_occurrences`] for expressions. Non-deterministic expressions are never repeats.
-fn first_expr_occurrences(
+pub(super) fn first_expr_occurrences(
     nodes: impl IntoIterator<Item = Node>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<Vec<usize>> {

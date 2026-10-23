@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -200,16 +201,89 @@ def test_cte_shadows_registered_table() -> None:
         assert ctx.execute("SELECT x FROM store").to_series().to_list() == [-1, -2]
 
 
-def test_cte_shadows_derived_table_from_earlier_query() -> None:
-    # a derived table stays registered after its query, but must not shadow a
-    # CTE that a later query defines under the same name
+def test_cte_named_like_derived_table_from_earlier_query() -> None:
     lf = pl.LazyFrame({"x": [1, 2, 3]})
     with pl.SQLContext(tbl=lf, eager=True) as ctx:
         ctx.execute("SELECT SUM(x) AS total FROM (SELECT x FROM tbl) agg")
-        assert "agg" in ctx.tables()
+        assert ctx.tables() == ["tbl"]
 
         res = ctx.execute("WITH agg AS (SELECT x FROM tbl) SELECT a.x FROM agg a")
         assert res.to_series().to_list() == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM range(2) AS lineitem",
+        "SELECT * FROM UNNEST([1, 2]) AS lineitem(z)",
+        "SELECT * FROM (SELECT 5 AS z) AS lineitem",
+        "SELECT * FROM (SELECT 5 AS z) AS foo",
+        "SELECT * FROM (SELECT 5 AS z) AS foo, lineitem",
+    ],
+)
+def test_from_items_last_for_their_query(query: str) -> None:
+    # #30070
+    ctx = pl.SQLContext(lineitem=pl.LazyFrame({"k": [1]}))
+    ctx.execute(query, eager=True)
+    assert ctx.tables() == ["lineitem"]
+    assert ctx.execute("SELECT * FROM lineitem", eager=True).columns == ["k"]
+
+
+FROM_ITEMS_NAMED_LINEITEM = [
+    "range(1, 3) AS lineitem(x)",
+    "UNNEST([1, 2]) AS lineitem(x)",
+    "(SELECT 1 AS x UNION ALL SELECT 2) AS lineitem",
+]
+
+
+@pytest.mark.parametrize("from_item", FROM_ITEMS_NAMED_LINEITEM)
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT lineitem.x FROM {from_item}",
+        "SELECT x FROM {from_item} WHERE EXISTS (SELECT 1 FROM t WHERE t.k = lineitem.x)",
+        "SELECT x FROM {from_item} WHERE x IN (SELECT x FROM lineitem)",
+        "SELECT * FROM {from_item}, lineitem AS l2",
+        "SELECT lineitem.x AS a, l2.x AS b FROM {from_item}, lineitem AS l2",
+        "SELECT l2.x AS a, lineitem.x AS b FROM lineitem AS l2, {from_item}",
+        "WITH lineitem AS (SELECT 7 AS x) SELECT * FROM {from_item}, lineitem AS l2",
+    ],
+)
+def test_from_item_alias_is_not_a_table(from_item: str, query: str) -> None:
+    assert_sql_matches(
+        {"lineitem": pl.DataFrame({"x": [2]}), "t": pl.DataFrame({"k": [2]})},
+        query=query.format(from_item=from_item),
+        compare_with="duckdb",
+        check_row_order=False,
+        check_column_names=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "WITH D AS (SELECT 7 AS c) SELECT d.a, D.c FROM (SELECT 1 AS a) AS d, D",
+        "WITH D AS (SELECT 7 AS c) SELECT D.c, d.a FROM D, (SELECT 1 AS a) AS d",
+        "SELECT t1.a, T1.b FROM (SELECT 1 AS a) AS t1, (SELECT 2 AS b) AS T1",
+        "SELECT r.x, R.b FROM range(1, 2) AS r(x), (SELECT 2 AS b) AS R",
+        "WITH U AS (SELECT 5 AS a) SELECT u.x, U.a FROM UNNEST([1]) AS u(x), U",
+    ],
+)
+def test_from_item_names_differing_in_case(query: str) -> None:
+    assert_sql_matches({}, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize("from_item", FROM_ITEMS_NAMED_LINEITEM)
+def test_from_item_alias_is_not_readable_as_a_table(from_item: str) -> None:
+    ctx = pl.SQLContext()
+    for query in [
+        f"SELECT x FROM {from_item} WHERE x IN (SELECT x FROM lineitem)",
+        f"SELECT * FROM {from_item} JOIN lineitem AS l2 ON lineitem.x = l2.x",
+    ]:
+        with pytest.raises(
+            SQLInterfaceError, match="relation 'lineitem' was not found"
+        ):
+            ctx.execute(query, eager=True)
 
 
 def _execute(ctx: pl.SQLContext[Any], query: str, *, eager_path: bool) -> pl.DataFrame:
@@ -312,6 +386,55 @@ def test_create_table_if_not_exists() -> None:
         ctx.execute("CREATE TABLE IF NOT EXISTS FRAME AS SELECT 3 AS x")
         assert ctx.tables() == ["frame"]
         assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+
+@pytest.mark.parametrize("temp", ["TEMP", "TEMPORARY"])
+def test_create_temp_table(temp: str) -> None:
+    with pl.SQLContext() as ctx:
+        ctx.execute(f"CREATE {temp} TABLE frame AS SELECT 1 AS x")
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+        # an existing table (matched ignoring case) is an error, unlike CREATE TABLE
+        for sql in (
+            f"CREATE {temp} TABLE frame AS SELECT 2 AS x",
+            f"CREATE {temp} TABLE FRAME (x INT)",
+        ):
+            with pytest.raises(SQLInterfaceError, match="table 'frame' already exists"):
+                ctx.execute(sql)
+        # the query of a no-op does not run
+        ctx.execute(f"CREATE {temp} TABLE IF NOT EXISTS Frame AS SELECT * FROM nosuch")
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 1
+
+        ctx.execute(f"CREATE OR REPLACE {temp} TABLE FRAME AS SELECT 4 AS x")
+        assert ctx.tables() == ["frame"]
+        assert ctx.execute("SELECT x FROM frame", eager=True).item() == 4
+
+        ctx.execute(f"CREATE {temp} TABLE other LIKE frame")
+        assert ctx.execute("SELECT * FROM other", eager=True).columns == ["x"]
+        ctx.execute(f"CREATE OR REPLACE {temp} TABLE new AS SELECT 5 AS x")
+        assert sorted(ctx.tables()) == ["frame", "new", "other"]
+
+
+@pytest.mark.parametrize(
+    ("sql", "error"),
+    [
+        (
+            "CREATE OR REPLACE TABLE t AS SELECT 1 AS x",
+            "`CREATE OR REPLACE TABLE` is not supported",
+        ),
+        (
+            "CREATE OR REPLACE TEMP TABLE IF NOT EXISTS t AS SELECT 1 AS x",
+            "cannot be combined",
+        ),
+        (
+            "CREATE GLOBAL TEMPORARY TABLE t (x INT)",
+            "`CREATE GLOBAL/LOCAL TABLE` is not supported",
+        ),
+    ],
+)
+def test_create_temp_table_errors(sql: str, error: str) -> None:
+    with pytest.raises(SQLInterfaceError, match=error):
+        pl.SQLContext().execute(sql)
 
 
 def test_qualified_table_name_delete() -> None:
