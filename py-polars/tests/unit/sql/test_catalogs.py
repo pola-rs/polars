@@ -315,6 +315,26 @@ def test_create_table_resolves_like_a_read(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+def test_create_temp_table_with_catalogs(lake: CountingCatalog) -> None:
+    # a temporary table is a registered table, also where the default catalog applies
+    ctx = lake_ctx(lake)
+    for name in ("t", "tpch.t", "lineitem"):
+        ctx.execute(f"CREATE TEMP TABLE {name} AS SELECT 1 AS x")
+    assert sorted(ctx.tables()) == ["lineitem", "t", "tpch.t"]
+    assert ctx.execute("SELECT x FROM lineitem", eager=True).item() == 1
+    assert not lake.table_exists(("tpch", "t"))
+    res = ctx.execute("SELECT * FROM lake.tpch.lineitem", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+    for name in ("lake.tpch.t2", "LAKE.t2"):
+        with pytest.raises(
+            SQLInterfaceError,
+            match="temporary tables cannot be created in catalog 'lake'",
+        ):
+            ctx.execute(f"CREATE TEMP TABLE {name} AS SELECT 1 AS x")
+
+
+@pytest.mark.write_disk
 def test_if_exists_without_catalog_name_acts_on_registered_tables(
     lake: CountingCatalog,
 ) -> None:
