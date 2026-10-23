@@ -60,13 +60,9 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_last_distinct_by_groups(&s),
-        List(inner) => {
-            polars_ensure!(
-                !inner.is_nested(),
-                InvalidOperation: "`is_last_distinct` on list type is only allowed if the inner type is not nested."
-            );
-            return is_last_distinct_by_groups(&s);
-        },
+        #[cfg(feature = "dtype-array")]
+        Array(..) => return is_last_distinct_by_groups(&s),
+        List(_) | Null => return is_last_distinct_by_groups(&s),
         dt => polars_bail!(opq = is_last_distinct, dt),
     };
     Ok(out)

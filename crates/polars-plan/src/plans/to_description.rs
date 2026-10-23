@@ -494,6 +494,10 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             keys: key.iter().map(|k| k.to_string()).collect(),
             maintain_order: *maintain_order,
         },
+        IR::Recursive { id, .. } => IrPropsDescription::Recursive { id: id.to_string() },
+        IR::WorkingTableScan { id, .. } => {
+            IrPropsDescription::WorkingTableScan { id: id.to_string() }
+        },
         IR::Resolver {
             resolver,
             resolver_schema,

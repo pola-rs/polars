@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use num_traits::Zero;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -72,98 +71,26 @@ where
     }
 }
 
-fn asof_join_by_numeric<T, S, A, F>(
-    by_left: &ChunkedArray<S>,
-    by_right: &ChunkedArray<S>,
+/// Writes the right group of left rows `start..start + out.len()` of partition `part_idx` into
+/// `out`, or `None` if a row has no group.
+type ProbeFn<'r> = dyn Fn(usize, usize, &mut [Option<&'r [IdxSize]>]) + Sync + 'r;
+
+/// Runs the asof search, given the left partition lengths and a probe for the right groups.
+/// The probe is generic over the `by` key type and the search over the asof key type, so
+/// keeping them apart avoids generating every combination of the two.
+type JoinFn<'a> = dyn for<'r> Fn(&[usize], &ProbeFn<'r>) -> IdxArr + 'a;
+
+const PROBE_BATCH_SIZE: usize = 512;
+
+fn asof_join_by_groups<'r, T, A, F>(
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
-    filter: F,
-    allow_eq: bool,
-) -> PolarsResult<IdxArr>
-where
-    T: PolarsDataType,
-    S: PolarsNumericType,
-    S::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    Option<S::Native>: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <Option<S::Native> as ToTotalOrd>::TotalOrdItem:
-        Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
-    A: for<'a> AsofJoinState<T::Physical<'a>>,
-    F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
-{
-    let (left_asof, right_asof) = RAYON.join(|| left_asof.rechunk(), || right_asof.rechunk());
-    let left_val_arr = left_asof.downcast_as_array();
-    let right_val_arr = right_asof.downcast_as_array();
-
-    let n_threads = RAYON.current_num_threads();
-    // `strict` is false so that we always flatten. Even if there are more chunks than threads.
-    let split_by_left = split_and_flatten(by_left, n_threads);
-    let split_by_right = split_and_flatten(by_right, n_threads);
-    let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
-
-    let right_arrays = split_by_right
-        .iter()
-        .map(|ca| {
-            assert_eq!(ca.chunks().len(), 1);
-            ca.downcast_iter().next().unwrap()
-        })
-        .collect::<Vec<_>>();
-    let hash_tbls = build_tables_from_arrays::<S>(&right_arrays, false);
-    let n_tables = hash_tbls.len();
-
-    // Now we probe the right hand side for each left hand side.
-    let bufs = par_map_collect(split_by_left.len(), &|part_idx| {
-        let by_left = &split_by_left[part_idx];
-        let offset = offsets[part_idx];
-        let mut results = Vec::with_capacity(by_left.len());
-        let mut group_states: PlHashMap<IdxSize, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
-
-        assert_eq!(by_left.chunks().len(), 1);
-        let by_left_chunk = by_left.downcast_iter().next().unwrap();
-        for (rel_idx_left, opt_by_left_k) in by_left_chunk.iter().enumerate() {
-            let Some(by_left_k) = opt_by_left_k else {
-                results.push(NullableIdxSize::null());
-                continue;
-            };
-            let by_left_k = Some(*by_left_k).to_total_ord();
-            let idx_left = (rel_idx_left + offset) as IdxSize;
-            let Some(left_val) = left_val_arr.get(idx_left as usize) else {
-                results.push(NullableIdxSize::null());
-                continue;
-            };
-
-            let group_probe_table = unsafe {
-                hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
-            };
-            let Some(right_grp_idxs) = group_probe_table.get(&by_left_k) else {
-                results.push(NullableIdxSize::null());
-                continue;
-            };
-            let id = asof_in_group::<T, A, &F>(
-                left_val,
-                right_val_arr,
-                right_grp_idxs.as_slice(),
-                &mut group_states,
-                &filter,
-                allow_eq,
-            );
-            results.push(materialize_nullable(id));
-        }
-        results
-    });
-    Ok(flatten_nullable(&bufs))
-}
-
-fn asof_join_by_binary<B, T, A, F>(
-    by_left: &ChunkedArray<B>,
-    by_right: &ChunkedArray<B>,
-    left_asof: &ChunkedArray<T>,
-    right_asof: &ChunkedArray<T>,
+    part_lens: &[usize],
+    probe: &ProbeFn<'r>,
     filter: F,
     allow_eq: bool,
 ) -> IdxArr
 where
-    B: PolarsDataType,
-    for<'b> <B::Array as StaticArray>::ValueT<'b>: AsRef<[u8]>,
     T: PolarsDataType,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
@@ -171,63 +98,118 @@ where
     let (left_asof, right_asof) = RAYON.join(|| left_asof.rechunk(), || right_asof.rechunk());
     let left_val_arr = left_asof.downcast_as_array();
     let right_val_arr = right_asof.downcast_as_array();
+    let offsets = compute_len_offsets(part_lens.iter().copied());
 
-    let (prep_by_left, prep_by_right, _, _) = prepare_binary::<B>(by_left, by_right, false);
-    let offsets = compute_len_offsets(prep_by_left.iter().map(|s| s.len()));
-    let hash_tbls = build_tables(prep_by_right, false);
-    let n_tables = hash_tbls.len();
-
-    // Now we probe the right hand side for each left hand side.
-    let bufs = par_map_collect(prep_by_left.len(), &|part_idx| {
-        let by_left = &prep_by_left[part_idx];
+    let bufs = par_map_collect(part_lens.len(), &|part_idx| {
+        let len = part_lens[part_idx];
         let offset = offsets[part_idx];
-        let mut results = Vec::with_capacity(by_left.len());
-        let mut group_states: PlHashMap<_, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
+        let mut results = Vec::with_capacity(len);
+        let mut group_states: PlHashMap<IdxSize, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
+        let mut groups = [None; PROBE_BATCH_SIZE];
 
-        for (rel_idx_left, by_left_k) in by_left.iter().enumerate() {
-            let idx_left = (rel_idx_left + offset) as IdxSize;
-            let Some(left_val) = left_val_arr.get(idx_left as usize) else {
-                results.push(NullableIdxSize::null());
-                continue;
-            };
-
-            let group_probe_table = unsafe {
-                hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
-            };
-            let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
-                results.push(NullableIdxSize::null());
-                continue;
-            };
-            let id = asof_in_group::<T, A, &F>(
-                left_val,
-                right_val_arr,
-                right_grp_idxs.as_slice(),
-                &mut group_states,
-                &filter,
-                allow_eq,
-            );
-
-            results.push(materialize_nullable(id));
+        for start in (0..len).step_by(PROBE_BATCH_SIZE) {
+            let groups = &mut groups[..PROBE_BATCH_SIZE.min(len - start)];
+            probe(part_idx, start, groups);
+            for (i, right_grp_idxs) in groups.iter().enumerate() {
+                let id = right_grp_idxs.and_then(|right_grp_idxs| {
+                    let left_val = left_val_arr.get(offset + start + i)?;
+                    asof_in_group::<T, A, &F>(
+                        left_val,
+                        right_val_arr,
+                        right_grp_idxs,
+                        &mut group_states,
+                        &filter,
+                        allow_eq,
+                    )
+                });
+                results.push(materialize_nullable(id));
+            }
         }
         results
     });
     flatten_nullable(&bufs)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn dispatch_join_by_type<T, A, F>(
-    left_asof: &ChunkedArray<T>,
-    right_asof: &ChunkedArray<T>,
+fn asof_join_by_numeric<S>(
+    by_left: &ChunkedArray<S>,
+    by_right: &ChunkedArray<S>,
+    join: &JoinFn,
+) -> IdxArr
+where
+    S: PolarsNumericType,
+    S::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    Option<S::Native>: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <Option<S::Native> as ToTotalOrd>::TotalOrdItem:
+        Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+{
+    let n_threads = RAYON.current_num_threads();
+    // `strict` is false so that we always flatten. Even if there are more chunks than threads.
+    let split_by_left = split_and_flatten(by_left, n_threads);
+    let split_by_right = split_and_flatten(by_right, n_threads);
+
+    fn single_arrays<S: PolarsNumericType>(split: &[ChunkedArray<S>]) -> Vec<&S::Array> {
+        split
+            .iter()
+            .map(|ca| {
+                assert_eq!(ca.chunks().len(), 1);
+                ca.downcast_iter().next().unwrap()
+            })
+            .collect()
+    }
+    let left_arrays = single_arrays(&split_by_left);
+    let right_arrays = single_arrays(&split_by_right);
+    let hash_tbls = build_tables_from_arrays::<S>(&right_arrays, false);
+    let n_tables = hash_tbls.len();
+    let part_lens: Vec<usize> = left_arrays.iter().map(|arr| arr.len()).collect();
+
+    join(&part_lens, &|part_idx, start, out| {
+        let by_left_arr = left_arrays[part_idx];
+        for (rel_idx_left, right_grp_idxs) in (start..).zip(out.iter_mut()) {
+            // SAFETY: the driver only probes rows within the partition.
+            let by_left_k = unsafe { by_left_arr.get_unchecked(rel_idx_left) };
+            *right_grp_idxs = by_left_k.and_then(|by_left_k| {
+                let by_left_k = Some(by_left_k).to_total_ord();
+                let group_probe_table = unsafe {
+                    hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
+                };
+                group_probe_table
+                    .get(&by_left_k)
+                    .map(|idxs| idxs.as_slice())
+            });
+        }
+    })
+}
+
+fn asof_join_by_binary<B>(
+    by_left: &ChunkedArray<B>,
+    by_right: &ChunkedArray<B>,
+    join: &JoinFn,
+) -> IdxArr
+where
+    B: PolarsDataType,
+    for<'b> <B::Array as StaticArray>::ValueT<'b>: AsRef<[u8]>,
+{
+    let (prep_by_left, prep_by_right, _, _) = prepare_binary::<B>(by_left, by_right, false);
+    let hash_tbls = build_tables(prep_by_right, false);
+    let n_tables = hash_tbls.len();
+    let part_lens: Vec<usize> = prep_by_left.iter().map(|s| s.len()).collect();
+
+    join(&part_lens, &|part_idx, start, out| {
+        let by_left = &prep_by_left[part_idx][start..start + out.len()];
+        for (by_left_k, right_grp_idxs) in by_left.iter().zip(out.iter_mut()) {
+            let group_probe_table = unsafe {
+                hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
+            };
+            *right_grp_idxs = group_probe_table.get(by_left_k).map(|idxs| idxs.as_slice());
+        }
+    })
+}
+
+fn dispatch_join_by_type(
     left_by: &mut DataFrame,
     right_by: &mut DataFrame,
-    filter: F,
-    allow_eq: bool,
-) -> PolarsResult<IdxArr>
-where
-    T: PolarsDataType,
-    A: for<'a> AsofJoinState<T::Physical<'a>>,
-    F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
-{
+    join: &JoinFn,
+) -> PolarsResult<IdxArr> {
     let out = if left_by.width() == 1 {
         let left_by_s = left_by.columns()[0].to_physical_repr();
         let right_by_s = right_by.columns()[0].to_physical_repr();
@@ -240,24 +222,18 @@ where
             DataType::String => {
                 let left_by = &left_by_s.str().unwrap().as_binary();
                 let right_by = right_by_s.str().unwrap().as_binary();
-                asof_join_by_binary::<BinaryType, T, A, F>(
-                    left_by, &right_by, left_asof, right_asof, filter, allow_eq,
-                )
+                asof_join_by_binary::<BinaryType>(left_by, &right_by, join)
             },
             DataType::Binary => {
                 let left_by = &left_by_s.binary().unwrap();
                 let right_by = right_by_s.binary().unwrap();
-                asof_join_by_binary::<BinaryType, T, A, F>(
-                    left_by, right_by, left_asof, right_asof, filter, allow_eq,
-                )
+                asof_join_by_binary::<BinaryType>(left_by, right_by, join)
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
                     let left_by: &ChunkedArray<$T> = left_by_s.as_materialized_series().as_ref().as_ref().as_ref();
                     let right_by: &ChunkedArray<$T> = right_by_s.as_materialized_series().as_ref().as_ref().as_ref();
-                    asof_join_by_numeric::<T, $T, A, F>(
-                        left_by, right_by, left_asof, right_asof, filter, allow_eq
-                    )?
+                    asof_join_by_numeric::<$T>(left_by, right_by, join)
                 })
             },
             _ => {
@@ -271,30 +247,20 @@ where
                 use BitRepr as B;
                 match (left_by, right_by) {
                     (B::U8(left_by), B::U8(right_by)) => {
-                        asof_join_by_numeric::<T, UInt8Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
-                        )?
+                        asof_join_by_numeric::<UInt8Type>(&left_by, &right_by, join)
                     },
                     (B::U16(left_by), B::U16(right_by)) => {
-                        asof_join_by_numeric::<T, UInt16Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
-                        )?
+                        asof_join_by_numeric::<UInt16Type>(&left_by, &right_by, join)
                     },
                     (B::U32(left_by), B::U32(right_by)) => {
-                        asof_join_by_numeric::<T, UInt32Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
-                        )?
+                        asof_join_by_numeric::<UInt32Type>(&left_by, &right_by, join)
                     },
                     (B::U64(left_by), B::U64(right_by)) => {
-                        asof_join_by_numeric::<T, UInt64Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
-                        )?
+                        asof_join_by_numeric::<UInt64Type>(&left_by, &right_by, join)
                     },
                     #[cfg(feature = "dtype-u128")]
                     (B::U128(left_by), B::U128(right_by)) => {
-                        asof_join_by_numeric::<T, UInt128Type, A, F>(
-                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
-                        )?
+                        asof_join_by_numeric::<UInt128Type>(&left_by, &right_by, join)
                     },
                     // We have already asserted that the datatypes are the same.
                     _ => unreachable!(),
@@ -313,14 +279,11 @@ where
         let right_by_series: Vec<_> = right_by.materialized_column_iter().cloned().collect();
         let lhs_keys = prepare_keys_multiple(&left_by_series, false)?;
         let rhs_keys = prepare_keys_multiple(&right_by_series, false)?;
-        asof_join_by_binary::<BinaryOffsetType, T, A, F>(
-            &lhs_keys, &rhs_keys, left_asof, right_asof, filter, allow_eq,
-        )
+        asof_join_by_binary::<BinaryOffsetType>(&lhs_keys, &rhs_keys, join)
     };
     Ok(out)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn dispatch_join_strategy<T: PolarsDataType>(
     left_asof: &ChunkedArray<T>,
     right_asof: &Series,
@@ -336,17 +299,20 @@ where
 
     let filter = |_a: T::Physical<'_>, _b: T::Physical<'_>| true;
     match strategy {
-        AsofStrategy::Backward => dispatch_join_by_type::<T, AsofJoinBackwardState, _>(
-            left_asof, right_asof, left_by, right_by, filter, allow_eq,
-        ),
-        AsofStrategy::Forward => dispatch_join_by_type::<T, AsofJoinForwardState, _>(
-            left_asof, right_asof, left_by, right_by, filter, allow_eq,
-        ),
+        AsofStrategy::Backward => dispatch_join_by_type(left_by, right_by, &|part_lens, probe| {
+            asof_join_by_groups::<T, AsofJoinBackwardState, _>(
+                left_asof, right_asof, part_lens, probe, filter, allow_eq,
+            )
+        }),
+        AsofStrategy::Forward => dispatch_join_by_type(left_by, right_by, &|part_lens, probe| {
+            asof_join_by_groups::<T, AsofJoinForwardState, _>(
+                left_asof, right_asof, part_lens, probe, filter, allow_eq,
+            )
+        }),
         AsofStrategy::Nearest => unimplemented!(),
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn dispatch_join_strategy_numeric<T: PolarsNumericType>(
     left_asof: &ChunkedArray<T>,
     right_asof: &Series,
@@ -357,35 +323,29 @@ fn dispatch_join_strategy_numeric<T: PolarsNumericType>(
     allow_eq: bool,
 ) -> PolarsResult<IdxArr> {
     let right_ca = left_asof.unpack_series_matching_type(right_asof)?;
+    let abs_tolerance = tolerance
+        .map(|tol| abs_tolerance::<T::Native>(&tol))
+        .transpose()?;
+    let filter = |a: T::Native, b: T::Native| {
+        abs_tolerance.is_none_or(|abs_tolerance| a.abs_diff(b) <= abs_tolerance)
+    };
 
-    if let Some(tol) = tolerance {
-        let native_tolerance: T::Native = tol.try_extract()?;
-        let abs_tolerance = native_tolerance.abs_diff(T::Native::zero());
-        let filter = |a: T::Native, b: T::Native| a.abs_diff(b) <= abs_tolerance;
-        match strategy {
-            AsofStrategy::Backward => dispatch_join_by_type::<T, AsofJoinBackwardState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
-            ),
-            AsofStrategy::Forward => dispatch_join_by_type::<T, AsofJoinForwardState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
-            ),
-            AsofStrategy::Nearest => dispatch_join_by_type::<T, AsofJoinNearestState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
-            ),
-        }
-    } else {
-        let filter = |_a: T::Physical<'_>, _b: T::Physical<'_>| true;
-        match strategy {
-            AsofStrategy::Backward => dispatch_join_by_type::<T, AsofJoinBackwardState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
-            ),
-            AsofStrategy::Forward => dispatch_join_by_type::<T, AsofJoinForwardState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
-            ),
-            AsofStrategy::Nearest => dispatch_join_by_type::<T, AsofJoinNearestState, _>(
-                left_asof, right_ca, left_by, right_by, filter, allow_eq,
-            ),
-        }
+    match strategy {
+        AsofStrategy::Backward => dispatch_join_by_type(left_by, right_by, &|part_lens, probe| {
+            asof_join_by_groups::<T, AsofJoinBackwardState, _>(
+                left_asof, right_ca, part_lens, probe, filter, allow_eq,
+            )
+        }),
+        AsofStrategy::Forward => dispatch_join_by_type(left_by, right_by, &|part_lens, probe| {
+            asof_join_by_groups::<T, AsofJoinForwardState, _>(
+                left_asof, right_ca, part_lens, probe, filter, allow_eq,
+            )
+        }),
+        AsofStrategy::Nearest => dispatch_join_by_type(left_by, right_by, &|part_lens, probe| {
+            asof_join_by_groups::<T, AsofJoinNearestState, _>(
+                left_asof, right_ca, part_lens, probe, filter, allow_eq,
+            )
+        }),
     }
 }
 

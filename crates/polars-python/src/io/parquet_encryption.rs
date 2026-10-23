@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars::prelude::PolarsError;
 use polars_io::parquet::read::ParquetDecryptionKeys;
 use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
+use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_utils::pl_path::PlRefPath;
 use pyo3::prelude::*;
 
@@ -62,5 +63,39 @@ impl PyFileDecryptionProperties {
         Ok(Self {
             inner: Arc::new(ParquetDecryptionKeys::Uniform(inner)),
         })
+    }
+}
+
+#[pyclass(frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyFileEncryptionProperties {
+    pub inner: Arc<FileEncryptionProperties>,
+}
+
+#[pymethods]
+impl PyFileEncryptionProperties {
+    #[new]
+    #[pyo3(signature = (footer_key, column_keys, plaintext_footer, aad_prefix, store_aad_prefix))]
+    fn new(
+        footer_key: Vec<u8>,
+        column_keys: Vec<(String, Vec<u8>)>,
+        plaintext_footer: bool,
+        aad_prefix: Option<Vec<u8>>,
+        store_aad_prefix: bool,
+    ) -> PyResult<Self> {
+        let mut builder =
+            FileEncryptionProperties::builder(footer_key).with_plaintext_footer(plaintext_footer);
+        for (column_name, key) in column_keys {
+            builder = builder.with_column_key(&column_name, key);
+        }
+        if let Some(aad_prefix) = aad_prefix {
+            builder = builder
+                .with_aad_prefix(aad_prefix)
+                .with_aad_prefix_storage(store_aad_prefix);
+        }
+        let inner = builder
+            .build()
+            .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
+        Ok(Self { inner })
     }
 }

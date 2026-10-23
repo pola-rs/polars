@@ -22,7 +22,7 @@ from pyiceberg.types import (
 import polars as pl
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal
-from tests.unit.io.test_iceberg import (  # noqa: F401
+from tests.unit.io.iceberg_utils import (  # noqa: F401
     new_iceberg_table,
     sqlcatalog_uses_null_pool_connections,
 )
@@ -118,6 +118,9 @@ def read(table: pyiceberg.table.Table) -> pl.DataFrame:
         pl.col("f").is_not_null(),
         ~pl.col("f").is_not_null(),
         (pl.col("f") < 2.0) | (pl.col("x") == 1),
+        # Top-level conjunctions are split into multiple filters.
+        (pl.col("x") == 1) & (pl.col("s") == "apple"),
+        (pl.col("x") > 1) & (pl.col("y") == 2) & pl.col("d").is_not_null(),
         pl.lit(True),
         pytest.param(
             pl.lit(False),

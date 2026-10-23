@@ -148,6 +148,7 @@ pub enum IRFunctionExpr {
     Pow(IRPowFunction),
     #[cfg(feature = "row_hash")]
     Hash(u64),
+    Mm3Hash,
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "index_of")]
@@ -598,6 +599,7 @@ impl Hash for IRFunctionExpr {
             Sign => {},
             #[cfg(feature = "row_hash")]
             Hash(seed) => seed.hash(state),
+            Mm3Hash => {},
             FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -864,6 +866,7 @@ impl IRFunctionExpr {
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
             Hash(_) => "hash",
+            Mm3Hash => "mm3_hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]
@@ -1230,6 +1233,7 @@ impl IRFunctionExpr {
             F::NullCount => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "row_hash")]
             F::Hash(_) => FunctionOptions::elementwise(),
+            F::Mm3Hash => FunctionOptions::elementwise(),
             #[cfg(feature = "arg_where")]
             F::ArgWhere => FunctionOptions::groupwise(),
             #[cfg(feature = "index_of")]

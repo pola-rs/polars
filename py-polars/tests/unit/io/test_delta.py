@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 import pytest
 from deltalake import DeltaTable, WriterProperties, write_deltalake
-from deltalake.exceptions import DeltaError, TableNotFoundError
+from deltalake.exceptions import DeltaError, DeltaProtocolError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
@@ -28,13 +28,17 @@ from polars.io.delta._dataset import (
     _source_sizes,
     _table_root,
 )
-from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
+from polars.io.delta._utils import (
+    _extract_table_statistics_from_delta_add_actions,
+    _widen_truncated_timestamp_max,
+)
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import TimeUnit
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1092,7 +1096,7 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
                 pl.Series('date_max', [datetime.date(2020, 1, 2), datetime.date(2020, 1, 6), datetime.date(2020, 1, 4)], dtype=pl.Date),
                 pl.Series('datetime_nc', [0, 0, 0], dtype=get_index_type()),
                 pl.Series('datetime_min', [datetime.datetime(2020, 1, 1, 0, 0), datetime.datetime(2020, 1, 5, 0, 0), datetime.datetime(2020, 1, 3, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
-                pl.Series('datetime_max', [datetime.datetime(2020, 1, 2, 0, 0), datetime.datetime(2020, 1, 6, 0, 0), datetime.datetime(2020, 1, 4, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
+                pl.Series('datetime_max', [datetime.datetime(2020, 1, 2, 0, 0, 0, 1000), datetime.datetime(2020, 1, 6, 0, 0, 0, 1000), datetime.datetime(2020, 1, 4, 0, 0, 0, 1000)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
             ]
         ),
         check_row_order=False
@@ -1258,6 +1262,111 @@ def test_delta_dataset_does_not_pickle_table_object(tmp_path: Path) -> None:
     assert dataset.table_.get() is None
 
     assert_frame_equal(dataset.to_dataset_scan()[0].collect(), df)
+
+
+def _write_column_mapped_delta_table(root: Path, protocol: dict[str, Any]) -> None:
+    """Hand-write a Delta table with column mapping mode "name"."""
+    import json
+    import uuid
+
+    import pyarrow.parquet as pq
+
+    physical_names = {"id": f"col-{uuid.uuid4()}", "v": f"col-{uuid.uuid4()}"}
+    data_path = root / "part-00000.parquet"
+    (root / "_delta_log").mkdir(parents=True)
+    pq.write_table(
+        pa.table(
+            {physical_names["id"]: [1, 2, 3], physical_names["v"]: ["a", "b", "c"]}
+        ),
+        data_path,
+    )
+
+    fields = [
+        {
+            "name": name,
+            "type": dtype,
+            "nullable": True,
+            "metadata": {
+                "delta.columnMapping.id": column_id,
+                "delta.columnMapping.physicalName": physical_names[name],
+            },
+        }
+        for column_id, (name, dtype) in enumerate([("id", "long"), ("v", "string")], 1)
+    ]
+    actions = [
+        {"protocol": protocol},
+        {
+            "metaData": {
+                "id": str(uuid.uuid4()),
+                "format": {"provider": "parquet", "options": {}},
+                "schemaString": json.dumps({"type": "struct", "fields": fields}),
+                "partitionColumns": [],
+                "configuration": {
+                    "delta.columnMapping.mode": "name",
+                    "delta.columnMapping.maxColumnId": "2",
+                },
+                "createdTime": 0,
+            }
+        },
+        {
+            "add": {
+                "path": data_path.name,
+                "partitionValues": {},
+                "size": data_path.stat().st_size,
+                "modificationTime": 0,
+                "dataChange": True,
+            }
+        },
+    ]
+    (root / "_delta_log" / "00000000000000000000.json").write_text(
+        "".join(json.dumps(action) + "\n" for action in actions)
+    )
+
+
+@pytest.mark.parametrize(
+    ("protocol", "match"),
+    [
+        (
+            {"minReaderVersion": 2, "minWriterVersion": 5},
+            r"reader version 2 \(column mapping\)",
+        ),
+        (
+            {
+                "minReaderVersion": 3,
+                "minWriterVersion": 7,
+                "readerFeatures": ["columnMapping"],
+                "writerFeatures": ["columnMapping"],
+            },
+            "columnMapping",
+        ),
+    ],
+    ids=["reader_v2", "reader_v3_feature"],
+)
+@pytest.mark.parametrize("use_pyarrow", [False, True])
+@pytest.mark.parametrize("as_delta_table", [False, True])
+@pytest.mark.write_disk
+def test_scan_delta_column_mapping_raises_30179(
+    tmp_path: Path,
+    protocol: dict[str, Any],
+    match: str,
+    use_pyarrow: bool,
+    as_delta_table: bool,
+) -> None:
+    _write_column_mapped_delta_table(tmp_path, protocol)
+    source = DeltaTable(tmp_path) if as_delta_table else str(tmp_path)
+
+    with pytest.raises(DeltaProtocolError, match=match):
+        pl.read_delta(source, use_pyarrow=use_pyarrow)
+
+    with pytest.raises(DeltaProtocolError, match=match):
+        pl.scan_delta(source, use_pyarrow=use_pyarrow).filter(
+            pl.col("id") == 2
+        ).collect()
+
+    # Pickling must not run the check; the reloaded table is checked.
+    dataset = pickle.loads(pickle.dumps(new_pl_delta_dataset(source)))
+    with pytest.raises(DeltaProtocolError, match=match):
+        dataset.schema()
 
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
@@ -1463,6 +1572,62 @@ def test_scan_delta_predicate_pushdown_struct_column_27857(tmp_path: Path) -> No
         {"error_flags": pl.Series([{"length_issue": True, "incomplete": True}])}
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_filter_truncated_timestamp_max_statistics_30147(
+    tmp_path: Path,
+) -> None:
+    # The Delta protocol truncates timestamp min/max statistics to milliseconds, so
+    # the max in the log can be below the real max of the file.
+    first = datetime(2026, 1, 1, 0, 0, 0, 999)
+    second = datetime(2026, 1, 1, 1, 0, 0)
+
+    pl.DataFrame({"ts": [first], "s": [{"ts": first}]}).write_delta(tmp_path)
+    pl.DataFrame({"ts": [second], "s": [{"ts": second}]}).write_delta(
+        tmp_path, mode="append"
+    )
+
+    q = pl.scan_delta(tmp_path)
+    ts = pl.col("ts")
+    s_ts = pl.col("s").struct.field("ts")
+
+    assert q.filter(ts == first).collect().height == 1
+    assert q.filter(ts >= first).collect().height == 2
+    assert q.filter(ts > first).collect().height == 1
+    assert q.filter(ts.is_in([first])).collect().height == 1
+    assert q.filter(s_ts == first).collect().height == 1
+    assert q.filter(s_ts >= first).collect().height == 2
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_widen_truncated_timestamp_max(time_unit: TimeUnit) -> None:
+    one_ms = {"ms": 1, "us": 1_000, "ns": 1_000_000}[time_unit]
+    dtype = pl.Datetime(time_unit, "UTC")
+    i64_max = 2**63 - 1
+
+    s = pl.Series("a", [0, i64_max - one_ms, i64_max, None]).cast(dtype)
+    out = _widen_truncated_timestamp_max(s)
+
+    # Keeps the time unit and maps overflow to null (unknown) instead of wrapping.
+    assert out.dtype == dtype
+    assert out.to_physical().to_list() == [one_ms, i64_max, None, None]
+
+    struct_dtype = pl.Struct({"x": pl.Struct({"ts": dtype}), "y": pl.Int64})
+    s = pl.Series(
+        "s",
+        [{"x": {"ts": 0}, "y": 0}, None, {"x": None, "y": None}],
+        dtype=pl.Struct({"x": pl.Struct({"ts": pl.Int64}), "y": pl.Int64}),
+    ).cast(struct_dtype)
+    out = _widen_truncated_timestamp_max(s)
+
+    assert out.dtype == struct_dtype
+    assert out.struct.field("x").struct.field("ts").to_physical().to_list() == [
+        one_ms,
+        None,
+        None,
+    ]
+    assert out.is_null().to_list() == [False, True, False]
 
 
 @pytest.mark.write_disk

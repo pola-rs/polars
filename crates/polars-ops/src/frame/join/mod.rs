@@ -164,7 +164,6 @@ pub trait DataFrameJoinOps: IntoDf {
                 args.suffix.clone(),
                 cross_options,
                 args.maintain_order,
-                args.how.emits_unmatched_left(),
                 &args.how,
             );
         }
@@ -261,13 +260,16 @@ pub trait DataFrameJoinOps: IntoDf {
             } else {
                 iejoin::iejoin
             };
-            let emit_unmatched = if args.how.emits_unmatched_left() {
-                iejoin::EmitUnmatched::Left
-            } else if args.how.emits_unmatched_right() {
-                iejoin::EmitUnmatched::Right
-            } else {
-                iejoin::EmitUnmatched::None
-            };
+            let emit_unmatched =
+                if args.how.emits_unmatched_left() && args.how.emits_unmatched_right() {
+                    iejoin::EmitUnmatched::Both
+                } else if args.how.emits_unmatched_left() {
+                    iejoin::EmitUnmatched::Left
+                } else if args.how.emits_unmatched_right() {
+                    iejoin::EmitUnmatched::Right
+                } else {
+                    iejoin::EmitUnmatched::None
+                };
             return func(
                 left_df,
                 other,

@@ -285,12 +285,13 @@ fn run_subgraph(
 pub fn execute_graph(
     graph: &mut Graph,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    num_pipelines: usize,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
     let (query_tasks_send, query_tasks_recv) = crossbeam_channel::unbounded();
     let (subphase_tasks_send, subphase_tasks_recv) = crossbeam_channel::unbounded();
 
     let state = StreamingExecutionState {
-        num_pipelines: polars_config::config().max_threads(),
+        num_pipelines,
         in_memory_exec_state: ExecutionState::default(),
         query_tasks_send,
         subphase_tasks_send,

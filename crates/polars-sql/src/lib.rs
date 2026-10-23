@@ -1,7 +1,9 @@
 //! Polars SQL
 //! This crate provides a SQL interface for Polars DataFrames
 #![deny(missing_docs)]
+mod catalog;
 mod context;
+mod dyn_visit;
 pub mod function_registry;
 mod functions;
 mod group_context;
@@ -23,6 +25,7 @@ mod table_functions;
 mod types;
 mod window_frames;
 
+pub use catalog::{CatalogDdl, CatalogTable};
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;

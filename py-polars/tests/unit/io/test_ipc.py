@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import warnings
 from decimal import Decimal
@@ -597,6 +598,45 @@ def test_read_ipc_compressed_empty_bitmap_27532() -> None:
     f.seek(0)
 
     assert_frame_equal(pl.read_ipc(f), pl.DataFrame(schema={"bool": pl.Boolean}))
+
+
+def test_read_ipc_uncompressed_buffers_in_compressed_file_30080() -> None:
+    # Written by arrow-rs with LZ4_FRAME compression. arrow-rs stores a buffer
+    # uncompressed (uncompressed length -1) when compressing does not make it
+    # smaller, as is the case for both buffers of this column.
+    data = base64.b64decode(
+        "QVJST1cxAAD/////eAAAABAAAAAAAAoADAAKAAkABAAKAAAAEAAAAAABBAAIAAgAAAAEAAgAAAAE"
+        "AAAAAQAAABQAAAAQABQAEAAOAA8ABAAAAAgAEAAAABwAAAAMAAAAAAABBxwAAAAAAAAACAAMAAgA"
+        "BAAIAAAAAgAAACYAAAABAAAAYwAAAP////+QAAAAEAAAAAwAFAASABEABAAIAAwAAAAcAAAASAAA"
+        "AAAAAAAAAwQADAAcABAADAAIAAQADAAAAFgAAAAsAAAAEAAAAAMAAAAAAAAAAAAAAAEAAAADAAAA"
+        "AAAAAAEAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAkAAAAAAAAAEAAAAAAAAAA4AAAAAAAAAAQABAAE"
+        "AAAA//////////8FAAAAAAAAAP//////////V8bIMGdiAcXl5ErAChMSAAAAAAAAAAAAAAAAAAAA"
+        "AABP/oBu5pwYAc91jCGOHPT//////wAAAAAUAAAAAAAAAAwAFAASAAwACAAEAAwAAABsAAAAiAAA"
+        "ABAAAAAAAAQACAAIAAAABAAIAAAABAAAAAEAAAAUAAAAEAAUABAADgAPAAQAAAAIABAAAAAcAAAA"
+        "DAAAAAAAAQccAAAAAAAAAAgADAAIAAQACAAAAAIAAAAmAAAAAQAAAGMAAAABAAAAiAAAAAAAAACY"
+        "AAAAAAAAAEgAAAAAAAAAAAAAAAAAAACoAAAAQVJST1cx"
+    )
+    expected = pl.DataFrame(
+        {
+            "c": [
+                Decimal("938475610293847561029384756102938.47"),
+                None,
+                Decimal("-617283940516273849506172839405162.73"),
+            ]
+        },
+        schema={"c": pl.Decimal(38, 2)},
+    )
+
+    assert_frame_equal(pl.read_ipc(io.BytesIO(data)), expected)
+    assert_frame_equal(pl.read_ipc(io.BytesIO(data), n_rows=2), expected.head(2))
+    assert_frame_equal(
+        pl.scan_ipc(io.BytesIO(data)).head(2).collect(), expected.head(2)
+    )
+
+    # The stream format is the file without its leading magic and its footer.
+    footer_len = int.from_bytes(data[-10:-6], "little")
+    stream = data[8 : len(data) - 10 - footer_len]
+    assert_frame_equal(pl.read_ipc_stream(io.BytesIO(stream)), expected)
 
 
 def test_read_ipc_pyarrow() -> None:

@@ -59,6 +59,9 @@ const DEFAULT_VERBOSE_SENSITIVE: bool = false;
 const FORCE_ASYNC: &str = "POLARS_FORCE_ASYNC";
 const DEFAULT_FORCE_ASYNC: bool = false;
 
+const SCAN_CHUNK_STATISTICS: &str = "POLARS_SCAN_CHUNK_STATISTICS";
+const DEFAULT_SCAN_CHUNK_STATISTICS: bool = false;
+
 const IMPORT_INTERVAL_AS_STRUCT: &str = "POLARS_IMPORT_INTERVAL_AS_STRUCT";
 const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
 
@@ -70,7 +73,7 @@ const OOC_SPILL_FORMAT: &str = "POLARS_OOC_SPILL_FORMAT";
 const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
 
 const OOC_SPILL_COMPRESSION_LEVEL: &str = "POLARS_OOC_SPILL_COMPRESSION_LEVEL";
-const DEFAULT_OOC_SPILL_COMPRESSION_LEVEL: u64 = 0;
+const DEFAULT_OOC_SPILL_COMPRESSION_LEVEL: u64 = 1;
 
 const OOC_MEMORY_BUDGET_FRACTION: &str = "POLARS_OOC_MEMORY_BUDGET_FRACTION";
 const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
@@ -95,6 +98,9 @@ const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
+
+const OOMKILL_THRESHOLD_FRACTION: &str = "POLARS_OOMKILL_THRESHOLD_FRACTION";
+const DEFAULT_OOMKILL_THRESHOLD_FRACTION: f64 = f64::INFINITY;
 
 const OOMKILL_THRESHOLD_MB: &str = "POLARS_OOMKILL_THRESHOLD_MB";
 const DEFAULT_OOMKILL_THRESHOLD_MB: u64 = u64::MAX;
@@ -196,6 +202,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     // Private.
     VERBOSE_SENSITIVE,
     FORCE_ASYNC,
+    SCAN_CHUNK_STATISTICS,
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
     OOC_SPILL_FORMAT,
@@ -208,6 +215,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MAX_PARALLEL_SPILL_TASKS,
     OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
+    OOMKILL_THRESHOLD_FRACTION,
     OOMKILL_THRESHOLD_MB,
     JOIN_SAMPLE_LIMIT,
     JOIN_RUNTIME_FILTERS,
@@ -243,6 +251,7 @@ pub struct Config {
     // Private.
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
+    scan_chunk_statistics: AtomicBool,
     import_interval_as_struct: AtomicBool,
     ooc_spill_format: AtomicU8,
     ooc_spill_compression_level: AtomicU64,
@@ -254,6 +263,8 @@ pub struct Config {
     ooc_max_parallel_spill_tasks: AtomicU64,
     ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
+    oomkill_threshold_fraction: AtomicU64,
+    oomkill_threshold_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
     join_runtime_filters: AtomicBool,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
@@ -295,6 +306,7 @@ impl Config {
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
+            scan_chunk_statistics: AtomicBool::new(DEFAULT_SCAN_CHUNK_STATISTICS),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
             ooc_spill_compression_level: AtomicU64::new(DEFAULT_OOC_SPILL_COMPRESSION_LEVEL),
@@ -316,6 +328,12 @@ impl Config {
                 DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
             ),
             ooc_log_metrics: AtomicBool::new(false),
+            oomkill_threshold_fraction: AtomicU64::new(
+                DEFAULT_OOMKILL_THRESHOLD_FRACTION.to_bits(),
+            ),
+            oomkill_threshold_bytes: AtomicU64::new(
+                DEFAULT_OOMKILL_THRESHOLD_MB.saturating_mul(1_000_000),
+            ),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
             join_runtime_filters: AtomicBool::new(DEFAULT_JOIN_RUNTIME_FILTERS),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
@@ -379,6 +397,18 @@ impl Config {
         let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
+
+        let oomkill_frac = f64::from_bits(self.oomkill_threshold_fraction.load(Ordering::Relaxed));
+        let oomkill_frac_bytes = if oomkill_frac.is_finite() {
+            (total_memory() as f64 * oomkill_frac) as u64
+        } else {
+            u64::MAX
+        };
+        let oomkill_mb_bytes = self.oomkill_threshold_bytes.load(Ordering::Relaxed);
+        OOMKILL_THRESHOLD_BYTES_ATOMIC.store(
+            u64::min(oomkill_mb_bytes, oomkill_frac_bytes),
+            Ordering::Relaxed,
+        );
     }
 
     fn apply_env_var(&self, var: &str, val: Option<&str>) {
@@ -453,6 +483,11 @@ impl Config {
                     .unwrap_or(DEFAULT_FORCE_ASYNC),
                 Ordering::Relaxed,
             ),
+            SCAN_CHUNK_STATISTICS => self.scan_chunk_statistics.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_SCAN_CHUNK_STATISTICS),
+                Ordering::Relaxed,
+            ),
             IMPORT_INTERVAL_AS_STRUCT => self.import_interval_as_struct.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
@@ -519,7 +554,13 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
                 Ordering::Relaxed,
             ),
-            OOMKILL_THRESHOLD_MB => OOMKILL_THRESHOLD_BYTES_ATOMIC.store(
+            OOMKILL_THRESHOLD_FRACTION => self.oomkill_threshold_fraction.store(
+                val.and_then(|x| parse::parse_f64(var, x))
+                    .unwrap_or(DEFAULT_OOMKILL_THRESHOLD_FRACTION)
+                    .to_bits(),
+                Ordering::Relaxed,
+            ),
+            OOMKILL_THRESHOLD_MB => self.oomkill_threshold_bytes.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOMKILL_THRESHOLD_MB)
                     .saturating_mul(1_000_000),
@@ -692,6 +733,14 @@ impl Config {
     #[inline(always)]
     pub fn force_async(&self) -> bool {
         self.force_async.load(Ordering::Relaxed)
+    }
+
+    /// Whether a parquet scan, besides its per-column totals, keeps the min, max, null count and
+    /// sizes that each sampled row group records. Planners use these to estimate how a column's
+    /// values are distributed across the files, e.g. how many rows a filter keeps.
+    #[inline(always)]
+    pub fn scan_chunk_statistics(&self) -> bool {
+        self.scan_chunk_statistics.load(Ordering::Relaxed)
     }
 
     #[inline(always)]

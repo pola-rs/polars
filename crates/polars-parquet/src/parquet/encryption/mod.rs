@@ -3,10 +3,10 @@
 
 mod ciphers;
 pub mod decrypt;
-// TODO: Remove once encrypted writing is implemented.
-#[allow(dead_code)]
 pub mod encrypt;
-mod modules;
+pub mod iceberg;
+pub(crate) mod modules;
+#[cfg(test)]
+mod write_tests;
 
 pub use ciphers::AesGcmBlockDecryptor as AesGcmDecryptor;
-pub mod iceberg;

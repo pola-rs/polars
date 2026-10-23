@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from polars.dataframe import DataFrame
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.io.partition import PartitionBy, SinkedPathsCallback
     from polars.lazyframe.frame import LazyFrame
 
@@ -70,6 +71,7 @@ def _sink_parquet_plan(
     sync_on_close: SyncOnCloseMethod | None,
     metadata: ParquetMetadata | None,
     arrow_schema: ArrowSchemaExportable | None,
+    encryption: ParquetEncryptionProperties | None,
     mkdir: bool,
     sinked_paths_callback: SinkedPathsCallback | None,
 ) -> LazyFrame:
@@ -87,6 +89,19 @@ def _sink_parquet_plan(
     if arrow_schema is not None:
         msg = "`arrow_schema` parameter is considered unstable"
         issue_unstable_warning(msg)
+
+    if encryption is not None:
+        msg = "`encryption` parameter is considered unstable"
+        issue_unstable_warning(msg)
+
+        from polars.io.parquet.encryption import ParquetEncryptionProperties
+
+        if not isinstance(encryption, ParquetEncryptionProperties):
+            msg = (
+                "`encryption` must be a `ParquetEncryptionProperties`, "
+                f"got {qualified_type_name(encryption)!r}"
+            )
+            raise TypeError(msg)
 
     default_statistics = {
         "min": True,
@@ -143,6 +158,9 @@ def _sink_parquet_plan(
         data_page_size=data_page_size,
         metadata=metadata,
         arrow_schema=arrow_schema,
+        encryption_properties=(
+            encryption._pyencryptionproperties if encryption is not None else None
+        ),
     )
     return wrap_ldf(ldf_py)
 

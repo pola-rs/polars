@@ -25,7 +25,7 @@ mod row_group;
 mod schema;
 mod utils;
 
-pub use nested::{num_values, write_rep_and_def};
+pub use nested::write_rep_and_def;
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;

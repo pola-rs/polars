@@ -385,6 +385,14 @@ impl<'a> IRDotDisplay<'a> {
                     )
                 })?;
             },
+            Recursive { anchor, step, .. } => {
+                recurse!(*anchor);
+                recurse!(*step);
+                write_label(f, id, |f| f.write_str("RECURSIVE"))?;
+            },
+            WorkingTableScan { .. } => {
+                write_label(f, id, |f| f.write_str("WORKING TABLE"))?;
+            },
             UnoptimizedDispatch {
                 inputs,
                 operation,

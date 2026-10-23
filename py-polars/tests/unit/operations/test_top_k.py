@@ -692,3 +692,49 @@ def test_top_k_decimal_single_row_row_group(descending: bool, tmp_path: Path) ->
             df.top_k(3, by="x", reverse=descending),
             check_row_order=False,
         )
+
+
+@pytest.mark.parametrize("col", ["a", "b"])
+@pytest.mark.parametrize(
+    "optimizations",
+    [
+        pl.QueryOptFlags(),
+        # Keeps the repeated keys while still lowering to a top-k.
+        pl.QueryOptFlags(simplify_expression=False),
+        pl.QueryOptFlags.none(),
+    ],
+)
+def test_top_k_repeated_key_30081(col: str, optimizations: pl.QueryOptFlags) -> None:
+    lf = pl.LazyFrame({"a": [3, 1, 2, 0], "b": ["x", "y", "z", "w"]})
+    expected_asc = pl.DataFrame({"a": [0, 1], "b": ["w", "y"]})
+    expected_desc = pl.DataFrame({"a": [3, 2], "b": ["x", "z"]})
+    if col == "b":
+        expected_asc = pl.DataFrame({"a": [0, 3], "b": ["w", "x"]})
+        expected_desc = pl.DataFrame({"a": [2, 1], "b": ["z", "y"]})
+
+    def collect(q: pl.LazyFrame) -> pl.DataFrame:
+        return q.collect(optimizations=optimizations)
+
+    assert_frame_equal(collect(lf.sort([col, col]).head(2)), expected_asc)
+    assert_frame_equal(
+        collect(lf.sort([col, col], descending=[True, False]).head(2)),
+        expected_desc,
+    )
+    assert_frame_equal(
+        collect(lf.sort(pl.col(col), pl.col(col).reverse()).head(2)), expected_asc
+    )
+    assert_frame_equal(
+        collect(lf.top_k(2, by=[col, col])), expected_desc, check_row_order=False
+    )
+    assert_frame_equal(
+        collect(lf.bottom_k(2, by=[col, col])), expected_asc, check_row_order=False
+    )
+    assert_frame_equal(
+        collect(lf.select(pl.struct(pl.all()).top_k_by([col, col], 2)).unnest("a")),
+        expected_desc,
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        collect(lf.select(pl.all().sort_by(col, col, descending=[False, True]))),
+        pl.concat([expected_asc, expected_desc.reverse()]),
+    )
