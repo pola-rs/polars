@@ -11,6 +11,8 @@ from polars.exceptions import ComputeError, OutOfBoundsError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import EngineType
 
 
@@ -601,6 +603,9 @@ def test_gather_group_by_index_dtypes(idx: pl.Series) -> None:
             [[[1, 2], None], None, [], [[3, 4]], None, [[5, 6]]],
             pl.List(pl.Array(pl.Int64, 2)),
         ),
+        ([[True, None], None, [], [False, True], None, [True]], pl.List(pl.Boolean)),
+        ([[None, None], None, [], [None], None, [None]], pl.List(pl.Null)),
+        ([None] * 6, pl.List(pl.Int64)),
     ],
 )
 def test_gather_list_29993(data: list[Any], dtype: pl.DataType) -> None:
@@ -613,6 +618,27 @@ def test_gather_list_29993(data: list[Any], dtype: pl.DataType) -> None:
     df = pl.DataFrame({"k": [0, 1, 0, 1, 0, 1], "a": s})
     out = df.group_by("k", maintain_order=True).agg("a")
     assert out["a"].to_list() == [data[0::2], data[1::2]]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "leaf"),
+    [
+        (pl.Int64, lambda i: None if i % 7 == 0 else i),
+        (pl.Boolean, lambda i: i % 3 == 0),
+        (pl.String, lambda i: None if i % 5 == 0 else f"value number {i}"),
+        (pl.Struct({"x": pl.Int64, "s": pl.String}), lambda i: {"x": i, "s": str(i)}),
+        (pl.List(pl.Int64), lambda i: [i, None]),
+    ],
+)
+def test_gather_list_wide_rows(dtype: pl.DataType, leaf: Callable[[int], Any]) -> None:
+    # Wide rows of fixed-width values are copied whole instead of gathered per element.
+    rows = [range(40), range(40, 40), range(40, 140), None, range(140, 440)]
+    data = [None if r is None else [leaf(i) for i in r] for r in rows]
+    s = pl.Series(data, dtype=pl.List(dtype))
+    idx = [4, None, 2, 0, 3, 1, 4]
+    expected = [None if i is None else data[i] for i in idx]
+    assert s.gather(pl.Series(idx, dtype=pl.get_index_type())).to_list() == expected
+    assert s[1:].gather([3, 0, 1]).to_list() == [data[4], data[1], data[2]]
 
 
 def test_gather_list_null_rows_with_values() -> None:
