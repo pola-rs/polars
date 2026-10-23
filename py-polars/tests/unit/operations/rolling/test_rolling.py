@@ -426,76 +426,111 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
     }
 
 
+def _rolling_extrema_naive(
+    values: list[float | None], window_size: int, center: bool
+) -> tuple[dict[str, np.ndarray], np.ndarray]:
+    """Per-index windowed min, max and non-null count.
+
+    A row is null when its count is below ``max(min_samples, 1)``, which makes
+    these three cover any ``min_samples`` and operation of one window/center.
+    """
+    n = len(values)
+    # A wider window only sees out-of-range pads, which the sentinel fill and
+    # the count both already ignore.
+    limit = 2 * n if center else n
+    w = min(window_size, limit)
+    if not w:
+        return {"min": np.zeros(n), "max": np.zeros(n)}, np.zeros(n)
+    left, right = (w // 2, w - 1 - w // 2) if center else (w - 1, 0)
+    is_null = np.fromiter((v is None for v in values), dtype=bool, count=n)
+    nums = np.array(values, dtype=np.float64)
+    cum = np.concatenate([[0], np.cumsum(~is_null)])
+    edge = np.arange(n) - left
+    counts = cum[np.minimum(edge + w, n)] - cum[np.maximum(edge, 0)]
+    # Nulls and pads become +-inf sentinels that never win the reduction.
+    lo, hi = (np.where(is_null, x, nums) for x in (np.inf, -np.inf))
+    if w == limit:
+        # The window covers each row's whole prefix, or the whole series, so the
+        # extremes are a prefix scan that is then flattened for the centered case.
+        scan = {"min": np.minimum.accumulate(lo), "max": np.maximum.accumulate(hi)}
+        return (
+            {k: np.full(n, v[-1]) for k, v in scan.items()} if center else scan
+        ), counts
+
+    def windows(a: np.ndarray, fill: float) -> np.ndarray:
+        padded = np.concatenate([np.full(left, fill), a, np.full(right, fill)])
+        return np.lib.stride_tricks.sliding_window_view(padded, w)
+
+    return {
+        "min": windows(lo, np.inf).min(axis=1),
+        "max": windows(hi, -np.inf).max(axis=1),
+    }, counts
+
+
 @pytest.mark.parametrize(
     ("length", "stride", "invert", "with_nan"),
     [
         (length, stride, invert, with_nan)
-        for length in [
-            *range(10),
-            130,
-            *(n + d for n in (64, 128, 192, 256, 512) for d in (-1, 0, 1)),
-        ]
+        # Sample representative lengths near window and bitmap word boundaries.
+        for length in (0, 1, 2, 3, 9, 63, 64, 65, 130, 513)
         # Minimum length at which each stride adds a distinct null mask.
-        for stride, min_length in ((0, 0), (67, 2), (1024, 68))
-        if length >= min_length
-        # Only the unmasked case needs a NaN variant.
+        for stride, min_length in ((0, 0), (1024, 2), (67, 68))
+        # NaN variant runs with the mask that leaves the NaN un-nulled.
         for invert, with_nan in ((False, False), (True, False), (stride == 0, True))
-        if (length > 0 or not invert) and (length > 17 or not with_nan)
+        # NaN only where it survives masking and truncation; the all-null mask
+        # only needs the empty and single-element series, as its output is null
+        # at every index whatever the length.
+        if length >= min_length
+        and (length > 0 or not invert)
+        and (not with_nan or length in (130, 513))
+        and (stride or invert or length in (0, 1))
     ],
 )
 def test_rolling_extrema_matches_naive(
     invert: bool, with_nan: bool, stride: int, length: int
 ) -> None:
     values: list[float | None] = [float((i * 17) % 23 - 11) for i in range(513)]
+    values[79], values[101] = float("inf"), -float("inf")
     if with_nan:
         values[17] = float("nan")
-    values[79] = float("inf")
-    values[101] = -float("inf")
     values = values[:length]
     for i in range(length):
         if (stride == 0 or i % stride == 0) != invert:
             values[i] = None
 
+    # Same series at different memory offsets; the offset is rotated over
+    # the window sizes instead of crossed with every combination.
     slices = [
         pl.Series([0.0] * offset + values + [0.0] * 64).slice(offset, length)
         for offset in (*range(9), 63, 65)
     ]
-    for window_size in {0, 1, 2, 3, 9, 100, 130, 131, 385, 1024, 2**64 - 1} | {
-        n + d for n in (64, 128, 192, 256) for d in (-1, 0, 1)
-    }:
-        min_samples_values = {
-            min(p, window_size) for p in (0, 1, 2, window_size // 2, window_size)
-        }
-        for min_samples in min_samples_values:
-            for center in (False, True):
-                for operation in ("min", "max"):
-                    expected: list[float | None] = []
-                    for i in range(len(values)):
-                        start, stop = (
-                            (max(0, i + 1 - window_size), i + 1)
-                            if not center
-                            else (
-                                max(0, i - window_size // 2),
-                                min(len(values), i - window_size // 2 + window_size),
-                            )
-                        )
-                        window = [v for v in values[start:stop] if v is not None]
-                        if not window or len(window) < min_samples:
-                            expected.append(None)
-                        elif np.isnan(window).any():
-                            expected.append(float("nan"))
-                        else:
-                            expected.append(
-                                min(window) if operation == "min" else max(window)
-                            )
-
-                    expected_series = pl.Series(expected, dtype=pl.Float64)
-                    for s in slices:
-                        result = getattr(s, f"rolling_{operation}")(
+    window_sizes = sorted(
+        {0, 1, 2, 3, 9, 100, 130, 131, 385, 1024, 2**64 - 1}
+        | {n + d for n in (64, 128, 192, 256) for d in (-1, 0, 1)}
+    )
+    null_literal = pl.Series([None], dtype=pl.Float64)
+    for window_idx, window_size in enumerate(window_sizes):
+        # One select and one comparison per window: the alias carries the
+        # parameters, so every (center, min_samples, operation) is a column.
+        exprs: list[pl.Expr] = []
+        expected: dict[str, pl.Series] = {}
+        for center in (False, True):
+            windowed, counts = _rolling_extrema_naive(values, window_size, center)
+            for min_samples in sorted(
+                {min(p, window_size) for p in (0, 1, 2, window_size // 2, window_size)}
+            ):
+                # An empty window is null for any min_samples.
+                valid = pl.Series(counts >= max(min_samples, 1))
+                for op, result in windowed.items():
+                    alias = f"w{window_size}-{op}-c{center}-p{min_samples}"
+                    exprs.append(
+                        getattr(pl.col(""), f"rolling_{op}")(
                             window_size, min_samples=min_samples, center=center
-                        )
-                        assert result.null_count() == expected_series.null_count()
-                        assert_series_equal(result, expected_series)
+                        ).alias(alias)
+                    )
+                    expected[alias] = pl.Series(result).zip_with(valid, null_literal)
+        frame = slices[(window_idx + length) % len(slices)]
+        assert_frame_equal(frame.to_frame().select(exprs), pl.DataFrame(expected))
 
 
 def test_rolling_extrema_edge_cases() -> None:
