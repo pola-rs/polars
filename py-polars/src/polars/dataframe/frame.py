@@ -4862,7 +4862,7 @@ class DataFrame:
 
         # Arrow data from Polars is always nullable; required Iceberg fields reject it.
         data = with_table_nullability(
-            self.to_arrow(compat_level=CompatLevel.oldest()), table.schema().as_arrow()
+            self.to_arrow(compat_level=CompatLevel.oldest()), table.schema()
         )
 
         if mode == "append":

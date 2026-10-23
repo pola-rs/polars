@@ -3896,7 +3896,7 @@ def test_write_iceberg_required_columns(tmp_path: Path) -> None:
         tbl, mode="append"
     )
     pl.DataFrame({"id": [4]}).write_iceberg(tbl, mode="append")
-    with pytest.raises(ValueError, match="column 'id' contains nulls"):
+    with pytest.raises(pl.exceptions.SchemaError, match="column 'id' contains nulls"):
         pl.DataFrame({"id": [None, 5]}).write_iceberg(tbl, mode="append")
 
     assert_frame_equal(
