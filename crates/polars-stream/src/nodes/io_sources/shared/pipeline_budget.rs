@@ -33,20 +33,8 @@ pub(crate) fn default_prefetch_kbytes_limit(num_pipelines: usize) -> usize {
     (4 * num_pipelines * target_chunk_size_kb).max(get_download_chunk_size().div_ceil(1024))
 }
 
-/// Factor by which an ordered scan grows the default count limit. `PLDEV_ORDERED_WINDOW_FACTOR`
-/// overrides it.
+/// Factor by which an ordered scan grows the default count limit.
 const ORDERED_WINDOW_FACTOR: usize = 2;
-
-fn ordered_window_factor() -> usize {
-    static FACTOR: LazyLock<usize> = LazyLock::new(|| {
-        std::env::var("PLDEV_ORDERED_WINDOW_FACTOR").map_or(ORDERED_WINDOW_FACTOR, |x| {
-            x.parse::<NonZeroUsize>()
-                .unwrap_or_else(|_| panic!("invalid value for PLDEV_ORDERED_WINDOW_FACTOR: {x}"))
-                .get()
-        })
-    });
-    *FACTOR
-}
 
 #[derive(Clone, Debug)]
 pub struct PipelineBudget {
@@ -96,7 +84,7 @@ impl PipelineBudget {
         self.grown_for_ordered.call_once(|| {
             let count_limit = self.count_limit();
             let new_count_limit = count_limit
-                .saturating_mul(ordered_window_factor())
+                .saturating_mul(ORDERED_WINDOW_FACTOR)
                 .min(Self::MAX_DEFAULT_COUNT_LIMIT);
 
             self.count
