@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -782,3 +783,77 @@ def test_list_agg_explode_30023() -> None:
     expected = [[], [1, 2], [None, 3]]
     assert s.list.agg(pl.element().explode()).to_list() == expected
     assert s.list.eval(pl.element().explode()).to_list() == expected
+
+
+def _via_arrow_table(s: pl.Series) -> pl.Series:
+    # Builds the list from Arrow arrays, as a Parquet read does.
+    df = pl.from_arrow(pa.table({s.name: s.to_arrow()}))
+    assert isinstance(df, pl.DataFrame)
+    return df.to_series()
+
+
+@pytest.mark.parametrize("empty_as_null", [False, True])
+@pytest.mark.parametrize("keep_nulls", [False, True])
+@pytest.mark.parametrize(
+    ("rows", "dtype"),
+    [
+        ([[1, 2], [3], [4, 5, 6]], pl.List(pl.Int64)),
+        ([[1, 2], [], [3]], pl.List(pl.Int64)),
+        ([[1, 2], None, [3]], pl.List(pl.Int64)),
+        (
+            [[{"x": 1}, {"x": 2}], [{"x": 3}], [{"x": None}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[{"x": 1}], [], None, [{"x": 2}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        ([[[1], [2, 3]], [[4]], [[]]], pl.List(pl.List(pl.Int64))),
+    ],
+)
+def test_explode_list_from_arrow_30175(
+    rows: list[Any], dtype: pl.DataType, *, empty_as_null: bool, keep_nulls: bool
+) -> None:
+    s = _via_arrow_table(pl.Series("a", rows, dtype=dtype))
+    opts = {"empty_as_null": empty_as_null, "keep_nulls": keep_nulls}
+    for offset in range(len(rows)):
+        out = s.slice(offset).explode(**opts)
+        assert out.to_list() == _explode_rows(rows[offset:], **opts)
+
+
+@pytest.mark.parametrize("keep_nulls", [False, True])
+def test_explode_list_from_arrow_masked_null_row_30175(*, keep_nulls: bool) -> None:
+    # The null row still covers the value 3, which must not be exploded.
+    arr = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 3, 4], pa.int64()),
+        pa.array([1, 2, 3, 4], pa.int64()),
+        mask=pa.array([False, True, False]),
+    )
+    s = _via_arrow_table(pl.Series("a", arr))
+    expected = _explode_rows(
+        [[1, 2], None, [4]], empty_as_null=True, keep_nulls=keep_nulls
+    )
+    assert s.explode(keep_nulls=keep_nulls).to_list() == expected
+
+
+def test_explode_list_columns_from_memory_and_arrow_30175() -> None:
+    rows = [[{"x": 1}], [{"x": 2}, {"x": 3}], [{"x": 4}]]
+    a = pl.Series("a", rows, dtype=pl.List(pl.Struct({"x": pl.Int64})))
+    df = pl.DataFrame([a, _via_arrow_table(a).alias("b")]).slice(1)
+    expected = pl.DataFrame(
+        {"a": [{"x": 2}, {"x": 3}, {"x": 4}], "b": [{"x": 2}, {"x": 3}, {"x": 4}]}
+    )
+    assert_frame_equal(df.explode("a", "b"), expected)
+
+
+def test_explode_list_read_from_parquet_30175() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "a": [[{"x": 1, "l": [1, 2]}, {"x": 2, "l": []}], [{"x": 3, "l": [3]}]],
+        }
+    )
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f).explode("a"), df.explode("a"))

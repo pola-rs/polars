@@ -455,24 +455,19 @@ def test_invalid_derived_table_column_aliases() -> None:
         SQLSyntaxError,
         match=r"columns \(5\) in alias 'tbl' does not match .* the table/query \(2\)",
     ):
-        pl.sql(f"{values_query} AS tbl(a, b, c, d, e)")
+        pl.sql(f"{values_query} AS tbl(a, b, c, d, e)", eager=True)
 
     assert pl.sql(f"{values_query} tbl", eager=True).rows() == [(1, 2), (3, 4)]
 
 
-def test_values_clause_table_registration() -> None:
+def test_values_clause_derived_table() -> None:
     with pl.SQLContext(frames=None, eager=True) as ctx:
-        # initially no tables are registered
+        res = ctx.execute("SELECT * FROM (VALUES (-1,1)) AS tbl(x, y)")
+        assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}
+
         assert ctx.tables() == []
-
-        # confirm that VALUES clause derived table is registered, post-query
-        res1 = ctx.execute("SELECT * FROM (VALUES (-1,1)) AS tbl(x, y)")
-        assert ctx.tables() == ["tbl"]
-
-        # and confirm that we can select from it by the registered name
-        res2 = ctx.execute("SELECT x, y FROM tbl")
-        for res in (res1, res2):
-            assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}
+        with pytest.raises(SQLInterfaceError, match="relation 'tbl' was not found"):
+            ctx.execute("SELECT x, y FROM tbl")
 
 
 def test_read_csv(tmp_path: Path) -> None:
