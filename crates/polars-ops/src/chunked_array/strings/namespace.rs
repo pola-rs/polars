@@ -130,7 +130,13 @@ impl MatchesToEnd {
             },
             _ => return None,
         };
-        let head = compile_regex(&Hir::concat(head.to_vec()).to_string()).ok()?;
+        let head = Hir::concat(head.to_vec());
+        let head_pat = head.to_string();
+        // The printer does not group nested repetitions, e.g. `(?:a+)?` prints as `a+?`.
+        if regex_syntax::parse(&head_pat).ok()? != head {
+            return None;
+        }
+        let head = compile_regex(&head_pat).ok()?;
         // Groups that cannot match, as `(a){0}`, are not printed.
         if head.captures_len() != reg.captures_len()
             || !head.capture_names().eq(reg.capture_names())
