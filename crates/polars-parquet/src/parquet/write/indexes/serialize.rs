@@ -108,7 +108,7 @@ mod tests {
             .unwrap()
             .map(|page| {
                 let page = compress(page.unwrap(), vec![], CompressionOptions::Uncompressed);
-                write_page(&mut buffer, 0, &page.unwrap()).unwrap()
+                write_page(&mut buffer, 0, &page.unwrap(), None).unwrap()
             })
             .collect()
     }

@@ -88,6 +88,13 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::SpillFrameSource { frames, schema } => (
+            PhysicalPropsDescription::InMemorySource {
+                n_rows: frames.iter().map(|sf| sf.height()).sum(),
+                schema_names: schema.iter_names().map(ToString::to_string).collect(),
+            },
+            vec![],
+        ),
         PhysNodeKind::InputIndependentSelect { selectors, .. } => (
             PhysicalPropsDescription::InputIndependentSelect {
                 selectors: fmt_exprs(selectors, expr_arena),
@@ -435,6 +442,17 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::Recursive {
+            anchor, externals, ..
+        } => (
+            PhysicalPropsDescription::Recursive {
+                num_external_inputs: externals.len(),
+            },
+            std::iter::once(anchor)
+                .chain(externals)
+                .map(|s| s.node)
+                .collect(),
+        ),
         PhysNodeKind::OrderedUnion { inputs, .. } => (
             PhysicalPropsDescription::OrderedUnion {
                 num_inputs: inputs.len(),
@@ -707,6 +725,7 @@ pub fn phys_props(
             },
             vec![input_left.node, input_right.node],
         ),
+        PhysNodeKind::Reverse { input } => (PhysicalPropsDescription::Reverse, vec![input.node]),
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,

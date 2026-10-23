@@ -328,12 +328,12 @@ fn serialize_levels(
     nested: &[Nested],
     options: WriteOptions,
     buffer: &mut Vec<u8>,
-) -> PolarsResult<(usize, usize)> {
+) -> PolarsResult<(usize, usize, usize)> {
     if nested.len() == 1 {
         let is_optional = is_nullable(&type_.field_info);
         serialize_def_levels_simple(validity, length, is_optional, options, buffer)?;
         let definition_levels_byte_length = buffer.len();
-        Ok((0, definition_levels_byte_length))
+        Ok((0, definition_levels_byte_length, length))
     } else {
         nested::write_rep_and_def(options.version, nested, buffer)
     }
@@ -395,22 +395,19 @@ fn serialize_keys_range<K: DictionaryKey>(
     // and ignore keys whose _value_ is null.
     let validity = normalized_validity(array);
 
-    let (repetition_levels_byte_length, definition_levels_byte_length) = serialize_levels(
-        validity.as_ref(),
-        array.len(),
-        type_,
-        nested,
-        options,
-        &mut buffer,
-    )?;
+    let (repetition_levels_byte_length, definition_levels_byte_length, num_values) =
+        serialize_levels(
+            validity.as_ref(),
+            array.len(),
+            type_,
+            nested,
+            options,
+            &mut buffer,
+        )?;
 
     serialize_keys_values(array, validity.as_ref(), &mut buffer)?;
 
-    let (num_values, num_rows) = if nested.len() == 1 {
-        (array.len(), array.len())
-    } else {
-        (nested::num_values(nested), nested[0].len())
-    };
+    let num_rows = nested[0].len();
 
     let null_count = validity.as_ref().map_or(0, Bitmap::unset_bits);
     // Like `nested::num_nulls`, but with the normalized validity.

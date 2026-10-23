@@ -41,14 +41,10 @@ pub fn create_file_writer_starter(
                 )?)
             };
 
-            Arc::new(ParquetWriterStarter {
-                options: Arc::clone(options),
+            Arc::new(ParquetWriterStarter::try_new(
+                Arc::clone(options),
                 arrow_schema,
-                initialized_state: Default::default(),
-                row_group_size: options
-                    .row_group_size
-                    .map(|x| IdxSize::try_from(x).unwrap()),
-            }) as _
+            )?) as _
         },
         #[cfg(feature = "ipc")]
         FileWriteFormat::Ipc(options) => {

@@ -513,8 +513,12 @@ fn for_each_line_from_reader_from_compressed_reader(
             return Ok(prev_leftover);
         }
 
-        if read_size < CompressedReader::ideal_read_size() && fixed_read_size.is_none() {
-            read_size *= 4;
+        if fixed_read_size.is_none() {
+            if read_size < CompressedReader::ideal_read_size() {
+                read_size *= 4;
+            }
+            // Copying readers re-copy `prev_leftover` on every read and kept lines pin each copy.
+            read_size = read_size.max(prev_leftover.len());
         }
     }
 }
@@ -646,10 +650,12 @@ fn for_each_line_from_reader(
             return Ok(prev_leftover);
         }
 
-        if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size()
-            && fixed_read_size.is_none()
-        {
-            read_size *= 4;
+        if fixed_read_size.is_none() {
+            if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size() {
+                read_size *= 4;
+            }
+            // Copying readers re-copy `prev_leftover` on every read and kept lines pin each copy.
+            read_size = read_size.max(prev_leftover.len());
         }
     }
 }

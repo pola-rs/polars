@@ -508,6 +508,91 @@ pub(super) fn non_null_side_for_column(
     }
 }
 
+/// Whether the join condition allows the join to become stricter. With a non-equality
+/// component, `left_on`/`right_on` are not equality keys, so the coalesced key columns
+/// can't be mapped to the new join type. A stricter join lets filters reach its inputs, so
+/// the match condition must also give the same result on filtered inputs.
+pub(super) fn join_condition_allows_downgrade(
+    options: &JoinOptionsIR,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    if options.is_pure_equi() {
+        return true;
+    }
+    if options.args.should_coalesce() || options.options.has_fused_predicate() {
+        return false;
+    }
+    match &options.options {
+        JoinTypeOptionsIR::CrossAndFilter { predicate } => {
+            commutes_with_filter(predicate, expr_arena)
+        },
+        condition => condition
+            .left_on()
+            .chain(condition.right_on())
+            .all(|e| commutes_with_filter(e, expr_arena)),
+    }
+}
+
+/// The join sides on which `acc_predicates` drop the rows that are null.
+fn non_null_side(
+    acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    options: &JoinOptionsIR,
+    expr_arena: &Arena<AExpr>,
+) -> ExprOrigin {
+    let mut non_null_side = ExprOrigin::None;
+    for predicate in acc_predicates.values() {
+        for node in MintermIter::new(predicate.node(), expr_arena) {
+            predicate_non_null_column_outputs(node, expr_arena, &mut |non_null_column| {
+                non_null_side |=
+                    non_null_side_for_column(non_null_column, schema_left, schema_right, options);
+            });
+        }
+    }
+    non_null_side
+}
+
+/// Makes an outer join with a non-equi condition stricter when `acc_predicates` drop the rows
+/// that are null on one side. This runs before the condition is pushed down and the join
+/// algorithm is picked, so both see the new join type. The join keeps its columns, so the
+/// output schema does not change. Joins that must be validated are left to
+/// `try_rewrite_join_type`, as a cross join can't validate.
+pub(super) fn try_downgrade_non_equi_join(
+    schema_left: &Schema,
+    schema_right: &Schema,
+    options: &mut Arc<JoinOptionsIR>,
+    acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>,
+    expr_arena: &Arena<AExpr>,
+) {
+    if options.is_pure_equi()
+        || options.args.validation.needs_checks()
+        || !join_condition_allows_downgrade(options, expr_arena)
+    {
+        return;
+    }
+    let side = non_null_side(
+        acc_predicates,
+        schema_left,
+        schema_right,
+        options,
+        expr_arena,
+    );
+    let Some(new_join_type) = downgraded_join_type(&options.args.how, side) else {
+        return;
+    };
+    let options = Arc::make_mut(options);
+    options.args.how = match (new_join_type, &options.options) {
+        // An inner join keeps its condition in this form.
+        (JoinType::Inner, JoinTypeOptionsIR::CrossAndFilter { .. }) => JoinType::Cross,
+        #[cfg(feature = "iejoin")]
+        (JoinType::Inner, JoinTypeOptionsIR::IEJoin { .. }) => JoinType::IEJoin,
+        #[cfg(feature = "iejoin")]
+        (JoinType::Inner, JoinTypeOptionsIR::Range { .. }) => JoinType::Range,
+        (new_join_type, _) => new_join_type,
+    };
+}
+
 /// The stricter join an outer join becomes when a filter above it drops rows that are null
 /// on `non_null_side`.
 pub(super) fn downgraded_join_type(how: &JoinType, non_null_side: ExprOrigin) -> Option<JoinType> {
@@ -576,8 +661,10 @@ pub fn try_rewrite_join_type(
     // to return any post-select (inserted inner joins will use JoinCoalesce::KeepColumns).
     (|| {
         // Outer ON conditions must be fully captured by the selected join algorithm.
-        let is_outer_non_equi =
-            matches!(options.args.how, JoinType::Left | JoinType::Right) && options.is_non_equi();
+        let is_outer_non_equi = matches!(
+            options.args.how,
+            JoinType::Left | JoinType::Right | JoinType::Full
+        ) && options.is_non_equi();
 
         if is_outer_non_equi {
             if !try_rewrite_outer_equi_join(
@@ -865,18 +952,14 @@ pub fn try_rewrite_join_type(
         coalesced_to_right = lhs_input_column_keys_iter!().collect();
     }
 
-    let mut non_null_side = ExprOrigin::None;
-
-    for predicate in acc_predicates.values() {
-        for node in MintermIter::new(predicate.node(), expr_arena) {
-            predicate_non_null_column_outputs(node, expr_arena, &mut |non_null_column| {
-                non_null_side |=
-                    non_null_side_for_column(non_null_column, schema_left, schema_right, options);
-            });
-        }
-    }
-
-    let Some(new_join_type) = downgraded_join_type(&options.args.how, non_null_side) else {
+    let side = non_null_side(
+        acc_predicates,
+        schema_left,
+        schema_right,
+        options,
+        expr_arena,
+    );
+    let Some(new_join_type) = downgraded_join_type(&options.args.how, side) else {
         return Ok(None);
     };
 

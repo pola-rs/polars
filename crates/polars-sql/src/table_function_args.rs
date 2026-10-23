@@ -1,7 +1,9 @@
 //! Arguments of SQL table functions: a positional path followed by named options, as in
 //! `read_csv('data.csv', has_header => false, separator => ';')`.
 
+#[cfg(any(feature = "csv", feature = "json"))]
 use std::num::NonZeroUsize;
+#[cfg(any(feature = "csv", feature = "json"))]
 use std::str::FromStr;
 
 use polars_core::prelude::*;
@@ -155,6 +157,7 @@ impl<'a> TableFunctionOptions<'a> {
         self.expect_number(name, expr, "a non-negative integer")
     }
 
+    #[cfg(any(feature = "csv", feature = "json"))]
     fn expect_number<T: FromStr>(
         &self,
         name: &str,
@@ -169,7 +172,7 @@ impl<'a> TableFunctionOptions<'a> {
     }
 
     /// One of the string `values`, matched case-insensitively, as the value paired with it.
-    #[cfg(feature = "csv")]
+    #[cfg(any(feature = "csv", feature = "parquet"))]
     pub(crate) fn one_of<T: Copy>(
         &self,
         name: &str,

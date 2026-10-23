@@ -124,3 +124,27 @@ result = ctx.execute(
 )
 print(result)
 # --8<-- [end:tablefunctionndjson]
+
+# --8<-- [start:tablefunctionparquet]
+result = ctx.execute(
+    """
+        SELECT id, bool_col, path
+        FROM read_parquet('docs/assets/data/alltypes_plain.parquet', include_file_paths => 'path')
+        LIMIT 3
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionparquet]
+
+# --8<-- [start:tablefunctionipc]
+pl.read_csv("docs/assets/data/iris.csv").write_ipc("docs/assets/data/iris.feather")
+
+result = ctx.execute(
+    """
+        SELECT species, sepal_length, path
+        FROM read_ipc('docs/assets/data/iris.feather', include_file_paths => 'path')
+        LIMIT 3
+    """
+)
+print(result)
+# --8<-- [end:tablefunctionipc]

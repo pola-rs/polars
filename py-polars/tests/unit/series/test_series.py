@@ -2368,6 +2368,22 @@ def test_comp_series_with_str_13123() -> None:
     assert_series_equal(s.ne_missing("1"), pl.Series([False, True, True]))
 
 
+def test_comp_series_with_ndarray_26164() -> None:
+    s = pl.Series(["a", "b"])
+    assert (s == np.array(["a", "c"])).to_list() == [True, False]
+
+    s = pl.Series([1, 2])
+    assert (s == np.array([1, 3])).to_list() == [True, False]
+    assert (s < np.array([2, 2])).to_list() == [True, False]
+
+    for dtype in [pl.List(pl.Int64), pl.Array(pl.Int64, 2)]:
+        s = pl.Series([[1, 2], [3, 4]], dtype=dtype)
+        with pytest.raises(TypeError, match="NumPy array"):
+            s == np.array([1, 2])  # noqa: B015
+        with pytest.raises(TypeError, match="NumPy array"):
+            s == np.array([[1, 2], [0, 4]])  # noqa: B015
+
+
 @pytest.mark.parametrize(
     ("data", "single", "multiple", "single_expected", "multiple_expected"),
     [

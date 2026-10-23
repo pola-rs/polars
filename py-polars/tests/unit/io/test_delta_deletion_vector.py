@@ -575,7 +575,7 @@ def test_scan_delta_dv_single(
     conn.execute("INSTALL delta;")
     conn.execute("LOAD delta;")
 
-    df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
+    df_duckdb = conn.sql(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
 
     # Test: py deletion_vectors() API contract
@@ -686,7 +686,7 @@ def test_scan_delta_dv_multiple(
     conn.execute("INSTALL delta;")
     conn.execute("LOAD delta;")
 
-    df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
+    df_duckdb = conn.sql(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
 
 
@@ -760,9 +760,7 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
         conn = duckdb.connect()
         conn.execute("INSTALL delta;")
         conn.execute("LOAD delta;")
-        df_duckdb = (
-            conn.execute(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)
-        )
+        df_duckdb = conn.sql(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)
         assert_frame_equal(out, df_duckdb, check_row_order=False)
 
 

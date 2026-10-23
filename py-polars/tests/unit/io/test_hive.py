@@ -78,7 +78,6 @@ def impl_test_hive_partitioned_predicate_pushdown(
     )
 
 
-@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
@@ -92,7 +91,6 @@ def test_hive_partitioned_predicate_pushdown(
     )
 
 
-@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk
 def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
@@ -375,7 +373,6 @@ def test_hive_streaming_pushdown_is_in_22212(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [True, False])
 def test_hive_partitioned_slice_pushdown(
@@ -445,7 +442,6 @@ def test_hive_slice_ends_in_file_skipped_by_predicate(
     )
 
 
-@pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk
 def test_hive_partitioned_projection_pushdown(
     io_files_path: Path, tmp_path: Path

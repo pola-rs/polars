@@ -13,6 +13,7 @@ from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     is_int_sequence,
     normalize_filepath,
+    qualified_type_name,
 )
 from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow
@@ -717,6 +718,15 @@ def scan_parquet(
     if decryption is not None:
         msg = "The `decryption` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
+
+        from polars.io.parquet.decryption import ParquetDecryptionProperties
+
+        if not isinstance(decryption, ParquetDecryptionProperties):
+            msg = (
+                "`decryption` must be a `ParquetDecryptionProperties`, "
+                f"got {qualified_type_name(decryption)!r}"
+            )
+            raise TypeError(msg)
 
     sources = get_sources(source)
 

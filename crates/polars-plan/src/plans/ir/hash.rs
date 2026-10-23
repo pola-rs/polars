@@ -231,6 +231,7 @@ impl IR {
                 key.hash(state);
                 maintain_order.hash(state);
             },
+            IR::Recursive { id, .. } | IR::WorkingTableScan { id, .. } => id.hash(state),
             IR::UnoptimizedDispatch {
                 inputs: _,
                 arg_map: _,

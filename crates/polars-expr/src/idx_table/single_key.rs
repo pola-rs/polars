@@ -11,9 +11,6 @@ use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 use super::*;
 use crate::hash_keys::{BLOCK_SIZE, HashKeys, MIN_PREFETCH_BUCKETS};
 
-/// Set in `Slot::first` once a probe key matched the slot.
-const MARKED: IdxSize = 1 << (IdxSize::BITS - 1);
-
 struct Slot<K> {
     key: K,
     /// The first build row with this key, combined with the MARKED flag.
@@ -29,10 +26,8 @@ pub struct SingleKeyIdxTable<T: PolarsDataType> {
     random_state: PlRandomState,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
-    nulls_emitted: RelaxedCell<bool>,
-    /// A bit per build row, set once a probe key matched it. Only kept when
-    /// the unmatched rows are tracked.
-    matched: Vec<RelaxedCell<u64>>,
+    nulls_marked: RelaxedCell<bool>,
+    matched: MatchedRows,
 }
 
 impl<T: PolarsDataType> SingleKeyIdxTable<T> {
@@ -43,8 +38,8 @@ impl<T: PolarsDataType> SingleKeyIdxTable<T> {
             random_state: PlRandomState::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
-            nulls_emitted: RelaxedCell::from(false),
-            matched: Vec::new(),
+            nulls_marked: RelaxedCell::from(false),
+            matched: MatchedRows::default(),
         }
     }
 }
@@ -71,13 +66,6 @@ where
     }
 
     #[inline(always)]
-    fn mark_row(&self, idx: IdxSize) {
-        if let Some(word) = self.matched.get(idx as usize / 64) {
-            word.fetch_or(1 << (idx % 64));
-        }
-    }
-
-    #[inline(always)]
     fn probe_one<const MARK_MATCHES: bool>(
         &self,
         key_idx: IdxSize,
@@ -93,11 +81,9 @@ where
                 probe_match.push(key_idx);
             });
 
-            // Mark if necessary. This action is idempotent so doesn't need
-            // atomic fetch_or to do it atomically.
             if MARK_MATCHES && first & MARKED == 0 {
                 slot.first.store(first | MARKED);
-                self.for_each_row(first, slot.last, |idx| self.mark_row(idx));
+                self.for_each_row(first, slot.last, |idx| self.matched.mark(idx));
             }
             true
         } else {
@@ -153,10 +139,10 @@ where
                         table_match.push(*idx);
                         probe_match.push(key_idx);
                     }
-                    if MARK_MATCHES && !self.nulls_emitted.load() {
-                        self.nulls_emitted.store(true);
+                    if MARK_MATCHES && !self.nulls_marked.load() {
+                        self.nulls_marked.store(true);
                         for idx in &self.null_keys {
-                            self.mark_row(*idx);
+                            self.matched.mark(*idx);
                         }
                     }
                     !self.null_keys.is_empty()
@@ -245,8 +231,7 @@ where
         assert!(new_idx_offset <= MARKED as usize, "{}", LENGTH_LIMIT_MSG);
 
         if track_unmatchable {
-            self.matched
-                .resize_with(new_idx_offset.div_ceil(64), Default::default);
+            self.matched.grow(new_idx_offset);
         }
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
@@ -344,31 +329,7 @@ where
     }
 
     fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize {
-        out.clear();
-
-        // The offset is a build row. The rows are emitted in order so their
-        // payload is gathered sequentially. Don't read past the bitset if not
-        // all rows were inserted while tracking.
-        let num_rows = (self.idx_offset as usize).min(self.matched.len() * 64);
-        let mut row = offset as usize;
-        'words: while row < num_rows {
-            let base = row & !63;
-            let word = unsafe { self.matched.get_unchecked(base / 64) }.load();
-            let mut unmatched = !word & (u64::MAX << (row - base));
-            if num_rows - base < 64 {
-                unmatched &= (1 << (num_rows - base)) - 1;
-            }
-            row = base + 64;
-            while unmatched != 0 {
-                let bit = unmatched.trailing_zeros() as usize;
-                if out.len() >= limit as usize {
-                    row = base + bit;
-                    break 'words;
-                }
-                out.push((base + bit) as IdxSize);
-                unmatched &= unmatched - 1;
-            }
-        }
-        row.min(num_rows).saturating_sub(offset as usize) as IdxSize
+        self.matched
+            .unmarked_rows(self.idx_offset, out, offset, limit)
     }
 }

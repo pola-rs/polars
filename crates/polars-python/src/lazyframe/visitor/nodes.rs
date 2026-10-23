@@ -14,9 +14,9 @@ use polars_io::external_reader::ExternalReaderBuilder;
 use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
-#[cfg(feature = "iejoin")]
-use polars_plan::prelude::JoinTypeOptionsIR;
-use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
+use polars_plan::prelude::{
+    FileScanIR, FunctionIR, JoinTypeOptionsIR, PythonPredicate, UnifiedScanArgs,
+};
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
@@ -442,6 +442,8 @@ pub struct Join {
     #[pyo3(get)]
     right_on: Vec<PyExprIR>,
     #[pyo3(get)]
+    predicate: Option<PyExprIR>,
+    #[pyo3(get)]
     options: Py<PyAny>,
 }
 
@@ -754,6 +756,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 input_right: input_right.0,
                 left_on: options.options.left_on().map(|e| e.into()).collect(),
                 right_on: options.options.right_on().map(|e| e.into()).collect(),
+                predicate: match &options.options {
+                    JoinTypeOptionsIR::CrossAndFilter { predicate } => Some(predicate.into()),
+                    _ => options.options.fused_predicate().map(|e| e.into()),
+                },
                 options: {
                     let how = &options.args.how;
                     let name = Into::<&str>::into(how).into_pyobject(py)?;
@@ -803,17 +809,27 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                                 )
                                     .into_py_any(py)?
                             },
-                            // This is a cross join fused with a predicate. Shown in the IR::explain as
-                            // NESTED LOOP JOIN
-                            JoinType::Cross if options.is_non_equi() => {
-                                return Err(PyNotImplementedError::new_err("nested loop join"));
+                            _ => match &options.options {
+                                // An outer join whose ON condition was rewritten to inequalities.
+                                #[cfg(feature = "iejoin")]
+                                JoinTypeOptionsIR::IEJoin { ie_options, .. } => (
+                                    name,
+                                    crate::Wrap(ie_options.operator1).into_py_any(py)?,
+                                    ie_options.operator2.as_ref().map_or_else(
+                                        || Ok(py.None()),
+                                        |op| crate::Wrap(*op).into_py_any(py),
+                                    )?,
+                                )
+                                    .into_py_any(py)?,
+                                // Shown in IR::explain as NESTED LOOP JOIN.
+                                JoinTypeOptionsIR::CrossAndFilter { .. } => {
+                                    (name, "cross_and_filter").into_py_any(py)?
+                                },
+                                _ if options.options.has_fused_predicate() => {
+                                    (name, "fused_predicate").into_py_any(py)?
+                                },
+                                _ => name.into_any().unbind(),
                             },
-                            _ if options.options.has_fused_predicate() => {
-                                return Err(PyNotImplementedError::new_err(
-                                    "join with a fused predicate",
-                                ));
-                            },
-                            _ => name.into_any().unbind(),
                         },
                         options.args.nulls_equal,
                         options.args.slice,
@@ -1012,6 +1028,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::Resolver { .. } => Err(PyNotImplementedError::new_err(
             "not implemented: IR::Resolver to Python conversion",
         )),
+        IR::Recursive { .. } | IR::WorkingTableScan { .. } => {
+            Err(PyNotImplementedError::new_err("recursive query"))
+        },
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

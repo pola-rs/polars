@@ -2675,3 +2675,35 @@ def test_rolling_agg_arg_min_max_bool(
         )
     )
     assert_frame_equal(q.collect(engine=engine).drop("t"), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("ts", "period", "offset", "tz", "closed", "expected"),
+    [
+        ([(3, 1, 0), (3, 31, 0), (4, 1, 0)], "28d", "-1mo", None, "right", [0, 1, 0]),
+        ([(2, 1, 0), (2, 28, 0), (3, 1, 0)], "1mo", "-28d", None, "left", [1, 2, 2]),
+        (
+            [(3, 31, 0), (4, 1, 0), (4, 1, 1)],
+            "24h",
+            "-1d",
+            "Europe/Amsterdam",
+            "right",
+            [1, 2, 2],
+        ),
+    ],
+)
+def test_rolling_offset_not_negated_period_29199(
+    ts: list[tuple[int, int, int]],
+    period: str,
+    offset: str,
+    tz: str | None,
+    closed: ClosedInterval,
+    expected: list[int],
+    engine: EngineType,
+) -> None:
+    t = pl.Series([datetime(2024, *d) for d in ts]).dt.replace_time_zone(tz)
+    q = pl.LazyFrame({"t": t}).rolling(
+        index_column="t", period=period, offset=offset, closed=closed
+    )
+    assert q.agg(pl.len()).collect(engine=engine)["len"].to_list() == expected

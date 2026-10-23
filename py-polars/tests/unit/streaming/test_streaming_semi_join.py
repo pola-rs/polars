@@ -17,8 +17,6 @@ if TYPE_CHECKING:
     from polars._typing import JoinBuildSide
     from tests.conftest import PlMonkeyPatch
 
-pytestmark = pytest.mark.xdist_group("streaming")
-
 BUILD_SIDES: list[JoinBuildSide] = [
     "auto",
     "force_left",
@@ -155,6 +153,7 @@ def test_composite_and_string_keys(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("build_side", BUILD_SIDES)
 def test_skewed_and_large(build_side: JoinBuildSide) -> None:
     # One hot key on the right, many left rows with duplicate keys, more rows

@@ -76,6 +76,7 @@ pub enum PhysicalPropsDescription {
         maintain_order: bool,
     },
     InMemorySink,
+    Reverse,
     InMemorySource {
         n_rows: usize,
         schema_names: Vec<String>,
@@ -188,6 +189,9 @@ pub enum PhysicalPropsDescription {
     },
     OrderedUnion {
         num_inputs: usize,
+    },
+    Recursive {
+        num_external_inputs: usize,
     },
     UnorderedUnion {
         num_inputs: usize,

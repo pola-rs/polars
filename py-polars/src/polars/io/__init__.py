@@ -7,7 +7,7 @@ from polars.io.csv import read_csv, scan_csv
 from polars.io.database import read_database, read_database_uri
 from polars.io.delta import read_delta, scan_delta
 from polars.io.external_reader.api import scan_external_reader
-from polars.io.iceberg import scan_iceberg
+from polars.io.iceberg import delete_iceberg, scan_iceberg
 from polars.io.ipc import read_ipc, read_ipc_schema, read_ipc_stream, scan_ipc
 from polars.io.json import read_json
 from polars.io.lance import scan_lance
@@ -15,6 +15,7 @@ from polars.io.lines import read_lines, scan_lines
 from polars.io.ndjson import read_ndjson, scan_ndjson
 from polars.io.parquet import (
     ParquetDecryptionProperties,
+    ParquetEncryptionProperties,
     read_parquet,
     read_parquet_metadata,
     read_parquet_schema,
@@ -31,8 +32,10 @@ from polars.io.spreadsheet import read_excel, read_ods
 
 __all__ = [
     "defer",
+    "delete_iceberg",
     "FileProviderArgs",
     "ParquetDecryptionProperties",
+    "ParquetEncryptionProperties",
     "PartitionBy",
     "read_avro",
     "read_clipboard",

@@ -4,7 +4,6 @@ use parking_lot::Mutex;
 use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
-use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet, SortMultipleOptions};
 use polars_core::scalar::Scalar;
@@ -12,7 +11,7 @@ use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::{SchemaExtPl, config};
 use polars_defs::join::{JoinType, MaintainOrderJoin};
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_io::external_reader::ExternalReaderBuilder;
@@ -22,6 +21,7 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::prune::prune_plan;
 use polars_plan::plans::{
     AExpr, DynamicPred, FunctionIR, IR, IRAggExpr, LiteralValue, window_exprs_match_keys,
     write_ir_non_recursive,
@@ -50,10 +50,11 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::recursive::{RecursiveInputs, RecursiveStep};
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{
     ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
-    is_elementwise_rec_cached, lower_exprs,
+    input_height_expr, is_elementwise_rec_cached, lower_exprs,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::unique_column_name;
@@ -174,8 +175,6 @@ pub(crate) fn add_row_idx_sort_key(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut DenseSlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
-    _broadcast_bools(by_column.len(), &mut sort_options.descending);
-    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
     let row_idx_name = unique_column_name();
     let stream = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
 
@@ -227,6 +226,8 @@ pub(crate) fn build_top_k_stream(
 pub struct StreamingLowerIRContext<'a> {
     pub prepare_visualization: bool,
     pub sortedness: &'a IRPlanSorted,
+    /// The working tables and caches whose values a recursive query holds in this round.
+    pub recursive_inputs: Option<&'a RecursiveInputs>,
 }
 
 #[recursive::recursive]
@@ -505,6 +506,59 @@ fn lower_ir_inner(
                 sinks.push(phys_node_stream.node);
             }
             PhysNodeKind::SinkMultiple { sinks }
+        },
+
+        IR::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => {
+            let anchor = *anchor;
+            let step = *step;
+            let id = *id;
+            let external_cache_nodes =
+                recursive_step_external_caches(step, round_local_caches.clone(), ir_arena);
+            let step_plan = round_plan(step, &external_cache_nodes, ir_arena, expr_arena);
+            let mut external_caches = Vec::new();
+            let mut externals = Vec::new();
+            for node in external_cache_nodes {
+                let IR::Cache { id, .. } = ir_arena.get(node) else {
+                    unreachable!()
+                };
+                if !external_caches.contains(id) {
+                    external_caches.push(*id);
+                    externals.push(node);
+                }
+            }
+
+            let anchor = lower_ir!(anchor)?;
+            let externals = externals
+                .into_iter()
+                .map(|node| lower_ir!(node))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            PhysNodeKind::Recursive {
+                anchor,
+                externals,
+                step: Arc::new(RecursiveStep {
+                    id,
+                    root: step_plan.lp_top,
+                    ir_arena: step_plan.lp_arena,
+                    expr_arena: step_plan.expr_arena,
+                    external_caches,
+                    outer_inputs: ctx.recursive_inputs.cloned().unwrap_or_default(),
+                }),
+            }
+        },
+
+        IR::WorkingTableScan { id, .. } => match ctx.recursive_inputs.and_then(|i| i.get(id)) {
+            Some(frames) => PhysNodeKind::SpillFrameSource {
+                frames: frames.clone(),
+                schema: output_schema.clone(),
+            },
+            None => {
+                polars_bail!(ComputeError: "working table read outside of its recursive query")
+            },
         },
 
         #[cfg(feature = "merge_sorted")]
@@ -1456,18 +1510,23 @@ fn lower_ir_inner(
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
-                // So we add dummy expressions before lowering and remove them afterwards.
-
-                let mut aug_left_on = left_on.clone();
-                for name in phys_left.output_schema(phys_sm).iter_names() {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-                }
-                let mut aug_right_on = right_on.clone();
-                for name in phys_right.output_schema(phys_sm).iter_names() {
-                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
-                    aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
-                }
+                // So we add dummy expressions before lowering and remove them afterwards. An input
+                // without columns gets an expression that keeps its height.
+                let mut augment_keys = |on: &Vec<ExprIR>, input: PhysStream| {
+                    let mut aug_on = on.clone();
+                    let input_schema = input.output_schema(phys_sm);
+                    for name in input_schema.iter_names() {
+                        let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                        aug_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                    }
+                    if input_schema.is_empty() {
+                        let height = input_height_expr(input_schema, expr_arena);
+                        aug_on.push(ExprIR::new(height, OutputName::Alias(unique_column_name())));
+                    }
+                    aug_on
+                };
+                let aug_left_on = augment_keys(&left_on, phys_left);
+                let aug_right_on = augment_keys(&right_on, phys_right);
 
                 let (mut trans_input_left, mut trans_left_on) = lower_exprs(
                     phys_left,
@@ -1569,15 +1628,32 @@ fn lower_ir_inner(
                     #[cfg(feature = "asof_join")]
                     _ if use_streaming_asof_join => {
                         assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
+                        let tmp_right_key_col = tmp_right_col_names.pop().unwrap();
+                        // Right rows with a null key never match, and the binary searches in
+                        // the node rely on a key without nulls.
+                        let right_key = tmp_right_key_col
+                            .clone()
+                            .unwrap_or_else(|| right_on_names[0].clone());
+                        let predicate = AExprBuilder::col(right_key, expr_arena)
+                            .is_not_null(expr_arena)
+                            .expr_ir_unnamed();
+                        let input_right = build_filter_stream(
+                            trans_input_right,
+                            predicate,
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        )?;
                         phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::AsOfJoin {
                                 input_left: trans_input_left,
-                                input_right: trans_input_right,
+                                input_right,
                                 left_on: left_on_names[0].clone(),
                                 right_on: right_on_names[0].clone(),
                                 tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
-                                tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
+                                tmp_right_key_col,
                                 by_descending,
                                 by_nulls_last,
                                 args: args.clone(),
@@ -2173,4 +2249,76 @@ fn lower_subtree_to_inmem_engine(
             format_str,
         },
     ))))
+}
+
+/// The reads of the caches in the step of a recursive query that are computed once for the whole
+/// query. A cache is computed again in every round if a recursive query around it lists it in its
+/// `round_local_caches`.
+fn recursive_step_external_caches(
+    step: Node,
+    round_local_caches: Arc<[UniqueId]>,
+    ir_arena: &Arena<IR>,
+) -> Vec<Node> {
+    let mut out = Vec::new();
+    let mut seen_caches = PlHashSet::default();
+    let mut seen_reads = PlHashSet::default();
+    let mut stack = vec![(step, vec![round_local_caches])];
+    while let Some((node, owners)) = stack.pop() {
+        match ir_arena.get(node) {
+            IR::Cache { input, id } => {
+                if !owners.iter().any(|caches| caches.contains(id)) {
+                    if seen_reads.insert(node) {
+                        out.push(node);
+                    }
+                } else if seen_caches.insert(*id) {
+                    stack.push((*input, owners));
+                }
+            },
+            IR::Recursive {
+                anchor,
+                step,
+                round_local_caches,
+                ..
+            } => {
+                stack.push((*anchor, owners.clone()));
+                let mut owners = owners;
+                owners.push(round_local_caches.clone());
+                stack.push((*step, owners));
+            },
+            ir => stack.extend(ir.inputs().map(|input| (input, owners.clone()))),
+        }
+    }
+    out
+}
+
+/// Copies the step of a recursive query for its rounds. The caches that are computed once become
+/// reads of their values, so the plans that compute them are not copied into every round.
+fn round_plan(
+    step: Node,
+    external_cache_nodes: &[Node],
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> IRPlan {
+    let caches: Vec<IR> = external_cache_nodes
+        .iter()
+        .map(|&node| {
+            let IR::Cache { id, input } = ir_arena.get(node) else {
+                unreachable!()
+            };
+            let read = IR::WorkingTableScan {
+                id: *id,
+                schema: ir_arena.get(*input).schema(ir_arena).into_owned(),
+            };
+            ir_arena.replace(node, read)
+        })
+        .collect();
+    let plan = prune_plan(IRPlanRef {
+        lp_top: step,
+        lp_arena: ir_arena,
+        expr_arena,
+    });
+    for (&node, cache) in external_cache_nodes.iter().zip(caches) {
+        ir_arena.replace(node, cache);
+    }
+    plan
 }

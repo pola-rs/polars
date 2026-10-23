@@ -52,6 +52,10 @@ impl NumericFixedSizeListOp {
     pub fn floor_div() -> Self {
         Self(NumericOp::FloorDiv)
     }
+
+    pub fn trunc_div() -> Self {
+        Self(NumericOp::TruncDiv)
+    }
 }
 
 impl NumericFixedSizeListOp {

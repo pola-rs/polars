@@ -76,6 +76,11 @@ pub fn start_single_file_sink_pipeline(
     let file_schema = input_schema;
     let verbose = polars_core::config::verbose();
 
+    // Created before the file is opened, so that invalid options don't leave an
+    // empty file behind.
+    let file_writer_starter: Arc<dyn FileWriterStarter> =
+        create_file_writer_starter(&file_format, &file_schema, bytes_bufferer_config)?;
+
     let file_open_task = {
         let io_metrics = io_metrics.clone();
         let sinked_path_info_entry = sinked_path_info_entry.clone();
@@ -99,8 +104,6 @@ pub fn start_single_file_sink_pipeline(
     };
     let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);
 
-    let file_writer_starter: Arc<dyn FileWriterStarter> =
-        create_file_writer_starter(&file_format, &file_schema, bytes_bufferer_config)?;
     let target_sink_morsel_size = file_writer_starter.target_sink_morsel_size();
 
     if verbose {

@@ -21,11 +21,13 @@ use crate::nodes::io_sources::multi_scan::components::row_deletions::{
     DeletionFilesProvider, ExternalFilterMask, RowDeletionsInit,
 };
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
-use crate::nodes::io_sources::multi_scan::functions::is_compressed_source;
 use crate::nodes::io_sources::multi_scan::functions::resolve_slice::resolve_to_positive_slice;
+use crate::nodes::io_sources::multi_scan::functions::{
+    calc_max_concurrent_scan_bytes, is_compressed_source,
+};
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
-    ExtraOperations, InitializedPipelineState, ResolvedSliceInfo, StartReaderArgsConstant,
-    UnorderedFiles,
+    ExtraOperations, InitializedPipelineState, ReadBytesLimit, ResolvedSliceInfo,
+    StartReaderArgsConstant, UnorderedFiles,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::attach_reader_to_bridge::AttachReaderToBridge;
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::bridge::spawn_bridge;
@@ -513,6 +515,7 @@ async fn finish_initialize_multi_scan_pipeline(
             readers_init_iter,
             started_reader_tx,
             max_concurrent_scans,
+            read_bytes_limit: ReadBytesLimit::new(calc_max_concurrent_scan_bytes(num_pipelines)),
             unordered_files: unordered_files.clone(),
             skip_files_mask,
             extra_ops,
@@ -526,7 +529,6 @@ async fn finish_initialize_multi_scan_pipeline(
                 missing_columns_policy,
                 forbid_extra_columns: config.forbid_extra_columns.clone(),
                 num_pipelines,
-                max_concurrent_scans,
                 disable_morsel_split,
                 maintain_order: config.maintain_order,
                 last_morsel_pipelines,
