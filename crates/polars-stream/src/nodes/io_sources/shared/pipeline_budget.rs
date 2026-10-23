@@ -72,12 +72,11 @@ fn default_prefetch_kbytes_limit(num_pipelines: usize, scans: usize) -> usize {
     (4 * num_pipelines * target_chunk_size_kb / scans).max(get_download_chunk_size().div_ceil(1024))
 }
 
-/// A scan counted in `ACTIVE_SCANS`, with the kilobytes it holds from `WINDOW_POOL_KBYTES`.
-/// Released once, when the scan ends or its budget is dropped.
+/// A scan counted in `ACTIVE_SCANS`, with the kilobytes it holds from `WINDOW_POOL_KBYTES` (`None`
+/// once released). Released once, when the scan ends or its budget is dropped.
 #[derive(Debug)]
 struct ScanRegistration {
-    pool_kbytes: AtomicUsize,
-    released: AtomicBool,
+    pool_kbytes: Mutex<Option<usize>>,
 }
 
 impl ScanRegistration {
@@ -85,38 +84,15 @@ impl ScanRegistration {
     fn register() -> (Self, usize) {
         let scans = ACTIVE_SCANS.fetch_add(1, Ordering::Relaxed) + 1;
         let registration = Self {
-            pool_kbytes: AtomicUsize::new(0),
-            released: AtomicBool::new(false),
+            pool_kbytes: Mutex::new(Some(0)),
         };
         (registration, scans)
     }
 
-    /// Takes up to `kbytes` from the pool and returns the kilobytes granted.
-    fn draw(&self, kbytes: usize) -> usize {
-        if self.released.load(Ordering::SeqCst) {
-            return 0;
-        }
-        let free = WINDOW_POOL_KBYTES
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |free| {
-                (free > 0).then(|| free - free.min(kbytes))
-            })
-            .unwrap_or(0);
-        let granted = free.min(kbytes);
-        self.pool_kbytes.fetch_add(granted, Ordering::SeqCst);
-        // Raced with the release: give back what it missed.
-        if self.released.load(Ordering::SeqCst) {
-            WINDOW_POOL_KBYTES
-                .fetch_add(self.pool_kbytes.swap(0, Ordering::SeqCst), Ordering::SeqCst);
-            return 0;
-        }
-        granted
-    }
-
     fn release(&self) {
-        if !self.released.swap(true, Ordering::SeqCst) {
+        if let Some(kbytes) = self.pool_kbytes.lock().unwrap().take() {
             ACTIVE_SCANS.fetch_sub(1, Ordering::Relaxed);
-            WINDOW_POOL_KBYTES
-                .fetch_add(self.pool_kbytes.swap(0, Ordering::SeqCst), Ordering::SeqCst);
+            WINDOW_POOL_KBYTES.fetch_add(kbytes, Ordering::Relaxed);
         }
     }
 }
@@ -153,7 +129,6 @@ pub struct PipelineBudget {
     /// In-flight budget of the store the scan reads from, attached by the first cloud reader.
     inflight: Arc<OnceLock<Arc<InFlightBudget>>>,
     registration: Arc<ScanRegistration>,
-    growing: Arc<Mutex<()>>,
     last_reported: Arc<Mutex<Instant>>,
     report_interval: Duration,
 }
@@ -185,7 +160,6 @@ impl PipelineBudget {
             num_pipelines,
             inflight: Arc::new(OnceLock::new()),
             registration: Arc::new(registration),
-            growing: Arc::default(),
             last_reported: Arc::new(Mutex::new(Instant::now())),
             report_interval: Duration::from_millis(100),
         }
@@ -207,35 +181,32 @@ impl PipelineBudget {
         }
     }
 
-    /// Marks the scan as ordered, once per budget (shared by clones): unless set by an env var, the
-    /// count limit becomes `ORDERED_COUNT_LIMIT` for a scan with an in-flight budget and grows by
-    /// `ORDERED_LOCAL_COUNT_FACTOR` otherwise; the window grows by the reorder headroom. Call
-    /// before sizing anything from `count_limit()`.
-    pub(crate) fn set_ordered(&self, has_inflight: bool) {
-        if self.ordered.swap(true, Ordering::AcqRel) || !self.can_grow_count {
-            return;
-        }
-        let count_limit = if has_inflight {
-            ORDERED_COUNT_LIMIT
-        } else {
-            self.count_limit()
-                .saturating_mul(ORDERED_LOCAL_COUNT_FACTOR)
-                .min(Self::MAX_DEFAULT_COUNT_LIMIT)
-        };
-        let prev = self.count_limit.fetch_max(count_limit, Ordering::AcqRel);
-        self.count.add_permits(count_limit.saturating_sub(prev));
+    /// Per file, before sizing anything from `count_limit()`. The window grows with the first
+    /// in-flight budget of the scan's store. For an ordered scan, unless set by an env var, the count
+    /// limit becomes `ORDERED_COUNT_LIMIT` once a file has an in-flight budget, and grows by
+    /// `ORDERED_LOCAL_COUNT_FACTOR` on the first file otherwise; the window grows by the reorder
+    /// headroom.
+    pub(crate) fn begin_file(&self, inflight: Option<Arc<InFlightBudget>>, maintain_order: bool) {
+        if maintain_order {
+            let first = !self.ordered.swap(true, Ordering::AcqRel);
+            if self.can_grow_count && (first || inflight.is_some()) {
+                let count_limit = if inflight.is_some() {
+                    ORDERED_COUNT_LIMIT
+                } else {
+                    self.count_limit()
+                        .saturating_mul(ORDERED_LOCAL_COUNT_FACTOR)
+                        .min(Self::MAX_DEFAULT_COUNT_LIMIT)
+                };
+                let prev = self.count_limit.fetch_max(count_limit, Ordering::AcqRel);
+                self.count.add_permits(count_limit.saturating_sub(prev));
 
-        if config::verbose() {
-            eprintln!(
-                "[PipelineBudget]: ordered scan: prefetch_limit: {prev} -> {}",
-                prev.max(count_limit)
-            );
+                if config::verbose() && count_limit > prev {
+                    eprintln!(
+                        "[PipelineBudget]: ordered scan: prefetch_limit: {prev} -> {count_limit}"
+                    );
+                }
+            }
         }
-    }
-
-    /// Lets the window grow with the in-flight budget of the scan's store. The first call with a
-    /// budget wins.
-    pub(crate) fn attach_inflight(&self, inflight: Option<Arc<InFlightBudget>>) {
         if let (true, Some(inflight)) = (self.can_grow_kbytes, inflight) {
             let _ = self.inflight.set(inflight);
         }
@@ -246,9 +217,6 @@ impl PipelineBudget {
     /// what the count limit holds at this fetch size. Never shrinks.
     fn grow_window(&self, n_bytes: usize) {
         let Some(inflight) = self.inflight.get() else {
-            return;
-        };
-        let Ok(_growing) = self.growing.try_lock() else {
             return;
         };
 
@@ -262,6 +230,12 @@ impl PipelineBudget {
             .saturating_add((self.num_pipelines + 1).saturating_mul(n_bytes))
             .min(self.count_limit().saturating_mul(n_bytes));
 
+        // Held while growing: concurrent fetches see the grown limit, and a release after the scan
+        // ends returns all drawn kilobytes.
+        let mut registration = self.registration.pool_kbytes.lock().unwrap();
+        let Some(pool_kbytes) = registration.as_mut() else {
+            return;
+        };
         let kbytes_limit = self.kbytes_limit();
         let Some(missing) = target_bytes
             .div_ceil(1 << 10)
@@ -270,10 +244,16 @@ impl PipelineBudget {
         else {
             return;
         };
-        let granted = self.registration.draw(missing);
+        let free = WINDOW_POOL_KBYTES
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |free| {
+                (free > 0).then(|| free - free.min(missing))
+            })
+            .unwrap_or(0);
+        let granted = free.min(missing);
         if granted == 0 {
             return;
         }
+        *pool_kbytes += granted;
         self.kbytes_limit.fetch_add(granted, Ordering::AcqRel);
         self.kbytes.add_permits(granted);
 
