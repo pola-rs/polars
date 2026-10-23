@@ -450,9 +450,8 @@ struct AimdState {
     prev_resp_succeeded: u64,
     prev_resp_throttled: u64,
 
-    // Search follower: start of the current interval, pacer statistics at its start, the demand
-    // measured over the last interval (requests/s), and rate raises since the last tick.
-    follow_start: Option<Instant>,
+    // Search follower: pacer statistics at the start of the current interval, the demand measured
+    // over the last interval (requests/s), and rate raises since the last tick.
     follow_prev_admitted: u64,
     follow_prev_throttled: u64,
     demand: Option<f64>,
@@ -565,7 +564,6 @@ impl AdaptiveRateController {
             prev_denied: 0,
             prev_resp_succeeded: 0,
             prev_resp_throttled: 0,
-            follow_start: None,
             follow_prev_admitted: 0,
             follow_prev_throttled: 0,
             demand: None,
@@ -601,7 +599,6 @@ impl AdaptiveRateController {
             let mut state = self.state.lock().unwrap();
             state.window_start = Some(Instant::now());
             if self.config.follow_factor.is_some() {
-                state.follow_start = state.window_start;
                 self.signal
                     .follow_end_ns
                     .store(now_ns + FOLLOW_INTERVAL.as_nanos() as u64, Relaxed);
@@ -649,8 +646,7 @@ impl AdaptiveRateController {
         });
         let (anchor, beta) = cut_anchor(
             state.rate(),
-            state.success_rate,
-            goodput,
+            state.success_rate.or(goodput),
             state.demand,
             self.config.floor_rate,
         );
@@ -706,16 +702,16 @@ impl AdaptiveRateController {
     }
 
     // Search: every `FOLLOW_INTERVAL`, raise the rate to at least `follow_factor` x the demand of
-    // the last interval, so that the limiter stays ahead of demand until the first throttle.
+    // the last interval (at most the ceiling), so that the limiter stays ahead of demand until the
+    // first throttle.
     fn follow_demand(&self) {
         let Some(factor) = self.config.follow_factor else {
             return;
         };
         let mut state = self.state.lock().unwrap();
-        let now = Instant::now();
 
         // Another response may have run the check while we waited on the lock.
-        if now.duration_since(state.follow_start.unwrap()) < FOLLOW_INTERVAL {
+        if self.now_ns() < self.signal.follow_end_ns.load(Relaxed) {
             return;
         }
 
@@ -725,7 +721,6 @@ impl AdaptiveRateController {
         let throttled = self.signal.resp_throttled.load(Relaxed);
         let win_throttled = throttled.saturating_sub(state.follow_prev_throttled);
         state.follow_prev_throttled = throttled;
-        state.follow_start = Some(now);
         self.signal
             .follow_end_ns
             .store(self.now_ns() + FOLLOW_INTERVAL.as_nanos() as u64, Relaxed);
@@ -734,7 +729,7 @@ impl AdaptiveRateController {
         let demand = win_admitted as f64 / FOLLOW_INTERVAL.as_secs_f64();
         state.demand = Some(demand);
         if matches!(state.regime, Regime::Search) && win_throttled == 0 {
-            let rate = follow_rate(state.rate(), demand, factor, self.config.ceiling_rate);
+            let rate = (factor * demand).min(self.config.ceiling_rate);
             if rate > state.rate() {
                 state.set_rate(rate);
                 state.follow_raises += 1;
@@ -890,22 +885,16 @@ impl AdaptiveRateController {
     }
 }
 
-/// Search follower: at least `factor` x `demand`, at most `ceiling`; never lowers `rate`.
-fn follow_rate(rate: f64, demand: f64, factor: f64, ceiling: f64) -> f64 {
-    rate.max((factor * demand).min(ceiling))
-}
-
-/// Anchor and decrease factor of a cut: the success-rate EWMA; without one (a throttle before the
-/// first settled tick) the goodput so far; without either, the measured demand or the rate, with
-/// the larger decrease. Never above the rate.
+/// Anchor and decrease factor of a cut: the observed success rate (the EWMA, or before the first
+/// settled tick the goodput so far); without one, the measured demand or the rate, with the larger
+/// decrease. Never above the rate.
 fn cut_anchor(
     rate: f64,
-    ewma: Option<f64>,
-    goodput: Option<f64>,
+    observed: Option<f64>,
     demand: Option<f64>,
     floor_rate: f64,
 ) -> (f64, f64) {
-    match ewma.or(goodput) {
+    match observed {
         Some(observed) => (rate.min(observed.max(floor_rate)), BETA),
         None => (
             rate.min(demand.unwrap_or(rate).max(floor_rate)),
@@ -918,13 +907,12 @@ fn cut_anchor(
 /// the inherited rate without one; otherwise it searches. A write controller tracks the learned
 /// ceiling if there is one.
 fn initial_regime(follows: bool, throttled: bool, last_max: Option<f64>, rate: f64) -> Regime {
-    match last_max {
-        _ if follows && throttled => Regime::Track {
-            anchor: last_max.unwrap_or(rate),
-        },
-        Some(anchor) if !follows => Regime::Track { anchor },
-        _ => Regime::Search,
-    }
+    let anchor = if follows {
+        throttled.then(|| last_max.unwrap_or(rate))
+    } else {
+        last_max
+    };
+    anchor.map_or(Regime::Search, |anchor| Regime::Track { anchor })
 }
 
 /// Grouped rate-limit controller as used by a logical object_store instance.
@@ -1191,25 +1179,11 @@ mod tests {
 
     #[test]
     fn follower_cut_anchor_and_initial_regime() {
-        assert_eq!(follow_rate(5000.0, 1400.0, 8.0, 50_000.0), 11_200.0);
-        assert_eq!(follow_rate(20_000.0, 1400.0, 8.0, 50_000.0), 20_000.0);
-        assert_eq!(follow_rate(5000.0, 10_000.0, 8.0, 50_000.0), 50_000.0);
-
-        let cut = |ewma, goodput, demand, rate| cut_anchor(rate, ewma, goodput, demand, 50.0);
-        assert_eq!(
-            cut(Some(900.0), Some(1500.0), Some(5000.0), 5000.0),
-            (900.0, BETA)
-        );
-        assert_eq!(
-            cut(None, Some(1500.0), Some(5000.0), 5000.0),
-            (1500.0, BETA)
-        );
-        assert_eq!(cut(None, Some(9000.0), None, 5000.0), (5000.0, BETA));
-        assert_eq!(
-            cut(None, None, Some(6000.0), 20_000.0),
-            (6000.0, BETA_NO_SIGNAL)
-        );
-        assert_eq!(cut(None, None, None, 5000.0), (5000.0, BETA_NO_SIGNAL));
+        let cut = |observed, demand, rate| cut_anchor(rate, observed, demand, 50.0);
+        assert_eq!(cut(Some(900.0), Some(5000.0), 5000.0), (900.0, BETA));
+        assert_eq!(cut(Some(9000.0), None, 5000.0), (5000.0, BETA));
+        assert_eq!(cut(None, Some(6000.0), 20_000.0), (6000.0, BETA_NO_SIGNAL));
+        assert_eq!(cut(None, None, 5000.0), (5000.0, BETA_NO_SIGNAL));
 
         // Reads after a cut, also before the first settled tick (no learned ceiling): Track.
         assert!(
