@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import IO, TYPE_CHECKING, Any, Literal, get_args
 
-from polars._dependencies import import_optional
+from polars._dependencies import import_optional, polars_cloud
 from polars._typing import EngineTypeName, ScalingMode
 from polars._utils.various import qualified_type_name
 from polars.lazyframe.engine import Engine
@@ -138,7 +138,7 @@ class RemoteEngine(Engine):
 
         # fail here rather than deep inside a sink
         import_optional(
-            "polars_cloud",
+            polars_cloud.__name__,
             err_prefix="remote engine requested, but required package",
             install_message="Please install using the command `pip install polars-cloud`",
         )

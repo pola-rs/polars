@@ -99,6 +99,7 @@ def _get_dependency_list() -> list[str]:
         "pandas",
         "polars_cloud",
         "polars_iceberg",
+        "polars_nanook",
         "pyarrow",
         "pydantic",
         "pyiceberg",
