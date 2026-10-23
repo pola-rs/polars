@@ -1,11 +1,11 @@
 mod dremel;
+mod levels_encoder;
 
 use dremel::{Level, Levels};
 use polars_arrow::array::Array;
 use polars_error::PolarsResult;
 
 use super::Nested;
-use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::read::levels::get_bit_width;
 use crate::parquet::write::Version;
 
@@ -44,15 +44,17 @@ fn write_levels<T: Level>(
     if max_level == 0 {
         return Ok(());
     }
-    let num_bits = get_bit_width(max_level as i16);
-    let levels = levels.iter().map(|&l| l.into());
+    let num_bits = get_bit_width(max_level as i16) as usize;
 
     match version {
         Version::V1 => write_levels_v1(buffer, |buffer: &mut Vec<u8>| {
-            encode::<u32, _, _>(buffer, levels, num_bits)?;
+            levels_encoder::encode(buffer, levels, num_bits);
             Ok(())
         }),
-        Version::V2 => Ok(encode::<u32, _, _>(buffer, levels, num_bits)?),
+        Version::V2 => {
+            levels_encoder::encode(buffer, levels, num_bits);
+            Ok(())
+        },
     }
 }
 
