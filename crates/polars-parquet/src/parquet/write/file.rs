@@ -59,7 +59,7 @@ pub(super) fn end_file<W: Write>(
 fn end_encrypted_file<W: Write>(
     writer: &mut W,
     metadata: &ThriftFileMetadata,
-    encryptor: &FileEncryptor,
+    encryptor: &mut FileEncryptor,
     schema: &SchemaDescriptor,
 ) -> ParquetResult<u64> {
     let mut metadata = metadata.clone();
@@ -92,7 +92,7 @@ fn end_encrypted_file<W: Write>(
 /// When the footer is in plaintext, column chunk metadata with redacted statistics is kept.
 fn encrypt_column_metadata(
     row_groups: &mut [RowGroup],
-    encryptor: &FileEncryptor,
+    encryptor: &mut FileEncryptor,
     schema: &SchemaDescriptor,
 ) -> ParquetResult<()> {
     let encrypt_footer = encryptor.properties().encrypt_footer();
@@ -112,8 +112,9 @@ fn encrypt_column_metadata(
             let Some(mut metadata) = column_chunk.meta_data.take() else {
                 continue;
             };
-            column_chunk.encrypted_column_metadata = Some(encryptor.encrypt_column_metadata(
+            column_chunk.encrypted_column_metadata = Some(encryptor.encrypt_column_module(
                 descriptor,
+                ModuleType::ColumnMetaData,
                 row_group_idx,
                 column_ordinal,
                 &metadata.to_thrift_bytes()?,
@@ -137,7 +138,7 @@ fn encrypt_column_metadata(
 /// is encrypted. Returns the number of bytes written.
 fn write_index<W: Write>(
     writer: &mut W,
-    encryptor: Option<&FileEncryptor>,
+    encryptor: Option<&mut FileEncryptor>,
     index: &impl WriteThrift,
     descriptor: &ColumnDescriptor,
     module_type: ModuleType,
@@ -165,9 +166,9 @@ fn write_index<W: Write>(
 
 /// Returns the file encryptor to use for a column, or `None` if the column isn't encrypted.
 fn column_encryptor<'a>(
-    encryptor: Option<&'a FileEncryptor>,
+    encryptor: Option<&'a mut FileEncryptor>,
     column: &ColumnDescriptor,
-) -> Option<&'a FileEncryptor> {
+) -> Option<&'a mut FileEncryptor> {
     encryptor.filter(|encryptor| encryptor.is_column_descriptor_encrypted(column))
 }
 
@@ -320,7 +321,7 @@ impl<W: Write> FileWriter<W> {
             self.schema.columns(),
             row_group,
             ordinal,
-            self.encryptor.as_ref(),
+            self.encryptor.as_mut(),
         )?;
         self.offset += size;
         self.row_groups.push(group);
@@ -343,7 +344,7 @@ impl<W: Write> FileWriter<W> {
         // compute file stats
         let num_rows = self.row_groups.iter().map(|group| group.num_rows).sum();
 
-        let encryptor = self.encryptor.as_ref();
+        let mut encryptor = self.encryptor.as_mut();
         let column_descriptors = self.schema.columns();
 
         if self.options.write_statistics {
@@ -360,7 +361,7 @@ impl<W: Write> FileWriter<W> {
                     let offset = self.offset;
                     self.offset += write_index(
                         &mut self.writer,
-                        encryptor,
+                        encryptor.as_deref_mut(),
                         &index,
                         descriptor,
                         ModuleType::ColumnIndex,
@@ -382,7 +383,7 @@ impl<W: Write> FileWriter<W> {
                 let offset = self.offset;
                 self.offset += write_index(
                     &mut self.writer,
-                    encryptor,
+                    encryptor.as_deref_mut(),
                     &serialize_offset_index(pages)?,
                     descriptor,
                     ModuleType::OffsetIndex,
@@ -406,7 +407,7 @@ impl<W: Write> FileWriter<W> {
             None,
         );
 
-        let len = match &self.encryptor {
+        let len = match &mut self.encryptor {
             None => end_file(&mut self.writer, &metadata)?,
             Some(encryptor) => {
                 end_encrypted_file(&mut self.writer, &metadata, encryptor, &self.schema)?

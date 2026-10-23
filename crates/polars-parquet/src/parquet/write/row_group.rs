@@ -78,7 +78,7 @@ pub(crate) fn write_row_group<
     descriptors: &[ColumnDescriptor],
     columns: DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>,
     ordinal: usize,
-    file_encryptor: Option<&FileEncryptor>,
+    mut file_encryptor: Option<&mut FileEncryptor>,
 ) -> ParquetResult<(RowGroup, Vec<Vec<PageWriteSpec>>, u64)>
 where
     W: Write,
@@ -91,11 +91,14 @@ where
     let columns = column_iter
         .enumerate()
         .map(|(column_ordinal, (descriptor, page_iter))| {
-            let encryption = file_encryptor.map(|file_encryptor| ColumnChunkEncryption {
-                file_encryptor,
-                row_group_idx: ordinal,
-                column_ordinal,
-            });
+            let encryption =
+                file_encryptor
+                    .as_deref_mut()
+                    .map(|file_encryptor| ColumnChunkEncryption {
+                        file_encryptor,
+                        row_group_idx: ordinal,
+                        column_ordinal,
+                    });
             let (column, page_specs, size) =
                 write_column_chunk(writer, offset, descriptor, page_iter?, encryption)?;
             offset += size;

@@ -23,7 +23,7 @@ use crate::parquet::page::{CompressedPage, PageType};
 
 /// The context needed to encrypt a column chunk.
 pub(crate) struct ColumnChunkEncryption<'a> {
-    pub file_encryptor: &'a FileEncryptor,
+    pub file_encryptor: &'a mut FileEncryptor,
     pub row_group_idx: usize,
     pub column_ordinal: usize,
 }
@@ -40,8 +40,10 @@ where
     ParquetError: From<E>,
     E: std::error::Error,
 {
-    let mut page_encryptor = encryption
+    let crypto_metadata = encryption
         .as_ref()
+        .and_then(|e| get_column_crypto_metadata(e.file_encryptor.properties(), descriptor));
+    let mut page_encryptor = encryption
         .map(|e| {
             e.file_encryptor
                 .page_encryptor(descriptor, e.row_group_idx, e.column_ordinal)
@@ -63,10 +65,7 @@ where
 
     let mut column_chunk = build_column_chunk(&specs, descriptor)?;
 
-    if let Some(encryption) = &encryption {
-        column_chunk.crypto_metadata =
-            get_column_crypto_metadata(encryption.file_encryptor.properties(), descriptor);
-    }
+    column_chunk.crypto_metadata = crypto_metadata;
 
     // write metadata, unless the column is encrypted, in which case the metadata is only
     // written to the footer.
