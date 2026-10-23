@@ -79,8 +79,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let prefetch_limit_env = env_nonzero_usize("POLARS_ROW_GROUP_PREFETCH_SIZE");
 
         // Bound the number of fetches in the pipeline.
-        // This bound goes together with the `prefetch_kbytes_limit` bound; it binds first for
-        // row groups smaller than `prefetch_kbytes_limit / prefetch_limit`.
+        // Together with `prefetch_kbytes_limit`; binds first for small row groups.
         // This limit should be at least as large as the max in-flight concurrency.
         let prefetch_limit = prefetch_limit_env.unwrap_or_else(|| {
             execution_state

@@ -377,8 +377,7 @@ impl FileReader for ParquetFileReader {
         let projected_arrow_fields = projected_arrow_fields()?.clone();
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
 
-        // Grow pipeline count budget for ordered scans to absorb variability in response times.
-        // This mitigates head-of-line blocking.
+        // Ordered scans get a larger count budget: partly offsets head-of-line blocking.
         if maintain_order {
             self.row_group_prefetch_sync
                 .pipeline_budget

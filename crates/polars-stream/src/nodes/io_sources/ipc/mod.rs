@@ -310,8 +310,7 @@ impl FileReader for IpcFileReader {
         // Prepare parameters for Prefetch
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
 
-        // Grow pipeline count budget for ordered scans to absorb variability in response times.
-        // This mitigates head-of-line blocking.
+        // Ordered scans get a larger count budget: partly offsets head-of-line blocking.
         if maintain_order {
             self.record_batch_prefetch_sync
                 .pipeline_budget

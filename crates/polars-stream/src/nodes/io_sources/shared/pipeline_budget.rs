@@ -50,7 +50,7 @@ pub struct PipelineBudget {
 }
 
 impl PipelineBudget {
-    /// Upper bound of the default count limit, also when grown for an ordered scan.
+    /// Cap of the default count limit, also after `grow_for_ordered`.
     pub(crate) const MAX_DEFAULT_COUNT_LIMIT: usize = 2048;
 
     pub fn new(count_limit: usize, kbytes_limit: usize, can_grow_for_ordered: bool) -> Self {
@@ -74,9 +74,8 @@ impl PipelineBudget {
         self.kbytes_limit
     }
 
-    /// Grows the count limit by `ORDERED_WINDOW_FACTOR`, once per budget (shared by clones); a
-    /// no-op if the count limit was set by an env var. Call before sizing anything from
-    /// `count_limit()`.
+    /// Grows the count limit by `ORDERED_WINDOW_FACTOR`, once per scan; not if set by an env var.
+    /// Call before sizing anything from `count_limit()`.
     pub(crate) fn grow_for_ordered(&self) {
         if !self.can_grow_for_ordered {
             return;
