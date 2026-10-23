@@ -200,7 +200,7 @@ pub struct FileWriter<W: Write> {
     page_specs: Vec<Vec<Vec<PageWriteSpec>>>,
     /// Used to store the current state for writing the file
     state: State,
-    // when the file is written, metadata becomes available
+    // when the file is written, metadata becomes available, unless the file is encrypted
     metadata: Option<ThriftFileMetadata>,
     encryptor: Option<FileEncryptor>,
 }
@@ -233,14 +233,12 @@ impl<W: Write> FileWriter<W> {
         &self.schema
     }
 
-    /// Returns the [`ThriftFileMetadata`]. This is Some iff the [`Self::end`] has been called.
+    /// Returns the [`ThriftFileMetadata`]. This is Some iff the [`Self::end`] has been called
+    /// and the file is not encrypted. Encrypted files return None, as their plaintext metadata
+    /// would expose information about encrypted columns, such as statistics.
     ///
     /// This is used to write the metadata as a separate Parquet file, usually when data
     /// is partitioned across multiple files.
-    ///
-    /// For encrypted files, this is the plaintext metadata as it was before
-    /// encryption, and it may contain sensitive information like statistics of encrypted
-    /// columns. Callers are responsible for handling this appropriately.
     pub fn metadata(&self) -> Option<&ThriftFileMetadata> {
         self.metadata.as_ref()
     }
@@ -415,7 +413,9 @@ impl<W: Write> FileWriter<W> {
             },
         };
         self.state = State::Finished;
-        self.metadata = Some(metadata);
+        if self.encryptor.is_none() {
+            self.metadata = Some(metadata);
+        }
         Ok(self.offset + len)
     }
 
@@ -426,8 +426,12 @@ impl<W: Write> FileWriter<W> {
 
     /// Returns the underlying writer and [`ThriftFileMetadata`]
     /// # Panics
-    /// This function panics if [`Self::end`] has not yet been called
+    /// This function panics if [`Self::end`] has not yet been called, or if the file is encrypted
     pub fn into_inner_and_metadata(self) -> (W, ThriftFileMetadata) {
-        (self.writer, self.metadata.expect("File to have ended"))
+        (
+            self.writer,
+            self.metadata
+                .expect("File to have ended and not be encrypted"),
+        )
     }
 }

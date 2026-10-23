@@ -29,6 +29,15 @@ const NUM_ROW_GROUPS: usize = 2;
 
 /// Write a file with two Int64 columns, `a` and `b`, and multiple row groups.
 fn write_file(encryption_properties: Arc<FileEncryptionProperties>) -> Vec<u8> {
+    write_file_with_writer(Some(encryption_properties))
+        .into_inner()
+        .into_inner()
+}
+
+/// Write the file from [`write_file`], returning the ended writer.
+fn write_file_with_writer(
+    encryption_properties: Option<Arc<FileEncryptionProperties>>,
+) -> FileWriter<Cursor<Vec<u8>>> {
     let schema = ArrowSchema::from_iter(
         ["a", "b"].map(|name| Field::new(name.into(), ArrowDataType::Int64, true)),
     );
@@ -56,14 +65,14 @@ fn write_file(encryption_properties: Arc<FileEncryptionProperties>) -> Vec<u8> {
         Cursor::new(vec![]),
         schema.clone(),
         options,
-        Some(encryption_properties),
+        encryption_properties,
     )
     .unwrap();
     for row_group in row_groups {
         writer.write(100, row_group.unwrap()).unwrap();
     }
     writer.end(None).unwrap();
-    writer.into_inner().into_inner()
+    writer
 }
 
 fn read_metadata(
@@ -97,6 +106,23 @@ fn read_index_module(data: &[u8], offset: Option<i64>, length: Option<i32>) -> V
 
 fn decode<T: ReadThrift>(bytes: &[u8]) -> T {
     T::read_from_in_protocol(&mut TCompactInputProtocol::new(bytes, usize::MAX)).unwrap()
+}
+
+#[test]
+fn test_no_plaintext_metadata_for_encrypted_file() {
+    assert!(write_file_with_writer(None).metadata().is_some());
+
+    for plaintext_footer in [false, true] {
+        let properties = FileEncryptionProperties::builder(FOOTER_KEY.to_vec())
+            .with_plaintext_footer(plaintext_footer)
+            .build()
+            .unwrap();
+        assert!(
+            write_file_with_writer(Some(properties))
+                .metadata()
+                .is_none()
+        );
+    }
 }
 
 #[test]

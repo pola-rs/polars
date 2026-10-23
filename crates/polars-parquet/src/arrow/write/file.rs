@@ -38,6 +38,7 @@ impl<W: Write> FileWriter<W> {
         &self.schema
     }
 
+    /// The metadata of the written file. None until the file has ended, and never set for encrypted files.
     pub fn metadata(&self) -> Option<&ThriftFileMetadata> {
         self.writer.metadata()
     }

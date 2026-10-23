@@ -71,17 +71,25 @@ impl IOWriter {
         }
 
         parquet_writer.finish()?;
+        // Encrypted files have no plaintext metadata to expose.
         let parquet_metadata = {
             let writer = parquet_writer.get_writer().lock().unwrap();
-            let mut out = Vec::new();
-            write_metadata_sidecar(&mut out, writer.metadata().unwrap())?;
-            out
+            writer
+                .metadata()
+                .map(|metadata| {
+                    let mut out = Vec::new();
+                    write_metadata_sidecar(&mut out, metadata)?;
+                    PolarsResult::Ok(out)
+                })
+                .transpose()?
         };
         drop(parquet_writer);
         buffered_file.flush()?;
         drop(buffered_file);
 
-        file.set_parquet_metadata(parquet_metadata);
+        if let Some(parquet_metadata) = parquet_metadata {
+            file.set_parquet_metadata(parquet_metadata);
+        }
         file.close(sync_on_close).await?;
 
         Ok(())
