@@ -532,17 +532,23 @@ def test_create_catalog_table_missing_namespace(
 def test_create_catalog_table_without_warehouse(
     lake: CountingCatalog, tmp_path: Path
 ) -> None:
+    from pyiceberg.exceptions import TableAlreadyExistsError
+
     catalog = SqlCatalog("bare", uri=f"sqlite:///{tmp_path / 'bare.db'}")
     catalog.create_namespace("ns")
     ctx = pl.SQLContext().register_catalog("bare", catalog, default=True)
-    with pytest.raises(
-        ValueError,
-        match=r"table 'ns\.t' could not be created: catalog 'bare' has no warehouse",
-    ):
+    # the catalog's error, with the table named in a note
+    with pytest.raises(ValueError) as exc:
         ctx.execute("CREATE TABLE ns.t (x INT)")
+    assert exc.value.__notes__ == [
+        "table 'ns.t' could not be created: catalog table 'ns.t'"
+    ]
     location = f"file://{tmp_path / 't'}"
     ctx.execute(f"CREATE TABLE ns.t (x INT) WITH ('location' = '{location}')")
     assert catalog.load_table(("ns", "t")).location() == location
+    # an existing table, though the catalog would first report the missing location
+    with pytest.raises(TableAlreadyExistsError, match=r"table 'ns\.t' already exists"):
+        ctx.execute("CREATE TABLE ns.t (x INT)")
 
 
 @pytest.mark.write_disk

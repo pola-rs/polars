@@ -922,8 +922,15 @@ def _create_catalog_table(
     schema, _ = _create_table_schema(
         Schema(ddl["schema"]), required=ddl["required"], context="CREATE TABLE"
     )
-    if ddl["if_not_exists"] and catalog.table_exists(identifier):
-        return response
+    # checked first, as some catalogs report other errors before an existing table
+    if catalog.table_exists(identifier):
+        if ddl["if_not_exists"]:
+            return response
+        msg = (
+            f"table '{name}' already exists: catalog table '{table_name}' "
+            "could not be created"
+        )
+        raise TableAlreadyExistsError(msg)
     try:
         catalog.create_table(
             identifier,
@@ -953,12 +960,6 @@ def _create_catalog_table(
                 "case-sensitive"
             )
             raise NoSuchNamespaceError(msg) from error
-        if "No default path" in str(error) or "location required" in str(error):
-            msg = (
-                f"{prefix}: catalog '{ddl['catalog']}' has no warehouse location; "
-                "set `WITH ('location' = '...')`"
-            )
-            raise ValueError(msg) from error
         error.add_note(f"{prefix}: catalog table '{table_name}'")
         raise
     return response
