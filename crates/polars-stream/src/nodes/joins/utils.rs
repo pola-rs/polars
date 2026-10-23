@@ -99,6 +99,9 @@ impl SpillFrameSearchBuffer {
     pub(super) async fn push_sf(&mut self, sf: SpillFrame) {
         assert!(!self.frozen);
         let added_rows = sf.height();
+        if added_rows == 0 {
+            return;
+        }
         let offset = match self.sfs_at_offsets.last_key_value() {
             Some((last_key, last_sf)) => last_key + last_sf.height(),
             None => 0,

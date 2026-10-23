@@ -96,6 +96,7 @@ dependencies = [
  "strum_macros 0.27.2",
  "thiserror",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -3121,7 +3122,6 @@ dependencies = [
  "strum_macros 0.28.0",
  "tokio",
  "version_check",
- "zstd",
 ]
 
 [[package]]
@@ -3346,6 +3346,7 @@ dependencies = [
  "polars-defs",
  "polars-io",
  "polars-json",
+ "polars-ooc",
  "polars-ops",
  "polars-plan",
  "polars-row",
@@ -3613,7 +3614,6 @@ dependencies = [
  "snap",
  "streaming-decompression",
  "xxhash-rust",
- "zstd",
 ]
 
 [[package]]
@@ -3799,6 +3799,7 @@ name = "polars-sql"
 version = "0.55.1"
 dependencies = [
  "bitflags",
+ "chrono",
  "hex",
  "polars-compute",
  "polars-core",
@@ -3940,6 +3941,7 @@ dependencies = [
  "tokio",
  "uuid",
  "version_check",
+ "zstd",
 ]
 
 [[package]]
@@ -4645,9 +4647,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.14"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0527518605e68109d875e248ea259b6758801cf165e4b2c2733ae3b51f12535a"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -5897,18 +5899,18 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "1.0.9"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b96554aa2acc8ccdb7e1c9a58a7a68dd5d13bccc69cd124cb09406db612a1c9b"
+checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
 dependencies = [
  "rustls-pki-types",
 ]
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.9"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
 dependencies = [
  "rustls-pki-types",
 ]

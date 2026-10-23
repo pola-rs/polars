@@ -65,6 +65,9 @@ impl PyExpr {
     fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
+    fn trunc_div(&self, rhs: Self) -> PyResult<Self> {
+        Ok(self.inner.clone().trunc_div(rhs.inner).into())
+    }
     fn __neg__(&self) -> PyResult<Self> {
         Ok(self.inner.clone().neg().into())
     }
@@ -1120,6 +1123,9 @@ impl PyExpr {
     fn hash(&self, seed: u64) -> Self {
         self.inner.clone().hash(seed).into()
     }
+    fn mm3_hash(&self) -> Self {
+        self.inner.clone().mm3_hash().into()
+    }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()
             .with_desc(Some(descending))
@@ -1202,32 +1208,51 @@ impl PyExpr {
                 .filter(self.inner.clone())
                 .logical_plan
                 .to_alp()?;
-            let IR::Filter { predicate, .. } = plan.root() else {
-                polars_bail!(ComputeError: "expected a filter plan");
-            };
+            // The conversion splits a conjunction into stacked filters.
+            let mut predicates = vec![];
+            let mut node = plan.lp_top;
+            while let IR::Filter { input, predicate } = plan.lp_arena.get(node) {
+                predicates.push(predicate.node());
+                node = *input;
+            }
+            polars_ensure!(
+                !predicates.is_empty()
+                    && matches!(plan.lp_arena.get(node), IR::DataFrameScan { .. }),
+                ComputeError: "expected a filter plan"
+            );
             // The PyArrow `isin` only keeps `nulls_equal` through the haystack's
             // nulls, but e.g. PyIceberg evaluates membership as null for null
             // needles.
             #[cfg(feature = "is_in")]
-            if plan.expr_arena.iter(predicate.node()).any(|(_, ae)| {
-                matches!(
-                    ae,
-                    AExpr::Function {
-                        function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
-                            nulls_equal: true,
+            if predicates.iter().any(|&predicate| {
+                plan.expr_arena.iter(predicate).any(|(_, ae)| {
+                    matches!(
+                        ae,
+                        AExpr::Function {
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
+                                nulls_equal: true,
+                                ..
+                            }),
                             ..
-                        }),
-                        ..
-                    }
-                )
+                        }
+                    )
+                })
             }) {
                 return Ok(None);
             }
-            PolarsResult::Ok(predicate_to_pa(
-                predicate.node(),
-                &plan.expr_arena,
-                &schema.0,
-            ))
+            // Filters lower in the plan are applied first.
+            let converted = predicates
+                .iter()
+                .rev()
+                .map(|&predicate| predicate_to_pa(predicate, &plan.expr_arena, &schema.0))
+                .collect::<Option<Vec<_>>>();
+            PolarsResult::Ok(converted.map(|parts| {
+                if let [part] = parts.as_slice() {
+                    part.clone()
+                } else {
+                    format!("({})", parts.join(" & "))
+                }
+            }))
         })
     }
 

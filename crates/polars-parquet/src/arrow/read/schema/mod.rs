@@ -62,8 +62,9 @@ impl Default for SchemaInferenceOptions {
 
 /// Infers a [`ArrowSchema`] from parquet's [`FileMetadata`].
 ///
-/// This first looks for the metadata key `"ARROW:schema"`; if it does not exist, it converts the
-/// Parquet types declared in the file's Parquet schema to Arrow's equivalent.
+/// This converts the Parquet types declared in the file's Parquet schema to Arrow's equivalent.
+/// The Arrow schema stored under the metadata key `"ARROW:schema"`, if any, adds what the Parquet
+/// types cannot express, such as time zones and categorical types.
 ///
 /// # Error
 /// - Errors if the key `"ARROW:schema"` exists but is not correctly encoded.
@@ -86,10 +87,8 @@ pub fn infer_schema_with_options(
 
     let mut metadata = parse_key_value_metadata(file_metadata.key_value_metadata());
 
-    let mut schema = match read_schema_from_metadata(&mut metadata)? {
-        Some(schema) => schema,
-        None => parquet_to_arrow_schema_with_options(fields, options)?,
-    };
+    let arrow_hints = read_schema_from_metadata(&mut metadata)?;
+    let mut schema = parquet_to_arrow_schema_with_options(fields, options, arrow_hints.as_ref())?;
     apply_geo_metadata(&metadata, &mut schema);
     Ok(schema)
 }

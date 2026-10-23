@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
+import subprocess
+import sys
 import tempfile
 import textwrap
 from collections import OrderedDict
@@ -1046,3 +1049,44 @@ A,B
 def test_scan_csv_extra_columns_truncate_ragged_lines() -> None:
     with pytest.raises(ValueError):
         pl.scan_csv(b"", extra_columns="ignore", truncate_ragged_lines=False)
+
+
+@pytest.mark.parametrize("comment_prefix", [None, "#"])
+def test_scan_csv_wide_rows_30114(comment_prefix: str | None) -> None:
+    n_rows, n_cols = 50, 3000
+    df = pl.DataFrame(
+        {f"c{i}": pl.int_range(n_rows, eager=True) % 10 for i in range(n_cols)}
+    )
+    lf = pl.scan_csv(df.write_csv().encode(), comment_prefix=comment_prefix)
+
+    assert_frame_equal(lf.collect(), df)
+    assert_frame_equal(lf.select("c1", "c2999").collect(), df.select("c1", "c2999"))
+    assert_frame_equal(lf.head(3).collect(), df.head(3))
+
+
+@pytest.mark.write_disk
+def test_scan_csv_wide_rows_schema_inference_memory_30114(tmp_path: Path) -> None:
+    # Schema inference used to take memory quadratic in the number of reads (~0.8 GB).
+    path = tmp_path / "wide.csv"
+    pl.DataFrame({"a": ["x" * 300_000] * 100}).write_csv(path)
+
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import sys
+
+import polars as pl
+
+(_, path) = sys.argv
+
+assert pl.read_csv(path).shape == (100, 1)
+print("OK", end="")
+""",
+            str(path),
+        ],
+        env={**os.environ, "POLARS_OOMKILL_THRESHOLD_MB": "400"},
+    )
+
+    assert out == b"OK"

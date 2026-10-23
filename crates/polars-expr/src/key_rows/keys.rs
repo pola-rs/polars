@@ -1,20 +1,26 @@
 use std::hash::BuildHasher;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use polars_arrow::array::{PrimitiveArray, UInt64Array, View};
+use polars_arrow::array::{
+    BinaryViewArray, BooleanArray, PrimitiveArray, UInt64Array, Utf8ViewArray, View,
+};
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::utils::combine_validities_and_many;
 use polars_arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_compute::gather::bitmap::take_bitmap_unchecked;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_polars_type;
-use polars_utils::IdxSize;
+use polars_core::{
+    with_match_physical_integer_polars_type, with_match_physical_numeric_polars_type,
+};
 use polars_utils::hashing::folded_multiply;
 use polars_utils::total_ord::{canonical_f32, canonical_f64};
+use polars_utils::{IdxSize, format_pl_smallstr};
 
 use super::layout::{ColLayout, KeyRowLayout, bytes_eq};
-use crate::hash_keys::{for_each_hash_prehashed, for_each_hash_subset_prehashed};
+use crate::hash_keys::{
+    array_column, column_array, for_each_hash_prehashed, for_each_hash_subset_prehashed,
+};
 
 const HASH_MULTIPLE: u64 = 0x5851f42d4c957f2d;
 const VIEW_MULTIPLE: u64 = 0xd6e8feb86659fd93;
@@ -57,6 +63,23 @@ unsafe fn gather_buffer<T: Copy>(values: &Buffer<T>, idxs: &[IdxSize]) -> Buffer
         .collect()
 }
 
+/// The fixed-width values as values of `T`, which has their width.
+fn typed_values<T: NativeType>(values: &ColValues) -> Buffer<T> {
+    match values {
+        ColValues::W1(v) => v.clone().try_transmute().unwrap(),
+        ColValues::W2(v) => v.clone().try_transmute().unwrap(),
+        ColValues::W4(v) => v.clone().try_transmute().unwrap(),
+        ColValues::W8(v) => v.clone().try_transmute().unwrap(),
+        ColValues::W16(v) => v.clone().try_transmute().unwrap(),
+        ColValues::Bool(_) | ColValues::View(..) => unreachable!(),
+    }
+}
+
+/// The name of key column `i` in the frame form of the keys.
+fn key_column_name(i: usize) -> PlSmallStr {
+    format_pl_smallstr!("__POLARS_KEY_ROW_{i}")
+}
+
 #[inline(always)]
 fn fold_each(hashes: &mut [u64], validity: Option<&Bitmap>, mut f: impl FnMut(u64, usize) -> u64) {
     match validity {
@@ -80,6 +103,8 @@ pub(super) struct KeyColumn {
     pub(super) validity: Option<Bitmap>,
     /// Byte offset within the row.
     pub(super) offset: usize,
+    /// The total length of the values of a view column, set by the first size estimate.
+    bytes_len: OnceLock<usize>,
 }
 
 impl KeyColumn {
@@ -139,7 +164,67 @@ impl KeyColumn {
             values,
             validity,
             offset: col.offset,
+            bytes_len: OnceLock::new(),
         }
+    }
+
+    /// Estimated memory of the values and validity, in bytes.
+    fn estimated_size(&self) -> usize {
+        let values = match &self.values {
+            ColValues::Bool(b) => b.len().div_ceil(8),
+            ColValues::W1(v) => size_of_val(v.as_slice()),
+            ColValues::W2(v) => size_of_val(v.as_slice()),
+            ColValues::W4(v) => size_of_val(v.as_slice()),
+            ColValues::W8(v) => size_of_val(v.as_slice()),
+            ColValues::W16(v) => size_of_val(v.as_slice()),
+            ColValues::View(views, _) => {
+                let bytes_len = *self
+                    .bytes_len
+                    .get_or_init(|| views.iter().map(|v| v.length as usize).sum());
+                size_of_val(views.as_slice()) + bytes_len
+            },
+        };
+        values + self.validity.as_ref().map_or(0, |v| v.len().div_ceil(8))
+    }
+
+    /// The values and validity as a column of the physical dtype of `col`, which `new` turns
+    /// back into this column.
+    fn to_column(&self, name: PlSmallStr, col: &ColLayout) -> Column {
+        let validity = self.validity.clone();
+        let array = match (&self.values, &col.physical) {
+            // SAFETY: the views are valid for these buffers, and hold strings.
+            (ColValues::View(views, buffers), DataType::String) => unsafe {
+                Utf8ViewArray::new_unchecked_unknown_md(
+                    ArrowDataType::Utf8View,
+                    views.clone(),
+                    buffers.clone(),
+                    validity,
+                    None,
+                )
+                .boxed()
+            },
+            (ColValues::Bool(b), _) => {
+                BooleanArray::new(ArrowDataType::Boolean, b.clone(), validity).boxed()
+            },
+            // SAFETY: the views are valid for these buffers.
+            (ColValues::View(views, buffers), _) => unsafe {
+                BinaryViewArray::new_unchecked_unknown_md(
+                    ArrowDataType::BinaryView,
+                    views.clone(),
+                    buffers.clone(),
+                    validity,
+                    None,
+                )
+                .boxed()
+            },
+            (values, dt) => with_match_physical_numeric_polars_type!(dt, |$T| {
+                let values = typed_values::<<$T as PolarsNumericType>::Native>(values);
+                PrimitiveArray::new(dt.to_arrow(CompatLevel::newest()), values, validity).boxed()
+            }),
+        };
+        // SAFETY: the array has the physical dtype.
+        unsafe { Series::from_chunks_and_dtype_unchecked(name, vec![array], &col.physical) }
+            .into_column()
     }
 
     /// Folds this column into the hash of each row.
@@ -209,6 +294,7 @@ impl KeyColumn {
                 .as_ref()
                 .map(|v| take_bitmap_unchecked(v, idxs)),
             offset: self.offset,
+            bytes_len: OnceLock::new(),
         }
     }
 }
@@ -227,7 +313,7 @@ enum KeyData {
 /// rows of the layout.
 #[derive(Clone, Debug)]
 pub struct KeyRowKeys {
-    pub(super) layout: Arc<KeyRowLayout>,
+    pub(crate) layout: Arc<KeyRowLayout>,
     pub(crate) hashes: UInt64Array,
     /// Keys with a null, when nulls are not keys.
     pub(crate) validity: Option<Bitmap>,
@@ -287,6 +373,60 @@ impl KeyRowKeys {
 
     pub(crate) fn len(&self) -> usize {
         self.hashes.len()
+    }
+
+    /// Estimated memory of the keys and hashes, in bytes.
+    pub(crate) fn estimated_size(&self) -> usize {
+        let data = match &self.data {
+            KeyData::Columns(cols) => cols.iter().map(KeyColumn::estimated_size).sum(),
+            KeyData::Rows { rows, buffers } => {
+                size_of_val(rows.as_slice()) + buffers.iter().map(Vec::len).sum::<usize>()
+            },
+        };
+        size_of_val(self.hashes.values().as_slice())
+            + self.validity.as_ref().map_or(0, |v| v.len().div_ceil(8))
+            + data
+    }
+
+    /// The hashes, the validity (all set if there is none), and the key columns `k0`, `k1`, ...
+    /// in their physical dtypes, as a frame. Panics on keys in the row form (keys taken from a
+    /// hot table).
+    pub(crate) fn to_frame(&self) -> DataFrame {
+        let KeyData::Columns(cols) = &self.data else {
+            panic!("keys in the row form can not be converted to a frame");
+        };
+        let validity = match &self.validity {
+            Some(validity) => {
+                array_column("validity", BooleanArray::from(validity.clone()).boxed())
+            },
+            None => Column::new_scalar("validity".into(), Scalar::from(true), self.len()),
+        };
+        let mut columns = vec![
+            array_column("hashes", self.hashes.clone().boxed()),
+            validity,
+        ];
+        let key_columns = cols.iter().zip(&self.layout.cols).enumerate();
+        columns.extend(key_columns.map(|(i, (c, col))| c.to_column(key_column_name(i), col)));
+        DataFrame::new(self.len(), columns).unwrap()
+    }
+
+    /// Reads back keys of `layout` from the frame of `to_frame`.
+    pub(crate) fn from_frame(layout: Arc<KeyRowLayout>, df: &DataFrame) -> Self {
+        let validity = column_array::<BooleanArray>(df, "validity")
+            .values()
+            .clone();
+        let cols = layout
+            .cols
+            .iter()
+            .enumerate()
+            .map(|(i, col)| KeyColumn::new(df.column(&key_column_name(i)).unwrap(), col))
+            .collect();
+        Self {
+            layout,
+            hashes: column_array(df, "hashes"),
+            validity: Some(validity).filter(|v| v.unset_bits() > 0),
+            data: KeyData::Columns(cols),
+        }
     }
 
     /// Panics unless these keys have `layout`.

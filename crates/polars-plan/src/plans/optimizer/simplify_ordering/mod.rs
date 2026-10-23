@@ -308,12 +308,12 @@ impl SimplifyIRNodeOrder<'_> {
                     || eos.internally_observed_orders().contains(O::COLUMN)
                     || (*maintain_order
                         && keys_observable.contains(O::COLUMN)
-                        && !out_edge.is_unordered()))
+                        && (!out_edge.is_unordered() || options.slice.is_some())))
                 {
                     *in_edge = Edge::Unordered;
                 }
 
-                if out_edge.is_unordered()
+                if (out_edge.is_unordered() && options.slice.is_none())
                     || !*maintain_order
                     || (in_edge.is_unordered() && !keys_observable.contains(O::INDEPENDENT))
                 {
@@ -613,6 +613,8 @@ impl SimplifyIRNodeOrder<'_> {
             IR::Scan { .. }
             | IR::DataFrameScan { .. }
             | IR::UnoptimizedDispatch { .. }
+            | IR::Recursive { .. }
+            | IR::WorkingTableScan { .. }
             | IR::Resolver { .. } => {},
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         };

@@ -127,6 +127,20 @@ def test_streaming_cross_join_empty() -> None:
     assert out.columns == ["col1", "col1_right"]
 
 
+def test_streaming_cross_join_nullable_struct_probe() -> None:
+    # Each probe row is repeated once per build row, its validity included.
+    build = pl.LazyFrame({"a": [1, 2, 3]})
+    probe = pl.LazyFrame({"s": [{"x": 1}, None, {"x": 3}, None]})
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2, 3] * 4,
+            "s": [s for s in [{"x": 1}, None, {"x": 3}, None] for _ in range(3)],
+        }
+    )
+    out = build.join(probe, how="cross").collect(engine="streaming")
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
 def test_streaming_join_rechunk_12498() -> None:
     rows = pl.int_range(0, 2)
 
@@ -1057,3 +1071,18 @@ def test_streaming_join_unmatched_repeated_key_morsels(
     assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
     # At most a morsel per pipeline, there is one pipeline per thread.
     assert out.n_chunks() <= pl.thread_pool_size()
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+def test_streaming_join_keeps_height_of_input_without_columns(
+    how: Literal["inner", "left", "right", "full"],
+) -> None:
+    # Only `id` is selected, so the left input keeps no columns.
+    left = pl.LazyFrame({"x": [10, 20, 30, 40]})
+    right = pl.LazyFrame({"id": [1, 2], "f": [True, False]})
+    q = left.join_where(right, pl.col("f"), how=how).select("id")
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )

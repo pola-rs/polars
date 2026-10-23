@@ -5,6 +5,7 @@ SHELL=bash
 ifeq ($(VENV),)
 VENV := .venv
 endif
+PYTHON ?= python3
 
 RUNTIME_CARGO_TOML=py-polars/runtime/polars-runtime-32/Cargo.toml
 
@@ -75,7 +76,7 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 # directory; checking bin/python allows Make to better-detect/rebuild a broken venv
 $(VENV_BIN)/python:
 	@unset CONDA_PREFIX \
-	&& python3 -m venv $(VENV) \
+	&& $(PYTHON) -m venv $(VENV) \
 	&& $(MAKE) requirements
 
 .PHONY: .venv
@@ -86,7 +87,7 @@ $(VENV_BIN)/python:
 .PHONY: requirements
 requirements:  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
-	&& python3 -m venv $(VENV) --clear \
+	&& $(PYTHON) -m venv $(VENV) --clear \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
 	$(if $(EXTRA_REQUIREMENTS),&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode -r $(EXTRA_REQUIREMENTS)) \
 	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
@@ -164,11 +165,11 @@ check: update-cargo-env ## Run cargo check with all features
 
 .PHONY: clippy
 clippy: update-cargo-env ## Run clippy with all features
-	python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
+	$(PYTHON) tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
 
 .PHONY: clippy-default
 clippy-default: update-cargo-env ## Run clippy with default features
-	python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
+	$(PYTHON) tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
 
 .PHONY: fmt
 fmt: update-cargo-env ## Run autoformatting and linting

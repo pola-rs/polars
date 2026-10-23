@@ -223,7 +223,9 @@ fn comparison_cases(op: Operator) -> Option<u8> {
         Eq => CMP_EQ,
         NotEq => CMP_LT | CMP_GT,
         EqValidity | NotEqValidity | And | Or | Xor | LogicalAnd | LogicalOr | Plus | Minus
-        | Multiply | RustDivide | TrueDivide | FloorDivide | Modulus => return None,
+        | Multiply | RustDivide | TrueDivide | FloorDivide | TruncDivide | Modulus => {
+            return None;
+        },
     })
 }
 

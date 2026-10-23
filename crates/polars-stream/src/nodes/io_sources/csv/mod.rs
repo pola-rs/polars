@@ -324,6 +324,7 @@ impl FileReader for CsvFileReader {
                 let comment_prefix = options.parse_options.comment_prefix.clone();
 
                 let line_counter = CountLines::new(quote_char, eol_char, comment_prefix);
+                let num_projected_columns = projection.len();
 
                 let chunk_reader_result =
                     ChunkReader::try_new(options, used_schema, projection).map(Arc::new);
@@ -339,6 +340,7 @@ impl FileReader for CsvFileReader {
                             pre_slice,
                             needs_full_row_count,
                             num_pipelines,
+                            num_projected_columns,
                             task_metrics: line_batch_task_metrics,
                             verbose,
                         }

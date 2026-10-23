@@ -71,6 +71,8 @@ class IcebergCatalogTableDescriptor:
     # Used for table loads when set; `catalog_config` is the fallback after
     # unpickling, and for descriptors pickled without this field.
     catalog_: NoPickleOption[pyiceberg.catalog.Catalog] | None = None
+    # The table's name in SQL, for the error when it does not exist.
+    display_name: str | None = None
 
 
 # Catalog classes whose instances, and those of their subclasses, can load tables
@@ -112,6 +114,25 @@ def _load_static_table(
     return table
 
 
+def _load_catalog_table(
+    catalog: pyiceberg.catalog.Catalog, descriptor: IcebergCatalogTableDescriptor
+) -> pyiceberg.table.Table:
+    from pyiceberg.exceptions import NoSuchTableError
+
+    identifier = descriptor.table_identifier
+    try:
+        return catalog.load_table(identifier)
+    except NoSuchTableError as error:
+        if descriptor.display_name is None:
+            raise
+        name = identifier if isinstance(identifier, str) else ".".join(identifier)
+        msg = (
+            f"relation '{descriptor.display_name}' not found: catalog table '{name}' "
+            f"could not be loaded ({error}); catalog identifiers are case-sensitive"
+        )
+        raise NoSuchTableError(msg) from error
+
+
 @dataclass(kw_only=True)
 class IcebergTableWrap:
     table_: NoPickleOption[pyiceberg.table.Table]
@@ -147,7 +168,7 @@ class IcebergTableWrap:
                 elif verbose():
                     eprint("IcebergTableWrap: reuse catalog instance")
 
-                table = catalog.load_table(self.table_descriptor_.table_identifier)
+                table = _load_catalog_table(catalog, self.table_descriptor_)
             else:
                 table = _load_static_table(
                     self.table_descriptor_, self.iceberg_storage_properties or {}
@@ -211,7 +232,7 @@ class IcebergCatalogConfig:
     def _from_api_parameter_or_environment_default(
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None,
         *,
-        fn_name: Literal["scan_iceberg", "sink_iceberg"],
+        fn_name: Literal["scan_iceberg", "sink_iceberg", "register_catalog"],
     ) -> tuple[IcebergCatalogConfig, pyiceberg.catalog.Catalog | None]:
         """Return the catalog config, and the catalog instance when one is known."""
         import pyiceberg.catalog

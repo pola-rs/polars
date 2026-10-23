@@ -231,10 +231,11 @@ pub(super) fn to_aexpr_impl(
             sort_options,
         } => {
             let (expr, output_name) = recurse_arc!(expr)?;
-            let by = by
+            let by: Vec<Node> = by
                 .into_iter()
                 .map(|e| Ok(recurse!(e)?.0))
                 .collect::<PolarsResult<_>>()?;
+            let sort_options = sort_options.expand_flags(by.len())?;
 
             (
                 AExpr::SortBy {

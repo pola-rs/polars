@@ -519,7 +519,7 @@ pub(crate) fn predicate_non_null_column_outputs(
 
                 match op {
                     Eq | NotEq | Lt | LtEq | Gt | GtEq | Plus | Minus | Multiply | RustDivide
-                    | TrueDivide | FloorDivide | Modulus | Xor => true,
+                    | TrueDivide | FloorDivide | TruncDivide | Modulus | Xor => true,
 
                     // These can turn NULLs into true/false. E.g.:
                     // * (L & False) >= False becomes True

@@ -179,6 +179,25 @@ fn pad_and_finish_ipc_buffer(
     })
 }
 
+/// Writes the length of `bytes` followed by `bytes` compressed.
+fn write_compressed(
+    arrow_data: &mut dyn WriteBytesOwned,
+    bytes: &[u8],
+    compression: Compression,
+) -> PolarsResult<()> {
+    arrow_data.write_all(&i64::to_le_bytes(bytes.len() as _))?;
+
+    let mut compressed = Vec::new();
+    match compression {
+        Compression::LZ4 => compression::compress_lz4(bytes, &mut compressed)?,
+        Compression::ZSTD(level) => compression::compress_zstd(bytes, &mut compressed, level)?,
+    }
+    // The compressed bytes are kept alive until written out.
+    compressed.shrink_to_fit();
+    arrow_data.write_all_owned(&Buffer::from_vec(compressed))?;
+    Ok(())
+}
+
 fn write_bytes(
     ctx: &mut IpcBatchSerializationContext<'_>,
     bytes: BufferOrSlice<'_>,
@@ -186,17 +205,7 @@ fn write_bytes(
     let start_offset = ctx.arrow_data.len();
 
     if let Some(compression) = ctx.compression {
-        ctx.arrow_data
-            .write_all(&i64::to_le_bytes(bytes.len() as _))?;
-
-        match compression {
-            Compression::LZ4 => {
-                compression::compress_lz4(&bytes, ctx.arrow_data.as_io_write())?;
-            },
-            Compression::ZSTD(level) => {
-                compression::compress_zstd(&bytes, ctx.arrow_data.as_io_write(), level)?;
-            },
-        }
+        write_compressed(ctx.arrow_data, &bytes, compression)?;
     } else {
         match bytes {
             BufferOrSlice::Buffer(buffer) => ctx.arrow_data.write_all_owned(buffer)?,

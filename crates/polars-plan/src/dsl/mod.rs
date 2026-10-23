@@ -83,7 +83,9 @@ use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
-pub use sql::{CachedSqlStatement, SqlResolver, get_sql_resolver, set_sql_resolver};
+pub use sql::{
+    CachedSqlStatement, SqlCatalogTable, SqlResolver, get_sql_resolver, set_sql_resolver,
+};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -1675,6 +1677,11 @@ impl Expr {
     /// Compute the hash of every element.
     pub fn hash(self, seed: u64) -> Expr {
         self.map_unary(FunctionExpr::Hash(seed))
+    }
+
+    /// Compute the 32-bit MurmurHash3 of the values as defined by the Iceberg specification.
+    pub fn mm3_hash(self) -> Expr {
+        self.map_unary(FunctionExpr::Mm3Hash)
     }
 
     pub fn to_physical(self) -> Expr {

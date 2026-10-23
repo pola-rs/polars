@@ -43,7 +43,6 @@ lz4_flex = { version = "0.13", optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 snap = { version = "^1.1", optional = true }
-zstd = { workspace = true, optional = true }
 
 xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }
 
@@ -69,6 +68,7 @@ snappy = ["snap"]
 gzip = ["flate2/zlib-rs"]
 lz4 = ["dep:lz4"]
 lz4_flex = ["dep:lz4_flex"]
+zstd = ["polars-utils/zstd"]
 
 async = ["async-stream", "futures", "polars-parquet-format/async"]
 bloom_filter = ["xxhash-rust"]

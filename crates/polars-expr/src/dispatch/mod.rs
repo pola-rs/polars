@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, GroupPositions};
+use polars_core::prelude::{Column, ExplodeOptions, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::{AExpr, IRBooleanFunction, IRFunctionExpr, IRPowFunction};
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -194,6 +194,7 @@ pub fn function_expr_to_udf(
         F::Hash(seed) => {
             map!(misc::row_hash, seed)
         },
+        F::Mm3Hash => map!(misc::mm3_hash),
         #[cfg(feature = "arg_where")]
         F::ArgWhere => {
             wrap!(misc::arg_where)
@@ -583,6 +584,23 @@ pub trait GroupsUdf: Send + Sync + 'static {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>>;
+}
+
+pub fn explode_groups_udf(options: ExplodeOptions) -> SpecialEq<Arc<dyn GroupsUdf>> {
+    struct Explode(ExplodeOptions);
+    impl GroupsUdf for Explode {
+        fn evaluate_on_groups<'a>(
+            &self,
+            inputs: &[Arc<dyn PhysicalExpr>],
+            df: &DataFrame,
+            groups: &'a GroupPositions,
+            state: &ExecutionState,
+        ) -> PolarsResult<AggregationContext<'a>> {
+            groups_dispatch::explode(inputs, df, groups, state, self.0)
+        }
+    }
+
+    SpecialEq::new(Arc::new(Explode(options)) as Arc<dyn GroupsUdf>)
 }
 
 pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Arc<dyn GroupsUdf>>> {

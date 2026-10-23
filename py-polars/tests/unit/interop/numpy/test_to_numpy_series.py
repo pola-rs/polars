@@ -12,7 +12,7 @@ from hypothesis import given, settings
 from numpy.testing import assert_array_equal
 
 import polars as pl
-from polars.exceptions import ArgumentRemovedError
+from polars.exceptions import ArgumentRemovedError, InvalidOperationError
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
@@ -379,7 +379,7 @@ def test_zero_copy_only_removed() -> None:
     s = pl.Series([1, 2])
     msg = "Use the `allow_copy` parameter instead"
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
-        s.to_numpy(zero_copy_only=True)  # type: ignore[call-arg]
+        s.to_numpy(zero_copy_only=True)  # type: ignore[call-overload]
 
 
 def test_series_to_numpy_temporal() -> None:
@@ -490,3 +490,100 @@ def test_to_numpy_series_indexed_18986() -> None:
     assert (
         df.to_numpy()[2] == np.array([None])
     ).all()  # this one is strange, but only option in numpy?
+
+
+@pytest.mark.parametrize(
+    ("s", "expected_dtype"),
+    [
+        (pl.Series([1, None, 3], dtype=pl.UInt16), np.uint16),
+        (pl.Series([1.0, None, 3.0]), np.float64),
+        (pl.Series([True, None, False]), np.bool_),
+        (pl.Series(["a", None, "c"]), np.object_),
+        (pl.Series([date(2020, 1, 1), None, date(2020, 1, 3)]), "datetime64[D]"),
+        (pl.Series([timedelta(1), None, timedelta(3)]), "timedelta64[us]"),
+    ],
+)
+def test_to_numpy_series_masked_16398(s: pl.Series, expected_dtype: Any) -> None:
+    result = s.to_numpy(masked=True)
+    assert isinstance(result, np.ma.MaskedArray)
+    assert result.dtype == np.dtype(expected_dtype)
+    assert_array_equal(result.mask, [False, True, False])
+    assert_array_equal(result.compressed(), s.drop_nulls().to_numpy())
+
+
+def test_to_numpy_series_masked_no_nulls_16398() -> None:
+    s = pl.Series([1, 2, 3])
+    result = s.to_numpy(masked=True, allow_copy=False)
+    assert result.dtype == np.int64
+    assert result.mask is np.ma.nomask
+    assert_array_equal(result.data, [1, 2, 3])
+
+    s = pl.Series([[1, 2], [3, 4]], dtype=pl.Array(pl.Int64, 2))
+    assert s.to_numpy(masked=True).mask is np.ma.nomask
+
+    s = pl.Series([{"a": 1}, {"a": 2}])
+    assert s.to_numpy(masked=True).mask is np.ma.nomask
+
+
+def test_to_numpy_series_masked_array_16398() -> None:
+    s = pl.Series(
+        [[[1, 2], [None, 4]], None, [[5, 6], [7, 8]]],
+        dtype=pl.Array(pl.Int32, (2, 2)),
+    )
+    result = s.to_numpy(masked=True)
+    assert result.dtype == np.int32
+    assert_array_equal(
+        result.mask,
+        [
+            [[False, False], [True, False]],
+            [[True, True], [True, True]],
+            [[False, False], [False, False]],
+        ],
+    )
+    assert_array_equal(result.compressed(), [1, 2, 4, 5, 6, 7, 8])
+
+    s = pl.Series([[True, None], None], dtype=pl.Array(pl.Boolean, 2))
+    result = s.to_numpy(masked=True)
+    assert result.dtype == np.bool_
+    assert_array_equal(result.mask, [[False, True], [True, True]])
+    assert_array_equal(result.compressed(), [True])
+
+
+def test_to_numpy_series_masked_struct_16398() -> None:
+    s = pl.Series([{"a": 1, "b": 2}, None, {"a": None, "b": 3}])
+    result = s.to_numpy(masked=True)
+    assert result.dtype == np.int64
+    assert_array_equal(result.mask, [[False, False], [True, True], [True, False]])
+    assert_array_equal(result.compressed(), [1, 2, 3])
+
+    s = pl.Series(
+        [[{"a": 1, "b": 2}, None]],
+        dtype=pl.Array(pl.Struct({"a": pl.Int64, "b": pl.Int64}), 2),
+    )
+    result = s.to_numpy(masked=True)
+    assert result.dtype == np.int64
+    assert_array_equal(result.mask, [[[False, False], [True, True]]])
+    assert_array_equal(result.compressed(), [1, 2])
+
+
+@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
+def test_to_numpy_128_bit_integers(dtype: PolarsDataType) -> None:
+    msg = "no 128-bit integer types"
+    for s in [pl.Series([1, 2], dtype=dtype), pl.Series([1, None], dtype=dtype)]:
+        with pytest.raises(InvalidOperationError, match=msg):
+            s.to_numpy()
+        with pytest.raises(InvalidOperationError, match=msg):
+            s.to_numpy(masked=True)
+    with pytest.raises(InvalidOperationError, match=msg):
+        pl.Series([[1, 2]], dtype=pl.Array(dtype, 2)).to_numpy()
+
+
+def test_to_numpy_series_masked_copy_16398() -> None:
+    s = pl.Series([1, None, 3])
+    result = s.to_numpy(masked=True, allow_copy=False)
+    assert not result.data.flags.writeable
+    assert s.to_numpy(masked=True, writable=True).data.flags.writeable
+
+    chunked = pl.concat([s, s], rechunk=False)
+    with pytest.raises(RuntimeError, match="copy not allowed"):
+        chunked.to_numpy(masked=True, allow_copy=False)

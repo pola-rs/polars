@@ -33,13 +33,14 @@ from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
 from polars.datatypes import Boolean
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.io._utils import null_count_dtype
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
     from datetime import date, datetime
 
+    import pyarrow as pa
     import pyiceberg
     import pyiceberg.schema
     from pyiceberg.manifest import DataFile
@@ -1570,3 +1571,21 @@ def predicate_to_pyiceberg_delete_filter(
         raise error(msg)
 
     return out
+
+
+def with_table_nullability(
+    data: pa.Table, table_schema: pyiceberg.schema.Schema
+) -> pa.Table:
+    """`data` with the table's required top-level columns marked non-nullable."""
+    import pyarrow as pa
+
+    required = {f.name for f in table_schema.fields if f.required}
+    fields = []
+    for field, column in zip(data.schema, data.columns, strict=True):
+        if field.name in required:
+            if column.null_count:
+                msg = f"column '{field.name}' contains nulls, but the Iceberg table requires a value"
+                raise SchemaError(msg)
+            field = field.with_nullable(False)
+        fields.append(field)
+    return data.cast(pa.schema(fields)) if required else data
