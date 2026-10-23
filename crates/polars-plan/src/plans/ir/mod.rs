@@ -196,6 +196,25 @@ pub enum IR {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    /// Recursive query. The output is the anchor rows followed by the rows of each round: a
+    /// round runs `step` with the `WorkingTableScan` of `id` holding the rows of the round
+    /// before. It ends when a round has no rows.
+    ///
+    /// The schema of `step` equals the schema of `anchor`.
+    Recursive {
+        anchor: Node,
+        step: Node,
+        id: UniqueId,
+        /// The caches in `step` that are computed again in every round. All other caches in
+        /// `step` are computed once for the whole query.
+        round_local_caches: Arc<[UniqueId]>,
+    },
+    /// The rows of the round before, inside the `step` of the `Recursive` with this `id`. In the
+    /// plan of a single round it also reads the value of a cache that is computed once.
+    WorkingTableScan {
+        id: UniqueId,
+        schema: SchemaRef,
+    },
     UnoptimizedDispatch {
         inputs: Vec<Node>,
         arg_map: FunctionArgMap,

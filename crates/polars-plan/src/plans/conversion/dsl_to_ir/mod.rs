@@ -76,6 +76,7 @@ pub fn to_alp(
         pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
         verbose: verbose(),
         seen_caches: Default::default(),
+        recursions: Vec::new(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
@@ -1630,6 +1631,42 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 key,
                 maintain_order,
             }
+        },
+        DslPlan::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => {
+            let anchor = to_alp_impl(owned(anchor), ctxt).context(failed_here!(recursive))?;
+            let schema = ctxt.lp_arena.get(anchor).schema(ctxt.lp_arena).into_owned();
+
+            ctxt.recursions.push((id, schema.clone()));
+            let step = to_alp_impl(owned(step), ctxt);
+            ctxt.recursions.pop();
+            let step = step.context(failed_here!(recursive))?;
+
+            let step_schema = ctxt.lp_arena.get(step).schema(ctxt.lp_arena);
+            step_schema
+                .ensure_is_exact_match(&schema)
+                .context("recursive step")?;
+
+            IR::Recursive {
+                anchor,
+                step,
+                id,
+                round_local_caches,
+            }
+        },
+        DslPlan::WorkingTable { id, schema } => {
+            // A plan that reads a working table may also be converted on its own, e.g. to get
+            // its schema.
+            if let Some((_, recursion_schema)) = ctxt.recursions.iter().find(|(r, _)| *r == id) {
+                schema
+                    .ensure_is_exact_match(recursion_schema)
+                    .context("working table")?;
+            }
+            IR::WorkingTableScan { id, schema }
         },
         DslPlan::IR {
             node,

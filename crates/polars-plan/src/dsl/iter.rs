@@ -54,6 +54,11 @@ impl DslPlan {
                 scratch.push(input_left);
                 scratch.push(input_right);
             },
+            Recursive { anchor, step, .. } => {
+                scratch.push(anchor);
+                scratch.push(step);
+            },
+            WorkingTable { .. } => (),
             Resolver { .. } => {},
         }
     }

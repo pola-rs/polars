@@ -737,6 +737,14 @@ impl PredicatePushDown {
             lp @ MergeSorted { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
+            // Each round reads the rows of the round before, so filters can't move into or out
+            // of a recursive query.
+            lp @ Recursive { .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            lp @ WorkingTableScan { .. } => {
+                self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
+            },
             UnoptimizedDispatch { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },

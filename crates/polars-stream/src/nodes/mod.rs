@@ -32,6 +32,7 @@ pub mod multiplexer;
 pub mod negative_slice;
 pub mod ordered_union;
 pub mod peak_minmax;
+pub mod recursive;
 pub mod reduce;
 pub mod repeat;
 pub mod reverse;
@@ -47,6 +48,7 @@ pub mod simple_projection;
 pub mod sort;
 pub mod sorted_group_by;
 pub mod sorted_unique;
+pub mod spill_frame_source;
 pub mod streaming_slice;
 #[cfg(any(
     feature = "dtype-date",

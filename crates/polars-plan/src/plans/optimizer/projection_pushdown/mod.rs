@@ -11,7 +11,7 @@ use polars_core::schema::Schema;
 use polars_defs::join::{JoinCoalesce, JoinType};
 use polars_io::RowIndex;
 #[allow(clippy::disallowed_types)]
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{PlHashMap, PlHashSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools as _;
 use polars_utils::itertools::iters_eq::iters_eq;
@@ -26,6 +26,7 @@ use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::projection_pushdown::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
 };
+use crate::plans::optimizer::recursive_caches::caches_shared_across_rounds;
 use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
@@ -37,7 +38,12 @@ use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
-pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+pub fn projection_pushdown(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    has_recursive: bool,
+) {
     let schema_cache = &mut Default::default();
 
     // Put a simple projection on top so that the root node has a valid ParentKeyAndPort to point to.
@@ -54,6 +60,11 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
 
     #[allow(clippy::disallowed_types)]
     let mut optimized_cache_nodes = PlHashMap::default();
+    let caches_shared_across_rounds = if has_recursive {
+        caches_shared_across_rounds(optimize_root, ir_arena)
+    } else {
+        Default::default()
+    };
 
     ir_graph_traversal(
         optimize_root,
@@ -68,6 +79,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
             optimized_cache_nodes: &mut optimized_cache_nodes,
+            caches_shared_across_rounds: &caches_shared_across_rounds,
             default_edge: Edge::new(
                 Projection::All,
                 None,
@@ -126,6 +138,8 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
     #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     optimized_cache_nodes: &'a mut PlHashMap<UniqueId, Node>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over it.
+    caches_shared_across_rounds: &'a PlHashSet<UniqueId>,
     default_edge: Edge,
     maintain_errors: bool,
 }
@@ -2120,10 +2134,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::Cache { input, .. } => {
+            IR::Cache { input, id } => {
                 let input = *input;
 
-                if edges.outputs().len() == 1 {
+                // A single reader in the step of a recursive query can run more than once.
+                if edges.outputs().len() == 1 && !self.caches_shared_across_rounds.contains(id) {
                     unlink_current_node_and_return!(input)
                 }
 
@@ -2169,7 +2184,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::UnoptimizedDispatch { .. } => {
+            // Each round reads all columns of the round before.
+            IR::UnoptimizedDispatch { .. } | IR::Recursive { .. } | IR::WorkingTableScan { .. } => {
                 post_project_and_return!()
             },
 
