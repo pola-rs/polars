@@ -1304,6 +1304,20 @@ def test_string_add_concatenates(other: Any, expected: list[str]) -> None:
     assert (s + other).to_list() == expected
 
 
+@pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32])
+def test_truediv_int_literal_float_schema(float_dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"f": [4.0]}, schema={"f": float_dtype}).select(
+        f_lit=pl.col.f / 2,
+        lit_f=2 / pl.col.f,
+    )
+    expected = pl.DataFrame(
+        {"f_lit": [2.0], "lit_f": [0.5]},
+        schema={"f_lit": float_dtype, "lit_f": float_dtype},
+    )
+    assert_schema_equal(lf.collect_schema(), expected.schema)
+    assert_frame_equal(lf.collect(), expected)
+
+
 @pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32, pl.Float64])
 def test_truediv_float_decimal_schema(float_dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame(

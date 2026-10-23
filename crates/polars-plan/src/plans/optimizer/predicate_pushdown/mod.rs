@@ -5,8 +5,9 @@ mod join;
 mod keys;
 pub(super) mod utils;
 
-pub(crate) use dynamic::new_dynamic_pred;
-pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
+pub use dynamic::{
+    DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr, new_dynamic_pred,
+};
 use polars_buffer::Buffer;
 use polars_io::predicates::ReadOrder;
 use polars_utils::idx_vec::UnitVec;

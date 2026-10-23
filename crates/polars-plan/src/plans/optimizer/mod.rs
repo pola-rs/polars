@@ -53,6 +53,7 @@ pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
 pub use predicate_pushdown::{
     DynamicPred, DynamicPredWeakRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
+    new_dynamic_pred,
 };
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;

@@ -103,7 +103,8 @@ and only applies to catalog tables. A `DROP TABLE` of a catalog table takes one 
 
 `CREATE TABLE`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet. For `CREATE TABLE`
 that includes a name the default catalog applies to, such as `tpch.t`, even if a table of that name
-is registered. `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached catalog
+is registered. `CREATE TEMP TABLE` always creates a registered table; its name cannot start with an
+attached catalog. `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached catalog
 only acts on a registered table.
 
 !!! warning "Serialized plans"

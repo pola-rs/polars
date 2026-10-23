@@ -4845,8 +4845,14 @@ class DataFrame:
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
 
+        Notes
+        -----
+        Columns of required (`NOT NULL`) table fields must not contain nulls.
+        Required fields nested in structs or lists are not supported.
         """
         from pyiceberg.catalog import load_catalog
+
+        from polars.io.iceberg._utils import with_table_nullability
 
         if isinstance(target, str):
             catalog = load_catalog()
@@ -4854,7 +4860,10 @@ class DataFrame:
         else:
             table = target
 
-        data = self.to_arrow(compat_level=CompatLevel.oldest())
+        # Arrow data from Polars is always nullable; required Iceberg fields reject it.
+        data = with_table_nullability(
+            self.to_arrow(compat_level=CompatLevel.oldest()), table.schema()
+        )
 
         if mode == "append":
             table.append(data)
