@@ -39,7 +39,8 @@ pub struct MemoryManager {
     reserved: AtomicU64,
     /// Notified when a spill finishes or is given up.
     spill_done: Notify,
-    spills_exist: AtomicBool,
+    // Number of live `OocActivity` guards.
+    activity: AtomicU64,
 }
 
 impl MemoryManager {
@@ -59,11 +60,11 @@ impl MemoryManager {
             est_prefetch_in_progress: AtomicU64::new(0),
             reserved: AtomicU64::new(0),
             spill_done: Notify::new(),
-            spills_exist: AtomicBool::new(false),
+            activity: AtomicU64::new(0),
         }
     }
 
-    fn should_spill(&self) -> bool {
+    pub(crate) fn should_spill(&self) -> bool {
         let usage = crate::estimate_memory_usage();
         let likely_dealt_with = self.est_spill_in_progress.load(Ordering::Relaxed);
         let likely_incoming = self.est_prefetch_in_progress.load(Ordering::Relaxed)
@@ -73,7 +74,7 @@ impl MemoryManager {
     }
 
     pub(crate) fn should_prefetch(&self) -> bool {
-        if !self.spills_exist.load(Ordering::Acquire) {
+        if !self.has_activity() {
             return false;
         }
 
@@ -81,6 +82,16 @@ impl MemoryManager {
         let likely_incoming = self.est_prefetch_in_progress.load(Ordering::Relaxed)
             + self.reserved.load(Ordering::Relaxed);
         (usage + likely_incoming) < config().ooc_memory_prefetch_bytes()
+    }
+
+    /// Whether a spill is running, selected or done and still on disk.
+    pub(crate) fn has_activity(&self) -> bool {
+        self.activity.load(Ordering::SeqCst) != 0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn activity_count(&self) -> u64 {
+        self.activity.load(Ordering::SeqCst)
     }
 
     pub(crate) fn try_get_prefetch_permit(&self) -> Option<OwnedSemaphorePermit> {
@@ -210,8 +221,6 @@ impl MemoryManager {
                                         strong.stats().finish_spill_exploration_event(true);
                                     }
                                 }
-
-                                MEMORY_MANAGER.spills_exist.store(true, Ordering::Release);
                             } else {
                                 // A racy pin interrupted us, the value is still in memory.
                                 spillable.cancel_spill_attempt_and_reinsert(
@@ -332,6 +341,9 @@ impl MemoryManager {
             RegisteredSpillToken,
         )>,
     )> {
+        let _activity = OocActivity::new();
+        crate::decay::note_spill();
+
         // TODO: don't block here under a certain memory threshold.
         let finding_spill_guard = self.finding_spill_lock.lock().await;
 
@@ -439,9 +451,31 @@ impl Drop for MemoryReservation {
     }
 }
 
+/// Counted while alive, so the memory manager knows when no spill is running
+/// and nothing is spilled.
+///
+/// A guard for the next step of a spill is always created before the guard of
+/// the previous step is dropped, so the count never drops to zero in between.
+pub(crate) struct OocActivity(());
+
+impl OocActivity {
+    pub fn new() -> Self {
+        memory_manager().activity.fetch_add(1, Ordering::SeqCst);
+        Self(())
+    }
+}
+
+impl Drop for OocActivity {
+    fn drop(&mut self) {
+        let old = memory_manager().activity.fetch_sub(1, Ordering::SeqCst);
+        debug_assert!(old > 0);
+    }
+}
+
 /// Used to update the total bytes of estimated spills in progress.
 struct SpillInProgressTracker {
     bytes: u64,
+    _activity: OocActivity,
 }
 
 impl SpillInProgressTracker {
@@ -449,7 +483,10 @@ impl SpillInProgressTracker {
         memory_manager()
             .est_spill_in_progress
             .fetch_add(bytes, Ordering::Relaxed);
-        Self { bytes }
+        Self {
+            bytes,
+            _activity: OocActivity::new(),
+        }
     }
 }
 

@@ -99,6 +99,12 @@ const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
 
+const OOC_PRESSURE_DECAY: &str = "POLARS_OOC_PRESSURE_DECAY";
+const DEFAULT_OOC_PRESSURE_DECAY: bool = true;
+
+const OOC_PRESSURE_DECAY_GRACE_MS: &str = "POLARS_OOC_PRESSURE_DECAY_GRACE_MS";
+const DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS: u64 = 1000;
+
 const OOMKILL_THRESHOLD_FRACTION: &str = "POLARS_OOMKILL_THRESHOLD_FRACTION";
 const DEFAULT_OOMKILL_THRESHOLD_FRACTION: f64 = f64::INFINITY;
 
@@ -215,6 +221,8 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MAX_PARALLEL_SPILL_TASKS,
     OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
+    OOC_PRESSURE_DECAY,
+    OOC_PRESSURE_DECAY_GRACE_MS,
     OOMKILL_THRESHOLD_FRACTION,
     OOMKILL_THRESHOLD_MB,
     JOIN_SAMPLE_LIMIT,
@@ -263,6 +271,8 @@ pub struct Config {
     ooc_max_parallel_spill_tasks: AtomicU64,
     ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
+    ooc_pressure_decay: AtomicBool,
+    ooc_pressure_decay_grace_ms: AtomicU64,
     oomkill_threshold_fraction: AtomicU64,
     oomkill_threshold_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
@@ -328,6 +338,8 @@ impl Config {
                 DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
             ),
             ooc_log_metrics: AtomicBool::new(false),
+            ooc_pressure_decay: AtomicBool::new(DEFAULT_OOC_PRESSURE_DECAY),
+            ooc_pressure_decay_grace_ms: AtomicU64::new(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
             oomkill_threshold_fraction: AtomicU64::new(
                 DEFAULT_OOMKILL_THRESHOLD_FRACTION.to_bits(),
             ),
@@ -552,6 +564,16 @@ impl Config {
             OOC_LOG_METRICS => self.ooc_log_metrics.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_OOC_LOG_METRICS),
+                Ordering::Relaxed,
+            ),
+            OOC_PRESSURE_DECAY => self.ooc_pressure_decay.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY),
+                Ordering::Relaxed,
+            ),
+            OOC_PRESSURE_DECAY_GRACE_MS => self.ooc_pressure_decay_grace_ms.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_PRESSURE_DECAY_GRACE_MS),
                 Ordering::Relaxed,
             ),
             OOMKILL_THRESHOLD_FRACTION => self.oomkill_threshold_fraction.store(
@@ -809,6 +831,18 @@ impl Config {
     #[inline(always)]
     pub fn ooc_log_metrics(&self) -> bool {
         self.ooc_log_metrics.load(Ordering::Relaxed)
+    }
+
+    /// Whether the allocator returns freed memory right away while out-of-core
+    /// data is being spilled or is spilled.
+    #[inline(always)]
+    pub fn ooc_pressure_decay(&self) -> bool {
+        self.ooc_pressure_decay.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn ooc_pressure_decay_grace_ms(&self) -> u64 {
+        self.ooc_pressure_decay_grace_ms.load(Ordering::Relaxed)
     }
 
     pub fn ooc_spill_dir(&self) -> std::path::PathBuf {

@@ -540,6 +540,11 @@ impl MostRecentSpillContext {
             task_metrics,
         ))
     }
+
+    #[cfg(test)]
+    pub(crate) fn downgrade(&self) -> WeakSpillContext {
+        self.0.downgrade()
+    }
 }
 
 impl ParameterFreeSpillContext for MostRecentSpillContext {
