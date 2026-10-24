@@ -2116,6 +2116,17 @@ def test_read_filelike_object_12404(chunk_override: None) -> None:
     assert_frame_equal(df, expected)
 
 
+def test_write_csv_quote_line_terminator_30181(chunk_override: None) -> None:
+    df = pl.DataFrame({"s": ["x", "a;b", "y"], "a;b": ["p", "q", "r"]})
+    expected = 's,"a;b";x,p;"a;b",q;y,r;'
+
+    assert df.write_csv(line_terminator=";") == expected
+    f = io.BytesIO()
+    df.lazy().sink_csv(f, line_terminator=";")
+    assert f.getvalue().decode() == expected
+    assert_frame_equal(pl.read_csv(expected.encode(), eol_char=";"), df)
+
+
 def test_write_csv_bom(chunk_override: None) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()

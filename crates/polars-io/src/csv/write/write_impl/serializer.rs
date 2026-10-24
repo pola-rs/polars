@@ -35,7 +35,7 @@ use std::io::Write;
 
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-use memchr::{memchr_iter, memchr3};
+use memchr::{memchr, memchr_iter, memchr3, memmem};
 use num_traits::NumCast;
 use polars_arrow::array::{
     Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray,
@@ -525,7 +525,30 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
             Box::new(StringSerializer { serialize, iter })
         },
         QuoteStyle::Necessary => {
-            let serialize =
+            // Like Python's `csv`, quote a field that contains any character of the line
+            // terminator. `\n` and `\r` are always checked, so the default terminators add
+            // nothing here.
+            let mut extra_bytes: Vec<u8> = Vec::new();
+            let mut extra_finders: Vec<memmem::Finder<'static>> = Vec::new();
+            for c in options.line_terminator.chars() {
+                if c.is_ascii() {
+                    let b = c as u8;
+                    if ![options.separator, LF, CR].contains(&b) && !extra_bytes.contains(&b) {
+                        extra_bytes.push(b);
+                    }
+                } else {
+                    let mut bytes = [0; 4];
+                    let bytes = c.encode_utf8(&mut bytes).as_bytes();
+                    if !extra_finders.iter().any(|finder| finder.needle() == bytes) {
+                        extra_finders.push(memmem::Finder::new(bytes).into_owned());
+                    }
+                }
+            }
+
+            fn serialize_necessary<Iter>(
+                mut f: impl FnMut(&mut Iter) -> Option<&str>,
+                has_extra: impl Fn(&[u8]) -> bool,
+            ) -> impl FnMut(&mut Iter, &mut Vec<u8>, &SerializeOptions) {
                 move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
                     let Some(s) = f(iter) else {
                         buf.extend_from_slice(options.null.as_bytes());
@@ -537,7 +560,8 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                         buf.extend_from_slice(&[quote_char, quote_char]);
                         return;
                     }
-                    let needs_quote = memchr3(options.separator, LF, CR, s.as_bytes()).is_some();
+                    let needs_quote = memchr3(options.separator, LF, CR, s.as_bytes()).is_some()
+                        || has_extra(s.as_bytes());
                     if needs_quote {
                         buf.push(quote_char);
                     }
@@ -545,8 +569,26 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     if needs_quote {
                         buf.push(quote_char);
                     }
-                };
-            Box::new(StringSerializer { serialize, iter })
+                }
+            }
+
+            match (extra_bytes.as_slice(), extra_finders.is_empty()) {
+                ([], true) => {
+                    let serialize = serialize_necessary(f, |_| false);
+                    Box::new(StringSerializer { serialize, iter })
+                },
+                (&[b], true) => {
+                    let serialize = serialize_necessary(f, move |s| memchr(b, s).is_some());
+                    Box::new(StringSerializer { serialize, iter })
+                },
+                _ => {
+                    let serialize = serialize_necessary(f, move |s| {
+                        extra_bytes.iter().any(|&b| memchr(b, s).is_some())
+                            || extra_finders.iter().any(|finder| finder.find(s).is_some())
+                    });
+                    Box::new(StringSerializer { serialize, iter })
+                },
+            }
         },
         QuoteStyle::Never => {
             let serialize =
@@ -957,6 +999,35 @@ mod test {
         check_string_serialization(&necessary_quote, Some("a,b"), r#""a,b""#);
         check_string_serialization(&necessary_quote, Some("a\nb"), "\"a\nb\"");
         check_string_serialization(&necessary_quote, Some("a\rb"), "\"a\rb\"");
+        check_string_serialization(&necessary_quote, Some("a;b"), "a;b");
+
+        // Any character of a custom line terminator needs quotes.
+        let necessary_quote_semicolon = SerializeOptions {
+            line_terminator: ";".into(),
+            ..necessary_quote.clone()
+        };
+        check_string_serialization(&necessary_quote_semicolon, Some("a"), "a");
+        check_string_serialization(&necessary_quote_semicolon, Some("a;b"), r#""a;b""#);
+        check_string_serialization(&necessary_quote_semicolon, Some("a,b"), r#""a,b""#);
+        check_string_serialization(&necessary_quote_semicolon, Some("a\nb"), "\"a\nb\"");
+        check_string_serialization(&necessary_quote_semicolon, Some("a\rb"), "\"a\rb\"");
+        check_string_serialization(&necessary_quote_semicolon, Some("a\"b;"), r#""a""b;""#);
+
+        let necessary_quote_multi = SerializeOptions {
+            line_terminator: "|é|".into(),
+            ..necessary_quote.clone()
+        };
+        check_string_serialization(&necessary_quote_multi, Some("a|"), r#""a|""#);
+        check_string_serialization(&necessary_quote_multi, Some("é"), r#""é""#);
+        check_string_serialization(&necessary_quote_multi, Some("è"), "è");
+
+        let necessary_quote_crlf = SerializeOptions {
+            line_terminator: "\r\n".into(),
+            ..necessary_quote.clone()
+        };
+        check_string_serialization(&necessary_quote_crlf, Some("a"), "a");
+        check_string_serialization(&necessary_quote_crlf, Some("a;b"), "a;b");
+        check_string_serialization(&necessary_quote_crlf, Some("a\rb"), "\"a\rb\"");
 
         let never_quote = SerializeOptions {
             quote_style: QuoteStyle::Never,
