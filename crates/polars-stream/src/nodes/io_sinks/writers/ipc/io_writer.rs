@@ -47,7 +47,7 @@ impl IOWriter {
             write_custom_pl_metadata,
         } = self;
 
-        let (mut target, sync_on_close) = file.await?;
+        let (mut target, sync_on_close, finish) = file.await?;
 
         let mut writer = WritableWrap {
             writable: target.as_writable(),
@@ -132,6 +132,8 @@ impl IOWriter {
             drop(morsel_permit);
             drop(finish_write_token);
         }
+
+        finish.wait().await?;
 
         let custom_metadata = if let Some(custom_pl_metadata) = custom_pl_metadata {
             Some(vec![(

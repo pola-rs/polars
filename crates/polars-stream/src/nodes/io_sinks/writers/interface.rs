@@ -4,7 +4,7 @@ use std::sync::Arc;
 use futures::FutureExt;
 use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::connector;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_err};
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::index::NonZeroIdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -32,25 +32,54 @@ pub trait FileWriterStarter: Send + Sync + 'static {
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>>;
 }
 
+/// Lets a writer finish its file. A writer whose input ends without it (the query failed)
+/// leaves the file unfinished.
+pub struct FinishSignal(tokio::sync::oneshot::Receiver<()>);
+
+pub struct FinishSender(tokio::sync::oneshot::Sender<()>);
+
+pub fn finish_signal() -> (FinishSender, FinishSignal) {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    (FinishSender(tx), FinishSignal(rx))
+}
+
+impl FinishSender {
+    pub fn send(self) {
+        let _ = self.0.send(());
+    }
+}
+
+impl FinishSignal {
+    /// Waits until the file may be finished; errors if the sink was cancelled instead.
+    pub async fn wait(self) -> PolarsResult<()> {
+        self.0
+            .await
+            .map_err(|_| polars_err!(ComputeError: "sink cancelled before its input ended"))
+    }
+}
+
 pub struct FileOpenTaskHandle {
     handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<WriteTarget>>,
     sync_on_close: SyncOnCloseType,
+    finish: Option<FinishSignal>,
 }
 
 impl FileOpenTaskHandle {
     pub fn new(
         handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<WriteTarget>>,
         sync_on_close: SyncOnCloseType,
+        finish: FinishSignal,
     ) -> Self {
         Self {
             handle,
             sync_on_close,
+            finish: Some(finish),
         }
     }
 }
 
 impl std::future::Future for FileOpenTaskHandle {
-    type Output = PolarsResult<(WriteTarget, SyncOnCloseType)>;
+    type Output = PolarsResult<(WriteTarget, SyncOnCloseType, FinishSignal)>;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
@@ -61,7 +90,9 @@ impl std::future::Future for FileOpenTaskHandle {
         let file: Result<_, tokio::task::JoinError> = futures::ready!(self.handle.poll_unpin(cx));
         let file: PolarsResult<WriteTarget> = file.unwrap();
 
-        Poll::Ready(file.map(|file| (file, self.sync_on_close)))
+        let finish = self.finish.take().unwrap();
+
+        Poll::Ready(file.map(|file| (file, self.sync_on_close, finish)))
     }
 }
 
