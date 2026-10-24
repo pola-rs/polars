@@ -9,9 +9,7 @@ use polars_core::frame::DataFrame;
     feature = "dtype-time"
 ))]
 use polars_core::prelude::DataType;
-use polars_core::prelude::{
-    IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions, SortOptions,
-};
+use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
@@ -279,7 +277,7 @@ pub enum PhysNodeKind {
     Window {
         input: PhysStream,
         partition_by: Vec<PlSmallStr>,
-        order_by: Option<(PlSmallStr, SortOptions)>,
+        order_by: Option<(Vec<PlSmallStr>, SortMultipleOptions)>,
         exprs: Vec<ExprIR>,
         /// Evaluate the rows of a partition in input order.
         ordered_eval: bool,
