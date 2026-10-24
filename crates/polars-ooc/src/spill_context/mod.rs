@@ -416,7 +416,7 @@ impl StrongSpillContext {
         };
 
         // Important: mark as live (refcnt >= 1) before registering.
-        inner.refcount.store(1, Ordering::Relaxed);
+        inner.refcount.store(1, Ordering::Release);
         let slf = Self(inner);
         memory_manager().register_ctx(slf.downgrade());
         slf
@@ -498,13 +498,14 @@ impl WeakSpillContext {
         Some(strong)
     }
 
+    /// Whether the context was dropped, even if it was not re-used yet.
     pub(crate) fn is_dead(&self) -> bool {
-        self.0.context_id() != self.1
+        self.0.context_id() != self.1 || self.0.refcount.load(Ordering::Relaxed) == 0
     }
 
     pub(crate) fn task_metrics(&self) -> Option<Arc<TaskMetricAggregator>> {
         let shared = self.0.shared.lock().unwrap();
-        if self.is_dead() {
+        if self.0.context_id() != self.1 {
             return None;
         }
         shared.task_metrics.clone()
@@ -656,6 +657,7 @@ mod tests {
         let ctx = MostRecentSpillContext::new("test".into(), None);
         let weak = ctx.downgrade();
         drop(ctx);
+        assert!(weak.is_dead());
         assert!(weak.upgrade().is_none());
 
         // The context is in the reuse arena once, so two new contexts do not share it.
