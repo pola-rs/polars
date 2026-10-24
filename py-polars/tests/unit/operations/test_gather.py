@@ -791,3 +791,23 @@ def test_gather_list_of_array_hidden_values() -> None:
     out.to_frame().write_ipc(buf)
     buf.seek(0)
     assert_series_equal(pl.read_ipc(buf).to_series(), out)
+
+
+@pytest.mark.parametrize(
+    "child",
+    [
+        pa.array(["x", "y", "a", "b"]),
+        pa.array([[9], [9, 9], [1], [2]]),
+        pa.array([{"f": 9}, {"f": 9}, {"f": 1}, {"f": 2}]),
+        pa.array([9, 9, 1, None]),
+        pa.array([True, True, False, None]),
+    ],
+)
+def test_gather_array_null_rows_get_null_values(child: pa.Array) -> None:
+    # Like a null index, a null row gives null values, not the ones stored under it.
+    arr = pa.FixedSizeListArray.from_arrays(child, 2, mask=pa.array([True, False]))
+    s = pl.Series(arr)
+    assert s.to_arrow().values.is_null().to_pylist()[:2] == [False, False]
+    out = s.gather([1, 0, None])
+    assert out.to_list() == [s.to_list()[1], None, None]
+    assert out.to_arrow().values.is_null().to_pylist()[2:] == [True] * 4

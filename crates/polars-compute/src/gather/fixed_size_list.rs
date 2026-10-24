@@ -124,16 +124,22 @@ fn nest_leaves(dtype: &ArrowDataType, len: usize, leaves: ArrayRef) -> ArrayRef 
     FixedSizeListArray::new(dtype.clone(), len, values, None).boxed()
 }
 
-/// Generic path: gathers whole rows with a builder, keeping the dtype. Null indices become null rows.
+/// Generic path: gathers whole rows with a builder, keeping the dtype. Null indices and null rows
+/// become null rows with null values.
 unsafe fn take_with_builder(values: &FixedSizeListArray, indices: &IdxArr) -> ArrayRef {
     let mut builder = make_builder(values.dtype());
     builder.reserve(indices.len());
     let idx = indices.values().as_slice();
-    match indices.validity().filter(|v| v.unset_bits() > 0) {
+    let validity = values
+        .validity()
+        .filter(|v| v.unset_bits() > 0)
+        .map(|v| take_bitmap_nulls_unchecked(v, indices));
+    match combine_validities_and(validity.as_ref(), indices.validity())
+        .filter(|v| v.unset_bits() > 0)
+    {
         None => builder.gather_extend(values, idx, ShareStrategy::Always),
-        Some(validity) => {
-            // Values under null indices may be garbage, so only gather the valid runs.
-            let mut validity = validity.clone();
+        Some(mut validity) => {
+            // Only gather the valid runs: null indices may hold garbage, null rows get null values.
             let mut start = 0;
             while !validity.is_empty() {
                 let n = validity.take_leading_ones();
