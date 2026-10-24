@@ -63,22 +63,35 @@ pub fn register_polars_abort_mechanism() {
 
     // WASM doesn't support signals, so we just skip installing the hook there.
     #[cfg(not(target_family = "wasm"))]
-    unsafe {
-        // SAFETY: we only do an atomic op in the signal handler, which is allowed.
-        signal_hook::low_level::register(signal_hook::consts::signal::SIGINT, move || {
-            // Set the keyboard interrupt flag, but only if there are active catchers.
-            ABORT_STATE
-                .try_update(Ordering::Release, Ordering::Relaxed, |state| {
-                    let num_catchers = state >> ABORT_CATCHERS_UNIT.trailing_zeros();
-                    if num_catchers > 0 {
-                        Some(state | ABORT_KEYBOARD_INTERRUPT_BIT)
-                    } else {
-                        None
-                    }
-                })
-                .ok();
-        })
-        .unwrap();
+    {
+        // signal-hook sets SA_RESTART; restore the original behavior if it was disabled,
+        // so that SIGINT can interrupt blocking syscalls.
+        // See #21739.
+        #[cfg(target_family = "unix")]
+        let interrupts_syscalls = sigint_interrupts_syscalls();
+
+        unsafe {
+            // SAFETY: we only do an atomic op in the signal handler, which is allowed.
+            signal_hook::low_level::register(signal_hook::consts::signal::SIGINT, move || {
+                // Set the keyboard interrupt flag, but only if there are active catchers.
+                ABORT_STATE
+                    .try_update(Ordering::Release, Ordering::Relaxed, |state| {
+                        let num_catchers = state >> ABORT_CATCHERS_UNIT.trailing_zeros();
+                        if num_catchers > 0 {
+                            Some(state | ABORT_KEYBOARD_INTERRUPT_BIT)
+                        } else {
+                            None
+                        }
+                    })
+                    .ok();
+            })
+            .unwrap();
+        }
+
+        #[cfg(target_family = "unix")]
+        if interrupts_syscalls {
+            clear_sigint_restart();
+        }
     }
 }
 
@@ -163,4 +176,28 @@ fn unregister_catcher() {
             }
         })
         .ok();
+}
+
+#[cfg(target_family = "unix")]
+fn sigint_action() -> Option<libc::sigaction> {
+    let mut action = std::mem::MaybeUninit::uninit();
+    // SAFETY: a null `act` only queries the handler; `action` is valid output storage.
+    let rc = unsafe { libc::sigaction(libc::SIGINT, std::ptr::null(), action.as_mut_ptr()) };
+    // SAFETY: a return of 0 means `sigaction` initialized `action`.
+    (rc == 0).then(|| unsafe { action.assume_init() })
+}
+
+#[cfg(target_family = "unix")]
+fn sigint_interrupts_syscalls() -> bool {
+    sigint_action().is_some_and(|action| action.sa_flags & libc::SA_RESTART == 0)
+}
+
+#[cfg(target_family = "unix")]
+fn clear_sigint_restart() {
+    let Some(mut action) = sigint_action() else {
+        return;
+    };
+    action.sa_flags &= !libc::SA_RESTART;
+    // SAFETY: `action` came from `sigaction`; both pointers are valid for this call.
+    unsafe { libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut()) };
 }
