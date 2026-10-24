@@ -68,6 +68,10 @@ impl Spillable for DataFrame {
         Arc::new(file)
     }
 
+    fn spilled_bytes(location: &Self::Spilled) -> u64 {
+        location.size()
+    }
+
     async fn unspill(location: &Self::Spilled) -> Self {
         let path = location.path().to_owned();
         ASYNC
