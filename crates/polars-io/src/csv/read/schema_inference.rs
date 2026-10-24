@@ -56,32 +56,24 @@ pub(super) fn infer_file_schema_impl(
     }
 
     if let Some(column_names_overwrite) = column_names_overwrite {
-        let mut err_hint: String = String::new();
-
-        if column_names_overwrite.len() < headers.len() && !ignore_extra_columns {
-            let n = headers.len() - column_names_overwrite.len();
-            err_hint = format!("pass extra_columns='ignore' to ignore ({n}) extra columns.")
-        }
-
         if column_names_overwrite.len() > headers.len() && !insert_missing_columns {
             let n = column_names_overwrite.len() - headers.len();
-            err_hint = format!(
-                "pass missing_columns='insert' to create ({n}) missing columns with all-NULL values."
-            );
-        }
-
-        if !err_hint.is_empty() {
             polars_bail!(
                 SchemaMismatch:
                 "provided `new_columns` does not match number of columns in file ({} != {} in file). \
-                Ensure the number of names match, or {err_hint}",
+                Ensure the number of names match, or pass missing_columns='insert' to create ({n}) missing columns with all-NULL values.",
                 column_names_overwrite.len(),
                 headers.len(),
             )
         }
 
-        headers.truncate(column_names_overwrite.len());
-        column_types.truncate(column_names_overwrite.len());
+        // A shorter list renames that prefix and leaves every later column
+        // with its original name. `extra_columns='ignore'` is the option that
+        // drops those columns instead.
+        if ignore_extra_columns && column_names_overwrite.len() < headers.len() {
+            headers.truncate(column_names_overwrite.len());
+            column_types.truncate(column_names_overwrite.len());
+        }
 
         for (i, name) in column_names_overwrite.iter().cloned().enumerate() {
             if i < headers.len() {
