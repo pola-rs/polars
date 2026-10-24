@@ -4,6 +4,7 @@ import io
 import itertools
 import operator
 from dataclasses import dataclass
+from decimal import ROUND_HALF_EVEN
 from decimal import Decimal as D
 from math import ceil, floor
 from random import choice, randrange, seed
@@ -1565,6 +1566,40 @@ def test_decimal_to_float_is_correctly_rounded() -> None:
     assert pl.select(pl.lit(x).cast(pl.Float64)).item() == 0.9728340843400927
     big = pl.Series([D("1" * 30 + "." + "3" * 8)], dtype=pl.Decimal(38, 8))
     assert big.cast(pl.Float64).item() == float("1" * 30 + "." + "3" * 8)
+
+
+def test_float_to_decimal_is_correctly_rounded_30074() -> None:
+    # The magnitudes are a bit above the midpoint, but |x| * 10^4 rounds to it.
+    xs = [71.47265, 203.99725, 203.84985, -71.47265]
+    # 300.65625 is exactly a midpoint and rounds to even.
+    xs += [300.65625]
+    s = pl.Series(xs)
+    expected = [D(x).quantize(D("0.0001"), rounding=ROUND_HALF_EVEN) for x in xs]
+    assert expected == [
+        D("71.4727"),
+        D("203.9973"),
+        D("203.8499"),
+        D("-71.4727"),
+        D("300.6562"),
+    ]
+    assert s.cast(pl.Decimal(18, 4)).to_list() == expected
+    assert pl.select(pl.lit(71.47265).cast(pl.Decimal(18, 4))).item() == D("71.4727")
+    ctx = pl.SQLContext(df=s.to_frame("x"))
+    sql = ctx.execute("SELECT CAST(x AS DECIMAL(18, 4)) AS x FROM df", eager=True)
+    assert sql["x"].to_list() == expected
+
+    # The double 2.675 is a bit below 2.675.
+    assert pl.Series([2.675]).cast(pl.Decimal(10, 2)).item() == D("2.67")
+
+    # the scaled value must fit the precision
+    assert pl.Series([99999.5, 99999.4]).cast(
+        pl.Decimal(5, 0), strict=False
+    ).to_list() == [None, D("99999")]
+    assert pl.Series([1e30, 1e-30]).cast(
+        pl.Decimal(38, 38), strict=False
+    ).to_list() == [None, D("1e-30")]
+    with pytest.raises(InvalidOperationError):
+        pl.Series([1e17]).cast(pl.Decimal(18, 4))
 
 
 def test_decimal_is_in_exact() -> None:
