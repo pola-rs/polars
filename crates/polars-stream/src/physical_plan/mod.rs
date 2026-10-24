@@ -417,6 +417,7 @@ pub enum PhysNodeKind {
     Zip {
         inputs: Vec<PhysStream>,
         zip_behavior: ZipBehavior,
+        can_broadcast: Option<Vec<bool>>,
     },
 
     #[allow(unused)]

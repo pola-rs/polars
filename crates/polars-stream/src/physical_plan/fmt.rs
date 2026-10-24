@@ -581,6 +581,7 @@ fn visualize_plan_rec(
         PhysNodeKind::Zip {
             inputs,
             zip_behavior,
+            ..
         } => {
             let label = match zip_behavior {
                 ZipBehavior::NullExtend => "zip-null-extend",
