@@ -126,11 +126,40 @@ impl<K: Hash + Eq + Clone> UniqueValues<K> {
         self.num_values() + self.has_null as usize
     }
 
+    /// The heap size of the containers, without the heap memory of the values themselves.
+    fn container_bytes(&self) -> usize {
+        let small = if self.small.is_inline() {
+            0
+        } else {
+            self.small.capacity() * size_of::<K>()
+        };
+        let large = self.large.as_ref().map_or(0, |s| {
+            size_of::<PlHashSet<K>>() + s.capacity() * (size_of::<K>() + 1)
+        });
+        small + large
+    }
+
     fn into_values(self) -> impl Iterator<Item = K> {
         self.small
             .into_iter()
             .chain(self.large.into_iter().flat_map(|s| s.into_iter()))
     }
+}
+
+/// `value_bytes` gives the heap memory of the values of one group.
+fn state_size<K: Hash + Eq + Clone>(
+    v: &[UniqueValues<K>],
+    value_bytes: impl Fn(&UniqueValues<K>) -> usize,
+) -> StateSize {
+    let mut size = StateSize {
+        num_values: 0,
+        bytes: size_of_val(v),
+    };
+    for u in v {
+        size.num_values += u.len();
+        size.bytes += u.container_bytes() + value_bytes(u);
+    }
+    size
 }
 
 fn finish_counts<K: Hash + Eq + Clone>(v: Vec<UniqueValues<K>>) -> Series {
@@ -216,6 +245,10 @@ impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, CO
         let s = ca.into_series();
         unsafe { s.from_physical_unchecked(&list_dtype) }
     }
+
+    fn state_size(&self, v: &[Self::Value]) -> Option<StateSize> {
+        Some(state_size(v, |_| 0))
+    }
 }
 
 #[derive(Clone)]
@@ -288,6 +321,10 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
         let ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
         let list_dtype = DataType::List(Box::new(dtype.clone()));
         ca.into_series().cast(&list_dtype)
+    }
+
+    fn state_size(&self, v: &[Self::Value]) -> Option<StateSize> {
+        Some(state_size(v, |u| u.iter().map(Vec::capacity).sum()))
     }
 }
 

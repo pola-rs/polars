@@ -226,8 +226,22 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// After this operation the number of groups is reset to 0.
     fn finalize(&mut self) -> PolarsResult<Series>;
 
+    /// The size of the states, for reductions whose state grows with the number of distinct
+    /// values in a group. `None` if every group has a small state of a fixed size.
+    fn state_size(&self) -> Option<StateSize> {
+        None
+    }
+
     /// Returns this GroupedReduction as a dyn Any.
     fn as_any(&self) -> &dyn Any;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StateSize {
+    /// The number of values held over all groups.
+    pub num_values: usize,
+    /// The estimated heap size, in bytes.
+    pub bytes: usize,
 }
 
 // Helper traits used in the VecGroupedReduction and VecMaskGroupedReduction to
@@ -258,6 +272,9 @@ pub trait Reducer: Send + Sync + Clone + 'static {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series>;
+    fn state_size(&self, _v: &[Self::Value]) -> Option<StateSize> {
+        None
+    }
 }
 
 pub trait NumericReduction: Send + Sync + 'static {
@@ -525,6 +542,10 @@ where
         self.layout = LaneLayout::single(0);
         let v = core::mem::take(&mut self.values);
         self.reducer.finish(v, None, &self.in_dtype)
+    }
+
+    fn state_size(&self) -> Option<StateSize> {
+        self.reducer.state_size(&self.values)
     }
 
     fn as_any(&self) -> &dyn Any {

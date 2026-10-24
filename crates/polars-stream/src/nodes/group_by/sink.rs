@@ -75,6 +75,9 @@ struct LocalSink {
     cold_bytes: u64,
     // In creation order.
     pre_aggs: Vec<PreAgg>,
+    // Set by `finish_input`, see `InputStats`.
+    pre_agg_work: u64,
+    pre_agg_state_bytes: u64,
 }
 
 impl LocalSink {
@@ -94,6 +97,8 @@ impl LocalSink {
             cold_frames: Vec::new(),
             cold_bytes: 0,
             pre_aggs: Vec::new(),
+            pre_agg_work: 0,
+            pre_agg_state_bytes: 0,
         }
     }
 
@@ -301,6 +306,18 @@ impl LocalSink {
                 .map(|r| hot_reductions[*r].take().unwrap())
                 .collect();
             self.add_pre_agg(hot_grouper.keys(), r_idxs, reductions, false);
+        }
+
+        for pre_agg in &self.pre_aggs {
+            let num_groups = pre_agg.keys.len() as u64;
+            let mut num_values = 0;
+            for r in &pre_agg.reductions {
+                if let Some(size) = r.state_size() {
+                    num_values += size.num_values as u64;
+                    self.pre_agg_state_bytes += size.bytes as u64;
+                }
+            }
+            self.pre_agg_work += num_groups.max(num_values);
         }
     }
 }
@@ -515,6 +532,10 @@ impl GroupBySink {
 
         let mut stats = InputStats {
             num_reductions: params.grouped_reductions.len() as u64,
+            has_growing_states: params
+                .grouped_reductions
+                .iter()
+                .any(|r| r.state_size().is_some()),
             ..Default::default()
         };
         let mut sketch = CardinalitySketch::new();
@@ -530,6 +551,8 @@ impl GroupBySink {
                 stats.pre_agg_groups += pre_agg.keys.len() as u64;
                 stats.pre_agg_key_bytes += pre_agg.keys.estimated_size() as u64;
             }
+            stats.pre_agg_work += local.pre_agg_work;
+            stats.pre_agg_state_bytes += local.pre_agg_state_bytes;
             frames.extend(local.cold_frames);
             pre_aggs.extend(local.pre_aggs);
         }
