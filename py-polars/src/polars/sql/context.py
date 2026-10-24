@@ -489,34 +489,19 @@ class SQLContext(Generic[FrameType]):
 
     def _execute_catalog_ddl(self, ddl: dict[str, Any]) -> LazyFrame:
         """Perform the catalog DDL that `catalog_ddl` returned."""
-        from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
-
-        if ddl["kind"] != "drop_table":
-            msg = f"unsupported catalog statement {ddl['kind']!r}"
-            raise NotImplementedError(msg)
         config, instance, _ = self._catalogs[ddl["catalog"]]
         catalog = (
             instance
             if instance is not None
             else config.class_(config.name, **config.properties)
         )
-        identifier: tuple[str, ...] = tuple(ddl["identifier"])
-        purge = ddl["purge"]
-        full_name = _display_name([ddl["catalog"], *identifier])
-        response = f"DROP TABLE {full_name}" + (" PURGE" if purge else "")
-        try:
-            if purge:
-                catalog.purge_table(identifier)
-            else:
-                catalog.drop_table(identifier)
-        except (NoSuchTableError, NoSuchNamespaceError) as error:
-            if not ddl["if_exists"]:
-                msg = (
-                    f"table '{ddl['name']}' does not exist: catalog table "
-                    f"'{_display_name(identifier)}' could not be dropped ({error}); "
-                    "catalog identifiers are case-sensitive"
-                )
-                raise NoSuchTableError(msg) from error
+        if ddl["kind"] == "drop_table":
+            response = _drop_catalog_table(catalog, ddl)
+        elif ddl["kind"] == "create_table":
+            response = _create_catalog_table(catalog, ddl)
+        else:
+            msg = f"unsupported catalog statement {ddl['kind']!r}"
+            raise NotImplementedError(msg)
         return DataFrame({"Response": [response]}).lazy()
 
     def register_catalog(
@@ -587,11 +572,14 @@ class SQLContext(Generic[FrameType]):
         asks the catalog to delete the table's data files, and only applies to
         catalog tables. A `DROP TABLE` of a catalog table takes one name.
 
-        `CREATE TABLE`, `TRUNCATE` and `DELETE` on a table of an attached catalog are
-        not supported. For `CREATE TABLE` that includes a name the default catalog
-        applies to, even if a table of that name is registered: with a default
-        catalog, `CREATE TABLE tpch.t` does not create a registered table; use
-        `CREATE TEMP TABLE tpch.t` for that.
+        `CREATE TABLE <name> (<column>, ...)` resolves the name as a query does and
+        creates an empty table in the catalog it resolves to: with a default catalog,
+        `CREATE TABLE tpch.t (...)` creates `tpch.t` there rather than a registered
+        table; use `CREATE TEMP TABLE` for that. A registered table of that name is
+        an error, as it would hide the new table. `NOT NULL` columns become required
+        fields, and `LOCATION` and `WITH (...)` options set the table location and
+        properties. `CREATE TABLE ... AS SELECT`, `TRUNCATE` and `DELETE` on a table
+        of an attached catalog are not supported yet.
         `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
         catalog only acts on a registered table, and is a no-op otherwise.
 
@@ -893,6 +881,98 @@ def _pyiceberg_catalog_class() -> type | None:
     import pyiceberg.catalog
 
     return pyiceberg.catalog.Catalog
+
+
+def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]) -> str:
+    """Drop the catalog table of a `DROP TABLE`, returning the response."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    identifier: tuple[str, ...] = tuple(ddl["identifier"])
+    purge = ddl["purge"]
+    full_name = _display_name([ddl["catalog"], *identifier])
+    response = f"DROP TABLE {full_name}" + (" PURGE" if purge else "")
+    try:
+        if purge:
+            catalog.purge_table(identifier)
+        else:
+            catalog.drop_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError) as error:
+        if not ddl["if_exists"]:
+            msg = (
+                f"table '{ddl['name']}' does not exist: catalog table "
+                f"'{_display_name(identifier)}' could not be dropped ({error}); "
+                "catalog identifiers are case-sensitive"
+            )
+            raise NoSuchTableError(msg) from error
+    return response
+
+
+def _create_catalog_table(
+    catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]
+) -> str:
+    """Create the catalog table of a `CREATE TABLE`, returning the response."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, TableAlreadyExistsError
+
+    from polars.io.iceberg._sink import _create_table_schema
+    from polars.schema import Schema
+
+    identifier: tuple[str, ...] = tuple(ddl["identifier"])
+    name, table_name = ddl["name"], _display_name(identifier)
+    response = f"CREATE TABLE {_display_name([ddl['catalog'], *identifier])}"
+    schema, _ = _create_table_schema(
+        Schema(ddl["schema"]), required=ddl["required"], context="CREATE TABLE"
+    )
+    # checked first, as some catalogs report other errors before an existing table
+    if catalog.table_exists(identifier):
+        if ddl["if_not_exists"]:
+            return response
+        msg = (
+            f"table '{name}' already exists: catalog table '{table_name}' "
+            "could not be created"
+        )
+        raise TableAlreadyExistsError(msg)
+    try:
+        catalog.create_table(
+            identifier,
+            schema=schema,
+            location=ddl["location"],
+            properties=ddl["properties"],
+        )
+    except TableAlreadyExistsError as error:
+        # a concurrent create of the same table
+        if ddl["if_not_exists"]:
+            return response
+        msg = (
+            f"table '{name}' already exists: catalog table '{table_name}' "
+            f"could not be created ({error})"
+        )
+        raise TableAlreadyExistsError(msg) from error
+    except Exception as error:
+        prefix = f"table '{name}' could not be created"
+        namespace = identifier[:-1]
+        # not every catalog raises NoSuchNamespaceError for a missing namespace
+        if isinstance(error, NoSuchNamespaceError) or not _namespace_exists(
+            catalog, namespace
+        ):
+            msg = (
+                f"{prefix}: namespace '{_display_name(namespace)}' does not exist in "
+                f"catalog '{ddl['catalog']}' ({error}); catalog identifiers are "
+                "case-sensitive"
+            )
+            raise NoSuchNamespaceError(msg) from error
+        error.add_note(f"{prefix}: catalog table '{table_name}'")
+        raise
+    return response
+
+
+def _namespace_exists(
+    catalog: pyiceberg.catalog.Catalog, namespace: Sequence[str]
+) -> bool:
+    """Whether the catalog has `namespace`; `True` if that can't be checked."""
+    try:
+        return bool(catalog.namespace_exists(tuple(namespace)))
+    except Exception:
+        return True
 
 
 def _display_name(parts: Sequence[str]) -> str:
