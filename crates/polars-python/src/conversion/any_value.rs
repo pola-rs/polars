@@ -7,6 +7,7 @@ use chrono::{
 use chrono_tz::Tz;
 use hashbrown::HashMap;
 use num_traits::ToPrimitive;
+use numpy::{PyUntypedArray, PyUntypedArrayMethods};
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
@@ -525,6 +526,15 @@ pub(crate) fn py_object_to_any_value(
         }
     }
 
+    fn get_ndarray(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        if ob.cast::<PyUntypedArray>()?.ndim() == 0 {
+            let scalar = ob.call_method0(intern!(ob.py(), "item"))?;
+            py_object_to_any_value(&scalar, strict, true, None)
+        } else {
+            get_list(ob, strict)
+        }
+    }
+
     fn get_list_from_series(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let s = super::get_series(ob)?;
         Ok(AnyValue::List(s))
@@ -647,8 +657,7 @@ pub(crate) fn py_object_to_any_value(
             static NDARRAY_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if let Ok(ndarray_type) = NDARRAY_TYPE.import(py, "numpy", "ndarray") {
                 if ob.is_instance(ndarray_type)? {
-                    // will convert via Series -> mmap_numpy_array
-                    return Ok(get_list as InitFn);
+                    return Ok(get_ndarray as InitFn);
                 }
             }
             static DECIMAL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
