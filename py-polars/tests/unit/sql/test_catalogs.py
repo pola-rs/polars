@@ -394,8 +394,12 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             "`CREATE OR REPLACE TABLE` is not supported for catalog tables",
         ),
         (
-            "CREATE TABLE t AS SELECT 1 AS x",
-            r"`CREATE TABLE \.\.\. AS SELECT` is not yet supported for catalog tables",
+            "CREATE TABLE t (x INT) AS SELECT 1 AS x",
+            r"`CREATE TABLE \.\.\. AS SELECT` does not take column definitions",
+        ),
+        (
+            "CREATE TABLE t PARTITION BY (x) AS SELECT 1 AS x",
+            "`PARTITION BY` is not yet supported for catalog tables",
         ),
         (
             "CREATE TABLE t LIKE lineitem",
@@ -526,6 +530,556 @@ def test_create_catalog_table_missing_namespace(
     assert exc.value.__notes__ == [
         "table 't' could not be created: catalog table 'tpch.t'"
     ]
+
+
+def table_files(tmp_path: Path, *identifier: str) -> set[Path]:
+    # the `lake` warehouse is `tmp_path`
+    return set(tmp_path.joinpath(*identifier).rglob("*.parquet"))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("name", ["lake.tpch.t", "tpch.t", "t"])
+def test_create_catalog_table_as_select(lake: CountingCatalog, name: str) -> None:
+    # #29892
+    ctx = lake_ctx(lake)
+    ctx.register("extra", pl.LazyFrame({"k": [1], "w": [0.5]}))
+    res = ctx.execute(
+        f"CREATE TABLE {name} AS SELECT l.k, l.v, CAST(l.k AS UTINYINT) AS u, e.w "
+        "FROM lineitem AS l LEFT JOIN extra AS e ON l.k = e.k",
+        eager=True,
+    )
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    assert ctx.tables() == ["extra"]
+    # columns are never required, and get lossless Iceberg types
+    assert table_fields(lake, "tpch", "t") == [
+        ("k", "long", False),
+        ("v", "string", False),
+        ("u", "int", False),
+        ("w", "double", False),
+    ]
+    table = lake.load_table(("tpch", "t"))
+    assert len(table.metadata.snapshots) == 1
+    expected = pl.DataFrame(
+        {"k": [1, 2], "v": ["a", "b"], "u": [1, 2], "w": [0.5, None]},
+        schema_overrides={"u": pl.Int32},
+    )
+    res = ctx.execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, expected, check_row_order=False)
+    assert_frame_equal(pl.scan_iceberg(table).collect(), res, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_existing(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    from pyiceberg.exceptions import TableAlreadyExistsError
+
+    ctx = lake_ctx(lake)
+    files = table_files(tmp_path, "tpch", "lineitem")
+    # the query is planned, but not run: the cast would fail
+    res = ctx.execute(
+        "CREATE TABLE IF NOT EXISTS lineitem AS SELECT CAST(v AS INT) AS x FROM lineitem",
+        eager=True,
+    )
+    assert res.item() == "CREATE TABLE lake.tpch.lineitem"
+    with pytest.raises(NoSuchTableError):
+        ctx.execute("CREATE TABLE IF NOT EXISTS lineitem AS SELECT * FROM nope")
+    with pytest.raises(
+        TableAlreadyExistsError,
+        match=r"table 'lineitem' already exists: catalog table 'tpch\.lineitem'",
+    ):
+        ctx.execute("CREATE TABLE lineitem AS SELECT CAST(v AS INT) AS x FROM lineitem")
+    res = ctx.execute("SELECT * FROM lineitem", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    assert table_files(tmp_path, "tpch", "lineitem") == files
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_created_meanwhile(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import TableAlreadyExistsError
+
+    ctx = lake_ctx(lake)
+    files = table_files(tmp_path, "tpch", "lineitem")
+    metadata = set((tmp_path / "tpch" / "lineitem" / "metadata").iterdir())
+    table_exists = lake.table_exists
+    checks: list[Any] = []
+
+    def first_check_misses(identifier: Any) -> bool:
+        # the table appears after the existence check
+        checks.append(identifier)
+        return len(checks) > 1 and table_exists(identifier)
+
+    monkeypatch.setattr(lake, "table_exists", first_check_misses)
+    res = ctx.execute(
+        "CREATE TABLE IF NOT EXISTS lineitem AS SELECT 1 AS x", eager=True
+    )
+    assert res.item() == "CREATE TABLE lake.tpch.lineitem"
+
+    checks.clear()
+    with pytest.raises(
+        TableAlreadyExistsError, match="table 'lineitem' already exists"
+    ):
+        ctx.execute("CREATE TABLE lineitem AS SELECT 1 AS x")
+
+    # the other writer's table is unchanged, and this write's files are deleted
+    monkeypatch.setattr(lake, "table_exists", table_exists)
+    res = ctx.execute("SELECT * FROM lineitem", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    assert len(lake.load_table(("tpch", "lineitem")).metadata.snapshots) == 1
+    assert table_files(tmp_path, "tpch", "lineitem") == files
+    assert set((tmp_path / "tpch" / "lineitem" / "metadata").iterdir()) == metadata
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_fails(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.exceptions import InvalidOperationError
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    ctx = lake_ctx(lake)
+    # a query that fails while it runs creates no table
+    with pytest.raises(InvalidOperationError):
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM lineitem")
+    assert not lake.table_exists(("tpch", "t"))
+
+    # a failed commit deletes the written files
+    def fail(*args: Any, **kwargs: Any) -> None:
+        assert table_files(tmp_path, "tpch", "t")
+        msg = "commit failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "_commit_create", fail)
+    with pytest.raises(RuntimeError, match="commit failed") as exc:
+        ctx.execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert exc.value.__notes__ == [
+        "table 't' could not be created: catalog table 'tpch.t'"
+    ]
+    assert not lake.table_exists(("tpch", "t"))
+    assert not table_files(tmp_path, "tpch", "t")
+
+    # files under the object-storage layout are left, with a note
+    with pytest.raises(RuntimeError, match="commit failed") as exc:
+        ctx.execute(
+            "CREATE TABLE t WITH ('write.object-storage.enabled' = true) "
+            "AS SELECT * FROM lineitem"
+        )
+    assert exc.value.__notes__[0].startswith("data files may remain under '")
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_lost_commit_response(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+    from pyiceberg.table import CreateTableTransaction
+
+    commit_transaction = CreateTableTransaction.commit_transaction
+
+    def commit_then_fail(self: Any) -> Any:
+        commit_transaction(self)
+        msg = "response lost"
+        raise CommitStateUnknownException(msg)
+
+    monkeypatch.setattr(CreateTableTransaction, "commit_transaction", commit_then_fail)
+    res = lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem", eager=True)
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    res = lake_ctx(lake).execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_unknown_outcome(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+    from pyiceberg.table import CreateTableTransaction
+
+    commit_transaction = CreateTableTransaction.commit_transaction
+    load_table = lake.load_table
+    committed: list[bool] = []
+
+    def commit_then_fail(self: Any) -> Any:
+        commit_transaction(self)
+        committed.append(True)
+        msg = "response lost"
+        raise CommitStateUnknownException(msg)
+
+    def load_fails_for_t(identifier: Any) -> Any:
+        # the catalog becomes unreachable after the commit
+        if committed and tuple(identifier) == ("tpch", "t"):
+            msg = "catalog unreachable"
+            raise ConnectionError(msg)
+        return load_table(identifier)
+
+    monkeypatch.setattr(CreateTableTransaction, "commit_transaction", commit_then_fail)
+    monkeypatch.setattr(lake, "load_table", load_fails_for_t)
+    # the create landed, so its data files must be kept
+    with pytest.raises(CommitStateUnknownException, match="could not verify") as exc:
+        lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert exc.value.__notes__[0].startswith(
+        "the create may have landed; data files kept under '"
+    )
+    assert exc.value.__notes__[1] == "table 't' may not exist: catalog table 'tpch.t'"
+
+    monkeypatch.setattr(lake, "load_table", load_table)
+    res = lake_ctx(lake).execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_unknown_create_not_landed(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+    from pyiceberg.table import CreateTableTransaction
+
+    def unknown(self: Any) -> Any:
+        msg = "response lost"
+        raise CommitStateUnknownException(msg)
+
+    monkeypatch.setattr(CreateTableTransaction, "commit_transaction", unknown)
+    # the create may still land later, so its data files are kept
+    with pytest.raises(CommitStateUnknownException, match="response lost") as exc:
+        lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert exc.value.__notes__[0].startswith(
+        "the create may have landed; data files kept under '"
+    )
+    assert not lake.table_exists(("tpch", "t"))
+    assert table_files(tmp_path, "tpch", "t")
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_cleanup_storage_options(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg import _sink
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "commit failed"
+        raise RuntimeError(msg)
+
+    deleted_with: list[dict[str, Any]] = []
+    delete_dir = _sink._delete_dir
+
+    def record(io: Any, location: str) -> None:
+        deleted_with.append(dict(io.properties))
+        delete_dir(io, location)
+
+    monkeypatch.setattr(_sink.IcebergSinkState, "_commit_create", fail)
+    monkeypatch.setattr(_sink, "_delete_dir", record)
+    # the files are deleted with the storage options they were written with
+    ctx = lake_ctx(lake, storage_options={"polars.test-option": "x"})
+    with pytest.raises(RuntimeError, match="commit failed"):
+        ctx.execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert deleted_with
+    assert deleted_with[0]["polars.test-option"] == "x"
+
+    with pytest.raises(NotImplementedError):
+        delete_dir(object(), "file:///nowhere")  # type: ignore[arg-type]
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_cleanup_fails(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg import _sink
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "commit failed"
+        raise RuntimeError(msg)
+
+    def delete_fails(*args: Any, **kwargs: Any) -> None:
+        msg = "permission denied"
+        raise PermissionError(msg)
+
+    monkeypatch.setattr(_sink.IcebergSinkState, "_commit_create", fail)
+    monkeypatch.setattr(_sink, "_delete_dir", delete_fails)
+    with pytest.raises(RuntimeError, match="commit failed") as exc:
+        lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert exc.value.__notes__[0].startswith("data files may remain under '")
+    assert "/tpch/t/data/" in exc.value.__notes__[0]
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_fsspec_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("fsspec")
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    catalog = SqlCatalog(
+        "lake",
+        uri=f"sqlite:///{tmp_path / 'fs.db'}",
+        warehouse=f"file://{tmp_path}",
+        **{"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"},
+    )
+    catalog.create_namespace("ns")
+    ctx = pl.SQLContext().register_catalog(
+        "lake", catalog, default_namespace="ns", default=True
+    )
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        assert table_files(tmp_path, "ns", "t")
+        msg = "commit failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "_commit_create", fail)
+    with pytest.raises(RuntimeError, match="commit failed"):
+        ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
+    assert not table_files(tmp_path, "ns", "t")
+
+
+def no_staged_create(*args: Any, **kwargs: Any) -> None:
+    from pyiceberg.exceptions import BadRequestError
+
+    msg = "staged create rejected"
+    raise BadRequestError(msg)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("rejected", ["400", "501"])
+def test_create_catalog_table_as_select_without_staged_create(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, rejected: str
+) -> None:
+    from pyiceberg.exceptions import TableAlreadyExistsError
+
+    def not_implemented(*args: Any, **kwargs: Any) -> None:
+        msg = "staged create not implemented"
+        raise NotImplementedError(msg)
+
+    # some REST catalogs reject staged creates: the table is created, then filled
+    rejection = no_staged_create if rejected == "400" else not_implemented
+    monkeypatch.setattr(lake, "create_table_transaction", rejection)
+    ctx = lake_ctx(lake)
+    res = ctx.execute("CREATE TABLE t AS SELECT * FROM lineitem", eager=True)
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    assert len(lake.load_table(("tpch", "t")).metadata.snapshots) == 1
+    res = ctx.execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+    res = ctx.execute("CREATE TABLE IF NOT EXISTS t AS SELECT 1 AS x", eager=True)
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    assert len(lake.load_table(("tpch", "t")).metadata.snapshots) == 1
+
+    # the table appears after the existence check
+    table_exists = lake.table_exists
+    monkeypatch.setattr(lake, "table_exists", lambda identifier: False)
+    res = ctx.execute("CREATE TABLE IF NOT EXISTS t AS SELECT 1 AS x", eager=True)
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    with pytest.raises(TableAlreadyExistsError, match="table 't' already exists"):
+        ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
+    monkeypatch.setattr(lake, "table_exists", table_exists)
+    res = ctx.execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_without_staged_create_fails(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitFailedException
+
+    from polars.exceptions import InvalidOperationError
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    ctx = lake_ctx(lake)
+    # the table created for a failing query is dropped again
+    with pytest.raises(InvalidOperationError) as exc:
+        ctx.execute("CREATE TABLE t AS SELECT CAST(v AS INT) AS x FROM lineitem")
+    assert exc.value.__notes__ == [
+        "table 't' could not be created: catalog table 'tpch.t'"
+    ]
+    assert not lake.table_exists(("tpch", "t"))
+    assert not table_files(tmp_path, "tpch", "t")
+
+    # a failed commit is not taken for a table created meanwhile
+    def fail(*args: Any, **kwargs: Any) -> None:
+        assert table_files(tmp_path, "tpch", "t")
+        msg = "commit failed"
+        raise CommitFailedException(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "_commit", fail)
+    with pytest.raises(CommitFailedException, match="commit failed") as exc_commit:
+        ctx.execute("CREATE TABLE IF NOT EXISTS t AS SELECT * FROM lineitem")
+    assert exc_commit.value.__notes__ == [
+        "table 't' could not be created: catalog table 'tpch.t'"
+    ]
+    assert not lake.table_exists(("tpch", "t"))
+    assert not table_files(tmp_path, "tpch", "t")
+
+    # files under the object-storage layout are left, with a note
+    with pytest.raises(CommitFailedException) as exc_commit:
+        ctx.execute(
+            "CREATE TABLE t WITH ('write.object-storage.enabled' = true) "
+            "AS SELECT * FROM lineitem"
+        )
+    assert exc_commit.value.__notes__[0].startswith("data files may remain under '")
+    assert exc_commit.value.__notes__[1:] == [
+        "table 't' could not be created: catalog table 'tpch.t'"
+    ]
+    assert not lake.table_exists(("tpch", "t"))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_without_staged_create_written_meanwhile(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+
+    def write_then_fail(*args: Any, **kwargs: Any) -> None:
+        # another writer fills the new table first
+        pl.DataFrame({"k": [3], "v": ["c"]}).write_iceberg(
+            lake.load_table(("tpch", "t")), mode="append"
+        )
+        msg = "commit failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "_commit", write_then_fail)
+    with pytest.raises(RuntimeError, match="commit failed") as exc:
+        lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert exc.value.__notes__ == [
+        "table 't' could not be filled: catalog table 'tpch.t' was left in the catalog"
+    ]
+    monkeypatch.undo()
+    res = lake_ctx(lake).execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, pl.DataFrame({"k": [3], "v": ["c"]}))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_without_staged_create_unknown_outcome(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+
+    def unknown(*args: Any, **kwargs: Any) -> None:
+        msg = "response lost"
+        raise CommitStateUnknownException(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "_commit", unknown)
+    # the rows may have landed, so the table and its files are kept
+    with pytest.raises(CommitStateUnknownException) as exc:
+        lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert exc.value.__notes__[0].startswith(
+        "the rows may have landed; data files kept under '"
+    )
+    assert exc.value.__notes__[1] == (
+        "table 't' was created, its rows may be missing: catalog table 'tpch.t'"
+    )
+    assert lake.table_exists(("tpch", "t"))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_lost_response_created_meanwhile(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import (
+        CommitStateUnknownException,
+        TableAlreadyExistsError,
+    )
+    from pyiceberg.table import CreateTableTransaction
+
+    def other_writer_then_unknown(self: Any) -> Any:
+        # another writer creates the table, and this commit's response is lost
+        lake.create_table(("tpch", "t"), schema=LINEITEM.to_arrow().schema)
+        msg = "response lost"
+        raise CommitStateUnknownException(msg)
+
+    monkeypatch.setattr(
+        CreateTableTransaction, "commit_transaction", other_writer_then_unknown
+    )
+    ctx = lake_ctx(lake)
+    res = ctx.execute(
+        "CREATE TABLE IF NOT EXISTS t AS SELECT * FROM lineitem", eager=True
+    )
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    assert not lake.load_table(("tpch", "t")).metadata.snapshots
+    assert not table_files(tmp_path, "tpch", "t")
+
+    lake.drop_table(("tpch", "t"))
+    with pytest.raises(TableAlreadyExistsError, match="table 't' already exists"):
+        ctx.execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert not table_files(tmp_path, "tpch", "t")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("staged", [True, False])
+def test_create_catalog_table_as_select_fails_after_commit(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, staged: bool
+) -> None:
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    if not staged:
+        monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    commit = IcebergSinkState._commit
+
+    def commit_then_fail(self: Any, *args: Any, **kwargs: Any) -> None:
+        commit(self, *args, **kwargs)
+        msg = "failed after the commit"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(IcebergSinkState, "_commit", commit_then_fail)
+    # the data files of a landed commit are kept
+    with pytest.raises(RuntimeError, match="failed after the commit") as exc:
+        lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert exc.value.__notes__[0].startswith("data files may remain under '")
+    monkeypatch.undo()
+    res = lake_ctx(lake).execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_query_text(lake: CountingCatalog) -> None:
+    # the query is passed on as SQL text
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE t AS WITH c AS (SELECT k, 'it''s' AS s FROM lake.tpch.lineitem) "
+        'SELECT k::DOUBLE AS "k value", s FROM c WHERE k > 1'
+    )
+    res = ctx.execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, pl.DataFrame({"k value": [2.0], "s": ["it's"]}))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_options(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    ctx = lake_ctx(lake)
+    location = f"file://{tmp_path / 'custom'}"
+    ctx.execute(
+        f"CREATE TABLE t WITH ('location' = '{location}', 'format-version' = 1, "
+        "'k' = 'v') AS SELECT * FROM lineitem"
+    )
+    table = lake.load_table(("tpch", "t"))
+    assert table.location() == location
+    assert table.format_version == 1
+    assert table.properties["k"] == "v"
+    assert list((tmp_path / "custom").rglob("*.parquet"))
+
+    location = f"file://{tmp_path / 'clause'}"
+    ctx.execute(f"CREATE TABLE t3 LOCATION '{location}' AS SELECT * FROM lineitem")
+    assert lake.load_table(("tpch", "t3")).location() == location
+    assert list((tmp_path / "clause").rglob("*.parquet"))
+
+    with pytest.raises(
+        NoSuchNamespaceError,
+        match=r"table 'sales\.t' could not be created: namespace 'sales' does not exist",
+    ):
+        ctx.execute("CREATE TABLE sales.t AS SELECT 1 AS x")
+    with pytest.raises(TypeError, match="columns without a lossless Iceberg type"):
+        ctx.execute("CREATE TABLE t2 AS SELECT CAST(k AS UBIGINT) AS x FROM lineitem")
+    assert not lake.table_exists(("tpch", "t2"))
 
 
 @pytest.mark.write_disk
