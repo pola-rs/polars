@@ -64,6 +64,7 @@ impl PyScanOptions<'_> {
             hive_partitioning: Option<bool>,
             hive_schema: Option<Wrap<Schema>>,
             try_parse_hive_dates: bool,
+            hive_start_idx: usize,
             rechunk: bool,
             cache: bool,
             storage_options: OptPyCloudOptions<'a>,
@@ -90,6 +91,7 @@ impl PyScanOptions<'_> {
             hive_partitioning,
             hive_schema,
             try_parse_hive_dates,
+            hive_start_idx,
             rechunk,
             cache,
             storage_options,
@@ -113,7 +115,7 @@ impl PyScanOptions<'_> {
 
         let hive_options = HiveOptions {
             enabled: hive_partitioning,
-            hive_start_idx: 0,
+            hive_start_idx,
             schema: hive_schema,
             try_parse_dates: try_parse_hive_dates,
         };

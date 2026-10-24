@@ -235,7 +235,8 @@ impl ScanSources {
                 {
                     scan_args.hive_options.enabled = Some(true);
                 }
-                scan_args.hive_options.hive_start_idx = hive_start_idx;
+                scan_args.hive_options.hive_start_idx =
+                    scan_args.hive_options.hive_start_idx.max(hive_start_idx);
 
                 Ok((Self::Paths(expanded_paths), bytes_per_source))
             },

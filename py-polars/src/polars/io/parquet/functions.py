@@ -547,6 +547,7 @@ def scan_parquet(
     _table_statistics: DataFrame | None = None,
     _row_count: tuple[int, int] | None = None,
     _source_sizes: Sequence[int] | None = None,
+    _hive_start_idx: int = 0,
     _resolve_heavy_sources: int | None = None,
 ) -> LazyFrame:
     """
@@ -765,6 +766,7 @@ def scan_parquet(
             hive_partitioning=hive_partitioning,
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
+            hive_start_idx=_hive_start_idx,
             rechunk=False,
             cache=cache,
             storage_options=storage_options,

@@ -224,10 +224,10 @@ class DeltaDataset:
                 f"path expansion time: {elapsed:.3f}s"
             )
 
+        root = _table_root(table.table_uri)
+
         # Private delta-rs API: fetch sizes without materializing add-action statistics.
-        source_sizes = _source_sizes(
-            paths, _table_root(table.table_uri), table._table.get_add_file_sizes()
-        )
+        source_sizes = _source_sizes(paths, root, table._table.get_add_file_sizes())
 
         if source_sizes is None and verbose:
             eprint(
@@ -302,6 +302,7 @@ class DeltaDataset:
             _table_statistics=table_statistics,
             _deletion_files=deletion_files,
             _source_sizes=source_sizes,
+            _hive_start_idx=len(root) if all(p.startswith(root) for p in paths) else 0,
         ), version_key
 
     #

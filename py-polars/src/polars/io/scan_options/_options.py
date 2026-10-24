@@ -45,6 +45,7 @@ class ScanOptions:
     hive_partitioning: bool | None = None
     hive_schema: SchemaDict | None = None
     try_parse_hive_dates: bool = True
+    hive_start_idx: int = 0
 
     rechunk: bool = False
     cache: bool = True
