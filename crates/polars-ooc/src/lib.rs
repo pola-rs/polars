@@ -6,7 +6,7 @@ mod spill_frame;
 mod spill_token;
 
 pub use global_alloc::{Allocator, estimate_memory_usage};
-pub use memory_manager::memory_manager;
+pub use memory_manager::{MemoryReservation, memory_manager};
 use polars_utils::relaxed_cell::RelaxedCell;
 pub use spill_context::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, RandomSpillContext,
