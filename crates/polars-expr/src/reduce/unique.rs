@@ -109,6 +109,13 @@ impl<K: Copy> UniqueValues<K> {
         }
     }
 
+    /// Makes room for the keys of `other` if both are tables.
+    fn reserve_for(&mut self, other: &Self, rehash: impl Fn(&K) -> u64) {
+        if let (Some(table), Some(other)) = (&mut self.large, &other.large) {
+            table.reserve(other.len(), rehash);
+        }
+    }
+
     fn iter(&self) -> impl Iterator<Item = &K> {
         self.small
             .iter()
@@ -152,6 +159,7 @@ impl<T: TotalHash + TotalEq + Copy> UniqueValues<TotalOrdWrap<T>> {
 
     fn combine(&mut self, other: &Self) {
         self.has_null |= other.has_null;
+        self.reserve_for(other, hash_one);
         for k in other.iter() {
             self.insert_value(k.0);
         }
@@ -339,6 +347,7 @@ impl BinaryUniqueValues {
 
     fn combine(&mut self, other: &Self) {
         self.values.has_null |= other.values.has_null;
+        self.values.reserve_for(&other.values, |k| k.hash);
         for k in other.values.iter() {
             if k.view.is_inline() {
                 self.insert_inline(k.view, k.hash);
