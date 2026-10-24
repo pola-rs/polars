@@ -402,6 +402,11 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add("PolarsError", py.get_type::<exceptions::PolarsError>())
         .unwrap();
     m.add(
+        "PolarsTypeError",
+        py.get_type::<exceptions::PolarsTypeError>(),
+    )
+    .unwrap();
+    m.add(
         "ColumnNotFoundError",
         py.get_type::<exceptions::ColumnNotFoundError>(),
     )
@@ -452,6 +457,11 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add(
         "StructFieldNotFoundError",
         py.get_type::<exceptions::StructFieldNotFoundError>(),
+    )
+    .unwrap();
+    m.add(
+        "UnsupportedLiteralError",
+        py.get_type::<exceptions::UnsupportedLiteralError>(),
     )
     .unwrap();
 

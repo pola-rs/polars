@@ -282,13 +282,29 @@ fn map_dict<'py>(py: Python<'py>, entries: &Series) -> PyResult<Bound<'py, PyDic
 /// Convert a Python object to an [`AnyValue`].
 ///
 /// When known, `dtype` disambiguates Map dictionaries and containers holding nested Maps.
-#[cfg_attr(not(feature = "dtype-map"), expect(unused_variables))]
 pub(crate) fn py_object_to_any_value(
     ob: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
     dtype: Option<&DataType>,
 ) -> PyResult<AnyValue<'static>> {
+    try_py_object_to_any_value(ob, strict, allow_object, dtype)?
+        .ok_or_else(|| PyValueError::new_err(format!("Cannot convert {ob}")))
+}
+
+/// Convert a Python object to an [`AnyValue`].
+///
+/// Returns `Ok(None)` if the type of the object is not supported,
+/// and an error if the type is supported but the conversion failed.
+///
+/// When known, `dtype` disambiguates Map dictionaries and containers holding nested Maps.
+#[cfg_attr(not(feature = "dtype-map"), expect(unused_variables))]
+pub(crate) fn try_py_object_to_any_value(
+    ob: &Bound<'_, PyAny>,
+    strict: bool,
+    allow_object: bool,
+    dtype: Option<&DataType>,
+) -> PyResult<Option<AnyValue<'static>>> {
     // Conversion functions.
     fn get_null(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         Ok(AnyValue::Null)
@@ -599,74 +615,77 @@ pub(crate) fn py_object_to_any_value(
     ///
     /// Note: This function is only ran if the object's type is not already in the
     /// lookup table.
-    fn get_conversion_function(ob: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<InitFn> {
+    fn get_conversion_function(
+        ob: &Bound<'_, PyAny>,
+        allow_object: bool,
+    ) -> PyResult<Option<InitFn>> {
         let py = ob.py();
         if ob.is_none() {
-            Ok(get_null)
+            Ok(Some(get_null))
         }
         // bool must be checked before int because Python bool is an instance of int.
         else if ob.is_instance_of::<PyBool>() {
-            Ok(get_bool)
+            Ok(Some(get_bool))
         } else if ob.is_instance_of::<PyInt>() {
-            Ok(get_int)
+            Ok(Some(get_int))
         } else if ob.is_instance_of::<PyFloat>() {
-            Ok(get_float)
+            Ok(Some(get_float))
         } else if ob.is_instance_of::<PyString>() {
-            Ok(get_str)
+            Ok(Some(get_str))
         } else if ob.is_instance_of::<PyBytes>() {
-            Ok(get_bytes)
+            Ok(Some(get_bytes))
         } else if ob.is_instance_of::<PyTuple>() {
             // NamedTuple-like object?
             if ob.hasattr(intern!(py, "_fields"))? {
-                Ok(get_namedtuple)
+                Ok(Some(get_namedtuple))
             } else {
-                Ok(get_list)
+                Ok(Some(get_list))
             }
         } else if ob.is_instance_of::<PyList>() {
-            Ok(get_list)
+            Ok(Some(get_list))
         } else if ob.is_instance_of::<PyDict>() {
-            Ok(get_struct)
+            Ok(Some(get_struct))
         } else if PyMapping::type_check(ob) {
-            Ok(get_mapping)
+            Ok(Some(get_mapping))
         }
         // note: datetime must be checked *before* date
         // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
-            Ok(get_datetime as InitFn)
+            Ok(Some(get_datetime as InitFn))
         } else if PyDate::type_check(ob) {
-            Ok(get_date as InitFn)
+            Ok(Some(get_date as InitFn))
         } else if PyTime::type_check(ob) {
-            Ok(get_time as InitFn)
+            Ok(Some(get_time as InitFn))
         } else if PyDelta::type_check(ob) {
-            Ok(get_timedelta as InitFn)
+            Ok(Some(get_timedelta as InitFn))
         } else if ob.is_instance_of::<PyRange>() {
-            Ok(get_list as InitFn)
+            Ok(Some(get_list as InitFn))
         } else if ob.is_instance(pl_series(py).bind(py))? {
-            Ok(get_list_from_series as InitFn)
+            Ok(Some(get_list_from_series as InitFn))
         } else {
             static NDARRAY_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if let Ok(ndarray_type) = NDARRAY_TYPE.import(py, "numpy", "ndarray") {
                 if ob.is_instance(ndarray_type)? {
                     // will convert via Series -> mmap_numpy_array
-                    return Ok(get_list as InitFn);
+                    return Ok(Some(get_list as InitFn));
                 }
             }
             static DECIMAL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
-                return Ok(get_decimal as InitFn);
+                return Ok(Some(get_decimal as InitFn));
             }
 
             // support NumPy scalars
             if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
-                return Ok(get_int as InitFn);
+                return Ok(Some(get_int as InitFn));
             } else if ob.extract::<f64>().is_ok() {
-                return Ok(get_float as InitFn);
+                return Ok(Some(get_float as InitFn));
             }
 
             if allow_object {
-                Ok(get_object as InitFn)
+                Ok(Some(get_object as InitFn))
             } else {
-                Err(PyValueError::new_err(format!("Cannot convert {ob}")))
+                Ok(None)
             }
         }
     }
@@ -675,22 +694,23 @@ pub(crate) fn py_object_to_any_value(
     #[cfg(feature = "dtype-map")]
     if let Some(dtype) = dtype.filter(|dt| dt.contains_map()) {
         if ob.is_none() {
-            return Ok(AnyValue::Null);
+            return Ok(Some(AnyValue::Null));
         }
         match dtype {
             DataType::Map(key_dtype, value_dtype)
                 if ob.is_instance_of::<PyDict>() || PyMapping::type_check(ob) =>
             {
-                return get_map(ob, strict, key_dtype, value_dtype);
+                return get_map(ob, strict, key_dtype, value_dtype).map(Some);
             },
             DataType::List(_) | DataType::Struct(_) | DataType::Extension(_, _) => {
-                return get_container_of_map(ob, dtype, strict);
+                return get_container_of_map(ob, dtype, strict).map(Some);
             },
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => return get_container_of_map(ob, dtype, strict),
+            DataType::Array(_, _) => return get_container_of_map(ob, dtype, strict).map(Some),
             // The only way to construct a Map whose key dtype contains a type that is not hashable in Python
             DataType::Map(_, _) if is_map_entries(ob)? => {
-                return get_container_of_map(ob, &dtype.map_storage_dtype().unwrap(), strict);
+                return get_container_of_map(ob, &dtype.map_storage_dtype().unwrap(), strict)
+                    .map(Some);
             },
             // A Map target that is neither a mapping nor well-formed entries. Fall through
             // to the untargeted conversion, which reports the mismatch.
@@ -708,11 +728,13 @@ pub(crate) fn py_object_to_any_value(
             let k = TypeObjectKey::new(py_type.clone().unbind());
             assert_eq!(k.address, py_type_address);
 
-            let func = get_conversion_function(ob, allow_object)?;
+            let Some(func) = get_conversion_function(ob, allow_object)? else {
+                return Ok(None);
+            };
             LUT.lock().unwrap().insert(k, func);
             func
         }
     };
 
-    conversion_func(ob, strict)
+    conversion_func(ob, strict).map(Some)
 }

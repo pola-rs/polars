@@ -7,9 +7,10 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
-use crate::conversion::any_value::py_object_to_any_value;
+use crate::conversion::any_value::try_py_object_to_any_value;
 use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
+use crate::exceptions::UnsupportedLiteralError;
 use crate::expr::ToExprs;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::lazyframe::PyOptFlags;
@@ -502,8 +503,8 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     } else if let Ok(value) = value.cast::<PyBytes>() {
         Ok(dsl::lit(value.as_bytes()).into())
     } else {
-        let raise = || {
-            PyTypeError::new_err(format!(
+        let msg = || {
+            format!(
                 "cannot create expression literal for value of type {}.\
                     \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
                 value
@@ -511,24 +512,26 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
                     .qualname()
                     .map(|s| s.to_string())
                     .unwrap_or("unknown".to_owned()),
-            ))
+            )
         };
+        let raise_type_error = |_| PyTypeError::new_err(msg());
+        let raise_unsupported_literal = || UnsupportedLiteralError::new_err(msg());
 
-        let av = py_object_to_any_value(value, true, allow_object, None).map_err(|_| raise())?;
-        match av {
+        match try_py_object_to_any_value(value, true, allow_object, None)
+            .map_err(raise_type_error)?
+        {
+            // Check again for object allowance as for cached addresses this is not checked.
             #[cfg(feature = "object")]
-            AnyValue::ObjectOwned(_) => {
-                // Check again for object allowance as for cached addresses this is not checked.
-                if allow_object {
-                    let s = PySeries::new_object(py, "", vec![value.extract()?], false)
-                        .series
-                        .into_inner();
-                    Ok(dsl::lit(s).into())
-                } else {
-                    Err(raise())
-                }
+            Some(AnyValue::ObjectOwned(_)) if allow_object => {
+                let s = PySeries::new_object(py, "", vec![value.extract()?], false)
+                    .series
+                    .into_inner();
+                Ok(dsl::lit(s).into())
             },
-            _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
+            #[cfg(feature = "object")]
+            Some(AnyValue::ObjectOwned(_)) => Err(raise_unsupported_literal()),
+            Some(av) => Ok(Expr::Literal(LiteralValue::from(av)).into()),
+            None => Err(raise_unsupported_literal()),
         }
     }
 }
