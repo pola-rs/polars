@@ -6,6 +6,7 @@ pub mod nulls;
 pub mod quantile_filter;
 mod rank;
 mod sum;
+mod van_herk;
 
 mod arg_min_max;
 mod min_by_max_by;
