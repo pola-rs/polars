@@ -5,6 +5,7 @@ use polars_error::PolarsResult;
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::components::sinked_path_info_list::SinkedPathInfoEntry;
 use crate::nodes::io_sinks::components::size::RowCountAndSize;
+use crate::nodes::io_sinks::writers::interface::FinishSender;
 
 pub type FileSinkPermit = tokio::sync::OwnedSemaphorePermit;
 
@@ -14,6 +15,8 @@ pub struct FileSinkTaskData {
     task_handle: executor::JoinHandle<PolarsResult<FileSinkPermit>>,
     path_info_entry: Option<SinkedPathInfoEntry>,
     sent_rows: u64,
+    /// Sent on `close`; dropped unsent, the writer leaves its file unfinished.
+    finish_tx: FinishSender,
 }
 
 impl FileSinkTaskData {
@@ -22,6 +25,7 @@ impl FileSinkTaskData {
         start_position: RowCountAndSize,
         task_handle: executor::JoinHandle<PolarsResult<FileSinkPermit>>,
         path_info_entry: Option<SinkedPathInfoEntry>,
+        finish_tx: FinishSender,
     ) -> Self {
         Self {
             morsel_tx,
@@ -29,6 +33,7 @@ impl FileSinkTaskData {
             task_handle,
             path_info_entry,
             sent_rows: 0,
+            finish_tx,
         }
     }
 
@@ -49,6 +54,7 @@ impl FileSinkTaskData {
             path_info_entry.set_num_rows(self.sent_rows);
         }
 
+        self.finish_tx.send();
         self.task_handle
     }
 }

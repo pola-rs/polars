@@ -19,7 +19,9 @@ use crate::nodes::io_sinks::components::sinked_path_info_list::{
 };
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks::writers::create_file_writer_starter;
-use crate::nodes::io_sinks::writers::interface::{FileOpenTaskHandle, FileWriterStarter};
+use crate::nodes::io_sinks::writers::interface::{
+    FileOpenTaskHandle, FileWriterStarter, FinishSignal,
+};
 use crate::utils::tokio_handle_ext;
 
 pub fn start_single_file_sink_pipeline(
@@ -28,6 +30,7 @@ pub fn start_single_file_sink_pipeline(
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
+    finish: FinishSignal,
 ) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
     let task_metrics = execution_state.task_metrics();
@@ -102,7 +105,7 @@ pub fn start_single_file_sink_pipeline(
                 })
         }))
     };
-    let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);
+    let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close, finish);
 
     let target_sink_morsel_size = file_writer_starter.target_sink_morsel_size();
 
@@ -127,12 +130,13 @@ pub fn start_single_file_sink_pipeline(
     }
 
     let (writer_tx, writer_rx) = connector::connector();
-    let writer_handle = file_writer_starter.start_file_writer(
+    // Cancelled with the sink: a failed query must not finish the file.
+    let writer_handle = executor::AbortOnDropHandle::new(file_writer_starter.start_file_writer(
         writer_rx,
         file_open_task,
         num_pipelines_per_sink,
         execution_state.task_metrics.clone(),
-    )?;
+    )?);
 
     let schema = Arc::clone(&file_schema);
     let inflight_morsel_semaphore =

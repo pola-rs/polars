@@ -16,6 +16,7 @@ use crate::nodes::io_sinks::components::partition_sink_starter::PartitionSinkSta
 use crate::nodes::io_sinks::components::partition_state::PartitionState;
 use crate::nodes::io_sinks::components::partitioner::{self, PartitionedDataFrames};
 use crate::nodes::io_sinks::components::size::RowCountAndSize;
+use crate::nodes::io_sinks::writers::interface::FinishSignal;
 
 pub struct PartitionDistributor {
     pub node_name: PlSmallStr,
@@ -29,6 +30,8 @@ pub struct PartitionDistributor {
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
     pub partition_sink_starter: PartitionSinkStarter,
     pub no_partition_keys: bool,
+    /// Received once the input ended cleanly; files are finished only then.
+    pub finish: FinishSignal,
     pub verbose: bool,
 }
 
@@ -44,6 +47,7 @@ impl PartitionDistributor {
             open_sinks_semaphore,
             partition_sink_starter,
             no_partition_keys,
+            finish,
             verbose,
         } = self;
 
@@ -201,6 +205,9 @@ impl PartitionDistributor {
 
             drop(input_wait_token);
         }
+
+        // The input also ends when the query fails: then no file is finished.
+        finish.wait().await?;
 
         if verbose {
             eprintln!("{node_name}: Begin finalize");

@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from functools import partial
 from itertools import permutations
 from pathlib import Path
@@ -973,3 +974,46 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+@pytest.mark.parametrize(
+    ("sink", "read"),
+    [
+        (pl.LazyFrame.sink_parquet, pl.read_parquet),
+        (pl.LazyFrame.sink_ipc, pl.read_ipc),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_failed_query_does_not_finish_file(
+    tmp_path: Path, sink: Any, read: Any
+) -> None:
+    path = tmp_path / "out"
+    lf = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.Int32))
+    with pytest.raises(InvalidOperationError):
+        sink(lf, path)
+    # The writer used to finish the file in the background, after the error.
+    time.sleep(0.2)
+    # The file is missing if the sink was cancelled before it opened it.
+    with pytest.raises((ComputeError, FileNotFoundError)):
+        read(path)
+
+
+@pytest.mark.write_disk
+def test_sink_partitioned_failed_query_does_not_finish_files(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Small morsels, so that files are open when the query fails.
+    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "1000")
+    n = 200_000
+    rows = pl.LazyFrame({"k": pl.int_range(n, eager=True) % 2, "x": range(n)})
+    failing = pl.LazyFrame({"k": [1], "x": ["a"]}).select(
+        pl.col("k").cast(pl.Int64), pl.col("x").cast(pl.Int64)
+    )
+    with pytest.raises(InvalidOperationError):
+        pl.concat([rows, failing]).sink_parquet(
+            pl.PartitionBy(tmp_path, key="k"), mkdir=True
+        )
+    time.sleep(0.2)
+    for path in tmp_path.rglob("*.parquet"):
+        with pytest.raises(ComputeError):
+            pl.read_parquet(path)
