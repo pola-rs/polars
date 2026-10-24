@@ -333,11 +333,14 @@ impl BinaryUniqueValues {
         let start = bytes.len() as u64;
         let inserted = self.values.insert(
             || hash,
-            |k| k.hash == hash && k.view.length as usize == x.len() && Self::get(bytes, k) == x,
+            |k| k.hash == hash && Self::get(bytes, k) == x,
             |k| k.hash,
             || Key {
                 hash,
-                view: View::new_from_bytes(x, (start >> 32) as u32, start as u32),
+                // SAFETY: values that fit inline are inserted by `insert_inline`.
+                view: unsafe {
+                    View::new_noninline_unchecked(x, (start >> 32) as u32, start as u32)
+                },
             },
         );
         if inserted {

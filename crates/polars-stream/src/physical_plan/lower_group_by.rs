@@ -988,14 +988,10 @@ pub fn try_build_streaming_group_by(
             }) = ae
                 && let Some(x) = unordered_unique_input(*input, expr_arena)
             {
-                unique_input_ids.insert(x);
+                unique_input_ids.insert(canonical_exprs.resolve(x, expr_arena));
             }
         }
     }
-    let unique_input_ids = unique_input_ids
-        .into_iter()
-        .map(|x| canonical_exprs.resolve(x, expr_arena))
-        .collect();
 
     let input_schema = input.output_schema(phys_sm).clone();
     for agg in aggs {
