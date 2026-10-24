@@ -20,6 +20,7 @@ use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::PolarsResult;
 use polars_ooc::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame,
+    memory_manager,
 };
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -211,6 +212,16 @@ impl SortNode {
         } else {
             for (i, frame) in frames.into_iter().enumerate() {
                 frames_per_task[i % num_tasks].push(frame);
+            }
+        }
+
+        // Register frames in the order the tasks read them.
+        let max_task_frames = frames_per_task.iter().map(Vec::len).max().unwrap_or(0);
+        for i in 0..max_task_frames {
+            for task_frames in &frames_per_task {
+                if let Some(frame) = task_frames.get(i) {
+                    spill_ctx.register_no_spill_check(frame);
+                }
             }
         }
 
@@ -499,6 +510,7 @@ async fn partition_frames(
         }
         let mut df = frame.into_df().await;
         df.rechunk_mut();
+        memory_manager().spill().await;
 
         for idxs in idxs_per_bucket.iter_mut() {
             idxs.clear();

@@ -480,3 +480,76 @@ def test_dataframe_window_ties_in_input_order() -> None:
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("predicate", "extracted"),
+    [
+        (
+            pl.int_range(pl.len()).over("g", order_by=["t", "id"], descending=True)
+            == 0,
+            True,
+        ),
+        ((pl.col("x") > pl.col("x").mean().over("g")) & (pl.col("id") % 3 != 0), True),
+        (pl.col("x").cum_sum().over("h", order_by="t") < 5_000, True),
+        (pl.col("x").sum().over("g").sum() > 0, False),
+    ],
+)
+def test_window_in_filter(predicate: pl.Expr, extracted: bool) -> None:
+    q = _keyed_frame().lazy().filter(predicate)
+    graph = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert ("window[" in graph) == extracted
+    if extracted:
+        assert "in-memory-map" not in graph
+
+
+@pytest.mark.parametrize(
+    ("order_by", "descending", "nulls_last", "header"),
+    [
+        (["t", "h"], False, False, 'ORDER BY "t", "h"'),
+        (["t", "h"], True, True, 'ORDER BY "t" DESC NULLS LAST, "h" DESC NULLS LAST'),
+        ([pl.col("t") * 2, "h"], False, True, '"h" NULLS LAST'),
+    ],
+)
+def test_window_order_by_keys_not_encoded(
+    order_by: list[str | pl.Expr], descending: bool, nulls_last: bool, header: str
+) -> None:
+    w = pl.int_range(pl.len()).over(
+        "g", order_by=order_by, descending=descending, nulls_last=nulls_last
+    )
+    q = _keyed_frame().lazy().with_columns(w=w, c=pl.col("x").cum_sum().over("g"))
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert not any(
+        "row_encode" in line for line in dot.splitlines() if "window[" not in line
+    )
+    assert any(header in h for h in _window_headers(q))
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        [pl.col("t"), pl.lit(1)],
+        [pl.col("t").shuffle(), pl.col("t").shuffle()],
+    ],
+)
+def test_window_order_by_stays_encoded(order_by: list[pl.Expr]) -> None:
+    w = pl.int_range(pl.len()).over("g", order_by=order_by)
+    q = _keyed_frame().lazy().with_columns(w=w)
+    order_by_names = _window_headers(q)[0].split(" ORDER BY ")[1]
+    assert order_by_names.startswith('"_POLARS_TMP_PLAN_')
+    assert "," not in order_by_names
+    q.collect(engine="streaming")
+
+
+def test_sql_window_order_by_mixed_directions() -> None:
+    ctx = pl.SQLContext(t=_keyed_frame().lazy())
+    q = ctx.execute(
+        """
+        SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY g ORDER BY t DESC NULLS LAST, h ASC NULLS FIRST, id DESC
+        ) AS rn FROM t
+        """
+    )
+    assert 'ORDER BY "t" DESC NULLS LAST, "h", "id" DESC' in _window_headers(q)[0]
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
