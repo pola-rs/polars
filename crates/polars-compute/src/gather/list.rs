@@ -18,7 +18,7 @@
 use polars_arrow::array::builder::{ShareStrategy, make_builder};
 use polars_arrow::array::{self, Array, ArrayFromIterDtype, ListArray, StaticArray};
 use polars_arrow::compute::utils::combine_validities_and;
-use polars_arrow::datatypes::{IdxArr, PhysicalType};
+use polars_arrow::datatypes::{ArrowDataType, IdxArr, PhysicalType};
 use polars_arrow::offset::{Offset, OffsetsBuffer};
 use polars_utils::IdxSize;
 
@@ -26,6 +26,17 @@ use super::bitmap::take_bitmap_nulls_unchecked;
 
 /// Mean row length from which copying rows beats an element gather (fixed-width children).
 const ROW_COPY_MIN_LEN: usize = 32;
+
+/// Primitive or boolean leaves, possibly under `FixedSizeList` levels: rows are contiguous.
+fn is_fixed_width(dtype: &ArrowDataType) -> bool {
+    match dtype {
+        ArrowDataType::FixedSizeList(field, _) => is_fixed_width(field.dtype()),
+        dt => matches!(
+            dt.to_physical_type(),
+            PhysicalType::Primitive(_) | PhysicalType::Boolean
+        ),
+    }
+}
 
 /// `take` implementation for ListArrays
 pub(super) unsafe fn take_unchecked<I: Offset>(
@@ -41,12 +52,8 @@ where
     }
     let offsets = values.offsets().as_slice();
     let src_len = offsets[offsets.len() - 1].to_usize() - offsets[0].to_usize();
-    let fixed_width = matches!(
-        child.dtype().to_physical_type(),
-        PhysicalType::Primitive(_) | PhysicalType::Boolean
-    );
     // Child indices must fit in `IdxSize` for the element gather.
-    let row_copy = (fixed_width && src_len >= ROW_COPY_MIN_LEN * values.len())
+    let row_copy = (is_fixed_width(child.dtype()) && src_len >= ROW_COPY_MIN_LEN * values.len())
         || child.len() > IdxSize::MAX as usize;
     take_native(values, indices, row_copy)
 }

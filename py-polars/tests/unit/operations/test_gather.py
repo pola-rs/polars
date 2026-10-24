@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -606,6 +608,81 @@ def test_gather_group_by_index_dtypes(idx: pl.Series) -> None:
         ([[True, None], None, [], [False, True], None, [True]], pl.List(pl.Boolean)),
         ([[None, None], None, [], [None], None, [None]], pl.List(pl.Null)),
         ([None] * 6, pl.List(pl.Int64)),
+        (
+            [[[1, None], None], None, [], [[None, 4]], None, [[5, 6]]],
+            pl.List(pl.Array(pl.Int64, 2)),
+        ),
+        (
+            [
+                [["a", None], None],
+                None,
+                [],
+                [["a longer string value", ""]],
+                None,
+                [["c", "d"]],
+            ],
+            pl.List(pl.Array(pl.String, 2)),
+        ),
+        (
+            [
+                [[{"x": 1}, None]],
+                None,
+                [],
+                [[{"x": None}, {"x": 2}], None],
+                None,
+                [[{"x": 3}, {"x": 4}]],
+            ],
+            pl.List(pl.Array(pl.Struct({"x": pl.Int64}), 2)),
+        ),
+        (
+            [
+                [[[1, 2], [3, None]], None],
+                None,
+                [],
+                [[[5, 6], [7, 8]]],
+                None,
+                [[None, [9, 10]]],
+            ],
+            pl.List(pl.Array(pl.Int64, (2, 2))),
+        ),
+        (
+            [
+                [[datetime(2026, 1, 1), None]],
+                None,
+                [],
+                [None, [datetime(2026, 1, 2)] * 2],
+                None,
+                [[None, None]],
+            ],
+            pl.List(pl.Array(pl.Datetime("ms"), 2)),
+        ),
+        (
+            [[[True, None, False]], None, [], [[False] * 3, None], None, [[True] * 3]],
+            pl.List(pl.Array(pl.Boolean, 3)),
+        ),
+        ([[[], None], None, [], [[]], None, [[], []]], pl.List(pl.Array(pl.Int32, 0))),
+        (
+            [
+                [{"a": [1, 2]}, None],
+                None,
+                [],
+                [{"a": None}, {"a": [3, None]}],
+                None,
+                [{"a": [5, 6]}],
+            ],
+            pl.List(pl.Struct({"a": pl.Array(pl.Int64, 2)})),
+        ),
+        (
+            [
+                [list(range(128))],
+                None,
+                [],
+                [list(range(128, 256))],
+                None,
+                [[None] * 128],
+            ],
+            pl.List(pl.Array(pl.Int32, 128)),
+        ),
     ],
 )
 def test_gather_list_29993(data: list[Any], dtype: pl.DataType) -> None:
@@ -628,6 +705,8 @@ def test_gather_list_29993(data: list[Any], dtype: pl.DataType) -> None:
         (pl.String, lambda i: None if i % 5 == 0 else f"value number {i}"),
         (pl.Struct({"x": pl.Int64, "s": pl.String}), lambda i: {"x": i, "s": str(i)}),
         (pl.List(pl.Int64), lambda i: [i, None]),
+        (pl.Array(pl.Int32, 2), lambda i: [i, None]),
+        (pl.Array(pl.String, 2), lambda i: [str(i), None]),
     ],
 )
 def test_gather_list_wide_rows(dtype: pl.DataType, leaf: Callable[[int], Any]) -> None:
@@ -659,3 +738,76 @@ def test_gather_list_of_2d_array_null_hash() -> None:
     # A null 2-D array element must hash the same after a gather.
     s = pl.Series([[None, [[1, 2], [3, 4]]]], dtype=pl.List(pl.Array(pl.Int64, (2, 2))))
     assert pl.concat([s, s.gather([0])]).n_unique() == 1
+
+
+@pytest.mark.parametrize(
+    ("data", "dtype"),
+    [
+        ([[1, 2], None, [3, 4], [5, 6]], pl.Array(pl.Int64, 2)),
+        ([[1, None, 3, 4], None, [5, 6, None, 8], [None] * 4], pl.Array(pl.Int64, 4)),
+        (
+            [["a", None], None, ["a longer string value", ""], [None, "b"]],
+            pl.Array(pl.String, 2),
+        ),
+        (
+            [[{"x": 1}, None], None, [{"x": None}, {"x": 2}], [{"x": 3}, {"x": 4}]],
+            pl.Array(pl.Struct({"x": pl.Int64}), 2),
+        ),
+        (
+            [[[1, 2], [3, None]], None, [None, [5, 6]], [[7, 8], [9, 10]]],
+            pl.Array(pl.Int64, (2, 2)),
+        ),
+        ([[], None, [], []], pl.Array(pl.Int32, 0)),
+        ([[True, None], None, [False, True], [None, None]], pl.Array(pl.Boolean, 2)),
+    ],
+)
+def test_gather_array_rows(data: list[Any], dtype: pl.DataType) -> None:
+    s = pl.Series(data, dtype=dtype)
+    idx = [3, None, 1, 0, 0, 2, None]
+    out = s.gather(pl.Series(idx, dtype=pl.get_index_type()))
+    assert out.dtype == dtype
+    assert out.to_list() == [None if i is None else data[i] for i in idx]
+    assert s[1:].gather([2, 0, 1]).to_list() == [data[3], data[1], data[2]]
+    # A sliced index validity bitmap.
+    sliced_idx = pl.Series([None, 3, None, 1, 0], dtype=pl.get_index_type())[1:]
+    assert s.gather(sliced_idx).to_list() == [data[3], None, data[1], data[0]]
+
+
+def test_gather_list_of_array_hidden_values() -> None:
+    # The null array element hides the valid values 9, 9.
+    arr = pa.FixedSizeListArray.from_arrays(
+        pa.array([9, 9, 1, 2, 3, 4], pa.int64()), 2, mask=pa.array([True, False, False])
+    )
+    s = pl.Series(
+        "a", pa.LargeListArray.from_arrays(pa.array([0, 2, 3], pa.int64()), arr)
+    )
+    out = s.gather([1, 0, 0])
+    assert out.to_list() == [[[3, 4]], [None, [1, 2]], [None, [1, 2]]]
+    assert pl.concat([s, out]).n_unique() == 2
+    assert out.gather([1, 0]).eq_missing(s).all()
+    assert out.to_frame().group_by("a").len().height == 2
+
+    buf = io.BytesIO()
+    out.to_frame().write_ipc(buf)
+    buf.seek(0)
+    assert_series_equal(pl.read_ipc(buf).to_series(), out)
+
+
+@pytest.mark.parametrize(
+    "child",
+    [
+        pa.array(["x", "y", "a", "b"]),
+        pa.array([[9], [9, 9], [1], [2]]),
+        pa.array([{"f": 9}, {"f": 9}, {"f": 1}, {"f": 2}]),
+        pa.array([9, 9, 1, None]),
+        pa.array([True, True, False, None]),
+    ],
+)
+def test_gather_array_null_rows_get_null_values(child: pa.Array) -> None:
+    # Like a null index, a null row gives null values, not the ones stored under it.
+    arr = pa.FixedSizeListArray.from_arrays(child, 2, mask=pa.array([True, False]))
+    s = pl.Series(arr)
+    assert s.to_arrow().values.is_null().to_pylist()[:2] == [False, False]
+    out = s.gather(pl.Series([1, 0, None], dtype=pl.get_index_type()))
+    assert out.to_list() == [s.to_list()[1], None, None]
+    assert out.to_arrow().values.is_null().to_pylist()[2:] == [True] * 4
