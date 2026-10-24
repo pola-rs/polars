@@ -1,9 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use std::borrow::Borrow;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
 
-use hashbrown::Equivalent;
+use hashbrown::hash_table::{Entry, HashTable};
 use polars_arrow::array::{
     BinaryViewArray, ListArray, MutableBinaryViewArray, MutableBooleanArray, MutablePrimitiveArray,
 };
@@ -12,9 +11,9 @@ use polars_arrow::pushable::Pushable;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_plan::prelude::{AExpr, IRFunctionExpr};
 use polars_utils::UnitVec;
-use polars_utils::aliases::PlHashSet;
+use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::arena::{Arena, Node};
-use polars_utils::total_ord::TotalOrdWrap;
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 use super::*;
 
@@ -69,14 +68,19 @@ fn new_reduction<const COUNT: bool>(dtype: DataType) -> Box<dyn GroupedReduction
 /// Groups with at most this many unique values are deduplicated by a linear scan.
 const SMALL_LIMIT: usize = 16;
 
+fn hash_one<T: Hash + ?Sized>(x: &T) -> u64 {
+    PlFixedStateQuality::default().hash_one(x)
+}
+
+/// The distinct values of a group, as keys that may refer to memory outside of it.
 #[derive(Clone)]
 struct UniqueValues<K> {
     small: UnitVec<K>,
-    large: Option<Box<PlHashSet<K>>>,
+    large: Option<Box<HashTable<K>>>,
     has_null: bool,
 }
 
-impl<K: Hash + Eq + Clone> UniqueValues<K> {
+impl<K: Copy> UniqueValues<K> {
     fn new() -> Self {
         Self {
             small: UnitVec::new(),
@@ -85,85 +89,108 @@ impl<K: Hash + Eq + Clone> UniqueValues<K> {
         }
     }
 
+    /// Inserts the key `make` returns unless `eq` matches a key, and returns whether it did.
+    /// `hash` is the hash of the new value and `rehash` that of a key.
     #[inline(always)]
-    fn insert<Q>(&mut self, value: &Q, to_owned: impl FnOnce(&Q) -> K)
-    where
-        Q: Hash + Equivalent<K> + PartialEq + ?Sized,
-        K: Borrow<Q>,
-    {
-        if let Some(set) = &mut self.large {
-            set.get_or_insert_with(value, to_owned);
-        } else if !self.small.iter().any(|k| k.borrow() == value) {
-            if self.small.len() < SMALL_LIMIT {
-                self.small.push(to_owned(value));
-            } else {
-                let mut set = PlHashSet::with_capacity(2 * SMALL_LIMIT);
-                set.extend(std::mem::take(&mut self.small));
-                set.insert(to_owned(value));
-                self.large = Some(Box::new(set));
+    fn insert(
+        &mut self,
+        hash: impl FnOnce() -> u64,
+        eq: impl Fn(&K) -> bool,
+        rehash: impl Fn(&K) -> u64,
+        make: impl FnOnce() -> K,
+    ) -> bool {
+        if let Some(table) = &mut self.large {
+            match table.entry(hash(), eq, rehash) {
+                Entry::Occupied(_) => false,
+                Entry::Vacant(entry) => {
+                    entry.insert(make());
+                    true
+                },
             }
-        }
-    }
-
-    fn combine(&mut self, other: &Self) {
-        self.has_null |= other.has_null;
-        for k in other.iter() {
-            self.insert(k, K::clone);
+        } else if self.small.iter().any(eq) {
+            false
+        } else if self.small.len() < SMALL_LIMIT {
+            self.small.push(make());
+            true
+        } else {
+            let mut table = HashTable::with_capacity(2 * SMALL_LIMIT);
+            for k in std::mem::take(&mut self.small) {
+                table.insert_unique(rehash(&k), k, &rehash);
+            }
+            table.insert_unique(hash(), make(), &rehash);
+            self.large = Some(Box::new(table));
+            true
         }
     }
 
     fn iter(&self) -> impl Iterator<Item = &K> {
         self.small
             .iter()
-            .chain(self.large.iter().flat_map(|s| s.iter()))
+            .chain(self.large.iter().flat_map(|t| t.iter()))
     }
 
     fn num_values(&self) -> usize {
-        self.small.len() + self.large.as_ref().map_or(0, |s| s.len())
+        self.small.len() + self.large.as_ref().map_or(0, |t| t.len())
     }
 
     fn len(&self) -> usize {
         self.num_values() + self.has_null as usize
     }
 
-    /// The heap size of the containers, without the heap memory of the values themselves.
-    fn container_bytes(&self) -> usize {
+    /// The heap size of the keys.
+    fn heap_bytes(&self) -> usize {
         let small = if self.small.is_inline() {
             0
         } else {
             self.small.capacity() * size_of::<K>()
         };
-        let large = self.large.as_ref().map_or(0, |s| {
-            size_of::<PlHashSet<K>>() + s.capacity() * (size_of::<K>() + 1)
+        let large = self.large.as_ref().map_or(0, |t| {
+            size_of::<HashTable<K>>() + t.capacity() * (size_of::<K>() + 1)
         });
         small + large
     }
 
-    fn into_values(self) -> impl Iterator<Item = K> {
+    fn into_keys(self) -> impl Iterator<Item = K> {
         self.small
             .into_iter()
-            .chain(self.large.into_iter().flat_map(|s| s.into_iter()))
+            .chain(self.large.into_iter().flat_map(|t| t.into_iter()))
     }
 }
 
-/// `value_bytes` gives the heap memory of the values of one group.
-fn state_size<K: Hash + Eq + Clone>(
-    v: &[UniqueValues<K>],
-    value_bytes: impl Fn(&UniqueValues<K>) -> usize,
+impl<T: TotalHash + TotalEq + Copy> UniqueValues<TotalOrdWrap<T>> {
+    #[inline(always)]
+    fn insert_value(&mut self, x: T) {
+        let k = TotalOrdWrap(x);
+        self.insert(|| hash_one(&k), |s| *s == k, hash_one, || k);
+    }
+
+    fn combine(&mut self, other: &Self) {
+        self.has_null |= other.has_null;
+        for k in other.iter() {
+            self.insert_value(k.0);
+        }
+    }
+}
+
+/// `heap_bytes` gives the heap memory of one group.
+fn state_size<V>(
+    v: &[V],
+    len: impl Fn(&V) -> usize,
+    heap_bytes: impl Fn(&V) -> usize,
 ) -> StateSize {
     let mut size = StateSize {
         num_values: 0,
         bytes: size_of_val(v),
     };
     for u in v {
-        size.num_values += u.len();
-        size.bytes += u.container_bytes() + value_bytes(u);
+        size.num_values += len(u);
+        size.bytes += heap_bytes(u);
     }
     size
 }
 
-fn finish_counts<K: Hash + Eq + Clone>(v: Vec<UniqueValues<K>>) -> Series {
-    let counts = v.iter().map(|u| u.len() as IdxSize).collect();
+fn finish_counts<V>(v: &[V], len: impl Fn(&V) -> usize) -> Series {
+    let counts = v.iter().map(|u| len(u) as IdxSize).collect();
     IdxCa::from_vec(PlSmallStr::EMPTY, counts).into_series()
 }
 
@@ -194,7 +221,7 @@ impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, CO
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, _seq_id: u64) {
         match b {
-            Some(x) => a.insert(&TotalOrdWrap(x), |x| *x),
+            Some(x) => a.insert_value(x),
             None => a.has_null = true,
         }
     }
@@ -205,7 +232,7 @@ impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, CO
             .downcast_iter()
             .flat_map(|arr| arr.non_null_values_iter())
         {
-            v.insert(&TotalOrdWrap(x), |x| *x);
+            v.insert_value(x);
         }
     }
 
@@ -217,7 +244,7 @@ impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, CO
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         if COUNT {
-            return Ok(finish_counts(v));
+            return Ok(finish_counts(&v, UniqueValues::len));
         }
 
         let total_len = v.iter().map(|u| u.len()).sum();
@@ -226,7 +253,7 @@ impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, CO
         for u in v.into_iter() {
             offsets.try_push(u.len()).unwrap();
             let has_null = u.has_null;
-            out.extend_values(u.into_values().map(|x| x.0));
+            out.extend_values(u.into_keys().map(|x| x.0));
             if has_null {
                 out.push_null();
             }
@@ -247,7 +274,70 @@ impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, CO
     }
 
     fn state_size(&self, v: &[Self::Value]) -> Option<StateSize> {
-        Some(state_size(v, |_| 0))
+        Some(state_size(v, UniqueValues::len, UniqueValues::heap_bytes))
+    }
+}
+
+/// A value of a group, stored in the bytes of the group.
+#[derive(Clone, Copy)]
+struct Span {
+    hash: u64,
+    start: usize,
+    len: usize,
+}
+
+/// The distinct values of a group, with their bytes in one buffer.
+#[derive(Clone)]
+struct BinaryUniqueValues {
+    values: UniqueValues<Span>,
+    bytes: Vec<u8>,
+}
+
+impl BinaryUniqueValues {
+    fn new() -> Self {
+        Self {
+            values: UniqueValues::new(),
+            bytes: Vec::new(),
+        }
+    }
+
+    #[inline(always)]
+    fn get(&self, s: &Span) -> &[u8] {
+        &self.bytes[s.start..s.start + s.len]
+    }
+
+    #[inline(always)]
+    fn insert_value(&mut self, x: &[u8], hash: u64) {
+        let bytes = &self.bytes;
+        let start = bytes.len();
+        let inserted = self.values.insert(
+            || hash,
+            |s| s.hash == hash && &bytes[s.start..s.start + s.len] == x,
+            |s| s.hash,
+            || Span {
+                hash,
+                start,
+                len: x.len(),
+            },
+        );
+        if inserted {
+            self.bytes.extend_from_slice(x);
+        }
+    }
+
+    fn combine(&mut self, other: &Self) {
+        self.values.has_null |= other.values.has_null;
+        for s in other.values.iter() {
+            self.insert_value(other.get(s), s.hash);
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    fn heap_bytes(&self) -> usize {
+        self.values.heap_bytes() + self.bytes.capacity()
     }
 }
 
@@ -256,10 +346,10 @@ struct BinaryUniqueReducer<const COUNT: bool>;
 
 impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
     type Dtype = BinaryType;
-    type Value = UniqueValues<Vec<u8>>;
+    type Value = BinaryUniqueValues;
 
     fn init(&self) -> Self::Value {
-        UniqueValues::new()
+        BinaryUniqueValues::new()
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
@@ -273,18 +363,18 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>, _seq_id: u64) {
         match b {
-            Some(x) => a.insert(x, <[u8]>::to_vec),
-            None => a.has_null = true,
+            Some(x) => a.insert_value(x, hash_one(x)),
+            None => a.values.has_null = true,
         }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        v.has_null |= ca.null_count() > 0;
+        v.values.has_null |= ca.null_count() > 0;
         for x in ca
             .downcast_iter()
             .flat_map(|arr| arr.non_null_values_iter())
         {
-            v.insert(x, <[u8]>::to_vec);
+            v.insert_value(x, hash_one(x));
         }
     }
 
@@ -296,35 +386,44 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         if COUNT {
-            return Ok(finish_counts(v));
+            return Ok(finish_counts(&v, BinaryUniqueValues::len));
         }
 
         let total_len = v.iter().map(|u| u.len()).sum();
-        let mut out = MutableBinaryViewArray::with_capacity(total_len);
+        let mut out = MutableBinaryViewArray::<[u8]>::with_capacity(total_len);
         let mut offsets = Offsets::<i64>::with_capacity(v.len());
-        for u in v.into_iter() {
+        for u in &v {
             offsets.try_push(u.len()).unwrap();
-            let has_null = u.has_null;
-            out.extend_values(u.into_values());
-            if has_null {
+            for s in u.values.iter() {
+                out.push_value(u.get(s));
+            }
+            if u.values.has_null {
                 out.push_null();
             }
         }
 
         let values: BinaryViewArray = out.freeze();
+        let values = if dtype.is_string() {
+            // SAFETY: the values came from a String column.
+            unsafe { values.to_utf8view_unchecked() }.boxed()
+        } else {
+            values.boxed()
+        };
         let arrow_dtype = ArrowDataType::LargeList(Box::new(ArrowField::new(
             PlSmallStr::EMPTY,
-            ArrowDataType::BinaryView,
+            values.dtype().clone(),
             true,
         )));
-        let arr = ListArray::new(arrow_dtype, offsets.freeze(), values.boxed(), None);
-        let ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
-        let list_dtype = DataType::List(Box::new(dtype.clone()));
-        ca.into_series().cast(&list_dtype)
+        let arr = ListArray::new(arrow_dtype, offsets.freeze(), values, None);
+        Ok(ListChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn state_size(&self, v: &[Self::Value]) -> Option<StateSize> {
-        Some(state_size(v, |u| u.iter().map(Vec::capacity).sum()))
+        Some(state_size(
+            v,
+            BinaryUniqueValues::len,
+            BinaryUniqueValues::heap_bytes,
+        ))
     }
 }
 
