@@ -243,6 +243,21 @@ def _parse_inputs_as_iterable(
     if len(inputs) == 1 and _is_iterable(inputs[0]):
         return inputs[0]
 
+    # An iterable of expressions is only supported as the sole positional
+    # argument. Combining it with other positional arguments is ambiguous and
+    # previously failed deep inside the engine with a confusing error, so fail
+    # fast with an actionable message instead.
+    if any(_is_iterable(input) for input in inputs):
+        msg = (
+            "Only a single iterable can be passed as a positional argument.\n"
+            "If you meant to pass multiple expressions, either pass them as "
+            "separate positional arguments or combine them into a single "
+            "iterable, for example:\n"
+            "  \u2022 df.select(expr1, expr2)\n"
+            "  \u2022 df.select([expr1, expr2])"
+        )
+        raise TypeError(msg)
+
     return inputs
 
 
