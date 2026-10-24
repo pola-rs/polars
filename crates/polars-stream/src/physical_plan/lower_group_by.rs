@@ -118,10 +118,12 @@ fn build_group_by_fallback(
 //
 // uniq_agg_exprs is updated with the unique id of the aggregate mapping to
 // the aggregate expression and vector of unique input ids for that aggregate.
+//
+// If unique_of is Some(x), expr is implode(unique(x)) and x becomes the input.
 #[allow(clippy::too_many_arguments)]
 fn replace_agg_uniq(
     expr: Node,
-    reduce_unique: bool,
+    unique_of: Option<Node>,
     canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -144,8 +146,7 @@ fn replace_agg_uniq(
             let input_cols = inputs
                 .iter()
                 .map(|input| {
-                    // The unique reduction reads the input of `unique()` directly.
-                    if reduce_unique && let Some(x) = unordered_unique_input(*input, expr_arena) {
+                    if let Some(x) = unique_of {
                         let (Some(x_id), x_col) = replace_elementwise_components(
                             x,
                             canonical_exprs,
@@ -292,12 +293,12 @@ fn try_lower_elementwise_scalar_agg_expr(
 
     macro_rules! replace_agg_uniq {
         ($input:expr) => {
-            replace_agg_uniq!($input, false)
+            replace_agg_uniq!($input, unique_of = None)
         };
-        ($input:expr, $reduce_unique:expr) => {
+        ($input:expr, unique_of = $x:expr) => {
             replace_agg_uniq(
                 $input,
-                $reduce_unique,
+                $x,
                 canonical_exprs,
                 expr_cache,
                 expr_arena,
@@ -611,10 +612,10 @@ fn try_lower_elementwise_scalar_agg_expr(
                 IRAggExpr::Implode {
                     input,
                     maintain_order: false,
-                } if unordered_unique_input(*input, expr_arena)
-                    .is_some_and(|x| unique_reducible(x, expr_arena)) =>
+                } if let Some(x) = unordered_unique_input(*input, expr_arena)
+                    && unique_reducible(x, expr_arena) =>
                 {
-                    Some(replace_agg_uniq!(expr, true))
+                    Some(replace_agg_uniq!(expr, unique_of = Some(x)))
                 },
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }

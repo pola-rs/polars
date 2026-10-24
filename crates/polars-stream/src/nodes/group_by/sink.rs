@@ -55,16 +55,19 @@ const HOT_TABLE_GROW_SLOTS_PER_KEY: f64 = 1.5;
 const HOT_TABLE_GROW_MAX_LOAD: f64 = 0.75;
 
 /// An input stops using its hot table if its growing states hold more than this fraction of
-/// the values they received. Its rows then are stored as cold rows anyway, so its other
-/// reductions lose little.
+/// the values they received.
 const GROWING_STATES_MAX_KEPT_FRACTION: f64 = 0.5;
+
+/// An input stops using its hot table if its growing states, times the number of pipelines,
+/// use more than the memory budget divided by this.
+const GROWING_STATES_BUDGET_DIVISOR: u64 = 8;
 
 /// Whether growing states shrink the data is checked once an input has at least this many hot
 /// rows per hot group.
 const GROWING_STATES_MIN_ROWS_PER_GROUP: u64 = 8;
 
 /// Below this many groups per pipeline an input keeps its hot table even if its growing states
-/// do not shrink, as the partitions could not spread the groups over the pipelines.
+/// do not shrink.
 const GROWING_STATES_MIN_GROUPS_PER_PIPELINE: usize = 2;
 
 /// Whether an input whose hot states can grow uses its hot table, and what it received so far.
@@ -100,13 +103,15 @@ struct LocalSink {
 
     // Per input, the cold rows not yet in a frame.
     cold_row_builders: Vec<Option<FrameWithKeysBuilder>>,
+    // 0..n, to gather all rows of a morsel.
+    all_row_idxs: Vec<IdxSize>,
     // Each frame with the input it came from.
     cold_frames: Vec<(usize, SpillFrameWithKeys)>,
     // The estimated bytes of `cold_frames`.
     cold_bytes: u64,
     // In creation order.
     pre_aggs: Vec<PreAgg>,
-    // Set by `finish_input`, see `InputStats`.
+    // See `InputStats`.
     pre_agg_work: u64,
     pre_agg_state_bytes: u64,
     growing_states_per_input: Vec<GrowingStates>,
@@ -126,6 +131,7 @@ impl LocalSink {
             miss_f2: F2Sketch::new(),
             key_sketch: CardinalitySketch::new(),
             cold_row_builders: (0..num_inputs).map(|_| None).collect(),
+            all_row_idxs: Vec::new(),
             cold_frames: Vec::new(),
             cold_bytes: 0,
             pre_aggs: Vec::new(),
@@ -185,13 +191,17 @@ impl LocalSink {
                 }
             }
         });
-        let growing = &mut self.growing_states_per_input[input_idx];
-        if growing.may_go_cold {
-            for size in reductions.iter().filter_map(|r| r.state_size()) {
-                growing.pre_agg_values += size.num_values as u64;
-                growing.pre_agg_bytes += size.bytes as u64;
-            }
+        let mut num_values = 0;
+        let mut bytes = 0;
+        for size in reductions.iter().filter_map(|r| r.state_size()) {
+            num_values += size.num_values as u64;
+            bytes += size.bytes as u64;
         }
+        let growing = &mut self.growing_states_per_input[input_idx];
+        growing.pre_agg_values += num_values;
+        growing.pre_agg_bytes += bytes;
+        self.pre_agg_work += (keys.len() as u64).max(num_values);
+        self.pre_agg_state_bytes += bytes;
         self.pre_aggs.push(PreAgg {
             keys,
             reduction_idxs: UnitVec::from_slice(reduction_idxs),
@@ -226,9 +236,9 @@ impl LocalSink {
             values += size.num_values as u64;
             bytes += size.bytes as u64;
         }
-        let too_large = bytes.saturating_mul(8 * num_pipelines as u64) > budget();
+        let too_large =
+            bytes.saturating_mul(GROWING_STATES_BUDGET_DIVISOR * num_pipelines as u64) > budget();
 
-        // Whether the states shrink is only known once the hot rows outnumber the hot groups.
         let num_hot_groups = self.hot_grouper(input_idx).num_groups() as u64;
         let check_shrink = hot_rows >= next_check_rows
             && hot_rows >= GROWING_STATES_MIN_ROWS_PER_GROUP * num_hot_groups;
@@ -268,8 +278,8 @@ impl LocalSink {
         self.add_pre_agg(input_idx, hot_grouper.keys(), r_idxs, reductions, false);
     }
 
-    /// Stores the cold rows `cold_idxs` of a slice `df` of a morsel of `input_idx`, and adds
-    /// their hashes to the sketches. A whole morsel that may be stored as it is and has mostly
+    /// Stores the cold rows `cold_idxs` of a slice `df` of a morsel of `input_idx`, all rows if
+    /// `None`, and adds their hashes to the sketches. A whole morsel that may be stored as it is and has mostly
     /// cold rows becomes a frame with a mask of its cold rows; otherwise the cold rows are
     /// gathered into the builder of the input, which becomes a frame once it holds a morsel's
     /// worth of rows.
@@ -278,28 +288,33 @@ impl LocalSink {
         input_idx: usize,
         df: DataFrame,
         keys: HashKeys,
-        cold_idxs: &[IdxSize],
+        cold_idxs: Option<&[IdxSize]>,
         may_store_whole: bool,
         spill_ctx: &MostRecentSpillContext,
     ) {
-        unsafe {
-            keys.for_each_hash_subset(cold_idxs, |_, opt_h| {
-                if let Some(h) = opt_h {
-                    self.key_sketch.insert(h);
-                    self.miss_f2.insert(h);
-                }
-            });
+        let insert_hash = |_, opt_h: Option<u64>| {
+            if let Some(h) = opt_h {
+                self.key_sketch.insert(h);
+                self.miss_f2.insert(h);
+            }
+        };
+        match cold_idxs {
+            Some(idxs) => unsafe { keys.for_each_hash_subset(idxs, insert_hash) },
+            None => keys.for_each_hash(insert_hash),
         }
 
         // 75% or more cold, don't gather.
-        let frame = if may_store_whole && cold_idxs.len() as u64 >= df.height() as u64 * 3 / 4 {
-            let mask = (cold_idxs.len() < df.height()).then(|| {
-                let mut mask = MutableBitmap::from_len_zeroed(df.height());
-                for idx in cold_idxs {
-                    mask.set(*idx as usize, true);
-                }
-                mask.freeze()
-            });
+        let num_cold = cold_idxs.map_or(df.height(), |idxs| idxs.len());
+        let frame = if may_store_whole && num_cold as u64 >= df.height() as u64 * 3 / 4 {
+            let mask = cold_idxs
+                .filter(|idxs| idxs.len() < df.height())
+                .map(|idxs| {
+                    let mut mask = MutableBitmap::from_len_zeroed(df.height());
+                    for idx in idxs {
+                        mask.set(*idx as usize, true);
+                    }
+                    mask.freeze()
+                });
             FrameWithKeys {
                 frame: df,
                 keys,
@@ -312,7 +327,18 @@ impl LocalSink {
                 builder.reserve(frame_rows);
                 builder
             });
-            unsafe { builder.gather_extend(&df, &keys, cold_idxs) };
+            let idxs = match cold_idxs {
+                Some(idxs) => idxs,
+                None => {
+                    let n = self.all_row_idxs.len();
+                    if n < df.height() {
+                        self.all_row_idxs
+                            .extend(n as IdxSize..df.height() as IdxSize);
+                    }
+                    &self.all_row_idxs[..df.height()]
+                },
+            };
+            unsafe { builder.gather_extend(&df, &keys, idxs) };
             if builder.len() < frame_rows {
                 return;
             }
@@ -436,18 +462,6 @@ impl LocalSink {
                 .collect();
             self.add_pre_agg(input_idx, hot_grouper.keys(), r_idxs, reductions, false);
         }
-
-        for pre_agg in &self.pre_aggs {
-            let num_groups = pre_agg.keys.len() as u64;
-            let mut num_values = 0;
-            for r in &pre_agg.reductions {
-                if let Some(size) = r.state_size() {
-                    num_values += size.num_values as u64;
-                    self.pre_agg_state_bytes += size.bytes as u64;
-                }
-            }
-            self.pre_agg_work += num_groups.max(num_values);
-        }
     }
 }
 
@@ -534,8 +548,6 @@ impl GroupBySink {
 
                     if cold_only {
                         let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
-                        cold_idxs.clear();
-                        cold_idxs.extend(0..df.height() as IdxSize);
                         let may_store_whole =
                             df.height() >= local.min_rows_stored_whole(num_pipelines);
                         local
@@ -543,7 +555,7 @@ impl GroupBySink {
                                 input_idx,
                                 df,
                                 hash_keys,
-                                &cold_idxs,
+                                None,
                                 may_store_whole,
                                 spill_ctx,
                             )
@@ -597,7 +609,7 @@ impl GroupBySink {
                                     input_idx,
                                     df.slice(offset as i64, slice_size),
                                     hash_keys,
-                                    &cold_idxs,
+                                    Some(&cold_idxs),
                                     may_store_whole,
                                     spill_ctx,
                                 )

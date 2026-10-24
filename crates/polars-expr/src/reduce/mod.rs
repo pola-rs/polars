@@ -33,13 +33,13 @@ pub use approx_quantile::{
     new_approx_quantile_merge_reduction, new_approx_quantile_sketch_reduction,
     new_approx_quantile_state_reduction,
 };
-pub use convert::into_reduction;
+pub use convert::{into_reduction, unordered_unique_input};
 pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_arrow::array::{Array, PrimitiveArray, StaticArray};
 use polars_arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
-pub use unique::{supports_unique_reduction, unordered_unique_input};
+pub use unique::supports_unique_reduction;
 
 use crate::EvictIdx;
 
@@ -226,8 +226,9 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// After this operation the number of groups is reset to 0.
     fn finalize(&mut self) -> PolarsResult<Series>;
 
-    /// The size of the states, for reductions whose state grows with the number of distinct
-    /// values in a group. `None` if every group has a small state of a fixed size.
+    /// The size of the states, evicted groups included. Reductions whose states grow with the
+    /// values of a group return `Some`, also when they have no groups. `None` means the size is
+    /// not tracked.
     fn state_size(&self) -> Option<StateSize> {
         None
     }

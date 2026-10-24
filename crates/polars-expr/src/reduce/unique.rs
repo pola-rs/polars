@@ -1,4 +1,3 @@
-#![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::{BuildHasher, Hash};
 use std::marker::PhantomData;
 
@@ -9,10 +8,8 @@ use polars_arrow::array::{
 use polars_arrow::offset::Offsets;
 use polars_arrow::pushable::Pushable;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_plan::prelude::{AExpr, IRFunctionExpr};
 use polars_utils::UnitVec;
 use polars_utils::aliases::PlFixedStateQuality;
-use polars_utils::arena::{Arena, Node};
 use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 use super::*;
@@ -26,18 +23,6 @@ pub fn supports_unique_reduction(dtype: &DataType) -> bool {
         || dtype.is_enum()
         || dtype.is_string()
         || dtype.is_binary()
-}
-
-/// Returns `x` if `node` is `x.unique()` without `maintain_order`.
-pub fn unordered_unique_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<Node> {
-    match expr_arena.get(node) {
-        AExpr::Function {
-            input,
-            function: IRFunctionExpr::Unique(false),
-            ..
-        } => Some(input[0].node()),
-        _ => None,
-    }
 }
 
 /// The unique values of each group, as a list per group.
@@ -480,8 +465,7 @@ impl<const COUNT: bool> Reducer for BoolUniqueReducer<COUNT> {
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         if COUNT {
-            let counts = v.iter().map(|u| u.len() as IdxSize).collect();
-            return Ok(IdxCa::from_vec(PlSmallStr::EMPTY, counts).into_series());
+            return Ok(finish_counts(&v, BoolUniqueValues::len));
         }
 
         let total_len = v.iter().map(|u| u.len()).sum();
