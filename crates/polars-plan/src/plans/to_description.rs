@@ -187,12 +187,18 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
         } => IrPropsDescription::Window {
             partition_by: partition_by.iter().map(ToString::to_string).collect(),
             order_by: order_by
-                .as_ref()
-                .map(|(name, options)| SortColumnDescription {
-                    expr: name.to_string(),
-                    descending: options.descending,
-                    nulls_last: options.nulls_last,
-                }),
+                .iter()
+                .flat_map(|(names, options)| {
+                    names
+                        .iter()
+                        .enumerate()
+                        .map(|(i, name)| SortColumnDescription {
+                            expr: name.to_string(),
+                            descending: options.descending[i],
+                            nulls_last: options.nulls_last[i],
+                        })
+                })
+                .collect(),
             exprs: fmt_exprs(exprs, expr_arena),
             maintain_order: *maintain_order,
             ordered_eval: *ordered_eval,

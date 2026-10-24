@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_arrow::array::builder::ShareStrategy;
 use polars_async::executor::TaskMetricAggregator;
 use polars_core::frame::builder::DataFrameBuilder;
+use polars_core::prelude::sort::arg_sort;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
@@ -41,7 +42,7 @@ enum WindowOutput {
 
 pub struct WindowParams {
     partition_by: Vec<PlSmallStr>,
-    order_by: Option<(PlSmallStr, SortOptions)>,
+    order_by: Option<(Vec<PlSmallStr>, SortMultipleOptions)>,
     /// The window expressions with their output names.
     exprs: Vec<(PlSmallStr, WindowExpr)>,
     /// The input columns the window expressions read, including the keys.
@@ -56,7 +57,7 @@ impl WindowParams {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         partition_by: Vec<PlSmallStr>,
-        order_by: Option<(PlSmallStr, SortOptions)>,
+        order_by: Option<(Vec<PlSmallStr>, SortMultipleOptions)>,
         exprs: Vec<(PlSmallStr, WindowExpr)>,
         input_schema: &Schema,
         read_schema: Schema,
@@ -615,14 +616,15 @@ fn evaluate_partition(
     let order_idx = match &params.order_by {
         None => None,
         Some((order_by, options)) => {
-            let options = SortOptions {
+            let keys = order_by
+                .iter()
+                .map(|name| df.column(name).cloned())
+                .collect::<PolarsResult<Vec<_>>>()?;
+            let options = SortMultipleOptions {
                 maintain_order: params.ordered_eval,
-                ..*options
+                ..options.clone()
             };
-            let order_idx = df
-                .column(order_by)?
-                .as_materialized_series()
-                .arg_sort(options);
+            let order_idx = arg_sort(&keys, options)?;
             Some(order_idx.rechunk().downcast_as_array().values().clone())
         },
     };

@@ -193,7 +193,7 @@ pub enum IrPropsDescription {
     },
     Window {
         partition_by: Vec<String>,
-        order_by: Option<SortColumnDescription>,
+        order_by: Vec<SortColumnDescription>,
         exprs: Vec<String>,
         maintain_order: bool,
         ordered_eval: bool,
