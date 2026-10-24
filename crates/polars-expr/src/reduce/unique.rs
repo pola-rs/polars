@@ -392,7 +392,7 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
         let total_len = v.iter().map(|u| u.len()).sum();
         let mut out = MutableBinaryViewArray::<[u8]>::with_capacity(total_len);
         let mut offsets = Offsets::<i64>::with_capacity(v.len());
-        for u in &v {
+        for u in v {
             offsets.try_push(u.len()).unwrap();
             for s in u.values.iter() {
                 out.push_value(u.get(s));

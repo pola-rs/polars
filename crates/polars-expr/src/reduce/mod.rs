@@ -545,7 +545,11 @@ where
     }
 
     fn state_size(&self) -> Option<StateSize> {
-        self.reducer.state_size(&self.values)
+        let mut size = self.reducer.state_size(&self.values)?;
+        let evicted = self.reducer.state_size(&self.evicted_values)?;
+        size.num_values += evicted.num_values;
+        size.bytes += evicted.bytes;
+        Some(size)
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -927,10 +927,13 @@ def test_streaming_group_by_unique_hot_table_switch(
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "32")
-    n = 8000
+    # Each pipeline needs a few groups and many rows per group to decide.
+    num_threads = pl.thread_pool_size()
+    num_groups = max(64, 4 * num_threads)
+    n = 16 * num_groups * num_threads
     i = pl.int_range(n)
     v = i % 3 if repeats else i
-    df = pl.select(k=i % 64, v=v, s=v.cast(pl.String))
+    df = pl.select(k=i % num_groups, v=v, s=v.cast(pl.String))
     lf = (
         df.lazy()
         .group_by("k")

@@ -59,13 +59,17 @@ const HOT_TABLE_GROW_MAX_LOAD: f64 = 0.75;
 /// reductions lose little.
 const GROWING_STATES_MAX_KEPT_FRACTION: f64 = 0.5;
 
+/// Whether growing states shrink the data is checked once an input has at least this many hot
+/// rows per hot group.
+const GROWING_STATES_MIN_ROWS_PER_GROUP: u64 = 8;
+
 /// Below this many groups per pipeline an input keeps its hot table even if its growing states
 /// do not shrink, as the partitions could not spread the groups over the pipelines.
 const GROWING_STATES_MIN_GROUPS_PER_PIPELINE: usize = 2;
 
 /// Whether an input whose hot states can grow uses its hot table, and what it received so far.
-/// It first checks whether the states pay off after a morsel of hot rows, then each time the
-/// number of hot rows doubles.
+/// The size of the states is checked after every morsel. Whether they pay off is first checked
+/// after a morsel of hot rows, then each time the number of hot rows doubles.
 #[derive(Clone, Default)]
 struct GrowingStates {
     /// Some reduction of the input has states that grow with the values of a group.
@@ -205,9 +209,12 @@ impl LocalSink {
         num_pipelines: usize,
     ) {
         let growing = &self.growing_states_per_input[input_idx];
-        if !growing.may_go_cold || growing.cold_only || growing.hot_rows < growing.next_check_rows {
+        if !growing.may_go_cold || growing.cold_only {
             return;
         }
+        let hot_rows = growing.hot_rows;
+        let next_check_rows = growing.next_check_rows;
+        let num_growing = growing.num_growing;
 
         let r_idxs = &reductions_per_input[input_idx];
         let mut values = growing.pre_agg_values;
@@ -219,15 +226,23 @@ impl LocalSink {
             values += size.num_values as u64;
             bytes += size.bytes as u64;
         }
-        let received = growing.hot_rows * growing.num_growing;
-        let num_groups =
-            self.hot_grouper(input_idx).num_groups() as usize + self.key_sketch.estimate();
-        let keeps_too_much = values as f64 > GROWING_STATES_MAX_KEPT_FRACTION * received as f64
-            && num_groups >= GROWING_STATES_MIN_GROUPS_PER_PIPELINE * num_pipelines;
         let too_large = bytes.saturating_mul(8 * num_pipelines as u64) > budget();
 
+        // Whether the states shrink is only known once the hot rows outnumber the hot groups.
+        let num_hot_groups = self.hot_grouper(input_idx).num_groups() as u64;
+        let check_shrink = hot_rows >= next_check_rows
+            && hot_rows >= GROWING_STATES_MIN_ROWS_PER_GROUP * num_hot_groups;
+        let keeps_too_much = check_shrink && {
+            let received = hot_rows * num_growing;
+            let num_groups = num_hot_groups as usize + self.key_sketch.estimate();
+            values as f64 > GROWING_STATES_MAX_KEPT_FRACTION * received as f64
+                && num_groups >= GROWING_STATES_MIN_GROUPS_PER_PIPELINE * num_pipelines
+        };
+
         let growing = &mut self.growing_states_per_input[input_idx];
-        growing.next_check_rows = 2 * growing.hot_rows;
+        if check_shrink {
+            growing.next_check_rows = 2 * hot_rows;
+        }
         if !keeps_too_much && !too_large {
             return;
         }
