@@ -1304,6 +1304,50 @@ def test_string_add_concatenates(other: Any, expected: list[str]) -> None:
     assert (s + other).to_list() == expected
 
 
+@pytest.mark.parametrize(
+    "left",
+    [
+        "i8",
+        "u8",
+        "i64",
+        "f16",
+        "f32",
+        "f64",
+        "bool",
+        "dec",
+        "lst",
+        "lit_int",
+        "lit_flt",
+    ],
+)
+@pytest.mark.parametrize("right", ["dur", "dt", "d", "t"])
+def test_truediv_numeric_by_temporal_raises(left: str, right: str) -> None:
+    lf = pl.LazyFrame(
+        {
+            "i8": pl.Series([2], dtype=pl.Int8),
+            "u8": pl.Series([2], dtype=pl.UInt8),
+            "i64": pl.Series([2], dtype=pl.Int64),
+            "f16": pl.Series([2.0], dtype=pl.Float16),
+            "f32": pl.Series([2.0], dtype=pl.Float32),
+            "f64": pl.Series([2.0], dtype=pl.Float64),
+            "bool": [True],
+            "dec": pl.Series([2]).cast(pl.Decimal(10, 2)),
+            "lst": pl.Series([[2]], dtype=pl.List(pl.Int64)),
+            "dur": pl.Series([1]).cast(pl.Duration("us")),
+            "dt": pl.Series([1]).cast(pl.Datetime("us")),
+            "d": pl.Series([1], dtype=pl.Int32).cast(pl.Date),
+            "t": pl.Series([1]).cast(pl.Time),
+        }
+    )
+    lefts = {"lit_int": pl.lit(2), "lit_flt": pl.lit(2.0)}
+    q = lf.select(r=lefts.get(left, pl.col(left)) / pl.col(right))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="is not allowed"):
+        q.collect_schema()
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        q.collect()
+
+
 @pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32])
 def test_truediv_int_literal_float_schema(float_dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"f": [4.0]}, schema={"f": float_dtype}).select(
