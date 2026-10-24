@@ -46,6 +46,7 @@ mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod sortedness;
 mod stack_opt;
+mod top_k_pushdown;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
@@ -279,6 +280,14 @@ pub fn optimize(
     // reads.
     if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins {
         join_predicate_fusion::fuse_predicates(root, ir_arena, expr_arena)?;
+    }
+
+    // After join ordering, which fixes the joins the copies go below.
+    if opt_flags.slice_pushdown()
+        && get_or_init_members!().has_sort
+        && get_or_init_members!().has_joins
+    {
+        top_k_pushdown::push_down_top_k(root, ir_arena, expr_arena, pushdown_maintain_errors);
     }
 
     if opt_flags.projection_pushdown() {
