@@ -1,5 +1,7 @@
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::ScalarColumn;
+#[cfg(feature = "dtype-time")]
+use polars_core::prelude::IntoColumn;
 use polars_core::prelude::{Column, DataType};
 use polars_core::series::Series;
 
@@ -151,7 +153,19 @@ impl std::fmt::Display for HivePathFormatter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for column in self.keys {
             assert_eq!(column.len(), 1);
-            let column = column.cast(&DataType::String).unwrap();
+            let column = match column.dtype() {
+                // The `String` cast drops fractional seconds, which would make distinct keys
+                // collide.
+                #[cfg(feature = "dtype-time")]
+                DataType::Time => column
+                    .as_materialized_series()
+                    .time()
+                    .unwrap()
+                    .to_string("%T%.f")
+                    .unwrap()
+                    .into_column(),
+                _ => column.cast(&DataType::String).unwrap(),
+            };
 
             let key = column.name();
             let value = percent_encoding::percent_encode(
