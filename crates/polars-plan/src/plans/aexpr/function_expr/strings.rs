@@ -146,9 +146,32 @@ pub enum IRStringFunction {
     EscapeRegex,
 }
 
+impl<'a> FieldsMapper<'a> {
+    /// Validate that the dtype is a String.
+    pub fn ensure_is_string(&self) -> PolarsResult<()> {
+        let dt = self.args()[0].dtype();
+        polars_ensure!(
+            dt.is_string() || matches!(dt, DataType::Unknown(UnknownKind::Any)),
+            InvalidOperation:
+            "expected String data type for string operation, got: {dt:?}"
+        );
+        Ok(())
+    }
+}
+
 impl IRStringFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRStringFunction::*;
+        // These functions cast their inputs to String.
+        let casts_input = match self {
+            Format { .. } => true,
+            #[cfg(feature = "concat_str")]
+            ConcatVertical { .. } | ConcatHorizontal { .. } => true,
+            _ => false,
+        };
+        if !casts_input {
+            mapper.ensure_is_string()?;
+        }
         match self {
             Format { .. } => mapper.with_dtype(DataType::String),
             #[cfg(feature = "concat_str")]
