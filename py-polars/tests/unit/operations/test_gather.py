@@ -769,8 +769,8 @@ def test_gather_array_rows(data: list[Any], dtype: pl.DataType) -> None:
     assert out.to_list() == [None if i is None else data[i] for i in idx]
     assert s[1:].gather([2, 0, 1]).to_list() == [data[3], data[1], data[2]]
     # A sliced index validity bitmap.
-    idx = pl.Series([None, 3, None, 1, 0], dtype=pl.get_index_type())[1:]
-    assert s.gather(idx).to_list() == [data[3], None, data[1], data[0]]
+    sliced_idx = pl.Series([None, 3, None, 1, 0], dtype=pl.get_index_type())[1:]
+    assert s.gather(sliced_idx).to_list() == [data[3], None, data[1], data[0]]
 
 
 def test_gather_list_of_array_hidden_values() -> None:
@@ -808,6 +808,6 @@ def test_gather_array_null_rows_get_null_values(child: pa.Array) -> None:
     arr = pa.FixedSizeListArray.from_arrays(child, 2, mask=pa.array([True, False]))
     s = pl.Series(arr)
     assert s.to_arrow().values.is_null().to_pylist()[:2] == [False, False]
-    out = s.gather([1, 0, None])
+    out = s.gather(pl.Series([1, 0, None], dtype=pl.get_index_type()))
     assert out.to_list() == [s.to_list()[1], None, None]
     assert out.to_arrow().values.is_null().to_pylist()[2:] == [True] * 4
