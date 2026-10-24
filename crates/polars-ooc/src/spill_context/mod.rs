@@ -471,7 +471,23 @@ impl WeakSpillContext {
             return None;
         }
 
-        self.0.refcount.fetch_add(1, Ordering::Relaxed);
+        // A context without strong references is on its way to the reuse arena and may not
+        // come back to life.
+        let mut refcount = self.0.refcount.load(Ordering::Relaxed);
+        loop {
+            if refcount == 0 {
+                return None;
+            }
+            match self.0.refcount.compare_exchange_weak(
+                refcount,
+                refcount + 1,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(current) => refcount = current,
+            }
+        }
         let strong = StrongSpillContext(self.0);
 
         // To avoid race conditions, we must check again.
@@ -627,5 +643,24 @@ impl Debug for RandomSpillContext {
         f.debug_struct("RandomSpillContext")
             .field("name", &self.0.0.stats.name())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dropped_context_stays_dead() {
+        let _guard = crate::test_lock();
+        let ctx = MostRecentSpillContext::new("test".into(), None);
+        let weak = ctx.downgrade();
+        drop(ctx);
+        assert!(weak.upgrade().is_none());
+
+        // The context is in the reuse arena once, so two new contexts do not share it.
+        let a = MostRecentSpillContext::new("a".into(), None);
+        let b = MostRecentSpillContext::new("b".into(), None);
+        assert!(!std::ptr::eq(a.downgrade().0, b.downgrade().0));
     }
 }
