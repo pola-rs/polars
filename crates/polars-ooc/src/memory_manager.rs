@@ -74,7 +74,7 @@ impl MemoryManager {
     }
 
     pub(crate) fn should_prefetch(&self) -> bool {
-        if !self.has_activity() {
+        if self.activity.load(Ordering::Relaxed) == 0 {
             return false;
         }
 
@@ -467,7 +467,7 @@ impl OocActivity {
 
 impl Drop for OocActivity {
     fn drop(&mut self) {
-        let old = memory_manager().activity.fetch_sub(1, Ordering::SeqCst);
+        let old = memory_manager().activity.fetch_sub(1, Ordering::Relaxed);
         debug_assert!(old > 0);
     }
 }
