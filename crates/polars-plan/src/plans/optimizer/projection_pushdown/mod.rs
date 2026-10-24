@@ -2231,8 +2231,9 @@ where
         .min_by_key(|(_, dtype)| match () {
             _ if dtype.is_null() => 0,
             _ if dtype.is_bool() => 1,
-            _ if !dtype.is_nested() => 2,
-            _ => 32 + dtype.nesting_level(),
+            _ if dtype.is_nested() => 32 + dtype.nesting_level(),
+            _ if dtype.is_string() || dtype.is_binary() || dtype.is_object() => 3,
+            _ => 2,
         })
         .map(|(k, _)| k)
 }
