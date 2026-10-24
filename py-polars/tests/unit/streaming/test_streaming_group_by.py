@@ -912,8 +912,8 @@ def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
         df.lazy()
         .group_by("k")
         .agg(
-            cols.unique().name.suffix("_values"),
             cols.n_unique().name.suffix("_n_unique"),
+            cols.unique().name.suffix("_values"),
             cols.drop_nulls().n_unique().name.suffix("_n_unique_non_null"),
             pl.col("one").unique(),
         )
@@ -924,6 +924,7 @@ def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
     assert dot.count('label="group-by') == 1
     # The n_unique of each column is the length of its unique list.
     assert "n_unique()" not in dot
+    assert dot.count(".unique().implode(") == df.width - 1
 
     def sort_lists(lf: pl.LazyFrame, engine: Any) -> pl.DataFrame:
         out = lf.collect(engine=engine).sort("k")
