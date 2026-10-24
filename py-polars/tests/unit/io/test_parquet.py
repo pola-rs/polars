@@ -4337,6 +4337,175 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     assert_frame_equal(out, pl.select(x=value).select(pl.first().cast(scan_dtype)))
 
 
+@pytest.mark.parametrize(
+    ("write_value", "scan_dtype", "filter_expr", "expected_value"),
+    [
+        (
+            {"a": 1},
+            pl.Struct({"a": pl.Int64, "b": pl.Int64}),
+            pl.col("s").struct.field("b").is_null(),
+            {"a": 1, "b": None},
+        ),
+        (
+            {"t": {"a": 1}},
+            pl.Struct({"t": pl.Struct({"a": pl.Int64, "b": pl.Int64})}),
+            pl.col("s").struct.field("t").struct.field("b").is_null(),
+            {"t": {"a": 1, "b": None}},
+        ),
+    ],
+)
+def test_scan_parquet_skip_row_groups_missing_struct_field(
+    write_value: dict[str, Any],
+    scan_dtype: pl.DataType,
+    filter_expr: pl.Expr,
+    expected_value: dict[str, Any],
+) -> None:
+    # A missing struct field: min/max widen correctly, null_count must too.
+    f = io.BytesIO()
+    pl.DataFrame({"s": [write_value, write_value]}).write_parquet(f)
+    f.seek(0)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"s": scan_dtype},
+        cast_options=pl.ScanCastOptions(missing_struct_fields="insert"),
+    ).filter(filter_expr)
+
+    expected = pl.DataFrame(
+        {"s": [expected_value, expected_value]}, schema={"s": scan_dtype}
+    )
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)), expected
+    )
+
+
+def test_scan_parquet_skip_row_groups_struct_cast_keeps_null_count(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A cast-only struct must keep its real null_count, not fall back to "unknown".
+    f = io.BytesIO()
+    pl.DataFrame(
+        {"s": [{"a": 1}, {"a": 2}]}, schema={"s": pl.Struct({"a": pl.Int8})}
+    ).write_parquet(f)
+    f.seek(0)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"s": pl.Struct({"a": pl.Int64})},
+        cast_options=pl.ScanCastOptions(integer_cast="upcast"),
+    ).filter(pl.col("s").struct.field("a").is_null())
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    assert "reading 0 / 1 row groups" in capfd.readouterr().err
+    assert_frame_equal(out, pl.DataFrame(schema={"s": pl.Struct({"a": pl.Int64})}))
+
+
+@pytest.mark.parametrize(
+    ("write_values", "scan_dtype", "filter_expr", "expected_value"),
+    [
+        (
+            [{"a": 1}, {"a": 2}, {"a": None}, {"a": None}],
+            pl.Struct({"a": pl.Int64, "b": pl.Int64}),
+            pl.col("s").struct.field("a").is_null(),
+            {"a": None, "b": None},
+        ),
+        (
+            [{"t": {"a": 1}}, {"t": {"a": 2}}, {"t": {"a": None}}, {"t": {"a": None}}],
+            pl.Struct({"t": pl.Struct({"a": pl.Int64, "b": pl.Int64})}),
+            pl.col("s").struct.field("t").struct.field("a").is_null(),
+            {"t": {"a": None, "b": None}},
+        ),
+    ],
+)
+def test_scan_parquet_skip_row_groups_struct_insert_keeps_sibling_null_count(
+    write_values: list[dict[str, Any]],
+    scan_dtype: pl.DataType,
+    filter_expr: pl.Expr,
+    expected_value: dict[str, Any],
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Inserting a missing field must not blow away a sibling's own null-count pruning.
+    f = io.BytesIO()
+    pl.DataFrame({"s": write_values}).write_parquet(
+        f, row_group_size=2, statistics="full"
+    )
+    f.seek(0)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"s": scan_dtype},
+        cast_options=pl.ScanCastOptions(missing_struct_fields="insert"),
+    ).filter(filter_expr)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    assert "reading 1 / 2 row groups" in capfd.readouterr().err
+
+    expected = pl.DataFrame(
+        {"s": [expected_value, expected_value]}, schema={"s": scan_dtype}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_scan_parquet_skip_row_groups_struct_null_upcast() -> None:
+    # A physically `Null` field null-upcasts into a struct target - no source shape.
+    arrow_schema = pa.schema([("s", pa.struct([("x", pa.null())]))])
+    tbl = pa.table({"s": [{"x": None}, {"x": None}]}, schema=arrow_schema)
+    f = io.BytesIO()
+    pq.write_table(tbl, f)
+    f.seek(0)
+
+    q = pl.scan_parquet(
+        f, schema={"s": pl.Struct({"x": pl.Struct({"y": pl.Int64})})}
+    ).filter(pl.col("s").struct.field("x").struct.field("y").is_null())
+
+    expected = pl.DataFrame(
+        {"s": [{"x": None}, {"x": None}]},
+        schema={"s": pl.Struct({"x": pl.Struct({"y": pl.Int64})})},
+    )
+    assert_frame_equal(q.collect(), expected)
+
+
+def test_scan_parquet_skip_row_groups_struct_extra_field_dropped(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Dropping an extra field narrows the struct - must not keep the wider shape.
+    f = io.BytesIO()
+    pl.DataFrame(
+        {
+            "s": [
+                {"a": 1, "b": 1},
+                {"a": 2, "b": 1},
+                {"a": None, "b": 1},
+                {"a": None, "b": 1},
+            ]
+        }
+    ).write_parquet(f, row_group_size=2, statistics="full")
+    f.seek(0)
+
+    q = pl.scan_parquet(
+        f,
+        schema={"s": pl.Struct({"a": pl.Int64})},
+        cast_options=pl.ScanCastOptions(extra_struct_fields="ignore"),
+    ).filter(pl.col("s").struct.field("a").is_null())
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    assert "reading 1 / 2 row groups" in capfd.readouterr().err
+
+    expected = pl.DataFrame(
+        {"s": [{"a": None}, {"a": None}]}, schema={"s": pl.Struct({"a": pl.Int64})}
+    )
+    assert_frame_equal(out, expected)
+
+
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
 @pytest.mark.parametrize(
     ("df", "predicate", "reading"),
