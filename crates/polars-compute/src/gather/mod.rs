@@ -102,7 +102,7 @@ pub(crate) fn has_native_take(dtype: &ArrowDataType) -> bool {
     use PrimitiveType as P;
     match dtype {
         D::Extension(_) => false,
-        D::LargeList(field) => has_native_take(field.dtype()),
+        D::LargeList(field) | D::FixedSizeList(field, _) => has_native_take(field.dtype()),
         D::Struct(fields) => fields.iter().all(|f| has_native_take(f.dtype())),
         // Exhaustive, so new physical types must be classified here.
         dt => match dt.to_physical_type() {
@@ -123,10 +123,9 @@ pub(crate) fn has_native_take(dtype: &ArrowDataType) -> bool {
                 | P::Float64 => true,
                 P::Int256 | P::DaysMs | P::MonthDayNano | P::MonthDayMillis => false,
             },
-            // Its kernel rewrites null rows, changing nested-array hashes; slice instead.
-            T::FixedSizeList => false,
             T::Binary
             | T::FixedSizeBinary
+            | T::FixedSizeList
             | T::Utf8
             | T::LargeUtf8
             | T::List
