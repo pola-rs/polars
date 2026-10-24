@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.\_\_getitem\_\_
+================================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.__getitem__

@@ -1,0 +1,6 @@
+﻿polars.Expr.map.values
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.map.values

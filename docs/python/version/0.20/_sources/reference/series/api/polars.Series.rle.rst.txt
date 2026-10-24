@@ -1,0 +1,6 @@
+﻿polars.Series.rle
+=================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.rle

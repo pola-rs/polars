@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.drop
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.drop

@@ -1,0 +1,6 @@
+﻿polars.Expr.str.json_decode
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.json_decode

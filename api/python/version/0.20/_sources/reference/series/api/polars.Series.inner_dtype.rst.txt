@@ -1,0 +1,6 @@
+﻿polars.Series.inner_dtype
+=========================
+
+.. currentmodule:: polars
+
+.. autoaccessorattribute:: Series.inner_dtype

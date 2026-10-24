@@ -1,0 +1,6 @@
+﻿polars.SQLContext.register\_catalog
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: SQLContext.register_catalog

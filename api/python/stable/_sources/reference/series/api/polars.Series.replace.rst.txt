@@ -1,0 +1,6 @@
+﻿polars.Series.replace
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.replace

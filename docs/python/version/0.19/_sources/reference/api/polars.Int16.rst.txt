@@ -1,0 +1,37 @@
+﻿polars.Int16
+============
+
+.. currentmodule:: polars
+
+.. autoclass:: Int16
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Int16.__init__
+      ~Int16.base_type
+      ~Int16.is_
+      ~Int16.is_float
+      ~Int16.is_integer
+      ~Int16.is_not
+      ~Int16.is_numeric
+      ~Int16.is_signed_integer
+      ~Int16.is_temporal
+      ~Int16.is_unsigned_integer
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Int16.is_nested
+   
+   

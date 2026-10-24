@@ -1,0 +1,6 @@
+﻿polars.Series.var
+=================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.var

@@ -1,0 +1,6 @@
+﻿polars.DataFrame.\_\_setitem\_\_
+================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.__setitem__

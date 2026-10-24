@@ -1,0 +1,6 @@
+﻿polars.Series.map.values
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.map.values

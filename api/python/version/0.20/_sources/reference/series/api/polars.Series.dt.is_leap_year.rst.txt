@@ -1,0 +1,6 @@
+﻿polars.Series.dt.is_leap_year
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.is_leap_year

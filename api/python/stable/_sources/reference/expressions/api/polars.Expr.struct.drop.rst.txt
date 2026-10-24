@@ -1,0 +1,6 @@
+﻿polars.Expr.struct.drop
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.struct.drop

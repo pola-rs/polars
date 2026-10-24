@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.offset_by
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.offset_by

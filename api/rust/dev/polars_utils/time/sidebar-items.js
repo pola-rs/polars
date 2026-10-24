@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DAYS_PER_MONTH","NS_DAY","NS_HOUR","NS_MICROSECOND","NS_MILLISECOND","NS_MINUTE","NS_SECOND","NS_WEEK","NTE_NS_DAY","NTE_NS_WEEK"],"fn":["days_in_month","is_leap_year"]};
