@@ -36,6 +36,8 @@ polars-time = { workspace = true }
 polars-utils = { workspace = true, features = ["python"] }
 
 arboard = { workspace = true, optional = true }
+aws-config = { workspace = true, optional = true }
+aws-sdk-kms = { workspace = true, optional = true }
 bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
@@ -151,6 +153,7 @@ catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
+iceberg = ["parquet", "dep:aws-config", "dep:aws-sdk-kms"]
 is_in = ["polars/is_in"]
 json = [
   "polars/serde",
@@ -316,6 +319,7 @@ fast_alloc = ["polars-ooc/fast_alloc"]
 
 full_functionality = [
   "async",
+  "iceberg",
   "pymethods",
   "optimizations",
   "io",

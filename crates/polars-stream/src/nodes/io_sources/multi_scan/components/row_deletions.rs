@@ -61,6 +61,7 @@ pub enum DeletionFilesProvider {
 impl DeletionFilesProvider {
     pub fn try_new(
         deletion_files: Option<DeletionFilesList>,
+        #[allow(unused)] data_reader: &dyn FileReaderBuilder,
         selected_sources: ScanSources,
         execution_state: &crate::execute::StreamingExecutionState,
         io_metrics: Option<Arc<IOMetrics>>,
@@ -79,7 +80,7 @@ impl DeletionFilesProvider {
                         parallel: polars_io::prelude::ParallelStrategy::Auto,
                         low_memory: false,
                         use_statistics: false,
-                        decryption_properties: None,
+                        decryption_properties: data_reader.parquet_decryption_properties(),
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
@@ -332,6 +333,12 @@ impl DeletionFilesProvider {
                         let deletion_load_tasks = Arc::clone(deletion_load_tasks);
                         let data_path = data_paths[scan_source_idx].clone();
                         let path = path.clone();
+                        let decryption = reader_builder
+                            .options
+                            .decryption_properties
+                            .as_ref()
+                            .and_then(|p| p.for_path(Some(&path)))
+                            .cloned();
                         let content_offset = *content_offset;
                         let cloud_options = cloud_options.clone();
                         let io_metrics = reader_builder.io_metrics.get().cloned();
@@ -365,6 +372,15 @@ impl DeletionFilesProvider {
                                         }));
 
                                     let puffin_bytes = fetch_bytes_handle.await.unwrap()?;
+                                    let puffin_bytes = if let Some(properties) = decryption {
+                                        polars_parquet::parquet::encryption::iceberg::decrypt_stream(
+                                            &puffin_bytes,
+                                            properties.footer_key(None)?.as_slice(),
+                                            properties.aad_prefix().map(Vec::as_slice).unwrap_or_default(),
+                                        )?.into()
+                                    } else {
+                                        puffin_bytes
+                                    };
                                     load_iceberg_puffin_deletes(puffin_bytes)
                                 })
                                 .await?
