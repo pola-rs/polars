@@ -993,8 +993,8 @@ def test_sink_failed_query_does_not_finish_file(
         sink(lf, path)
     # The writer used to finish the file in the background, after the error.
     time.sleep(0.2)
-    # The file is missing if the sink was cancelled before it opened it.
-    with pytest.raises((ComputeError, FileNotFoundError)):
+    # Unreadable, or missing if the sink was cancelled before it opened it.
+    with pytest.raises((ComputeError, OSError)):
         read(path)
 
 
@@ -1015,5 +1015,5 @@ def test_sink_partitioned_failed_query_does_not_finish_files(
         )
     time.sleep(0.2)
     for path in tmp_path.rglob("*.parquet"):
-        with pytest.raises(ComputeError):
+        with pytest.raises((ComputeError, OSError)):
             pl.read_parquet(path)
