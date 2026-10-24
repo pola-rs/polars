@@ -461,6 +461,56 @@ def test_dataclasses_initvar_typing() -> None:
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
+def test_dataclasses_flat_and_nested_fields() -> None:
+    @dataclasses.dataclass
+    class One:
+        x: int
+
+    @dataclasses.dataclass
+    class Flat:
+        x: int
+        y: str | None
+
+    @dataclasses.dataclass
+    class Nested:
+        x: int
+        y: list[int]
+
+    assert pl.DataFrame([One(1), One(2)]).to_dict(as_series=False) == {"x": [1, 2]}
+    assert pl.DataFrame([Flat(1, "a"), Flat(2, None)]).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": ["a", None],
+    }
+    assert pl.DataFrame([Nested(1, [1, 2]), Nested(2, [])]).to_dict(
+        as_series=False
+    ) == {"x": [1, 2], "y": [[1, 2], []]}
+
+    @dataclasses.dataclass
+    class Other:
+        z: int
+        w: str | None
+
+    # Rows of other dataclasses are read by position.
+    assert pl.DataFrame([Flat(1, "a"), Other(2, "b")]).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": ["a", "b"],
+    }
+
+    @dataclasses.dataclass
+    class Empty:
+        pass
+
+    assert pl.DataFrame([Empty(), Empty()]).shape == (2, 0)
+
+    @dataclasses.dataclass
+    class WithObject:
+        x: int
+        y: object
+
+    df = pl.DataFrame([WithObject(1, One(2))], schema_overrides={"y": pl.Object})
+    assert df.item(0, "y") == [2]
+
+
 @pytest.mark.parametrize(
     "nt",
     [

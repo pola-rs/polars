@@ -10,7 +10,7 @@ use polars_async::ASYNC;
 use polars_utils::UnitVec;
 use polars_utils::with_drop::WithDrop;
 
-use crate::memory_manager::{PrefetchInProgressTracker, memory_manager};
+use crate::memory_manager::{OocActivity, PrefetchInProgressTracker, memory_manager};
 use crate::spill_context::InsertReason;
 use crate::{SpillContextParam, Spillable, WeakSpillContext};
 
@@ -29,6 +29,7 @@ enum ValueSlot<T> {
         spill_ctx: WeakSpillContext,
         spill_time_ns: u64,
         spilled_start: Instant,
+        _activity: OocActivity,
     },
     Dropped,
 }
@@ -316,6 +317,7 @@ impl<T: Spillable> SpillTokenInner<T> {
             spill_ctx,
             spill_time_ns,
             spilled_start,
+            ..
         } = old_slot
         else {
             unreachable!()
@@ -436,12 +438,7 @@ where
                 slf.wake_waiters(slf.state.fetch_and(!LOCK_BIT, Ordering::AcqRel));
             });
 
-            let ValueSlot::Spilled {
-                spill_ctx,
-                spill_time_ns: _,
-                spilled_start: _,
-            } = &*lock_guard.value_slot.get()
-            else {
+            let ValueSlot::Spilled { spill_ctx, .. } = &*lock_guard.value_slot.get() else {
                 unreachable!()
             };
 
@@ -462,6 +459,7 @@ where
                     spill_ctx: spill_ctx.clone(),
                     spill_time_ns,
                     spilled_start,
+                    _activity: OocActivity::new(),
                 }),
                 spilled_value: UnsafeCell::new(Some(spilled_value)),
                 est_size: AtomicUsize::new(n_bytes),
@@ -740,6 +738,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                         spill_ctx: stats_ctx.clone(),
                         spill_time_ns,
                         spilled_start,
+                        _activity: OocActivity::new(),
                     })
                 };
 
@@ -924,5 +923,121 @@ impl<'a, T: Spillable> DerefMut for PinnedMut<'a, T> {
 impl<'a, T: Spillable> Drop for PinnedMut<'a, T> {
     fn drop(&mut self) {
         unsafe { SpillTokenInner::unpin_mut(self.inner) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MostRecentSpillContext;
+
+    #[derive(Clone)]
+    struct Value(Vec<u8>);
+
+    impl Spillable for Value {
+        type Spilled = Vec<u8>;
+
+        fn estimate_byte_size(&self) -> usize {
+            self.0.len()
+        }
+
+        async fn spill(&self, _context_id: &str) -> Vec<u8> {
+            self.0.clone()
+        }
+
+        async fn unspill(location: &Vec<u8>) -> Self {
+            Value(location.clone())
+        }
+    }
+
+    fn activity() -> u64 {
+        memory_manager().activity_count()
+    }
+
+    fn spill(token: &SpillToken<Value>, ctx: &MostRecentSpillContext) {
+        let spill = token.upcast().try_spill(ctx.downgrade()).ok().unwrap();
+        assert!(ASYNC.block_in_place_on(spill));
+    }
+
+    #[test]
+    fn activity_follows_spilled_tokens() {
+        let _guard = crate::test_lock();
+        let ctx = MostRecentSpillContext::new("test".into(), None);
+        let start = activity();
+
+        // Spill, then unspill.
+        let token = SpillToken::new(Value(vec![1; 100]));
+        spill(&token, &ctx);
+        assert_eq!(activity(), start + 1);
+        assert_eq!(token.get_blocking().0.len(), 100);
+        assert_eq!(activity(), start);
+
+        // Spill, then drop.
+        spill(&token, &ctx);
+        assert_eq!(activity(), start + 1);
+        drop(token);
+        assert_eq!(activity(), start);
+
+        // A clone of a spilled token is spilled too.
+        let token = SpillToken::new(Value(vec![2; 100]));
+        spill(&token, &ctx);
+        let clone = token.clone();
+        assert_eq!(activity(), start + 2);
+        drop(clone);
+        assert_eq!(activity(), start + 1);
+        drop(token);
+        assert_eq!(activity(), start);
+    }
+
+    // Waits twice in `unspill`, so a test can act while an unspill holds the lock.
+    static UNSPILL_GATE: std::sync::Barrier = std::sync::Barrier::new(2);
+
+    #[derive(Clone)]
+    struct GatedValue(Vec<u8>);
+
+    impl Spillable for GatedValue {
+        type Spilled = Vec<u8>;
+
+        fn estimate_byte_size(&self) -> usize {
+            self.0.len()
+        }
+
+        async fn spill(&self, _context_id: &str) -> Vec<u8> {
+            self.0.clone()
+        }
+
+        async fn unspill(location: &Vec<u8>) -> Self {
+            UNSPILL_GATE.wait();
+            UNSPILL_GATE.wait();
+            GatedValue(location.clone())
+        }
+    }
+
+    #[test]
+    fn activity_with_drop_during_spill_and_prefetch() {
+        let _guard = crate::test_lock();
+        let ctx = MostRecentSpillContext::new("test".into(), None);
+        let start = activity();
+
+        // Dropped while being spilled.
+        let token = SpillToken::new(Value(vec![1; 100]));
+        let spill_fut = token.upcast().try_spill(ctx.downgrade()).ok().unwrap();
+        drop(token);
+        ASYNC.block_in_place_on(spill_fut);
+        assert_eq!(activity(), start);
+
+        // Dropped while a prefetch holds the lock and unspills.
+        let token = SpillToken::new(GatedValue(vec![2; 100]));
+        let spill_fut = token.upcast().try_spill(ctx.downgrade()).ok().unwrap();
+        assert!(ASYNC.block_in_place_on(spill_fut));
+        assert_eq!(activity(), start + 1);
+        let prefetch = token.upcast().prefetch();
+        let prefetch_thread = std::thread::spawn(move || ASYNC.block_in_place_on(prefetch));
+        UNSPILL_GATE.wait();
+        drop(token);
+        assert_eq!(activity(), start + 1);
+        UNSPILL_GATE.wait();
+        prefetch_thread.join().unwrap();
+        assert_eq!(activity(), start);
     }
 }

@@ -1751,7 +1751,9 @@ impl Column {
             .quantiles_reduce(quantiles, method)
     }
 
-    pub(crate) fn estimated_size(&self, expanded: bool) -> usize {
+    /// The estimated memory of the column in bytes. Without `expanded`, a scalar column that is
+    /// not materialized counts only its value.
+    pub fn estimated_size(&self, expanded: bool) -> usize {
         match self {
             Column::Series(s) => s.estimated_size(),
             Column::Scalar(s) => s.estimated_size(expanded),
