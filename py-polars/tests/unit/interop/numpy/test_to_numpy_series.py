@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pyarrow as pa
 import pytest
 from hypothesis import given, settings
 from numpy.testing import assert_array_equal
@@ -278,6 +279,21 @@ def test_series_to_numpy_array_with_nested_nulls() -> None:
     assert_array_equal(result, expected)
     assert result.dtype == np.float64
     assert_allow_copy_false_raises(s)
+
+
+def test_series_to_numpy_array_null_row_stored_values_30273() -> None:
+    # The null row stores valid values, which must become NaN/None.
+    mask = pa.array([False, True, False])
+    ints = pa.array([1, 2, 9, 9, 3, 4])
+    s = pl.Series(pa.FixedSizeListArray.from_arrays(ints, 2, mask=mask))
+    result = s.to_numpy()
+    assert_array_equal(result, np.array([[1.0, 2.0], [np.nan, np.nan], [3.0, 4.0]]))
+    assert result.dtype == np.float64
+    assert_array_equal(s.to_frame().to_numpy()[1, 0], [np.nan, np.nan])
+
+    strs = pa.array(["a", "b", "z", "z", "c", "d"])
+    s = pl.Series(pa.FixedSizeListArray.from_arrays(strs, 2, mask=mask))
+    assert s.to_numpy().tolist() == [["a", "b"], [None, None], ["c", "d"]]
 
 
 def test_series_to_numpy_array_of_arrays() -> None:
