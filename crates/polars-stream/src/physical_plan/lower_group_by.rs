@@ -271,6 +271,7 @@ fn try_lower_elementwise_scalar_agg_expr(
     uniq_agg_exprs: &mut PlIndexMap<CanonicalExprId, (ExprIR, Vec<CanonicalExprId>)>,
     uniq_elementwise_exprs: &mut PlIndexMap<CanonicalExprId, ExprIR>,
     substream_input_ids: &mut PlIndexSet<CanonicalExprId>,
+    unique_input_ids: &PlIndexSet<CanonicalExprId>,
 ) -> Option<Node> {
     // Helper macros to simplify (recursive) calls.
     macro_rules! lower_rec {
@@ -287,6 +288,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 uniq_agg_exprs,
                 uniq_elementwise_exprs,
                 substream_input_ids,
+                unique_input_ids,
             )
         };
     }
@@ -644,9 +646,34 @@ fn try_lower_elementwise_scalar_agg_expr(
                         _ => (*uniq_input, true),
                     };
                     if unique_reducible(uniq_input, expr_arena) {
-                        let n_unique =
-                            AExprBuilder::agg(IRAggExpr::NUnique(uniq_input), expr_arena);
-                        let n_unique = replace_agg_uniq!(n_unique.node());
+                        let uniq_input_id = canonical_exprs.resolve(uniq_input, expr_arena);
+                        let n_unique = if unique_input_ids.contains(&uniq_input_id) {
+                            // Count the unique list that is already computed.
+                            let unique = AExprBuilder::function(
+                                vec![ExprIR::from_node(uniq_input, expr_arena)],
+                                IRFunctionExpr::Unique(false),
+                                expr_arena,
+                            );
+                            let implode = AExprBuilder::agg(
+                                IRAggExpr::Implode {
+                                    input: unique.node(),
+                                    maintain_order: false,
+                                },
+                                expr_arena,
+                            );
+                            let list =
+                                replace_agg_uniq!(implode.node(), unique_of = Some(uniq_input));
+                            AExprBuilder::function(
+                                vec![ExprIR::from_node(list, expr_arena)],
+                                IRFunctionExpr::ListExpr(IRListFunction::Length),
+                                expr_arena,
+                            )
+                            .node()
+                        } else {
+                            let n_unique =
+                                AExprBuilder::agg(IRAggExpr::NUnique(uniq_input), expr_arena);
+                            replace_agg_uniq!(n_unique.node())
+                        };
                         if include_nulls {
                             return Some(n_unique);
                         }
@@ -951,6 +978,25 @@ pub fn try_build_streaming_group_by(
     // sub-stream derived from the pre-select, which reads them from there as columns.
     let mut substream_input_ids = PlIndexSet::new();
 
+    // Inputs of unordered unique lists, whose length also gives their n_unique.
+    let mut unique_input_ids = PlIndexSet::new();
+    for agg in aggs {
+        for (_, ae) in expr_arena.iter(agg.node()) {
+            if let AExpr::Agg(IRAggExpr::Implode {
+                input,
+                maintain_order: false,
+            }) = ae
+                && let Some(x) = unordered_unique_input(*input, expr_arena)
+            {
+                unique_input_ids.insert(x);
+            }
+        }
+    }
+    let unique_input_ids = unique_input_ids
+        .into_iter()
+        .map(|x| canonical_exprs.resolve(x, expr_arena))
+        .collect();
+
     let input_schema = input.output_schema(phys_sm).clone();
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
@@ -965,6 +1011,7 @@ pub fn try_build_streaming_group_by(
             &mut uniq_agg_exprs,
             &mut uniq_elementwise_exprs,
             &mut substream_input_ids,
+            &unique_input_ids,
         ) else {
             return Ok(None);
         };

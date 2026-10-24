@@ -917,6 +917,8 @@ def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
     dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert isinstance(dot, str)
     assert dot.count('label="group-by') == 1
+    # The n_unique of each column is the length of its unique list.
+    assert "n_unique()" not in dot
 
     def sort_lists(lf: pl.LazyFrame, engine: Any) -> pl.DataFrame:
         out = lf.collect(engine=engine).sort("k")
