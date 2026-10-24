@@ -409,3 +409,17 @@ def test_unpivot_selector_parsing_parity() -> None:
             pl.Series("value", [2, 4], dtype=pl.Int64),
         ],
     )
+
+
+def test_unpivot_expr_27037() -> None:
+    df = pl.DataFrame({"x": [1], "y": [2]})
+    result = df.unpivot(pl.col.x)
+    expected = pl.DataFrame({"variable": ["x"], "value": [1]})
+    assert_frame_equal(result, expected)
+
+
+def test_unpivot_expr_index_27037() -> None:
+    df = pl.DataFrame({"x": [1], "y": [2]})
+    result = df.unpivot(pl.col.y, index=pl.col.x)
+    expected = pl.DataFrame({"x": [1], "variable": ["y"], "value": [2]})
+    assert_frame_equal(result, expected)
