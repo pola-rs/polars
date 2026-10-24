@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use hashbrown::hash_table::{Entry, HashTable};
 use polars_arrow::array::{
     BinaryViewArray, ListArray, MutableBinaryViewArray, MutableBooleanArray, MutablePrimitiveArray,
+    View,
 };
 use polars_arrow::offset::Offsets;
 use polars_arrow::pushable::Pushable;
@@ -263,18 +264,18 @@ impl<T: PolarsNumericType, const COUNT: bool> Reducer for NumUniqueReducer<T, CO
     }
 }
 
-/// A value of a group, stored in the bytes of the group.
+/// A value of a group. Values that do not fit inline are stored in the bytes of the group,
+/// at offset `buffer_idx << 32 | offset`.
 #[derive(Clone, Copy)]
-struct Span {
+struct Key {
     hash: u64,
-    start: usize,
-    len: usize,
+    view: View,
 }
 
-/// The distinct values of a group, with their bytes in one buffer.
+/// The distinct values of a group, with the values that do not fit inline in one buffer.
 #[derive(Clone)]
 struct BinaryUniqueValues {
-    values: UniqueValues<Span>,
+    values: UniqueValues<Key>,
     bytes: Vec<u8>,
 }
 
@@ -287,22 +288,48 @@ impl BinaryUniqueValues {
     }
 
     #[inline(always)]
-    fn get(&self, s: &Span) -> &[u8] {
-        &self.bytes[s.start..s.start + s.len]
+    fn get<'a>(bytes: &'a [u8], k: &'a Key) -> &'a [u8] {
+        if k.view.is_inline() {
+            // SAFETY: the view is inline.
+            unsafe { k.view.get_inlined_slice_unchecked() }
+        } else {
+            let start = ((k.view.buffer_idx as u64) << 32 | k.view.offset as u64) as usize;
+            &bytes[start..start + k.view.length as usize]
+        }
     }
 
     #[inline(always)]
-    fn insert_value(&mut self, x: &[u8], hash: u64) {
+    fn insert_value(&mut self, x: &[u8]) {
+        if x.len() <= View::MAX_INLINE_SIZE as usize {
+            // SAFETY: the length was checked.
+            let view = unsafe { View::new_inline_unchecked(x) };
+            self.insert_inline(view, hash_one(&view.as_u128()));
+        } else {
+            self.insert_external(x, hash_one(x));
+        }
+    }
+
+    #[inline(always)]
+    fn insert_inline(&mut self, view: View, hash: u64) {
+        self.values.insert(
+            || hash,
+            |k| k.view == view,
+            |k| k.hash,
+            || Key { hash, view },
+        );
+    }
+
+    #[inline(always)]
+    fn insert_external(&mut self, x: &[u8], hash: u64) {
         let bytes = &self.bytes;
-        let start = bytes.len();
+        let start = bytes.len() as u64;
         let inserted = self.values.insert(
             || hash,
-            |s| s.hash == hash && &bytes[s.start..s.start + s.len] == x,
-            |s| s.hash,
-            || Span {
+            |k| k.hash == hash && k.view.length as usize == x.len() && Self::get(bytes, k) == x,
+            |k| k.hash,
+            || Key {
                 hash,
-                start,
-                len: x.len(),
+                view: View::new_from_bytes(x, (start >> 32) as u32, start as u32),
             },
         );
         if inserted {
@@ -312,8 +339,12 @@ impl BinaryUniqueValues {
 
     fn combine(&mut self, other: &Self) {
         self.values.has_null |= other.values.has_null;
-        for s in other.values.iter() {
-            self.insert_value(other.get(s), s.hash);
+        for k in other.values.iter() {
+            if k.view.is_inline() {
+                self.insert_inline(k.view, k.hash);
+            } else {
+                self.insert_external(Self::get(&other.bytes, k), k.hash);
+            }
         }
     }
 
@@ -348,7 +379,7 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>, _seq_id: u64) {
         match b {
-            Some(x) => a.insert_value(x, hash_one(x)),
+            Some(x) => a.insert_value(x),
             None => a.values.has_null = true,
         }
     }
@@ -359,7 +390,7 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
             .downcast_iter()
             .flat_map(|arr| arr.non_null_values_iter())
         {
-            v.insert_value(x, hash_one(x));
+            v.insert_value(x);
         }
     }
 
@@ -380,7 +411,7 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
         for u in v {
             offsets.try_push(u.len()).unwrap();
             for s in u.values.iter() {
-                out.push_value(u.get(s));
+                out.push_value(BinaryUniqueValues::get(&u.bytes, s));
             }
             if u.values.has_null {
                 out.push_null();
