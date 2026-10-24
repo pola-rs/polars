@@ -27,7 +27,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Collection, Iterable
 
     import pyarrow as pa
     import pyiceberg.catalog
@@ -624,11 +624,16 @@ def _partition_key_exprs(
 
 def _create_table_schema(
     schema: pl.Schema,
+    *,
+    required: Collection[str] = (),
+    context: str = "create_if_not_exists",
 ) -> tuple[Schema, dict[str, pl.DataType]]:
     """Iceberg schema of a table created from `schema`.
 
     Also returns the casts that make the data match the table schema, all of which
-    are lossless. Raises if a column has no lossless Iceberg equivalent.
+    are lossless. Raises if a column has no lossless Iceberg equivalent. The
+    top-level columns in `required` become required fields; `context` starts the
+    error message.
     """
     from itertools import count
 
@@ -721,15 +726,15 @@ def _create_table_schema(
         if (converted := convert(dtype, name)) is None:
             continue
         iceberg_type, cast_dtype = converted
-        fields.append(NestedField(field_id, name, iceberg_type))
+        fields.append(
+            NestedField(field_id, name, iceberg_type, required=name in required)
+        )
         if cast_dtype != dtype:
             casts[name] = cast_dtype
 
     if unsupported:
-        msg = (
-            "create_if_not_exists: columns without a lossless Iceberg type: "
-            + ", ".join(unsupported)
-        )
+        columns = ", ".join(unsupported)
+        msg = f"{context}: columns without a lossless Iceberg type: {columns}"
         raise TypeError(msg)
 
     return Schema(*fields), casts
