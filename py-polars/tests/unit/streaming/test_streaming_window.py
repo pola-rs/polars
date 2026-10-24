@@ -480,3 +480,25 @@ def test_dataframe_window_ties_in_input_order() -> None:
         q.collect(engine="in-memory"),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("predicate", "extracted"),
+    [
+        (
+            pl.int_range(pl.len()).over("g", order_by=["t", "id"], descending=True)
+            == 0,
+            True,
+        ),
+        ((pl.col("x") > pl.col("x").mean().over("g")) & (pl.col("id") % 3 != 0), True),
+        (pl.col("x").cum_sum().over("h", order_by="t") < 5_000, True),
+        (pl.col("x").sum().over("g").sum() > 0, False),
+    ],
+)
+def test_window_in_filter(predicate: pl.Expr, extracted: bool) -> None:
+    q = _keyed_frame().lazy().filter(predicate)
+    graph = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert ("window[" in graph) == extracted
+    if extracted:
+        assert "in-memory-map" not in graph
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

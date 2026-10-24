@@ -1,4 +1,4 @@
-//! Moves `over` windows out of `Select` and `HStack` nodes into [`IR::Window`] nodes.
+//! Moves `over` windows out of `Select`, `HStack` and `Filter` nodes into [`IR::Window`] nodes.
 //!
 //! ```text
 //! SELECT [a, (x - x.mean().over(g)) as b]
@@ -37,14 +37,29 @@ pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: 
     let mut visited = PlIndexSet::new();
     let mut stack = vec![root];
     let mut projections = Vec::new();
+    let mut filters = Vec::new();
 
     while let Some(node) = stack.pop() {
         if !visited.insert(node) {
             continue;
         }
         let ir = ir_arena.get(node);
-        if matches!(ir, IR::Select { .. } | IR::HStack { .. }) {
-            projections.push(node);
+        match ir {
+            IR::Select { .. } | IR::HStack { .. } => projections.push(node),
+            IR::Filter { predicate, .. }
+                if expr_arena.iter(predicate.node()).any(|(_, ae)| {
+                    matches!(
+                        ae,
+                        AExpr::Over {
+                            mapping: WindowMapping::GroupsToRows,
+                            ..
+                        }
+                    )
+                }) =>
+            {
+                filters.push(node)
+            },
+            _ => {},
         }
         stack.extend(ir.inputs());
     }
@@ -52,6 +67,50 @@ pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: 
     for node in projections {
         extract_from_projection(node, ir_arena, expr_arena);
     }
+    for node in filters {
+        extract_from_filter(node, ir_arena, expr_arena);
+    }
+}
+
+/// Computes the predicate of a filter in an `HStack` below it, so its windows can be extracted
+/// like those of a projection.
+/// ```text
+/// FILTER pred            SIMPLE_PROJECTION [input columns]
+///   input        →         FILTER col(tmp)
+///                            HSTACK [pred as tmp]
+///                              input
+/// ```
+fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+    let IR::Filter { input, predicate } = ir_arena.get(node) else {
+        unreachable!()
+    };
+    let input = *input;
+    let name = unique_column_name();
+    let hstack = add_hstack(
+        input,
+        vec![ExprIR::new(
+            predicate.node(),
+            OutputName::Alias(name.clone()),
+        )],
+        ProjectionOptions::default(),
+        ir_arena,
+        expr_arena,
+    );
+    if !extract_from_projection(hstack, ir_arena, expr_arena) {
+        return;
+    }
+    let filter = ir_arena.add(IR::Filter {
+        input: hstack,
+        predicate: ExprIR::from_column_name(name, expr_arena),
+    });
+    let columns = ir_arena.get(input).schema(ir_arena).into_owned();
+    ir_arena.replace(
+        node,
+        IR::SimpleProjection {
+            input: filter,
+            columns,
+        },
+    );
 }
 
 #[derive(PartialEq)]
@@ -424,7 +483,12 @@ fn is_window(ae: &AExpr) -> bool {
     }
 }
 
-fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+/// Returns whether any window was moved.
+fn extract_from_projection(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> bool {
     let (input, exprs, options) = match ir_arena.get(node) {
         IR::Select {
             input,
@@ -464,7 +528,7 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         .collect::<Vec<_>>();
 
     if extractor.specs.is_empty() {
-        return;
+        return false;
     }
 
     let input_schema = ir_arena.get(input).schema(ir_arena).into_owned();
@@ -692,6 +756,7 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         _ => unreachable!(),
     };
     ir_arena.replace(node, new_ir);
+    true
 }
 
 /// Replaces the columns in `exprs` by their expressions.
