@@ -54,6 +54,33 @@ const HOT_TABLE_GROW_SLOTS_PER_KEY: f64 = 1.5;
 /// of the slots after growing.
 const HOT_TABLE_GROW_MAX_LOAD: f64 = 0.75;
 
+/// An input stops using its hot table if its growing states hold more than this fraction of
+/// the values they received. Its rows then are stored as cold rows anyway, so its other
+/// reductions lose little.
+const GROWING_STATES_MAX_KEPT_FRACTION: f64 = 0.5;
+
+/// Below this many groups per pipeline an input keeps its hot table even if its growing states
+/// do not shrink, as the partitions could not spread the groups over the pipelines.
+const GROWING_STATES_MIN_GROUPS_PER_PIPELINE: usize = 2;
+
+/// Whether an input whose hot states can grow uses its hot table, and what it received so far.
+/// It first checks whether the states pay off after a morsel of hot rows, then each time the
+/// number of hot rows doubles.
+#[derive(Clone, Default)]
+struct GrowingStates {
+    /// Some reduction of the input has states that grow with the values of a group.
+    may_go_cold: bool,
+    /// The number of reductions of the input with growing states.
+    num_growing: u64,
+    /// Every row of the input is stored as a cold row.
+    cold_only: bool,
+    hot_rows: u64,
+    next_check_rows: u64,
+    /// The values and bytes held by the pre-aggregates of the input.
+    pre_agg_values: u64,
+    pre_agg_bytes: u64,
+}
+
 /// The state of one pipeline of the sink.
 struct LocalSink {
     // Created when the input first sends this pipeline a non-empty morsel.
@@ -78,6 +105,7 @@ struct LocalSink {
     // Set by `finish_input`, see `InputStats`.
     pre_agg_work: u64,
     pre_agg_state_bytes: u64,
+    growing_states_per_input: Vec<GrowingStates>,
 }
 
 impl LocalSink {
@@ -99,6 +127,24 @@ impl LocalSink {
             pre_aggs: Vec::new(),
             pre_agg_work: 0,
             pre_agg_state_bytes: 0,
+            growing_states_per_input: params
+                .reductions_per_input
+                .iter()
+                .map(|r_idxs| {
+                    let num_growing = r_idxs
+                        .iter()
+                        .filter(|r| params.grouped_reductions[**r].state_size().is_some())
+                        .count();
+                    // Cold rows only exist without order-sensitive reductions.
+                    let may_go_cold = num_growing > 0 && !params.has_order_sensitive_agg;
+                    GrowingStates {
+                        may_go_cold,
+                        num_growing: num_growing as u64,
+                        next_check_rows: get_ideal_morsel_size() as u64,
+                        ..Default::default()
+                    }
+                })
+                .collect(),
         }
     }
 
@@ -115,12 +161,13 @@ impl LocalSink {
             .iter()
             .map(|r| self.hot_grouped_reductions[*r].take_evictions())
             .collect();
-        self.add_pre_agg(keys, reduction_idxs, reductions, true);
+        self.add_pre_agg(input_idx, keys, reduction_idxs, reductions, true);
     }
 
     /// Adds a pre-aggregate over `keys`, which count as missed by the hot table if `is_miss`.
     fn add_pre_agg(
         &mut self,
+        input_idx: usize,
         keys: HashKeys,
         reduction_idxs: &[usize],
         reductions: Vec<Box<dyn GroupedReduction>>,
@@ -134,12 +181,76 @@ impl LocalSink {
                 }
             }
         });
+        let growing = &mut self.growing_states_per_input[input_idx];
+        if growing.may_go_cold {
+            for size in reductions.iter().filter_map(|r| r.state_size()) {
+                growing.pre_agg_values += size.num_values as u64;
+                growing.pre_agg_bytes += size.bytes as u64;
+            }
+        }
         self.pre_aggs.push(PreAgg {
             keys,
             reduction_idxs: UnitVec::from_slice(reduction_idxs),
             reductions,
             split: None,
         });
+    }
+
+    /// Stops using the hot table of `input_idx` if its growing states keep too many of the
+    /// values they received, or use too much memory. Its hot groups become a pre-aggregate.
+    fn maybe_go_cold(
+        &mut self,
+        input_idx: usize,
+        reductions_per_input: &[Vec<usize>],
+        num_pipelines: usize,
+    ) {
+        let growing = &self.growing_states_per_input[input_idx];
+        if !growing.may_go_cold || growing.cold_only || growing.hot_rows < growing.next_check_rows {
+            return;
+        }
+
+        let r_idxs = &reductions_per_input[input_idx];
+        let mut values = growing.pre_agg_values;
+        let mut bytes = growing.pre_agg_bytes;
+        for size in r_idxs
+            .iter()
+            .filter_map(|r| self.hot_grouped_reductions[*r].state_size())
+        {
+            values += size.num_values as u64;
+            bytes += size.bytes as u64;
+        }
+        let received = growing.hot_rows * growing.num_growing;
+        let num_groups =
+            self.hot_grouper(input_idx).num_groups() as usize + self.key_sketch.estimate();
+        let keeps_too_much = values as f64 > GROWING_STATES_MAX_KEPT_FRACTION * received as f64
+            && num_groups >= GROWING_STATES_MIN_GROUPS_PER_PIPELINE * num_pipelines;
+        let too_large = bytes.saturating_mul(8 * num_pipelines as u64) > budget();
+
+        let growing = &mut self.growing_states_per_input[input_idx];
+        growing.next_check_rows = 2 * growing.hot_rows;
+        if !keeps_too_much && !too_large {
+            return;
+        }
+        growing.cold_only = true;
+        if polars_config::config().verbose() {
+            eprintln!(
+                "[group-by]: input {input_idx} stops using its hot table (hot rows: {}, values kept: {values}, state bytes: {bytes})",
+                growing.hot_rows
+            );
+        }
+
+        if self.hot_grouper(input_idx).num_evictions() > 0 {
+            self.flush_evictions(input_idx, r_idxs);
+        }
+        let hot_grouper = self.hot_grouper_per_input[input_idx].take().unwrap();
+        let reductions = r_idxs
+            .iter()
+            .map(|r| {
+                let template = self.hot_grouped_reductions[*r].new_empty();
+                std::mem::replace(&mut self.hot_grouped_reductions[*r], template)
+            })
+            .collect();
+        self.add_pre_agg(input_idx, hot_grouper.keys(), r_idxs, reductions, false);
     }
 
     /// Stores the cold rows `cold_idxs` of a slice `df` of a morsel of `input_idx`, and adds
@@ -167,14 +278,17 @@ impl LocalSink {
 
         // 75% or more cold, don't gather.
         let frame = if may_store_whole && cold_idxs.len() as u64 >= df.height() as u64 * 3 / 4 {
-            let mut mask = MutableBitmap::from_len_zeroed(df.height());
-            for idx in cold_idxs {
-                mask.set(*idx as usize, true);
-            }
+            let mask = (cold_idxs.len() < df.height()).then(|| {
+                let mut mask = MutableBitmap::from_len_zeroed(df.height());
+                for idx in cold_idxs {
+                    mask.set(*idx as usize, true);
+                }
+                mask.freeze()
+            });
             FrameWithKeys {
                 frame: df,
                 keys,
-                mask: Some(mask.freeze()),
+                mask,
             }
         } else {
             let frame_rows = get_ideal_morsel_size();
@@ -305,7 +419,7 @@ impl LocalSink {
                 .iter()
                 .map(|r| hot_reductions[*r].take().unwrap())
                 .collect();
-            self.add_pre_agg(hot_grouper.keys(), r_idxs, reductions, false);
+            self.add_pre_agg(input_idx, hot_grouper.keys(), r_idxs, reductions, false);
         }
 
         for pre_agg in &self.pre_aggs {
@@ -377,7 +491,8 @@ impl GroupBySink {
                     }
                     let local =
                         opt_local.get_or_insert_with(|| LocalSink::new(params, hot_table_size));
-                    if local.hot_grouper_per_input[input_idx].is_none() {
+                    let cold_only = local.growing_states_per_input[input_idx].cold_only;
+                    if !cold_only && local.hot_grouper_per_input[input_idx].is_none() {
                         local.hot_grouper_per_input[input_idx] = Some(new_hash_hot_grouper(
                             params.key_schema.clone(),
                             local.hot_table_size,
@@ -401,6 +516,25 @@ impl GroupBySink {
                         df = unsafe { df.select_unchecked(&payload.stored_cols) }.unwrap();
                     }
                     df.rechunk_mut(); // For gathers.
+
+                    if cold_only {
+                        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+                        cold_idxs.clear();
+                        cold_idxs.extend(0..df.height() as IdxSize);
+                        let may_store_whole =
+                            df.height() >= local.min_rows_stored_whole(num_pipelines);
+                        local
+                            .store_cold_rows(
+                                input_idx,
+                                df,
+                                hash_keys,
+                                &cold_idxs,
+                                may_store_whole,
+                                spill_ctx,
+                            )
+                            .await;
+                        continue;
+                    }
 
                     let slice_size = if all_hot_per_input[input_idx] {
                         KEY_SLICE_SIZE
@@ -438,6 +572,8 @@ impl GroupBySink {
                                 *idx += offset as IdxSize;
                             }
                         }
+                        local.growing_states_per_input[input_idx].hot_rows +=
+                            (hot_idxs.len() - hot_start) as u64;
 
                         if !cold_idxs.is_empty() {
                             all_hot_per_input[input_idx] = false;
@@ -501,6 +637,7 @@ impl GroupBySink {
                         local.flush_evictions(input_idx, &params.reductions_per_input[input_idx]);
                     }
 
+                    local.maybe_go_cold(input_idx, &params.reductions_per_input, num_pipelines);
                     local.maybe_grow_hot_tables(max_hot_table_size);
                 }
                 Ok(())

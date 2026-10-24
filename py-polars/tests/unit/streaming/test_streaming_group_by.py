@@ -919,3 +919,34 @@ def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
         return out.with_columns(pl.col("^.*_values$").list.sort())
 
     assert_frame_equal(sort_lists(lf, "streaming"), sort_lists(lf, "in-memory"))
+
+
+@pytest.mark.parametrize("repeats", [False, True])
+def test_streaming_group_by_unique_hot_table_switch(
+    repeats: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "32")
+    n = 8000
+    i = pl.int_range(n)
+    v = i % 3 if repeats else i
+    df = pl.select(k=i % 64, v=v, s=v.cast(pl.String))
+    lf = (
+        df.lazy()
+        .group_by("k")
+        .agg(
+            pl.col("v").unique(),
+            pl.col("s").n_unique(),
+            pl.col("s").drop_nulls().n_unique().alias("s_non_null"),
+        )
+    )
+
+    out = lf.collect(engine="streaming")
+    switched = "stops using its hot table" in capfd.readouterr().err
+    assert switched != repeats
+
+    expected = lf.collect(engine="in-memory")
+    out, expected = (
+        x.sort("k").with_columns(pl.col("v").list.sort()) for x in (out, expected)
+    )
+    assert_frame_equal(out, expected)
