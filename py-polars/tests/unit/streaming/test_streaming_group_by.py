@@ -895,8 +895,13 @@ def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
         int=pl.when(i % 11 == 0).then(None).otherwise(i % 40),
         float=pl.when(i % 13 == 0).then(float("nan")).otherwise((i % 5) - 2.0),
         str=pl.when(i % 17 == 0).then(None).otherwise((i % 30).cast(pl.String)),
-        long_str=(i % 30).cast(pl.String).str.pad_start(20, "x"),
-        bin=(i % 30).cast(pl.String).str.pad_start(20, "x").cast(pl.Binary),
+        mixed_str=pl.Series(
+            [
+                "" if j % 23 == 0 else str(j % 30).rjust(11 + j % 3, "x")
+                for j in range(n)
+            ]
+        ),
+        bin=pl.Series([bytes([j % 7, 0, 255, j % 5] * (1 + j % 4)) for j in range(n)]),
         bool=pl.when(i % 19 == 0).then(None).otherwise(i % 3 == 0),
         cat=(i % 4).cast(pl.String).cast(pl.Categorical),
         dt=pl.date(2020, 1, 1) + pl.duration(days=i % 3),
