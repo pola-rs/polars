@@ -1,3 +1,4 @@
+mod decay;
 mod global_alloc;
 mod memory_manager;
 mod spill_context;
@@ -30,3 +31,12 @@ pub trait Spillable: Send + Sync + 'static {
 }
 
 static BYTES_SPILLED_TO_DISK: RelaxedCell<u64> = RelaxedCell::new_u64(0);
+
+// Tests that change global spill or allocator state run one at a time.
+#[cfg(test)]
+fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}

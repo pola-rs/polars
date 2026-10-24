@@ -3534,6 +3534,7 @@ dependencies = [
  "rand 0.10.2",
  "rand_distr",
  "thread_local",
+ "tikv-jemalloc-sys",
  "tikv-jemallocator",
  "tokio",
  "uuid",
