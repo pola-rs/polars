@@ -2,11 +2,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 
 use polars_async::ASYNC;
-use polars_async::executor::{self, TaskPriority};
+use polars_async::executor::{self, JoinHandle, TaskPriority};
 use polars_config::config;
 use polars_utils::total_ord::TotalOrd;
 use polars_utils::with_drop::WithDrop;
-use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore as AsyncSemaphore};
+use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedSemaphorePermit, Semaphore as AsyncSemaphore};
 
 // How much worse than the best achieved (sample) score are we willing to look
 // for spillables.
@@ -36,6 +36,9 @@ pub struct MemoryManager {
     prefetch_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
     est_prefetch_in_progress: AtomicU64,
+    reserved: AtomicU64,
+    /// Notified when a spill finishes or is given up.
+    spill_done: Notify,
     spills_exist: AtomicBool,
 }
 
@@ -54,6 +57,8 @@ impl MemoryManager {
             )),
             est_spill_in_progress: AtomicU64::new(0),
             est_prefetch_in_progress: AtomicU64::new(0),
+            reserved: AtomicU64::new(0),
+            spill_done: Notify::new(),
             spills_exist: AtomicBool::new(false),
         }
     }
@@ -61,7 +66,8 @@ impl MemoryManager {
     fn should_spill(&self) -> bool {
         let usage = crate::estimate_memory_usage();
         let likely_dealt_with = self.est_spill_in_progress.load(Ordering::Relaxed);
-        let likely_incoming = self.est_prefetch_in_progress.load(Ordering::Relaxed);
+        let likely_incoming = self.est_prefetch_in_progress.load(Ordering::Relaxed)
+            + self.reserved.load(Ordering::Relaxed);
         (usage + likely_incoming).saturating_sub(likely_dealt_with)
             > config().ooc_memory_budget_bytes()
     }
@@ -72,7 +78,8 @@ impl MemoryManager {
         }
 
         let usage = crate::estimate_memory_usage();
-        let likely_incoming = self.est_prefetch_in_progress.load(Ordering::Relaxed);
+        let likely_incoming = self.est_prefetch_in_progress.load(Ordering::Relaxed)
+            + self.reserved.load(Ordering::Relaxed);
         (usage + likely_incoming) < config().ooc_memory_prefetch_bytes()
     }
 
@@ -114,6 +121,41 @@ impl MemoryManager {
         ASYNC.block_in_place_on(self.do_spill())
     }
 
+    /// Reserves `bytes` of memory for work that is about to allocate it. While the reservation
+    /// lives, its bytes count as memory in use for spilling and prefetching.
+    ///
+    /// Before returning, this spills until the memory in use plus all reservations fits in the
+    /// budget, waiting for the spills to finish. It stops early, without waiting for other work,
+    /// when nothing more can be spilled and no spill is in progress.
+    pub async fn reserve(&self, bytes: u64) -> MemoryReservation {
+        self.reserved.fetch_add(bytes, Ordering::Relaxed);
+        let reservation = MemoryReservation { bytes };
+        while crate::estimate_memory_usage() + self.reserved.load(Ordering::Relaxed)
+            > config().ooc_memory_budget_bytes()
+        {
+            if let Some((ctx, spillables)) = self.find_spillables().await {
+                let mut handles = Vec::with_capacity(spillables.len());
+                self.spawn_spills(ctx, spillables, |h| handles.push(h))
+                    .await;
+                for handle in handles {
+                    handle.await;
+                }
+                continue;
+            }
+            // Spills started elsewhere can still free memory.
+            let spill_done = self.spill_done.notified();
+            if self.est_spill_in_progress.load(Ordering::Relaxed) == 0 {
+                break;
+            }
+            spill_done.await;
+        }
+        reservation
+    }
+
+    pub fn reserve_blocking(&self, bytes: u64) -> MemoryReservation {
+        ASYNC.block_in_place_on(self.reserve(bytes))
+    }
+
     #[inline(never)]
     #[cold]
     async fn do_spill(&self) {
@@ -121,26 +163,44 @@ impl MemoryManager {
             let Some((ctx, spillables)) = self.find_spillables().await else {
                 return;
             };
+            self.spawn_spills(ctx, spillables, drop).await;
+        }
+    }
 
-            let successful_spill = Arc::new(WithDrop::new(
-                (AtomicBool::new(false), ctx.clone()),
-                move |(success, weak_ctx)| {
-                    if !success.load(Ordering::Relaxed) {
-                        if let Some(strong) = weak_ctx.upgrade() {
-                            strong.stats().finish_spill_exploration_event(false);
-                        }
+    /// Spawns a task to spill each of `spillables`, as permits become available, and passes its
+    /// handle to `on_spawn`. A dropped handle does not stop its task.
+    async fn spawn_spills(
+        &self,
+        ctx: WeakSpillContext,
+        spillables: Vec<(
+            Arc<dyn DynSpillToken>,
+            SpillInProgressTracker,
+            RegisteredSpillToken,
+        )>,
+        mut on_spawn: impl FnMut(JoinHandle<()>),
+    ) {
+        let successful_spill = Arc::new(WithDrop::new(
+            (AtomicBool::new(false), ctx.clone()),
+            move |(success, weak_ctx)| {
+                if !success.load(Ordering::Relaxed) {
+                    if let Some(strong) = weak_ctx.upgrade() {
+                        strong.stats().finish_spill_exploration_event(false);
                     }
-                },
-            ));
+                }
+            },
+        ));
 
-            let task_metrics = ctx.task_metrics();
-            for (spillable, spill_in_progress, rt) in spillables {
-                let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
+        let task_metrics = ctx.task_metrics();
+        for (spillable, spill_in_progress, rt) in spillables {
+            let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
 
-                let successful_spill = successful_spill.clone();
-                let ctx = ctx.clone();
+            let successful_spill = successful_spill.clone();
+            let ctx = ctx.clone();
 
-                executor::spawn(TaskPriority::High, task_metrics.as_deref(), async move {
+            on_spawn(executor::spawn(
+                TaskPriority::High,
+                task_metrics.as_deref(),
+                async move {
                     // Spill, or reinsert if a failure.
                     match spillable.clone().try_spill(ctx.clone()) {
                         Ok(spill_success) => {
@@ -173,8 +233,8 @@ impl MemoryManager {
 
                     drop(permit);
                     drop(spill_in_progress);
-                });
-            }
+                },
+            ));
         }
     }
 
@@ -365,6 +425,20 @@ impl MemoryManager {
     }
 }
 
+/// Memory reserved with [`MemoryManager::reserve`], released on drop.
+#[must_use]
+pub struct MemoryReservation {
+    bytes: u64,
+}
+
+impl Drop for MemoryReservation {
+    fn drop(&mut self) {
+        memory_manager()
+            .reserved
+            .fetch_sub(self.bytes, Ordering::Relaxed);
+    }
+}
+
 /// Used to update the total bytes of estimated spills in progress.
 struct SpillInProgressTracker {
     bytes: u64,
@@ -381,9 +455,10 @@ impl SpillInProgressTracker {
 
 impl Drop for SpillInProgressTracker {
     fn drop(&mut self) {
-        memory_manager()
-            .est_spill_in_progress
+        let mm = memory_manager();
+        mm.est_spill_in_progress
             .fetch_sub(self.bytes, Ordering::Relaxed);
+        mm.spill_done.notify_waiters();
     }
 }
 
