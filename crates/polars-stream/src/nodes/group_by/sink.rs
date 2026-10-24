@@ -239,6 +239,7 @@ impl LocalSink {
         let too_large =
             bytes.saturating_mul(GROWING_STATES_BUDGET_DIVISOR * num_pipelines as u64) > budget();
 
+        #[allow(clippy::unnecessary_cast)] // Necessary when IdxSize = u32.
         let num_hot_groups = self.hot_grouper(input_idx).num_groups() as u64;
         let check_shrink = hot_rows >= next_check_rows
             && hot_rows >= GROWING_STATES_MIN_ROWS_PER_GROUP * num_hot_groups;
