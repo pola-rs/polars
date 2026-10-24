@@ -4,8 +4,8 @@ use std::sync::Arc;
 use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::{
-    CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
-    PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
+    CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, HivePartitions,
+    MissingColumnsPolicy, PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
 };
 use polars_buffer::Buffer;
 use polars_io::{HiveOptions, RowIndex};
@@ -43,6 +43,18 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<TableStatistics> {
     }
 }
 
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<HivePartitions> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let py = ob.py();
+        let attr = ob.getattr(intern!(py, "_df"))?;
+        Ok(Wrap(HivePartitions(Arc::new(
+            PyDataFrame::extract(attr.as_borrowed())?.df.into_inner(),
+        ))))
+    }
+}
+
 impl PyScanOptions<'_> {
     pub fn extract_unified_scan_args(
         &self,
@@ -64,6 +76,7 @@ impl PyScanOptions<'_> {
             hive_partitioning: Option<bool>,
             hive_schema: Option<Wrap<Schema>>,
             try_parse_hive_dates: bool,
+            hive_partitions: Option<Wrap<HivePartitions>>,
             rechunk: bool,
             cache: bool,
             storage_options: OptPyCloudOptions<'a>,
@@ -90,6 +103,7 @@ impl PyScanOptions<'_> {
             hive_partitioning,
             hive_schema,
             try_parse_hive_dates,
+            hive_partitions,
             rechunk,
             cache,
             storage_options,
@@ -145,6 +159,7 @@ impl PyScanOptions<'_> {
             include_file_paths: include_file_paths.map(|x| x.0),
             deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
+            hive_partitions: hive_partitions.map(|x| x.0),
             row_count,
             source_sizes: source_sizes.map(Buffer::from),
             resolve_heavy_sources: resolve_heavy_sources
