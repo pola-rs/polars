@@ -895,11 +895,14 @@ def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
         int=pl.when(i % 11 == 0).then(None).otherwise(i % 40),
         float=pl.when(i % 13 == 0).then(float("nan")).otherwise((i % 5) - 2.0),
         str=pl.when(i % 17 == 0).then(None).otherwise((i % 30).cast(pl.String)),
+        long_str=(i % 30).cast(pl.String).str.pad_start(20, "x"),
+        bin=(i % 30).cast(pl.String).str.pad_start(20, "x").cast(pl.Binary),
         bool=pl.when(i % 19 == 0).then(None).otherwise(i % 3 == 0),
         cat=(i % 4).cast(pl.String).cast(pl.Categorical),
         dt=pl.date(2020, 1, 1) + pl.duration(days=i % 3),
+        one=(i % 7).cast(pl.String).str.pad_start(20, "x"),
     )
-    cols = pl.all().exclude("k")
+    cols = pl.all().exclude("k", "one")
     lf = (
         df.lazy()
         .group_by("k")
@@ -907,6 +910,7 @@ def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
             cols.unique().name.suffix("_values"),
             cols.n_unique().name.suffix("_n_unique"),
             cols.drop_nulls().n_unique().name.suffix("_n_unique_non_null"),
+            pl.col("one").unique(),
         )
     )
 

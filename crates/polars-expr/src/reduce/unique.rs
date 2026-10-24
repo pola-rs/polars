@@ -425,12 +425,13 @@ impl<const COUNT: bool> Reducer for BinaryUniqueReducer<COUNT> {
         } else {
             values.boxed()
         };
-        let arrow_dtype = ArrowDataType::LargeList(Box::new(ArrowField::new(
-            PlSmallStr::EMPTY,
-            values.dtype().clone(),
-            true,
-        )));
-        let arr = ListArray::new(arrow_dtype, offsets.freeze(), values, None);
+        let list_dtype = DataType::List(Box::new(dtype.clone()));
+        let arr = ListArray::new(
+            list_dtype.to_arrow(CompatLevel::newest()),
+            offsets.freeze(),
+            values,
+            None,
+        );
         Ok(ListChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
