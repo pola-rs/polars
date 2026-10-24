@@ -131,10 +131,10 @@ def test_array_ndarray_reshape() -> None:
     s = pl.Series(range(64)).reshape(shape)
     n = s.to_numpy()
     assert n.shape == shape
-    assert (n[0] == s[0].to_numpy()).all()
+    assert n[0].tolist() == s[0]
     n = n[0]
-    s = s[0]
-    assert (n[0] == s[0].to_numpy()).all()
+    s0 = s[0]
+    assert n[0].tolist() == s0[0]
 
 
 @pytest.mark.parametrize(
