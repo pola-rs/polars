@@ -106,7 +106,7 @@ pub fn into_reduction(
                 maintain_order: false,
             } => {
                 let unique_input = unordered_unique_input(*input, expr_arena);
-                let unique_dtype = unique_input.map(&get_dt).transpose()?;
+                let unique_dtype = unique_input.map(get_dt).transpose()?;
                 match (unique_input, unique_dtype) {
                     (Some(x), Some(dt)) if supports_unique_reduction(&dt) => {
                         (new_unique_reduction(dt), x)
