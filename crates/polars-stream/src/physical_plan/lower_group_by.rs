@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
+use polars_core::prelude::{
+    Field, IDX_DTYPE, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions,
+};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_err};
+use polars_expr::reduce::{supports_unique_reduction, unordered_unique_input};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
@@ -118,6 +121,7 @@ fn build_group_by_fallback(
 #[allow(clippy::too_many_arguments)]
 fn replace_agg_uniq(
     expr: Node,
+    reduce_unique: bool,
     canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -140,6 +144,28 @@ fn replace_agg_uniq(
             let input_cols = inputs
                 .iter()
                 .map(|input| {
+                    // The unique reduction reads the input of `unique()` directly.
+                    if reduce_unique && let Some(x) = unordered_unique_input(*input, expr_arena) {
+                        let (Some(x_id), x_col) = replace_elementwise_components(
+                            x,
+                            canonical_exprs,
+                            expr_cache,
+                            expr_arena,
+                            uniq_input_names,
+                            uniq_elementwise_exprs,
+                            substream_input_ids,
+                        ) else {
+                            unreachable!()
+                        };
+                        input_ids.push(x_id);
+                        return AExprBuilder::function(
+                            vec![ExprIR::from_node(x_col, expr_arena)],
+                            IRFunctionExpr::Unique(false),
+                            expr_arena,
+                        )
+                        .node();
+                    }
+
                     let (input_id, node) = replace_elementwise_components(
                         *input,
                         canonical_exprs,
@@ -266,8 +292,12 @@ fn try_lower_elementwise_scalar_agg_expr(
 
     macro_rules! replace_agg_uniq {
         ($input:expr) => {
+            replace_agg_uniq!($input, false)
+        };
+        ($input:expr, $reduce_unique:expr) => {
             replace_agg_uniq(
                 $input,
+                $reduce_unique,
                 canonical_exprs,
                 expr_cache,
                 expr_arena,
@@ -291,6 +321,15 @@ fn try_lower_elementwise_scalar_agg_expr(
             return Some(expr_arena.add(AExpr::Agg(agg)));
         }
     }
+
+    // Whether `x` can be the input of a unique reduction.
+    let mut unique_reducible = |x: Node, expr_arena: &Arena<AExpr>| {
+        is_elementwise_rec_cached(x, expr_arena, expr_cache)
+            && expr_arena
+                .get(x)
+                .to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+                .is_ok_and(|dtype| supports_unique_reduction(&dtype))
+    };
 
     match expr_arena.get(expr) {
         // Should be handled separately in `Eval`.
@@ -569,6 +608,14 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         AExpr::Agg(agg) => {
             match agg {
+                IRAggExpr::Implode {
+                    input,
+                    maintain_order: false,
+                } if unordered_unique_input(*input, expr_arena)
+                    .is_some_and(|x| unique_reducible(x, expr_arena)) =>
+                {
+                    Some(replace_agg_uniq!(expr, true))
+                },
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
@@ -595,6 +642,27 @@ fn try_lower_elementwise_scalar_agg_expr(
                         } => (input[0].node(), false),
                         _ => (*uniq_input, true),
                     };
+                    if unique_reducible(uniq_input, expr_arena) {
+                        let n_unique =
+                            AExprBuilder::agg(IRAggExpr::NUnique(uniq_input), expr_arena);
+                        let n_unique = replace_agg_uniq!(n_unique.node());
+                        if include_nulls {
+                            return Some(n_unique);
+                        }
+                        let has_nulls = AExprBuilder::function(
+                            vec![ExprIR::from_node(uniq_input, expr_arena)],
+                            IRFunctionExpr::Boolean(IRBooleanFunction::HasNulls),
+                            expr_arena,
+                        );
+                        let has_nulls = replace_agg_uniq!(has_nulls.node());
+                        let has_nulls =
+                            AExprBuilder::new_from_node(has_nulls).cast(IDX_DTYPE, expr_arena);
+                        return Some(
+                            AExprBuilder::new_from_node(n_unique)
+                                .minus(has_nulls, expr_arena)
+                                .node(),
+                        );
+                    }
                     let function = IRFunctionExpr::Unique(false);
                     let uniq_input_expr = ExprIR::from_node(uniq_input, expr_arena);
                     let uniq_node = expr_arena.add(AExpr::Function {

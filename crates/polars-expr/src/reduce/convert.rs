@@ -25,6 +25,9 @@ use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 #[cfg(feature = "moment")]
 use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
 use crate::reduce::sum::{IdxTypeCheckedSumReducer, new_sum_reduction};
+use crate::reduce::unique::{
+    new_n_unique_reduction, new_unique_reduction, supports_unique_reduction, unordered_unique_input,
+};
 use crate::reduce::var_std::new_var_std_reduction;
 
 /// Converts a node into a reduction + its associated selector expression.
@@ -89,9 +92,18 @@ pub fn into_reduction(
             IRAggExpr::Implode {
                 input,
                 maintain_order: false,
-            } => (new_unordered_implode_reduction(get_dt(*input)?), *input),
+            } => {
+                let unique_input = unordered_unique_input(*input, expr_arena);
+                let unique_dtype = unique_input.map(&get_dt).transpose()?;
+                match (unique_input, unique_dtype) {
+                    (Some(x), Some(dt)) if supports_unique_reduction(&dt) => {
+                        (new_unique_reduction(dt), x)
+                    },
+                    _ => (new_unordered_implode_reduction(get_dt(*input)?), *input),
+                }
+            },
+            IRAggExpr::NUnique(input) => (new_n_unique_reduction(get_dt(*input)?), *input),
             IRAggExpr::Median(_) => todo!(),
-            IRAggExpr::NUnique(_) => todo!(),
             IRAggExpr::Implode { .. } => todo!(),
         },
         AExpr::Len => {

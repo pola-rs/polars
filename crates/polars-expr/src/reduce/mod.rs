@@ -21,6 +21,7 @@ mod min_max_by;
 #[cfg(feature = "moment")]
 mod skew_kurtosis;
 mod sum;
+mod unique;
 mod var_std;
 
 use std::any::Any;
@@ -38,6 +39,7 @@ use polars_arrow::array::{Array, PrimitiveArray, StaticArray};
 use polars_arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
+pub use unique::{supports_unique_reduction, unordered_unique_input};
 
 use crate::EvictIdx;
 

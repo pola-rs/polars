@@ -885,3 +885,37 @@ def test_streaming_group_by_into_sampling_join(
         w=3000 + k,
     )
     assert_frame_equal(out, expected, check_row_order=False)
+
+
+def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
+    n = 300
+    i = pl.int_range(n)
+    df = pl.select(
+        k=i % 7,
+        int=pl.when(i % 11 == 0).then(None).otherwise(i % 40),
+        float=pl.when(i % 13 == 0).then(float("nan")).otherwise((i % 5) - 2.0),
+        str=pl.when(i % 17 == 0).then(None).otherwise((i % 30).cast(pl.String)),
+        bool=pl.when(i % 19 == 0).then(None).otherwise(i % 3 == 0),
+        cat=(i % 4).cast(pl.String).cast(pl.Categorical),
+        dt=pl.date(2020, 1, 1) + pl.duration(days=i % 3),
+    )
+    cols = pl.all().exclude("k")
+    lf = (
+        df.lazy()
+        .group_by("k")
+        .agg(
+            cols.unique().name.suffix("_values"),
+            cols.n_unique().name.suffix("_n_unique"),
+            cols.drop_nulls().n_unique().name.suffix("_n_unique_non_null"),
+        )
+    )
+
+    dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert isinstance(dot, str)
+    assert dot.count('label="group-by') == 1
+
+    def sort_lists(lf: pl.LazyFrame, engine: Any) -> pl.DataFrame:
+        out = lf.collect(engine=engine).sort("k")
+        return out.with_columns(pl.col("^.*_values$").list.sort())
+
+    assert_frame_equal(sort_lists(lf, "streaming"), sort_lists(lf, "in-memory"))
