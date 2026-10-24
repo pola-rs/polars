@@ -2822,6 +2822,14 @@ def test_write_csv_float_type_decimal_comma(
         assert_frame_equal(df, out)
 
 
+def test_write_csv_float_scientific_decimal_comma_multiple_rows(
+    chunk_override: None,
+) -> None:
+    df = pl.DataFrame({"a": [1.5, 2.5, 3.5]})
+    out = df.write_csv(float_scientific=True, decimal_comma=True, separator=";")
+    assert out == "a\n1,5e0\n2,5e0\n3,5e0\n"
+
+
 @pytest.mark.parametrize(
     (
         "separator",

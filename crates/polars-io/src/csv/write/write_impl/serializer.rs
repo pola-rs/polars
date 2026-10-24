@@ -207,6 +207,7 @@ fn float_serializer_no_precision_scientific_decimal_comma<I: NativeType + LowerE
     let mut scratch = Vec::new();
 
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        scratch.clear();
         // Float writing into a buffer of `Vec<u8>` cannot fail.
         let _ = write!(&mut scratch, "{item:.e}");
         for c in &mut scratch {
@@ -910,10 +911,12 @@ pub(super) fn serializer_for<'a>(
 
 #[cfg(test)]
 mod test {
-    use polars_arrow::array::NullArray;
+    use polars_arrow::array::{NullArray, PrimitiveArray};
     use polars_core::prelude::ArrowDataType;
 
-    use super::string_serializer;
+    use super::{
+        Serializer, float_serializer_no_precision_scientific_decimal_comma, string_serializer,
+    };
     use crate::csv::write::options::{QuoteStyle, SerializeOptions};
 
     // It is the most complex serializer with most edge cases, it definitely needs a comprehensive test.
@@ -985,5 +988,19 @@ mod test {
         check_string_serialization(&non_numeric_quote, Some("a,b"), r#""a,b""#);
         check_string_serialization(&non_numeric_quote, Some("a\nb"), "\"a\nb\"");
         check_string_serialization(&non_numeric_quote, Some("a\rb"), "\"a\rb\"");
+    }
+
+    #[test]
+    fn test_float_scientific_decimal_comma_serializer_resets_scratch() {
+        let options = SerializeOptions::default();
+        let array = PrimitiveArray::<f64>::from_slice([1.5, 2.5, 3.5]);
+        let mut serializer = float_serializer_no_precision_scientific_decimal_comma(&array);
+        let mut out = Vec::new();
+        for _ in 0..3 {
+            let mut buf = Vec::new();
+            serializer.serialize(&mut buf, &options);
+            out.push(String::from_utf8(buf).unwrap());
+        }
+        assert_eq!(out, ["1,5e0", "2,5e0", "3,5e0"]);
     }
 }
