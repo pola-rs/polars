@@ -1070,8 +1070,8 @@ def test_sink_failed_query_does_not_finish_gzip(tmp_path: Path, sink: Any) -> No
     failing = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.Int64))
     with pytest.raises(InvalidOperationError):
         sink(pl.concat([rows, failing], parallel=False), path, compression="gzip")
-    # What was written before the failure has no gzip trailer.
-    data = path.read_bytes()
+    # What was written before the failure has no gzip trailer; the file may not exist.
+    data = path.read_bytes() if path.exists() else b""
     if data:
         with pytest.raises(EOFError):
             gzip.decompress(data)
