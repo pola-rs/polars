@@ -983,7 +983,7 @@ def _create_catalog_table(
             raise TableAlreadyExistsError(msg) from error
         if isinstance(error, CommitStateUnknownException):
             error.add_note(
-                f"table '{name}' may not exist: catalog table '{table_name}'"
+                f"table '{name}' may not have been created: catalog table '{table_name}'"
             )
             raise
         prefix = f"table '{name}' could not be created"

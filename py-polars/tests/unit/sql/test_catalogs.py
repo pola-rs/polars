@@ -670,6 +670,27 @@ def test_create_catalog_table_as_select_fails(
 
 
 @pytest.mark.write_disk
+def test_create_catalog_table_as_select_fails_location_suffix(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    # a fragment, query or glob in the location does not widen the cleanup
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "keep").touch()
+    ctx = lake_ctx(lake)
+    for suffix in ("#x", "?x", "*", "[x]"):
+        with pytest.raises(InvalidOperationError) as exc:
+            ctx.execute(
+                f"CREATE TABLE t LOCATION 'file://{other}{suffix}' "
+                "AS SELECT CAST(v AS INT) AS x FROM lineitem"
+            )
+        assert (other / "keep").exists()
+        assert exc.value.__notes__[0].startswith("data files may remain under '")
+
+
+@pytest.mark.write_disk
 def test_create_catalog_table_as_select_lost_commit_response(
     lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -688,6 +709,52 @@ def test_create_catalog_table_as_select_lost_commit_response(
     assert res.item() == "CREATE TABLE lake.tpch.t"
     res = lake_ctx(lake).execute("SELECT * FROM t", eager=True)
     assert_frame_equal(res, LINEITEM, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_lost_response_snapshot_expired(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+    from pyiceberg.table import CreateTableTransaction
+
+    commit_transaction = CreateTableTransaction.commit_transaction
+    extra = pl.DataFrame({"k": [3], "v": ["c"]})
+
+    def commit_then_fail(self: Any) -> Any:
+        commit_transaction(self)
+        # another writer appends and expires the create's snapshot
+        table = lake.load_table(("tpch", "t"))
+        first = table.current_snapshot().snapshot_id
+        extra.write_iceberg(table, mode="append")
+        table.maintenance.expire_snapshots().by_id(first).commit()
+        msg = "response lost"
+        raise CommitStateUnknownException(msg)
+
+    monkeypatch.setattr(CreateTableTransaction, "commit_transaction", commit_then_fail)
+    res = lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem", eager=True)
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    res = lake_ctx(lake).execute("SELECT * FROM t", eager=True)
+    expected = pl.concat([LINEITEM, extra])
+    assert_frame_equal(res, expected, check_row_order=False)
+
+
+def test_create_catalog_table_as_select_not_serializable(
+    lake: CountingCatalog,
+) -> None:
+    from polars.exceptions import ComputeError
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    # elsewhere, the staged table would be loaded by name: maybe another writer's
+    transaction = lake.create_table_transaction(
+        ("tpch", "t"), schema=LINEITEM.to_arrow().schema
+    )
+    state = IcebergSinkState.new_create(transaction)
+    with pytest.raises(TypeError, match="staged Iceberg create cannot be serialized"):
+        pickle.dumps(state)
+    lf = state.attach_sink(LINEITEM.lazy())
+    with pytest.raises(ComputeError, match="staged Iceberg create cannot be"):
+        lf.serialize()
 
 
 @pytest.mark.write_disk
@@ -722,7 +789,9 @@ def test_create_catalog_table_as_select_unknown_outcome(
     assert exc.value.__notes__[0].startswith(
         "the create may have landed; data files kept under '"
     )
-    assert exc.value.__notes__[1] == "table 't' may not exist: catalog table 'tpch.t'"
+    assert exc.value.__notes__[1] == (
+        "table 't' may not have been created: catalog table 'tpch.t'"
+    )
 
     monkeypatch.setattr(lake, "load_table", load_table)
     res = lake_ctx(lake).execute("SELECT * FROM t", eager=True)
@@ -748,6 +817,68 @@ def test_create_catalog_table_as_select_unknown_create_not_landed(
         "the create may have landed; data files kept under '"
     )
     assert not lake.table_exists(("tpch", "t"))
+    assert table_files(tmp_path, "tpch", "t")
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_as_select_rejected_unverified(
+    lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import TableAlreadyExistsError
+    from pyiceberg.table import CreateTableTransaction
+
+    load_table = lake.load_table
+    rejected: list[bool] = []
+
+    def other_writer_then_rejected(self: Any) -> Any:
+        lake.create_table(("tpch", "t"), schema=LINEITEM.to_arrow().schema)
+        rejected.append(True)
+        msg = "created meanwhile"
+        raise TableAlreadyExistsError(msg)
+
+    def load_fails_for_t(identifier: Any) -> Any:
+        if rejected and tuple(identifier) == ("tpch", "t"):
+            msg = "catalog unreachable"
+            raise ConnectionError(msg)
+        return load_table(identifier)
+
+    monkeypatch.setattr(
+        CreateTableTransaction, "commit_transaction", other_writer_then_rejected
+    )
+    monkeypatch.setattr(lake, "load_table", load_fails_for_t)
+    # a rejection stands when it cannot be verified; the files are kept
+    res = lake_ctx(lake).execute(
+        "CREATE TABLE IF NOT EXISTS t AS SELECT * FROM lineitem", eager=True
+    )
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    monkeypatch.setattr(lake, "load_table", load_table)
+    assert not lake.load_table(("tpch", "t")).metadata.snapshots
+    assert table_files(tmp_path, "tpch", "t")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("staged", [True, False])
+def test_create_catalog_table_as_select_commit_not_rejected(
+    lake: CountingCatalog,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    staged: bool,
+) -> None:
+    from pyiceberg.exceptions import CommitStateUnknownException
+
+    if not staged:
+        monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+
+    def connection_lost(*args: Any, **kwargs: Any) -> None:
+        msg = "connection lost"
+        raise ConnectionError(msg)
+
+    monkeypatch.setattr(lake, "commit_table", connection_lost)
+    # a commit that was not rejected may still land, so its data files are kept
+    with pytest.raises(CommitStateUnknownException, match="may still land") as exc:
+        lake_ctx(lake).execute("CREATE TABLE t AS SELECT * FROM lineitem")
+    assert isinstance(exc.value.__cause__, ConnectionError)
+    assert "landed; data files kept under '" in exc.value.__notes__[0]
     assert table_files(tmp_path, "tpch", "t")
 
 
@@ -982,10 +1113,7 @@ def test_create_catalog_table_as_select_without_staged_create_unknown_outcome(
 def test_create_catalog_table_as_select_lost_response_created_meanwhile(
     lake: CountingCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from pyiceberg.exceptions import (
-        CommitStateUnknownException,
-        TableAlreadyExistsError,
-    )
+    from pyiceberg.exceptions import CommitStateUnknownException
     from pyiceberg.table import CreateTableTransaction
 
     def other_writer_then_unknown(self: Any) -> Any:
@@ -997,18 +1125,14 @@ def test_create_catalog_table_as_select_lost_response_created_meanwhile(
     monkeypatch.setattr(
         CreateTableTransaction, "commit_transaction", other_writer_then_unknown
     )
-    ctx = lake_ctx(lake)
-    res = ctx.execute(
-        "CREATE TABLE IF NOT EXISTS t AS SELECT * FROM lineitem", eager=True
+    # this create may have landed and been renamed: its files are kept
+    with pytest.raises(CommitStateUnknownException, match="response lost") as exc:
+        lake_ctx(lake).execute("CREATE TABLE IF NOT EXISTS t AS SELECT * FROM lineitem")
+    assert exc.value.__notes__[0].startswith(
+        "the create may have landed; data files kept under '"
     )
-    assert res.item() == "CREATE TABLE lake.tpch.t"
     assert not lake.load_table(("tpch", "t")).metadata.snapshots
-    assert not table_files(tmp_path, "tpch", "t")
-
-    lake.drop_table(("tpch", "t"))
-    with pytest.raises(TableAlreadyExistsError, match="table 't' already exists"):
-        ctx.execute("CREATE TABLE t AS SELECT * FROM lineitem")
-    assert not table_files(tmp_path, "tpch", "t")
+    assert table_files(tmp_path, "tpch", "t")
 
 
 @pytest.mark.write_disk

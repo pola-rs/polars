@@ -67,6 +67,14 @@ _IcebergSinkedFile = tuple[str, int, int, bytes, "pl.DataFrame | None"]
 _SINK_UUID_PROPERTY = "polars.sink-uuid"
 
 
+class _StagedTableOption(NoPickleOption["pyiceberg.table.Table"]):
+    """A staged table, which cannot be loaded by name after unpickling."""
+
+    def __getstate__(self) -> tuple[()]:
+        msg = "a staged Iceberg create cannot be serialized"
+        raise TypeError(msg)
+
+
 class _AlreadyCommitted(Exception):
     """A snapshot tagged with this sink's uuid already landed.
 
@@ -133,13 +141,64 @@ def _already_committed(metadata: TableMetadata, sink_uuid: str) -> bool:
     )
 
 
+def _landed(
+    current: pyiceberg.table.Table, table: pyiceberg.table.Table, sink_uuid: str
+) -> bool:
+    """Whether the sink's commit to `table` landed in `current`, as loaded now."""
+    from pyiceberg.table import StagedTable
+
+    # a staged create's snapshot can be expired, but its uuid stays
+    return _already_committed(current.metadata, sink_uuid) or (
+        isinstance(table, StagedTable)
+        and current.metadata.table_uuid == table.metadata.table_uuid
+    )
+
+
+def _rejected(error: Exception) -> bool:
+    """Whether a failed catalog commit is certain not to land."""
+    from pyiceberg.exceptions import (
+        AuthorizationExpiredError,
+        BadRequestError,
+        CommitFailedException,
+        ForbiddenError,
+        NoSuchNamespaceError,
+        NoSuchTableError,
+        OAuthError,
+        RESTError,
+        TableAlreadyExistsError,
+        TooManyRequestsError,
+        UnauthorizedError,
+        ValidationException,
+    )
+
+    # a plain RESTError is an unmapped 4xx response
+    return type(error) is RESTError or isinstance(
+        error,
+        (
+            AuthorizationExpiredError,
+            BadRequestError,
+            CommitFailedException,
+            ForbiddenError,
+            NoSuchNamespaceError,
+            NoSuchTableError,
+            NotImplementedError,
+            OAuthError,
+            TableAlreadyExistsError,
+            TooManyRequestsError,
+            UnauthorizedError,
+            ValidationException,
+        ),
+    )
+
+
 class _SinkCatalog:
     """Delegates to `catalog`, but recovers the outcome of a failed `commit_table`.
 
     pyiceberg deletes a transaction's manifests when a commit fails, and does not
     always check first whether the commit landed (empty overwrite producers, zero
     retries, the final attempt). Resolving the outcome here, before pyiceberg sees
-    the failure, keeps a landed snapshot's manifests.
+    the failure, keeps a landed snapshot's manifests. A failure that is not a
+    rejection is raised as `CommitStateUnknownException`: the commit may still land.
     """
 
     def __init__(
@@ -188,7 +247,10 @@ class _SinkCatalog:
             if _already_committed(metadata, self._sink_uuid):
                 raise _AlreadyCommitted(current) from e
 
-            raise
+            if _rejected(e) or isinstance(e, CommitStateUnknownException):
+                raise
+            msg = "a failed Iceberg commit may still land"
+            raise CommitStateUnknownException(msg) from e
 
 
 def _sink_transaction(table: pyiceberg.table.Table, sink_uuid: str) -> Transaction:
@@ -529,6 +591,12 @@ def _delete_dir(io: FileIO, location: str) -> None:
     """Delete the directory `location` and everything under it, if it exists."""
     from pyiceberg.io.pyarrow import PyArrowFileIO
 
+    uri = urlparse(location)
+    # FileIOs drop a query or fragment, and fsspec expands globs: both widen the delete
+    if any(c in location for c in "?#*["):
+        msg = f"not deleting '{location}': it has one of the characters ?#*["
+        raise ValueError(msg)
+
     if isinstance(io, PyArrowFileIO):
         from pyarrow.fs import FileType
 
@@ -542,7 +610,6 @@ def _delete_dir(io: FileIO, location: str) -> None:
     from pyiceberg.io.fsspec import FsspecFileIO
 
     if isinstance(io, FsspecFileIO):
-        uri = urlparse(location)
         fs = io.get_fs(uri.scheme or "file", uri.hostname)
         with contextlib.suppress(FileNotFoundError):
             fs.rm(location, recursive=True)
@@ -1036,9 +1103,11 @@ class IcebergSinkState:
         The create commits the data as the table's first snapshot, so a failed write
         leaves no table, and the data is never added to a table created meanwhile.
         """
-        return IcebergSinkState.new(
+        state = IcebergSinkState.new(
             transaction._table, mode="append", storage_options=storage_options
         )
+        state.table_ = _StagedTableOption(transaction._table)
+        return state
 
     def table(self) -> pyiceberg.table.Table:
         if self.table_.get() is None:
@@ -1442,7 +1511,6 @@ class IcebergSinkState:
         data files must then be kept.
         """
         from pyiceberg.exceptions import (
-            CommitFailedException,
             CommitStateUnknownException,
             NoSuchTableError,
         )
@@ -1462,28 +1530,31 @@ class IcebergSinkState:
         try:
             transaction.commit_transaction()
         except Exception as error:
+            verified = True
             try:
                 current = table.catalog.load_table(table.name())
             except NoSuchTableError:
                 current = None
             except Exception:
-                msg = "could not verify the outcome of a failed Iceberg create"
-                raise CommitStateUnknownException(msg) from error
-            if current is not None and _already_committed(
-                current.metadata, self.sink_uuid_str
-            ):
+                current, verified = None, False
+            if current is not None and _landed(current, table, self.sink_uuid_str):
                 if verbose:
                     eprint("IcebergSinkState[commit]: recovered lost commit response")
                 _copy_table_state(current, table)
                 return
-            if current is None and isinstance(error, CommitStateUnknownException):
-                raise
-            for producer in transaction._snapshot_producers:
-                producer._clean_all_uncommitted()
-            # Another writer's table means this create did not land.
-            if isinstance(error, CommitStateUnknownException):
-                msg = "the Iceberg table was created by another writer"
-                raise CommitFailedException(msg) from error
+            # another writer's table under the name is no proof: ours may be renamed
+            if not _rejected(error):
+                if not verified:
+                    msg = "could not verify the outcome of a failed Iceberg create"
+                    raise CommitStateUnknownException(msg) from error
+                if isinstance(error, CommitStateUnknownException):
+                    raise
+                msg = "a failed Iceberg create may still land"
+                raise CommitStateUnknownException(msg) from error
+            # an unverified rejection keeps its manifests
+            if verified:
+                for producer in transaction._snapshot_producers:
+                    producer._clean_all_uncommitted()
             raise
 
         if verbose:
@@ -1519,9 +1590,8 @@ class IcebergSinkState:
             return location
         table = self.table()
         try:
-            if _already_committed(
-                table.catalog.load_table(table.name()).metadata, self.sink_uuid_str
-            ):
+            current = table.catalog.load_table(table.name())
+            if _landed(current, table, self.sink_uuid_str):
                 return location
         except NoSuchTableError:
             pass
