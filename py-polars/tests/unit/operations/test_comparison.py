@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from itertools import combinations
 from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -204,6 +205,105 @@ def test_struct_nested_equality() -> None:
     ans = df.select(pl.col("a").ne(pl.col("b")))
     expected = pl.DataFrame({"a": [False, True, None]})
     assert_frame_equal(ans, expected)
+
+
+STRUCT_X = pl.Struct({"x": pl.Int64})
+
+
+def _assert_eq_ops(a: pl.Series, b: pl.Series, xs: list[Any], ys: list[Any]) -> None:
+    pairs = list(zip(xs, ys, strict=True))
+    eq = [None if x is None or y is None else x == y for x, y in pairs]
+    assert a.eq(b).to_list() == eq
+    assert a.ne(b).to_list() == [None if v is None else not v for v in eq]
+    assert a.eq_missing(b).to_list() == [x == y for x, y in pairs]
+    assert a.ne_missing(b).to_list() == [x != y for x, y in pairs]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "lhs", "rhs"),
+    [
+        (
+            pl.Array(STRUCT_X, 1),
+            [[{"x": 1}], [{"x": 2}], [None], [{"x": None}], [{"x": None}], None, None],
+            [[{"x": 1}], [{"x": 3}], [None], [None], [{"x": 0}], [{"x": 1}], None],
+        ),
+        (
+            pl.Array(pl.Struct({"x": pl.Int64, "s": pl.String}), 2),
+            [[{"x": 1, "s": "a"}, None], [{"x": 2, "s": None}, {"x": 3, "s": "c"}]],
+            [[{"x": 1, "s": "a"}, None], [{"x": 2, "s": "b"}, {"x": 3, "s": "c"}]],
+        ),
+        (
+            pl.Array(pl.Array(STRUCT_X, 1), 1),
+            [[[{"x": 1}]], [[{"x": 2}]], [[{"x": 4}]]],
+            [[[{"x": 1}]], [[{"x": 3}]], [[{"x": 4}]]],
+        ),
+        (
+            pl.Array(pl.Struct({"s": STRUCT_X}), 1),
+            [[{"s": {"x": 1}}], [{"s": {"x": 2}}], [{"s": None}]],
+            [[{"s": {"x": 1}}], [{"s": {"x": 3}}], [{"s": None}]],
+        ),
+        (
+            pl.List(pl.Array(STRUCT_X, 1)),
+            [[[{"x": 1}], [{"x": 2}]], [[{"x": 5}]], [[{"x": 6}]]],
+            [[[{"x": 1}], [{"x": 3}]], [[{"x": 5}]], [[{"x": 6}]]],
+        ),
+        (
+            pl.Struct({"a": pl.Array(STRUCT_X, 1)}),
+            [{"a": [{"x": 1}]}, {"a": [{"x": 2}]}, None],
+            [{"a": [{"x": 1}]}, {"a": [{"x": 3}]}, None],
+        ),
+        (
+            pl.List(STRUCT_X),
+            [[{"x": 1}], [{"x": 2}, {"x": 5}], [], None],
+            [[{"x": 1}], [{"x": 2}, {"x": 6}], [], [{"x": 1}]],
+        ),
+    ],
+)
+def test_nested_struct_equality_per_row(
+    dtype: PolarsDataType, lhs: list[Any], rhs: list[Any]
+) -> None:
+    a = pl.Series(lhs, dtype=dtype)
+    b = pl.Series(rhs, dtype=dtype)
+    for offset in (0, 1):
+        sa, sb = a[offset:], b[offset:]
+        xs, ys = lhs[offset:], rhs[offset:]
+        _assert_eq_ops(sa, sb, xs, ys)
+        # Broadcast a single row on either side.
+        _assert_eq_ops(sa, sb[:1], xs, ys[:1] * len(xs))
+        _assert_eq_ops(sa[:1], sb, xs[:1] * len(ys), ys)
+
+    df = pl.DataFrame({"a": a, "b": b})
+    assert df.filter(pl.col("a") == pl.col("b"))["a"].to_list() == [
+        x for x, y in zip(lhs, rhs, strict=True) if x is not None and x == y
+    ]
+
+
+def test_nested_struct_equality_values_under_null_rows() -> None:
+    dt = pl.Array(STRUCT_X, 1)
+    s = pl.Series([[{"x": 1}], [None], [{"x": 2}]], dtype=dt)
+    # when/then keeps the values stored under the null row.
+    masked = pl.select(
+        pl.when(pl.Series([True, True, False])).then(pl.lit(s))
+    ).to_series()
+    expected = pl.Series([[{"x": 1}], [None], None], dtype=dt)
+    assert masked.ne_missing(expected).to_list() == [False, False, False]
+    assert_series_equal(masked, expected, check_names=False)
+
+    # A value stored under a null struct element.
+    values = pa.StructArray.from_arrays(
+        [pa.array([1, 7])], names=["x"], mask=pa.array([False, True])
+    )
+    got = pl.Series(pa.ListArray.from_arrays([0, 2], values))
+    ref = pl.Series([[{"x": 1}, None]], dtype=pl.List(STRUCT_X))
+    assert (got == ref).to_list() == [True]
+
+
+def test_array_struct_rank_rle_id() -> None:
+    dt = pl.Array(STRUCT_X, 1)
+    s = pl.Series([[{"x": 1}], [{"x": 2}], [{"x": 1}]], dtype=dt)
+    assert s.rank("dense").to_list() == [1, 2, 1]
+    s = pl.Series([[{"x": 1}], [{"x": 1}], [{"x": 2}]], dtype=dt)
+    assert s.rle_id().to_list() == [0, 0, 1]
 
 
 def isnan(x: Any) -> bool:
