@@ -1442,7 +1442,7 @@ impl DataFrame {
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
     pub fn sort_impl(
         self,
-        by_column: Vec<Column>,
+        mut by_column: Vec<Column>,
         sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
@@ -1535,7 +1535,23 @@ impl DataFrame {
         // a lot of indirection in both sorting and take; rechunking the owned
         // frame frees the old chunks
         let mut df = self;
+        // Keys that are columns of this frame take the rechunked columns, so
+        // that their old chunks are freed too.
+        let frame_key_idxs: Vec<Option<usize>> = by_column
+            .iter()
+            .map(|c| {
+                let s = c.as_series()?;
+                df.columns()
+                    .iter()
+                    .position(|dc| dc.as_series().is_some_and(|ds| Arc::ptr_eq(&ds.0, &s.0)))
+            })
+            .collect();
         let df = df.rechunk_mut_par();
+        for (c, idx) in by_column.iter_mut().zip(frame_key_idxs) {
+            if let Some(idx) = idx {
+                *c = df.columns()[idx].clone();
+            }
+        }
         let mut take = match (by_column.len(), has_nested) {
             (1, false) => {
                 let s = &by_column[0];
