@@ -402,14 +402,41 @@ mod compressed_writer {
 
     /// Constructor for `WritableTrait` compressed encoders.
     pub enum CompressedWriter<'a, W: io::Write> {
-        Gzip(Option<flate2::write::GzEncoder<&'a mut W>>),
+        Gzip(Option<flate2::write::GzEncoder<GzipTarget<'a, W>>>),
         Zstd(Option<zstd::Encoder<'static, &'a mut W>>),
+    }
+
+    /// Discards writes once `discard` is set.
+    pub struct GzipTarget<'a, W> {
+        inner: &'a mut W,
+        discard: bool,
+    }
+
+    impl<W: io::Write> io::Write for GzipTarget<'_, W> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if self.discard {
+                Ok(buf.len())
+            } else {
+                self.inner.write(buf)
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            if self.discard {
+                Ok(())
+            } else {
+                self.inner.flush()
+            }
+        }
     }
 
     impl<'a, W: io::Write> CompressedWriter<'a, W> {
         pub fn gzip(writer: &'a mut W, level: Option<u32>) -> Self {
             Self::Gzip(Some(flate2::write::GzEncoder::new(
-                writer,
+                GzipTarget {
+                    inner: writer,
+                    discard: false,
+                },
                 level.map(flate2::Compression::new).unwrap_or_default(),
             )))
         }
@@ -440,8 +467,17 @@ mod compressed_writer {
     impl<'a, W: io::Write> CompressedWriter<'a, W> {
         pub fn finish(&mut self) -> io::Result<&'a mut W> {
             match self {
-                Self::Gzip(encoder) => encoder.take().unwrap().finish(),
+                Self::Gzip(encoder) => encoder.take().unwrap().finish().map(|t| t.inner),
                 Self::Zstd(encoder) => encoder.take().unwrap().finish(),
+            }
+        }
+    }
+
+    impl<W: io::Write> Drop for CompressedWriter<'_, W> {
+        fn drop(&mut self) {
+            // `GzEncoder` writes its trailer on drop, which would make an unfinished file look complete.
+            if let Self::Gzip(Some(encoder)) = self {
+                encoder.get_mut().discard = true;
             }
         }
     }

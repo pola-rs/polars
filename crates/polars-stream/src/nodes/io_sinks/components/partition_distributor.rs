@@ -30,7 +30,6 @@ pub struct PartitionDistributor {
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
     pub partition_sink_starter: PartitionSinkStarter,
     pub no_partition_keys: bool,
-    /// Received once the input ended cleanly; files are finished only then.
     pub finish: FinishSignal,
     pub verbose: bool,
 }
@@ -206,7 +205,6 @@ impl PartitionDistributor {
             drop(input_wait_token);
         }
 
-        // The input also ends when the query fails: then no file is finished.
         finish.wait().await?;
 
         if verbose {

@@ -2,6 +2,7 @@ use std::any::Any;
 use std::panic::AssertUnwindSafe;
 
 use futures::FutureExt;
+use futures::future::Either;
 
 /// Utility to capture errors and propagate them to an associated [`ErrorHandle`].
 pub struct ErrorCapture<ErrorT> {
@@ -23,12 +24,19 @@ impl<ErrorT> ErrorCapture<ErrorT> {
     }
 
     /// Wraps a future such that its error result is sent to the associated [`ErrorHandle`].
+    /// The future is dropped unfinished once the [`ErrorHandle`] is dropped.
     pub async fn wrap_future<F, O>(self, fut: F)
     where
         F: Future<Output = Result<O, ErrorT>>,
     {
+        let fut = std::pin::pin!(AssertUnwindSafe(fut).catch_unwind());
+        let result = match futures::future::select(fut, std::pin::pin!(self.tx.closed())).await {
+            Either::Left((result, _)) => result,
+            Either::Right(_) => return,
+        };
+
         let err: Result<(), tokio::sync::mpsc::error::TrySendError<ErrorMessage<ErrorT>>> =
-            match AssertUnwindSafe(fut).catch_unwind().await {
+            match result {
                 Ok(Ok(_)) => return,
                 Ok(Err(err)) => self.tx.try_send(ErrorMessage::Error(err)),
                 Err(panic) => self.tx.try_send(ErrorMessage::Panic(panic)),

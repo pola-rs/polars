@@ -130,7 +130,7 @@ pub fn start_single_file_sink_pipeline(
     }
 
     let (writer_tx, writer_rx) = connector::connector();
-    // Cancelled with the sink: a failed query must not finish the file.
+    // Aborted with the sink, so that a failed query can't finish the file.
     let writer_handle = executor::AbortOnDropHandle::new(file_writer_starter.start_file_writer(
         writer_rx,
         file_open_task,

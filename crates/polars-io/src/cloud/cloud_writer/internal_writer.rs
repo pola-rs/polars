@@ -30,7 +30,7 @@ pub(super) enum InternalCloudWriterState {
 type WriterState = InternalCloudWriterState;
 
 pub(super) struct StartedState {
-    // Dropped first, so that no new parts start once an unfinished upload is aborted.
+    // Dropped before `multipart`, so that no part starts after the abort.
     tasks: FuturesUnordered<tokio_handle_ext::AbortOnDropHandle<()>>,
     multipart: PlMultipartUpload,
     error_handle: ErrorHandle<PolarsError>,

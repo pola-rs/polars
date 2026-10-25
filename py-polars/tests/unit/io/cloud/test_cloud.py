@@ -512,15 +512,14 @@ def test_sink_failed_query_leaves_no_object(
     s3.on_request = record
 
     failing = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.UInt64))
-    # Incompressible rows, so that a multipart upload starts before the query fails.
+    # Incompressible, so that a multipart upload starts before the query fails.
     rows = pl.LazyFrame({"x": pl.int_range(1_000_000, eager=True).hash()})
     for lf in [failing, pl.concat([rows, failing])]:
         requests.clear()
         with pytest.raises(pl.exceptions.InvalidOperationError):
             sink(lf, "s3://bucket/out", storage_options=s3.storage_options)
 
-        # A started upload is aborted in the background, unless the query failed
-        # before the upload id was known.
+        # A started upload is aborted in the background.
         deadline = time.monotonic() + 10
         while (
             "POST uploads" in requests
@@ -530,7 +529,7 @@ def test_sink_failed_query_leaves_no_object(
             time.sleep(0.01)
         time.sleep(0.2)
 
-        # Neither a single `PUT` nor a completed multipart upload.
+        # `POST uploadId` completes a multipart upload.
         assert "PUT" not in requests
         assert "POST uploadId" not in requests
         assert s3.client.list_objects_v2(Bucket="bucket")["KeyCount"] == 0

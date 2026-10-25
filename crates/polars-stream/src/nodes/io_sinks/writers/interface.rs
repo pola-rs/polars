@@ -32,8 +32,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>>;
 }
 
-/// Lets a writer finish its file. A writer whose input ends without it (the query failed)
-/// leaves the file unfinished.
+/// A writer finishes its file only after this; its input also ends when the query fails.
 pub struct FinishSignal(tokio::sync::oneshot::Receiver<()>);
 
 pub struct FinishSender(tokio::sync::oneshot::Sender<()>);
@@ -50,7 +49,6 @@ impl FinishSender {
 }
 
 impl FinishSignal {
-    /// Waits until the file may be finished; errors if the sink was cancelled instead.
     pub async fn wait(self) -> PolarsResult<()> {
         self.0
             .await

@@ -62,10 +62,14 @@ impl PartitionSinkStarter {
             )?);
 
         let task_metrics = self.task_metrics.as_deref();
-        let task_handle = executor::spawn(TaskPriority::High, task_metrics, async move {
-            writer_handle.await?;
-            Ok(file_permit)
-        });
+        let task_handle = executor::AbortOnDropHandle::new(executor::spawn(
+            TaskPriority::High,
+            task_metrics,
+            async move {
+                writer_handle.await?;
+                Ok(file_permit)
+            },
+        ));
 
         Ok(FileSinkTaskData::new(
             morsel_tx,

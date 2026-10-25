@@ -94,7 +94,6 @@ impl ComputeNode for IOSinkNode {
                             self.name()
                         );
                     }
-                    // Sent before the join, which waits for the files to finish.
                     finish_tx.send();
                     drop(phase_channel_tx);
                     ASYNC.block_in_place_on(task_handle)?;
@@ -173,7 +172,7 @@ impl ComputeNode for IOSinkNode {
                 }
 
                 drop(phase_channel_tx);
-                // Unsent, so that no writer waits on it during the join.
+                // Before the join, or the writers waiting on it hang.
                 drop(finish_tx);
 
                 return Err(task_handle.await.unwrap_err());
@@ -193,7 +192,7 @@ enum IOSinkNodeState {
         phase_channel_tx: connector::Sender<PortReceiver>,
         /// Join handle for all background tasks.
         task_handle: AbortOnDropHandle<PolarsResult<()>>,
-        /// Sent when the input is done; dropped unsent (the query failed), no file is finished.
+        /// Sent once the input ended cleanly; files are finished only then.
         finish_tx: FinishSender,
     },
 

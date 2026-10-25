@@ -4,8 +4,6 @@ use polars_error::PolarsResult;
 use crate::cloud::ObjectStoreErrorContext;
 
 /// Wrapper for [`object_store::MultipartUpload`] that handles error conversion.
-///
-/// An upload dropped before it completed is aborted, so its parts are not left behind.
 pub struct PlMultipartUpload {
     inner: Option<Box<dyn object_store::MultipartUpload>>,
     error_cx: ObjectStoreErrorContext,
@@ -52,7 +50,6 @@ impl Drop for PlMultipartUpload {
         if let Some(mut inner) = self.inner.take()
             && !self.completed
         {
-            // Best effort: an upload that is not aborted only costs storage until it expires.
             ASYNC.spawn(async move {
                 let _ = inner.abort().await;
             });
