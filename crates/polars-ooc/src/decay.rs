@@ -26,15 +26,19 @@ mod jemalloc {
     static ACTIVE: AtomicBool = AtomicBool::new(false);
     static LAST_SPILL_NS: AtomicU64 = AtomicU64::new(0);
     static START: LazyLock<Instant> = LazyLock::new(Instant::now);
-    static STATE: Mutex<DecayState> = Mutex::new(DecayState {
-        saved: None,
-        timer_running: false,
-    });
+    static STATE: Mutex<DecayState> = Mutex::new(DecayState::EMPTY);
 
     struct DecayState {
         // The default decay from before the first spill, while active.
         saved: Option<Decay>,
         timer_running: bool,
+    }
+
+    impl DecayState {
+        const EMPTY: Self = Self {
+            saved: None,
+            timer_running: false,
+        };
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,21 +75,19 @@ mod jemalloc {
             return;
         }
         let mut state = STATE.lock().unwrap();
-        if !enter_locked(&mut state) {
+        if !enter_locked(&mut state) || state.timer_running {
             return;
         }
-        if !state.timer_running {
-            let spawned = std::thread::Builder::new()
-                .name("polars-ooc-decay".into())
-                .spawn(run_timer);
-            if spawned.is_ok() {
-                state.timer_running = true;
-            } else {
-                // Without a timer the decay would never be restored.
-                let saved = state.saved.take().unwrap();
-                restore(saved);
-                ACTIVE.store(false, Ordering::SeqCst);
-            }
+        let spawned = std::thread::Builder::new()
+            .name("polars-ooc-decay".into())
+            .spawn(run_timer);
+        if spawned.is_ok() {
+            state.timer_running = true;
+        } else {
+            // Without a timer the decay would never be restored.
+            let saved = state.saved.take().unwrap();
+            restore(saved);
+            ACTIVE.store(false, Ordering::SeqCst);
         }
     }
 
@@ -331,10 +333,7 @@ mod jemalloc {
             reset(defaults);
             let arena = thread_arena();
 
-            let mut state = DecayState {
-                saved: None,
-                timer_running: false,
-            };
+            let mut state = DecayState::EMPTY;
             for _ in 0..2 {
                 assert!(enter_locked(&mut state));
                 assert_eq!(state.saved, Some(defaults));
@@ -355,10 +354,7 @@ mod jemalloc {
                 muzzy_ms: 900,
             };
             reset(defaults);
-            let mut state = DecayState {
-                saved: None,
-                timer_running: false,
-            };
+            let mut state = DecayState::EMPTY;
             assert!(enter_locked(&mut state));
             let saved = state.saved.unwrap();
 
@@ -385,10 +381,7 @@ mod jemalloc {
                 muzzy_ms: 800,
             };
             reset(defaults);
-            let mut state = DecayState {
-                saved: None,
-                timer_running: false,
-            };
+            let mut state = DecayState::EMPTY;
             assert!(enter_locked(&mut state));
 
             // A new arena, created while active, starts with the pressure decay.

@@ -1,7 +1,7 @@
 //! Combine per-column comparisons in an `AND` chain: spot impossible filters
 //! (replace with `false`, e.g. `a.is_in([1, 2]) AND a.is_in([3, 4])`) and drop
 //! redundant comparisons (`a >= 1 AND a >= 5` to `a >= 5`; `a >= 3 AND a != 3`
-//! to `a > 3`).
+//! to `a > 3`; `a.is_not_null() AND a > 3` to `a > 3`).
 //!
 //! `merge_filter_constraints` runs four data-dependent stages (no reordering):
 //! 1. **Collect** (`classify_into_constraints`): fold each `col op lit` into a
@@ -57,13 +57,16 @@ enum Classification {
     // A `col == col` equality, whose two columns form a cross-column propagation
     // edge (the node is kept verbatim unless its class becomes fixed).
     Equality(PlSmallStr, PlSmallStr),
+    // `is_not_null` (or `!is_null`) on a column. Dropped when a bound, `!=` or
+    // `is_in` on the column already drops its nulls, else kept verbatim.
+    NotNull(PlSmallStr),
     // An `is_in` whose haystack went into its column's allowed set. The node is
     // kept verbatim.
     #[cfg(feature = "is_in")]
     Membership,
     // Node kept verbatim: either unmodeled (UDFs, null-aware ops, arithmetic) or
-    // modeled only for contradiction (`!is_in` / `is_null` / `is_not_null` /
-    // non-`==` column-column comparisons record but aren't rewritten).
+    // modeled only for contradiction (`!is_in` / `is_null` / non-`==` column-column
+    // comparisons record but aren't rewritten).
     Opaque,
 }
 
@@ -315,12 +318,17 @@ impl ColumnConstraints {
         self.disallowed.len() != before
     }
 
-    fn has_value_constraint(&self) -> bool {
+    // Whether a conjunct that stays in the rebuilt chain drops the nulls of this
+    // column. `!is_in` is left out: with `nulls_equal` it keeps nulls.
+    fn drops_nulls(&self) -> bool {
         self.lower.is_some()
             || self.upper.is_some()
             || !self.excluded.is_empty()
             || self.allowed.is_some()
-            || !self.disallowed.is_empty()
+    }
+
+    fn has_value_constraint(&self) -> bool {
+        self.drops_nulls() || !self.disallowed.is_empty()
     }
 
     // Records an `is_null` (`Null`) / `is_not_null` (`NonNull`) requirement. The first
@@ -520,10 +528,13 @@ impl ColumnConstraints {
 // One `AND` chain modeled per column.
 struct ConstraintModel {
     constraints: PlIndexMap<PlSmallStr, ColumnConstraints>,
-    // Conjuncts the model does not describe, kept for a rebuild.
+    // Conjuncts the model does not describe, kept for a rebuild. Includes the
+    // `is_not_null` conjuncts.
     opaque: Vec<Node>,
     // `is_in` conjuncts in the model's allowed sets, also kept for a rebuild.
     memberships: Vec<Node>,
+    // The columns of the `is_not_null` conjuncts in `opaque`.
+    not_nulls: Vec<(PlSmallStr, Node)>,
     num_bound_conjuncts: usize,
     normalized: bool,
     propagated: bool,
@@ -540,6 +551,7 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
     let mut opaque: Vec<Node> = Vec::new();
     #[cfg_attr(not(feature = "is_in"), allow(unused_mut))]
     let mut memberships: Vec<Node> = Vec::new();
+    let mut not_nulls: Vec<(PlSmallStr, Node)> = Vec::new();
     let mut edges: Vec<(PlSmallStr, PlSmallStr, Node)> = Vec::new();
     let mut num_bound_conjuncts = 0usize;
     let mut normalized = false;
@@ -569,6 +581,10 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
                 normalized = true;
             },
             Classification::Equality(a, b) => edges.push((a, b, conjunct)),
+            Classification::NotNull(name) => {
+                not_nulls.push((name, conjunct));
+                opaque.push(conjunct);
+            },
             #[cfg(feature = "is_in")]
             Classification::Membership => memberships.push(conjunct),
             Classification::Opaque => opaque.push(conjunct),
@@ -630,6 +646,7 @@ fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) 
         constraints,
         opaque,
         memberships,
+        not_nulls,
         num_bound_conjuncts,
         normalized,
         propagated,
@@ -705,6 +722,7 @@ pub(crate) fn merge_filter_constraints(
         constraints,
         mut opaque,
         memberships,
+        not_nulls,
         num_bound_conjuncts,
         normalized,
         propagated,
@@ -732,12 +750,23 @@ pub(crate) fn merge_filter_constraints(
     // adds no nodes.
     let comparisons = emitted_comparisons(&constraints);
 
-    // Rewrite only if we tightened, normalized a negation, propagated, or dropped an
-    // `a == b`; else leave the plan alone (no churn, no optimizer loop).
+    // Rewrite only if something changed, so the optimizer loop ends.
     let tightened = comparisons.len() < num_bound_conjuncts;
-    if !(tightened || normalized || propagated || dropped_equality) {
+    let redundant_not_nulls: Vec<Node> = not_nulls
+        .into_iter()
+        .filter(|(name, _)| constraints.get(name).is_some_and(|cc| cc.drops_nulls()))
+        .map(|(_, node)| node)
+        .collect();
+
+    if !(tightened
+        || normalized
+        || propagated
+        || dropped_equality
+        || !redundant_not_nulls.is_empty())
+    {
         return None;
     }
+    opaque.retain(|node| !redundant_not_nulls.contains(node));
 
     // Materialize the nodes now that we know we rewrite.
     opaque.extend(memberships);
@@ -784,9 +813,9 @@ fn propagate_equalities(
 
 // Classifies one conjunct, folding any `col op lit` bound into its column.
 // A leading `!(...)` is pushed inward (`classify_negation`). Unmodeled shapes are
-// reported as `Opaque` and kept verbatim by the caller. `is_in` is `Membership`
-// and `is_null` / `is_not_null` are `Opaque`; both are kept verbatim but record
-// (haystack / nullability) for contradiction detection.
+// reported as `Opaque` and kept verbatim by the caller. `is_in` is `Membership`,
+// `is_not_null` is `NotNull` and `is_null` is `Opaque`; all record (haystack /
+// nullability) for contradiction detection.
 fn classify_into_constraints(
     ae: &AExpr,
     schema: &Schema,
@@ -849,7 +878,7 @@ fn classify_into_constraints(
                 },
                 // `is_null` / `is_not_null` record a nullability requirement for
                 // contradiction detection (`a.is_null() AND a > 5` is impossible since
-                // any comparison drops nulls); the node is kept verbatim.
+                // any comparison drops nulls).
                 IRBooleanFunction::IsNull => classify_null(
                     input[0].node(),
                     Nullability::Null,
@@ -1054,7 +1083,7 @@ fn classify_negation(
             Classification::Opaque
         },
         // `!(is_null)` is `is_not_null` and vice versa; record the flipped
-        // nullability (node kept verbatim, like the direct `is_null` case).
+        // nullability, like the direct `is_null` case.
         AExpr::Function {
             input,
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
@@ -1106,8 +1135,8 @@ fn classify_negation(
 }
 
 // Records an `is_null` (`Null`) / `is_not_null` (`NonNull`) requirement on a bare
-// column, for contradiction detection only; the node is kept verbatim. A non-column
-// argument (e.g. `(a + b).is_null()`) stays opaque.
+// column, for contradiction detection. A non-column argument (e.g.
+// `(a + b).is_null()`) stays opaque.
 fn classify_null(
     col: Node,
     required: Nullability,
@@ -1118,10 +1147,12 @@ fn classify_null(
     let Some(col_name) = as_column(expr_arena.get(col)) else {
         return Classification::Opaque;
     };
-    let cc = column_constraints(constraints, schema, col_name);
+    let cc = column_constraints(constraints, schema, col_name.clone());
     cc.require_nullability(required);
     if cc.unsat {
         Classification::Unsat
+    } else if required == Nullability::NonNull {
+        Classification::NotNull(col_name)
     } else {
         Classification::Opaque
     }
