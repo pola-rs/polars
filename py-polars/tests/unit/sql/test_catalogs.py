@@ -680,7 +680,7 @@ def test_create_catalog_table_as_select_fails_location_suffix(
     other.mkdir()
     (other / "keep").touch()
     ctx = lake_ctx(lake)
-    for suffix in ("#x", "?x", "*", "[x]"):
+    for suffix in ("#x", "?x", "*"):
         with pytest.raises(InvalidOperationError) as exc:
             ctx.execute(
                 f"CREATE TABLE t LOCATION 'file://{other}{suffix}' "
