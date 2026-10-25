@@ -64,14 +64,11 @@ impl SortTuning {
         self.partition_threshold_bytes.min(budget() / 2)
     }
 
-    /// The number of buckets that may be sorted or waiting to be emitted at
-    /// once while flushing: two per pipeline, as long as they take at most a
-    /// quarter of the memory budget.
-    pub fn flush_ahead(&self, bucket_bytes: u64, num_pipelines: usize) -> usize {
-        let fit = budget() / 4 / bucket_bytes.max(1);
-        usize::try_from(fit)
-            .unwrap_or(usize::MAX)
-            .clamp(1, 2 * num_pipelines)
+    /// The number of buckets and the memory that may be sorted or waiting to
+    /// be emitted at once while flushing: two buckets per pipeline, holding at
+    /// most a quarter of the memory budget.
+    pub fn flush_ahead(&self, num_pipelines: usize) -> (usize, u64) {
+        (2 * num_pipelines, budget() / 4)
     }
 
     /// The number of value buckets to partition into, always a power of two.

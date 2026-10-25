@@ -15,7 +15,7 @@ use polars_core::frame::DataFrame;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
-use polars_core::series::{IntoSeries, Series};
+use polars_core::series::{IntoSeries, IsSorted, Series};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::PolarsResult;
 use polars_ooc::{
@@ -27,7 +27,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::slice_offsets;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use self::flush::{Flush, PendingBucket};
+use self::flush::{Flush, PendingBucket, sort_index_row_bytes};
 use self::sample::{KeySample, split_keys};
 use self::split_tree::BucketClassifier;
 use self::tuning::SortTuning;
@@ -304,11 +304,13 @@ impl SortNode {
         }
         drop_parallel(dropped);
 
-        let bucket_bytes = total_bytes / (num_buckets as u64 + 1);
         Ok(Flush::new(
             pending,
             get_ideal_morsel_size().max(1),
-            self.tuning.flush_ahead(bucket_bytes, num_tasks),
+            self.tuning.flush_ahead(num_tasks),
+            // Rounded up, so that no bucket with rows is free.
+            total_bytes.div_ceil(total_rows.max(1) as u64).max(1),
+            sort_index_row_bytes(self.input_schema.get(&self.key).unwrap()),
             spill_ctx,
         ))
     }
@@ -467,11 +469,17 @@ fn key_series(df: &DataFrame, key: &str) -> PolarsResult<Series> {
 
 /// Sorts `df` and restricts it to the `(offset, len)` row range of the result.
 fn sort_range(
-    df: DataFrame,
+    mut df: DataFrame,
     key: &str,
     sort_options: SortMultipleOptions,
     (offset, len): (usize, usize),
 ) -> PolarsResult<DataFrame> {
+    // `sort_impl` sorts a rechunked copy. Rechunking the owned frame here
+    // instead frees the old chunks, unless the key is sorted already and no
+    // copy is made.
+    if df.column(key)?.is_sorted_flag() == IsSorted::Not {
+        df.rechunk_mut_par();
+    }
     let by_column = vec![df.column(key)?.clone()];
     if offset == 0 {
         // A `(0, len)` slice would send `sort_impl` down the bottom-k path,
