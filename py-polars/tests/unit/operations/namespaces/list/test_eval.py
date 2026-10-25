@@ -753,3 +753,32 @@ def test_eval_on_literal_in_group_by_29554(expr: pl.Expr, expected: pl.Series) -
     out = df.select(r=expr.over("g"))
     expected_over = expected.gather([0, 0, 1, 1]).alias("r")
     assert_series_equal(out.get_column("r"), expected_over)
+
+
+def test_list_agg_null_rows_30252() -> None:
+    dtype = pl.Struct({"a": pl.Int64, "b": pl.Struct({"c": pl.Int64})})
+    x = {"a": 1, "b": {"c": 2}}
+    y = {"a": 3, "b": {"c": 4}}
+    s = pl.Series(
+        "s", [None, [x], None, None, [], [None], [y], None], dtype=pl.List(dtype)
+    )
+    expected = pl.Series("s", [None, x, None, None, None, None, y, None], dtype=dtype)
+    item = s.to_frame().select(pl.col.s.list.item(allow_empty=True)).to_series()
+    for out in [s.list.agg(pl.element().first()), item]:
+        assert_series_equal(out, expected)
+        # The null rows must also be null in the fields.
+        c = out.struct.field("b").struct.field("c")
+        assert c.to_list() == [None, 2, None, None, None, None, 4, None]
+
+    # `list.item()` on a null row (#28932).
+    assert_series_equal(s.gather([1, 2, 6]).list.item(), expected.gather([1, 2, 6]))
+
+    out = s.list.agg(pl.struct(pl.element().struct.field("a").first()))
+    a = [None, 1, None, None, None, None, 3, None]
+    assert out.struct.field("a").to_list() == a
+    assert_series_equal(out.is_null(), s.is_null())
+
+    s = pl.Series("s", [None, [None], None], dtype=pl.List(pl.Null))
+    assert_series_equal(
+        s.list.agg(pl.element().first()), pl.Series("s", [None, None, None])
+    )
