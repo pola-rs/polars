@@ -65,13 +65,28 @@ impl MemoryManager {
         }
     }
 
+    /// The memory in use plus incoming memory.
+    fn usage_with_incoming(&self) -> u64 {
+        crate::estimate_memory_usage()
+            + self.est_prefetch_in_progress.load(Ordering::Relaxed)
+            + self.reserved.load(Ordering::Relaxed)
+    }
+
+    /// The bytes still to spill to fit in the budget, after the spills in progress.
+    fn spill_deficit(&self) -> u64 {
+        self.usage_with_incoming()
+            .saturating_sub(self.est_spill_in_progress.load(Ordering::Relaxed))
+            .saturating_sub(config().ooc_memory_budget_bytes())
+    }
+
     pub(crate) fn should_spill(&self) -> bool {
-        let usage = crate::estimate_memory_usage();
-        let likely_dealt_with = self.est_spill_in_progress.load(Ordering::Relaxed);
-        let likely_incoming = self.est_prefetch_in_progress.load(Ordering::Relaxed)
-            + self.reserved.load(Ordering::Relaxed);
-        (usage + likely_incoming).saturating_sub(likely_dealt_with)
-            > config().ooc_memory_budget_bytes()
+        self.spill_deficit() > 0
+    }
+
+    /// Whether the memory in use is over the budget, also counting values that are being
+    /// spilled, as they stay in memory until written.
+    fn is_over_budget(&self) -> bool {
+        self.usage_with_incoming() > config().ooc_memory_budget_bytes()
     }
 
     pub(crate) fn should_prefetch(&self) -> bool {
@@ -116,6 +131,9 @@ impl MemoryManager {
         } else if self.should_prefetch() {
             self.do_prefetch().await
         }
+        if self.is_over_budget() {
+            self.wait_for_spills().await
+        }
     }
 
     #[inline(always)]
@@ -125,6 +143,37 @@ impl MemoryManager {
         } else if self.should_prefetch() {
             self.do_prefetch_blocking()
         }
+        if self.is_over_budget() {
+            ASYNC.block_in_place_on(self.wait_for_spills())
+        }
+    }
+
+    /// Waits while the memory in use is over the budget, spilling more when needed. Returns
+    /// when no spill is in progress, as then nothing more will free memory.
+    #[inline(never)]
+    #[cold]
+    async fn wait_for_spills(&self) {
+        loop {
+            if self.should_spill() {
+                self.do_spill().await;
+            }
+            if !self.wait_for_spill_done(|| self.is_over_budget()).await {
+                return;
+            }
+        }
+    }
+
+    /// Waits for a spill in progress to finish if `condition` holds. Returns false, without
+    /// waiting, if it doesn't hold or no spill is in progress.
+    async fn wait_for_spill_done(&self, condition: impl Fn() -> bool) -> bool {
+        // Create the future before checking, so a spill that finishes in between still
+        // wakes it.
+        let spill_done = self.spill_done.notified();
+        if !condition() || self.est_spill_in_progress.load(Ordering::Relaxed) == 0 {
+            return false;
+        }
+        spill_done.await;
+        true
     }
 
     #[inline(never)]
@@ -156,11 +205,9 @@ impl MemoryManager {
                 continue;
             }
             // Spills started elsewhere can still free memory.
-            let spill_done = self.spill_done.notified();
-            if self.est_spill_in_progress.load(Ordering::Relaxed) == 0 {
+            if !self.wait_for_spill_done(|| true).await {
                 break;
             }
-            spill_done.await;
         }
         reservation
     }
@@ -348,6 +395,10 @@ impl MemoryManager {
 
         // TODO: don't block here under a certain memory threshold.
         let finding_spill_guard = self.finding_spill_lock.lock().await;
+        let mut deficit = self.spill_deficit();
+        if deficit == 0 {
+            return None;
+        }
 
         // TODO: don't loop over all contexts here, keep track of good ones and inspect those plus a couple random ones.
         let contexts = self.contexts.read().unwrap();
@@ -398,6 +449,7 @@ impl MemoryManager {
                 };
                 match cand.clone().spill_status() {
                     SpillStatus::InMemory(sz) if sz >= min_spill => {
+                        deficit = deficit.saturating_sub(sz);
                         candidates.push((cand, SpillInProgressTracker::new(sz), rt));
                     },
                     SpillStatus::InMemory(_) => {
@@ -420,7 +472,7 @@ impl MemoryManager {
                 }
 
                 num_considered += 1;
-                num_considered < SPILL_FRAME_BATCH_SIZE
+                deficit > 0 && num_considered < SPILL_FRAME_BATCH_SIZE
             });
 
             if candidates.is_empty() {
@@ -529,5 +581,61 @@ impl Drop for PrefetchInProgressTracker {
         memory_manager()
             .est_prefetch_in_progress
             .fetch_sub(self.bytes, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::pin::pin;
+    use std::task::{Context, Waker};
+
+    use super::*;
+
+    const OVER_BUDGET_VARS: [(&str, &str); 2] = [
+        // Keeps polling spill() from starting the global decay timer.
+        ("POLARS_OOC_PRESSURE_DECAY", "0"),
+        ("POLARS_OOC_MEMORY_BUDGET_MB", "1"),
+    ];
+    const OVER_BUDGET_USAGE: i64 = 16 << 20;
+
+    /// Puts the memory manager over budget until dropped.
+    struct OverBudget;
+
+    impl OverBudget {
+        fn new() -> Self {
+            for (var, val) in OVER_BUDGET_VARS {
+                unsafe { std::env::set_var(var, val) };
+                config().reload_env_var(var);
+            }
+            crate::global_alloc::add_test_usage(OVER_BUDGET_USAGE);
+            OverBudget
+        }
+    }
+
+    impl Drop for OverBudget {
+        fn drop(&mut self) {
+            crate::global_alloc::add_test_usage(-OVER_BUDGET_USAGE);
+            for (var, _) in OVER_BUDGET_VARS {
+                unsafe { std::env::remove_var(var) };
+                config().reload_env_var(var);
+            }
+        }
+    }
+
+    #[test]
+    fn spill_waits_while_over_budget() {
+        let _guard = crate::test_lock();
+        let _over_budget = OverBudget::new();
+        let mm = memory_manager();
+        let mut cx = Context::from_waker(Waker::noop());
+
+        // Nothing frees memory without a spill in progress, so there is nothing to wait for.
+        assert!(pin!(mm.spill()).poll(&mut cx).is_ready());
+
+        let spill_in_progress = SpillInProgressTracker::new(1);
+        let mut spill = pin!(mm.spill());
+        assert!(spill.as_mut().poll(&mut cx).is_pending());
+        drop(spill_in_progress);
+        assert!(spill.as_mut().poll(&mut cx).is_ready());
     }
 }
