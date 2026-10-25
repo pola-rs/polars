@@ -41,9 +41,10 @@ fn update_alloc_size(bytes: i64) {
     })
 }
 
+/// Adds the allocations of this thread that are not yet counted to the total.
 #[cold]
 #[inline(never)]
-fn flush_local_drift() {
+pub(crate) fn flush_local_drift() {
     LOCAL_ALLOC_DRIFT.with(|drift| {
         let drift_bytes = drift.get();
         let old = GLOBAL_ALLOC_SIZE.fetch_add(drift_bytes as u64, Ordering::AcqRel);
