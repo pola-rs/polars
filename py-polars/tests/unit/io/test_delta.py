@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import pickle
 import re
@@ -1401,8 +1402,10 @@ def test_scan_delta_collect_without_version_scans_latest(
     table = DeltaTable(tmp_path)
 
     q = pl.scan_delta(table, use_pyarrow=use_pyarrow)
+    q_v0 = pl.scan_delta(table, use_pyarrow=use_pyarrow, version=0)
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [0]}))
+    assert_frame_equal(q_v0.collect(), pl.DataFrame({"a": [0]}))
 
     pl.DataFrame({"a": [1]}).write_delta(table, mode="append")
 
@@ -1428,6 +1431,87 @@ def test_scan_delta_collect_without_version_scans_latest(
     assert (
         "DeltaDataset: to_dataset_scan(): early return (version_key = '1')" in capture
     )
+
+    for lf, expected in (
+        (q_v0, pl.DataFrame({"a": [0]})),
+        (q_with_id, pl.DataFrame({"a": [0, 1]})),
+    ):
+        for via_pickle in (True, False):
+            assert_frame_equal(
+                _roundtrip_delta_lf(lf, via_pickle).collect().sort("*"), expected
+            )
+
+
+def _roundtrip_delta_lf(lf: pl.LazyFrame, via_pickle: bool) -> pl.LazyFrame:
+    return (
+        pickle.loads(pickle.dumps(lf))
+        if via_pickle
+        else pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
+    )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("use_pyarrow", [False, True])
+@pytest.mark.parametrize("via_pickle", [True, False], ids=["pickle", "serialize"])
+def test_scan_delta_direct_table_version_survives_roundtrip(
+    tmp_path: Path, use_pyarrow: bool, via_pickle: bool
+) -> None:
+    v0 = pl.DataFrame({"a": [0]})
+    v0.write_delta(tmp_path)
+    pl.DataFrame({"a": [1]}).write_delta(tmp_path, mode="append")
+    table = DeltaTable(tmp_path, version=0)
+    lf = pl.scan_delta(table, use_pyarrow=use_pyarrow)
+
+    assert_frame_equal(lf.collect(), v0)
+    restored = _roundtrip_delta_lf(lf, via_pickle)
+    assert_frame_equal(restored.collect(), v0)
+    assert table.version() == 0
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("use_pyarrow", [False, True])
+def test_scan_delta_direct_table_pickle_tracks_snapshot_updates(
+    tmp_path: Path, use_pyarrow: bool
+) -> None:
+    v0 = pl.DataFrame({"a": [0]})
+    v0.write_delta(tmp_path)
+    table = DeltaTable(tmp_path)
+    lf = pl.scan_delta(table, use_pyarrow=use_pyarrow)
+    assert_frame_equal(lf.collect(), v0)
+
+    restored_v0 = pickle.loads(pickle.dumps(lf))
+    assert table.version() == 0
+    v1 = pl.DataFrame({"a": [1]})
+    v1.write_delta(table, mode="append")
+    expected = pl.concat([v0, v1])
+    assert table.version() == 1
+
+    restored_v1 = pickle.loads(pickle.dumps(lf))
+    assert_frame_equal(restored_v1.collect().sort("a"), expected.sort("a"))
+    assert_frame_equal(restored_v0.collect(), v0)
+    assert_frame_equal(pickle.loads(pickle.dumps(restored_v0)).collect(), v0)
+    assert table.version() == 1
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("use_pyarrow", [False, True])
+def test_scan_delta_path_pickle_preserves_latest_and_explicit_version(
+    tmp_path: Path, use_pyarrow: bool
+) -> None:
+    v0 = pl.DataFrame({"a": [0]})
+    v0.write_delta(tmp_path)
+    latest = pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow)
+    pinned = pl.scan_delta(tmp_path, version=0, use_pyarrow=use_pyarrow)
+    latest_pickle = pickle.dumps(latest)
+    pinned_pickle = pickle.dumps(pinned)
+    v1 = pl.DataFrame({"a": [1]})
+    v1.write_delta(tmp_path, mode="append")
+
+    assert_frame_equal(
+        pickle.loads(latest_pickle).collect().sort("a"),
+        pl.concat([v0, v1]).sort("a"),
+    )
+    assert_frame_equal(pickle.loads(pinned_pickle).collect(), v0)
 
 
 @pytest.mark.write_disk
