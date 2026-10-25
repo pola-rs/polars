@@ -205,7 +205,17 @@ impl SQLVisitor for AmbiguousColumnVisitor<'_> {
         if self.subquery_depth > 0 {
             return ControlFlow::Continue(());
         }
-        if let SQLExpr::Identifier(ident) = expr {
+        let col = match expr {
+            SQLExpr::Identifier(ident) => Some(ident),
+            // A struct path (`s.f`) whose first part names no relation reads that column.
+            SQLExpr::CompoundIdentifier(parts)
+                if match_qualifier(parts, self.relations.iter()).is_none() =>
+            {
+                parts.first()
+            },
+            _ => None,
+        };
+        if let Some(ident) = col {
             if let Err(err) = check_ambiguous_column(
                 &ident.value,
                 self.joined_aliases,

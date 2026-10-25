@@ -2095,6 +2095,39 @@ def test_ambiguous_column_detection_in_joins() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT s.f FROM a JOIN c ON a.k = c.k",
+        "SELECT a.k FROM a JOIN c ON a.k = c.k WHERE s.f > 15",
+    ],
+)
+def test_ambiguous_struct_path_in_joins(query: str) -> None:
+    # `s` is a struct column of both relations, as `k` is a column of both
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "s": [{"f": 10}, {"f": 20}]}),
+        "c": pl.DataFrame({"k": [1, 2], "s": [{"f": 77}, {"f": 88}]}),
+    }
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r'ambiguous reference to column "s" \(use one of: a\.s, c\.s\)',
+    ):
+        pl.SQLContext(frames).execute(query, eager=True)
+
+    res = pl.SQLContext(frames).execute(
+        "SELECT a.s.f AS x, c.s.f AS y FROM a JOIN c ON a.k = c.k ORDER BY x",
+        eager=True,
+    )
+    assert res.rows() == [(10, 77), (20, 88)]
+
+    # a USING column is one column
+    frames["c"] = pl.DataFrame({"k": [1, 2], "s": [{"f": 10}, {"f": 99}]})
+    res = pl.SQLContext(frames).execute(
+        "SELECT s.f FROM a JOIN c USING (s)", eager=True
+    )
+    assert res.rows() == [(10,)]
+
+
 def test_join_relations_sharing_last_name_part() -> None:
     # `tpch.lineitem` and `tpch_sf100.lineitem` are both called `lineitem`; the join
     # itself is fine, only a qualifier naming both is ambiguous
