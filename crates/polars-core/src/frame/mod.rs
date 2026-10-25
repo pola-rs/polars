@@ -1535,23 +1535,26 @@ impl DataFrame {
         // a lot of indirection in both sorting and take; rechunking the owned
         // frame frees the old chunks
         let mut df = self;
-        // Keys that are columns of this frame take the rechunked columns, so
-        // that their old chunks are freed too.
-        let frame_key_idxs: Vec<Option<usize>> = by_column
-            .iter()
-            .map(|c| {
-                let s = c.as_series()?;
-                df.columns()
-                    .iter()
-                    .position(|dc| dc.as_series().is_some_and(|ds| Arc::ptr_eq(&ds.0, &s.0)))
-            })
-            .collect();
-        let df = df.rechunk_mut_par();
-        for (c, idx) in by_column.iter_mut().zip(frame_key_idxs) {
-            if let Some(idx) = idx {
-                *c = df.columns()[idx].clone();
+        if df.columns().iter().any(|c| c.n_chunks() > 1) {
+            // Keys that are columns of this frame take the rechunked columns,
+            // so that their old chunks are freed too.
+            let frame_key_idxs: Vec<Option<usize>> = by_column
+                .iter()
+                .map(|c| {
+                    let s = c.as_series()?;
+                    let idx = df.get_column_index(s.name())?;
+                    let ds = df.columns()[idx].as_series()?;
+                    Arc::ptr_eq(&ds.0, &s.0).then_some(idx)
+                })
+                .collect();
+            df.rechunk_mut_par();
+            for (c, idx) in by_column.iter_mut().zip(frame_key_idxs) {
+                if let Some(idx) = idx {
+                    *c = df.columns()[idx].clone();
+                }
             }
         }
+        let df = &df;
         let mut take = match (by_column.len(), has_nested) {
             (1, false) => {
                 let s = &by_column[0];
