@@ -519,20 +519,12 @@ def test_sink_failed_query_leaves_no_object(
         with pytest.raises(pl.exceptions.InvalidOperationError):
             sink(lf, "s3://bucket/out", storage_options=s3.storage_options)
 
-        # A started upload is aborted in the background.
-        deadline = time.monotonic() + 10
-        while (
-            "POST uploads" in requests
-            and "DELETE uploadId" not in requests
-            and time.monotonic() < deadline
-        ):
-            time.sleep(0.01)
-        time.sleep(0.2)
-
         # `POST uploadId` completes a multipart upload.
         assert "PUT" not in requests
         assert "POST uploadId" not in requests
         assert s3.client.list_objects_v2(Bucket="bucket")["KeyCount"] == 0
+        # A started upload was aborted before the sink returned.
+        assert "Uploads" not in s3.client.list_multipart_uploads(Bucket="bucket")
 
 
 @pytest.mark.slow

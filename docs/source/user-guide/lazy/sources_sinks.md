@@ -38,11 +38,13 @@ output_folder/0000000f.parquet
 output_folder/00000010.parquet
 ```
 
-If the query fails, the sink raises the query's error and doesn't finish its output. No object is
-created on cloud storage, and a local file the sink already opened stays unfinished. For plain CSV
-and NDJSON, that file is a readable prefix of the output, so delete it after a failure. With
-`PartitionBy`, files closed before the failure (by `max_rows_per_file` or the open-file limit) are
-complete and stay.
+If the query fails, the sink stops writing, then raises the query's error, and doesn't finish its
+output. No object is created on cloud storage, and an upload the sink started is aborted. A local
+file the sink already opened stays unfinished. For plain CSV and NDJSON, that file is a readable
+prefix of the output, so delete it after a failure. With `PartitionBy`, files closed before the
+failure (by `max_rows_per_file` or the open-file limit) are complete and stay. An upload cut off by
+a crash can't be aborted; a lifecycle rule on the bucket that aborts incomplete multipart uploads
+cleans those up.
 
 ## Multiplexing sinks
 

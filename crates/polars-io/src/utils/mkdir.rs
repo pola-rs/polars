@@ -21,19 +21,6 @@ pub fn mkdir_recursive(path: &PlRefPath) -> PolarsResult<()> {
         .map_err(|err| _limit_path_len_io_err(&parent, err))
 }
 
-/// Async counterpart of [`mkdir_recursive`].
-pub async fn tokio_mkdir_recursive(path: &PlRefPath) -> PolarsResult<()> {
-    let Some(parent) = writable_parent(path)? else {
-        return Ok(());
-    };
-
-    tokio::fs::DirBuilder::new()
-        .recursive(true)
-        .create(&parent)
-        .await
-        .map_err(|err| _limit_path_len_io_err(&parent, err))
-}
-
 /// The local directory that must exist before `path` can be opened for writing, or `None`
 /// when there is nothing to create.
 fn writable_parent(path: &PlRefPath) -> PolarsResult<Option<PathBuf>> {

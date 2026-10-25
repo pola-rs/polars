@@ -481,4 +481,43 @@ mod compressed_writer {
             }
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io::{self, Read, Write};
+
+        use super::CompressedWriter;
+
+        fn gzip_written(finish: bool) -> Vec<u8> {
+            let mut out = Vec::new();
+            let mut writer = CompressedWriter::gzip(&mut out, None);
+            writer.write_all(b"x\n1\n").unwrap();
+            writer.flush().unwrap();
+            if finish {
+                writer.finish().unwrap();
+            }
+            drop(writer);
+            out
+        }
+
+        #[test]
+        fn dropped_gzip_writer_leaves_no_trailer() {
+            let out = gzip_written(false);
+            assert!(!out.is_empty());
+            let err = flate2::read::GzDecoder::new(out.as_slice())
+                .read_to_end(&mut Vec::new())
+                .unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+        }
+
+        #[test]
+        fn finished_gzip_writer_is_complete() {
+            let out = gzip_written(true);
+            let mut decoded = Vec::new();
+            flate2::read::GzDecoder::new(out.as_slice())
+                .read_to_end(&mut decoded)
+                .unwrap();
+            assert_eq!(decoded, b"x\n1\n");
+        }
+    }
 }

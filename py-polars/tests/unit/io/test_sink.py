@@ -7,7 +7,6 @@ import re
 import subprocess
 import sys
 import threading
-import time
 from functools import partial
 from itertools import permutations
 from pathlib import Path
@@ -997,8 +996,6 @@ def test_sink_failed_query_does_not_finish_file(
     lf = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.Int32))
     with pytest.raises(InvalidOperationError):
         sink(lf, path)
-    # The bug finished the file in the background, after the error.
-    time.sleep(0.2)
     # An empty or missing file raises OSError.
     with pytest.raises((ComputeError, OSError)):
         read(path)
@@ -1019,7 +1016,6 @@ def test_sink_partitioned_failed_query_does_not_finish_files(
         pl.concat([rows, failing]).sink_parquet(
             pl.PartitionBy(tmp_path, key="k"), mkdir=True
         )
-    time.sleep(0.2)
     for path in tmp_path.rglob("*.parquet"):
         with pytest.raises((ComputeError, OSError)):
             pl.read_parquet(path)
@@ -1030,19 +1026,24 @@ def test_sink_partitioned_failed_query_cancels_rotated_file(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "1")
+    first_called = threading.Event()
     release_first = threading.Event()
+    first_returned = threading.Event()
     second_opened = threading.Event()
 
     # The first file opens only after the query failed, so it is rotated out unfinished.
     def provider(args: FileProviderArgs) -> str:
         if args.index_in_partition == 0:
-            release_first.wait(10)
+            first_called.set()
+            release_first.wait()
+            first_returned.set()
         else:
             second_opened.set()
         return f"{args.index_in_partition}.parquet"
 
     def fail(df: pl.DataFrame) -> pl.DataFrame:
-        second_opened.wait(10)
+        first_called.wait()
+        second_opened.wait()
         raise ValueError
 
     failing = pl.LazyFrame({"x": [3]}).map_batches(fail, streamable=True)
@@ -1056,32 +1057,20 @@ def test_sink_partitioned_failed_query_cancels_rotated_file(
             )
     finally:
         release_first.set()
-    time.sleep(0.5)
-    with pytest.raises((ComputeError, OSError)):
-        pl.read_parquet(tmp_path / "0.parquet")
+    first_returned.wait()
+    # The sink returned only after the open of the first file was cancelled.
+    assert not (tmp_path / "0.parquet").exists()
 
 
 @pytest.mark.parametrize("sink", [pl.LazyFrame.sink_csv, pl.LazyFrame.sink_ndjson])
 @pytest.mark.write_disk
-def test_sink_failed_query_does_not_finish_gzip(
-    tmp_path: Path, sink: Any, plmonkeypatch: PlMonkeyPatch
-) -> None:
-    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "1")
+def test_sink_failed_query_does_not_finish_gzip(tmp_path: Path, sink: Any) -> None:
     path = tmp_path / "out.gz"
-
-    # Fails once the writer has written to the file; an async writer buffers instead.
-    def fail(df: pl.DataFrame) -> pl.DataFrame:
-        deadline = time.monotonic() + 1
-        while not path.exists() or path.stat().st_size == 0:
-            if time.monotonic() > deadline:
-                break
-            time.sleep(0.01)
-        raise ValueError
-
-    failing = pl.LazyFrame({"x": [3]}).map_batches(fail, streamable=True)
-    lf = pl.concat([pl.LazyFrame({"x": [1, 2]}), failing], parallel=False)
-    with pytest.raises(ValueError):
-        sink(lf, path, compression="gzip")
+    rows = pl.LazyFrame({"x": pl.int_range(1_000_000, eager=True)})
+    failing = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.Int64))
+    with pytest.raises(InvalidOperationError):
+        sink(pl.concat([rows, failing], parallel=False), path, compression="gzip")
+    # What was written before the failure has no gzip trailer.
     data = path.read_bytes()
     if data:
         with pytest.raises(EOFError):

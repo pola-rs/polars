@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
@@ -26,6 +27,7 @@ pub struct PartitionSinkStarter {
     pub num_pipelines_per_sink: NonZeroUsize,
     pub sinked_path_info_list: Option<SinkedPathInfoList>,
     pub task_metrics: Option<Arc<TaskMetricAggregator>>,
+    pub tasks: WaitToken,
 }
 
 impl PartitionSinkStarter {
@@ -43,11 +45,13 @@ impl PartitionSinkStarter {
         });
         let file_open_task = tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn({
             let path_info_entry = path_info_entry.clone();
-            async move {
+            let token = self.tasks.clone();
+            self.tasks.clone().hold_until_drop(async move {
                 file_provider
                     .open_file(file_provider_args, path_info_entry)
                     .await
-            }
+                    .map(|target| target.holding(token))
+            })
         }));
 
         let (morsel_tx, morsel_rx) = connector::connector();
@@ -59,6 +63,7 @@ impl PartitionSinkStarter {
                 FileOpenTaskHandle::new(file_open_task, self.sync_on_close, finish_rx),
                 self.num_pipelines_per_sink,
                 self.task_metrics.clone(),
+                self.tasks.clone(),
             )?);
 
         let task_metrics = self.task_metrics.as_deref();

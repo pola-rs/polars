@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use object_store::PutPayload;
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsError, PolarsResult, polars_bail};
 use polars_utils::async_utils::error_capture::{ErrorCapture, ErrorHandle};
@@ -10,6 +11,7 @@ use polars_utils::async_utils::tokio_handle_ext;
 
 use crate::cloud::PolarsObjectStore;
 use crate::cloud::cloud_writer::multipart_upload::PlMultipartUpload;
+use crate::cloud::cloud_writer::{CLEANUP_TIMEOUT, hold, run_to_completion};
 use crate::metrics::OptIOMetrics;
 
 /// Cloud writer that provides the `put()` function, does not perform any buffering.
@@ -19,6 +21,8 @@ pub(super) struct InternalCloudWriter {
     pub(super) max_concurrency: NonZeroUsize,
     pub(super) io_metrics: OptIOMetrics,
     pub(super) state: InternalCloudWriterState,
+    /// Held by the upload's tasks, so that a waiter sees them stopped.
+    pub(super) wait_token: Option<WaitToken>,
 }
 
 pub(super) enum InternalCloudWriterState {
@@ -37,19 +41,61 @@ pub(super) struct StartedState {
     error_capture: ErrorCapture<PolarsError>,
 }
 
+impl StartedState {
+    /// Lets the part uploads in flight finish, then aborts the upload. Returns the first part
+    /// upload error.
+    async fn abort(self) -> PolarsResult<()> {
+        let StartedState {
+            tasks,
+            multipart,
+            error_handle,
+            error_capture,
+        } = self;
+
+        drop(error_capture);
+        // `error_handle` stays alive meanwhile, as dropping it stops the part uploads.
+        let drained = tokio::time::timeout(CLEANUP_TIMEOUT, tasks.collect::<Vec<_>>()).await;
+        if drained.is_err() && polars_core::config::verbose() {
+            eprintln!(
+                "[CloudWriter]: aborting with part uploads in flight, which may still be stored"
+            );
+        }
+        let result = error_handle.join().await;
+        multipart.abort().await;
+        result
+    }
+}
+
+impl Drop for InternalCloudWriter {
+    fn drop(&mut self) {
+        if let Some(state) = self.take_started_state() {
+            ASYNC.spawn(hold(self.wait_token.clone(), state.abort()));
+        }
+    }
+}
+
 impl InternalCloudWriter {
     async fn start(&mut self) -> PolarsResult<()> {
         if let WriterState::NotStarted = &self.state {
-            let path_ref = &self.path;
-            let multipart = PlMultipartUpload::new(
-                self.store
+            let store = self.store.clone();
+            let path = self.path.clone();
+            let wait_token = self.wait_token.clone();
+            // An upload created after this writer was dropped is aborted with the task's output.
+            let multipart = run_to_completion(self.wait_token.clone(), async move {
+                let path_ref = &path;
+                let inner = store
                     .exec_with_rebuild_retry_on_err(|s| async move {
                         s.put_multipart_opts(path_ref, object_store::PutMultipartOptions::default())
                             .await
                     })
-                    .await?,
-                self.store.error_context(),
-            );
+                    .await?;
+                Ok(PlMultipartUpload::new(
+                    inner,
+                    store.error_context(),
+                    wait_token,
+                ))
+            })
+            .await?;
 
             let (error_capture, error_handle) = ErrorCapture::new();
 
@@ -99,12 +145,13 @@ impl InternalCloudWriter {
     pub(super) async fn put(&mut self, payload: PutPayload) -> PolarsResult<()> {
         let io_metrics = self.io_metrics.clone();
         let max_concurrency = self.max_concurrency.get();
+        let wait_token = self.wait_token.clone();
 
         let state = self.get_or_init_started_state().await?;
 
         if state.error_handle.has_errored() {
             let state = self.take_started_state().unwrap();
-            return Err(state.error_handle.join().await.unwrap_err());
+            return run_to_completion(self.wait_token.clone(), state.abort()).await;
         }
 
         while state.tasks.len() >= max_concurrency {
@@ -116,9 +163,10 @@ impl InternalCloudWriter {
 
         let fut = async move { io_metrics.record_bytes_tx(num_bytes, upload_fut).await };
 
-        let handle = tokio_handle_ext::AbortOnDropHandle(
-            ASYNC.spawn(state.error_capture.clone().wrap_future(fut)),
-        );
+        let handle = tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(hold(
+            wait_token,
+            state.error_capture.clone().wrap_future(fut),
+        )));
 
         state.tasks.push(handle);
 
@@ -129,22 +177,26 @@ impl InternalCloudWriter {
     async fn put_single(&mut self, payload: PutPayload) -> PolarsResult<()> {
         self.state = WriterState::Finished;
 
-        let path_ref = &self.path;
+        let store = self.store.clone();
+        let path = self.path.clone();
+        let io_metrics = self.io_metrics.clone();
         let num_bytes = payload.content_length() as u64;
 
-        let upload_fut = self.store.exec_with_rebuild_retry_on_err(|s| {
-            let payload = payload.clone();
-            async move {
-                s.put_opts(path_ref, payload, object_store::PutOptions::default())
-                    .await
-            }
-        });
+        run_to_completion(self.wait_token.clone(), async move {
+            let path_ref = &path;
+            let upload_fut = store.exec_with_rebuild_retry_on_err(|s| {
+                let payload = payload.clone();
+                async move {
+                    s.put_opts(path_ref, payload, object_store::PutOptions::default())
+                        .await
+                }
+            });
 
-        self.io_metrics
-            .record_bytes_tx(num_bytes, upload_fut)
-            .await?;
+            io_metrics.record_bytes_tx(num_bytes, upload_fut).await?;
 
-        Ok(())
+            Ok(())
+        })
+        .await
     }
 
     /// Uploads `tail` and completes the object, via a single `PUT` if multipart never started.
@@ -157,25 +209,29 @@ impl InternalCloudWriter {
             self.put(payload).await?;
         }
 
-        let Some(StartedState {
-            mut multipart,
-            tasks,
-            error_handle,
-            error_capture,
-        }) = self.take_started_state()
-        else {
+        // In place, so that a drop meanwhile still aborts the upload.
+        if let WriterState::Started(state) = &mut self.state {
+            while !state.error_handle.has_errored()
+                && let Some(result) = state.tasks.next().await
+            {
+                result.unwrap();
+            }
+        }
+
+        let Some(state) = self.take_started_state() else {
             return Ok(());
         };
 
-        drop(error_capture);
-        error_handle.join().await?;
-
-        for handle in tasks {
-            handle.await.unwrap();
+        if state.error_handle.has_errored() {
+            return run_to_completion(self.wait_token.clone(), state.abort()).await;
         }
 
-        multipart.finish().await?;
+        let StartedState { mut multipart, .. } = state;
 
-        Ok(())
+        run_to_completion(self.wait_token.clone(), async move {
+            multipart.finish().await?;
+            Ok(())
+        })
+        .await
     }
 }

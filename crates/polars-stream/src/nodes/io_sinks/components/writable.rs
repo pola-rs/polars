@@ -1,5 +1,6 @@
 use std::io;
 
+use polars_async::primitives::wait_group::WaitToken;
 use polars_io::ExternalCompression;
 use polars_io::utils::compression::CompressedWriter;
 use polars_io::utils::file::Writable as WriteTargetVariant;
@@ -12,6 +13,8 @@ use crate::nodes::io_sinks::components::sinked_path_info_list::SinkedPathInfoEnt
 pub struct WriteTarget {
     variant: WriteTargetVariant,
     inner: WriteTargetInner,
+    /// Dropped last, so that a sink waiting on it sees the target closed or dropped.
+    token: Option<WaitToken>,
 }
 
 struct WriteTargetInner {
@@ -30,7 +33,16 @@ impl WriteTarget {
                 bytes_written: 0,
                 path_info,
             },
+            token: None,
         }
+    }
+
+    pub fn holding(mut self, token: WaitToken) -> Self {
+        if let WriteTargetVariant::Cloud(x) = &mut self.variant {
+            x.set_wait_token(token.clone());
+        }
+        self.token = Some(token);
+        self
     }
 
     pub fn as_writable(&mut self) -> Writable<'_> {

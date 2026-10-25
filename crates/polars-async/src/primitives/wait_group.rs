@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 
 use parking_lot::Mutex;
+use pin_project_lite::pin_project;
 
 #[derive(Default, Debug)]
 struct WaitGroupInner {
@@ -71,6 +72,30 @@ impl Drop for WaitGroupFuture<'_> {
 #[derive(Debug)]
 pub struct WaitToken {
     inner: Arc<WaitGroupInner>,
+}
+
+impl WaitToken {
+    /// Holds this token until `fut` is dropped, so that a waiter also sees the effects of its drop.
+    pub fn hold_until_drop<F: Future>(self, fut: F) -> TokenHeld<F> {
+        TokenHeld { fut, _token: self }
+    }
+}
+
+pin_project! {
+    // Fields drop in declaration order: the future before the token.
+    pub struct TokenHeld<F> {
+        #[pin]
+        fut: F,
+        _token: WaitToken,
+    }
+}
+
+impl<F: Future> Future for TokenHeld<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.project().fut.poll(cx)
+    }
 }
 
 impl Clone for WaitToken {
