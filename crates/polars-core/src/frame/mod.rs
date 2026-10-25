@@ -1430,7 +1430,7 @@ impl DataFrame {
         }
         let by_column = self.select_to_vec(by)?;
 
-        let mut out = self.sort_impl(by_column, sort_options, None)?;
+        let mut out = self.clone().sort_impl(by_column, sort_options, None)?;
         unsafe { out.set_schema_from(self) };
 
         *self = out;
@@ -1441,7 +1441,7 @@ impl DataFrame {
     #[doc(hidden)]
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
     pub fn sort_impl(
-        &self,
+        self,
         by_column: Vec<Column>,
         sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
@@ -1451,7 +1451,7 @@ impl DataFrame {
             return if let Some((offset, len)) = slice {
                 Ok(self.slice(offset, len))
             } else {
-                Ok(self.clone())
+                Ok(self)
             };
         }
 
@@ -1485,7 +1485,7 @@ impl DataFrame {
         };
 
         if self.shape_has_zero() {
-            let mut out = self.clone();
+            let mut out = self;
             set_sorted(&mut out);
             return Ok(out);
         }
@@ -1524,7 +1524,7 @@ impl DataFrame {
                 return if let Some((offset, len)) = slice {
                     Ok(self.slice(offset, len))
                 } else {
-                    Ok(self.clone())
+                    Ok(self)
                 };
             }
         }
@@ -1532,8 +1532,9 @@ impl DataFrame {
         let has_nested = by_column.iter().any(|s| s.dtype().is_nested());
         let allow_threads = sort_options.multithreaded;
 
-        // a lot of indirection in both sorting and take
-        let mut df = self.clone();
+        // a lot of indirection in both sorting and take; rechunking the owned
+        // frame frees the old chunks
+        let mut df = self;
         let df = df.rechunk_mut_par();
         let mut take = match (by_column.len(), has_nested) {
             (1, false) => {

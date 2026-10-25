@@ -15,7 +15,7 @@ use polars_core::frame::DataFrame;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
-use polars_core::series::{IntoSeries, IsSorted, Series};
+use polars_core::series::{IntoSeries, Series};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::PolarsResult;
 use polars_ooc::{
@@ -310,7 +310,7 @@ impl SortNode {
             self.tuning.flush_ahead(num_tasks),
             // Rounded up, so that no bucket with rows is free.
             total_bytes.div_ceil(total_rows.max(1) as u64).max(1),
-            sort_index_row_bytes(self.input_schema.get(&self.key).unwrap()),
+            sort_index_row_bytes(&self.key_dtype),
             spill_ctx,
         ))
     }
@@ -469,17 +469,11 @@ fn key_series(df: &DataFrame, key: &str) -> PolarsResult<Series> {
 
 /// Sorts `df` and restricts it to the `(offset, len)` row range of the result.
 fn sort_range(
-    mut df: DataFrame,
+    df: DataFrame,
     key: &str,
     sort_options: SortMultipleOptions,
     (offset, len): (usize, usize),
 ) -> PolarsResult<DataFrame> {
-    // `sort_impl` sorts a rechunked copy. Rechunking the owned frame here
-    // instead frees the old chunks, unless the key is sorted already and no
-    // copy is made.
-    if df.column(key)?.is_sorted_flag() == IsSorted::Not {
-        df.rechunk_mut_par();
-    }
     let by_column = vec![df.column(key)?.clone()];
     if offset == 0 {
         // A `(0, len)` slice would send `sort_impl` down the bottom-k path,

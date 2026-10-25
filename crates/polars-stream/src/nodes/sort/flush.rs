@@ -43,25 +43,32 @@ pub struct PendingBucket {
     pub needs_sort: bool,
 }
 
+#[derive(Clone, Copy)]
+struct BucketMemory {
+    /// Held at once while loading and sorting the bucket.
+    sort: u64,
+    /// Kept by its sorted rows until they are all emitted. The emitted rows
+    /// can be a slice of all the sorted or loaded rows, which keeps them all.
+    kept: u64,
+}
+
 impl PendingBucket {
-    /// The memory held at once while loading and sorting this bucket, and the
-    /// memory its sorted rows keep until they are all emitted. The emitted
-    /// rows can be a slice of all the sorted or loaded rows, which keeps them
-    /// all.
-    fn memory(&self, row_bytes: u64, index_row_bytes: u64) -> (u64, u64) {
+    fn memory(&self, row_bytes: u64, index_row_bytes: u64) -> BucketMemory {
         let rows = self.frames.iter().map(SpillFrame::height).sum::<usize>() as u64;
         let kept = rows * row_bytes;
-        if !self.needs_sort {
-            return (kept, kept);
-        }
-        (2 * kept + rows * index_row_bytes, kept)
+        let sort = if self.needs_sort {
+            2 * kept + rows * index_row_bytes
+        } else {
+            kept
+        };
+        BucketMemory { sort, kept }
     }
 }
 
 struct FlushInner {
     /// Buckets not yet sorted, in output order, with the sequence number of
-    /// their first morsel and their memory (see `PendingBucket::memory`).
-    unsorted: VecDeque<(PendingBucket, u64, (u64, u64))>,
+    /// their first morsel and their memory.
+    unsorted: VecDeque<(PendingBucket, u64, BucketMemory)>,
     /// Sorted rows waiting to be emitted, by the sequence number of their
     /// first morsel, with the memory counted for them until they are all
     /// emitted.
@@ -98,7 +105,7 @@ pub struct Flush {
 
 enum Step<'a> {
     Emit(DataFrame, u64),
-    Sort(PendingBucket, u64, (u64, u64)),
+    Sort(PendingBucket, u64, BucketMemory),
     Wait(tokio::sync::futures::Notified<'a>),
     Stop,
 }
@@ -157,18 +164,20 @@ impl Flush {
                 inner.sorted.insert(seq + 1, (rest, bytes));
             } else {
                 inner.ahead_bytes -= bytes;
-                self.notify.notify_waiters();
+                if !inner.unsorted.is_empty() {
+                    self.notify.notify_waiters();
+                }
             }
             return Step::Emit(df.slice(0, self.morsel_size), seq);
         }
 
-        if let Some((_, _, (sort_bytes, _))) = inner.unsorted.front()
+        if let Some((_, _, memory)) = inner.unsorted.front()
             && inner.sorted.len() + inner.num_sorting < self.max_ahead
         {
             let nothing_ahead = inner.sorted.is_empty() && inner.num_sorting == 0;
-            if nothing_ahead || inner.ahead_bytes + sort_bytes <= self.max_ahead_bytes {
+            if nothing_ahead || inner.ahead_bytes + memory.sort <= self.max_ahead_bytes {
                 let (bucket, seq, memory) = inner.unsorted.pop_front().unwrap();
-                inner.ahead_bytes += memory.0;
+                inner.ahead_bytes += memory.sort;
                 inner.num_sorting += 1;
                 return Step::Sort(bucket, seq, memory);
             }
@@ -183,7 +192,7 @@ impl Flush {
     fn finish_sort(
         &self,
         seq: u64,
-        (sort_bytes, kept_bytes): (u64, u64),
+        memory: BucketMemory,
         sorted: PolarsResult<DataFrame>,
     ) -> PolarsResult<()> {
         let result = {
@@ -191,8 +200,8 @@ impl Flush {
             inner.num_sorting -= 1;
             match sorted {
                 Ok(df) => {
-                    inner.ahead_bytes -= sort_bytes - kept_bytes;
-                    inner.sorted.insert(seq, (df, kept_bytes));
+                    inner.ahead_bytes -= memory.sort - memory.kept;
+                    inner.sorted.insert(seq, (df, memory.kept));
                     Ok(())
                 },
                 Err(e) => {
@@ -237,7 +246,7 @@ impl Flush {
                             wait_group.wait().await;
                         },
                         Step::Sort(bucket, seq, memory) => {
-                            let sorted = sort_bucket(bucket, memory.0, key, &sort_options).await;
+                            let sorted = sort_bucket(bucket, memory.sort, key, &sort_options).await;
                             self.finish_sort(seq, memory, sorted)?;
                         },
                         Step::Wait(notified) => notified.await,
