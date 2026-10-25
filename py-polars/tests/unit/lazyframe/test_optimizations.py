@@ -1673,14 +1673,6 @@ def test_simplify_boolean_identities(expr: pl.Expr, simplified: str) -> None:
         pl.when(pl.col("p"))
         .then(pl.lit(1).is_in(pl.Series([[1]])))
         .otherwise(pl.lit(1).is_in(pl.Series([[1]]))),
-        # The struct reads `p`, so it is not a scalar.
-        pl.when(
-            pl.struct(pl.lit(True).alias("v"))
-            .struct.with_fields(pl.col("p").alias("v"))
-            .struct.field("v")
-        )
-        .then(1)
-        .otherwise(1),
         # Bitwise `|` on integers gives `null` for a `null` in `b`.
         pl.col("a") & (pl.col("a") | pl.col("b")),
         pl.col("a") | (pl.col("a") & pl.col("b")),
@@ -1702,6 +1694,21 @@ def test_simplify_boolean_identities_keep_length(expr: pl.Expr) -> None:
     assert out.height == 4
     assert_frame_equal(
         out, q.collect(optimizations=QueryOptFlags(simplify_expression=False))
+    )
+
+
+def test_simplify_when_then_struct_eval_keeps_length() -> None:
+    # The struct reads `p`, so it is not a scalar. Only the streaming engine
+    # accepts a column field on a scalar struct.
+    p = (
+        pl.struct(pl.lit(True).alias("v"))
+        .struct.with_fields(pl.col("p").alias("v"))
+        .struct.field("v")
+    )
+    q = pl.LazyFrame({"p": [True, False, None]}).select(pl.when(p).then(1).otherwise(1))
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        pl.DataFrame({"literal": [1, 1, 1]}, schema={"literal": pl.Int32}),
     )
 
 
