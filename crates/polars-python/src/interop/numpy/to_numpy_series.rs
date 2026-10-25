@@ -492,6 +492,8 @@ fn list_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<
 
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
 fn array_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
+    // Null rows may store any values, so null them in the inner values.
+    let s = s.propagate_nulls().unwrap_or_else(|| s.clone());
     let ca = s.array().unwrap();
     let s_inner = ca.get_inner();
     let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable)?;

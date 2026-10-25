@@ -28,14 +28,34 @@ pub struct InputStats {
     pub cold_rows: u64,
     pub cold_bytes: u64,
     pub pre_agg_groups: u64,
+    /// The pre-aggregate groups, or the values they hold if that is more.
+    pub pre_agg_work: u64,
     pub pre_agg_key_bytes: u64,
+    /// The size of the states of reductions that grow with the values of a group.
+    pub pre_agg_state_bytes: u64,
     pub num_reductions: u64,
+    /// Whether a reduction has states that grow with the values of a group.
+    pub has_growing_states: bool,
     pub estimated_groups: u64,
 }
 
 impl InputStats {
     fn work(&self) -> u64 {
-        self.cold_rows + self.pre_agg_groups
+        self.cold_rows + self.pre_agg_work
+    }
+
+    /// The estimated memory of the whole result, in bytes.
+    fn result_bytes(&self) -> u64 {
+        let result_bytes = self.estimated_groups.saturating_mul(self.group_bytes());
+        if self.has_growing_states {
+            // A group can hold as many values as it received, so its size is not known from
+            // the number of groups.
+            let received_bytes =
+                self.cold_bytes + self.pre_agg_key_bytes + self.pre_agg_state_bytes;
+            result_bytes.max(received_bytes)
+        } else {
+            result_bytes
+        }
     }
 
     /// The estimated memory of one group of the result, in bytes.
@@ -90,9 +110,7 @@ impl GroupByTuning {
 
         let t = num_pipelines.max(1) as u64;
         let n_rows = (work / self.min_rows_per_partition).clamp(1, t);
-        let result_bytes = (2 * t)
-            .saturating_mul(stats.estimated_groups)
-            .saturating_mul(stats.group_bytes());
+        let result_bytes = (2 * t).saturating_mul(stats.result_bytes());
         let n_memory = result_bytes.div_ceil((budget() / 2).max(1));
         if n_memory <= t {
             return n_rows.max(n_memory) as usize;
