@@ -29,7 +29,8 @@ use sqlparser::ast::{
 use crate::catalog::CatalogSpellings;
 use crate::context::{
     CORRELATED_COL_PREFIX, FilterMode, RelationName, TableInfo, combine_conditions,
-    declared_relations, flatten_and_conditions, get_table_name, match_qualifier, relation_name,
+    declared_relations, flatten_and_conditions, get_table_name, join_idents, match_qualifier,
+    relation_name,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::functions::PolarsSQLFunctions;
@@ -209,7 +210,10 @@ impl SQLContext {
             return Ok(None);
         };
 
-        let mut inner_lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
+        let mut inner_lf = self.execute_isolated(|ctx| {
+            ctx.nesting += 1;
+            ctx.execute_query(subquery)
+        })?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
         polars_ensure!(inner_schema.len() == 1, SQLSyntax: "SQL subquery returns more than one column");
         let right_key = col(inner_schema.get_at_index(0).unwrap().0.clone());
@@ -579,6 +583,63 @@ impl SQLContext {
         self.check_select_column_refs(select)?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
         Ok(Some((inner_names, inner_lf, inner_schema)))
+    }
+
+    /// The error for a dotted name of `subquery` whose first part names no relation or
+    /// column of the subquery, nor of this query (`outer_schema`), as this query reports
+    /// it. Only for a subquery that no other subquery encloses, whose names can't read a
+    /// scope further out; names in nested subqueries are not checked.
+    pub(crate) fn unknown_qualifier_err(
+        &self,
+        subquery: &Query,
+        outer_schema: Option<&Schema>,
+    ) -> Option<PolarsError> {
+        let SetExpr::Select(select) = subquery.body.as_ref() else {
+            return None;
+        };
+        if self.nesting > 0 {
+            return None;
+        }
+        let mut inner = self.isolated();
+        let (inner_names, _, inner_schema) = inner.resolve_subquery_from(select).ok()??;
+        let known = |parts: &[Ident]| {
+            match_qualifier(parts, inner_names.iter()).is_some()
+                || inner_schema.contains(&parts[0].value)
+                // An ambiguous qualifier is an error of its own, raised elsewhere.
+                || !matches!(self.resolve_qualifier(parts), Ok(None))
+                || outer_schema.is_some_and(|schema| schema.contains(&parts[0].value))
+        };
+        let projection = select.projection.iter().filter_map(|item| match item {
+            SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
+            _ => None,
+        });
+        let mut unknown = None;
+        for expr in projection.chain(&select.selection).chain(&select.having) {
+            let _ = visit_top_level_compound_idents(expr, |parts| {
+                if known(parts) {
+                    return ControlFlow::Continue(());
+                }
+                unknown = Some(parts.to_vec());
+                ControlFlow::Break(())
+            });
+            if unknown.is_some() {
+                break;
+            }
+        }
+        let parts = unknown?;
+        let hint = (1..parts.len())
+            .rev()
+            .find_map(|len| {
+                let qualifier = join_idents(&parts[..len]);
+                inner
+                    .hidden_by_alias_hint(&qualifier)
+                    .or_else(|| self.hidden_by_alias_hint(&qualifier))
+            })
+            .unwrap_or_default();
+        Some(polars_err!(
+            SQLInterface: "no table or struct column named '{}' found{}",
+            parts[0], hint
+        ))
     }
 
     // Split a subquery's WHERE conjuncts into a `SubqueryConjuncts`, or `None`
@@ -2876,7 +2937,8 @@ fn correlation_key_pair(
 
 // Whether every column the expression references resolves to the inner relation,
 // so it can be evaluated against the inner frame alone. A qualified name resolves
-// through its qualifier: only an inner relation's name or alias counts as inner.
+// through its qualifier: an inner relation's name or alias, or an inner struct
+// column, counts as inner.
 // An unqualified name binds to the innermost scope that has it, so the inner
 // schema wins over the outer one.
 fn binds_to_inner_relation(
@@ -2950,8 +3012,12 @@ fn binds_to_inner_column(
 ) -> bool {
     match expr {
         SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),
-        SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, inner_names.iter())
-            .is_some_and(|(_, len)| inner_schema.contains(&parts[len].value)),
+        SQLExpr::CompoundIdentifier(parts) => match match_qualifier(parts, inner_names.iter()) {
+            Some((_, len)) => inner_schema.contains(&parts[len].value),
+            // A field of an inner struct column (`s.f`), which an outer relation `s`
+            // doesn't hide.
+            None => matches!(inner_schema.get(&parts[0].value), Some(DataType::Struct(_))),
+        },
         _ => true,
     }
 }
@@ -3534,6 +3600,40 @@ fn declared_anywhere(query: &Query, spellings: &CatalogSpellings) -> Vec<Relatio
     let mut declared = Declared(Vec::new(), spellings);
     let _ = dyn_visit::visit(query, &mut declared);
     declared.0
+}
+
+/// Visit the dotted names of `expr` outside its nested subqueries.
+fn visit_top_level_compound_idents(
+    expr: &SQLExpr,
+    f: impl FnMut(&[Ident]) -> ControlFlow<()>,
+) -> ControlFlow<()> {
+    struct TopLevel<F> {
+        query_depth: usize,
+        f: F,
+    }
+
+    impl<F: FnMut(&[Ident]) -> ControlFlow<()>> Visitor for TopLevel<F> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match expr {
+                SQLExpr::CompoundIdentifier(parts) if self.query_depth == 0 => (self.f)(parts),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    dyn_visit::visit(expr, &mut TopLevel { query_depth: 0, f })
 }
 
 /// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`

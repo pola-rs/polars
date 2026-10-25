@@ -1814,6 +1814,33 @@ def test_subquery_struct_field_is_not_correlated(projection: str, field: str) ->
 
 
 @pytest.mark.parametrize(
+    ("exists", "expected"), [("EXISTS", [1, 2]), ("NOT EXISTS", [])]
+)
+@pytest.mark.parametrize("field", ["s.id", "c.s.id", "a.id", "c.a.id"])
+def test_exists_subquery_struct_field_is_not_correlated(
+    exists: str, expected: list[int], field: str
+) -> None:
+    # `s` and `a` are struct columns of `c`; `a` is also the outer relation.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2]}),
+            "c": pl.DataFrame(
+                {
+                    "id": [1, 3],
+                    "s": [{"id": 1}, {"id": 2}],
+                    "a": [{"id": 1}, {"id": 2}],
+                }
+            ),
+        },
+        query=f"SELECT a.id FROM a WHERE {exists} (SELECT 1 FROM c WHERE {field} = c.id)",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": expected},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
     ("query", "expected"),
     [
         (
@@ -2130,6 +2157,34 @@ def test_correlated_subquery_inner_subquery_filter_join_tree() -> None:
         expected={"x": [100], "v": [5]},
         engines=ENGINES,
     )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "EXISTS (SELECT 1 FROM c WHERE c.id = {name}.id)",
+        "NOT EXISTS (SELECT 1 FROM c WHERE c.id = {name}.id)",
+        "a.id IN (SELECT c.id FROM c WHERE c.id = {name}.id)",
+        "a.id = (SELECT MAX(c.id) FROM c WHERE c.id = {name}.id)",
+    ],
+)
+@pytest.mark.parametrize(
+    ("name", "error"),
+    [
+        ("nope", r"^no table or struct column named 'nope' found(\n|$)"),
+        ("t", r"""named 't' found; table "t" is hidden by alias "a"(\n|$)"""),
+    ],
+)
+def test_subquery_unknown_qualifier(condition: str, name: str, error: str) -> None:
+    # A qualifier that names no relation or struct column of either query is an
+    # error, as in the outer query; the alias `a` hides the table `t`.
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    query = f"SELECT a.id FROM t AS a WHERE {condition.format(name=name)}"
+    with pytest.raises(pl.exceptions.SQLInterfaceError, match=error):
+        ctx.execute(query, eager=True)
 
 
 @pytest.mark.parametrize(
@@ -2567,3 +2622,58 @@ def test_correlated_decimal_float_keys(query: str) -> None:
         check_dtypes=False,
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "WITH x AS (SELECT a.id FROM t AS a WHERE {cond}) SELECT * FROM x",
+        "SELECT * FROM (SELECT a.id FROM t AS a WHERE {cond}) AS y",
+        "SELECT a.id FROM t AS a WHERE {cond} UNION ALL SELECT 9",
+    ],
+)
+def test_subquery_unknown_qualifier_in_cte_derived_table_set_operand(
+    query: str,
+) -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    cond = "EXISTS (SELECT 1 FROM c WHERE c.id = nope.id)"
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError,
+        match=r"^no table or struct column named 'nope' found(\n|$)",
+    ):
+        ctx.execute(query.format(cond=cond), eager=True)
+
+
+def test_subquery_qualifier_hidden_by_inner_alias() -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError,
+        match=r"""named 'c' found; table "c" is hidden by alias "x"(\n|$)""",
+    ):
+        ctx.execute(
+            "SELECT a.id FROM t AS a WHERE EXISTS (SELECT 1 FROM c AS x WHERE c.id = a.id)",
+            eager=True,
+        )
+
+
+def test_nested_subquery_reading_outermost_query() -> None:
+    # Not supported yet: `a` is the outermost relation, which the error must not
+    # report as unknown.
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+        d=pl.DataFrame({"id": [1, 2]}),
+    )
+    query = """
+        SELECT a.id FROM t AS a
+        WHERE EXISTS (SELECT 1 FROM c WHERE EXISTS (SELECT 1 FROM d WHERE d.id = a.id))
+    """
+    with pytest.raises(pl.exceptions.SQLInterfaceError) as exc:
+        ctx.execute(query, eager=True)
+    assert "named 'a'" not in str(exc.value)

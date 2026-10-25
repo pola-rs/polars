@@ -279,6 +279,9 @@ pub struct SQLContext {
     /// Whether a qualifier may only name a relation that a `FROM` declares, also before any
     /// `FROM` is processed. Kept by the contexts of subqueries.
     pub(crate) strict_relations: bool,
+    /// How many subqueries enclose this scope. CTEs, derived tables and set operands don't
+    /// count: they read no enclosing scope.
+    pub(crate) nesting: usize,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -345,6 +348,7 @@ impl Default for SQLContext {
             catalog_spellings: Default::default(),
             statement_time: Default::default(),
             strict_relations: false,
+            nesting: 0,
         }
     }
 }
@@ -885,6 +889,7 @@ impl SQLContext {
             catalog_spellings: self.catalog_spellings.clone(),
             statement_time: self.statement_time.clone(),
             strict_relations: self.strict_relations,
+            nesting: self.nesting + 1,
 
             ..Default::default()
         }
@@ -1077,6 +1082,8 @@ impl SQLContext {
         F: FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
     {
         let mut ctx = self.isolated();
+        // Not a subquery scope; a subquery caller counts one itself.
+        ctx.nesting = self.nesting;
 
         // Execute query with clean state (eg: nested/subquery)
         let lf = query(&mut ctx)?;
