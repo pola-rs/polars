@@ -885,3 +885,80 @@ def test_streaming_group_by_into_sampling_join(
         w=3000 + k,
     )
     assert_frame_equal(out, expected, check_row_order=False)
+
+
+def test_streaming_group_by_unique_n_unique_29904(group_by_mode: str) -> None:
+    n = 300
+    i = pl.int_range(n)
+    df = pl.select(
+        k=i % 7,
+        int=pl.when(i % 11 == 0).then(None).otherwise(i % 40),
+        float=pl.when(i % 13 == 0).then(float("nan")).otherwise((i % 5) - 2.0),
+        str=pl.when(i % 17 == 0).then(None).otherwise((i % 30).cast(pl.String)),
+        mixed_str=pl.Series(
+            [
+                "" if j % 23 == 0 else str(j % 30).rjust(11 + j % 3, "x")
+                for j in range(n)
+            ]
+        ),
+        bin=pl.Series([bytes([j % 7, 0, 255, j % 5] * (1 + j % 4)) for j in range(n)]),
+        bool=pl.when(i % 19 == 0).then(None).otherwise(i % 3 == 0),
+        cat=(i % 4).cast(pl.String).cast(pl.Categorical),
+        dt=pl.date(2020, 1, 1) + pl.duration(days=i % 3),
+        one=(i % 7).cast(pl.String).str.pad_start(20, "x"),
+    )
+    cols = pl.all().exclude("k", "one")
+    lf = (
+        df.lazy()
+        .group_by("k")
+        .agg(
+            cols.n_unique().name.suffix("_n_unique"),
+            cols.unique().name.suffix("_values"),
+            cols.drop_nulls().n_unique().name.suffix("_n_unique_non_null"),
+            pl.col("one").unique(),
+        )
+    )
+
+    dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert isinstance(dot, str)
+    assert dot.count('label="group-by') == 1
+    # The n_unique of each column is the length of its unique list.
+    assert "n_unique()" not in dot
+    assert dot.count(".unique().implode(") == df.width - 1
+
+    def sort_lists(lf: pl.LazyFrame, engine: Any) -> pl.DataFrame:
+        out = lf.collect(engine=engine).sort("k")
+        return out.with_columns(pl.col("^.*_values$").list.sort())
+
+    assert_frame_equal(sort_lists(lf, "streaming"), sort_lists(lf, "in-memory"))
+
+
+@pytest.mark.parametrize("repeats", [False, True])
+def test_streaming_group_by_unique_hot_table_switch(
+    repeats: bool, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "32")
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+    i = pl.int_range(8192)
+    v = i % 3 if repeats else i
+    df = pl.select(k=i % 64, v=v, s=v.cast(pl.String))
+    lf = (
+        df.lazy()
+        .group_by("k")
+        .agg(
+            pl.col("v").unique(),
+            pl.col("s").n_unique(),
+            pl.col("s").drop_nulls().n_unique().alias("s_non_null"),
+        )
+    )
+
+    out = lf.collect(engine="streaming")
+    switched = "stops using its hot table" in capfd.readouterr().err
+    assert switched != repeats
+
+    expected = lf.collect(engine="in-memory")
+    out, expected = (
+        x.sort("k").with_columns(pl.col("v").list.sort()) for x in (out, expected)
+    )
+    assert_frame_equal(out, expected)

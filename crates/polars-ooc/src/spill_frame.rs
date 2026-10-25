@@ -68,6 +68,10 @@ impl Spillable for DataFrame {
         Arc::new(file)
     }
 
+    fn spilled_bytes(location: &Self::Spilled) -> u64 {
+        location.size()
+    }
+
     async fn unspill(location: &Self::Spilled) -> Self {
         let path = location.path().to_owned();
         ASYNC
@@ -75,9 +79,12 @@ impl Spillable for DataFrame {
                 let file = std::fs::File::open(&path).unwrap_or_else(|e| {
                     panic!("failed to open spill file {:?}: {e}", path.display())
                 });
-                IpcStreamReader::new(file).finish().unwrap_or_else(|e| {
+                let df = IpcStreamReader::new(file).finish().unwrap_or_else(|e| {
                     panic!("failed to read spill file {:?}: {e}", path.display())
-                })
+                });
+                // This thread may not allocate again for a while, so count the frame now.
+                crate::global_alloc::flush_local_drift();
+                df
             })
             .await
             .unwrap()

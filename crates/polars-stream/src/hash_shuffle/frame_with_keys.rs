@@ -80,6 +80,10 @@ impl Spillable for FrameWithKeys {
         }
         Self { frame, keys, mask }
     }
+
+    fn spilled_bytes(spilled: &SpilledFrameWithKeys) -> u64 {
+        DataFrame::spilled_bytes(&spilled.frame) + HashKeys::spilled_bytes(&spilled.keys)
+    }
 }
 
 /// A `FrameWithKeys` that can spill, like `SpillFrame`: one `SpillToken`, its size known while
