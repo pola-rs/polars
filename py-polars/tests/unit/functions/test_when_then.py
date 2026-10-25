@@ -830,6 +830,11 @@ def test_when_then_simplification_scalar_branches() -> None:
     assert "when" in q.explain()
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [3, 3, 3]}))
 
+    # A scalar branch that is not taken is broadcast to the taken branch, so it can go.
+    q = lf.select(pl.when(False).then(pl.col("a").max()).otherwise(pl.col("a")))
+    assert "when" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
 
 def test_when_then_in_group_by_aggregated_22922() -> None:
     df = pl.DataFrame({"group": ["x", "y", "x", "y"], "value": [1, 2, 3, 4]})
