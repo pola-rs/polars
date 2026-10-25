@@ -4,6 +4,7 @@ use std::sync::{Arc, LazyLock, RwLock};
 use polars_async::ASYNC;
 use polars_async::executor::{self, JoinHandle, TaskPriority};
 use polars_config::config;
+use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::total_ord::TotalOrd;
 use polars_utils::with_drop::WithDrop;
 use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedSemaphorePermit, Semaphore as AsyncSemaphore};
@@ -139,7 +140,8 @@ impl MemoryManager {
     /// budget, waiting for the spills to finish. It stops early, without waiting for other work,
     /// when nothing more can be spilled and no spill is in progress.
     pub async fn reserve(&self, bytes: u64) -> MemoryReservation {
-        self.reserved.fetch_add(bytes, Ordering::Relaxed);
+        let old = self.reserved.fetch_add(bytes, Ordering::Relaxed);
+        PEAK_RESERVED.fetch_max(old + bytes);
         let reservation = MemoryReservation { bytes };
         while crate::estimate_memory_usage() + self.reserved.load(Ordering::Relaxed)
             > config().ooc_memory_budget_bytes()
@@ -506,11 +508,20 @@ pub(crate) struct PrefetchInProgressTracker {
 
 impl PrefetchInProgressTracker {
     pub fn new(bytes: u64) -> Self {
-        memory_manager()
+        let old = memory_manager()
             .est_prefetch_in_progress
             .fetch_add(bytes, Ordering::Relaxed);
+        PEAK_PREFETCH_IN_PROGRESS.fetch_max(old + bytes);
         Self { bytes }
     }
+}
+
+static PEAK_PREFETCH_IN_PROGRESS: RelaxedCell<u64> = RelaxedCell::new_u64(0);
+static PEAK_RESERVED: RelaxedCell<u64> = RelaxedCell::new_u64(0);
+
+/// The highest prefetch bytes in flight and reserved bytes seen so far, in this process.
+pub(crate) fn peak_prefetch_and_reserved() -> (u64, u64) {
+    (PEAK_PREFETCH_IN_PROGRESS.load(), PEAK_RESERVED.load())
 }
 
 impl Drop for PrefetchInProgressTracker {
