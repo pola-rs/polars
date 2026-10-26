@@ -116,8 +116,8 @@ pub fn physical_plan_to_graph(
     phys_sm: &DenseSlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
+    num_pipelines: usize,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
-    let num_pipelines = polars_config::config().max_threads();
     let mut ctx = GraphConversionContext {
         phys_sm,
         expr_arena,
@@ -990,6 +990,41 @@ fn to_graph_rec<'a>(
             ctx.graph.add_node(
                 nodes::is_sorted::IsSortedNode::new(*descending, *nulls_last, output_name.clone()),
                 [(input_key, input.port)],
+            )
+        },
+
+        SpillFrameSource { frames, schema } => ctx.graph.add_node(
+            nodes::spill_frame_source::SpillFrameSourceNode::new(
+                vec![frames.clone()],
+                schema.clone(),
+            ),
+            [],
+        ),
+
+        Recursive {
+            anchor,
+            externals,
+            step,
+        } => {
+            let anchor_schema = anchor.output_schema(ctx.phys_sm).clone();
+            let external_schemas = externals
+                .iter()
+                .map(|i| i.output_schema(ctx.phys_sm).clone())
+                .collect();
+            let input_keys = std::iter::once(anchor)
+                .chain(externals)
+                .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
+                .try_collect_vec()?;
+            ctx.add_node_with_metrics(
+                |registry| {
+                    nodes::recursive::RecursiveNode::new(
+                        anchor_schema,
+                        external_schemas,
+                        step.clone(),
+                        registry.task_metrics(),
+                    )
+                },
+                input_keys,
             )
         },
 

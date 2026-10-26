@@ -1614,3 +1614,158 @@ def test_scalar_window_order_by_key_removed() -> None:
     )
     assert "row_encode" not in q.explain()
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 3, 7, 4]}))
+
+
+@pytest.mark.parametrize(
+    ("expr", "simplified"),
+    [
+        (pl.col("p") & pl.col("p"), 'col("p")'),
+        (pl.col("p") | pl.col("p"), 'col("p")'),
+        (pl.col("a") & pl.col("a"), 'col("a")'),
+        (pl.col("p") & (pl.col("p") | pl.col("q")), 'col("p")'),
+        ((pl.col("q") & pl.col("p")) | pl.col("p"), 'col("p").alias("q")'),
+        (pl.col("p") == True, 'col("p")'),  # noqa: E712
+        (pl.col("p") != False, 'col("p")'),  # noqa: E712
+        (pl.col("p") == False, 'col("p").not()'),  # noqa: E712
+        (pl.lit(True) != pl.col("p"), 'col("p").not().alias("literal")'),
+        (pl.lit(True) & pl.col("p"), 'col("p").alias("literal")'),
+        (pl.lit(False) | pl.col("p"), 'col("p").alias("literal")'),
+        (
+            pl.when(pl.col("p")).then(True).otherwise(False),
+            'col("p").fill_null([false]).alias("literal")',
+        ),
+        (
+            pl.when(pl.col("p")).then(False).otherwise(True),
+            'col("p").fill_null([false]).not().alias("literal")',
+        ),
+        (pl.when(pl.col("p")).then(pl.col("a")).otherwise(pl.col("a")), 'col("a")'),
+        (pl.when(True).then(pl.col("a")), 'col("a")'),
+        (pl.when(False).then(0).otherwise(pl.col("a")), 'col("a").alias("literal")'),
+    ],
+)
+def test_simplify_boolean_identities(expr: pl.Expr, simplified: str) -> None:
+    lf = pl.LazyFrame(
+        {
+            "p": [True, False, None, True],
+            "q": [None, True, False, False],
+            "a": [1, None, 3, 4],
+        }
+    )
+    q = lf.select(expr)
+    assert f"SELECT [{simplified}]" in q.explain()
+    assert_frame_equal(
+        q.collect(), q.collect(optimizations=QueryOptFlags(simplify_expression=False))
+    )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        # Replacing these by the scalar operand would change the length.
+        pl.col("p").any() & (pl.col("p").any() | pl.col("q")),
+        pl.lit(True) & (pl.lit(True) | pl.col("q")),
+        pl.lit(False) | (pl.lit(False) & pl.col("q")),
+        pl.when(pl.col("p")).then(pl.col("a").max()).otherwise(pl.col("a").max()),
+        pl.when(pl.col("p")).then(pl.lit(1)).otherwise(pl.lit(1)),
+        # A one-row literal is broadcast to the other operand.
+        pl.lit(1).is_in(pl.Series([[1]]))
+        & (pl.lit(1).is_in(pl.Series([[1]])) | pl.col("p")),
+        pl.when(pl.col("p"))
+        .then(pl.lit(1).is_in(pl.Series([[1]])))
+        .otherwise(pl.lit(1).is_in(pl.Series([[1]]))),
+        # Bitwise `|` on integers gives `null` for a `null` in `b`.
+        pl.col("a") & (pl.col("a") | pl.col("b")),
+        pl.col("a") | (pl.col("a") & pl.col("b")),
+        # Not boolean, so `== true` is not the operand itself.
+        pl.col("a") == True,  # noqa: E712
+    ],
+)
+def test_simplify_boolean_identities_keep_length(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame(
+        {
+            "p": [True, False, None, True],
+            "q": [None, True, False, False],
+            "a": [1, None, 3, 4],
+            "b": [None, 1, None, 2],
+        }
+    )
+    q = lf.select(expr)
+    out = q.collect()
+    assert out.height == 4
+    assert_frame_equal(
+        out, q.collect(optimizations=QueryOptFlags(simplify_expression=False))
+    )
+
+
+def test_simplify_when_then_struct_eval_keeps_length() -> None:
+    # The struct reads `p`, so it is not a scalar. Only the streaming engine
+    # accepts a column field on a scalar struct.
+    p = (
+        pl.struct(pl.lit(True).alias("v"))
+        .struct.with_fields(pl.col("p").alias("v"))
+        .struct.field("v")
+    )
+    q = pl.LazyFrame({"p": [True, False, None]}).select(pl.when(p).then(1).otherwise(1))
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        pl.DataFrame({"literal": [1, 1, 1]}, schema={"literal": pl.Int32}),
+    )
+
+
+def test_simplify_boolean_identities_nondeterministic() -> None:
+    # Two draws of a random expression are not the same value.
+    shuffled = pl.int_range(pl.len()).shuffle()
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select(shuffled | shuffled)
+    assert "|" in q.explain()
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.when(pl.col("a")).then(True).otherwise(False),
+        pl.when(pl.col("a")).then(pl.col("p")).otherwise(pl.col("p")),
+        pl.col("s") & pl.col("s"),
+        pl.col("f") & pl.col("f"),
+        pl.col("p") & (pl.col("p") | pl.col("s")),
+    ],
+)
+def test_simplify_boolean_identities_keep_dtype_errors(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame(
+        {"p": [True, None], "a": [1, 2], "s": ["x", "y"], "f": [1.0, 2.0]}
+    )
+    with pytest.raises(
+        (pl.exceptions.SchemaError, pl.exceptions.InvalidOperationError)
+    ):
+        lf.select(expr).collect()
+
+
+def test_simplify_when_then_bool_literals_in_filter() -> None:
+    lf = pl.LazyFrame({"p": [True, False, None], "a": [1, 2, 3]})
+    q = lf.filter(pl.when(pl.col("p")).then(True).otherwise(False))
+    assert q.explain().startswith('FILTER col("p")')
+    assert_frame_equal(q.collect(), pl.DataFrame({"p": [True], "a": [1]}))
+
+    q = lf.filter(pl.when(pl.col("p")).then(False).otherwise(True))
+    assert_frame_equal(q.collect(), pl.DataFrame({"p": [False, None], "a": [2, 3]}))
+
+
+def test_simplify_unique_len_to_n_unique() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2], "a": [1, None, 1, 2]})
+    q = lf.group_by("g", maintain_order=True).agg(
+        pl.col("a").unique().len(), c=pl.col("a").unique().count()
+    )
+    plan = q.explain()
+    assert 'col("a").n_unique()' in plan
+    assert 'col("a").unique().count()' in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"g": [1, 2], "a": [2, 1], "c": [1, 1]},
+            schema={"g": pl.Int64, "a": pl.get_index_type(), "c": pl.get_index_type()},
+        ),
+    )
+
+    # `n_unique` does not support objects in groups.
+    lf = pl.LazyFrame({"g": [1, 1], "a": pl.Series([1, 1], dtype=pl.Object)})
+    q = lf.group_by("g").agg(pl.col("a").unique().len())
+    assert "n_unique" not in q.explain()

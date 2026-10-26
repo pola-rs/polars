@@ -45,6 +45,10 @@ impl SpillFile {
         &self.path
     }
 
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
     pub fn creation_aborted(mut self) {
         BYTES_SPILLED_TO_DISK.fetch_sub(self.size);
         core::mem::take(&mut self.path);

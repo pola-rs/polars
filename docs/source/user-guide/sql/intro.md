@@ -94,9 +94,21 @@ has no `default_namespace`, or `tpch.lineitem` when an attached catalog named `t
 
 Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
 registered there. If that detaches the default catalog, the default catalog on entry is restored.
-`CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet.
-`DROP TABLE IF EXISTS` and `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
-catalog only act on a registered table.
+
+`DROP TABLE [IF EXISTS] <name> [PURGE]` resolves the name as a query does: a registered table of
+that name is dropped from the context, else the catalog table is dropped from its catalog. Once no
+registered table matches, `DROP TABLE IF EXISTS` of a name reaches the catalog. The drop is
+permanent and runs at `execute()`. `PURGE` also asks the catalog to delete the table's data files,
+and only applies to catalog tables. A `DROP TABLE` of a catalog table takes one name.
+
+`CREATE TABLE <name> (<column>, ...)` resolves the name as a query does and creates an empty table
+in the catalog it resolves to, at `execute()`. With a default catalog, that includes names such as
+`tpch.t`; `CREATE TEMP TABLE` always creates a registered table instead, and its name cannot start
+with an attached catalog. `NOT NULL` makes a column a required field, and `LOCATION '...'` or
+`WITH ('location' = '...', 'format-version' = 2)` sets the table's location and properties.
+`CREATE TABLE ... AS SELECT`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet.
+`TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached catalog only acts on a
+registered table.
 
 !!! warning "Serialized plans"
 

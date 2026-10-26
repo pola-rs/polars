@@ -153,6 +153,16 @@ pub(crate) enum SerializableDslPlanNode {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    Recursive {
+        anchor: DslPlanKey,
+        step: DslPlanKey,
+        id: UniqueId,
+        round_local_caches: Arc<[UniqueId]>,
+    },
+    WorkingTable {
+        id: UniqueId,
+        schema: SchemaRef,
+    },
     #[allow(clippy::upper_case_acronyms)]
     SQL {
         query: Arc<String>,
@@ -380,6 +390,21 @@ fn convert_dsl_plan_to_serializable_plan(
             input_right: dsl_plan_key(input_right, arenas),
             key: key.clone(),
             maintain_order: *maintain_order,
+        },
+        DP::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => SP::Recursive {
+            anchor: dsl_plan_key(anchor, arenas),
+            step: dsl_plan_key(step, arenas),
+            id: *id,
+            round_local_caches: round_local_caches.clone(),
+        },
+        DP::WorkingTable { id, schema } => SP::WorkingTable {
+            id: *id,
+            schema: schema.clone(),
         },
         DP::SQL {
             query,
@@ -656,6 +681,21 @@ fn try_convert_serializable_plan_to_dsl_plan(
             input_right: get_dsl_plan(*input_right, ser_dsl_plan, arenas)?,
             key: key.clone(),
             maintain_order: *maintain_order,
+        }),
+        SP::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => Ok(DP::Recursive {
+            anchor: get_dsl_plan(*anchor, ser_dsl_plan, arenas)?,
+            step: get_dsl_plan(*step, ser_dsl_plan, arenas)?,
+            id: *id,
+            round_local_caches: round_local_caches.clone(),
+        }),
+        SP::WorkingTable { id, schema } => Ok(DP::WorkingTable {
+            id: *id,
+            schema: schema.clone(),
         }),
         SP::SQL {
             query,

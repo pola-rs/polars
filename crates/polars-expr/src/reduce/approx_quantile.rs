@@ -49,8 +49,7 @@ pub fn new_approx_quantile_sketch_reduction(
 }
 
 /// Like [`new_approx_quantile_sketch_reduction`], but outputs the serialized
-/// ingesting state of each group, to be merged by
-/// [`new_approx_quantile_merge_reduction`].
+/// ingesting state of each group.
 pub fn new_approx_quantile_state_reduction(
     dtype: DataType,
     method: ApproxQuantileMethod,

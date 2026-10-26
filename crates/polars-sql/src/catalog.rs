@@ -5,14 +5,16 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    Ident, ObjectName, ObjectNamePart, Query, SetExpr, Statement, TableFactor, Visitor, VisitorMut,
-    With,
+    ColumnDef, ColumnOption, CreateTableOptions, Expr, Ident, ObjectName, ObjectNamePart, Query,
+    SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value, ValueWithSpan, Visitor,
+    VisitorMut, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 use sqlparser::tokenizer::{Location, Span};
 
 use crate::dyn_visit;
+use crate::types::map_sql_dtype_to_polars;
 
 /// A table of an attached catalog that a statement reads.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -21,6 +23,40 @@ pub struct CatalogTable {
     pub catalog: String,
     /// The table's identifier in the catalog: namespace parts, then the table name.
     pub identifier: Vec<String>,
+}
+
+/// A statement changing a catalog table, for the caller to perform (see
+/// [`SQLContext::catalog_ddl`](crate::SQLContext::catalog_ddl)).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CatalogDdl {
+    /// `DROP TABLE [IF EXISTS] <name> [PURGE]`.
+    DropTable {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table it resolves to.
+        table: CatalogTable,
+        /// `IF EXISTS`.
+        if_exists: bool,
+        /// `PURGE`: also delete the data files.
+        purge: bool,
+    },
+    /// `CREATE TABLE [IF NOT EXISTS] <name> (<column>, ...)`.
+    CreateTable {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to create.
+        table: CatalogTable,
+        /// `IF NOT EXISTS`.
+        if_not_exists: bool,
+        /// The columns.
+        schema: Schema,
+        /// The columns declared `NOT NULL`.
+        required: Vec<String>,
+        /// The table location, from `LOCATION` or the `location` option.
+        location: Option<String>,
+        /// The other `WITH` options, as table properties.
+        properties: Vec<(String, String)>,
+    },
 }
 
 impl CatalogTable {
@@ -443,8 +479,159 @@ fn select_star_from(parts: &[String], span: Span) -> SetExpr {
     body
 }
 
+/// The schema of a catalog table from its column definitions, and its `NOT NULL` columns.
+pub(crate) fn create_table_columns(columns: &[ColumnDef]) -> PolarsResult<(Schema, Vec<String>)> {
+    let mut schema = Schema::with_capacity(columns.len());
+    let mut required = Vec::new();
+    for col in columns {
+        let name = col.name.value.as_str();
+        let mut not_null = None;
+        for option in &col.options {
+            let is_not_null = match option.option {
+                ColumnOption::NotNull => true,
+                ColumnOption::Null => false,
+                _ => polars_bail!(
+                    SQLInterface: "only NOT NULL constraints are supported for catalog tables; found `{}` on column '{}'",
+                    option, name
+                ),
+            };
+            polars_ensure!(
+                not_null.is_none_or(|n| n == is_not_null),
+                SQLInterface: "conflicting NULL/NOT NULL declarations for column '{}'", name
+            );
+            not_null = Some(is_not_null);
+        }
+        let dtype = map_sql_dtype_to_polars(&col.data_type)?;
+        polars_ensure!(
+            schema.insert(name.into(), dtype).is_none(),
+            Duplicate: "column '{}' is defined more than once", name
+        );
+        if not_null == Some(true) {
+            required.push(name.to_string());
+        }
+    }
+    Ok((schema, required))
+}
+
+/// Iceberg's reserved table properties, other than `format-version`, which a create may set.
+const RESERVED_TABLE_PROPERTIES: [&str; 8] = [
+    "uuid",
+    "snapshot-count",
+    "current-snapshot-id",
+    "current-snapshot-summary",
+    "current-snapshot-timestamp-ms",
+    "current-schema",
+    "default-partition-spec",
+    "default-sort-order",
+];
+
+/// Table properties, in the order written.
+type TableProperties = Vec<(String, String)>;
+
+/// The location and properties of a catalog table, from `LOCATION` and `WITH (...)`.
+pub(crate) fn create_table_options(
+    options: &CreateTableOptions,
+    location_clause: Option<&str>,
+) -> PolarsResult<(Option<String>, TableProperties)> {
+    let options = match options {
+        CreateTableOptions::None => &[][..],
+        CreateTableOptions::With(options) => options.as_slice(),
+        CreateTableOptions::TableProperties(_) => {
+            polars_bail!(SQLInterface: "`TBLPROPERTIES` is not supported; use `WITH (...)` instead")
+        },
+        _ => {
+            polars_bail!(SQLInterface: "table `OPTIONS` clauses are not supported; use `WITH (...)` instead")
+        },
+    };
+    let mut location = location_clause.map(str::to_string);
+    let mut properties = TableProperties::new();
+    for option in options {
+        let SqlOption::KeyValue { key, value } = option else {
+            polars_bail!(SQLInterface: "table options must be `'key' = value` pairs; found `{}`", option)
+        };
+        let key = key.value.as_str();
+        polars_ensure!(!key.is_empty(), SQLInterface: "table option names must not be empty");
+        for known in ["location", "format-version"] {
+            polars_ensure!(
+                key == known || !key.eq_ignore_ascii_case(known),
+                SQLInterface: "'{}' is not a table option; did you mean '{}'?", key, known
+            );
+        }
+        polars_ensure!(
+            !RESERVED_TABLE_PROPERTIES.contains(&key),
+            SQLInterface: "table option '{}' is reserved by Iceberg", key
+        );
+        let Some(value) = option_value(value) else {
+            polars_bail!(
+                SQLInterface: "table option values must be string, number or boolean literals; found `{}` for '{}'",
+                value, key
+            )
+        };
+        if key == "location" {
+            polars_ensure!(
+                location_clause.is_none(),
+                SQLInterface: "`LOCATION` and table option 'location' cannot be combined"
+            );
+            polars_ensure!(location.is_none(), SQLInterface: "duplicate table option 'location'");
+            location = Some(value);
+        } else {
+            polars_ensure!(
+                properties.iter().all(|(k, _)| k != key),
+                SQLInterface: "duplicate table option '{}'", key
+            );
+            properties.push((key.to_string(), value));
+        }
+    }
+    if let Some(location) = &location {
+        polars_ensure!(
+            is_absolute_location(location),
+            SQLInterface: "location must be an absolute path or a URI; found '{}'", location
+        );
+    }
+    Ok((location, properties))
+}
+
+/// A table option value as a property string, if it is a string, number or boolean literal.
+fn option_value(value: &Expr) -> Option<String> {
+    match value {
+        Expr::Value(v) => match &v.value {
+            Value::SingleQuotedString(s) => Some(s.clone()),
+            Value::Number(n, _) => Some(n.clone()),
+            Value::Boolean(b) => Some(b.to_string()),
+            _ => None,
+        },
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => match expr.as_ref() {
+            Expr::Value(ValueWithSpan {
+                value: Value::Number(n, _),
+                ..
+            }) => Some(format!("-{n}")),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether a location is an absolute path (POSIX or Windows) or has a URI scheme.
+fn is_absolute_location(location: &str) -> bool {
+    let bytes = location.as_bytes();
+    let windows_path = bytes.len() > 2
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'/' | b'\\');
+    let has_scheme = location.split_once("://").is_some_and(|(scheme, _)| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    });
+    location.starts_with('/') || windows_path || has_scheme
+}
+
 /// A table name for messages, with parts containing dots quoted.
-fn display_name(parts: &[String]) -> String {
+pub(crate) fn display_name(parts: &[String]) -> String {
     let parts: Vec<String> = parts
         .iter()
         .map(|part| match part.contains('.') {

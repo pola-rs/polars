@@ -170,6 +170,21 @@ pub enum DslPlan {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    /// Recursive query (SQL `WITH RECURSIVE`). The output is the anchor rows followed by the
+    /// rows of each round: a round runs `step` with the `WorkingTable` of `id` holding the rows
+    /// of the round before. It ends when a round has no rows.
+    Recursive {
+        anchor: Arc<DslPlan>,
+        step: Arc<DslPlan>,
+        id: UniqueId,
+        /// The caches in `step` that are computed again in every round.
+        round_local_caches: Arc<[UniqueId]>,
+    },
+    /// The rows of the round before, inside the `step` of the `Recursive` with this `id`.
+    WorkingTable {
+        id: UniqueId,
+        schema: SchemaRef,
+    },
     /// A SQL query that is resolved during DSL -> IR conversion.
     SQL {
         query: Arc<String>,
@@ -231,6 +246,8 @@ impl Clone for DslPlan {
             Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order, column_naming }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order, column_naming: *column_naming },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key, maintain_order } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone(), maintain_order: *maintain_order },
+            Self::Recursive { anchor, step, id, round_local_caches } => Self::Recursive { anchor: anchor.clone(), step: step.clone(), id: *id, round_local_caches: round_local_caches.clone() },
+            Self::WorkingTable { id, schema } => Self::WorkingTable { id: *id, schema: schema.clone() },
             Self::SQL { query, relations, catalog_tables, cached_stmt } => Self::SQL { query: query.clone(), relations: relations.clone(), catalog_tables: catalog_tables.clone(), cached_stmt: cached_stmt.clone() },
             Self::IR {node, dsl, version, opt_flags} => Self::IR {node: *node, dsl: dsl.clone(), version: *version, opt_flags: *opt_flags},
             Self::Resolver { resolver, resolver_schema, resolved_cache } => Self::Resolver { resolver: resolver.clone(), resolver_schema: resolver_schema.clone(), resolved_cache: resolved_cache.clone() },

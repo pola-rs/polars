@@ -96,6 +96,7 @@ dependencies = [
  "strum_macros 0.27.2",
  "thiserror",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -1065,9 +1066,9 @@ dependencies = [
 
 [[package]]
 name = "clipboard-win"
-version = "5.4.1"
+version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
+checksum = "052af7878466feccda12ba7a6a67d019d712f296809559b47c12c8cc196d3a9a"
 dependencies = [
  "error-code",
 ]
@@ -3121,7 +3122,6 @@ dependencies = [
  "strum_macros 0.28.0",
  "tokio",
  "version_check",
- "zstd",
 ]
 
 [[package]]
@@ -3534,6 +3534,7 @@ dependencies = [
  "rand 0.10.2",
  "rand_distr",
  "thread_local",
+ "tikv-jemalloc-sys",
  "tikv-jemallocator",
  "tokio",
  "uuid",
@@ -3614,7 +3615,6 @@ dependencies = [
  "snap",
  "streaming-decompression",
  "xxhash-rust",
- "zstd",
 ]
 
 [[package]]
@@ -3752,7 +3752,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "either",
  "libc",
@@ -3763,7 +3763,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "either",
  "libc",
@@ -3774,7 +3774,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "either",
  "libc",
@@ -3942,6 +3942,7 @@ dependencies = [
  "tokio",
  "uuid",
  "version_check",
+ "zstd",
 ]
 
 [[package]]

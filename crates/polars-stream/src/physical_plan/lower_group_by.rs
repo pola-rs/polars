@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
+use polars_core::prelude::{
+    Field, IDX_DTYPE, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions,
+};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_err};
+use polars_expr::reduce::{supports_unique_reduction, unordered_unique_input};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
@@ -115,9 +118,12 @@ fn build_group_by_fallback(
 //
 // uniq_agg_exprs is updated with the unique id of the aggregate mapping to
 // the aggregate expression and vector of unique input ids for that aggregate.
+//
+// If unique_of is Some(x), expr is implode(unique(x)) and x becomes the input.
 #[allow(clippy::too_many_arguments)]
 fn replace_agg_uniq(
     expr: Node,
+    unique_of: Option<Node>,
     canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -140,6 +146,27 @@ fn replace_agg_uniq(
             let input_cols = inputs
                 .iter()
                 .map(|input| {
+                    if let Some(x) = unique_of {
+                        let (Some(x_id), x_col) = replace_elementwise_components(
+                            x,
+                            canonical_exprs,
+                            expr_cache,
+                            expr_arena,
+                            uniq_input_names,
+                            uniq_elementwise_exprs,
+                            substream_input_ids,
+                        ) else {
+                            unreachable!()
+                        };
+                        input_ids.push(x_id);
+                        return AExprBuilder::function(
+                            vec![ExprIR::from_node(x_col, expr_arena)],
+                            IRFunctionExpr::Unique(false),
+                            expr_arena,
+                        )
+                        .node();
+                    }
+
                     let (input_id, node) = replace_elementwise_components(
                         *input,
                         canonical_exprs,
@@ -244,6 +271,7 @@ fn try_lower_elementwise_scalar_agg_expr(
     uniq_agg_exprs: &mut PlIndexMap<CanonicalExprId, (ExprIR, Vec<CanonicalExprId>)>,
     uniq_elementwise_exprs: &mut PlIndexMap<CanonicalExprId, ExprIR>,
     substream_input_ids: &mut PlIndexSet<CanonicalExprId>,
+    unique_input_ids: &PlIndexSet<CanonicalExprId>,
 ) -> Option<Node> {
     // Helper macros to simplify (recursive) calls.
     macro_rules! lower_rec {
@@ -260,14 +288,19 @@ fn try_lower_elementwise_scalar_agg_expr(
                 uniq_agg_exprs,
                 uniq_elementwise_exprs,
                 substream_input_ids,
+                unique_input_ids,
             )
         };
     }
 
     macro_rules! replace_agg_uniq {
         ($input:expr) => {
+            replace_agg_uniq!($input, unique_of = None)
+        };
+        ($input:expr, unique_of = $x:expr) => {
             replace_agg_uniq(
                 $input,
+                $x,
                 canonical_exprs,
                 expr_cache,
                 expr_arena,
@@ -291,6 +324,15 @@ fn try_lower_elementwise_scalar_agg_expr(
             return Some(expr_arena.add(AExpr::Agg(agg)));
         }
     }
+
+    // Whether `x` can be the input of a unique reduction.
+    let mut unique_reducible = |x: Node, expr_arena: &Arena<AExpr>| {
+        is_elementwise_rec_cached(x, expr_arena, expr_cache)
+            && expr_arena
+                .get(x)
+                .to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+                .is_ok_and(|dtype| supports_unique_reduction(&dtype))
+    };
 
     match expr_arena.get(expr) {
         // Should be handled separately in `Eval`.
@@ -569,6 +611,14 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         AExpr::Agg(agg) => {
             match agg {
+                IRAggExpr::Implode {
+                    input,
+                    maintain_order: false,
+                } if let Some(x) = unordered_unique_input(*input, expr_arena)
+                    && unique_reducible(x, expr_arena) =>
+                {
+                    Some(replace_agg_uniq!(expr, unique_of = Some(x)))
+                },
                 IRAggExpr::Min { .. }
                 | IRAggExpr::Max { .. }
                 | IRAggExpr::First(_)
@@ -595,6 +645,52 @@ fn try_lower_elementwise_scalar_agg_expr(
                         } => (input[0].node(), false),
                         _ => (*uniq_input, true),
                     };
+                    if unique_reducible(uniq_input, expr_arena) {
+                        let uniq_input_id = canonical_exprs.resolve(uniq_input, expr_arena);
+                        let n_unique = if unique_input_ids.contains(&uniq_input_id) {
+                            // Count the unique list that is already computed.
+                            let unique = AExprBuilder::function(
+                                vec![ExprIR::from_node(uniq_input, expr_arena)],
+                                IRFunctionExpr::Unique(false),
+                                expr_arena,
+                            );
+                            let implode = AExprBuilder::agg(
+                                IRAggExpr::Implode {
+                                    input: unique.node(),
+                                    maintain_order: false,
+                                },
+                                expr_arena,
+                            );
+                            let list =
+                                replace_agg_uniq!(implode.node(), unique_of = Some(uniq_input));
+                            AExprBuilder::function(
+                                vec![ExprIR::from_node(list, expr_arena)],
+                                IRFunctionExpr::ListExpr(IRListFunction::Length),
+                                expr_arena,
+                            )
+                            .node()
+                        } else {
+                            let n_unique =
+                                AExprBuilder::agg(IRAggExpr::NUnique(uniq_input), expr_arena);
+                            replace_agg_uniq!(n_unique.node())
+                        };
+                        if include_nulls {
+                            return Some(n_unique);
+                        }
+                        let has_nulls = AExprBuilder::function(
+                            vec![ExprIR::from_node(uniq_input, expr_arena)],
+                            IRFunctionExpr::Boolean(IRBooleanFunction::HasNulls),
+                            expr_arena,
+                        );
+                        let has_nulls = replace_agg_uniq!(has_nulls.node());
+                        let has_nulls =
+                            AExprBuilder::new_from_node(has_nulls).cast(IDX_DTYPE, expr_arena);
+                        return Some(
+                            AExprBuilder::new_from_node(n_unique)
+                                .minus(has_nulls, expr_arena)
+                                .node(),
+                        );
+                    }
                     let function = IRFunctionExpr::Unique(false);
                     let uniq_input_expr = ExprIR::from_node(uniq_input, expr_arena);
                     let uniq_node = expr_arena.add(AExpr::Function {
@@ -882,6 +978,21 @@ pub fn try_build_streaming_group_by(
     // sub-stream derived from the pre-select, which reads them from there as columns.
     let mut substream_input_ids = PlIndexSet::new();
 
+    // Inputs of unordered unique lists, whose length also gives their n_unique.
+    let mut unique_input_ids = PlIndexSet::new();
+    for agg in aggs {
+        for (_, ae) in expr_arena.iter(agg.node()) {
+            if let AExpr::Agg(IRAggExpr::Implode {
+                input,
+                maintain_order: false,
+            }) = ae
+                && let Some(x) = unordered_unique_input(*input, expr_arena)
+            {
+                unique_input_ids.insert(canonical_exprs.resolve(x, expr_arena));
+            }
+        }
+    }
+
     let input_schema = input.output_schema(phys_sm).clone();
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
@@ -896,6 +1007,7 @@ pub fn try_build_streaming_group_by(
             &mut uniq_agg_exprs,
             &mut uniq_elementwise_exprs,
             &mut substream_input_ids,
+            &unique_input_ids,
         ) else {
             return Ok(None);
         };

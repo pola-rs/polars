@@ -569,6 +569,9 @@ class PySeries:
     # interop
     def to_numpy(self, writable: bool, allow_copy: bool) -> Any: ...
     def to_numpy_view(self) -> Any | None: ...
+    def to_numpy_masked(
+        self, writable: bool, allow_copy: bool
+    ) -> tuple[Any, Any | None]: ...
     @staticmethod
     def _import_decimal_from_iceberg_binary_repr(
         *, bytes_list: Sequence[bytes | None], precision: int, scale: int
@@ -814,6 +817,12 @@ class PyDataFrame:
         writable: bool,
         allow_copy: bool,
     ) -> Any: ...
+    def to_numpy_masked(
+        self,
+        order: IndexOrder,
+        writable: bool,
+        allow_copy: bool,
+    ) -> tuple[Any, Any | None]: ...
 
 class PyLazyFrame:
     @staticmethod
@@ -996,6 +1005,7 @@ class PyLazyFrame:
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption_properties: PyFileEncryptionProperties | None = None,
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,
@@ -2166,6 +2176,16 @@ class PyFileDecryptionProperties:
         verify_footer_signature: bool,
     ) -> None: ...
 
+class PyFileEncryptionProperties:
+    def __init__(
+        self,
+        footer_key: bytes,
+        column_keys: pylist[tuple[str, bytes]],
+        plaintext_footer: bool,
+        aad_prefix: bytes | None,
+        store_aad_prefix: bool,
+    ) -> None: ...
+
 class PyOptFlags:
     def __init__(self) -> None: ...
     @staticmethod
@@ -2664,6 +2684,7 @@ class PySQLContext:
     def set_default_catalog(self, name: str) -> None: ...
     def unregister_catalog(self, name: str) -> str | None: ...
     def catalog_tables(self, query: str) -> pylist[tuple[str, pylist[str]]]: ...
+    def catalog_ddl(self, query: str) -> dict[str, Any] | None: ...
     def execute_with_catalog_tables(
         self, query: str, tables: pylist[tuple[pylist[str], PyLazyFrame]]
     ) -> PyLazyFrame: ...

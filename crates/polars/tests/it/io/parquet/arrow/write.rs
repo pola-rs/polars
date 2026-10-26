@@ -53,7 +53,7 @@ fn round_trip_opt_stats(
     )?;
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::try_new(writer, schema, options)?;
+    let mut writer = FileWriter::try_new(writer, schema, options, None)?;
 
     for group in row_groups {
         writer.write(u64::MAX, group?)?;

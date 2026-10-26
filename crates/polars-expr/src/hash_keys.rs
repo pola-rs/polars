@@ -602,6 +602,10 @@ impl Spillable for HashKeys {
         let frame = DataFrame::unspill(&spilled.frame).await;
         Self::from_frame(&frame, &spilled.kind)
     }
+
+    fn spilled_bytes(spilled: &SpilledHashKeys) -> u64 {
+        DataFrame::spilled_bytes(&spilled.frame)
+    }
 }
 
 /// A column holding one array.

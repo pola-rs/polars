@@ -7,13 +7,14 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
-use super::to_numpy_df::df_to_numpy;
+use super::to_numpy_df::{df_null_mask_to_numpy, df_to_numpy, df_values_to_numpy};
 use super::utils::{
     create_borrowed_np_array, dtype_supports_view, polars_dtype_to_np_temporal_dtype,
     reshape_numpy_array, series_contains_null,
 };
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::conversion::{ObjectValue, Wrap};
+use crate::error::PyPolarsErr;
 use crate::interned;
 use crate::series::PySeries;
 
@@ -37,6 +38,25 @@ impl PySeries {
         let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, false)?;
         Some(view)
     }
+
+    /// Convert this Series to a NumPy ndarray of values and a boolean ndarray of the same shape
+    /// marking the null values, including nulls nested inside Array and Struct types. The mask
+    /// is `None` if there are no nulls.
+    ///
+    /// The values array has the data type it would have without nulls. Its values at null
+    /// positions are unspecified.
+    fn to_numpy_masked(
+        &self,
+        py: Python<'_>,
+        writable: bool,
+        allow_copy: bool,
+    ) -> PyResult<(Py<PyAny>, Option<Py<PyAny>>)> {
+        let s = self.series.read().clone();
+        let s = s.propagate_nulls().unwrap_or(s);
+        let values = series_values_to_numpy(py, &s, writable, allow_copy)?;
+        let mask = series_null_mask_to_numpy(py, &s)?;
+        Ok((values, mask))
+    }
 }
 
 /// Convert a Series to a NumPy ndarray.
@@ -46,12 +66,23 @@ pub(super) fn series_to_numpy(
     writable: bool,
     allow_copy: bool,
 ) -> PyResult<Py<PyAny>> {
+    series_to_numpy_impl(py, s, writable, allow_copy, false)
+}
+
+fn series_to_numpy_impl(
+    py: Python<'_>,
+    s: &Series,
+    writable: bool,
+    allow_copy: bool,
+    allow_nulls: bool,
+) -> PyResult<Py<PyAny>> {
     if s.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty Series.
         return series_to_numpy_with_copy(py, s, true);
     }
-    if let Some((mut arr, writable_flag)) = try_series_to_numpy_view(py, s, false, allow_copy) {
+    if let Some((mut arr, writable_flag)) = try_series_to_numpy_view(py, s, allow_nulls, allow_copy)
+    {
         if writable && !writable_flag {
             if !allow_copy {
                 return Err(PyRuntimeError::new_err(
@@ -69,7 +100,62 @@ pub(super) fn series_to_numpy(
         ));
     }
 
+    // Boolean doesn't have a view in numpy but can be efficiently converted if allow_nulls.
+    if allow_nulls && s.dtype().is_bool() {
+        return Ok(boolean_series_to_numpy(py, s, true));
+    }
+
     series_to_numpy_with_copy(py, s, writable)
+}
+
+/// Convert a Series to a NumPy ndarray with the data type it would have without nulls.
+///
+/// The values at null positions are unspecified.
+fn series_values_to_numpy(
+    py: Python<'_>,
+    s: &Series,
+    writable: bool,
+    allow_copy: bool,
+) -> PyResult<Py<PyAny>> {
+    match s.dtype() {
+        DataType::Array(inner, width) if !dtype_supports_view(inner) => {
+            let ca = s.array().unwrap();
+            let flat = series_values_to_numpy(py, &ca.get_inner(), writable, allow_copy)?;
+            reshape_numpy_array(py, flat, ca.len(), *width)
+        },
+        DataType::Struct(_) => {
+            let df = s.struct_().unwrap().clone().unnest();
+            df_values_to_numpy(py, &df, IndexOrder::Fortran, writable, allow_copy)
+        },
+        DataType::Extension(_, _) => {
+            series_values_to_numpy(py, s.ext().unwrap().storage(), writable, allow_copy)
+        },
+        _ => series_to_numpy_impl(py, s, writable, allow_copy, true),
+    }
+}
+
+/// Create a boolean NumPy ndarray marking the null values of the Series, with the same shape as
+/// the output of [`series_values_to_numpy`], or `None` if there are no nulls.
+///
+/// Outer nulls must have been propagated to the inner values of Array and Struct types.
+fn series_null_mask_to_numpy(py: Python<'_>, s: &Series) -> PyResult<Option<Py<PyAny>>> {
+    match s.dtype() {
+        DataType::Array(_, width) => {
+            let ca = s.array().unwrap();
+            series_null_mask_to_numpy(py, &ca.get_inner())?
+                .map(|flat| reshape_numpy_array(py, flat, ca.len(), *width))
+                .transpose()
+        },
+        DataType::Struct(_) => {
+            let df = s.struct_().unwrap().clone().unnest();
+            df_null_mask_to_numpy(py, &df, IndexOrder::Fortran)
+        },
+        DataType::Extension(_, _) => series_null_mask_to_numpy(py, s.ext().unwrap().storage()),
+        _ if s.has_nulls() => {
+            series_to_numpy_with_copy(py, &s.is_null().into_series(), true).map(Some)
+        },
+        _ => Ok(None),
+    }
 }
 
 /// Create a NumPy view of the given Series.
@@ -192,22 +278,21 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyRe
         Int16 => numeric_series_to_numpy::<Int16Type, f32>(py, s),
         Int32 => numeric_series_to_numpy::<Int32Type, f64>(py, s),
         Int64 => numeric_series_to_numpy::<Int64Type, f64>(py, s),
-        Int128 => {
-            let s = s.cast(&DataType::Float64).unwrap();
-            series_to_numpy(py, &s, writable, true)?
-        },
         UInt8 => numeric_series_to_numpy::<UInt8Type, f32>(py, s),
         UInt16 => numeric_series_to_numpy::<UInt16Type, f32>(py, s),
         UInt32 => numeric_series_to_numpy::<UInt32Type, f64>(py, s),
         UInt64 => numeric_series_to_numpy::<UInt64Type, f64>(py, s),
-        UInt128 => {
-            let s = s.cast(&DataType::Float64).unwrap();
-            series_to_numpy(py, &s, writable, true)?
+        Int128 | UInt128 => {
+            return Err(PyPolarsErr::from(polars_err!(
+                InvalidOperation: "cannot convert {} to NumPy, which has no 128-bit integer types",
+                s.dtype()
+            ))
+            .into());
         },
         Float16 => numeric_series_to_numpy::<Float16Type, pf16>(py, s),
         Float32 => numeric_series_to_numpy::<Float32Type, f32>(py, s),
         Float64 => numeric_series_to_numpy::<Float64Type, f64>(py, s),
-        Boolean => boolean_series_to_numpy(py, s),
+        Boolean => boolean_series_to_numpy(py, s, false),
         Date => date_series_to_numpy(py, s),
         Datetime(tu, _) => {
             use numpy::datetime::{Datetime, units};
@@ -324,18 +409,32 @@ where
     }
 }
 
-/// Convert booleans to u8 if no nulls are present, otherwise convert to objects.
-fn boolean_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
-    let ca = s.bool().unwrap();
-    if s.null_count() == 0 {
-        let values = ca.no_null_iter();
-        PyArray1::<bool>::from_iter(py, values)
-            .into_py_any(py)
-            .unwrap()
-    } else {
-        let values = ca.iter().map(|opt_v| opt_v.into_py_any(py).unwrap());
-        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+/// Convert booleans to a NumPy bool array if no nulls are present or `allow_nulls` is set,
+/// otherwise convert to objects.
+///
+/// With `allow_nulls`, the values at null positions are unspecified.
+fn boolean_series_to_numpy(py: Python<'_>, s: &Series, allow_nulls: bool) -> Py<PyAny> {
+    if allow_nulls || s.null_count() == 0 {
+        // NumPy stores booleans as bytes that are either 0 or 1, so the result of casting to
+        // UInt8 can be viewed as booleans.
+        let s_u8 = s.cast(&DataType::UInt8).unwrap().rechunk();
+        let slice = s_u8.u8().unwrap().data_views().next().unwrap();
+        let dims = [s_u8.len()].into_dimension();
+        return unsafe {
+            create_borrowed_np_array::<_>(
+                py,
+                bool::get_dtype(py),
+                dims,
+                flags::NPY_ARRAY_FARRAY,
+                slice.as_ptr() as _,
+                PySeries::from(s_u8).into_py_any(py).unwrap(), // Keep the Series memory alive.
+            )
+        };
     }
+
+    let ca = s.bool().unwrap();
+    let values = ca.iter().map(|opt_v| opt_v.into_py_any(py).unwrap());
+    PyArray1::from_iter(py, values).into_py_any(py).unwrap()
 }
 
 /// Convert dates directly to i64 with i64::MIN representing a null value.
@@ -393,6 +492,8 @@ fn list_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<
 
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
 fn array_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
+    // Null rows may store any values, so null them in the inner values.
+    let s = s.propagate_nulls().unwrap_or_else(|| s.clone());
     let ca = s.array().unwrap();
     let s_inner = ca.get_inner();
     let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable)?;

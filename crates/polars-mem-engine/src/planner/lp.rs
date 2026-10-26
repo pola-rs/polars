@@ -373,6 +373,7 @@ fn create_physical_plan_impl(
             IR::Scan { .. } // Needed for the streaming impl
                 | IR::Cache { .. } // Needed for plans branching from the same cache node
                 | IR::GroupBy { .. } // Needed for the streaming impl
+                | IR::Recursive { .. } // Needed for the streaming impl
                 | IR::Sink { // Needed for the streaming impl
                     payload:
                         SinkTypeIR::File(_) | SinkTypeIR::Partitioned { .. },
@@ -901,6 +902,9 @@ fn create_physical_plan_impl(
             Ok(Box::new(exec))
         },
         UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
+        Recursive { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
+        // Only in the step of a `Recursive`, which runs on the streaming engine.
+        WorkingTableScan { .. } => unreachable!(),
         Resolver { resolved_ir, .. } => {
             let node = resolved_ir.expect("IR::Resolver not resolved at create_physical_plan_impl");
             recurse!(node, state)

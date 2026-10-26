@@ -11,7 +11,7 @@ use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::{SchemaExtPl, config};
 use polars_defs::join::{JoinType, MaintainOrderJoin};
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_io::external_reader::ExternalReaderBuilder;
@@ -21,6 +21,7 @@ use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTypeIR};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::prune::prune_plan;
 use polars_plan::plans::{
     AExpr, DynamicPred, FunctionIR, IR, IRAggExpr, LiteralValue, window_exprs_match_keys,
     write_ir_non_recursive,
@@ -49,6 +50,7 @@ use crate::nodes::io_sources::multi_scan;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
+use crate::nodes::recursive::{RecursiveInputs, RecursiveStep};
 use crate::physical_plan::ZipBehavior;
 use crate::physical_plan::lower_expr::{
     ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
@@ -224,6 +226,8 @@ pub(crate) fn build_top_k_stream(
 pub struct StreamingLowerIRContext<'a> {
     pub prepare_visualization: bool,
     pub sortedness: &'a IRPlanSorted,
+    /// The working tables and caches whose values a recursive query holds in this round.
+    pub recursive_inputs: Option<&'a RecursiveInputs>,
 }
 
 #[recursive::recursive]
@@ -502,6 +506,59 @@ fn lower_ir_inner(
                 sinks.push(phys_node_stream.node);
             }
             PhysNodeKind::SinkMultiple { sinks }
+        },
+
+        IR::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => {
+            let anchor = *anchor;
+            let step = *step;
+            let id = *id;
+            let external_cache_nodes =
+                recursive_step_external_caches(step, round_local_caches.clone(), ir_arena);
+            let step_plan = round_plan(step, &external_cache_nodes, ir_arena, expr_arena);
+            let mut external_caches = Vec::new();
+            let mut externals = Vec::new();
+            for node in external_cache_nodes {
+                let IR::Cache { id, .. } = ir_arena.get(node) else {
+                    unreachable!()
+                };
+                if !external_caches.contains(id) {
+                    external_caches.push(*id);
+                    externals.push(node);
+                }
+            }
+
+            let anchor = lower_ir!(anchor)?;
+            let externals = externals
+                .into_iter()
+                .map(|node| lower_ir!(node))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            PhysNodeKind::Recursive {
+                anchor,
+                externals,
+                step: Arc::new(RecursiveStep {
+                    id,
+                    root: step_plan.lp_top,
+                    ir_arena: step_plan.lp_arena,
+                    expr_arena: step_plan.expr_arena,
+                    external_caches,
+                    outer_inputs: ctx.recursive_inputs.cloned().unwrap_or_default(),
+                }),
+            }
+        },
+
+        IR::WorkingTableScan { id, .. } => match ctx.recursive_inputs.and_then(|i| i.get(id)) {
+            Some(frames) => PhysNodeKind::SpillFrameSource {
+                frames: frames.clone(),
+                schema: output_schema.clone(),
+            },
+            None => {
+                polars_bail!(ComputeError: "working table read outside of its recursive query")
+            },
         },
 
         #[cfg(feature = "merge_sorted")]
@@ -2192,4 +2249,76 @@ fn lower_subtree_to_inmem_engine(
             format_str,
         },
     ))))
+}
+
+/// The reads of the caches in the step of a recursive query that are computed once for the whole
+/// query. A cache is computed again in every round if a recursive query around it lists it in its
+/// `round_local_caches`.
+fn recursive_step_external_caches(
+    step: Node,
+    round_local_caches: Arc<[UniqueId]>,
+    ir_arena: &Arena<IR>,
+) -> Vec<Node> {
+    let mut out = Vec::new();
+    let mut seen_caches = PlHashSet::default();
+    let mut seen_reads = PlHashSet::default();
+    let mut stack = vec![(step, vec![round_local_caches])];
+    while let Some((node, owners)) = stack.pop() {
+        match ir_arena.get(node) {
+            IR::Cache { input, id } => {
+                if !owners.iter().any(|caches| caches.contains(id)) {
+                    if seen_reads.insert(node) {
+                        out.push(node);
+                    }
+                } else if seen_caches.insert(*id) {
+                    stack.push((*input, owners));
+                }
+            },
+            IR::Recursive {
+                anchor,
+                step,
+                round_local_caches,
+                ..
+            } => {
+                stack.push((*anchor, owners.clone()));
+                let mut owners = owners;
+                owners.push(round_local_caches.clone());
+                stack.push((*step, owners));
+            },
+            ir => stack.extend(ir.inputs().map(|input| (input, owners.clone()))),
+        }
+    }
+    out
+}
+
+/// Copies the step of a recursive query for its rounds. The caches that are computed once become
+/// reads of their values, so the plans that compute them are not copied into every round.
+fn round_plan(
+    step: Node,
+    external_cache_nodes: &[Node],
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> IRPlan {
+    let caches: Vec<IR> = external_cache_nodes
+        .iter()
+        .map(|&node| {
+            let IR::Cache { id, input } = ir_arena.get(node) else {
+                unreachable!()
+            };
+            let read = IR::WorkingTableScan {
+                id: *id,
+                schema: ir_arena.get(*input).schema(ir_arena).into_owned(),
+            };
+            ir_arena.replace(node, read)
+        })
+        .collect();
+    let plan = prune_plan(IRPlanRef {
+        lp_top: step,
+        lp_arena: ir_arena,
+        expr_arena,
+    });
+    for (&node, cache) in external_cache_nodes.iter().zip(caches) {
+        ir_arena.replace(node, cache);
+    }
+    plan
 }
