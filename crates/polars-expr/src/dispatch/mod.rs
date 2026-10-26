@@ -354,8 +354,17 @@ pub fn function_expr_to_udf(
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => map!(misc::approx_n_unique),
         #[cfg(feature = "approx_quantile")]
-        F::ApproxQuantileSketch { method, error } => {
-            map!(misc::approx_quantile_sketch, &method, error)
+        F::ApproxQuantileSketch {
+            method,
+            error,
+            failure_probability,
+        } => {
+            map!(
+                misc::approx_quantile_sketch,
+                &method,
+                error,
+                failure_probability
+            )
         },
         #[cfg(feature = "approx_quantile")]
         F::ApproxQuantileEstimate { values_dtype } => {
