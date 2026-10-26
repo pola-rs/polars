@@ -240,16 +240,16 @@ fn convert_to_avs(
     dtype: Option<&DataType>,
     time_unit: Option<TimeUnit>,
 ) -> PyResult<Vec<AnyValue<'static>>> {
-    values
-        .try_iter()?
-        .map(|v| {
-            let av = py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object, dtype)?;
-            match time_unit {
-                Some(tu) => to_time_unit(av, tu, strict),
-                None => Ok(av),
-            }
-        })
-        .collect()
+    // (pre-sized, as collecting `PyResult`s would discard the size hint)
+    let mut avs = Vec::with_capacity(values.len().unwrap_or(0));
+    for v in values.try_iter()? {
+        let av = py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object, dtype)?;
+        avs.push(match time_unit {
+            Some(tu) => to_time_unit(av, tu, strict)?,
+            None => av,
+        });
+    }
+    Ok(avs)
 }
 
 /// Error for a failed (strict) Series construction from AnyValues.
