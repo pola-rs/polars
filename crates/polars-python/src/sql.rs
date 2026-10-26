@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::PyLazyFrame;
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 
@@ -132,6 +133,29 @@ impl PySQLContext {
                 dict.set_item("identifier", table.identifier)?;
                 dict.set_item("if_exists", if_exists)?;
                 dict.set_item("purge", purge)?;
+            },
+            CatalogDdl::CreateTable {
+                name,
+                table,
+                if_not_exists,
+                schema,
+                required,
+                location,
+                properties,
+            } => {
+                dict.set_item("kind", "create_table")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_not_exists", if_not_exists)?;
+                dict.set_item("schema", Wrap(schema))?;
+                dict.set_item("required", required)?;
+                dict.set_item("location", location)?;
+                let props = PyDict::new(py);
+                for (key, value) in properties {
+                    props.set_item(key, value)?;
+                }
+                dict.set_item("properties", props)?;
             },
         }
         Ok(Some(dict))

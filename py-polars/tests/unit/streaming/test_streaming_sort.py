@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import time
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
@@ -720,3 +722,34 @@ def test_sort_resume_over_phase_boundary_multiplexer(sort_mode: str) -> None:
         sorted_lf.join(sorted_lf.select("rn", pl.col("idx").alias("idx2")), on="rn"),
         [],
     )
+
+
+@pytest.mark.write_disk
+@pytest.mark.slow
+@pytest.mark.skipif(sys.platform == "win32", reason="only jemalloc has a decay")
+def test_sort_spill_sets_and_restores_allocator_decay(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_OOC_PRESSURE_DECAY_GRACE_MS", "0")
+    df = pl.DataFrame({"k": pl.Series(range(N_ROWS)).shuffle(seed=0)})
+
+    # The first round may reuse a decay change left by an earlier test. After
+    # its restore nothing is changed anymore, so the second round must enter again.
+    for i in range(2):
+        _apply_sort_mode("spilled", plmonkeypatch, tmp_path)
+        out = df.lazy().sort("k").collect(engine="streaming")
+        assert_frame_equal(out, df.sort("k"))
+        err = capfd.readouterr().err
+        if i > 0:
+            assert "setting allocator dirty decay to 0" in err
+            assert "restoring allocator decay" not in err
+
+        # With a positive budget nothing needs to spill anymore.
+        plmonkeypatch.delenv("POLARS_OOC_MEMORY_BUDGET_MB")
+        err = ""
+        deadline = time.monotonic() + 10
+        while "restoring allocator decay" not in err and time.monotonic() < deadline:
+            time.sleep(0.05)
+            err += capfd.readouterr().err
+        assert "restoring allocator decay" in err

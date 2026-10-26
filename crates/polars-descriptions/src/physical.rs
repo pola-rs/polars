@@ -70,7 +70,7 @@ pub enum PhysicalPropsDescription {
     },
     Window {
         partition_by: Vec<String>,
-        order_by: Option<String>,
+        order_by: Vec<String>,
         exprs: Vec<String>,
         ordered_eval: bool,
         maintain_order: bool,

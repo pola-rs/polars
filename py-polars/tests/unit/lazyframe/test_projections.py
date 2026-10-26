@@ -837,6 +837,16 @@ def test_projection_pushdown_select_len() -> None:
     assert q.collect().item() == 1
 
 
+def test_projection_pushdown_len_keeps_narrow_column_28582() -> None:
+    lf = pl.LazyFrame({"document": ["abc"], "id": [1]})
+    lf = lf.with_columns(pl.col("id").cast(pl.Int64)).select("document", "id")
+    q = pl.concat([lf, lf]).head(1).select(pl.len() != 0)
+
+    plan = q.explain()
+    assert 'PROJECT["id"] 1/2 COLUMNS' in plan
+    assert q.collect().item() is True
+
+
 def test_projection_pushdown_split_select_len_29393() -> None:
     # An expression that only references its input through `len()` is split into a
     # `select(len())` plus a residual, so that the `len()` optimizations still apply.

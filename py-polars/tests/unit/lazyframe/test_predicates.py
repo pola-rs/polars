@@ -2213,3 +2213,49 @@ def test_predicate_not_pushed_below_scalar_select(engine: EngineType) -> None:
         eager=False,
     )
     assert q.collect(engine=engine).height == 0
+
+
+_NOT_NULL_LF = pl.LazyFrame({"a": [1, None, 4, 7], "b": [None, 2, 3, 4]})
+
+
+@pytest.mark.parametrize(
+    ("q", "kept"),
+    [
+        (_NOT_NULL_LF.drop_nulls("a").filter(pl.col("a") > 3), 0),
+        (_NOT_NULL_LF.filter(pl.col("a").is_not_null() & pl.col("a").is_in([1, 4])), 0),
+        (_NOT_NULL_LF.filter(~pl.col("a").is_null() & (pl.col("a") != 4)), 0),
+        (
+            _NOT_NULL_LF.filter(
+                pl.col("a").is_not_null()
+                & pl.col("b").is_not_null()
+                & (pl.col("a") < 5)
+            ),
+            1,
+        ),
+        (_NOT_NULL_LF.filter(pl.col("a").is_not_null() & ~pl.col("a").is_in([1])), 0),
+        # These keep the null rows, so the null check stays.
+        (_NOT_NULL_LF.filter(pl.col("a").is_not_null() & pl.col("a").eq_missing(4)), 1),
+        (
+            _NOT_NULL_LF.filter(
+                pl.col("a").is_not_null() & ~pl.col("a").is_in([1], nulls_equal=True)
+            ),
+            1,
+        ),
+    ],
+)
+def test_filter_drops_redundant_is_not_null(q: pl.LazyFrame, kept: int) -> None:
+    assert q.explain().count("is_not_null") == kept
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+    )
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_filter_is_null_and_not_is_in(nulls_equal: bool) -> None:
+    lf = pl.LazyFrame({"a": [1, None, 4]})
+    q = lf.filter(
+        pl.col("a").is_null() & ~pl.col("a").is_in([1], nulls_equal=nulls_equal)
+    )
+    expected = lf.collect().filter(pl.col("a").is_null() if nulls_equal else False)
+    assert_frame_equal(q.collect(), expected)

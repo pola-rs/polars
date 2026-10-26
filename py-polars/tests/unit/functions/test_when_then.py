@@ -830,6 +830,11 @@ def test_when_then_simplification_scalar_branches() -> None:
     assert "when" in q.explain()
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [3, 3, 3]}))
 
+    # A scalar branch that is not taken is broadcast to the taken branch, so it can go.
+    q = lf.select(pl.when(False).then(pl.col("a").max()).otherwise(pl.col("a")))
+    assert "when" not in q.explain()
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
 
 def test_when_then_in_group_by_aggregated_22922() -> None:
     df = pl.DataFrame({"group": ["x", "y", "x", "y"], "value": [1, 2, 3, 4]})
@@ -914,6 +919,28 @@ def test_when_then_scalar_condition_masks_unselected_branch(engine: EngineType) 
         pl.when(pl.lit(False)).then(pl.col("x").cast(pl.Int64)).otherwise(0)
     )
     assert q.collect(engine=engine).to_series().to_list() == [0, 0]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_masked_list_item_struct_30252(engine: EngineType) -> None:
+    schema = {
+        "params": pl.List(
+            pl.Struct({"key": pl.String, "value": pl.Struct({"int_value": pl.Int64})})
+        )
+    }
+    lf = pl.LazyFrame(
+        {"params": [[{"key": "foo", "value": {"int_value": 42}}], []]},
+        schema=schema,
+    )
+    filtered = pl.col.params.list.filter(pl.element().struct.field("key") == "foo")
+    q = lf.select(
+        pl.when(filtered.list.len() > 0).then(
+            filtered.list.item(allow_empty=True)
+            .struct.field("value")
+            .struct.field("int_value")
+        )
+    )
+    assert q.collect(engine=engine).to_series().to_list() == [42, None]
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
