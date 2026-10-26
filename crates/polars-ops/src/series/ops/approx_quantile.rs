@@ -9,8 +9,10 @@ use polars_utils::pl_serialize;
 use polars_utils::total_ord::TotalOrd;
 use rayon::prelude::*;
 
-/// Encode `sketches` (finalized, or ingesting states) as one opaque blob per row.
-pub fn sketches_to_series<S: serde::Serialize>(sketches: &[S]) -> PolarsResult<Series> {
+/// Encode finalized `sketches` as one opaque blob per row.
+pub fn sketches_to_series<T: fmt::Debug + Clone + TotalOrd + serde::Serialize>(
+    sketches: &[FinalizedSketch<T>],
+) -> PolarsResult<Series> {
     let mut builder = BinaryChunkedBuilder::new(PlSmallStr::EMPTY, sketches.len());
     let mut blob = Vec::new();
     for sketch in sketches {
