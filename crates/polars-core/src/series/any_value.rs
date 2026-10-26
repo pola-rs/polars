@@ -7,6 +7,8 @@ use polars_compute::cast::SerPrimitive;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
+use crate::datatypes::time_unit::time_unit_conversion_error;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
 use crate::prelude::*;
@@ -78,6 +80,31 @@ impl Series {
                         }
                     }
                     DataType::Decimal(prec, scale)
+                },
+                // Use the finest time unit(s), so that mixed-unit values can be
+                // represented without loss of precision.
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(tu, tz) => {
+                    let tu = values.iter().fold(tu, |tu, v| match v {
+                        AnyValue::Datetime(_, v_tu, _) | AnyValue::DatetimeOwned(_, v_tu, _) => {
+                            tu.min(*v_tu)
+                        },
+                        _ => tu,
+                    });
+                    DataType::Datetime(tu, tz)
+                },
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(tu) => {
+                    DataType::Duration(values.iter().fold(tu, |tu, v| match v {
+                        AnyValue::Duration(_, v_tu) => tu.min(*v_tu),
+                        _ => tu,
+                    }))
+                },
+                mut dt if dt.is_nested() && dt.contains_time_units() => {
+                    dt.merge_finest_time_units_from(
+                        values.iter().filter(|v| !v.is_null()).map(|v| v.dtype()),
+                    );
+                    dt
                 },
                 dt => dt,
             }
@@ -551,6 +578,16 @@ fn any_values_to_datetime(
         match av {
             AnyValue::Datetime(i, tu, _) if *tu == time_unit => builder.append_value(*i),
             AnyValue::DatetimeOwned(i, tu, _) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::Datetime(i, tu, _) | AnyValue::DatetimeOwned(i, tu, _) => {
+                // Note: support mixed time units, even in 'strict' mode (only overflow is an error)
+                match tu.rescale_to(time_unit).datetime_value(*i) {
+                    Some(v) => builder.append_value(v),
+                    None if strict => {
+                        return Err(time_unit_conversion_error(av.dtype(), &target_dtype, av));
+                    },
+                    None => builder.append_null(),
+                }
+            },
             AnyValue::Null => builder.append_null(),
             av => {
                 if strict {
@@ -578,6 +615,16 @@ fn any_values_to_duration(
     for av in values {
         match av {
             AnyValue::Duration(i, tu) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::Duration(i, tu) => {
+                // Note: support mixed time units, even in 'strict' mode (only overflow is an error)
+                match tu.rescale_to(time_unit).duration_value(*i) {
+                    Some(v) => builder.append_value(v),
+                    None if strict => {
+                        return Err(time_unit_conversion_error(av.dtype(), &target_dtype, av));
+                    },
+                    None => builder.append_null(),
+                }
+            },
             AnyValue::Null => builder.append_null(),
             av => {
                 if strict {
@@ -742,6 +789,13 @@ fn any_values_to_list(
                     AnyValue::List(b) => match b.cast(inner_type) {
                         Ok(casted) => {
                             if casted.null_count() != b.null_count() {
+                                // (out-of-range temporal values raise as they do elsewhere)
+                                if strict
+                                    && inner_type.contains_time_units()
+                                    && let Err(err) = b.strict_cast(inner_type)
+                                {
+                                    return Err(err);
+                                }
                                 valid = !strict;
                             }
                             builder.append_series(&casted)?;

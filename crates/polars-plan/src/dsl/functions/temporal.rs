@@ -1,6 +1,4 @@
 use chrono::{Datelike, Timelike};
-use polars_arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
-use polars_utils::array;
 
 use super::*;
 
@@ -326,21 +324,6 @@ impl DurationArgs {
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 
     fn as_literal(&self) -> Option<Expr> {
-        use time_unit::convert_time_units;
-
-        let extract_i64_as_i128 = |e: &Expr| {
-            let Expr::Literal(lv) = e else { return None };
-            let av = lv.to_any_value()?;
-            if !av.is_integer() {
-                return None;
-            };
-            av.extract::<i64>().map(i128::from)
-        };
-        let extract_f64 = |e: &Expr| {
-            let Expr::Literal(lv) = e else { return None };
-            let av = lv.to_any_value()?;
-            av.extract::<f64>()
-        };
         let overflows_i64 = |e: &&Expr| {
             let Expr::Literal(lv) = e else { return false };
             let av = lv.to_any_value();
@@ -364,38 +347,49 @@ impl DurationArgs {
         ];
 
         // go into the function expr implementation to throw an error
+        // (the same applies to totals that do not fit into the time unit)
         if fields.iter().any(overflows_i64) {
             return None;
         }
 
-        let d = if let Some(fields) = array::try_map(fields, extract_i64_as_i128) {
-            let [w, d, h, m, s, ms, us, ns] = fields;
-
-            let total_ns = w * 7 * NANOSECONDS_IN_DAY as i128
-                + d * NANOSECONDS_IN_DAY as i128
-                + h * 3600 * NANOSECONDS as i128
-                + m * 60 * NANOSECONDS as i128
-                + s * NANOSECONDS as i128
-                + ms * 1_000_000
-                + us * 1_000
-                + ns;
-
-            convert_time_units(total_ns, TimeUnit::Nanoseconds, self.time_unit) as i64
-        } else if let Some(fields) = array::try_map(fields, extract_f64) {
-            let [w, d, h, m, s, ms, us, ns] = fields;
-
-            let total_ns = w * 7.0 * NANOSECONDS_IN_DAY as f64
-                + d * NANOSECONDS_IN_DAY as f64
-                + h * 3600.0 * NANOSECONDS as f64
-                + m * 60.0 * NANOSECONDS as f64
-                + s * NANOSECONDS as f64
-                + ms * 1_000_000.0
-                + us * 1_000.0
-                + ns;
-
-            convert_time_units(total_ns, TimeUnit::Nanoseconds, self.time_unit) as i64
+        // Fold exactly as the function expr evaluates: each component is rescaled separately,
+        // integers are summed exactly, and floats are then added (in component order)
+        let mut int_total = 0i128;
+        let mut float_terms = Vec::new();
+        for (e, rescale) in fields
+            .into_iter()
+            .zip(TimeUnitRescale::duration_components(self.time_unit))
+        {
+            let Expr::Literal(lv) = e else { return None };
+            let av = lv.to_any_value()?;
+            if av.is_integer() {
+                let v = av.extract::<i64>()? as i128;
+                int_total += match rescale {
+                    TimeUnitRescale::Unchanged => v,
+                    TimeUnitRescale::Multiply(k) => v * k as i128,
+                    TimeUnitRescale::Divide(k) => v / k as i128,
+                };
+            } else if av.is_float() {
+                let v = av.extract::<f64>()?;
+                float_terms.push(match rescale {
+                    TimeUnitRescale::Unchanged => v,
+                    TimeUnitRescale::Multiply(k) => v * k as f64,
+                    TimeUnitRescale::Divide(k) => (v * (1.0 / k as f64)).trunc(),
+                });
+            } else {
+                return None;
+            }
+        }
+        let d = if float_terms.is_empty() {
+            i64::try_from(int_total).ok()?
         } else {
-            return None;
+            let total = float_terms
+                .into_iter()
+                .fold(int_total as f64, |total, v| total + v);
+            if !(i64::MIN as f64..i64::MAX as f64).contains(&total) {
+                return None;
+            }
+            total as i64
         };
 
         Some(

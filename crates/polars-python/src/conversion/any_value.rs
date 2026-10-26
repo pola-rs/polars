@@ -14,6 +14,7 @@ use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
+use polars_core::datatypes::time_unit::time_unit_conversion_error;
 use polars_core::prelude::try_unpack_map_entries;
 #[cfg(feature = "dtype-map")]
 use polars_core::scalar::Scalar;
@@ -24,6 +25,7 @@ use polars_core::utils::polars_arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyAttributeError, PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     IntoPyDict, PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList,
@@ -39,6 +41,7 @@ use crate::error::PyPolarsErr;
 use crate::interned;
 use crate::py_modules::{pl_series, pl_utils};
 use crate::series::PySeries;
+use crate::series::construction::construction_error;
 
 impl<'py> IntoPyObject<'py> for Wrap<AnyValue<'_>> {
     type Target = PyAny;
@@ -408,47 +411,61 @@ pub(crate) fn py_object_to_any_value(
         }
     }
 
-    fn get_timestamp(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+    /// The ticks and time unit of a pandas `Timestamp` or `Timedelta` (at its own resolution,
+    /// except that seconds become milliseconds); `dtype` builds the matching polars dtype.
+    fn get_pandas_ticks(
+        ob: &Bound<'_, PyAny>,
+        dtype: fn(TimeUnit) -> DataType,
+    ) -> PyResult<(i64, TimeUnit)> {
         let py = ob.py();
-        let (timestamp, time_unit) = match ob.getattr(intern!(py, "unit")) {
-            Ok(unit) => {
-                let unit = unit.extract::<String>()?;
-                let ticks = ob
-                    .getattr(intern!(py, "asm8"))?
-                    .call_method1(intern!(py, "view"), (intern!(py, "i8"),))?
-                    .extract::<i64>()?;
-                match unit.as_str() {
-                    "ns" => (ticks, TimeUnit::Nanoseconds),
-                    "us" => (ticks, TimeUnit::Microseconds),
-                    "ms" => (ticks, TimeUnit::Milliseconds),
-                    "s" => (
-                        ticks.checked_mul(1_000).ok_or_else(|| {
-                            PyOverflowError::new_err(
-                                "Timestamp seconds value does not fit into milliseconds",
-                            )
-                        })?,
-                        TimeUnit::Milliseconds,
-                    ),
-                    _ => {
-                        return Err(PyValueError::new_err(format!(
-                            "unsupported Timestamp unit: {unit}"
-                        )));
-                    },
-                }
+        let unit = match ob.getattr(intern!(py, "unit")) {
+            Ok(unit) => unit.extract::<PyBackedStr>()?,
+            // Older pandas versions have no `unit` attribute (always "ns")
+            Err(err) if err.is_instance_of::<PyAttributeError>(py) => {
+                let ns = ob.getattr(intern!(py, "value"))?.extract::<i64>()?;
+                return Ok((ns, TimeUnit::Nanoseconds));
             },
-            // Older pandas Timestamps have no `unit` attribute (always "ns")
-            Err(err) if err.is_instance_of::<PyAttributeError>(py) => (
-                ob.getattr(intern!(py, "value"))?.extract::<i64>()?,
-                TimeUnit::Nanoseconds,
-            ),
             Err(err) => return Err(err),
         };
-
-        match get_datetime(ob, strict)? {
-            AnyValue::Datetime(_, _, tz) => Ok(AnyValue::Datetime(timestamp, time_unit, tz)),
-            AnyValue::DatetimeOwned(_, _, tz) => {
-                Ok(AnyValue::DatetimeOwned(timestamp, time_unit, tz))
+        let time_unit = match &*unit {
+            "ns" => TimeUnit::Nanoseconds,
+            "us" => TimeUnit::Microseconds,
+            "ms" | "s" => TimeUnit::Milliseconds,
+            unit => {
+                return Err(PyValueError::new_err(format!(
+                    "unsupported time unit for {}: {unit}",
+                    ob.get_type().name()?
+                )));
             },
+        };
+        let ticks = ob
+            .getattr(intern!(py, "asm8"))?
+            .call_method1(intern!(py, "view"), (intern!(py, "i8"),))?
+            .extract::<i64>()?;
+        if &*unit != "s" {
+            return Ok((ticks, time_unit));
+        }
+        match ticks.checked_mul(1_000) {
+            Some(ms) => Ok((ms, time_unit)),
+            None => Err(PyPolarsErr::from(time_unit_conversion_error(
+                format!("{}[s]", ob.get_type().name()?),
+                &dtype(time_unit),
+                ob.str()?,
+            ))
+            .into()),
+        }
+    }
+
+    fn get_pandas_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
+        let (ticks, time_unit) = get_pandas_ticks(ob, DataType::Duration)?;
+        Ok(AnyValue::Duration(ticks, time_unit))
+    }
+
+    fn get_pandas_timestamp(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
+        let (ticks, time_unit) = get_pandas_ticks(ob, |tu| DataType::Datetime(tu, None))?;
+        match get_datetime(ob, strict)? {
+            AnyValue::Datetime(_, _, tz) => Ok(AnyValue::Datetime(ticks, time_unit, tz)),
+            AnyValue::DatetimeOwned(_, _, tz) => Ok(AnyValue::DatetimeOwned(ticks, time_unit, tz)),
             _ => unreachable!(),
         }
     }
@@ -558,11 +575,7 @@ pub(crate) fn py_object_to_any_value(
             let (dtype, _n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
                 .map_err(|e| PyTypeError::new_err(e.to_string()))?;
             let s = Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &avs, &dtype, strict)
-                .map_err(|e| {
-                    PyTypeError::new_err(format!(
-                        "{e}\n\nHint: Try setting `strict=False` to allow passing data with mixed types."
-                    ))
-                })?;
+                .map_err(construction_error)?;
             Ok(AnyValue::List(s))
         } else {
             // range will take this branch
@@ -640,6 +653,17 @@ pub(crate) fn py_object_to_any_value(
         panic!("activate object")
     }
 
+    /// Whether `py_type` is the pandas type with the given name.
+    fn is_pandas_type(py_type: &Bound<'_, PyType>, name: &str) -> PyResult<bool> {
+        if py_type.name()?.to_str()? != name {
+            return Ok(false);
+        }
+        let module = py_type
+            .getattr(intern!(py_type.py(), "__module__"))?
+            .extract::<PyBackedStr>()?;
+        Ok(&*module == "pandas" || module.starts_with("pandas."))
+    }
+
     /// Determine which conversion function to use for the given object.
     ///
     /// Note: This function is only ran if the object's type is not already in the
@@ -678,16 +702,12 @@ pub(crate) fn py_object_to_any_value(
         // (as python datetime is an instance of date)
         else if PyDateTime::type_check(ob) {
             let py_type = ob.get_type();
-            if py_type.is(py.get_type::<PyDateTime>()) {
-                return Ok(get_datetime as InitFn);
+            if is_pandas_type(&py_type, "Timestamp")? {
+                return Ok(get_pandas_timestamp as InitFn);
             }
-            if py_type.name()?.to_str()? == "Timestamp" {
-                let module = py_type
-                    .getattr(intern!(py, "__module__"))?
-                    .extract::<String>()?;
-                if module == "pandas" || module.starts_with("pandas.") {
-                    return Ok(get_timestamp as InitFn);
-                }
+            // (pandas `NaT` is a datetime subclass)
+            if is_pandas_type(&py_type, "NaTType")? {
+                return Ok(get_null as InitFn);
             }
             Ok(get_datetime as InitFn)
         } else if PyDate::type_check(ob) {
@@ -695,6 +715,9 @@ pub(crate) fn py_object_to_any_value(
         } else if PyTime::type_check(ob) {
             Ok(get_time as InitFn)
         } else if PyDelta::type_check(ob) {
+            if is_pandas_type(&ob.get_type(), "Timedelta")? {
+                return Ok(get_pandas_timedelta as InitFn);
+            }
             Ok(get_timedelta as InitFn)
         } else if ob.is_instance_of::<PyRange>() {
             Ok(get_list as InitFn)

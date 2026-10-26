@@ -248,13 +248,17 @@ def sequence_to_pyseries(
                 msg
             )
 
-        # We use the AnyValue builder to create the datetime array
-        # We store the values internally as UTC and set the timezone
-        py_series = PySeries.new_from_any_values(name, values, strict)
-
         time_unit = getattr(dtype, "time_unit", None)
         time_zone = getattr(dtype, "time_zone", None)
 
+        # We use the AnyValue builder to create the datetime array
+        # We store the values internally as UTC and set the timezone
+        py_series = PySeries.new_from_any_values(
+            name=name,
+            values=values,
+            strict=strict,
+            time_unit=time_unit,
+        )
         if dtype.is_temporal() and values_dtype == String and dtype != Duration:
             s = wrap_s(py_series).str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
         elif time_unit is not None and values_dtype != Date:

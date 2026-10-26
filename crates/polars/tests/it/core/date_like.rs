@@ -174,3 +174,44 @@ fn test_duration_date_arithmetic() -> PolarsResult<()> {
 fn assert_series_eq(s1: &Series, s2: &Series) {
     assert!(s1.equals(s2))
 }
+
+#[test]
+#[cfg(all(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-duration",
+    feature = "dtype-time"
+))]
+fn test_any_value_temporal_casts() {
+    use TimeUnit::*;
+
+    // datetimes round down (1969-12-31 12:00:00), durations round towards zero
+    let dt = AnyValue::Datetime(-43_200_000_000, Microseconds, None);
+    assert_eq!(dt.strict_cast(&DataType::Date), Some(AnyValue::Date(-1)));
+    assert_eq!(
+        dt.strict_cast(&DataType::Time),
+        Some(AnyValue::Time(43_200_000_000_000))
+    );
+    assert_eq!(
+        AnyValue::Datetime(-1, Nanoseconds, None)
+            .strict_cast(&DataType::Datetime(Microseconds, None)),
+        Some(AnyValue::Datetime(-1, Microseconds, None))
+    );
+    assert_eq!(
+        AnyValue::Duration(-1, Nanoseconds).strict_cast(&DataType::Duration(Microseconds)),
+        Some(AnyValue::Duration(0, Microseconds))
+    );
+
+    // values that overflow the target time unit cannot be cast
+    let too_big = i64::MAX / 1_000 + 1;
+    let ns = DataType::Datetime(Nanoseconds, None);
+    assert_eq!(
+        AnyValue::Datetime(too_big, Microseconds, None).strict_cast(&ns),
+        None
+    );
+    assert_eq!(AnyValue::Date(i32::MAX).strict_cast(&ns), None);
+    assert_eq!(
+        AnyValue::Duration(too_big, Microseconds).strict_cast(&DataType::Duration(Nanoseconds)),
+        None
+    );
+}
