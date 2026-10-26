@@ -1029,3 +1029,49 @@ def test_sort_drops_scalar_keys() -> None:
     out = q.collect().rows()
     assert len(set(out)) == 2
     assert set(out) <= rows
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.when(pl.col("x") > 1).then(1).otherwise(0),
+        pl.when(pl.col("x") > 1).then(pl.col("y").sort()).otherwise(0),
+        pl.when(pl.col("x") > 2).then(2).when(pl.col("x") > 1).then(1).otherwise(0),
+        pl.when(pl.col("x") > 1).then(1).otherwise(0).cum_sum(),
+        pl.when(pl.col("x").rank().over("g") > 1).then(1).otherwise(0),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_predicate_order_30299(expr: pl.Expr, engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 2, 1, 2, 1], "x": [5, 1, 4, 2, 3], "y": [50, 10, 40, 20, 30]}
+    ).sort("x")
+    q = lf.select(expr.alias("v"))
+
+    assert "SORT" in q.explain(engine=engine)
+    expected = q.collect(optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_when_then_predicate_order_contexts_30299(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1], "x": [3, 1, 2], "y": [10, 30, 20]}).sort("x")
+    x, y = pl.col("x"), pl.col("y")
+    no_opt = pl.QueryOptFlags.none()
+
+    for q in [
+        lf.with_columns(v=pl.when(y.sort() > 15).then(1).otherwise(0)).unique(),
+        lf.filter(pl.when(y.sort() > 15).then(True).otherwise(None)).unique(),
+        lf.group_by("g").agg(pl.when(x > 1).then(1).otherwise(0)),
+    ]:
+        assert "SORT" in q.explain(engine=engine)
+        assert_frame_equal(
+            q.collect(engine=engine),
+            q.collect(optimizations=no_opt),
+            check_row_order=False,
+        )
+
+    # The order of a sum is not observed, so the sort can still go.
+    q = lf.select(pl.when(x > 1).then(1).otherwise(0).sum())
+    assert "SORT" not in q.explain(engine=engine)
+    assert q.collect(engine=engine).item() == 2
