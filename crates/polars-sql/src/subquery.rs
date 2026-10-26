@@ -38,6 +38,7 @@ use crate::sql_expr::{
     order_by_sort_options, parse_sql_expr, reduced_subquery, sql_in_membership, sql_is_in,
 };
 use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_subquery_expr};
+use crate::subquery_pull_up::ScopeColumns;
 use crate::{SQLContext, unique_column_name};
 
 impl SQLContext {
@@ -59,6 +60,8 @@ impl SQLContext {
         let residual = match filter_mode {
             FilterMode::RemoveTrue => {
                 let unwrapped = unwrap_nested(expr);
+                let prepared = self.pull_up_nested_in(ScopeColumns::Frame(schema), unwrapped);
+                let unwrapped = prepared.as_ref().unwrap_or(unwrapped);
                 match self.try_rewrite_subquery_conjunct(&lf, unwrapped, filter_mode, schema)? {
                     Some(new_lf) => {
                         lf = new_lf;
@@ -92,10 +95,17 @@ impl SQLContext {
                 }
 
                 for conj in with_subquery {
-                    if self.stage_offers_membership(conj, schema, stage)?
-                        && let Some(new_lf) =
-                            self.try_rewrite_subquery_conjunct(&lf, conj, filter_mode, schema)?
-                    {
+                    if !self.stage_offers_membership(conj, schema, stage)? {
+                        residual.push(conj);
+                        continue;
+                    }
+                    let prepared = self.pull_up_nested_in(ScopeColumns::Frame(schema), conj);
+                    if let Some(new_lf) = self.try_rewrite_subquery_conjunct(
+                        &lf,
+                        prepared.as_ref().unwrap_or(conj),
+                        filter_mode,
+                        schema,
+                    )? {
                         lf = new_lf;
                     } else {
                         residual.push(conj);
@@ -485,7 +495,7 @@ impl SQLContext {
     // LazyFrame, its schema, and the set of relation names/aliases used to
     // classify qualified correlation columns. Also checks the SELECT and WHERE
     // for unqualified columns that are ambiguous between the joined relations.
-    fn resolve_subquery_from(
+    pub(crate) fn resolve_subquery_from(
         &mut self,
         select: &Select,
     ) -> PolarsResult<Option<(Vec<RelationName>, LazyFrame, SchemaRef)>> {
@@ -874,7 +884,10 @@ impl SQLContext {
         let mut right_bindings = SubqueryBindings::new();
         let mut changed = false;
         let mut conjuncts = Vec::new();
-        for conj in flatten_and_conditions(on) {
+        for original in flatten_and_conditions(on) {
+            let prepared =
+                self.pull_up_nested_in(ScopeColumns::Join(tbl_left, tbl_right), original);
+            let conj = prepared.as_ref().unwrap_or(original);
             let lowered;
             match correlated_join_side(self, conj, tbl_left, tbl_right) {
                 Some(true) => {
@@ -906,8 +919,13 @@ impl SQLContext {
                     }
                 },
             }
-            changed |= matches!(lowered, Cow::Owned(_));
-            conjuncts.push(lowered.into_owned());
+            match lowered {
+                Cow::Owned(lowered) => {
+                    changed = true;
+                    conjuncts.push(lowered);
+                },
+                Cow::Borrowed(_) => conjuncts.push(original.clone()),
+            }
         }
         if !changed {
             return Ok(None);
@@ -2240,7 +2258,7 @@ fn classify_correlation_column(
 /// of its aggregates: `Some(true)` if it aggregates its own rows and so returns exactly one,
 /// `Some(false)` if it does not aggregate, and `None` for shapes left unsupported (an
 /// aggregate over outer columns only, which belongs to the outer query, or `UNNEST`).
-fn exists_aggregates(
+pub(crate) fn exists_aggregates(
     ctx: &SQLContext,
     query: &Query,
     select: &Select,
@@ -2404,7 +2422,7 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
 // Whether `subquery` keeps only its first row: `Some(true)` for `LIMIT 1` or
 // `FETCH FIRST 1 ROW ONLY`, `Some(false)` without a limit, `None` for any other
 // limit.
-fn first_row_limit(subquery: &Query) -> Option<bool> {
+pub(crate) fn first_row_limit(subquery: &Query) -> Option<bool> {
     let is_one = |e: &SQLExpr| matches!(e, SQLExpr::Value(ValueWithSpan { value: SQLValue::Number(n, _), .. }) if n == "1");
     match (&subquery.limit_clause, &subquery.fetch) {
         (None, None) => Some(false),
@@ -2428,10 +2446,15 @@ fn first_row_limit(subquery: &Query) -> Option<bool> {
     }
 }
 
-// `eligible_subquery_select` without the limit check. Exhaustive destructuring
-// (no `..`) is on purpose: a new sqlparser clause must not compile until it gets
-// an explicit keep-or-bail decision here.
-fn eligible_subquery_body(subquery: &Query) -> Option<&Select> {
+// `eligible_subquery_select` without the limit check.
+pub(crate) fn eligible_subquery_body(subquery: &Query) -> Option<&Select> {
+    eligible_query_block(subquery).filter(|select| !select.from.is_empty())
+}
+
+// `eligible_subquery_body` that also accepts a SELECT without FROM. Exhaustive
+// destructuring (no `..`) is on purpose: a new sqlparser clause must not compile
+// until it gets an explicit keep-or-bail decision here.
+pub(crate) fn eligible_query_block(subquery: &Query) -> Option<&Select> {
     let Query {
         with, // CTEs aren't resolved inside the rewrite: bail
         body,
@@ -2463,7 +2486,7 @@ fn eligible_subquery_body(subquery: &Query) -> Option<&Select> {
         projection: _,
         exclude: _,
         into,          // SELECT INTO is not a pure subquery: bail
-        from,          // at least one relation, comma-separated ones cross join
+        from: _,       // comma-separated relations cross join
         lateral_views, // row-multiplying: bail
         prewhere,      // an extra filter we don't fold in: bail
         selection: _,  // split into join keys/filters by callers
@@ -2485,8 +2508,7 @@ fn eligible_subquery_body(subquery: &Query) -> Option<&Select> {
         group_by,
         GroupByExpr::Expressions(e, m) if e.is_empty() && m.is_empty()
     );
-    if from.is_empty()
-        || !no_group_by
+    if !no_group_by
         || top.is_some()
         || into.is_some()
         || having.is_some()
@@ -2632,7 +2654,7 @@ fn correlated_join_side(
     }
 }
 
-fn strip_nested(mut expr: &SQLExpr) -> &SQLExpr {
+pub(crate) fn strip_nested(mut expr: &SQLExpr) -> &SQLExpr {
     while let SQLExpr::Nested(inner) = expr {
         expr = inner;
     }
@@ -2646,20 +2668,7 @@ fn visit_foreign_qualifiers(
     spellings: &CatalogSpellings,
     f: impl FnMut(&[Ident]) -> ControlFlow<()>,
 ) {
-    struct Declared<'a>(Vec<RelationName>, &'a CatalogSpellings);
-
-    impl Visitor for Declared<'_> {
-        type Break = ();
-
-        fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
-            let name = relation_name(factor).map(|name| name.spelled(factor, self.1));
-            self.0.extend(name);
-            ControlFlow::Continue(())
-        }
-    }
-
-    let mut declared = Declared(Vec::new(), spellings);
-    let _ = dyn_visit::visit(query, &mut declared);
+    let declared = declared_anywhere(query, spellings);
 
     struct Foreign<'a, F>(&'a [RelationName], F);
 
@@ -2678,7 +2687,26 @@ fn visit_foreign_qualifiers(
         }
     }
 
-    let _ = dyn_visit::visit(query, &mut Foreign(&declared.0, f));
+    let _ = dyn_visit::visit(query, &mut Foreign(&declared, f));
+}
+
+/// The relations declared anywhere in `query`, its subqueries included.
+fn declared_anywhere(query: &Query, spellings: &CatalogSpellings) -> Vec<RelationName> {
+    struct Declared<'a>(Vec<RelationName>, &'a CatalogSpellings);
+
+    impl Visitor for Declared<'_> {
+        type Break = ();
+
+        fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
+            let name = relation_name(factor).map(|name| name.spelled(factor, self.1));
+            self.0.extend(name);
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut declared = Declared(Vec::new(), spellings);
+    let _ = dyn_visit::visit(query, &mut declared);
+    declared.0
 }
 
 /// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`
@@ -2765,6 +2793,11 @@ impl CorrelatedLowering<'_> {
         {
             return Ok(Some(name.clone()));
         }
+        let prepared = self
+            .ctx
+            .pull_up_nested(ScopeColumns::Frame(self.outer_schema), subquery);
+        let original = subquery;
+        let subquery = prepared.as_ref().unwrap_or(subquery);
         // The frame is cloned rather than moved so it survives a declined lowering.
         let lowered = match &kind {
             SubqueryKind::Exists => self.ctx.try_decorrelate_exists_subquery(
@@ -2789,7 +2822,7 @@ impl CorrelatedLowering<'_> {
             return Ok(None);
         };
         self.lf = new_lf;
-        self.bindings.push((subquery.clone(), kind, name.clone()));
+        self.bindings.push((original.clone(), kind, name.clone()));
         Ok(Some(name))
     }
 
