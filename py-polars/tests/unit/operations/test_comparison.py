@@ -1338,8 +1338,67 @@ def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
 def test_comparison_int_decimal_literal_matches_nonliteral(
     dtype: PolarsDataType, value: str
 ) -> None:
-    lit = pl.lit(D(value))
-    values = [-129, -128, -2, -1, 0, 1, 2, 127, 128, 255, 256, None]
+    out = _compare_int_column_to_literal(
+        dtype, pl.lit(D(value)), D("-3.5"), D("200.25")
+    )
+    # A 128-bit integer may not fit the decimal, so that cast stays.
+    if dtype not in (pl.Int128, pl.UInt128):
+        assert "cast" not in out.select("lt", "eq", "gt").explain()
+
+
+@pytest.mark.parametrize("dtype", sorted(INTEGER_DTYPES, key=lambda v: str(v)))
+@pytest.mark.parametrize("float_dtype", [pl.Float32, pl.Float64])
+@pytest.mark.parametrize(
+    "value",
+    [1.5, -1.5, 2.0, -0.0, 127.5, -128.5, 255.99, 256.0, 2.0**53 - 1],
+)
+def test_comparison_int_float_literal_matches_nonliteral(
+    dtype: PolarsDataType, float_dtype: PolarsDataType, value: float
+) -> None:
+    lit = pl.lit(value, float_dtype)
+    out = _compare_int_column_to_literal(dtype, lit, -3.5, 200.25)
+    if abs(value) < 2**24:
+        assert "cast" not in out.select("lt", "eq", "gt").explain()
+
+
+@pytest.mark.parametrize("dtype", [pl.Int8, pl.Int64, pl.UInt64])
+@pytest.mark.parametrize(
+    "value", [1e20, -1e20, 2.0**53, -(2.0**53), float("nan"), float("inf")]
+)
+def test_comparison_int_float_literal_keeps_cast(
+    dtype: PolarsDataType, value: float
+) -> None:
+    # Beyond 2**53 the cast to float rounds, so it must stay.
+    out = _compare_int_column_to_literal(dtype, pl.lit(value), -3.5, 200.25)
+    assert "cast" in out.select("lt").explain()
+
+
+def test_comparison_int_is_between_keeps_bound_dtype() -> None:
+    # Rounding the float bound must not move the integer bound out of Float64.
+    lf = pl.LazyFrame({"x": [2**53 + 1]})
+    assert lf.select(pl.col("x").is_between(0.5, 2**53)).collect().item() is True
+
+
+@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
+def test_comparison_int_decimal_literal_keeps_cast_error(dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"x": [10**38]}, schema={"x": dtype})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        lf.select(pl.col("x") > D("1.5")).collect()
+
+
+def test_comparison_int_is_between_keeps_bound_cast_error() -> None:
+    # The upper bound does not fit Decimal(38, 30), so its cast must still raise.
+    lf = pl.LazyFrame(
+        {"x": [1], "hi": [2**63 - 1]}, schema={"x": pl.Int8, "hi": pl.Int64}
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        lf.select(pl.col("x").is_between(D("1E-30"), pl.col("hi"))).collect()
+
+
+def _compare_int_column_to_literal(
+    dtype: PolarsDataType, lit: pl.Expr, lower: Any, upper: Any
+) -> pl.LazyFrame:
+    values = [-129, -128, -2, -1, 0, 1, 2, 127, 128, 255, 256, 2**53 + 1, None]
     df = pl.DataFrame({"l": pl.Series(values, dtype=dtype, strict=False)})
 
     def query(lf: pl.LazyFrame, r: pl.Expr) -> pl.LazyFrame:
@@ -1349,19 +1408,18 @@ def test_comparison_int_decimal_literal_matches_nonliteral(
             rne=r != l, rlt=r < l, rlteq=r <= l, req=r == l, rgteq=r >= l, rgt=r > l,
             eq_missing=l.eq_missing(r),
             ne_missing=l.ne_missing(r),
-            between=l.is_between(r, D("200.25")),
-            between_open=l.is_between(D("-3.5"), r, closed="none"),
+            between=l.is_between(r, upper),
+            between_open=l.is_between(lower, r, closed="none"),
         )  # fmt: skip
 
     lf = df.lazy()
     out = query(lf, lit)
     expected = query(lf.with_columns(r=lit), pl.col("r"))
-
-    assert "cast" not in out.select("lt", "eq", "gt").explain()
     assert_frame_equal(out.collect(), expected.collect())
+    return out
 
 
-def test_comparison_int_decimal_literal_prunes_row_groups(
+def test_comparison_int_fractional_literal_prunes_row_groups(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     path = tmp_path / "a.parquet"
@@ -1371,5 +1429,13 @@ def test_comparison_int_decimal_literal_prunes_row_groups(
     ctx = pl.SQLContext(t=pl.scan_parquet(path))
     out = ctx.execute("SELECT x FROM t WHERE x > 849.5 AND x <= 900.75").collect()
 
+    assert out["x"].to_list() == list(range(850, 901))
+    assert "reading 2 / 10 row groups" in capfd.readouterr().err
+
+    out = (
+        pl.scan_parquet(path)
+        .filter(pl.col("x") > 849.5, pl.col("x") <= pl.lit(900.75, pl.Float32))
+        .collect()
+    )
     assert out["x"].to_list() == list(range(850, 901))
     assert "reading 2 / 10 row groups" in capfd.readouterr().err

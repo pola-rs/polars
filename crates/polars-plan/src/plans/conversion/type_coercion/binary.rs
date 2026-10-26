@@ -607,16 +607,16 @@ pub(super) fn coerce_comparison_literal(
         return None;
     }
 
-    #[cfg(feature = "dtype-decimal")]
     if dtype_lhs.is_integer()
-        && let AnyValue::Decimal(mantissa, _, scale) = *lit_rhs.value()
+        && let Some((floor, is_whole)) =
+            fractional_literal_parts(dtype_lhs, lit_rhs.value(), &supertype)
     {
-        return coerce_int_cmp_decimal_literal(
+        return coerce_int_cmp_fractional_literal(
             ae_node_left,
             dtype_lhs,
             cmp_op,
-            mantissa,
-            scale,
+            floor,
+            is_whole,
             expr_arena,
         );
     }
@@ -868,23 +868,65 @@ pub(super) fn coerce_comparison_literal(
     ))
 }
 
-/// Rewrite an integer column compared to a decimal literal into a comparison with an integer
+/// The floor of a decimal or float literal and whether it is a whole number, when an integer
+/// column of `dtype_lhs` compared to it in `supertype` compares the same as to the floor.
+fn fractional_literal_parts(
+    #[cfg_attr(not(feature = "dtype-decimal"), allow(unused_variables))] dtype_lhs: &DataType,
+    value: &AnyValue,
+    supertype: &DataType,
+) -> Option<(i128, bool)> {
+    let value = match *value {
+        #[cfg(feature = "dtype-decimal")]
+        AnyValue::Decimal(mantissa, _, scale) => {
+            // Every value of the column must cast to the decimal, else the cast can raise.
+            let DataType::Decimal(precision, supertype_scale) = *supertype else {
+                return None;
+            };
+            let fits = |bound: Scalar| {
+                bound.value().extract::<i128>().is_some_and(|v| {
+                    polars_compute::decimal::i128_to_dec128(v, precision, supertype_scale).is_some()
+                })
+            };
+            if !(fits(dtype_lhs.min().ok()?) && fits(dtype_lhs.max().ok()?)) {
+                return None;
+            }
+            let divisor = 10i128.checked_pow(scale as u32)?;
+            return Some((
+                mantissa.div_euclid(divisor),
+                mantissa.rem_euclid(divisor) == 0,
+            ));
+        },
+        AnyValue::Float32(v) => v as f64,
+        AnyValue::Float64(v) => v,
+        _ => return None,
+    };
+    // Integers below this bound cast to the float exactly, and larger ones never cross a
+    // literal below it.
+    let exact_below = match supertype {
+        DataType::Float32 => 2f64.powi(f32::MANTISSA_DIGITS as i32),
+        DataType::Float64 => 2f64.powi(f64::MANTISSA_DIGITS as i32),
+        _ => return None,
+    };
+    if !(value.abs() < exact_below) {
+        return None;
+    }
+    let floor = value.floor();
+    Some((floor as i128, floor == value))
+}
+
+/// Rewrite an integer column compared to a fractional literal into a comparison with an integer
 /// literal. The literal is rounded in the direction that keeps the result the same, e.g.
 /// `x < 1.5` becomes `x < 2` and `x > 1.5` becomes `x > 1`.
-#[cfg(feature = "dtype-decimal")]
-fn coerce_int_cmp_decimal_literal(
+fn coerce_int_cmp_fractional_literal(
     ae_node_left: Node,
     dtype_lhs: &DataType,
     cmp_op: Operator,
-    mantissa: i128,
-    scale: usize,
+    floor: i128,
+    is_whole: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<CmpLiteralRhsRewrite> {
     use CmpLiteralRhsRewrite::*;
 
-    let divisor = 10i128.checked_pow(scale as u32)?;
-    let floor = mantissa.div_euclid(divisor);
-    let is_whole = mantissa.rem_euclid(divisor) == 0;
     let ceil = floor + i128::from(!is_whole);
 
     let rounded = match cmp_op {

@@ -452,3 +452,134 @@ fn is_safe_to_drop(node: Node, expr_arena: &Arena<AExpr>, maintain_errors: bool)
     group.update_with_expr_rec(ae, expr_arena, None);
     !group.blocks_pushdown(maintain_errors)
 }
+
+// `x.dt.year() == 2020` => `x.is_between(2020-01-01, 2021-01-01, closed="left")` and
+// `x.dt.year() < 2020` => `x < 2020-01-01` for a Date or a Datetime without a time zone, so
+// the comparison can use the statistics of `x`. Only for a filter: where `dt.year()` is
+// null, the result is `false` instead of `null`.
+#[cfg(all(feature = "temporal", feature = "is_between"))]
+pub(super) fn simplify_year_comparison(
+    left: Node,
+    op: Operator,
+    right: Node,
+    schema: &Schema,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<AExpr> {
+    use chrono::{Datelike, NaiveDate};
+    use polars_arrow::temporal_conversions::EPOCH_DAYS_FROM_CE;
+
+    let (year_node, op, lit) = match (expr_arena.get(left), expr_arena.get(right)) {
+        (_, AExpr::Literal(lv)) => (left, op, lv),
+        (AExpr::Literal(lv), _) => (right, op.swap_operands()?, lv),
+        _ => return None,
+    };
+    let AExpr::Function {
+        input,
+        function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::Year),
+        ..
+    } = expr_arena.get(year_node)
+    else {
+        return None;
+    };
+    let year = i32::try_from(lit.extract_i64().ok()?).ok()?;
+    let x = input[0].node();
+    let dtype = expr_arena
+        .get(x)
+        .to_dtype(&ToFieldContext::new(expr_arena, schema))
+        .ok()?;
+
+    // The first or last value of `x` on the day `days` after the epoch, if it fits.
+    let day_value = |days: i64, last: bool| -> Option<Scalar> {
+        match &dtype {
+            DataType::Date => Some(Scalar::new_date(i32::try_from(days).ok()?)),
+            DataType::Datetime(time_unit, None) => {
+                let per_day = match time_unit {
+                    TimeUnit::Nanoseconds => 86_400_000_000_000,
+                    TimeUnit::Microseconds => 86_400_000_000,
+                    TimeUnit::Milliseconds => 86_400_000,
+                };
+                let first = days.checked_mul(per_day)?;
+                let value = if last {
+                    first.checked_add(per_day - 1)?
+                } else {
+                    first
+                };
+                Some(Scalar::new_datetime(value, *time_unit, None))
+            },
+            _ => None,
+        }
+    };
+    let days_from_epoch =
+        |date: NaiveDate| i64::from(date.num_days_from_ce()) - i64::from(EPOCH_DAYS_FROM_CE);
+    let year_start =
+        |year: i32| day_value(days_from_epoch(NaiveDate::from_ymd_opt(year, 1, 1)?), false);
+    // `dt.year()` is null outside the dates chrono supports, these bounds drop those rows.
+    // A bound is `None` if `x` can't hold values past it.
+    let first_valid = day_value(days_from_epoch(NaiveDate::MIN), false);
+    let last_valid = day_value(days_from_epoch(NaiveDate::MAX), true);
+
+    // `x.dt.year() < year`
+    let below = |year: i32, expr_arena: &mut Arena<AExpr>| -> Option<AExpr> {
+        let end = year_start(year)?;
+        Some(match first_valid.clone() {
+            Some(first) => is_between(x, first, end, ClosedInterval::Left, expr_arena),
+            None => compare_to_scalar(x, Operator::Lt, end, expr_arena),
+        })
+    };
+    // `x.dt.year() >= year`
+    let at_or_above = |year: i32, expr_arena: &mut Arena<AExpr>| -> Option<AExpr> {
+        let start = year_start(year)?;
+        Some(match last_valid.clone() {
+            Some(last) => is_between(x, start, last, ClosedInterval::Both, expr_arena),
+            None => compare_to_scalar(x, Operator::GtEq, start, expr_arena),
+        })
+    };
+
+    let next_year = year.checked_add(1)?;
+    Some(match op {
+        Operator::Lt => below(year, expr_arena)?,
+        Operator::LtEq => below(next_year, expr_arena)?,
+        Operator::GtEq => at_or_above(year, expr_arena)?,
+        Operator::Gt => at_or_above(next_year, expr_arena)?,
+        Operator::Eq => is_between(
+            x,
+            year_start(year)?,
+            year_start(next_year)?,
+            ClosedInterval::Left,
+            expr_arena,
+        ),
+        Operator::NotEq => {
+            let below = below(year, expr_arena)?;
+            let above = at_or_above(next_year, expr_arena)?;
+            AExpr::BinaryExpr {
+                left: expr_arena.add(below),
+                op: Operator::Or,
+                right: expr_arena.add(above),
+            }
+        },
+        _ => return None,
+    })
+}
+
+#[cfg(all(feature = "temporal", feature = "is_between"))]
+fn is_between(
+    x: Node,
+    low: Scalar,
+    high: Scalar,
+    closed: ClosedInterval,
+    expr_arena: &mut Arena<AExpr>,
+) -> AExpr {
+    let low = expr_arena.add(AExpr::Literal(low.into()));
+    let high = expr_arena.add(AExpr::Literal(high.into()));
+    function_of(
+        &[x, low, high],
+        IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
+        expr_arena,
+    )
+}
+
+#[cfg(all(feature = "temporal", feature = "is_between"))]
+fn compare_to_scalar(x: Node, op: Operator, value: Scalar, expr_arena: &mut Arena<AExpr>) -> AExpr {
+    let right = expr_arena.add(AExpr::Literal(value.into()));
+    AExpr::BinaryExpr { left: x, op, right }
+}
