@@ -550,7 +550,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
                 .collect::<Float64Chunked>()
                 .into_series();
             Ok(Scalar::new(
-                DataType::List(Box::new(self.dtype().clone())),
+                DataType::List(Box::new(DataType::Float64)),
                 AnyValue::List(scaled_s),
             ))
         } else {
