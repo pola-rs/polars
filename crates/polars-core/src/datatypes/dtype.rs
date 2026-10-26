@@ -801,8 +801,30 @@ impl DataType {
         &mut self,
         others: impl IntoIterator<Item = impl Borrow<DataType>>,
     ) {
-        for other in others {
+        let mut others = others.into_iter();
+        while !self.has_finest_time_units()
+            && let Some(other) = others.next()
+        {
             self.merge_finest_time_units(other.borrow());
+        }
+    }
+
+    /// Check if all [`TimeUnit`]s in this [`DataType`] (if any) are already the finest.
+    fn has_finest_time_units(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, _) => *tu == TimeUnit::Nanoseconds,
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => *tu == TimeUnit::Nanoseconds,
+            List(inner) => inner.has_finest_time_units(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.has_finest_time_units(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .all(|field| field.dtype.has_finest_time_units()),
+            _ => true,
         }
     }
 
@@ -819,8 +841,15 @@ impl DataType {
             (Array(inner, _), Array(other_inner, _)) => inner.merge_finest_time_units(other_inner),
             #[cfg(feature = "dtype-struct")]
             (Struct(fields), Struct(other_fields)) => {
-                for field in fields.iter_mut() {
-                    if let Some(other) = other_fields.iter().find(|f| f.name == field.name) {
+                for (i, field) in fields.iter_mut().enumerate() {
+                    if !field.dtype.contains_time_units() {
+                        continue;
+                    }
+                    let other = match other_fields.get(i) {
+                        Some(other) if other.name == field.name => Some(other),
+                        _ => other_fields.iter().find(|f| f.name == field.name),
+                    };
+                    if let Some(other) = other {
                         field.dtype.merge_finest_time_units(&other.dtype);
                     }
                 }

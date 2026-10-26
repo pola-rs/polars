@@ -181,6 +181,30 @@ def test_series_init_pandas_timestamp_time_zones(tz: Any, expected_tz: str) -> N
     assert result.dt.timestamp("ns").item() == value.value
 
 
+NEW_YORK = pytz.timezone("America/New_York")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        NEW_YORK.localize(datetime(2020, 6, 1, 12, 30, 15, 123456)),
+        NEW_YORK.localize(datetime(2020, 11, 1, 1, 30), is_dst=True),
+        NEW_YORK.localize(datetime(2020, 11, 1, 1, 30), is_dst=False),
+        datetime(2020, 1, 1, tzinfo=NEW_YORK),  # (not localized: LMT offset)
+        pytz.timezone("Europe/Amsterdam").localize(datetime(2150, 7, 1, 8)),
+        pytz.timezone("Etc/GMT+5").localize(datetime(2020, 1, 1)),
+        datetime(2020, 1, 1, tzinfo=pytz.UTC),
+    ],
+)
+def test_series_init_pytz_datetime(value: datetime) -> None:
+    result = pl.Series([value])
+    assert result.dtype == pl.Datetime("us", str(value.tzinfo))
+
+    epoch = datetime(1970, 1, 1, tzinfo=pytz.UTC)
+    ts = result.dt.timestamp("us").item()
+    assert ts == (value - epoch) // timedelta(microseconds=1)
+
+
 def test_series_init_pandas_timestamp_unsupported_time_zone() -> None:
     # zones that are neither named nor fixed-offset are not silently made UTC
     value = pd.Timestamp("2021-06-15 12:30", tz=dateutil.tz.gettz("Europe/Paris"))
