@@ -105,8 +105,8 @@ impl<
         }
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
-        self.sorted.is_valid(min_periods)
+    fn is_valid(&self, min_samples: usize) -> bool {
+        self.sorted.is_valid(min_samples)
     }
 
     fn slice_len(&self) -> usize {
@@ -117,7 +117,7 @@ impl<
 pub fn rolling_quantile<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
@@ -155,7 +155,7 @@ where
 
         let out = super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(
             params.method,
-            min_periods,
+            min_samples,
             window_size,
             arr.clone(),
             params.prob,
@@ -168,7 +168,7 @@ where
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,
-        min_periods,
+        min_samples,
         offset_fn,
         params,
     )

@@ -318,8 +318,8 @@ where
     }
 
     #[inline(always)]
-    fn is_valid(&self, min_periods: usize) -> bool {
-        ((self.end - self.start) - self.null_count) >= min_periods
+    fn is_valid(&self, min_samples: usize) -> bool {
+        ((self.end - self.start) - self.null_count) >= min_samples
     }
 
     fn slice_len(&self) -> usize {

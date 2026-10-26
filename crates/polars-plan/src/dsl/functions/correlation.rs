@@ -36,7 +36,7 @@ fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool
     // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804
     let rolling_options = RollingOptionsFixedWindow {
         window_size: options.window_size as usize,
-        min_periods: options.min_periods as usize,
+        min_samples: options.min_samples as usize,
         ..Default::default()
     };
 

@@ -163,7 +163,7 @@ pub(super) fn rolling_corr_cov(
     let mean_x_y = (&x * &y)?.rolling_mean(rolling_options.clone())?;
     let rolling_options_count = RollingOptionsFixedWindow {
         window_size: rolling_options.window_size,
-        min_periods: 0,
+        min_samples: 0,
         ..Default::default()
     };
 

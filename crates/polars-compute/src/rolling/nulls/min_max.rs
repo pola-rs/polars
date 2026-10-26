@@ -13,7 +13,7 @@ macro_rules! rolling_minmax_nulls_func {
         pub fn $rolling_m<T>(
             arr: &PrimitiveArray<T>,
             window_size: usize,
-            min_periods: usize,
+            min_samples: usize,
             center: bool,
             weights: Option<&[f64]>,
             _params: Option<RollingFnParams>,
@@ -24,7 +24,7 @@ macro_rules! rolling_minmax_nulls_func {
             if weights.is_some() {
                 panic!("weights not yet supported on array with null values")
             }
-            rolling_minmax_van_herk_nulls::<T, $policy>(arr, window_size, min_periods, center)
+            rolling_minmax_van_herk_nulls::<T, $policy>(arr, window_size, min_samples, center)
         }
     };
 }

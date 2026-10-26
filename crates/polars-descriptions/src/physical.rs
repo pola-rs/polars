@@ -273,7 +273,7 @@ pub enum PhysicalPropsDescription {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     },
     SemiAntiJoin {

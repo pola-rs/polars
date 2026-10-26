@@ -5,7 +5,7 @@ use super::*;
 pub fn rolling_mean<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     _params: Option<RollingFnParams>,
@@ -29,7 +29,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
-            min_periods,
+            min_samples,
             det_offsets_center,
             None,
         )
@@ -38,7 +38,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
-            min_periods,
+            min_samples,
             det_offsets,
             None,
         )

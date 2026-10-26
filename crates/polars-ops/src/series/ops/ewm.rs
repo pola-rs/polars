@@ -48,7 +48,7 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         xs.iter(),
         alpha,
         options.adjust,
-        options.min_periods,
+        options.min_samples,
         options.ignore_nulls,
     ))
 }
@@ -57,7 +57,7 @@ pub fn ewm_sum(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
     dispatch_ewm_kernel!(s, options, ewm_sum, |xs, alpha| kernel_ewm_sum(
         xs.iter(),
         alpha,
-        options.min_periods,
+        options.min_samples,
         options.ignore_nulls,
     ))
 }
@@ -75,7 +75,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.alpha.as_(),
                 options.adjust,
                 options.bias,
-                options.min_periods,
+                options.min_samples,
                 options.ignore_nulls,
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
@@ -87,7 +87,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.alpha as f32,
                 options.adjust,
                 options.bias,
-                options.min_periods,
+                options.min_samples,
                 options.ignore_nulls,
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
@@ -99,7 +99,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.alpha,
                 options.adjust,
                 options.bias,
-                options.min_periods,
+                options.min_samples,
                 options.ignore_nulls,
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
@@ -125,7 +125,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.alpha.as_(),
                 options.adjust,
                 options.bias,
-                options.min_periods,
+                options.min_samples,
                 options.ignore_nulls,
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
@@ -137,7 +137,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.alpha as f32,
                 options.adjust,
                 options.bias,
-                options.min_periods,
+                options.min_samples,
                 options.ignore_nulls,
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
@@ -149,7 +149,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.alpha,
                 options.adjust,
                 options.bias,
-                options.min_periods,
+                options.min_samples,
                 options.ignore_nulls,
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))

@@ -15,7 +15,7 @@ pub struct RollingOptionsDynamicWindow {
     /// The length of the window.
     pub window_size: Duration,
     /// Amount of elements in the window that should be filled before computing a result.
-    pub min_periods: usize,
+    pub min_samples: usize,
     /// Which side windows should be closed.
     pub closed_window: ClosedWindow,
     /// Optional parameters for the rolling
@@ -26,7 +26,7 @@ pub struct RollingOptionsDynamicWindow {
 impl Hash for RollingOptionsDynamicWindow {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.window_size.hash(state);
-        self.min_periods.hash(state);
+        self.min_samples.hash(state);
         self.closed_window.hash(state);
     }
 }

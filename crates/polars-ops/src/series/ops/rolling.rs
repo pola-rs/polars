@@ -9,7 +9,7 @@ use {
 fn rolling_skew_ca<T>(
     ca: &ChunkedArray<T>,
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     params: Option<RollingFnParams>,
 ) -> PolarsResult<ChunkedArray<T>>
@@ -26,13 +26,13 @@ where
     let ca = ca.rechunk();
     let arr = ca.downcast_get(0).unwrap();
     let arr = if arr.has_nulls() {
-        polars_compute::rolling::nulls::rolling_skew(arr, window_size, min_periods, center, params)
+        polars_compute::rolling::nulls::rolling_skew(arr, window_size, min_samples, center, params)
     } else {
         let values = arr.values();
         polars_compute::rolling::no_nulls::rolling_skew(
             values,
             window_size,
-            min_periods,
+            min_samples,
             center,
             params,
         )?
@@ -43,7 +43,7 @@ where
 #[cfg(feature = "moment")]
 pub fn rolling_skew(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
     let window_size = options.window_size;
-    let min_periods = options.min_periods;
+    let min_samples = options.min_samples;
     let center = options.center;
     let params = options.fn_params;
 
@@ -51,15 +51,15 @@ pub fn rolling_skew(s: &Series, options: RollingOptionsFixedWindow) -> PolarsRes
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();
-            rolling_skew_ca(ca, window_size, min_periods, center, params).map(|ca| ca.into_series())
+            rolling_skew_ca(ca, window_size, min_samples, center, params).map(|ca| ca.into_series())
         },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
-            rolling_skew_ca(ca, window_size, min_periods, center, params).map(|ca| ca.into_series())
+            rolling_skew_ca(ca, window_size, min_samples, center, params).map(|ca| ca.into_series())
         },
         DataType::Float32 => {
             let ca = s.f32().unwrap();
-            rolling_skew_ca(ca, window_size, min_periods, center, params).map(|ca| ca.into_series())
+            rolling_skew_ca(ca, window_size, min_samples, center, params).map(|ca| ca.into_series())
         },
         dt if dt.is_primitive_numeric() => {
             let s = s.cast(&DataType::Float64).unwrap();
@@ -74,7 +74,7 @@ fn rolling_kurtosis_ca<T>(
     ca: &ChunkedArray<T>,
     window_size: usize,
     params: Option<RollingFnParams>,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
 ) -> PolarsResult<ChunkedArray<T>>
 where
@@ -93,7 +93,7 @@ where
         polars_compute::rolling::nulls::rolling_kurtosis(
             arr,
             window_size,
-            min_periods,
+            min_samples,
             center,
             params,
         )
@@ -102,7 +102,7 @@ where
         polars_compute::rolling::no_nulls::rolling_kurtosis(
             values,
             window_size,
-            min_periods,
+            min_samples,
             center,
             params,
         )?
@@ -113,25 +113,25 @@ where
 #[cfg(feature = "moment")]
 pub fn rolling_kurtosis(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
     let window_size = options.window_size;
-    let min_periods = options.min_periods;
+    let min_samples = options.min_samples;
     let center = options.center;
     let params = options.fn_params;
 
     match s.dtype() {
         DataType::Float64 => {
             let ca = s.f64().unwrap();
-            rolling_kurtosis_ca(ca, window_size, params, min_periods, center)
+            rolling_kurtosis_ca(ca, window_size, params, min_samples, center)
                 .map(|ca| ca.into_series())
         },
         DataType::Float32 => {
             let ca = s.f32().unwrap();
-            rolling_kurtosis_ca(ca, window_size, params, min_periods, center)
+            rolling_kurtosis_ca(ca, window_size, params, min_samples, center)
                 .map(|ca| ca.into_series())
         },
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = s.f16().unwrap();
-            rolling_kurtosis_ca(ca, window_size, params, min_periods, center)
+            rolling_kurtosis_ca(ca, window_size, params, min_samples, center)
                 .map(|ca| ca.into_series())
         },
         dt if dt.is_primitive_numeric() => {

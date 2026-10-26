@@ -1009,21 +1009,21 @@ impl PyExpr {
             .into()
     }
 
-    fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_mean(&self, alpha: f64, adjust: bool, min_samples: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias: false,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_sum(&self, alpha: f64, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_sum(&self, alpha: f64, min_samples: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             bias: false,
-            min_periods,
+            min_samples,
             ignore_nulls,
             ..Default::default()
         };
@@ -1047,14 +1047,14 @@ impl PyExpr {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_std(options).into()
@@ -1064,14 +1064,14 @@ impl PyExpr {
         alpha: f64,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
             bias,
-            min_periods,
+            min_samples,
             ignore_nulls,
         };
         self.inner.clone().ewm_var(options).into()

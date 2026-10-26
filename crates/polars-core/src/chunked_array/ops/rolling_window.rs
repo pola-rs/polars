@@ -12,7 +12,7 @@ pub struct RollingOptionsFixedWindow {
     /// The length of the window.
     pub window_size: usize,
     /// Amount of elements in the window that should be filled before computing a result.
-    pub min_periods: usize,
+    pub min_samples: usize,
     /// An optional slice with the same length as the window that will be multiplied
     ///              elementwise with the values in the window.
     pub weights: Option<Vec<f64>>,
@@ -26,7 +26,7 @@ pub struct RollingOptionsFixedWindow {
 impl Hash for RollingOptionsFixedWindow {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.window_size.hash(state);
-        self.min_periods.hash(state);
+        self.min_samples.hash(state);
         self.center.hash(state);
         self.weights.is_some().hash(state);
     }
@@ -36,7 +36,7 @@ impl Default for RollingOptionsFixedWindow {
     fn default() -> Self {
         RollingOptionsFixedWindow {
             window_size: 3,
-            min_periods: 1,
+            min_samples: 1,
             weights: None,
             center: false,
             fn_params: None,
@@ -52,11 +52,11 @@ mod inner_mod {
     use crate::prelude::*;
 
     /// utility
-    fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
+    fn check_input(window_size: usize, min_samples: usize) -> PolarsResult<()> {
         polars_ensure!(
-            min_periods <= window_size,
+            min_samples <= window_size,
             ComputeError: "`window_size`: {} should be >= `min_samples`: {}",
-            window_size, min_periods
+            window_size, min_samples
         );
         Ok(())
     }
@@ -83,7 +83,7 @@ mod inner_mod {
             f: &dyn Fn(&Series) -> PolarsResult<Series>,
             mut options: RollingOptionsFixedWindow,
         ) -> PolarsResult<Series> {
-            check_input(options.window_size, options.min_periods)?;
+            check_input(options.window_size, options.min_samples)?;
 
             let ca = self.rechunk();
             if options.weights.is_some() && !self.dtype().is_float() {
@@ -110,7 +110,7 @@ mod inner_mod {
                 for idx in 0..len {
                     let (start, size) = window_edges(idx, len, options.window_size, options.center);
 
-                    if size < options.min_periods {
+                    if size < options.min_samples {
                         builder.append_null();
                     } else {
                         // SAFETY:
@@ -118,7 +118,7 @@ mod inner_mod {
                         let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
                         // ensure we still meet window size criteria after removing null values
-                        if size - arr_window.null_count() < options.min_periods {
+                        if size - arr_window.null_count() < options.min_samples {
                             builder.append_null();
                             continue;
                         }
@@ -177,7 +177,7 @@ mod inner_mod {
                 for idx in 0..len {
                     let (start, size) = window_edges(idx, len, options.window_size, options.center);
 
-                    if size < options.min_periods {
+                    if size < options.min_samples {
                         builder.append_null();
                     } else {
                         // SAFETY:
@@ -185,7 +185,7 @@ mod inner_mod {
                         let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
 
                         // ensure we still meet window size criteria after removing null values
-                        if size - arr_window.null_count() < options.min_periods {
+                        if size - arr_window.null_count() < options.min_samples {
                             builder.append_null();
                             continue;
                         }

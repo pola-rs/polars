@@ -40,7 +40,7 @@ use crate::dsl::Selector;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RollingCovOptions {
     pub window_size: IdxSize,
-    pub min_periods: IdxSize,
+    pub min_samples: IdxSize,
     pub ddof: Option<u8>,
 }
 
