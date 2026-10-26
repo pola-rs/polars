@@ -1269,6 +1269,24 @@ def test_from_dicts_missing_columns() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_from_dicts_extra_keys_after_inference_23190() -> None:
+    data = [{"a": 1}] * 3 + [{"a": 10, "b": 20}]
+    for strict in [True, False]:
+        with pytest.raises(
+            pl.exceptions.ComputeError, match='extra key in dict 3: "b"'
+        ):
+            pl.from_dicts(data, infer_schema_length=3, strict=strict)
+
+    assert_frame_equal(
+        pl.from_dicts(data, infer_schema_length=3, schema=["a"]),
+        pl.DataFrame({"a": [1, 1, 1, 10]}),
+    )
+    assert_frame_equal(
+        pl.from_dicts(data, infer_schema_length=None),
+        pl.DataFrame({"a": [1, 1, 1, 10], "b": [None, None, None, 20]}),
+    )
+
+
 def test_from_dicts_schema_columns_do_not_match() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
