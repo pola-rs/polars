@@ -1,6 +1,9 @@
+use std::borrow::Cow;
 use std::fmt;
 
+use polars_arrow::legacy::utils::CustomIterTools;
 use polars_compute::approx_quantile::{ApproxQuantileMethod, FinalizedSketch, Sketch};
+use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_split_offsets;
@@ -63,12 +66,12 @@ pub fn approx_quantile_sketch(
     error: f64,
     method: &ApproxQuantileMethod,
 ) -> PolarsResult<Series> {
-    let out = match s.dtype() {
-        dt if dt.is_primitive_numeric() || dt.is_temporal() || dt.is_decimal() => {
-            let physical = s.to_physical_repr();
-            let physical: &Series = physical.as_ref();
-            with_match_physical_numeric_polars_type!(physical.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = physical.as_ref().as_ref();
+    let items = sketch_repr(s)?;
+    let items: &Series = items.as_ref();
+    let out = match items.dtype() {
+        dt if dt.is_primitive_numeric() => {
+            with_match_physical_numeric_polars_type!(dt, |$T| {
+                let ca: &ChunkedArray<$T> = items.as_ref().as_ref();
                 let ca = ca.drop_nulls();
                 let ca = ca.rechunk();
                 let sketch = build_sketch(ca.cont_slice()?, error, method);
@@ -76,18 +79,60 @@ pub fn approx_quantile_sketch(
             })
         },
         DataType::Boolean => {
-            let items: Vec<bool> = s.bool()?.iter().flatten().collect();
+            let items: Vec<bool> = items.bool()?.iter().flatten().collect();
             sketches_to_series(&[build_sketch(&items, error, method)])
         },
         DataType::String => {
-            let items: Vec<&str> = s.str()?.iter().flatten().collect();
+            let items: Vec<&str> = items.str()?.iter().flatten().collect();
             sketches_to_series(&[build_sketch(&items, error, method)])
         },
-        dt => {
-            polars_bail!(InvalidOperation: "`approx_quantile` operation not supported for dtype `{dt}`")
+        DataType::Binary => {
+            let items: Vec<&[u8]> = items.binary()?.iter().flatten().collect();
+            sketches_to_series(&[build_sketch(&items, error, method)])
+        },
+        DataType::BinaryOffset => {
+            let items: Vec<&[u8]> = items.binary_offset()?.iter().flatten().collect();
+            sketches_to_series(&[build_sketch(&items, error, method)])
+        },
+        _ => {
+            polars_bail!(InvalidOperation: "`approx_quantile` operation not supported for dtype `{}`", s.dtype())
         },
     }?;
     Ok(out.with_name(s.name().clone()))
+}
+
+/// Convert `s` to sketch items that compare as `s` sorts: the physical repr of `s`, or its
+/// ordered row encoding if the physical repr compares differently.
+pub fn sketch_repr(s: &Series) -> PolarsResult<Cow<'_, Series>> {
+    if !sketch_items_are_row_encoded(s.dtype()) {
+        return Ok(s.to_physical_repr());
+    }
+    let rows = _get_rows_encoded_ca(
+        s.name().clone(),
+        &[s.clone().into_column()],
+        &[false],
+        &[false],
+        true,
+    )?;
+    Ok(Cow::Owned(rows.into_series()))
+}
+
+/// Return the dtype of [`sketch_repr`] for values of `dtype`.
+pub fn sketch_dtype(dtype: &DataType) -> DataType {
+    if sketch_items_are_row_encoded(dtype) {
+        DataType::BinaryOffset
+    } else {
+        dtype.to_physical()
+    }
+}
+
+fn sketch_items_are_row_encoded(dtype: &DataType) -> bool {
+    match dtype {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, storage) => sketch_items_are_row_encoded(storage),
+        // Categoricals sort lexically, not by their physical id.
+        dt => dt.is_categorical() || dt.is_nested() || dt.is_null(),
+    }
 }
 
 /// Estimate `quantiles` from every sketch of `sketch`.
@@ -140,19 +185,13 @@ pub fn approx_quantile_estimate(
         !quantiles_inner.has_nulls(),
         ComputeError: "`quantile` should not contain null values",
     );
-    let estimates = match values_dtype {
-        _ if values_dtype.is_primitive_numeric()
-            || values_dtype.is_temporal()
-            || values_dtype.is_decimal() =>
-        {
-            let physical = values_dtype.to_physical();
-            let estimates = with_match_physical_numeric_polars_type!(physical, |$T| {
+    let estimates = match sketch_dtype(values_dtype) {
+        physical if physical.is_primitive_numeric() => {
+            with_match_physical_numeric_polars_type!(physical, |$T| {
                 let estimates = approx_quantile_estimate_inner::<<$T as PolarsNumericType>::Native>(sketch, &quantiles, quantiles_inner)?;
                 ChunkedArray::<$T>::from_iter_options(PlSmallStr::EMPTY, estimates.into_iter())
                     .into_series()
-            });
-            // SAFETY: the estimates are items the input itself held.
-            unsafe { estimates.from_physical_unchecked(values_dtype)? }
+            })
         },
         DataType::Boolean => {
             let estimates =
@@ -169,9 +208,31 @@ pub fn approx_quantile_estimate(
             )
             .into_series()
         },
+        DataType::Binary => {
+            let estimates =
+                approx_quantile_estimate_inner::<Vec<u8>>(sketch, &quantiles, quantiles_inner)?;
+            BinaryChunked::from_iter_options(
+                PlSmallStr::EMPTY,
+                estimates.iter().map(|v| v.as_deref()),
+            )
+            .into_series()
+        },
+        DataType::BinaryOffset => {
+            let estimates =
+                approx_quantile_estimate_inner::<Vec<u8>>(sketch, &quantiles, quantiles_inner)?;
+            let estimates: BinaryOffsetChunked =
+                estimates.iter().map(|v| v.as_deref()).collect_trusted();
+            estimates.into_series()
+        },
         _ => {
             polars_bail!(InvalidOperation: "`approx_quantile` operation not supported for dtype `{values_dtype}`")
         },
+    };
+    let estimates = if sketch_items_are_row_encoded(values_dtype) {
+        decode_rows(estimates.binary_offset()?, values_dtype)?
+    } else {
+        // SAFETY: the estimates are items the input itself held.
+        unsafe { estimates.from_physical_unchecked(values_dtype)? }
     };
 
     let estimates = quantiles.with_inner_values(&estimates);
@@ -208,4 +269,25 @@ fn approx_quantile_estimate_inner<
         }
     }
     Ok(out)
+}
+
+/// Decode the ordered row encodings `rows` of values of `dtype`.
+fn decode_rows(rows: &BinaryOffsetChunked, dtype: &DataType) -> PolarsResult<Series> {
+    // A null has no row to decode, so decode the valid rows and gather them back in place.
+    let field = Field::new(rows.name().clone(), dtype.clone());
+    let decoded = rows
+        .drop_nulls()
+        .row_decode_ordered(&[field], &[false], &[false])?;
+    let decoded = decoded.fields_as_series().pop().unwrap();
+    let mut next: IdxSize = 0;
+    let idx = IdxCa::from_iter_options(
+        PlSmallStr::EMPTY,
+        rows.iter().map(|row| {
+            row.map(|_| {
+                next += 1;
+                next - 1
+            })
+        }),
+    );
+    decoded.take(&idx)
 }
