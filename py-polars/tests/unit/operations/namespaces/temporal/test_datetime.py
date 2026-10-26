@@ -638,6 +638,19 @@ def test_cast_time_unit_overflow_22878() -> None:
         d.dt.cast_time_unit("ns")
     assert d.dt.cast_time_unit("ms").to_list() == [timedelta(days=200_000)]
 
+    # constant-folded literals also raise
+    for value in (s.item(), d.item()):
+        with pytest.raises(InvalidOperationError, match="failed in column 'literal'"):
+            pl.select(pl.lit(value).dt.cast_time_unit("ns"))
+
+
+def test_cast_time_unit_rounding() -> None:
+    # datetimes round down, durations round towards zero
+    for dtype, expected in ((pl.Datetime, [-1, 0]), (pl.Duration, [0, 0])):
+        s = pl.Series([-1, 1], dtype=dtype("ns"))
+        assert s.dt.cast_time_unit("us").cast(pl.Int64).to_list() == expected
+        assert s.cast(dtype("us")).cast(pl.Int64).to_list() == expected
+
 
 def test_epoch_matches_timestamp() -> None:
     dates = pl.Series([datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
