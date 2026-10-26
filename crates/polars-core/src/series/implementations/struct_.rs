@@ -197,7 +197,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn deposit(&self, validity: &Bitmap) -> Series {
-        self.0.deposit(validity).into_series()
+        // The outer validity must also be propagated into the fields.
+        self.0
+            .deposit_with(validity, StructChunked::set_outer_validity)
+            .into_series()
     }
 
     fn len(&self) -> usize {
