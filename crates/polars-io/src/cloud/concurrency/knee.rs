@@ -589,6 +589,7 @@ impl KneeController {
         }
     }
 
+    #[cfg(test)]
     pub fn budget(&self) -> u64 {
         self.budget
     }
