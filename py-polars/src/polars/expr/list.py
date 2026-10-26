@@ -645,7 +645,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def gather(
         self,
-        indices: Expr | Series | list[int] | list[list[int]],
+        indices: Expr | Series | str | list[int] | list[list[int]],
         *,
         null_on_oob: bool = False,
     ) -> Expr:
