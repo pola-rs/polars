@@ -27,7 +27,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::slice_offsets;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use self::flush::{Flush, PendingBucket};
+use self::flush::{Flush, PendingBucket, sort_index_row_bytes};
 use self::sample::{KeySample, split_keys};
 use self::split_tree::BucketClassifier;
 use self::tuning::SortTuning;
@@ -304,11 +304,13 @@ impl SortNode {
         }
         drop_parallel(dropped);
 
-        let bucket_bytes = total_bytes / (num_buckets as u64 + 1);
         Ok(Flush::new(
             pending,
             get_ideal_morsel_size().max(1),
-            self.tuning.flush_ahead(bucket_bytes, num_tasks),
+            self.tuning.flush_ahead(num_tasks),
+            // Rounded up, so that no bucket with rows is free.
+            total_bytes.div_ceil(total_rows.max(1) as u64).max(1),
+            sort_index_row_bytes(&self.key_dtype),
             spill_ctx,
         ))
     }

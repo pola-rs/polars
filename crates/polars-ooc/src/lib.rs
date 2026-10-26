@@ -28,6 +28,11 @@ pub trait Spillable: Send + Sync + 'static {
 
     /// Given a previously spilled representation
     fn unspill(location: &Self::Spilled) -> impl Future<Output = Self> + Send;
+
+    /// The number of bytes a spilled representation takes on disk.
+    fn spilled_bytes(_location: &Self::Spilled) -> u64 {
+        0
+    }
 }
 
 static BYTES_SPILLED_TO_DISK: RelaxedCell<u64> = RelaxedCell::new_u64(0);

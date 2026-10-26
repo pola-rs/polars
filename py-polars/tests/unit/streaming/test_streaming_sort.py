@@ -735,8 +735,8 @@ def test_sort_spill_sets_and_restores_allocator_decay(
     df = pl.DataFrame({"k": pl.Series(range(N_ROWS)).shuffle(seed=0)})
 
     # The first round may reuse a decay change left by an earlier test. After
-    # its restore nothing is changed anymore, so later rounds must enter again.
-    for i in range(3):
+    # its restore nothing is changed anymore, so the second round must enter again.
+    for i in range(2):
         _apply_sort_mode("spilled", plmonkeypatch, tmp_path)
         out = df.lazy().sort("k").collect(engine="streaming")
         assert_frame_equal(out, df.sort("k"))

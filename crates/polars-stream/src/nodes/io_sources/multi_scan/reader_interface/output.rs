@@ -1,5 +1,6 @@
 use polars_async::primitives::connector;
 use polars_async::primitives::wait_group::WaitGroup;
+use polars_ooc::memory_manager;
 
 use crate::morsel::{Morsel, MorselInserter, MorselLinearizer};
 
@@ -53,6 +54,9 @@ impl FileReaderOutputSend {
 
         // We order to wait first, then send. This is intended to allow the producer create the
         // next morsel while waiting for the current one to be consumed.
+
+        // While over the memory budget, wait for spills before sending more.
+        memory_manager().spill().await;
 
         match self {
             Connector(tx, wait_group) => {
