@@ -79,6 +79,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     Int128,
+    List,
     Null,
     Object,
     String,
@@ -1178,7 +1179,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # determine which columns will produce std/mean/percentile/etc
         # statistics in a single pass over the frame schema
-        has_numeric_result, sort_cols = set(), set()
+        has_numeric_result = set()
         metric_exprs: list[Expr] = []
         null = F.lit(None)
 
@@ -1203,19 +1204,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             min_expr = F.col(c).min() if not skip_minmax(dtype) else null
             max_expr = F.col(c).max() if not skip_minmax(dtype) else null
 
-            # percentiles
+            # percentiles (as a single list, expanded when reshaping)
             pct_exprs = []
-            for p in quantiles:
+            if quantiles:
                 if is_numeric or is_temporal:
                     pct_expr = (
-                        F.col(c).to_physical().quantile(p, interpolation).cast(dtype)
+                        F.col(c)
+                        .to_physical()
+                        .quantile(list(quantiles), interpolation)
+                        .cast(List(dtype))
                         if is_temporal
-                        else F.col(c).quantile(p, interpolation)
+                        else F.col(c).quantile(list(quantiles), interpolation)
                     )
-                    sort_cols.add(c)
                 else:
                     pct_expr = null
-                pct_exprs.append(pct_expr.alias(f"{p}:{c}"))
+                pct_exprs.append(pct_expr.alias(f"percentiles:{c}"))
 
             if is_numeric or dtype.is_nested() or dtype in (Null, Boolean):
                 has_numeric_result.add(c)
@@ -1232,25 +1235,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ]
             )
 
-        df_metrics = (
-            (
-                # if more than one quantile, sort the relevant columns to make them O(1)
-                # TODO: drop sort once we have efficient retrieval of multiple quantiles
-                self.with_columns(F.col(c).sort() for c in sort_cols)
-                if sort_cols
-                else self
-            )
-            .select(*metric_exprs)
-            .collect()
-        )
+        df_metrics = self.select(*metric_exprs).collect()
 
         # reshape wide result
-        n_metrics = len(metrics)
-        column_metrics = [
-            df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
-            for n in range(schema.len())
-        ]
-        summary = dict(zip(schema, column_metrics, strict=True))
+        row = df_metrics.row(0)
+        n_exprs = len(metric_exprs) // schema.len()
+        summary: dict[str, list[Any]] = {}
+        for n, c in enumerate(schema):
+            *values, max_value = row[(n * n_exprs) : (n + 1) * n_exprs]
+            if quantiles:
+                values.extend(values.pop() or [None] * len(quantiles))
+            summary[c] = [*values, max_value]
 
         # cast by column type (numeric/bool -> float), (other -> string)
         # for non-numeric columns, format count/null_count with thousands
@@ -1260,7 +1255,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         thousands_sep = get_thousands_separator()
 
         for c in schema:
-            summary[c] = [  # type: ignore[assignment]
+            summary[c] = [
                 (
                     None
                     if (v is None or isinstance(v, dict))
