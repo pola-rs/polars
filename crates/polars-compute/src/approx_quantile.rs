@@ -328,6 +328,7 @@ pub mod kll {
     }
 
     #[derive(Debug, Clone, Copy, Default)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct Level {
         offset: usize,
         size: usize,
@@ -340,6 +341,7 @@ pub mod kll {
     /// Stand-in for the run of [`SAMPLER_CUTOFF`]-sized compactors at the bottom
     /// of the chain, which is a uniform sampler in distribution.
     #[derive(Debug, Clone)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct Sampler<T> {
         /// The retained item. `Some` whenever `weight` is nonzero.
         item: Option<T>,
@@ -401,6 +403,7 @@ pub mod kll {
     }
 
     #[derive(Debug)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
         /// Contents of the compactors, from the top compactor down to the base
         /// compactor. So the order of `levels` is *reversed* wrt `items`.
@@ -416,7 +419,9 @@ pub mod kll {
         base_compactor_height: usize,
         /// Sampler representing the (virtual) compactors below `base_height`.
         sampler: Sampler<T>,
+        #[cfg_attr(feature = "serde", serde(skip, default = "rand::make_rng"))]
         rng: SmallRng,
+        #[cfg_attr(feature = "serde", serde(skip, default = "Vec::new"))]
         scratch: Vec<T>,
     }
 
@@ -437,6 +442,7 @@ pub mod kll {
     }
 
     #[derive(Debug, Clone)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[repr(transparent)]
     pub struct KLLSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
@@ -850,6 +856,7 @@ pub mod req {
     }
 
     #[derive(Debug, Clone, Copy, Default)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct Level {
         offset: usize,
         size: usize,
@@ -859,6 +866,7 @@ pub mod req {
     }
 
     #[derive(Debug)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
         /// Contents of the relative compactors. The offsets of the compactors
         /// are stored in the levels vector. The top-level compactor is stored at
@@ -870,6 +878,7 @@ pub mod req {
         /// and height *0*. So the order of `levels` is *reversed* wrt `items`.
         items: Vec<T>,
         /// Scratch Vec to reduce an allocation during merging.
+        #[cfg_attr(feature = "serde", serde(skip, default = "Vec::new"))]
         scratch: Vec<T>,
         levels: Vec<Level>,
         /// Bit that specifies if this sketch is high-rank-accurate or low-rank-accurate.
@@ -884,6 +893,7 @@ pub mod req {
         /// see `close_out_if_needed`.
         k: usize,
         consumed_items: u64,
+        #[cfg_attr(feature = "serde", serde(skip, default = "rand::make_rng"))]
         rng: SmallRng,
     }
 
@@ -904,6 +914,7 @@ pub mod req {
     }
 
     #[derive(Debug, Clone)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[repr(transparent)]
     pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
@@ -947,6 +958,7 @@ pub mod req {
     ///
     /// Costs 2x the size and speed of a single [`ReqSketch`]
     #[derive(Debug, Clone)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct DoubleReqSketch<T: fmt::Debug + Clone + TotalOrd> {
         lra: ReqSketch<T>,
         hra: ReqSketch<T>,
@@ -1303,6 +1315,7 @@ fn merge_sorted<T>(
 
 /// A sketch picked by [`ApproxQuantileMethod`].
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Sketch<T: fmt::Debug + Clone + TotalOrd> {
     Kll(KLLSketch<T>),
     Req(ReqSketch<T>),
