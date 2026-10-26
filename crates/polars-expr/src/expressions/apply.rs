@@ -426,22 +426,6 @@ fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> Pol
     Ok(())
 }
 
-/// The value of an aggregated list that holds the same single value for every group.
-fn uniform_single_value(ac: &AggregationContext) -> Option<Column> {
-    let AggState::AggregatedList(c) = &ac.state else {
-        return None;
-    };
-    if c.is_empty() {
-        return None;
-    }
-    match c.as_scalar_column()?.scalar().value() {
-        AnyValue::List(s) if s.len() == 1 => {
-            Some(s.clone().with_name(c.name().clone()).into_column())
-        },
-        _ => None,
-    }
-}
-
 impl PhysicalExpr for ApplyExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
@@ -570,25 +554,7 @@ impl PhysicalExpr for ApplyExpr {
                     //
                     //  * Finally, when broadcast is required in non-scalar we switch to group_aware
 
-                    // A list that holds the same single value for every group broadcasts like a
-                    // literal scalar, as long as another input sets the group lengths.
-                    let uniform_values: Vec<_> = acs.iter().map(uniform_single_value).collect();
-                    if !acs
-                        .iter()
-                        .any(|ac| matches!(ac.state, AggState::AggregatedScalar(_)))
-                        && acs
-                            .iter()
-                            .zip(&uniform_values)
-                            .any(|(ac, v)| !ac.is_literal() && v.is_none())
-                    {
-                        for (ac, v) in acs.iter_mut().zip(uniform_values) {
-                            if let Some(v) = v {
-                                // Apply pending group updates while the state is still a list.
-                                ac.groups();
-                                ac.with_agg_state(AggState::LiteralScalar(v));
-                            }
-                        }
-                    }
+                    broadcast_uniform_lists(&mut acs);
 
                     // Collect statistics on input aggstates
                     let mut has_agg_list = false;

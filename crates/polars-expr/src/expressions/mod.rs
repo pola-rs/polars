@@ -815,6 +815,47 @@ pub trait PhysicalExpr: Send + Sync {
     fn is_scalar(&self) -> bool;
 }
 
+impl AggregationContext<'_> {
+    /// The value of a list that holds the same single value for every group.
+    fn uniform_single_value(&self) -> Option<&Series> {
+        let AggState::AggregatedList(c) = &self.state else {
+            return None;
+        };
+        if c.is_empty() {
+            return None;
+        }
+        match c.as_scalar_column()?.scalar().value() {
+            AnyValue::List(s) if s.len() == 1 => Some(s),
+            _ => None,
+        }
+    }
+}
+
+/// Turn lists that hold the same single value for every group into literal scalars, so they
+/// broadcast without evaluating per group. An aggregated scalar input, or no other input to set the
+/// group lengths, would change the output shape, so then nothing changes.
+fn broadcast_uniform_lists(acs: &mut [AggregationContext]) {
+    if !acs.iter().any(|ac| ac.uniform_single_value().is_some())
+        || acs
+            .iter()
+            .any(|ac| matches!(ac.state, AggState::AggregatedScalar(_)))
+        || acs
+            .iter()
+            .all(|ac| ac.is_literal() || ac.uniform_single_value().is_some())
+    {
+        return;
+    }
+    for ac in acs {
+        let Some(s) = ac.uniform_single_value() else {
+            continue;
+        };
+        let value = s.clone().with_name(ac.get_values().name().clone());
+        // Apply pending group updates while the state is still a list.
+        ac.groups();
+        ac.with_agg_state(AggState::LiteralScalar(value.into_column()));
+    }
+}
+
 impl Display for &dyn PhysicalExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.as_expression() {
