@@ -50,6 +50,7 @@ impl IR {
 
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Exprs::Empty,
+            Recursive { .. } | WorkingTableScan { .. } => Exprs::Empty,
 
             #[cfg(feature = "python")]
             PythonScan { options } => match &options.predicate {
@@ -111,6 +112,7 @@ impl IR {
             | Gather { .. } => ExprsMut::Empty,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => ExprsMut::Empty,
+            Recursive { .. } | WorkingTableScan { .. } => ExprsMut::Empty,
 
             #[cfg(feature = "python")]
             PythonScan { options } => match &mut options.predicate {
@@ -205,6 +207,8 @@ impl IR {
                 input_right,
                 ..
             } => Inputs::double(*input_left, *input_right),
+            Recursive { anchor, step, .. } => Inputs::double(*anchor, *step),
+            WorkingTableScan { .. } => Inputs::Empty,
             UnoptimizedDispatch { inputs, .. } => Inputs::slice(inputs),
             Resolver { resolved_ir, .. } => Inputs::Slice(resolved_ir.as_slice().iter().copied()),
             Invalid => unreachable!(),
@@ -245,6 +249,8 @@ impl IR {
                 input_right,
                 ..
             } => InputsMut::double(input_left, input_right),
+            Recursive { anchor, step, .. } => InputsMut::double(anchor, step),
+            WorkingTableScan { .. } => InputsMut::Empty,
             UnoptimizedDispatch { inputs, .. } => InputsMut::slice(inputs),
             Resolver { resolved_ir, .. } => InputsMut::slice(resolved_ir.as_mut_slice()),
             Invalid => unreachable!(),

@@ -825,18 +825,11 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 }
 
-pub fn _broadcast_bools(n_cols: usize, values: &mut Vec<bool>) {
-    if n_cols > values.len() && values.len() == 1 {
-        while n_cols != values.len() {
-            values.push(values[0]);
-        }
-    }
-}
-
 /// # Panics
 /// Panics if `columns` is empty.
-pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> PolarsResult<IdxCa> {
+pub fn arg_sort(columns: &[Column], sort_options: SortMultipleOptions) -> PolarsResult<IdxCa> {
     assert!(!columns.is_empty());
+    let sort_options = sort_options.expand_flags(columns.len())?;
 
     for column in columns {
         if column.dtype().is_object() {
@@ -855,23 +848,13 @@ pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> Po
             limit: sort_options.limit,
         }))
     } else if let Some(limit) = sort_options.limit {
-        Ok(arg_bottom_k::_arg_bottom_k(limit as usize, columns, &mut sort_options)?.into_inner())
+        Ok(arg_bottom_k::_arg_bottom_k(limit as usize, columns, sort_options)?.into_inner())
     } else if sort_options.nulls_last.iter().all(|&x| x)
         || columns.iter().any(|c| c.dtype().is_nested())
         || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
     {
-        argsort_multiple_row_fmt(
-            columns,
-            sort_options.descending,
-            sort_options.nulls_last,
-            sort_options.multithreaded,
-        )
+        argsort_multiple_row_fmt(columns, &sort_options)
     } else {
-        let n_cols = columns.len();
-
-        _broadcast_bools(n_cols, &mut sort_options.descending);
-        _broadcast_bools(n_cols, &mut sort_options.nulls_last);
-
         columns[0]
             .clone()
             .as_materialized_series()

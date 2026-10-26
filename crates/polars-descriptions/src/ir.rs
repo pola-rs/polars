@@ -158,6 +158,12 @@ pub enum IrPropsDescription {
         keys: Vec<String>,
         maintain_order: bool,
     },
+    Recursive {
+        id: String,
+    },
+    WorkingTableScan {
+        id: String,
+    },
     PythonScan {
         scan_source_type: String,
         n_rows: Option<usize>,
@@ -187,7 +193,7 @@ pub enum IrPropsDescription {
     },
     Window {
         partition_by: Vec<String>,
-        order_by: Option<SortColumnDescription>,
+        order_by: Vec<SortColumnDescription>,
         exprs: Vec<String>,
         maintain_order: bool,
         ordered_eval: bool,

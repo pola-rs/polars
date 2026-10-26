@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::sync::Arc;
 
 use polars_arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
@@ -9,6 +10,7 @@ use polars_utils::version::{
 use super::schema::schema_to_metadata_key;
 use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
 use crate::arrow::geo::geo_key_value;
+use crate::parquet::encryption::encrypt::FileEncryptionProperties;
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
 
@@ -36,6 +38,7 @@ impl<W: Write> FileWriter<W> {
         &self.schema
     }
 
+    /// The metadata of the written file. None until the file has ended, and never set for encrypted files.
     pub fn metadata(&self) -> Option<&ThriftFileMetadata> {
         self.writer.metadata()
     }
@@ -43,14 +46,16 @@ impl<W: Write> FileWriter<W> {
 
 impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
-    /// # Error
-    /// If it is unable to derive a parquet schema from [`ArrowSchema`].
-    pub fn new_with_parquet_schema(
+    ///
+    /// # Errors
+    /// If encryption properties are set and are not valid for the file schema.
+    pub fn try_new_with_parquet_schema(
         writer: W,
         schema: ArrowSchema,
         parquet_schema: SchemaDescriptor,
         options: WriteOptions,
-    ) -> Self {
+        encryption_properties: Option<Arc<FileEncryptionProperties>>,
+    ) -> PolarsResult<Self> {
         let created_by = Some(format!(
             "{} version {} (build {})",
             get_polars_lib_name(),
@@ -58,8 +63,8 @@ impl<W: Write> FileWriter<W> {
             get_polars_lib_build_commit()
         ));
 
-        Self {
-            writer: crate::parquet::write::FileWriter::new(
+        Ok(Self {
+            writer: crate::parquet::write::FileWriter::try_new(
                 writer,
                 parquet_schema,
                 FileWriteOptions {
@@ -67,23 +72,32 @@ impl<W: Write> FileWriter<W> {
                     write_statistics: options.has_statistics(),
                 },
                 created_by,
-            ),
+                encryption_properties,
+            )?,
             schema,
             options,
-        }
+        })
     }
 
     /// Returns a new [`FileWriter`].
+    ///
     /// # Error
-    /// If it is unable to derive a parquet schema from [`ArrowSchema`].
-    pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
+    /// If it is unable to derive a parquet schema from [`ArrowSchema`], or the encryption
+    /// properties are set and not valid for the file schema.
+    pub fn try_new(
+        writer: W,
+        schema: ArrowSchema,
+        options: WriteOptions,
+        encryption_properties: Option<Arc<FileEncryptionProperties>>,
+    ) -> PolarsResult<Self> {
         let parquet_schema = to_parquet_schema(&schema)?;
-        Ok(Self::new_with_parquet_schema(
+        Self::try_new_with_parquet_schema(
             writer,
             schema,
             parquet_schema,
             options,
-        ))
+            encryption_properties,
+        )
     }
 
     /// Writes a row group to the file.

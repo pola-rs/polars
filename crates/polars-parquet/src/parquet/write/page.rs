@@ -8,6 +8,7 @@ use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
 use polars_parquet_format::{DictionaryPageHeader, Encoding, PageType};
 
 use crate::parquet::compression::Compression;
+use crate::parquet::encryption::encrypt::PageEncryptor;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, ParquetPageHeader,
@@ -53,10 +54,11 @@ pub struct PageWriteSpec {
     pub statistics: Option<Statistics>,
 }
 
-pub fn write_page<W: Write>(
+pub(crate) fn write_page<W: Write>(
     writer: &mut W,
     offset: u64,
     compressed_page: &CompressedPage,
+    encryptor: Option<&mut PageEncryptor>,
 ) -> ParquetResult<PageWriteSpec> {
     let num_values = compressed_page.num_values();
     let num_rows = compressed_page
@@ -66,24 +68,38 @@ pub fn write_page<W: Write>(
         .num_nulls()
         .expect("We should have num_nulls when we are writing");
 
-    let header = match &compressed_page {
+    let mut header = match &compressed_page {
         CompressedPage::Data(compressed_page) => assemble_data_page_header(compressed_page),
         CompressedPage::Dict(compressed_page) => assemble_dict_page_header(compressed_page),
     }?;
 
-    let header_size = write_page_header(writer, &header)?;
-    let mut bytes_written = header_size;
+    let buffer = match &compressed_page {
+        CompressedPage::Data(compressed_page) => &compressed_page.buffer,
+        CompressedPage::Dict(compressed_page) => &compressed_page.buffer,
+    };
 
-    bytes_written += match &compressed_page {
-        CompressedPage::Data(compressed_page) => {
-            writer.write_all(&compressed_page.buffer)?;
-            compressed_page.buffer.len() as u64
+    let (header_size, page_size) = match encryptor {
+        None => {
+            let header_size = write_page_header(writer, &header)?;
+            writer.write_all(buffer)?;
+            (header_size, buffer.len() as u64)
         },
-        CompressedPage::Dict(compressed_page) => {
-            writer.write_all(&compressed_page.buffer)?;
-            compressed_page.buffer.len() as u64
+        Some(encryptor) => {
+            let is_dictionary = matches!(compressed_page, CompressedPage::Dict(_));
+            let encrypted_page = encryptor.encrypt_page(buffer, is_dictionary)?;
+            // The compressed page size in the header is the size of the encrypted page
+            (_, header.compressed_page_size) =
+                maybe_bytes(header.uncompressed_page_size as usize, encrypted_page.len())?;
+            let encrypted_header = encryptor.encrypt_page_header(&header, is_dictionary)?;
+            writer.write_all(&encrypted_header)?;
+            writer.write_all(&encrypted_page)?;
+            if !is_dictionary {
+                encryptor.increment_page();
+            }
+            (encrypted_header.len() as u64, encrypted_page.len() as u64)
         },
     };
+    let bytes_written = header_size + page_size;
 
     let statistics = match &compressed_page {
         CompressedPage::Data(compressed_page) => compressed_page.statistics().transpose()?,

@@ -548,6 +548,10 @@ pub struct SinkedPathInfo {
     pub path: PlRefPath,
     pub num_rows: u64,
     pub num_bytes: u64,
+    /// The serialized Parquet footer metadata of the written file.
+    ///
+    /// None for encrypted files, whose plaintext metadata would expose information
+    /// about encrypted columns.
     pub parquet_metadata: Option<Vec<u8>>,
     /// The partition keys of the file (a height-1 frame), if partitioned.
     pub partition_keys: Option<Arc<DataFrame>>,

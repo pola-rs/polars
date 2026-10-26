@@ -1310,6 +1310,19 @@ def test_replace_pattern_matching_to_end() -> None:
         "<a>bc",
         None,
     ]
+    # Nested repetitions before the `.*$`.
+    s = pl.Series(["b-x", "aab-x", "1b-x", "12b-x"])
+    for pattern, expected in [
+        (r"(?:a+)?(b).*$", ["<b>", "<b>", "1<b>", "12<b>"]),
+        (r"(?:a*)?(a*)b.*$", ["<>", "<>", "1<>", "12<>"]),
+        (r"(?:\d{2})?(\d*)b.*$", ["<>", "aa<>", "<1>", "<>"]),
+    ]:
+        assert s.str.replace(pattern, "<$1>").to_list() == expected
+    s = pl.Series(["key: value", "key:value"])
+    assert s.str.replace(r"^(\w+):(?:\s+)?(\w+).*$", "$2").to_list() == [
+        "value",
+        "value",
+    ]
 
 
 def test_replace_all() -> None:

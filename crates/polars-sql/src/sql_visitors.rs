@@ -8,8 +8,8 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use sqlparser::ast::{
     Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
-    FunctionArguments, ObjectName, Query, SetExpr, Statement, TableFactor, Visitor as SQLVisitor,
-    VisitorMut, With,
+    FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visitor as SQLVisitor, VisitorMut,
+    With,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
@@ -657,36 +657,4 @@ pub(crate) fn collect_grouping_calls(expr: &SQLExpr) -> Vec<Vec<SQLExpr>> {
     };
     let _ = dyn_visit::visit(expr, &mut collector);
     collector.calls
-}
-
-// ---------------------------------------------------------------------------
-// TableRegisteringFinder
-// ---------------------------------------------------------------------------
-
-/// Visitor that detects a relation whose execution inserts into the context's table map:
-/// an aliased derived table, an aliased `UNNEST`, or a table function.
-struct TableRegisteringFinder;
-
-impl SQLVisitor for TableRegisteringFinder {
-    type Break = ();
-
-    fn pre_visit_table_factor(&mut self, table_factor: &TableFactor) -> ControlFlow<Self::Break> {
-        let registers = match table_factor {
-            TableFactor::Derived { alias, .. } | TableFactor::UNNEST { alias, .. } => {
-                alias.is_some()
-            },
-            TableFactor::Table { args, .. } => args.is_some(),
-            _ => false,
-        };
-        if registers {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        }
-    }
-}
-
-/// Check whether executing `stmt` registers a relation into the context's table map.
-pub(crate) fn statement_registers_table(stmt: &Statement) -> bool {
-    dyn_visit::visit(stmt, &mut TableRegisteringFinder).is_break()
 }

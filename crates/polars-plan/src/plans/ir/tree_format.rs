@@ -462,6 +462,14 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                         .collect(),
                 ),
+                Recursive { anchor, step, .. } => ND(
+                    wh(h, "RECURSIVE"),
+                    vec![
+                        self.lp_node(Some("ANCHOR:".to_string()), *anchor),
+                        self.lp_node(Some("STEP:".to_string()), *step),
+                    ],
+                ),
+                WorkingTableScan { .. } => ND(wh(h, "WORKING TABLE"), vec![]),
                 UnoptimizedDispatch {
                     inputs,
                     operation,

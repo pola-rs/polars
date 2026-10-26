@@ -1275,6 +1275,53 @@ def test_correlated_membership_in_join_on(query: str) -> None:
     )
 
 
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # The condition reads only the right input.
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id)",
+        "NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id)",
+        # The condition reads only the left input.
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id)",
+        "a.id IN (SELECT c.b_id FROM c WHERE c.id > a.id)",
+        "a.v = (SELECT MAX(c.id) * 10 FROM c WHERE c.b_id = a.id)",
+        # Each conjunct reads one input.
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id) AND EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id)",
+        "b.id = a.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id)",
+        # The subquery's own `b` is not the joined `b`, so the condition reads only `a`.
+        "a.id = (SELECT MAX(b.b_id) FROM c AS b WHERE b.b_id = a.id)",
+    ],
+)
+@pytest.mark.parametrize("columns", ["a.id, b.w", "b.w"])
+def test_correlated_one_input_condition_in_join_on(
+    join_type: str, condition: str, columns: str
+) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=f"SELECT {columns} FROM a {join_type} b ON {condition}",
+        compare_with="sqlite",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.v = (SELECT c.id * 10 FROM c WHERE c.b_id = a.id)",
+        "a.id = (SELECT b.id FROM c AS b WHERE b.b_id = a.id)",
+    ],
+)
+def test_correlated_one_input_condition_in_join_on_many_rows(condition: str) -> None:
+    # `b_id` 2 has two rows of `c`.
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="expected no or a single value"
+    ):
+        ctx.execute(f"SELECT a.id FROM a JOIN b ON {condition}").collect()
+
+
 def _first_row_frames() -> dict[str, pl.DataFrame]:
     return {
         "a": pl.DataFrame({"id": [1, 2, 3, 4, 5], "k": [1, 2, 3, None, 1]}),
@@ -1356,12 +1403,6 @@ def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
         "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id > a.id)",
         # A window over the subquery's rows depends on the outer row.
         "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT ROW_NUMBER() OVER (ORDER BY c.id) FROM c WHERE c.b_id = a.id)",
-        # Conditions on one join input.
-        "SELECT a.id FROM a JOIN b ON a.v = (SELECT c.id * 10 FROM c WHERE c.b_id = a.id)",
-        "SELECT a.id FROM a LEFT JOIN b ON b.id = a.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id)",
-        "SELECT a.id FROM a LEFT JOIN b ON b.id = a.id AND a.v IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
-        # The subquery's own `b` is not the joined `b`, so the condition reads only `a`.
-        "SELECT a.id FROM a JOIN b ON a.id = (SELECT b.id FROM c AS b WHERE b.b_id = a.id)",
         # `a.b.id` is a struct field of `a`, not a column of the joined `b`.
         "SELECT a.id FROM a JOIN b ON a.id < (SELECT c.id FROM c WHERE c.b_id = a.b.id)",
         # The relations inside an aliased nested join are not resolved by name.

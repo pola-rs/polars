@@ -1518,3 +1518,23 @@ def test_outer_join_where_scalar_condition(
         else left.with_columns(pl.lit(None, dtype=pl.Int64).alias("b"))
     )
     assert_frame_equal(query.collect(engine=engine), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+def test_join_where_predicate_column_loses_suffix(
+    engine: EngineType, how: Literal["inner", "left", "right", "full"]
+) -> None:
+    # `v_right` is only read by the predicate; dropping `v` from the left input
+    # removes the name collision.
+    left = pl.LazyFrame({"id": [1, 2], "v": [8, 9]})
+    right = pl.LazyFrame({"id": [1, 2], "v": [1, 9]})
+    query = left.join_where(
+        right, pl.col("id_right") >= pl.col("v_right"), how=how
+    ).select("id", "id_right")
+    disabled = pl.QueryOptFlags(projection_pushdown=False)
+    assert_frame_equal(
+        query.collect(engine=engine),
+        query.collect(engine=engine, optimizations=disabled),
+        check_row_order=False,
+    )

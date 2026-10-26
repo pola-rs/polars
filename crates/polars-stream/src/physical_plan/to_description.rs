@@ -88,6 +88,13 @@ pub fn phys_props(
             },
             vec![input.node],
         ),
+        PhysNodeKind::SpillFrameSource { frames, schema } => (
+            PhysicalPropsDescription::InMemorySource {
+                n_rows: frames.iter().map(|sf| sf.height()).sum(),
+                schema_names: schema.iter_names().map(ToString::to_string).collect(),
+            },
+            vec![],
+        ),
         PhysNodeKind::InputIndependentSelect { selectors, .. } => (
             PhysicalPropsDescription::InputIndependentSelect {
                 selectors: fmt_exprs(selectors, expr_arena),
@@ -284,7 +291,10 @@ pub fn phys_props(
         } => (
             PhysicalPropsDescription::Window {
                 partition_by: partition_by.iter().map(ToString::to_string).collect(),
-                order_by: order_by.as_ref().map(|(name, _)| name.to_string()),
+                order_by: order_by
+                    .iter()
+                    .flat_map(|(names, _)| names.iter().map(ToString::to_string))
+                    .collect(),
                 exprs: fmt_exprs(exprs, expr_arena),
                 ordered_eval: *ordered_eval,
                 maintain_order: *maintain_order,
@@ -434,6 +444,17 @@ pub fn phys_props(
                 output_name: output_name.to_string(),
             },
             vec![input.node],
+        ),
+        PhysNodeKind::Recursive {
+            anchor, externals, ..
+        } => (
+            PhysicalPropsDescription::Recursive {
+                num_external_inputs: externals.len(),
+            },
+            std::iter::once(anchor)
+                .chain(externals)
+                .map(|s| s.node)
+                .collect(),
         ),
         PhysNodeKind::OrderedUnion { inputs, .. } => (
             PhysicalPropsDescription::OrderedUnion {
