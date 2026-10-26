@@ -884,7 +884,7 @@ fn fractional_literal_parts(
         DataType::Float64 => 2f64.powi(f64::MANTISSA_DIGITS as i32),
         _ => return None,
     };
-    if !(value.abs() < exact_below) {
+    if value.is_nan() || value.abs() >= exact_below {
         return None;
     }
     let floor = value.floor();
