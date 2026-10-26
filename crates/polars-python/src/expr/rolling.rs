@@ -334,7 +334,7 @@ impl PyExpr {
         let min_samples = min_samples.unwrap_or(window_size);
         let options = RollingOptionsFixedWindow {
             window_size,
-            min_samples: min_samples,
+            min_samples,
             weights: None,
             center,
             fn_params: Some(RollingFnParams::Rank {
@@ -358,7 +358,7 @@ impl PyExpr {
     ) -> PyResult<Self> {
         let options = RollingOptionsDynamicWindow {
             window_size: Duration::try_parse(window_size).map_err(PyPolarsErr::from)?,
-            min_samples: min_samples,
+            min_samples,
             closed_window: closed.0,
             fn_params: Some(RollingFnParams::Rank {
                 method: method.0,
