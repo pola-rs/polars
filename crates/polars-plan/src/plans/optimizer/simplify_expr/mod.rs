@@ -722,6 +722,13 @@ impl OptimizationRule for SimplifyExprRule {
             if let Some(out) = optimize_len_or_null_count_cmp(left, op, right, expr_arena) {
                 return Ok(Some(out));
             }
+            #[cfg(all(feature = "temporal", feature = "is_between"))]
+            if ctx.is_filter_predicate
+                && let Some(out) =
+                    arity::simplify_year_comparison(left, op, right, schema, expr_arena)
+            {
+                return Ok(Some(out));
+            }
         }
 
         let expr = expr_arena.get(expr_node);

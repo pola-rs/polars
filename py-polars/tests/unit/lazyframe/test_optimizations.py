@@ -16,7 +16,10 @@ from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_is_null_followed_by_all() -> None:
@@ -1769,3 +1772,90 @@ def test_simplify_unique_len_to_n_unique() -> None:
     lf = pl.LazyFrame({"g": [1, 1], "a": pl.Series([1, 1], dtype=pl.Object)})
     q = lf.group_by("g").agg(pl.col("a").unique().len())
     assert "n_unique" not in q.explain()
+
+
+_YEAR_OPS = ["__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__"]
+
+
+def _assert_year_filters_match(lf: pl.LazyFrame, year: int) -> None:
+    for op in _YEAR_OPS:
+        for e in [
+            getattr(pl.col("x").dt.year(), op)(year),
+            getattr(pl.lit(year), op)(pl.col("x").dt.year()),
+        ]:
+            q = lf.filter(e)
+            assert_frame_equal(
+                q.collect(),
+                q.collect(optimizations=QueryOptFlags(simplify_expression=False)),
+            )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime("ns"), pl.Datetime("us"), pl.Datetime("ms")],
+)
+@pytest.mark.parametrize("year", [1969, 1970, 2020, 2263, 2**31 - 1])
+def test_simplify_year_comparison(dtype: pl.DataType, year: int) -> None:
+    values = [
+        dt.datetime(1969, 12, 31, 23, 59, 59),
+        dt.datetime(1970, 1, 1),
+        dt.datetime(2019, 12, 31, 23, 59, 59, 999000),
+        dt.datetime(2020, 1, 1),
+        dt.datetime(2020, 12, 31, 23, 59, 59, 999000),
+        dt.datetime(2021, 1, 1),
+        None,
+    ]
+    lf = pl.LazyFrame({"x": values}).with_columns(pl.col("x").cast(dtype))
+    _assert_year_filters_match(lf, year)
+    if year == 2020:
+        assert "year" not in lf.filter(pl.col("x").dt.year() == year).explain()
+    # Outside a filter a null year must stay null, so nothing changes.
+    assert "year" in lf.select(pl.col("x").dt.year() == year).explain()
+
+
+@pytest.mark.parametrize("dtype", [pl.Date, pl.Datetime("ms"), pl.Datetime("us")])
+def test_simplify_year_comparison_keeps_null_years(dtype: pl.DataType) -> None:
+    # `dt.year()` is null for values outside the supported dates.
+    bits = 32 if dtype == pl.Date else 64
+    lf = pl.LazyFrame(
+        {"x": [-(2 ** (bits - 1)), 0, 2 ** (bits - 1) - 1]},
+        schema={"x": pl.Int32 if dtype == pl.Date else pl.Int64},
+    ).select(pl.col("x").cast(dtype))
+    _assert_year_filters_match(lf, 2020)
+    lf.filter(pl.col("x").dt.year() >= 2020).explain()
+
+
+def test_simplify_year_comparison_not_equal_reads_input_once() -> None:
+    lf = pl.LazyFrame({"s": ["2019-06-01", "2020-06-01", None]})
+    d = pl.col("s").str.to_date()
+    # `!=` would read the input twice, so only a column is rewritten.
+    q = lf.filter(d.dt.year() != 2020)
+    assert "dt.year()" in q.explain()
+    assert q.collect()["s"].to_list() == ["2019-06-01"]
+    q = lf.filter(d.dt.year() == 2020)
+    assert "dt.year()" not in q.explain()
+    assert q.collect()["s"].to_list() == ["2020-06-01"]
+
+
+def test_simplify_year_comparison_keeps_time_zone() -> None:
+    lf = pl.LazyFrame(
+        {"x": [dt.datetime(2020, 12, 31, 23)]},
+        schema={"x": pl.Datetime("us", "Asia/Kathmandu")},
+    )
+    # The year is taken in local time, which is already 2021 here.
+    q = lf.filter(pl.col("x").dt.year() == 2020)
+    assert "dt.year()" in q.explain()
+    assert q.collect().height == 0
+
+
+def test_simplify_year_comparison_prunes_row_groups(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "a.parquet"
+    dates = pl.date_range(dt.date(2019, 1, 1), dt.date(2021, 12, 31), eager=True)
+    pl.DataFrame({"d": dates}).write_parquet(path, row_group_size=100)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    out = pl.scan_parquet(path).filter(pl.col("d").dt.year() == 2021).collect()
+    assert out.height == 365
+    assert "reading 4 / 11 row groups" in capfd.readouterr().err
