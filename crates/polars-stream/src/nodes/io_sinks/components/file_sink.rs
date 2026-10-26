@@ -12,7 +12,7 @@ pub type FileSinkPermit = tokio::sync::OwnedSemaphorePermit;
 pub struct FileSinkTaskData {
     morsel_tx: connector::Sender<SinkMorsel>,
     start_position: RowCountAndSize,
-    task_handle: executor::AbortOnDropHandle<PolarsResult<FileSinkPermit>>,
+    task_handle: executor::JoinHandle<PolarsResult<FileSinkPermit>>,
     path_info_entry: Option<SinkedPathInfoEntry>,
     sent_rows: u64,
     finish_tx: FinishSender,
@@ -22,7 +22,7 @@ impl FileSinkTaskData {
     pub fn new(
         morsel_tx: connector::Sender<SinkMorsel>,
         start_position: RowCountAndSize,
-        task_handle: executor::AbortOnDropHandle<PolarsResult<FileSinkPermit>>,
+        task_handle: executor::JoinHandle<PolarsResult<FileSinkPermit>>,
         path_info_entry: Option<SinkedPathInfoEntry>,
         finish_tx: FinishSender,
     ) -> Self {
@@ -48,7 +48,7 @@ impl FileSinkTaskData {
     }
 
     /// Signals to the writer to close, and returns its task handle.
-    pub fn close(self) -> executor::AbortOnDropHandle<PolarsResult<FileSinkPermit>> {
+    pub fn close(self) -> executor::JoinHandle<PolarsResult<FileSinkPermit>> {
         if let Some(path_info_entry) = self.path_info_entry {
             path_info_entry.set_num_rows(self.sent_rows);
         }

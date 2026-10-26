@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
-use polars_async::primitives::wait_group::WaitToken;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
@@ -21,7 +20,7 @@ use crate::nodes::io_sinks::components::sinked_path_info_list::{
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks::writers::create_file_writer_starter;
 use crate::nodes::io_sinks::writers::interface::{
-    FileOpenTaskHandle, FileWriterStarter, FinishSignal,
+    FileOpenTaskHandle, FileWriterStarter, FinishSignal, finish_signal,
 };
 use crate::utils::tokio_handle_ext;
 
@@ -32,7 +31,6 @@ pub fn start_single_file_sink_pipeline(
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
     finish: FinishSignal,
-    tasks: WaitToken,
 ) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
     let task_metrics = execution_state.task_metrics();
@@ -89,29 +87,27 @@ pub fn start_single_file_sink_pipeline(
     let file_open_task = {
         let io_metrics = io_metrics.clone();
         let sinked_path_info_entry = sinked_path_info_entry.clone();
-        let token = tasks.clone();
-        tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(tasks.clone().hold_until_drop(
-            async move {
-                target
-                    .open_into_writable_async(
-                        cloud_options.as_deref(),
-                        mkdir,
-                        upload_chunk_size,
-                        upload_max_concurrency.get(),
-                        io_metrics,
+        tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
+            target
+                .open_into_writable_async(
+                    cloud_options.as_deref(),
+                    mkdir,
+                    upload_chunk_size,
+                    upload_max_concurrency.get(),
+                    io_metrics,
+                )
+                .await
+                .map(|x| {
+                    crate::nodes::io_sinks::components::writable::WriteTarget::new(
+                        x,
+                        sinked_path_info_entry,
                     )
-                    .await
-                    .map(|x| {
-                        crate::nodes::io_sinks::components::writable::WriteTarget::new(
-                            x,
-                            sinked_path_info_entry,
-                        )
-                        .holding(token)
-                    })
-            },
-        )))
+                })
+        }))
     };
-    let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close, finish);
+    // The writer finishes only once its input also passed the resize stage.
+    let (writer_finish_tx, writer_finish_rx) = finish_signal();
+    let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close, writer_finish_rx);
 
     let target_sink_morsel_size = file_writer_starter.target_sink_morsel_size();
 
@@ -136,14 +132,12 @@ pub fn start_single_file_sink_pipeline(
     }
 
     let (writer_tx, writer_rx) = connector::connector();
-    // Aborted with the sink, so that a failed query can't finish the file.
-    let writer_handle = executor::AbortOnDropHandle::new(file_writer_starter.start_file_writer(
+    let writer_handle = file_writer_starter.start_file_writer(
         writer_rx,
         file_open_task,
         num_pipelines_per_sink,
         execution_state.task_metrics.clone(),
-        tasks,
-    )?);
+    )?;
 
     let schema = Arc::clone(&file_schema);
     let inflight_morsel_semaphore =
@@ -167,8 +161,22 @@ pub fn start_single_file_sink_pipeline(
         TaskPriority::High,
         task_metrics,
         async move {
+            let sent_size = match resize_pipeline_handle.await {
+                Ok(sent_size) => sent_size,
+                Err(e) => {
+                    drop(writer_finish_tx);
+                    let _ = writer_handle.await;
+                    return Err(e);
+                },
+            };
+            match finish.wait().await {
+                Ok(()) => writer_finish_tx.send(),
+                Err(e) => {
+                    drop(writer_finish_tx);
+                    return writer_handle.await.and(Err(e));
+                },
+            }
             writer_handle.await?;
-            let sent_size = resize_pipeline_handle.await?;
 
             if verbose {
                 eprintln!("{node_name}: Statistics: total_size: {sent_size:?}");

@@ -82,7 +82,7 @@ impl FileProvider {
         // Raise errors from directory creation here, so the reason it could not be created is
         // reported, rather than raising "No such file or directory" when we try to open the
         // missing directory below.
-        polars_io::utils::mkdir::mkdir_recursive(&path)?;
+        polars_io::utils::mkdir::tokio_mkdir_recursive(&path).await?;
 
         if let Some(path_info_entry) = &path_info_entry {
             path_info_entry.set_path(path.clone());

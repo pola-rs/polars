@@ -85,7 +85,6 @@ impl FileWriterStarter for IpcWriterStarter {
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
-        tasks: WaitToken,
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let file_schema = Arc::clone(&self.schema);
         let options = Arc::clone(&self.options);
@@ -111,17 +110,15 @@ impl FileWriterStarter for IpcWriterStarter {
 
             let io_handle = tokio_handle_ext::AbortOnDropHandle(
                 ASYNC.spawn(
-                    tasks.hold_until_drop(
-                        io_writer::IOWriter {
-                            file,
-                            ipc_batch_rx,
-                            options,
-                            schema: file_schema,
-                            ipc_fields,
-                            write_custom_pl_metadata: write_statistics_flags,
-                        }
-                        .run(),
-                    ),
+                    io_writer::IOWriter {
+                        file,
+                        ipc_batch_rx,
+                        options,
+                        schema: file_schema,
+                        ipc_fields,
+                        write_custom_pl_metadata: write_statistics_flags,
+                    }
+                    .run(),
                 ),
             );
 

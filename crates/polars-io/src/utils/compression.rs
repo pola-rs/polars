@@ -467,7 +467,11 @@ mod compressed_writer {
     impl<'a, W: io::Write> CompressedWriter<'a, W> {
         pub fn finish(&mut self) -> io::Result<&'a mut W> {
             match self {
-                Self::Gzip(encoder) => encoder.take().unwrap().finish().map(|t| t.inner),
+                Self::Gzip(encoder) => {
+                    // On failure the encoder stays, so that its drop can't write the trailer.
+                    encoder.as_mut().unwrap().try_finish()?;
+                    encoder.take().unwrap().finish().map(|t| t.inner)
+                },
                 Self::Zstd(encoder) => encoder.take().unwrap().finish(),
             }
         }
@@ -505,6 +509,44 @@ mod compressed_writer {
             let out = gzip_written(false);
             assert!(!out.is_empty());
             let err = flate2::read::GzDecoder::new(out.as_slice())
+                .read_to_end(&mut Vec::new())
+                .unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+        }
+
+        struct FailOnce<'a> {
+            out: Vec<u8>,
+            fail: &'a std::cell::Cell<bool>,
+        }
+
+        impl Write for FailOnce<'_> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                if self.fail.replace(false) {
+                    return Err(io::Error::other("write failed"));
+                }
+                self.out.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn failed_gzip_finish_leaves_no_trailer() {
+            let fail = std::cell::Cell::new(false);
+            let mut target = FailOnce {
+                out: Vec::new(),
+                fail: &fail,
+            };
+            let mut writer = CompressedWriter::gzip(&mut target, None);
+            writer.write_all(b"x\n1\n").unwrap();
+            writer.flush().unwrap();
+            fail.set(true);
+            assert!(writer.finish().is_err());
+            drop(writer);
+            let err = flate2::read::GzDecoder::new(target.out.as_slice())
                 .read_to_end(&mut Vec::new())
                 .unwrap_err();
             assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);

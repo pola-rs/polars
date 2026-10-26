@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
-use polars_async::primitives::wait_group::WaitToken;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
 use polars_plan::dsl::UnifiedSinkArgs;
@@ -34,7 +33,6 @@ pub fn start_partition_sink_pipeline(
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
     finish: FinishSignal,
-    tasks: WaitToken,
 ) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
     let task_metrics = execution_state.task_metrics();
@@ -176,7 +174,6 @@ pub fn start_partition_sink_pipeline(
         num_pipelines_per_sink,
         sinked_path_info_list: sinked_path_info_list.clone(),
         task_metrics: execution_state.task_metrics.clone(),
-        tasks,
     };
 
     let partition_morsel_sender = PartitionMorselSender {

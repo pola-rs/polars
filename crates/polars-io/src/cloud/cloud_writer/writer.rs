@@ -2,7 +2,6 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use polars_async::primitives::wait_group::WaitToken;
 use polars_error::PolarsResult;
 
 use crate::cloud::PolarsObjectStore;
@@ -32,15 +31,9 @@ impl CloudWriter {
                 max_concurrency,
                 io_metrics: OptIOMetrics(io_metrics),
                 state: InternalCloudWriterState::NotStarted,
-                wait_token: None,
             },
             bufferer,
         }
-    }
-
-    /// The upload's tasks, including its abort, hold `token` until they stopped.
-    pub fn set_wait_token(&mut self, token: WaitToken) {
-        self.writer.wait_token = Some(token);
     }
 
     pub async fn write_all_owned(&mut self, mut bytes: Bytes) -> PolarsResult<()> {

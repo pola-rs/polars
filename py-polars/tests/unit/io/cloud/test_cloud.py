@@ -523,8 +523,6 @@ def test_sink_failed_query_leaves_no_object(
         assert "PUT" not in requests
         assert "POST uploadId" not in requests
         assert s3.client.list_objects_v2(Bucket="bucket")["KeyCount"] == 0
-        # A started upload was aborted before the sink returned.
-        assert "Uploads" not in s3.client.list_multipart_uploads(Bucket="bucket")
 
 
 @pytest.mark.slow

@@ -61,13 +61,6 @@ impl<'a> Future for FinishActivePoll<'a> {
 }
 
 impl CloudWriterIoTraitWrap {
-    /// See [`CloudWriter::set_wait_token`]. Tasks started before are not covered.
-    pub fn set_wait_token(&mut self, token: polars_async::primitives::wait_group::WaitToken) {
-        if let WriterState::Ready(writer) = &mut self.state {
-            writer.set_wait_token(token);
-        }
-    }
-
     fn finish_active_poll(&mut self) -> FinishActivePoll<'_> {
         FinishActivePoll(Pin::new(&mut self.state))
     }

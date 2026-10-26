@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
-use polars_async::primitives::wait_group::WaitToken;
 use polars_core::config;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
@@ -103,7 +102,6 @@ impl FileWriterStarter for CsvWriterStarter {
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
-        tasks: WaitToken,
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let (filled_serializer_tx, filled_serializer_rx) = tokio::sync::mpsc::channel::<(
             executor::AbortOnDropHandle<PolarsResult<morsel_serializer::MorselSerializer>>,
@@ -116,16 +114,14 @@ impl FileWriterStarter for CsvWriterStarter {
 
         let io_handle = tokio_handle_ext::AbortOnDropHandle(
             ASYNC.spawn(
-                tasks.hold_until_drop(
-                    io_writer::IOWriter {
-                        file,
-                        filled_serializer_rx,
-                        reuse_serializer_tx,
-                        schema: Arc::clone(&self.schema),
-                        options: Arc::clone(&self.options),
-                    }
-                    .run(),
-                ),
+                io_writer::IOWriter {
+                    file,
+                    filled_serializer_rx,
+                    reuse_serializer_tx,
+                    schema: Arc::clone(&self.schema),
+                    options: Arc::clone(&self.options),
+                }
+                .run(),
             ),
         );
 

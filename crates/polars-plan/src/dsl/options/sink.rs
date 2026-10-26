@@ -129,7 +129,7 @@ impl SinkTarget {
             match self {
                 SinkTarget::Path(path) => {
                     if mkdir {
-                        polars_io::utils::mkdir::mkdir_recursive(path)?;
+                        polars_io::utils::mkdir::tokio_mkdir_recursive(path).await?;
                     }
 
                     polars_io::utils::file::Writable::try_new(

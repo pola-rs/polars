@@ -4,7 +4,6 @@ use std::sync::Arc;
 use polars_arrow::datatypes::ArrowSchemaRef;
 use polars_async::executor::{self, TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::connector;
-use polars_async::primitives::wait_group::WaitToken;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -118,7 +117,6 @@ impl FileWriterStarter for ParquetWriterStarter {
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
-        tasks: WaitToken,
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let InitializedState {
             encodings,
@@ -150,24 +148,22 @@ impl FileWriterStarter for ParquetWriterStarter {
 
         let io_handle = tokio_handle_ext::AbortOnDropHandle(
             ASYNC.spawn(
-                tasks.hold_until_drop(
-                    io_writer::IOWriter {
-                        file,
-                        encoded_row_group_rx,
-                        arrow_schema,
-                        schema_descriptor: Arc::clone(&schema_descriptor),
-                        write_options,
-                        encodings: Buffer::clone(&encodings),
-                        key_value_metadata,
-                        num_leaf_columns,
-                        encryption_properties: self
-                            .options
-                            .encryption_properties
-                            .as_ref()
-                            .map(|p| Arc::clone(&p.0)),
-                    }
-                    .run(),
-                ),
+                io_writer::IOWriter {
+                    file,
+                    encoded_row_group_rx,
+                    arrow_schema,
+                    schema_descriptor: Arc::clone(&schema_descriptor),
+                    write_options,
+                    encodings: Buffer::clone(&encodings),
+                    key_value_metadata,
+                    num_leaf_columns,
+                    encryption_properties: self
+                        .options
+                        .encryption_properties
+                        .as_ref()
+                        .map(|p| Arc::clone(&p.0)),
+                }
+                .run(),
             ),
         );
 
