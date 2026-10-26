@@ -684,7 +684,18 @@ where
     ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]>,
 {
     /// Deposit values into nulls with a certain validity mask.
+    ///
+    /// Panics for structs; use `Series::deposit` for those.
     pub fn deposit(&self, validity: &Bitmap) -> Self {
+        self.deposit_with(validity, Self::set_validity)
+    }
+
+    /// [`Self::deposit`] with a custom setter for the resulting validity.
+    pub(crate) fn deposit_with(
+        &self,
+        validity: &Bitmap,
+        set_validity: impl FnOnce(&mut Self, Option<Bitmap>),
+    ) -> Self {
         let set_bits = validity.set_bits();
 
         assert_eq!(self.len(), set_bits);
@@ -710,10 +721,8 @@ where
         }));
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
-        ca.set_validity(combine_validities_and(
-            Some(validity),
-            ca.rechunk_validity().as_ref(),
-        ));
+        let validity = combine_validities_and(Some(validity), ca.rechunk_validity().as_ref());
+        set_validity(&mut ca, validity);
         ca
     }
 }
