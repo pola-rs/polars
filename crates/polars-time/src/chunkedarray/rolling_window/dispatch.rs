@@ -42,7 +42,7 @@ where
 {
     polars_ensure!(
         options.min_periods <= options.window_size,
-        InvalidOperation: "`min_periods` ({}) should be <= `window_size` ({})",
+        InvalidOperation: "`min_samples` ({}) should be <= `window_size` ({})",
         options.min_periods, options.window_size
     );
     if ca.is_empty() {

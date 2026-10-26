@@ -55,7 +55,7 @@ mod inner_mod {
     fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
         polars_ensure!(
             min_periods <= window_size,
-            ComputeError: "`window_size`: {} should be >= `min_periods`: {}",
+            ComputeError: "`window_size`: {} should be >= `min_samples`: {}",
             window_size, min_periods
         );
         Ok(())

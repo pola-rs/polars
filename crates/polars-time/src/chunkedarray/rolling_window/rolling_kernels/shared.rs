@@ -124,7 +124,7 @@ where
             result.map(|(start, len)| {
                 let end = start + len;
 
-                // On the Python side, if `min_periods` wasn't specified, it is set to
+                // On the Python side, if `min_samples` wasn't specified, it is set to
                 // `1`. In that case, this condition is the same as checking
                 // `if start == end`.
                 if len < (min_periods as IdxSize) {
@@ -165,7 +165,7 @@ where
         let end = start + len;
         let out_idx = unsafe { sorting_indices.get_unchecked(idx) };
 
-        // On the Python side, if `min_periods` wasn't specified, it is set to
+        // On the Python side, if `min_samples` wasn't specified, it is set to
         // `1`. In that case, this condition is the same as checking
         // `if start == end`.
         if len >= (min_periods as IdxSize) {
