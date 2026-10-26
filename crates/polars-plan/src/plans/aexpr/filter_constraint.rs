@@ -319,16 +319,13 @@ impl ColumnConstraints {
     }
 
     // Whether a conjunct that stays in the rebuilt chain drops the nulls of this
-    // column. `!is_in` is left out: with `nulls_equal` it keeps nulls.
+    // column.
     fn drops_nulls(&self) -> bool {
         self.lower.is_some()
             || self.upper.is_some()
             || !self.excluded.is_empty()
             || self.allowed.is_some()
-    }
-
-    fn has_value_constraint(&self) -> bool {
-        self.drops_nulls() || !self.disallowed.is_empty()
+            || !self.disallowed.is_empty()
     }
 
     // Records an `is_null` (`Null`) / `is_not_null` (`NonNull`) requirement. The first
@@ -414,11 +411,11 @@ impl ColumnConstraints {
         // requirement (`a.is_null() AND a > 5`). Checked here so it holds regardless
         // of the order the conjuncts arrived in. Soundness rests on every source of a
         // value constraint being null-dropping under K3 (bounds, `!=`, `is_in`,
-        // `!is_in`); the null-*preserving* ops `eq_missing` / `ne_missing`
-        // (`EqValidity` / `NotEqValidity`) must therefore stay `Opaque` and never feed
-        // `has_value_constraint`, or `a.is_null() AND a.ne_missing(4)` would wrongly
-        // collapse (it's satisfiable on the null rows).
-        if self.nullability == Nullability::Null && self.has_value_constraint() {
+        // `!is_in` without `nulls_equal`); the null-*preserving* ops `eq_missing` /
+        // `ne_missing` (`EqValidity` / `NotEqValidity`) must therefore stay `Opaque`
+        // and never feed `drops_nulls`, or `a.is_null() AND a.ne_missing(4)` would
+        // wrongly collapse (it's satisfiable on the null rows).
+        if self.nullability == Nullability::Null && self.drops_nulls() {
             self.unsat = true;
             return;
         }
@@ -1067,14 +1064,15 @@ fn classify_negation(
         // `!is_in(haystack)` disallows each haystack member: recorded for
         // contradiction detection only, the node kept verbatim (never rewritten
         // into `!=` terms). Same conservatism as positive `is_in` (literal,
-        // null-free haystack only, enforced by `as_value_set`).
+        // null-free haystack only, enforced by `as_value_set`). With `nulls_equal` a
+        // null is not in the haystack, so `!is_in` keeps the nulls; not recorded.
         #[cfg(feature = "is_in")]
         AExpr::Function {
             input,
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal, .. }),
             ..
         } => {
-            if let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
+            if !nulls_equal && let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
                 let cc = column_constraints(constraints, schema, col_name);
                 if let Some(values) = as_value_set(expr_arena.get(input[1].node()), &cc.dtype) {
                     cc.add_disallowed(values);
