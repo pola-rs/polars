@@ -18,8 +18,8 @@ pub(super) struct ByteBudget {
     floor_budget: u64,
     // Volume in use for in-flight traffic, as allowed by the current_budget.
     inflight_in_use: AtomicU64,
-    // Acquires parked right now.
-    parked_now: AtomicU64,
+    // Gauge: acquires parked now.
+    acquires_parked: AtomicU64,
     waiters: Notify,
 }
 
@@ -29,7 +29,7 @@ impl ByteBudget {
             current_budget: AtomicU64::new(initial),
             floor_budget,
             inflight_in_use: AtomicU64::new(0),
-            parked_now: AtomicU64::new(0),
+            acquires_parked: AtomicU64::new(0),
             waiters: Notify::new(),
         }
     }
@@ -76,7 +76,7 @@ impl ByteBudget {
             if inflight + n_bytes <= cap {
                 continue;
             }
-            let _parked = Parked::new(&self.parked_now);
+            let _parked = Parked::new(&self.acquires_parked);
             notified.await;
             parked = true;
         }
@@ -212,8 +212,8 @@ pub struct InFlightStats {
     // May exceed 1.0 transiently after a budget shrink, while
     // previously-admitted traffic drains. Expected, not a bug.
     pub bytes_saturation: f64,
-    // Byte acquires parked right now.
-    pub bytes_waiting: u64,
+    // Gauge: byte acquires parked at the time of `stats()`.
+    pub byte_acquires_parked: u64,
     pub request_budget: u64,
     pub requests_in_use: u64,
     pub requests_saturation: f64,
@@ -223,8 +223,8 @@ pub struct InFlightStats {
 pub struct InFlightBudget {
     byte_budget: Arc<ByteBudget>,
     request_budget: Arc<RequestBudget>,
-    // Byte acquires that parked since the last `take_bytes_parked()`.
-    bytes_parked: AtomicU64,
+    // Flow: byte acquires admitted after parking, since the last `take_byte_acquires_unparked()`.
+    byte_acquires_unparked: AtomicU64,
 }
 
 impl InFlightBudget {
@@ -234,30 +234,14 @@ impl InFlightBudget {
         initial_request_budget: u64,
         floor_request_budget: u64,
     ) -> Self {
-        let inflight_budget = Self {
+        Self {
             byte_budget: Arc::new(ByteBudget::new(initial_byte_budget, floor_byte_budget)),
             request_budget: Arc::new(RequestBudget::new(
                 initial_request_budget,
                 floor_request_budget,
             )),
-            bytes_parked: AtomicU64::new(0),
-        };
-
-        if polars_config::config().verbose() {
-            eprintln!(
-                "[InFlightConcurrency]: \
-                initial_byte_budget: {}, \
-                floor_byte_budget: {}, \
-                request_budget: {}, \
-                floor_request_budget: {}",
-                initial_byte_budget,
-                floor_byte_budget,
-                initial_request_budget,
-                floor_request_budget
-            );
+            byte_acquires_unparked: AtomicU64::new(0),
         }
-
-        inflight_budget
     }
 
     pub async fn acquire(self: &Arc<Self>, n_bytes: u64) -> InFlightPermit {
@@ -267,7 +251,7 @@ impl InFlightBudget {
 
         // Byte budget (may wait). Cancel-safe internally.
         if self.byte_budget.acquire_strict(n_bytes).await {
-            self.bytes_parked.fetch_add(1, Relaxed);
+            self.byte_acquires_unparked.fetch_add(1, Relaxed);
         }
 
         // Guard immediately — synchronous, so there's no cancellation
@@ -305,9 +289,9 @@ impl InFlightBudget {
         self.request_budget.resize(new);
     }
 
-    /// Byte acquires that parked since the last call. Read and reset.
-    pub fn take_bytes_parked(&self) -> u64 {
-        self.bytes_parked.swap(0, Relaxed)
+    /// Flow: byte acquires admitted after parking, since the last call. Read and reset.
+    pub fn take_byte_acquires_unparked(&self) -> u64 {
+        self.byte_acquires_unparked.swap(0, Relaxed)
     }
 
     pub fn stats(&self) -> InFlightStats {
@@ -331,7 +315,7 @@ impl InFlightBudget {
             bytes_budget,
             bytes_in_use,
             bytes_saturation,
-            bytes_waiting: self.byte_budget.parked_now.load(Relaxed),
+            byte_acquires_parked: self.byte_budget.acquires_parked.load(Relaxed),
             request_budget,
             requests_in_use,
             requests_saturation,

@@ -308,11 +308,11 @@ impl ObjectStoreErrorContext {
 
 pub use inner::PolarsObjectStore;
 
-/// `GetResult::bytes` for a streamed body that reports arrived bytes to the controller as they
-/// come in, per `ARRIVAL_FLUSH_BYTES`.
+/// `GetResult::bytes` for a streamed body of `len` bytes (the returned range) that reports arrived
+/// bytes to the controller as they come in, per `ARRIVAL_FLUSH_BYTES`.
 async fn collect_body(
     stream: futures::stream::BoxStream<'static, object_store::Result<bytes::Bytes>>,
-    len: usize,
+    len: u64,
     controller: &ConcurrencyController,
 ) -> object_store::Result<bytes::Bytes> {
     const ARRIVAL_FLUSH_BYTES: u64 = 64 * 1024;
@@ -325,7 +325,7 @@ async fn collect_body(
                 controller.record_arrived(std::mem::take(&mut pending));
             }
         }),
-        Some(len as u64),
+        Some(len),
     )
     .await;
     controller.record_arrived(pending);
@@ -373,7 +373,6 @@ impl PolarsObjectStore {
                 };
 
                 let controller_ref = controller.as_deref();
-                let len = range.len();
                 let (out, ttfb) = self
                     .io_metrics()
                     .record_io_read(
@@ -397,6 +396,7 @@ impl PolarsObjectStore {
                                         object_store::GetResultPayload::Stream(_)
                                     ) =>
                                 {
+                                    let len = response.range.end - response.range.start;
                                     collect_body(response.into_stream(), len, controller).await?
                                 },
                                 _ => {
