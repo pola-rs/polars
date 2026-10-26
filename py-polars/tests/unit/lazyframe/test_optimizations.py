@@ -1825,6 +1825,18 @@ def test_simplify_year_comparison_keeps_null_years(dtype: pl.DataType) -> None:
     lf.filter(pl.col("x").dt.year() >= 2020).explain()
 
 
+def test_simplify_year_comparison_not_equal_reads_input_once() -> None:
+    lf = pl.LazyFrame({"s": ["2019-06-01", "2020-06-01", None]})
+    d = pl.col("s").str.to_date()
+    # `!=` would read the input twice, so only a column is rewritten.
+    q = lf.filter(d.dt.year() != 2020)
+    assert "dt.year()" in q.explain()
+    assert q.collect()["s"].to_list() == ["2019-06-01"]
+    q = lf.filter(d.dt.year() == 2020)
+    assert "dt.year()" not in q.explain()
+    assert q.collect()["s"].to_list() == ["2020-06-01"]
+
+
 def test_simplify_year_comparison_keeps_time_zone() -> None:
     lf = pl.LazyFrame(
         {"x": [dt.datetime(2020, 12, 31, 23)]},

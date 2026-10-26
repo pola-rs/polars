@@ -608,6 +608,7 @@ pub(super) fn coerce_comparison_literal(
     }
 
     if dtype_lhs.is_integer()
+        && !dtype_lhs.is_unknown()
         && let Some((floor, is_whole)) =
             fractional_literal_parts(dtype_lhs, lit_rhs.value(), &supertype)
     {
@@ -811,65 +812,41 @@ pub(super) fn coerce_comparison_literal(
         return Some(ReplaceLit(lit_rhs_casted));
     }
 
-    let nonnull_rows_value: bool = if lit_rhs
+    if lit_rhs
         .clone()
         .cast_with_options(&supertype, CastOptions::NonStrict)
         .ok()?
         .is_null()
     {
-        finish_rewrite_cmp_with_null_literal!()
-    } else {
-        // Since the literal is out of range it's either below min or above max. Determining the side
-        // can be done by comparing against any in-range value (we pick 0).
-        let rhs_phys_lt0 = || {
-            let lit_rhs = lit_rhs.clone().to_physical();
+        finish_rewrite_cmp_with_null_literal!();
+    }
 
-            if lit_rhs.dtype().is_unsigned_integer() {
-                return Some(false);
-            }
+    // Since the literal is out of range it's either below min or above max. Determining the side
+    // can be done by comparing against any in-range value (we pick 0).
+    let rhs_phys_lt0 = || {
+        let lit_rhs = lit_rhs.clone().to_physical();
 
-            let AnyValue::Int128(x) = lit_rhs
-                .cast_with_options(&DataType::Int128, CastOptions::NonStrict)
-                .ok()
-                .filter(|x| !x.is_null())?
-                .as_any_value()
-            else {
-                unreachable!()
-            };
+        if lit_rhs.dtype().is_unsigned_integer() {
+            return Some(false);
+        }
 
-            Some(x < 0)
+        let AnyValue::Int128(x) = lit_rhs
+            .cast_with_options(&DataType::Int128, CastOptions::NonStrict)
+            .ok()
+            .filter(|x| !x.is_null())?
+            .as_any_value()
+        else {
+            unreachable!()
         };
 
-        match cmp_op {
-            Operator::Eq => false,
-            Operator::NotEq => true,
-            Operator::Lt | Operator::LtEq => !rhs_phys_lt0()?,
-            Operator::Gt | Operator::GtEq => rhs_phys_lt0()?,
-            Operator::EqValidity => {
-                return Some(NewAExpr {
-                    aexpr: repeat_opt_bool_ae(Some(false), ae_node_left, expr_arena),
-                    output_constraint: Some(BoolValueAlways::FalseOrNull),
-                });
-            },
-            Operator::NotEqValidity => {
-                return Some(NewAExpr {
-                    aexpr: repeat_opt_bool_ae(Some(true), ae_node_left, expr_arena),
-                    output_constraint: Some(BoolValueAlways::True),
-                });
-            },
-            _ => return None,
-        }
+        Some(x < 0)
     };
-
-    Some(nonnull_rows_rewrite(
-        nonnull_rows_value,
-        ae_node_left,
-        expr_arena,
-    ))
+    out_of_range_rewrite(cmp_op, rhs_phys_lt0, ae_node_left, expr_arena)
 }
 
 /// The floor of a decimal or float literal and whether it is a whole number, when an integer
-/// column of `dtype_lhs` compared to it in `supertype` compares the same as to the floor.
+/// column of `dtype_lhs` compared to it in `supertype` can be compared to a rounded integer
+/// instead.
 fn fractional_literal_parts(
     #[cfg_attr(not(feature = "dtype-decimal"), allow(unused_variables))] dtype_lhs: &DataType,
     value: &AnyValue,
@@ -938,23 +915,36 @@ fn coerce_int_cmp_fractional_literal(
         _ => return None,
     };
 
-    if let Some(rounded) = rounded {
-        let rounded_lit = Scalar::new(DataType::Int128, AnyValue::Int128(rounded))
-            .cast_with_options(dtype_lhs, CastOptions::NonStrict)
-            .ok()?;
-        if !rounded_lit.is_null() {
-            return Some(ReplaceLit(rounded_lit));
-        }
+    if let Some(rounded) = rounded
+        && let Some(value) = AnyValue::Int128(rounded).strict_cast(dtype_lhs)
+    {
+        return Some(ReplaceLit(Scalar::new(
+            dtype_lhs.clone(),
+            value.into_static(),
+        )));
     }
 
     // No value of the column type equals the literal, or the literal is out of range. Zero is
     // always in range, so the sign tells on which side it is.
-    let below_min = rounded.is_some_and(|r| r < 0);
+    let below_min = || Some(rounded.is_some_and(|r| r < 0));
+    out_of_range_rewrite(cmp_op, below_min, ae_node_left, expr_arena)
+}
+
+/// Rewrites a comparison with a literal that no value of the left side equals. `below_min`
+/// tells whether the literal is below all values, else it is above all values.
+fn out_of_range_rewrite(
+    cmp_op: Operator,
+    below_min: impl FnOnce() -> Option<bool>,
+    ae_node_left: Node,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<CmpLiteralRhsRewrite> {
+    use CmpLiteralRhsRewrite::*;
+
     let nonnull_rows_value = match cmp_op {
         Operator::Eq => false,
         Operator::NotEq => true,
-        Operator::Lt | Operator::LtEq => !below_min,
-        Operator::Gt | Operator::GtEq => below_min,
+        Operator::Lt | Operator::LtEq => !below_min()?,
+        Operator::Gt | Operator::GtEq => below_min()?,
         Operator::EqValidity => {
             return Some(NewAExpr {
                 aexpr: repeat_opt_bool_ae(Some(false), ae_node_left, expr_arena),
@@ -967,7 +957,7 @@ fn coerce_int_cmp_fractional_literal(
                 output_constraint: Some(BoolValueAlways::True),
             });
         },
-        _ => unreachable!(),
+        _ => return None,
     };
     Some(nonnull_rows_rewrite(
         nonnull_rows_value,

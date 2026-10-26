@@ -1395,6 +1395,14 @@ def test_comparison_int_is_between_keeps_bound_cast_error() -> None:
         lf.select(pl.col("x").is_between(D("1E-30"), pl.col("hi"))).collect()
 
 
+@pytest.mark.parametrize("float_dtype", [pl.Float32, pl.Float64])
+def test_comparison_dyn_int_literal_float_literal(float_dtype: PolarsDataType) -> None:
+    rhs = pl.lit(2.0, dtype=float_dtype)
+    assert pl.select(pl.lit(3) > rhs).item() is True
+    assert pl.select(pl.lit(3) > pl.lit(D("2.5"))).item() is True
+    assert pl.LazyFrame({"a": [1]}).filter(pl.lit(3) > rhs).collect().height == 1
+
+
 def _compare_int_column_to_literal(
     dtype: PolarsDataType, lit: pl.Expr, lower: Any, upper: Any
 ) -> pl.LazyFrame:
