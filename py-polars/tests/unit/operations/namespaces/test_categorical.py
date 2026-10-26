@@ -265,3 +265,23 @@ def test_cat_to_from_physical(cat_kind: str) -> None:
 
     with pytest.raises(ComputeError):
         pl.Series(cats + [4], dtype=phys).cat.to(dtype)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").cat.ends_with("d"),
+        pl.col("a").cat.starts_with("d"),
+        pl.col("a").cat.len_bytes(),
+        pl.col("a").cat.slice(0, 1),
+        pl.col("a").cat.physical(),
+    ],
+)
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.String, pl.List(pl.Categorical)])
+def test_cat_namespace_non_categorical_input_raises_at_schema(
+    expr: pl.Expr, dtype: pl.DataType
+) -> None:
+    q = pl.LazyFrame(schema={"a": dtype}).select(expr)
+    msg = "expected Categorical or Enum data type for categorical operation"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
+        q.collect_schema()

@@ -43,20 +43,24 @@ pub enum IRArrayFunction {
 
 impl<'a> FieldsMapper<'a> {
     /// Validate that the dtype is an array.
-    pub fn ensure_is_array(self) -> PolarsResult<Self> {
+    pub fn ensure_is_array(&self) -> PolarsResult<()> {
         let dt = self.args()[0].dtype();
         polars_ensure!(
             dt.is_array(),
             InvalidOperation:
             "expected Array datatype for array operation, got: {dt:?}"
         );
-        Ok(self)
+        Ok(())
     }
 }
 
 impl IRArrayFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRArrayFunction::*;
+        // `pl.concat_arr` reshapes non-array inputs to unit-width arrays.
+        if !matches!(self, Concat) {
+            mapper.ensure_is_array()?;
+        }
 
         match self {
             Concat => Ok(Field::new(
@@ -68,11 +72,9 @@ impl IRArrayFunction {
                     &mut mapper.args().iter().map(|x| (x.name.as_str(), &x.dtype)),
                 )?,
             )),
-            Length => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
-            Min | Max => mapper
-                .ensure_is_array()?
-                .map_to_list_and_array_inner_dtype(),
-            Sum => mapper.ensure_is_array()?.nested_sum_type(),
+            Length => mapper.with_dtype(IDX_DTYPE),
+            Min | Max => mapper.map_to_list_and_array_inner_dtype(),
+            Sum => mapper.nested_sum_type(),
             Dot => {
                 let args = mapper.args();
                 polars_ensure!(
@@ -110,30 +112,26 @@ impl IRArrayFunction {
 
                 mapper.with_dtype(sum_output_dtype(&inner_dtype))
             },
-            ToList => mapper
-                .ensure_is_array()?
-                .try_map_dtype(map_array_dtype_to_list_dtype),
-            Std(_) => mapper.ensure_is_array()?.var_dtype("std"),
-            Var(_) => mapper.ensure_is_array()?.var_dtype("var"),
-            Mean => mapper.ensure_is_array()?.moment_dtype(),
-            Median => mapper.ensure_is_array()?.moment_dtype(),
-            Sort(_) => mapper.ensure_is_array()?.with_same_dtype(),
-            ArgMin | ArgMax => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
-            Get(_) => mapper
-                .ensure_is_array()?
-                .map_to_list_and_array_inner_dtype(),
-            Join(_) => mapper.ensure_is_array()?.with_dtype(DataType::String),
+            ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
+            Std(_) => mapper.var_dtype("std"),
+            Var(_) => mapper.var_dtype("var"),
+            Mean => mapper.moment_dtype(),
+            Median => mapper.moment_dtype(),
+            Sort(_) => mapper.with_same_dtype(),
+            ArgMin | ArgMax => mapper.with_dtype(IDX_DTYPE),
+            Get(_) => mapper.map_to_list_and_array_inner_dtype(),
+            Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
-            Contains { .. } => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
+            Contains { .. } => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "array_count")]
-            CountMatches => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
-            Shift => mapper.ensure_is_array()?.with_same_dtype(),
-            Explode { .. } => mapper.ensure_is_array()?.try_map_to_array_inner_dtype(),
-            Slice(offset, length) => mapper
-                .ensure_is_array()?
-                .try_map_dtype(map_to_array_fixed_length(offset, length)),
+            CountMatches => mapper.with_dtype(IDX_DTYPE),
+            Shift => mapper.with_same_dtype(),
+            Explode { .. } => mapper.try_map_to_array_inner_dtype(),
+            Slice(offset, length) => {
+                mapper.try_map_dtype(map_to_array_fixed_length(offset, length))
+            },
             #[cfg(feature = "array_to_struct")]
-            ToStruct { fields } => mapper.ensure_is_array()?.try_map_dtype(|dtype| {
+            ToStruct { fields } => mapper.try_map_dtype(|dtype| {
                 let DataType::Array(inner, _) = dtype else {
                     polars_bail!(InvalidOperation: "expected Array type, got: {dtype}")
                 };
