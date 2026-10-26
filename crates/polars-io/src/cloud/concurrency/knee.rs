@@ -620,14 +620,17 @@ impl KneeController {
     pub fn step(&mut self, t: KneeTick) -> u64 {
         let traffic = t.bytes_arrived > 0 || t.bytes_in_use > 0;
         if let Phase::Knee(knee, KneeMode::Idle { since }) = self.phase {
-            if !traffic {
+            let expired = t.now.duration_since(since) > IDLE_RESET;
+            if expired {
                 // Reset while idle, so that the next traffic is admitted under the initial budget.
-                if t.now.duration_since(since) > IDLE_RESET {
-                    *self = Self::new(self.cfg.clone());
-                }
+                *self = Self::new(self.cfg.clone());
+            }
+            if !traffic {
                 return self.budget;
             }
-            self.phase = self.stable(knee, t.now);
+            if !expired {
+                self.phase = self.stable(knee, t.now);
+            }
         }
         if traffic {
             self.last_io = Some(t.now);
@@ -837,7 +840,8 @@ mod tests {
     }
 
     /// Idle longer than `IDLE_GRACE` (e.g. a scan stalled downstream) keeps the knee; idle longer
-    /// than `IDLE_RESET` (e.g. the next query) starts over from init, before the next traffic.
+    /// than `IDLE_RESET` (e.g. the next query) starts over from init, also when the first tick past
+    /// it has traffic.
     #[test]
     fn idle_keeps_the_knee_until_reset() {
         let mut c = KneeController::new(cfg());
@@ -853,10 +857,12 @@ mod tests {
         run_capped_inflight(&mut c, t0, 120..130, 1600);
         assert_eq!(c.phase_label(), "stable");
         assert_eq!(c.budget(), stable);
-        // 40 s without traffic.
-        for i in 130..530 {
+        // Traffic again in the first tick more than `IDLE_RESET` after the last.
+        for i in 130..430 {
             tick(&mut c, t0, i, 0, 0, 0, None);
         }
+        assert_eq!(c.phase_label(), "idle");
+        tick(&mut c, t0, 430, 100, 100, 1, None);
         assert_eq!(c.knee(), None);
         assert_eq!(c.budget(), 100);
     }
