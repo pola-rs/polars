@@ -112,7 +112,8 @@ fn dispatch_ewm_by<const IS_MEAN: bool>(
         _ => {
             polars_bail!(InvalidOperation: "expected series to be Float64, Float32, Float16, \
                 Int64, Int32, UInt64, UInt32, and `by` to be Date, Datetime, Int64, Int32, \
-                UInt64, or UInt32")
+                UInt64, or UInt32 (got series of type {} and `by` of type {})",
+                s.dtype(), times.dtype())
         },
     }
 }
