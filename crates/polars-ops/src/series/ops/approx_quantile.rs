@@ -107,6 +107,7 @@ pub fn sketch_repr(s: &Series) -> PolarsResult<Cow<'_, Series>> {
     if !sketch_items_are_row_encoded(s.dtype()) {
         return Ok(s.to_physical_repr());
     }
+    // TODO: See if we can row-encode lazily.
     let rows = _get_rows_encoded_ca(
         s.name().clone(),
         &[s.clone().into_column()],
