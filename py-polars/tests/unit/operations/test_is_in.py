@@ -2147,3 +2147,18 @@ def test_is_in_single_row_series_over_groups_23995() -> None:
         "c": [[11, 12], [13, 14], [11]],
         "d": [[3], [3], [3]],
     }
+
+
+def test_single_value_list_agg_state_edge_cases_23995() -> None:
+    df = pl.DataFrame(
+        {"g": [1, 1], "keep": [True, False], "xs": [[10], [20]], "i": [0, 0]}
+    )
+    out = df.group_by("g").agg(
+        pl.col("xs").filter(pl.col("keep")).list.get(pl.col("i").gather([0]))
+    )
+    assert out.to_dict(as_series=False) == {"g": [1], "xs": [[10]]}
+
+    df = pl.DataFrame(schema={"g": pl.Int64, "xs": pl.List(pl.Int64)})
+    out = df.group_by("g").agg(pl.col("xs").list.set_union(pl.Series([[1]])))
+    assert out.schema == {"g": pl.Int64, "xs": pl.List(pl.List(pl.Int64))}
+    assert out.height == 0

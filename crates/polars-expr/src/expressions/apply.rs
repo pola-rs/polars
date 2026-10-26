@@ -431,6 +431,9 @@ fn uniform_single_value(ac: &AggregationContext) -> Option<Column> {
     let AggState::AggregatedList(c) = &ac.state else {
         return None;
     };
+    if c.is_empty() {
+        return None;
+    }
     match c.as_scalar_column()?.scalar().value() {
         AnyValue::List(s) if s.len() == 1 => {
             Some(s.clone().with_name(c.name().clone()).into_column())
@@ -580,6 +583,8 @@ impl PhysicalExpr for ApplyExpr {
                     {
                         for (ac, v) in acs.iter_mut().zip(uniform_values) {
                             if let Some(v) = v {
+                                // Apply pending group updates while the state is still a list.
+                                ac.groups();
                                 ac.with_agg_state(AggState::LiteralScalar(v));
                             }
                         }
