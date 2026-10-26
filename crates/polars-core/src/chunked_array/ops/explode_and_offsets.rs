@@ -69,7 +69,9 @@ impl ChunkExplode for ListChunked {
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
 
-        let (mut s, offsets) = if ca._can_fast_explode()
+        // Without null rows the values between the first and last offset are exactly the
+        // exploded values, so the fast-explode flag is not needed to take them as they are.
+        let (mut s, offsets) = if (ca._can_fast_explode() || listarr.null_count() == 0)
             && (!options.keep_nulls || !ca.has_nulls())
             && (!options.empty_as_null || !ca.has_empty_lists())
         {
@@ -100,19 +102,10 @@ impl ChunkExplode for ListChunked {
             // during tests
             // test that this code branch is not hit with list arrays that could be fast exploded
             #[cfg(test)]
-            {
-                let mut last = offsets[0];
-                let mut has_empty = false;
-                for &o in &offsets[1..] {
-                    if o == last {
-                        has_empty = true;
-                    }
-                    last = o;
-                }
-                if !has_empty && offsets[0] == 0 {
-                    panic!("could have fast exploded")
-                }
-            }
+            assert!(
+                listarr.null_count() > 0 || (options.empty_as_null && ca.has_empty_lists()),
+                "could have fast exploded"
+            );
             let (indices, new_offsets) = if listarr.null_count() == 0 {
                 // SPECIALIZED path.
                 let inner_phys = self.inner_dtype().to_physical();

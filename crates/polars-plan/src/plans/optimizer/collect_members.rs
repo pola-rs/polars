@@ -38,6 +38,7 @@ pub(super) struct MemberCollector {
     pub(crate) has_sort: bool,
     pub(crate) has_group_by: bool,
     pub(crate) has_hint: bool,
+    pub(crate) has_recursive: bool,
     pub(crate) with_columns_count: u32,
     #[expect(clippy::disallowed_types)]
     pub(crate) seen_dsl_resolvers: Option<polars_utils::aliases::PlHashSet<Arc<DslResolver>>>,
@@ -57,13 +58,21 @@ impl MemberCollector {
             has_sort: false,
             has_group_by: false,
             has_hint: false,
+            has_recursive: false,
             with_columns_count: 0,
             seen_dsl_resolvers: Some(Default::default()),
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
         }
     }
-    pub(super) fn collect(&mut self, root: Node, lp_arena: &Arena<IR>, _expr_arena: &Arena<AExpr>) {
+    /// Only gives an id to the scans, which `has_duplicate_scans` needs, if `_hash_scans` is set.
+    pub(super) fn collect(
+        &mut self,
+        root: Node,
+        lp_arena: &Arena<IR>,
+        _expr_arena: &Arena<AExpr>,
+        _hash_scans: bool,
+    ) {
         #[cfg(feature = "cse")]
         let mut canonical_ir_map = CanonicalIRMap::new();
 
@@ -89,8 +98,9 @@ impl MemberCollector {
                 Sort { .. } => {
                     self.has_sort = true;
                 },
+                Recursive { .. } => self.has_recursive = true,
                 #[cfg(feature = "cse")]
-                Scan { .. } => {
+                Scan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
@@ -98,12 +108,12 @@ impl MemberCollector {
                     self.with_columns_count += 1;
                 },
                 #[cfg(feature = "cse")]
-                DataFrameScan { .. } => {
+                DataFrameScan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
                 #[cfg(all(feature = "cse", feature = "python"))]
-                PythonScan { .. } => {
+                PythonScan { .. } if _hash_scans => {
                     self.scans
                         .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },

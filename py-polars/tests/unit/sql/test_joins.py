@@ -79,6 +79,70 @@ def test_join_anti_semi(sql: str, expected: pl.DataFrame) -> None:
     assert_frame_equal(expected, ctx.execute(sql))
 
 
+@pytest.mark.parametrize(
+    ("join", "expected"),
+    [
+        ("RIGHT SEMI JOIN r ON l.lk = r.rk", [2, 3]),
+        ("RIGHT SEMI JOIN r ON rk = lk", [2, 3]),
+        ("RIGHT ANTI JOIN r ON l.lk = r.rk", [4]),
+        ("RIGHT SEMI JOIN r ON l.v = r.v", [2, 4]),
+        ("RIGHT SEMI JOIN r ON l.lk = r.rk AND l.v = r.v", [2]),
+        ("RIGHT SEMI JOIN r ON TRUE", [2, 3, 4]),
+        ("RIGHT ANTI JOIN r ON TRUE", []),
+        ("JOIN m ON l.lk = m.mk RIGHT SEMI JOIN r ON m.mk = r.rk", [3]),
+        ("JOIN m ON l.lk = m.mk RIGHT ANTI JOIN r ON r.rk = m.mk", [2, 4]),
+    ],
+)
+def test_join_right_semi_anti_on(join: str, expected: list[int]) -> None:
+    frames = {
+        "l": pl.DataFrame({"lk": [1, 2, 3], "v": [10, 20, 40]}),
+        "m": pl.DataFrame({"mk": [1, 3]}),
+        "r": pl.DataFrame({"rk": [2, 3, 4], "v": [20, 30, 10]}),
+    }
+    out = pl.SQLContext(frames).execute(
+        f"SELECT * FROM l {join} ORDER BY rk", eager=True
+    )
+    r = frames["r"]
+    assert_frame_equal(out, r.filter(pl.col("rk").is_in(expected)))
+
+
+@pytest.mark.parametrize(
+    ("query", "relation"),
+    [
+        ("SELECT r.v FROM l SEMI JOIN r ON l.lk = r.rk", "r"),
+        ("SELECT * FROM l ANTI JOIN r ON l.lk = r.rk WHERE r.v > 0", "r"),
+        ("SELECT l.lk FROM l SEMI JOIN r ON l.lk = r.rk ORDER BY r.v", "r"),
+        ("SELECT l.v FROM l RIGHT SEMI JOIN r ON l.lk = r.rk", "l"),
+        ("SELECT l.lk FROM l SEMI JOIN r ON l.lk = r.rk JOIN m ON m.mk = r.rk", "r"),
+        ("SELECT m.mk FROM m, l SEMI JOIN r ON l.lk = r.rk WHERE m.mk = r.rk", "r"),
+    ],
+)
+def test_join_semi_anti_drops_relation(query: str, relation: str) -> None:
+    frames = {
+        "l": pl.DataFrame({"lk": [1, 2, 3], "v": [10, 20, 40]}),
+        "m": pl.DataFrame({"mk": [1, 3]}),
+        "r": pl.DataFrame({"rk": [2, 3, 4], "v": [20, 30, 10]}),
+    }
+    with pytest.raises(
+        SQLInterfaceError, match=f"no table or struct column named '{relation}'"
+    ):
+        pl.SQLContext(frames).execute(query, eager=True)
+
+
+def test_join_right_semi_in_implicit_join() -> None:
+    frames = {
+        "m": pl.DataFrame({"k": [1]}),
+        "l": pl.DataFrame({"k": [2]}),
+        "r": pl.DataFrame({"k": [2]}),
+    }
+    res = pl.SQLContext(frames).execute(
+        "SELECT r.k AS rk, m.k AS mk FROM m, l RIGHT SEMI JOIN r ON l.k = r.k "
+        "WHERE m.k + 1 = r.k",
+        eager=True,
+    )
+    assert res.rows() == [(2, 1)]
+
+
 def test_join_cross() -> None:
     frames = {
         "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
@@ -475,14 +539,37 @@ def test_non_equi_right_join_pure() -> None:
     ]
 
 
+@pytest.mark.parametrize("join_type", ["RIGHT", "FULL"])
 @pytest.mark.parametrize(
-    "join_type",
-    ["RIGHT", "FULL", "LEFT SEMI", "LEFT ANTI"],
+    "condition",
+    [
+        "s.key = v.key AND s.t > v.lo AND s.t <= v.hi",
+        "s.t > v.lo AND s.t <= v.hi",
+        "v.hi > 5",
+        "s.key IS NOT NULL",
+    ],
 )
-def test_non_equi_outer_joins_unsupported(join_type: str) -> None:
-    # A non-equi ON clause routes through `join_where`. LEFT is implemented
-    # (see test_non_equi_left_join above); the others are not yet.
-    # See https://github.com/pola-rs/polars/issues/28875
+def test_non_equi_right_and_full_join(join_type: str, condition: str) -> None:
+    assert_sql_matches(
+        frames={
+            "v": pl.DataFrame(
+                {
+                    "key": ["A", "B", "C", None],
+                    "lo": [0, 0, 6, 1],
+                    "hi": [10, 10, 10, 4],
+                }
+            ),
+            "s": pl.DataFrame({"key": ["A", "A", "B", None], "t": [5, 7, 50, 3]}),
+        },
+        query=f"SELECT v.key, v.lo, s.key AS s_key, s.t FROM v {join_type} JOIN s ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("join_type", ["LEFT SEMI", "LEFT ANTI"])
+def test_non_equi_semi_anti_joins_unsupported(join_type: str) -> None:
+    # A non-equi ON clause routes through `join_where`, which has no semi or anti join.
     ctx = pl.SQLContext(
         v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),
         s=pl.LazyFrame({"key": ["A", "A", "B"], "t": [5, 7, 50]}),
@@ -625,6 +712,85 @@ def test_implicit_self_join() -> None:
         check_dtypes=False,
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT l.k AS lk, m.k AS mk FROM l, r NATURAL JOIN m "
+            "WHERE l.k + 1 = m.k + r.k",
+            {"lk": [1, 3], "mk": [1, 2]},
+        ),
+        (
+            "SELECT l.k AS lk, m.k AS mk FROM l, r AS x JOIN m USING (k) "
+            "WHERE l.k + 1 = m.k + x.k",
+            {"lk": [1, 3], "mk": [1, 2]},
+        ),
+        (
+            "SELECT l.k AS lk FROM l WHERE EXISTS (SELECT 1 FROM l AS a, "
+            "r NATURAL JOIN m WHERE a.k + 1 = m.k + r.k AND a.k = l.k)",
+            {"lk": [1, 3]},
+        ),
+    ],
+)
+def test_implicit_join_with_joined_relation(
+    query: str, expected: dict[str, Any]
+) -> None:
+    # the columns of every relation of the joined item are renamed, not only the first
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2, 3]}),
+        "r": pl.DataFrame({"k": [1, 2]}),
+        "m": pl.DataFrame({"k": [1, 2, 3]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        expected=expected,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("alias", ["a", "x"])
+def test_aliased_nested_join_as_relation(alias: str) -> None:
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2, 3]}),
+        "r": pl.DataFrame({"k": [1, 2]}),
+        "m": pl.DataFrame({"k": [1, 2, 3]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            f"SELECT {alias}.k AS ak, r.k AS rk "
+            f"FROM (l AS a NATURAL JOIN m AS b) AS {alias} JOIN r ON r.k + 1 = {alias}.k"
+        ),
+        compare_with="duckdb",
+        expected={"ak": [2, 3], "rk": [1, 2]},
+        check_row_order=False,
+    )
+
+
+def test_aliased_nested_join_does_not_hide_table() -> None:
+    frames = {"l": pl.LazyFrame({"k": [1]}), "m": pl.LazyFrame({"k": [1]})}
+    with pl.SQLContext(frames) as ctx:
+        res = ctx.execute(
+            "WITH x AS (SELECT 99 AS k) "
+            "SELECT x.k AS a, y.k AS b FROM (l NATURAL JOIN m) AS x, x AS y",
+            eager=True,
+        )
+        assert res.rows() == [(1, 99)]
+
+        res = ctx.execute(
+            "WITH x AS (SELECT 99 AS k) SELECT x.k AS a, "
+            "(SELECT k FROM l WHERE FALSE UNION ALL TABLE x LIMIT 1) AS b "
+            "FROM (l NATURAL JOIN m) AS x",
+            eager=True,
+        )
+        assert res.rows() == [(1, 99)]
+
+        ctx.execute("CREATE TABLE made AS SELECT * FROM (l NATURAL JOIN m) AS x")
+        assert sorted(ctx.tables()) == ["l", "m", "made"]
 
 
 @pytest.mark.parametrize(
@@ -1288,6 +1454,152 @@ def test_join_on_expression_conditions(expression: str, expected_length: int) ->
     """
     res = pl.sql(query, eager=True)
     assert len(res) == expected_length
+
+
+@pytest.fixture
+def join_subquery_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"id": [1, 2, 3, 4], "v": [10, 20, 30, None]}),
+        "b": pl.DataFrame({"id": [1, 2, 3, 5], "v": [10, 25, 30, 40]}),
+        "c": pl.DataFrame({"x": [10, 30, None]}),
+    }
+
+
+@pytest.mark.parametrize(
+    "join",
+    [
+        # the issue example: a filter on the right input of a LEFT JOIN
+        "LEFT JOIN b ON a.id = b.id AND b.v = (SELECT MAX(v) FROM b)",
+        # a flag on the left input of a LEFT JOIN
+        "LEFT JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id = b.id AND a.v NOT IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id = b.id AND a.v = (SELECT x FROM c WHERE x > 99)",
+        "LEFT JOIN b ON a.v IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id < b.id AND a.v = (SELECT MAX(x) FROM c)",
+        "LEFT JOIN b ON (SELECT COUNT(*) FROM c) > 5",
+        # a condition that is not a boolean is cast to one
+        "LEFT JOIN b ON (SELECT NULL)",
+        "LEFT JOIN b ON (SELECT 1)",
+        "JOIN b ON a.id = b.id AND b.v > (SELECT AVG(x) FROM c) AND a.v IN (SELECT x FROM c)",
+        "JOIN b ON (SELECT COUNT(*) FROM c) > 0 AND a.id = b.id",
+        "RIGHT JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)",
+        "RIGHT JOIN b ON a.id = b.id AND b.v IN (SELECT x FROM c)",
+        "FULL JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c) AND b.v IN (SELECT x FROM c)",
+        "FULL JOIN b ON a.v IN (SELECT x FROM c)",
+        "LEFT JOIN b ON a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE x > 20)",
+        "LEFT JOIN b ON a.id = b.id AND NOT EXISTS (SELECT 1 FROM c WHERE x > 20)",
+        # the left input holds two relations
+        "JOIN b AS d ON a.id = d.id LEFT JOIN b ON b.id = d.id AND d.v IN (SELECT x FROM c)",
+    ],
+)
+def test_join_on_uncorrelated_subquery(
+    join: str, join_subquery_frames: dict[str, pl.DataFrame]
+) -> None:
+    assert_sql_matches(
+        frames=join_subquery_frames,
+        query=f"SELECT a.id, b.id AS bid FROM a {join} ORDER BY a.id, bid",
+        compare_with="sqlite",
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("join", "expected"),
+    [
+        ("SEMI JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)", [1, 3]),
+        ("ANTI JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)", [2, 4]),
+        ("ANTI JOIN b ON a.id = b.id AND b.v IN (SELECT x FROM c)", [2, 4]),
+        ("ANTI JOIN b ON (SELECT COUNT(*) FROM c) > 5", [1, 2, 3, 4]),
+        ("RIGHT SEMI JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)", [1, 3]),
+        ("RIGHT ANTI JOIN b ON a.id = b.id AND b.v IN (SELECT x FROM c)", [2, 5]),
+        ("RIGHT ANTI JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c)", [2, 5]),
+    ],
+)
+def test_join_on_uncorrelated_subquery_semi_anti(
+    join: str, expected: list[int], join_subquery_frames: dict[str, pl.DataFrame]
+) -> None:
+    res = pl.SQLContext(join_subquery_frames).execute(
+        f"SELECT id FROM a {join} ORDER BY id", eager=True
+    )
+    assert res["id"].to_list() == expected
+
+
+def test_join_on_subquery_keeps_columns(
+    join_subquery_frames: dict[str, pl.DataFrame],
+) -> None:
+    res = pl.SQLContext(join_subquery_frames).execute(
+        "SELECT * FROM a LEFT JOIN b ON a.id = b.id AND a.v IN (SELECT x FROM c) "
+        "ORDER BY a.id",
+        eager=True,
+    )
+    assert res.rows() == [
+        (1, 10, 1, 10),
+        (2, 20, None, None),
+        (3, 30, 3, 30),
+        (4, None, None, None),
+    ]
+    assert res.columns == ["id", "v", "id:b", "v:b"]
+
+
+def test_join_on_subquery_reading_struct_field() -> None:
+    frames = {
+        "k": pl.DataFrame({"k": [10, 20]}),
+        "c": pl.DataFrame({"s": [{"x": 10}]}),
+    }
+    res = pl.SQLContext(frames).execute(
+        "SELECT k.k, c.s.x FROM k LEFT JOIN c ON k.k = (SELECT s.x FROM c) ORDER BY k.k",
+        eager=True,
+    )
+    assert res.rows() == [(10, 10), (20, None)]
+
+
+@pytest.mark.parametrize(
+    ("condition", "err"),
+    [
+        # correlated
+        ("b.v NOT IN (SELECT x FROM c WHERE c.x = a.v)", "no table or struct column"),
+        # an unqualified column of the joined tables
+        ("b.v IN (SELECT x FROM c WHERE x = id)", 'unable to find column "id"'),
+        # reads both tables
+        ("a.v + b.v > (SELECT MAX(x) FROM c)", "not currently supported in the JOIN"),
+        ("v IN (SELECT x FROM c)", "not currently supported in the JOIN"),
+        # more than one row
+        ("a.v = (SELECT x FROM c)", "expected no or a single value"),
+    ],
+)
+def test_join_on_subquery_unsupported(
+    condition: str, err: str, join_subquery_frames: dict[str, pl.DataFrame]
+) -> None:
+    with pytest.raises(Exception, match=err):
+        pl.SQLContext(join_subquery_frames).execute(
+            f"SELECT * FROM a LEFT JOIN b ON a.id = b.id AND {condition}", eager=True
+        )
+
+
+@pytest.mark.parametrize(
+    "join",
+    [
+        "JOIN r ON {on}",
+        "LEFT JOIN r ON {on}",
+        "FULL JOIN r ON {on}",
+        ", r WHERE {on}",
+    ],
+)
+@pytest.mark.parametrize("on", ["r.k + 1 = m.k", "m.k = r.k + 1"])
+def test_join_on_expression_over_chained_left_input(join: str, on: str) -> None:
+    # `m` is not the first relation, but is part of the left input
+    assert_sql_matches(
+        frames={
+            "l": pl.DataFrame({"k": [1, 2, 3]}),
+            "m": pl.DataFrame({"k": [2, 3, 4]}),
+            "r": pl.DataFrame({"k": [1, 2, 3, 4]}),
+        },
+        query=(
+            f"SELECT l.k AS lk, r.k AS rk FROM l NATURAL JOIN m {join.format(on=on)} "
+            "ORDER BY lk, rk"
+        ),
+        compare_with="duckdb",
+    )
 
 
 @pytest.mark.parametrize(
@@ -2321,6 +2633,35 @@ def test_join_on_constant_any_condition(join_type: str) -> None:
         res = ctx.execute(f"SELECT * FROM a {join_type} b ON {condition}").collect()
         expected = ctx.execute(f"SELECT * FROM a {join_type} b ON {verdict}").collect()
         assert_frame_equal(res, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "join_type", ["INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL OUTER JOIN"]
+)
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.k = a.v",
+        "x = a.k",
+        "b.k = b.v",
+        "a.k = b.k AND a.k = a.v",
+    ],
+)
+@pytest.mark.parametrize(
+    "columns", ["a.k, a.v, a.x, b.k AS bk, b.v AS bv", "a.k, b.k AS bk"]
+)
+def test_join_on_equality_within_one_input(
+    join_type: str, condition: str, columns: str
+) -> None:
+    # `v` is in both inputs.
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2, 3], "v": [1, 5, 3], "x": [1, 2, 4]}),
+        "b": pl.DataFrame({"k": [1, 3, 4], "v": [1, 7, 4]}),
+    }
+    query = f"SELECT {columns} FROM a {join_type} b ON {condition}"
+    assert_sql_matches(
+        frames, query=query, compare_with="sqlite", check_row_order=False
+    )
 
 
 def test_join_on_constant_true_plans_cross_join() -> None:

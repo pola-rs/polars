@@ -62,6 +62,7 @@ from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
     _is_generator,
+    is_sequence,
     parse_version,
     qualified_type_name,
     require_same_type,
@@ -785,8 +786,11 @@ class Series(metaclass=_Meta):
             assert f is not None
             return self._from_pyseries(f(d))
 
-        if isinstance(other, Sequence) and not isinstance(other, str):
+        if is_sequence(other):
             if self.dtype in (List, Array):
+                if _check_for_numpy(other) and isinstance(other, np.ndarray):
+                    msg = f"cannot compare a Series of dtype {self.dtype} to a NumPy array"
+                    raise TypeError(msg)
                 other = [other]
             other = Series("", other)
             if other.dtype == Null:
@@ -1040,9 +1044,16 @@ class Series(metaclass=_Meta):
             other = pl.Series("", [None])
 
         if isinstance(other, Series):
-            return self._from_pyseries(getattr(self._s, op_s)(other._s))
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(other._s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(other._s))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
-            return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
+            _s = Series(self.name, other)._s
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(_s, op_s)(self._s))
+            else:
+                return self._from_pyseries(getattr(self._s, op_s)(_s))
         elif isinstance(other, timedelta):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -1246,8 +1257,6 @@ class Series(metaclass=_Meta):
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        if self.dtype.is_float():
-            self.__rfloordiv__(other)
         if isinstance(other, (int, float)) and self.dtype.is_decimal():
             return self.to_frame().select(other / F.col(self.name)).to_series()
 
@@ -1277,6 +1286,8 @@ class Series(metaclass=_Meta):
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
+        if isinstance(other, Series):
+            return other.pow(self)
         return (
             self.to_frame()
             .select_seq((other ** F.col(self.name)).alias(self.name))
@@ -5042,6 +5053,33 @@ class Series(metaclass=_Meta):
             )
         ).to_series()
 
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: Literal[False] = ...,
+    ) -> np.ndarray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: Literal[True],
+    ) -> np.ma.MaskedArray[Any, Any]: ...
+
+    @overload
+    def to_numpy(
+        self,
+        *,
+        writable: bool = ...,
+        allow_copy: bool = ...,
+        masked: bool,
+    ) -> np.ndarray[Any, Any]: ...
+
     @removed_parameters(
         RemovedParameter(
             name="use_pyarrow",
@@ -5063,6 +5101,7 @@ class Series(metaclass=_Meta):
         *,
         writable: bool = False,
         allow_copy: bool = True,
+        masked: bool = False,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
@@ -5084,6 +5123,16 @@ class Series(metaclass=_Meta):
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
+        masked
+            Return a `numpy.ma.MaskedArray` in which null values are masked. The data
+            keeps the type it would have without nulls, and the values under the mask
+            are unspecified. Nulls inside nested values are converted as they are
+            without `masked`, except for `Array` and `Struct` values. `writable` and
+            `allow_copy` only apply to the data, not the mask.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -5123,7 +5172,26 @@ class Series(metaclass=_Meta):
         >>> s.to_numpy()
         array([[1, 2, 3],
                [4, 5, 6]])
+
+        Set `masked=True` to represent null values with a mask instead, which preserves
+        the data type.
+
+        >>> s = pl.Series([1, 2, None], dtype=pl.UInt16)
+        >>> arr = s.to_numpy(masked=True)
+        >>> arr.dtype
+        dtype('uint16')
+        >>> arr.mask
+        array([False, False,  True])
         """  # noqa: W505
+        if masked:
+            msg = (
+                "the `masked` parameter of `Series.to_numpy()` is considered unstable."
+            )
+            issue_unstable_warning(msg)
+            data, mask = self._s.to_numpy_masked(
+                writable=writable, allow_copy=allow_copy
+            )
+            return np.ma.MaskedArray(data, mask=np.ma.nomask if mask is None else mask)
         return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
     @unstable()
@@ -8421,10 +8489,14 @@ class Series(metaclass=_Meta):
         dtype: type[int | float] | PolarsDataType | None = None,
     ) -> Series:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer or float.
+        Reinterpret the underlying bits as a signed/unsigned integer, float or decimal.
 
-        This operation is only allowed for numeric types of the same size.
-        For lower bits numbers, you can safely use the cast operation.
+        This operation is only allowed between numeric types of the same size. To
+        convert between types of different sizes, use :meth:`cast` instead.
+
+        A `Decimal` can also be reinterpreted to and from `Int128`, its unscaled integer
+        representation: `1.23` as `Decimal(5, 2)` becomes `123`. Reinterpreting an
+        `Int128` raises if the value doesn't fit the precision of the target `Decimal`.
 
         Exactly one of `signed` or `dtype` must be specified.
 

@@ -1,4 +1,5 @@
 use polars_arrow::array::{Array, PrimitiveArray};
+use polars_arrow::compute::utils::combine_validities_and;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -67,20 +68,21 @@ where
     )
 }
 
-pub(super) fn array_dispatch(
-    name: PlSmallStr,
-    values: &Series,
-    width: usize,
-    agg_type: AggType,
-) -> Series {
+pub(super) fn array_dispatch(ca: &ArrayChunked, agg_type: AggType) -> Series {
+    let values = ca.get_inner();
+    let width = ca.width();
     let chunks: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(values.dtype(), |$T| {
-        let ca: &ChunkedArray<$T> = values.as_ref().as_ref().as_ref();
-        ca.downcast_iter().map(|arr| {
-            match agg_type {
-                AggType::Min => Box::new(agg_min(arr, width)) as ArrayRef,
-                AggType::Max => Box::new(agg_max(arr, width)) as ArrayRef,
-            }
+        let values: &ChunkedArray<$T> = values.as_ref().as_ref().as_ref();
+        // The inner chunks line up with the outer ones.
+        values.downcast_iter().zip(ca.downcast_iter()).map(|(arr, outer)| {
+            let out = match agg_type {
+                AggType::Min => agg_min(arr, width),
+                AggType::Max => agg_max(arr, width),
+            };
+            // Null rows may store any values.
+            let validity = combine_validities_and(out.validity(), outer.validity());
+            Box::new(out.with_validity(validity)) as ArrayRef
         }).collect()
     });
-    Series::try_from((name, chunks)).unwrap()
+    Series::try_from((ca.name().clone(), chunks)).unwrap()
 }

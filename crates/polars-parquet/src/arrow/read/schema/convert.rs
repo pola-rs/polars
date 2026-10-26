@@ -2,7 +2,8 @@
 use std::sync::Arc;
 
 use polars_arrow::datatypes::{
-    ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit,
+    ArrowDataType, ArrowSchema, ExtensionType, Field, IntervalUnit, MAINTAIN_PL_TYPE, Metadata,
+    PARQUET_EMPTY_STRUCT, PL_KEY, TimeUnit,
 };
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
@@ -18,17 +19,27 @@ use crate::parquet::schema::types::{
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.
 pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> PolarsResult<ArrowSchema> {
-    parquet_to_arrow_schema_with_options(fields, &SchemaInferenceOptions::default())
+    parquet_to_arrow_schema_with_options(fields, &SchemaInferenceOptions::default(), None)
 }
 
-/// Like [`parquet_to_arrow_schema`] but with configurable options which affect the behavior of schema inference
+/// Like [`parquet_to_arrow_schema`] but with configurable options which affect the behavior of schema inference.
+///
+/// `hints` is the Arrow schema the file was written with (`"ARROW:schema"`), if any. It is only
+/// used for what the Parquet types cannot express, such as time zones.
 pub fn parquet_to_arrow_schema_with_options(
     fields: &[ParquetType],
     options: &SchemaInferenceOptions,
+    arrow_hints: Option<&ArrowSchema>,
 ) -> PolarsResult<ArrowSchema> {
     let fields = fields
         .iter()
-        .map(|f| to_field(f, options))
+        .map(|f| {
+            to_field(
+                f,
+                options,
+                arrow_hints.and_then(|arrow_hints| arrow_hints.get(f.name())),
+            )
+        })
         .collect::<PolarsResult<Vec<Option<Field>>>>()?;
 
     Ok(fields
@@ -228,24 +239,184 @@ fn to_primitive_type_inner(
     }
 }
 
+/// Like [`to_primitive_type_inner`], combined with the type `hint` from the Arrow schema.
+fn to_primitive_type_with_hint(
+    primitive_type: &PrimitiveType,
+    options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
+) -> ArrowDataType {
+    let dtype = to_primitive_type_inner(primitive_type, options);
+    arrow_hint
+        .and_then(|arrow_hint| apply_leaf_arrow_hint(&dtype, primitive_type, arrow_hint))
+        .unwrap_or(dtype)
+}
+
+/// Combines the type `dtype` derived from the Parquet leaf column `primitive_type` with the type
+/// `hint` that the Arrow schema of the file records for it. Returns `None` if the hint does not
+/// fit the Parquet type, in which case it is ignored.
+///
+/// As in Arrow C++ (`ApplyOriginalStorageMetadata` in `cpp/src/parquet/arrow/schema.cc`), the
+/// Parquet type decides how the values are stored, including their time unit, and the hint only
+/// adds what Parquet cannot express. The plain integer cases are types the Polars writer stores
+/// without a Parquet logical type.
+fn apply_leaf_arrow_hint(
+    dtype: &ArrowDataType,
+    primitive_type: &PrimitiveType,
+    arrow_hint: &Field,
+) -> Option<ArrowDataType> {
+    use ArrowDataType as D;
+    let is_byte_array = matches!(dtype, D::BinaryView | D::Utf8View);
+    let out = match (&arrow_hint.dtype, dtype) {
+        (D::Extension(ext), _) => {
+            let storage_arrow_hint = arrow_hint.with_dtype(ext.inner.clone());
+            let inner = apply_leaf_arrow_hint(dtype, primitive_type, &storage_arrow_hint)?;
+            D::Extension(Box::new(ExtensionType {
+                inner,
+                ..(**ext).clone()
+            }))
+        },
+        (D::Dictionary(key, value, ordered), _) => match value.as_ref() {
+            D::Utf8 | D::LargeUtf8 | D::Utf8View if is_byte_array => {
+                D::Dictionary(*key, Box::new(D::Utf8View), *ordered)
+            },
+            D::Utf8 | D::LargeUtf8 | D::Utf8View => return None,
+            // Polars has no generic dictionary type, so only the values are kept.
+            value => {
+                return apply_leaf_arrow_hint(
+                    dtype,
+                    primitive_type,
+                    &arrow_hint.with_dtype(value.clone()),
+                );
+            },
+        },
+        (D::Null, _) if primitive_type.logical_type == Some(PrimitiveLogicalType::Unknown) => {
+            D::Null
+        },
+        (D::Struct(fields), D::Boolean)
+            if fields.is_empty() && arrow_hint.is_pl_pq_empty_struct() =>
+        {
+            D::Struct(Vec::new())
+        },
+        (D::Time32(TimeUnit::Second), D::Int32)
+        | (D::Timestamp(..) | D::Duration(_) | D::Date64, D::Int64)
+        | (D::Int128 | D::UInt128, D::FixedSizeBinary(16))
+        | (D::Float16, D::FixedSizeBinary(2))
+        | (D::Interval(IntervalUnit::YearMonth | IntervalUnit::DayTime), D::Interval(_)) => {
+            arrow_hint.dtype.clone()
+        },
+        // INT96 timestamps have no unit of their own.
+        (D::Timestamp(..), D::Timestamp(..))
+            if primitive_type.physical_type == PhysicalType::Int96 =>
+        {
+            arrow_hint.dtype.clone()
+        },
+        (D::Timestamp(_, tz), D::Timestamp(unit, parquet_tz)) => {
+            // Parquet only records whether the timestamps are adjusted to UTC.
+            let is_local = matches!(
+                primitive_type.logical_type,
+                Some(PrimitiveLogicalType::Timestamp {
+                    is_adjusted_to_utc: false,
+                    ..
+                })
+            );
+            let tz = tz.as_ref().filter(|tz| !is_local && !tz.is_empty());
+            D::Timestamp(*unit, tz.or(parquet_tz.as_ref()).cloned())
+        },
+        (D::Time32(_) | D::Time64(_), D::Time32(_) | D::Time64(_)) => dtype.clone(),
+        (D::Date64, D::Date32) => D::Date64,
+        (D::LargeBinary, _)
+            if is_byte_array
+                && arrow_hint.metadata.as_ref().is_some_and(|md| {
+                    md.get(PL_KEY).map(|s| s.as_str()) == Some(MAINTAIN_PL_TYPE)
+                }) =>
+        {
+            D::LargeBinary
+        },
+        (D::Binary | D::LargeBinary | D::BinaryView, _) if is_byte_array => D::BinaryView,
+        (D::Utf8 | D::LargeUtf8 | D::Utf8View, _) if is_byte_array => D::Utf8View,
+        (D::Decimal256(..), D::Decimal(precision, scale)) => D::Decimal256(*precision, *scale),
+        (D::Decimal32(..) | D::Decimal64(..) | D::Decimal(..), D::Decimal(..)) => dtype.clone(),
+        (arrow_hint_dtype, dtype) if arrow_hint_dtype == dtype => dtype.clone(),
+        _ => return None,
+    };
+    Some(out)
+}
+
 /// Entry point for converting parquet primitive type to arrow type.
 ///
 /// This function takes care of repetition.
 fn to_primitive_type(
     primitive_type: &PrimitiveType,
     options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
 ) -> ArrowDataType {
-    let base_type = to_primitive_type_inner(primitive_type, options);
-
     if primitive_type.field_info.repetition == Repetition::Repeated {
-        ArrowDataType::LargeList(Box::new(Field::new(
+        list_of(
             primitive_type.field_info.name.clone(),
-            base_type,
+            to_primitive_type_with_hint(primitive_type, options, list_arrow_hint(arrow_hint)),
             is_optional(&primitive_type.field_info),
-        )))
+            arrow_hint,
+        )
     } else {
-        base_type
+        to_primitive_type_with_hint(primitive_type, options, arrow_hint)
     }
+}
+
+/// The element field of a list `hint`.
+fn list_arrow_hint(arrow_hint: Option<&Field>) -> Option<&Field> {
+    match &arrow_hint?.dtype {
+        ArrowDataType::List(f)
+        | ArrowDataType::LargeList(f)
+        | ArrowDataType::FixedSizeList(f, _) => Some(f),
+        _ => None,
+    }
+}
+
+/// The fields of a struct `hint`.
+fn struct_arrow_hints(arrow_hint: Option<&Field>) -> &[Field] {
+    match arrow_hint.map(|h| &h.dtype) {
+        Some(ArrowDataType::Struct(fields)) => fields,
+        _ => &[],
+    }
+}
+
+/// A list of elements named `name`, or the element name of the list `hint` if there is one, as
+/// writers rename the element in Parquet. It is a fixed-size list if the list `hint` is one, as
+/// Parquet does not record the width.
+fn list_of(
+    name: PlSmallStr,
+    dtype: ArrowDataType,
+    is_nullable: bool,
+    arrow_hint: Option<&Field>,
+) -> ArrowDataType {
+    let element_arrow_hint = list_arrow_hint(arrow_hint);
+    let name = element_arrow_hint.map_or(name, |h| h.name.clone());
+    let element =
+        with_arrow_hint_metadata(Field::new(name, dtype, is_nullable), element_arrow_hint);
+    match arrow_hint.map(|h| &h.dtype) {
+        Some(ArrowDataType::FixedSizeList(_, width)) => {
+            ArrowDataType::FixedSizeList(Box::new(element), *width)
+        },
+        _ => ArrowDataType::LargeList(Box::new(element)),
+    }
+}
+
+/// Adds the metadata of `hint` to `field`. Keys `field` already has take precedence, as in Arrow
+/// C++.
+fn with_arrow_hint_metadata(mut field: Field, arrow_hint: Option<&Field>) -> Field {
+    let Some(arrow_hint_metadata) = arrow_hint.and_then(|h| h.metadata.as_deref()) else {
+        return field;
+    };
+    let mut metadata = arrow_hint_metadata.clone();
+    // The decoder reads a field with this key as an empty struct.
+    if !matches!(&field.dtype, ArrowDataType::Struct(fields) if fields.is_empty()) {
+        metadata.remove(PARQUET_EMPTY_STRUCT);
+    }
+    if let Some(own) = field.metadata.take() {
+        metadata.extend(own.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+    field.metadata = (!metadata.is_empty()).then(|| Arc::new(metadata));
+    field
 }
 
 fn non_repeated_group(
@@ -254,17 +425,18 @@ fn non_repeated_group(
     converted_type: &Option<GroupConvertedType>,
     fields: &[ParquetType],
     options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
 ) -> PolarsResult<Option<ArrowDataType>> {
     debug_assert!(!fields.is_empty());
     match (logical_type, converted_type) {
         _ if is_list_annotated(logical_type, converted_type) => {
-            to_list(field_info, fields, options)
+            to_list(field_info, fields, options, arrow_hint)
         },
         (Some(GroupLogicalType::Map), _)
         | (None, Some(GroupConvertedType::Map) | Some(GroupConvertedType::MapKeyValue)) => {
-            to_map(field_info, fields, options)
+            to_map(field_info, fields, options, arrow_hint)
         },
-        _ => to_struct(fields, options),
+        _ => to_struct(fields, options, struct_arrow_hints(arrow_hint)),
     }
 }
 
@@ -302,13 +474,23 @@ fn ensure_not_repeated_map(
 
 /// Converts a parquet group type to an arrow [`ArrowDataType::Struct`].
 /// Returns [`None`] if all its fields are empty
+///
+/// `hints` are the fields of the matching struct in the Arrow schema, matched by name.
 fn to_struct(
     fields: &[ParquetType],
     options: &SchemaInferenceOptions,
+    arrow_hints: &[Field],
 ) -> PolarsResult<Option<ArrowDataType>> {
     let fields = fields
         .iter()
-        .map(|f| to_field(f, options))
+        .enumerate()
+        .map(|(i, f)| {
+            let arrow_hint = arrow_hints
+                .get(i)
+                .filter(|h| h.name == f.name())
+                .or_else(|| arrow_hints.iter().find(|h| h.name == f.name()));
+            to_field(f, options, arrow_hint)
+        })
         .collect::<PolarsResult<Vec<Option<Field>>>>()?;
     let fields = fields.into_iter().flatten().collect::<Vec<Field>>();
 
@@ -328,6 +510,7 @@ fn to_map(
     map_info: &FieldInfo,
     fields: &[ParquetType],
     options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
 ) -> PolarsResult<Option<ArrowDataType>> {
     macro_rules! invalid_map {
         ($($arg:tt)*) => {
@@ -381,19 +564,45 @@ fn to_map(
     // Read maps without values as lists of keys. Bypass LIST validation because
     // the entries group may carry the legacy MAP_KEY_VALUE annotation.
     if kv_fields.len() == 1 {
-        return list_elements(map_info, entries, options);
+        return list_elements(map_info, entries, options, None);
     }
 
-    let Some(entries_dtype) = to_struct(kv_fields, options)? else {
-        invalid_map!("its `{}` child has no columns", field_info.name)
+    let (entries_arrow_hint, keys_sorted) = match arrow_hint.map(|h| &h.dtype) {
+        Some(ArrowDataType::Map(entries, keys_sorted)) => (Some(entries.as_ref()), *keys_sorted),
+        _ => (None, false),
     };
-    // `to_struct` drops column-less children, so recheck that both survived.
-    if !matches!(&entries_dtype, ArrowDataType::Struct(fields) if fields.len() == 2) {
-        invalid_map!("its key or value field has no columns")
+    // Writers rename the key and value in Parquet, so their hints are matched by position and
+    // keep their names.
+    let kv_arrow_hints = match struct_arrow_hints(entries_arrow_hint) {
+        kv_arrow_hints @ [_, _] => kv_arrow_hints,
+        _ => &[],
+    };
+    let kv = kv_fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let arrow_hint = kv_arrow_hints.get(i);
+            let field = to_field(f, options, arrow_hint)?;
+            Ok(field.map(|field| match arrow_hint {
+                Some(arrow_hint) => Field {
+                    name: arrow_hint.name.clone(),
+                    ..field
+                },
+                None => field,
+            }))
+        })
+        .collect::<PolarsResult<Vec<Option<Field>>>>()?;
+    match kv.iter().flatten().count() {
+        0 => invalid_map!("its `{}` child has no columns", field_info.name),
+        1 => invalid_map!("its key or value field has no columns"),
+        _ => {},
     }
+    let entries_dtype = ArrowDataType::Struct(kv.into_iter().flatten().collect());
 
-    let entry = Field::new(field_info.name.clone(), entries_dtype, false);
-    Ok(Some(ArrowDataType::Map(Box::new(entry), false)))
+    let name = entries_arrow_hint.map_or_else(|| field_info.name.clone(), |h| h.name.clone());
+    let entry = Field::new(name, entries_dtype, false);
+    let entry = with_arrow_hint_metadata(entry, entries_arrow_hint);
+    Ok(Some(ArrowDataType::Map(Box::new(entry), keys_sorted)))
 }
 
 /// Entry point for converting parquet group type.
@@ -405,21 +614,35 @@ fn to_group_type(
     converted_type: &Option<GroupConvertedType>,
     fields: &[ParquetType],
     options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
 ) -> PolarsResult<Option<ArrowDataType>> {
     debug_assert!(!fields.is_empty());
     ensure_not_repeated_map(field_info, logical_type, converted_type)?;
 
     if field_info.repetition == Repetition::Repeated {
-        let Some(inner) = to_struct(fields, options)? else {
+        let Some(inner) = to_struct(
+            fields,
+            options,
+            struct_arrow_hints(list_arrow_hint(arrow_hint)),
+        )?
+        else {
             return Ok(None);
         };
-        Ok(Some(ArrowDataType::LargeList(Box::new(Field::new(
+        Ok(Some(list_of(
             field_info.name.clone(),
             inner,
             is_optional(field_info),
-        )))))
+            arrow_hint,
+        )))
     } else {
-        non_repeated_group(field_info, logical_type, converted_type, fields, options)
+        non_repeated_group(
+            field_info,
+            logical_type,
+            converted_type,
+            fields,
+            options,
+            arrow_hint,
+        )
     }
 }
 
@@ -441,10 +664,14 @@ fn is_optional(field_info: &FieldInfo) -> bool {
     field_info.repetition == Repetition::Optional
 }
 
-/// Converts parquet schema to arrow field.
+/// Converts parquet schema to arrow field, using the field `hint` from the Arrow schema.
 /// Returns `None` iff the parquet type has no associated primitive types,
 /// i.e. if it is a column-less group type.
-fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> PolarsResult<Option<Field>> {
+fn to_field(
+    type_: &ParquetType,
+    options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
+) -> PolarsResult<Option<Field>> {
     let field_info = type_.get_field_info();
 
     let options = options.enter_nested(field_info.name.as_str());
@@ -459,7 +686,7 @@ fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> PolarsResu
         )
     });
 
-    let Some(dtype) = to_dtype(type_, options)? else {
+    let Some(dtype) = to_dtype(type_, options, arrow_hint)? else {
         return Ok(None);
     };
 
@@ -467,7 +694,7 @@ fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> PolarsResu
 
     arrow_field.metadata = metadata;
 
-    Ok(Some(arrow_field))
+    Ok(Some(with_arrow_hint_metadata(arrow_field, arrow_hint)))
 }
 
 /// Converts a Parquet `LIST` group to [`ArrowDataType::LargeList`] using the [spec]'s
@@ -478,6 +705,7 @@ fn to_list(
     list_info: &FieldInfo,
     fields: &[ParquetType],
     options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
 ) -> PolarsResult<Option<ArrowDataType>> {
     macro_rules! invalid_list {
         ($($arg:tt)*) => {
@@ -516,7 +744,7 @@ fn to_list(
         ensure_not_repeated_map(field_info, logical_type, converted_type)?;
     }
 
-    list_elements(list_info, repeated, options)
+    list_elements(list_info, repeated, options, arrow_hint)
 }
 
 /// Determines the element of a `LIST` group from its repeated level, by the spec's
@@ -525,14 +753,20 @@ fn list_elements(
     list_info: &FieldInfo,
     repeated: &ParquetType,
     options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
 ) -> PolarsResult<Option<ArrowDataType>> {
+    let element_arrow_hint = list_arrow_hint(arrow_hint);
     let (name, is_nullable, dtype) = match repeated {
         // 1. "If the repeated field is not a group, then its type is the element type and
         //    elements are required."
         ParquetType::PrimitiveType(primitive) => (
             primitive.field_info.name.clone(),
             false,
-            Some(to_primitive_type_inner(primitive, options)),
+            Some(to_primitive_type_with_hint(
+                primitive,
+                options,
+                element_arrow_hint,
+            )),
         ),
         ParquetType::GroupType {
             field_info,
@@ -560,14 +794,18 @@ fn list_elements(
                 (
                     field_info.name.clone(),
                     false,
-                    to_list(field_info, inner, options)?,
+                    to_list(field_info, inner, options, element_arrow_hint)?,
                 )
             } else if inner.len() > 1
                 || single_repeated_field
                 || field_info.name == "array"
                 || field_info.name.strip_suffix("_tuple") == Some(list_info.name.as_str())
             {
-                (field_info.name.clone(), false, to_struct(inner, options)?)
+                (
+                    field_info.name.clone(),
+                    false,
+                    to_struct(inner, options, struct_arrow_hints(element_arrow_hint))?,
+                )
             } else {
                 // 5. "Otherwise, the repeated field's type is the element type with the repeated
                 //    field's repetition." The name of the repeated group is not enforced: it is
@@ -576,7 +814,7 @@ fn list_elements(
                 (
                     element_info.name.clone(),
                     is_optional(element_info),
-                    to_dtype(first, options)?,
+                    to_dtype(first, options, element_arrow_hint)?,
                 )
             }
         },
@@ -585,14 +823,10 @@ fn list_elements(
     let Some(dtype) = dtype else {
         return Ok(None);
     };
-    Ok(Some(ArrowDataType::LargeList(Box::new(Field::new(
-        name,
-        dtype,
-        is_nullable,
-    )))))
+    Ok(Some(list_of(name, dtype, is_nullable, arrow_hint)))
 }
 
-/// Converts parquet schema to arrow data type.
+/// Converts parquet schema to arrow data type, using the field `hint` from the Arrow schema.
 ///
 /// This function discards schema name.
 ///
@@ -604,9 +838,12 @@ fn list_elements(
 pub(crate) fn to_dtype(
     type_: &ParquetType,
     options: &SchemaInferenceOptions,
+    arrow_hint: Option<&Field>,
 ) -> PolarsResult<Option<ArrowDataType>> {
     match type_ {
-        ParquetType::PrimitiveType(primitive) => Ok(Some(to_primitive_type(primitive, options))),
+        ParquetType::PrimitiveType(primitive) => {
+            Ok(Some(to_primitive_type(primitive, options, arrow_hint)))
+        },
         ParquetType::GroupType {
             field_info,
             logical_type,
@@ -614,10 +851,42 @@ pub(crate) fn to_dtype(
             fields,
         } => {
             if fields.is_empty() {
-                Ok(None)
-            } else {
-                to_group_type(field_info, logical_type, converted_type, fields, options)
+                return Ok(None);
             }
+            let to_group = |arrow_hint: Option<&Field>| {
+                to_group_type(
+                    field_info,
+                    logical_type,
+                    converted_type,
+                    fields,
+                    options,
+                    arrow_hint,
+                )
+            };
+            let Some((arrow_hint, ext)) =
+                arrow_hint.and_then(|arrow_hint| match &arrow_hint.dtype {
+                    ArrowDataType::Extension(ext) => Some((arrow_hint, ext)),
+                    _ => None,
+                })
+            else {
+                return to_group(arrow_hint);
+            };
+
+            let storage = to_group(Some(&arrow_hint.with_dtype(ext.inner.clone())))?;
+            // Keep the extension type if the Parquet type has the kind of its storage type.
+            use ArrowDataType as D;
+            Ok(storage.map(|inner| match (&inner, &ext.inner) {
+                (D::Struct(_), D::Struct(_))
+                | (D::Map(..), D::Map(..))
+                | (D::LargeList(_), D::List(_) | D::LargeList(_))
+                | (D::FixedSizeList(..), D::FixedSizeList(..)) => {
+                    D::Extension(Box::new(ExtensionType {
+                        inner,
+                        ..(**ext).clone()
+                    }))
+                },
+                _ => inner,
+            }))
         },
     }
 }
@@ -1772,6 +2041,7 @@ mod tests {
                     int96_coerce_to_timeunit: tu,
                     ..Default::default()
                 },
+                None,
             )?;
             let fields = fields.iter_values().cloned().collect::<Vec<_>>();
             assert_eq!(arrow_fields, fields);

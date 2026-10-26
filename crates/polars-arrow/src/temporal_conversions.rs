@@ -49,7 +49,7 @@ pub fn date32_to_date(days: i32) -> NaiveDate {
 /// converts a `i32` representing a `date32` to [`NaiveDate`]
 #[inline]
 pub fn date32_to_date_opt(days: i32) -> Option<NaiveDate> {
-    NaiveDate::from_num_days_from_ce_opt(EPOCH_DAYS_FROM_CE + days)
+    NaiveDate::from_num_days_from_ce_opt(EPOCH_DAYS_FROM_CE.checked_add(days)?)
 }
 
 /// converts a `i64` representing a `date64` to [`NaiveDateTime`]

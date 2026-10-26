@@ -10,7 +10,7 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 from decimal import Decimal as D
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import zstandard
 from hypothesis import given
@@ -21,8 +21,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 import orjson
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -325,6 +327,152 @@ def test_ndjson_sliced_list_serialization() -> None:
     sliced_df = df[1, :]
     sliced_df.write_ndjson(f)
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
+
+
+def test_write_ndjson_sliced_list_of_structs_30178() -> None:
+    df = pl.DataFrame(
+        {"a": [[{"x": 1}, None], [None, {"x": 2}], [{"x": 3}]]},
+        schema={"a": pl.List(pl.Struct({"x": pl.Int64}))},
+    )
+    assert df.tail(2).write_ndjson() == '{"a":[null,{"x":2}]}\n{"a":[{"x":3}]}\n'
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (
+            [[{"x": 1}, None], [None, {"x": 2}], [{"x": 3}], None, [{"x": 4}, None]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[{"x": 1}, {"x": 2}], [{"x": 3}], [], [{"x": 4}, {"x": 5}]],
+            pl.List(pl.Struct({"x": pl.Int64})),
+        ),
+        (
+            [[[1, 2], None], [None, [3, 4]], [[5, 6]], None, [[7, 8], None]],
+            pl.List(pl.Array(pl.Int64, 2)),
+        ),
+        (
+            [
+                [{"y": {"x": 1}}, None],
+                [None, {"y": None}],
+                [{"y": {"x": 3}}],
+                [{"y": {"x": 4}}, None],
+            ],
+            pl.List(pl.Struct({"y": pl.Struct({"x": pl.Int64})})),
+        ),
+        (
+            [
+                [[{"x": 1}, None], None],
+                [None, [None, {"x": 2}]],
+                [[{"x": 3}, None]],
+                [[{"x": 4}, {"x": 5}], None],
+            ],
+            pl.List(pl.Array(pl.Struct({"x": pl.Int64}), 2)),
+        ),
+        (
+            [
+                [{"a": [1, 2]}, None],
+                [None, {"a": None}],
+                [{"a": [3, 4]}],
+                [{"a": [5, 6]}, None],
+            ],
+            pl.List(pl.Struct({"a": pl.Array(pl.Int64, 2)})),
+        ),
+        (
+            [
+                [{"l": [1]}, None],
+                [None, {"l": [2, 3]}],
+                [{"l": None}],
+                [{"l": [4]}, None],
+            ],
+            pl.List(pl.Struct({"l": pl.List(pl.Int64)})),
+        ),
+        (
+            [[[1, 2], None], [None, [3]], [[4], None, []], [[5, 6]], None],
+            pl.List(pl.List(pl.Int64)),
+        ),
+        (
+            [
+                [[{"x": 1}, None]],
+                [None, [None, {"x": 2}]],
+                [[{"x": 3}]],
+                [[{"x": 4}, None]],
+            ],
+            pl.List(pl.List(pl.Struct({"x": pl.Int64}))),
+        ),
+        (
+            [[{"k": 1}, None], [None, {"k": 2, "l": None}], [{"m": 3}], [{"n": 4}]],
+            pl.List(pl.Map(pl.String, pl.Int64)),
+        ),
+        (
+            [{"l": [[1], None]}, None, {"l": [None, [2, 3]]}, {"l": [[4]]}],
+            pl.Struct({"l": pl.List(pl.List(pl.Int64))}),
+        ),
+    ],
+)
+@pytest.mark.parametrize(("offset", "length"), [(1, None), (1, 1), (2, None)])
+def test_write_json_sliced_nested_30178(
+    values: list[Any], dtype: pl.DataType, offset: int, length: int | None
+) -> None:
+    df = pl.DataFrame({"a": values}, schema={"a": dtype}).slice(offset, length)
+    rows = [json.dumps(row, separators=(",", ":")) for row in df.rows(named=True)]
+
+    assert df.write_ndjson() == "".join(f"{row}\n" for row in rows)
+    assert df.write_json() == f"[{','.join(rows)}]"
+    assert df.select(pl.struct("a").struct.json_encode())["a"].to_list() == rows
+
+
+def test_write_ndjson_sliced_masked_nested_list() -> None:
+    # Null rows that keep non-empty ranges of masked-out values, at both levels.
+    inner = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 4, 5, 8, 10, 10, 10], pa.int64()),
+        pa.array(range(10), pa.int64()),
+        mask=pa.array([False, True, False, False, False, True, False]),
+    )
+    outer = pa.LargeListArray.from_arrays(
+        pa.array([0, 2, 3, 5, 7, 7], pa.int64()),
+        inner,
+        mask=pa.array([False, True, False, False, True]),
+    )
+    df = pl.from_arrow(pa.table({"a": outer}))
+    assert isinstance(df, pl.DataFrame)
+
+    for offset in range(df.height):
+        for length in range(df.height - offset + 1):
+            sliced = df.slice(offset, length)
+            expected = "".join(
+                f"{json.dumps(row, separators=(',', ':'))}\n"
+                for row in sliced.rows(named=True)
+            )
+            assert sliced.write_ndjson() == expected
+
+
+def test_sink_ndjson_nested_multiple_morsels_30178(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Every morsel after the first is a slice, so its lists start at an offset.
+    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "100")
+    n = 1000
+    df = pl.DataFrame(
+        {
+            "s": [[None, {"x": i}] if i % 3 == 0 else [{"x": i}] for i in range(n)],
+            "a": [[None, [i, i]] if i % 3 == 0 else [[i, i]] for i in range(n)],
+        },
+        schema={
+            "s": pl.List(pl.Struct({"x": pl.Int64})),
+            "a": pl.List(pl.Array(pl.Int64, 2)),
+        },
+    )
+    expected = "".join(
+        f"{json.dumps(row, separators=(',', ':'))}\n" for row in df.rows(named=True)
+    )
+
+    assert df.write_ndjson() == expected
+
+    f = io.BytesIO()
+    df.lazy().sink_ndjson(f)
+    assert f.getvalue().decode() == expected
 
 
 def test_json_deserialize_9687() -> None:

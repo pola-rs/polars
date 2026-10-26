@@ -837,6 +837,16 @@ def test_projection_pushdown_select_len() -> None:
     assert q.collect().item() == 1
 
 
+def test_projection_pushdown_len_keeps_narrow_column_28582() -> None:
+    lf = pl.LazyFrame({"document": ["abc"], "id": [1]})
+    lf = lf.with_columns(pl.col("id").cast(pl.Int64)).select("document", "id")
+    q = pl.concat([lf, lf]).head(1).select(pl.len() != 0)
+
+    plan = q.explain()
+    assert 'PROJECT["id"] 1/2 COLUMNS' in plan
+    assert q.collect().item() is True
+
+
 def test_projection_pushdown_split_select_len_29393() -> None:
     # An expression that only references its input through `len()` is split into a
     # `select(len())` plus a residual, so that the `len()` optimizations still apply.
@@ -1005,6 +1015,16 @@ def test_projection_pushdown_union_len_pushdown_28657(
 
     with pytest.raises(InvalidOperationError, match=r"conversion.*failed"):
         q.collect()
+
+
+@pytest.mark.parametrize("union_fn", [pl.concat, pl.union])
+def test_projection_pushdown_sliced_union_len(
+    union_fn: Callable[..., pl.LazyFrame],
+) -> None:
+    empty = pl.LazyFrame({"a": pl.Series([], dtype=pl.Int64)})
+    one = pl.LazyFrame({"a": [1]})
+    assert union_fn([empty, one, one]).head(2).select(pl.len()).collect().item() == 2
+    assert union_fn([empty, one]).select(pl.len() > 0).collect().item()
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,7 @@ pub(super) fn simplify_binary(
     left: Node,
     op: Operator,
     right: Node,
+    schema: &Schema,
     ctx: OptimizeExprContext,
     maintain_errors: bool,
     expr_arena: &mut Arena<AExpr>,
@@ -14,7 +15,14 @@ pub(super) fn simplify_binary(
     let is_filter_predicate = ctx.is_filter_predicate;
 
     use Operator as O;
+    if let Some(out) =
+        simplify_repeated_operand(left, op, right, schema, maintain_errors, expr_arena)
+    {
+        return Some(out);
+    }
+
     match op {
+        O::Eq | O::NotEq => return simplify_bool_literal_cmp(left, op, right, schema, expr_arena),
         O::And => {
             let left_ae = expr_arena.get(left);
             let right_ae = expr_arena.get(right);
@@ -23,10 +31,8 @@ pub(super) fn simplify_binary(
             if matches!(
                 left_ae,
                 AExpr::Literal(lv) if lv.bool() == Some(true)
-            ) && is_filter_predicate
+            ) && (is_filter_predicate || is_boolean(right, schema, expr_arena))
             {
-                // Only in filter as we might change the name from "literal"
-                // to whatever lhs columns is.
                 return Some(right_ae.clone());
             }
 
@@ -100,10 +106,8 @@ pub(super) fn simplify_binary(
             if matches!(
                 left_ae,
                 AExpr::Literal(lv) if lv.bool() == Some(false)
-            ) && is_filter_predicate
+            ) && (is_filter_predicate || is_boolean(right, schema, expr_arena))
             {
-                // Only in filter as we might change the name from "literal"
-                // to whatever lhs columns is.
                 return Some(right_ae.clone());
             }
 
@@ -149,28 +153,223 @@ pub(super) fn simplify_ternary(
     predicate: Node,
     truthy: Node,
     falsy: Node,
+    schema: &Schema,
+    ctx: OptimizeExprContext,
+    maintain_errors: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<AExpr> {
-    let predicate = expr_arena.get(predicate);
+    let predicate_ae = expr_arena.get(predicate);
 
-    if let AExpr::Literal(lv) = predicate
+    if let AExpr::Literal(lv) = predicate_ae
         && let Some(predicate) = lv.bool()
     {
-        // Only replace if both are scalar or both are not scalar and are the same length,
-        // the latter is tested by checking if they are elementwise.
-        let t_is_scalar = is_scalar_ae(truthy, expr_arena);
-        let f_is_scalar = is_scalar_ae(falsy, expr_arena);
+        let (branch, other) = if predicate {
+            (truthy, falsy)
+        } else {
+            (falsy, truthy)
+        };
+        // Replace if both are scalar or both are not scalar and are the same length, the
+        // latter is tested by checking if they are elementwise. A scalar `other` is
+        // broadcast to `branch`, so then any `branch` is fine.
+        let b_is_scalar = is_scalar_ae(branch, expr_arena);
+        let o_is_scalar = is_scalar_ae(other, expr_arena);
 
-        if t_is_scalar == f_is_scalar
-            && (t_is_scalar
-                || (is_elementwise_rec(truthy, expr_arena)
-                    && is_elementwise_rec(falsy, expr_arena)))
+        if (b_is_scalar == o_is_scalar
+            && (b_is_scalar
+                || (is_elementwise_rec(branch, expr_arena)
+                    && is_elementwise_rec(other, expr_arena))))
+            || (!b_is_scalar && is_droppable_scalar(other, expr_arena))
         {
-            let branch = if predicate { truthy } else { falsy };
             return Some(expr_arena.get(branch).clone());
         }
+        return None;
     }
 
+    // when(p).then(x).otherwise(x) => x
+    let truthy_ae = expr_arena.get(truthy);
+    if truthy_ae.is_expr_equal_to(expr_arena.get(falsy), expr_arena) {
+        return (!is_inherently_nondeterministic(truthy, expr_arena)
+            && is_safe_to_drop(predicate, expr_arena, maintain_errors)
+            && keeps_length(truthy, predicate, expr_arena)
+            && is_boolean(predicate, schema, expr_arena))
+        .then(|| truthy_ae.clone());
+    }
+
+    // when(p).then(true).otherwise(false) => p.fill_null(false)
+    // when(p).then(false).otherwise(true) => p.fill_null(false).not()
+    let negate = match (bool_lit(truthy, expr_arena), bool_lit(falsy, expr_arena)) {
+        (Some(true), Some(false)) => false,
+        (Some(false), Some(true)) => true,
+        _ => return None,
+    };
+    // A predicate of another dtype must still raise when it runs.
+    if !is_boolean(predicate, schema, expr_arena) {
+        return None;
+    }
+    // A filter drops a `null` predicate like a `false` one.
+    if ctx.is_filter_predicate && !negate {
+        return Some(expr_arena.get(predicate).clone());
+    }
+    let false_lit = expr_arena.add(bool_literal(false));
+    let out = function_of(
+        &[predicate, false_lit],
+        IRFunctionExpr::FillNull,
+        expr_arena,
+    );
+    if !negate {
+        return Some(out);
+    }
+    let out = expr_arena.add(out);
+    Some(not(out, expr_arena))
+}
+
+fn function_of(input: &[Node], function: IRFunctionExpr, expr_arena: &Arena<AExpr>) -> AExpr {
+    let input = input
+        .iter()
+        .map(|node| ExprIR::from_node(*node, expr_arena))
+        .collect();
+    let options = function.function_options();
+    AExpr::Function {
+        input,
+        function,
+        options,
+    }
+}
+
+fn not(node: Node, expr_arena: &Arena<AExpr>) -> AExpr {
+    function_of(
+        &[node],
+        IRFunctionExpr::Boolean(IRBooleanFunction::Not),
+        expr_arena,
+    )
+}
+
+fn bool_lit(node: Node, expr_arena: &Arena<AExpr>) -> Option<bool> {
+    match expr_arena.get(node) {
+        AExpr::Literal(lv) => lv.bool(),
+        _ => None,
+    }
+}
+
+// Whether an expression of `keep` and `drop` has the length of `keep`, so `drop` can go.
+fn keeps_length(keep: Node, drop: Node, expr_arena: &Arena<AExpr>) -> bool {
+    is_droppable_scalar(drop, expr_arena)
+        || (is_length_preserving_ae(keep, expr_arena) && is_length_preserving_ae(drop, expr_arena))
+}
+
+// Whether `node` is a scalar that is broadcast to the other operands. The height of a struct
+// evaluation does not count the columns its fields read, so it is never taken as scalar here.
+fn is_droppable_scalar(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    if !is_scalar_ae(node, expr_arena) {
+        return false;
+    }
+    #[cfg(feature = "dtype-struct")]
+    if expr_arena
+        .iter(node)
+        .any(|(_, ae)| matches!(ae, AExpr::StructEval { .. }))
+    {
+        return false;
+    }
+    true
+}
+
+fn has_dtype(
+    node: Node,
+    schema: &Schema,
+    expr_arena: &Arena<AExpr>,
+    f: impl Fn(&DataType) -> bool,
+) -> bool {
+    let ctx = ToFieldContext::new(expr_arena, schema);
+    expr_arena
+        .get(node)
+        .to_dtype(&ctx)
+        .is_ok_and(|dtype| f(&dtype))
+}
+
+fn is_boolean(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
+    has_dtype(node, schema, expr_arena, DataType::is_bool)
+}
+
+// `x == true` and `x != false` => `x`, `x == false` and `x != true` => `NOT(x)` for a
+// boolean `x`. Both sides are `null` where `x` is `null`.
+fn simplify_bool_literal_cmp(
+    left: Node,
+    op: Operator,
+    right: Node,
+    schema: &Schema,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<AExpr> {
+    let (expr, value) = match (bool_lit(left, expr_arena), bool_lit(right, expr_arena)) {
+        (None, Some(value)) => (left, value),
+        (Some(value), None) => (right, value),
+        _ => return None,
+    };
+    if !is_boolean(expr, schema, expr_arena) {
+        return None;
+    }
+    if (op == Operator::Eq) == value {
+        Some(expr_arena.get(expr).clone())
+    } else {
+        Some(not(expr, expr_arena))
+    }
+}
+
+// `x & x` and `x | x` => `x`, also as bitwise operations on integers. For booleans also
+// absorption: `x & (x | y)` and `x | (x & y)` => `x`, which holds under Kleene logic
+// but not for integers, where a `null` in `y` gives `null`.
+fn simplify_repeated_operand(
+    left: Node,
+    op: Operator,
+    right: Node,
+    schema: &Schema,
+    maintain_errors: bool,
+    expr_arena: &Arena<AExpr>,
+) -> Option<AExpr> {
+    let inner_op = match op {
+        Operator::And => Operator::Or,
+        Operator::Or => Operator::And,
+        _ => return None,
+    };
+
+    let left_ae = expr_arena.get(left);
+    if left_ae.is_expr_equal_to(expr_arena.get(right), expr_arena) {
+        // Logical or bitwise `&` and `|` work on these dtypes.
+        return (!is_inherently_nondeterministic(left, expr_arena)
+            && has_dtype(left, schema, expr_arena, |dtype| {
+                dtype.is_bool() || dtype.is_integer()
+            }))
+        .then(|| left_ae.clone());
+    }
+
+    for (keep, other) in [(left, right), (right, left)] {
+        let AExpr::BinaryExpr {
+            left: inner_left,
+            op,
+            right: inner_right,
+        } = expr_arena.get(other)
+        else {
+            continue;
+        };
+        if *op != inner_op {
+            continue;
+        }
+        let keep_ae = expr_arena.get(keep);
+        let drop = if keep_ae.is_expr_equal_to(expr_arena.get(*inner_left), expr_arena) {
+            *inner_right
+        } else if keep_ae.is_expr_equal_to(expr_arena.get(*inner_right), expr_arena) {
+            *inner_left
+        } else {
+            continue;
+        };
+        if !is_inherently_nondeterministic(keep, expr_arena)
+            && is_safe_to_drop(drop, expr_arena, maintain_errors)
+            && keeps_length(keep, drop, expr_arena)
+            && is_boolean(keep, schema, expr_arena)
+            && is_boolean(drop, schema, expr_arena)
+        {
+            return Some(keep_ae.clone());
+        }
+    }
     None
 }
 
@@ -223,7 +422,9 @@ fn comparison_cases(op: Operator) -> Option<u8> {
         Eq => CMP_EQ,
         NotEq => CMP_LT | CMP_GT,
         EqValidity | NotEqValidity | And | Or | Xor | LogicalAnd | LogicalOr | Plus | Minus
-        | Multiply | RustDivide | TrueDivide | FloorDivide | Modulus => return None,
+        | Multiply | RustDivide | TrueDivide | FloorDivide | TruncDivide | Modulus => {
+            return None;
+        },
     })
 }
 

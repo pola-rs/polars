@@ -74,7 +74,7 @@ def _execute_with_duckdb(
         conn.execute("SET default_null_order = 'nulls_last_on_asc_first_on_desc'")
         for name, df in frames.items():
             conn.register(name, df)
-        return conn.execute(query).pl()  # type: ignore[no-any-return]
+        return conn.sql(query).pl()  # type: ignore[no-any-return]
 
 
 _COMPARISON_BACKENDS_ = {

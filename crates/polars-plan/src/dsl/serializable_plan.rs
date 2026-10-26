@@ -18,6 +18,9 @@ new_key_type! {
     pub(crate) struct DslPlanKey;
 }
 
+/// A catalog table of a deferred SQL query (see `SqlCatalogTable`), with its plan as a key.
+type SerializableSqlCatalogTable = (Arc<[PlSmallStr]>, Arc<[PlSmallStr]>, DslPlanKey);
+
 /// A representation of DslPlan that does not contain any `Arc` pointers, and
 /// instead uses indices to refer to DataFrames and other DslPlan nodes.
 ///
@@ -150,10 +153,21 @@ pub(crate) enum SerializableDslPlanNode {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    Recursive {
+        anchor: DslPlanKey,
+        step: DslPlanKey,
+        id: UniqueId,
+        round_local_caches: Arc<[UniqueId]>,
+    },
+    WorkingTable {
+        id: UniqueId,
+        schema: SchemaRef,
+    },
     #[allow(clippy::upper_case_acronyms)]
     SQL {
         query: Arc<String>,
         relations: Vec<(PlSmallStr, DslPlanKey)>,
+        catalog_tables: Vec<SerializableSqlCatalogTable>,
     },
     IR {
         dsl: DslPlanKey,
@@ -377,15 +391,38 @@ fn convert_dsl_plan_to_serializable_plan(
             key: key.clone(),
             maintain_order: *maintain_order,
         },
+        DP::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => SP::Recursive {
+            anchor: dsl_plan_key(anchor, arenas),
+            step: dsl_plan_key(step, arenas),
+            id: *id,
+            round_local_caches: round_local_caches.clone(),
+        },
+        DP::WorkingTable { id, schema } => SP::WorkingTable {
+            id: *id,
+            schema: schema.clone(),
+        },
         DP::SQL {
             query,
             relations,
+            catalog_tables,
             cached_stmt: _,
         } => SP::SQL {
             query: query.clone(),
             relations: relations
                 .iter()
                 .map(|(name, plan)| (name.clone(), dsl_plan_key_from_ref(plan, arenas)))
+                .collect(),
+            catalog_tables: catalog_tables
+                .iter()
+                .map(|(name, full_name, plan)| {
+                    let key = dsl_plan_key_from_ref(plan, arenas);
+                    (name.clone(), full_name.clone(), key)
+                })
                 .collect(),
         },
         DP::IR {
@@ -645,13 +682,39 @@ fn try_convert_serializable_plan_to_dsl_plan(
             key: key.clone(),
             maintain_order: *maintain_order,
         }),
-        SP::SQL { query, relations } => Ok(DP::SQL {
+        SP::Recursive {
+            anchor,
+            step,
+            id,
+            round_local_caches,
+        } => Ok(DP::Recursive {
+            anchor: get_dsl_plan(*anchor, ser_dsl_plan, arenas)?,
+            step: get_dsl_plan(*step, ser_dsl_plan, arenas)?,
+            id: *id,
+            round_local_caches: round_local_caches.clone(),
+        }),
+        SP::WorkingTable { id, schema } => Ok(DP::WorkingTable {
+            id: *id,
+            schema: schema.clone(),
+        }),
+        SP::SQL {
+            query,
+            relations,
+            catalog_tables,
+        } => Ok(DP::SQL {
             query: query.clone(),
             relations: relations
                 .iter()
                 .map(|(name, key)| {
                     let plan = get_dsl_plan(*key, ser_dsl_plan, arenas)?;
                     Ok((name.clone(), Arc::unwrap_or_clone(plan)))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?,
+            catalog_tables: catalog_tables
+                .iter()
+                .map(|(name, full_name, key)| {
+                    let plan = get_dsl_plan(*key, ser_dsl_plan, arenas)?;
+                    Ok((name.clone(), full_name.clone(), Arc::unwrap_or_clone(plan)))
                 })
                 .collect::<PolarsResult<Vec<_>>>()?,
             cached_stmt: Default::default(),

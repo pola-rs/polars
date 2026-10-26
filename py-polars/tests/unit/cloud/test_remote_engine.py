@@ -17,10 +17,14 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars._dependencies import polars_cloud
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+
+CLOUD_MODULE = polars_cloud.__name__
 
 
 class FakeQuery:
@@ -124,14 +128,14 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, ...]]:
         recorded.append(("remote", context, kwargs))
         return FakeLazyFrameRemote(recorded, "auto", self)
 
-    monkeypatch.setitem(sys.modules, "polars_cloud", ModuleType("polars_cloud"))
+    monkeypatch.setitem(sys.modules, CLOUD_MODULE, ModuleType(CLOUD_MODULE))
     monkeypatch.setattr(pl.LazyFrame, "remote", fake_remote, raising=False)
     return recorded
 
 
 @pytest.fixture
 def _stub_cloud(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "polars_cloud", ModuleType("polars_cloud"))
+    monkeypatch.setitem(sys.modules, CLOUD_MODULE, ModuleType(CLOUD_MODULE))
 
 
 @pytest.fixture
@@ -141,7 +145,7 @@ def lf() -> pl.LazyFrame:
 
 def test_requires_polars_cloud(monkeypatch: pytest.MonkeyPatch) -> None:
     # a `None` entry in `sys.modules` makes the import fail as if not installed
-    monkeypatch.setitem(sys.modules, "polars_cloud", None)  # type: ignore[arg-type]
+    monkeypatch.setitem(sys.modules, CLOUD_MODULE, None)  # type: ignore[arg-type]
     with pytest.raises(ImportError, match="remote engine requested"):
         pl.RemoteEngine()
 
@@ -302,6 +306,14 @@ def test_sink_forwards_options(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -
     [
         ("sink_parquet", {"mkdir": True}),
         ("sink_parquet", {"sync_on_close": "data"}),
+        (
+            "sink_parquet",
+            {
+                "encryption": pl.ParquetEncryptionProperties(
+                    footer_key=b"0123456789012345"
+                )
+            },
+        ),
         ("sink_csv", {"compression": "gzip"}),
         ("sink_csv", {"check_extension": False}),
         ("sink_csv", {"maintain_order": False}),

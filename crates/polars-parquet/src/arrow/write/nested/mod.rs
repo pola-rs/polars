@@ -1,11 +1,11 @@
 mod dremel;
+mod levels_encoder;
 
-pub use dremel::num_values;
+use dremel::{Level, Levels};
 use polars_arrow::array::Array;
 use polars_error::PolarsResult;
 
 use super::Nested;
-use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::read::levels::get_bit_width;
 use crate::parquet::write::Version;
 
@@ -34,47 +34,27 @@ fn write_levels_v1<F: FnOnce(&mut Vec<u8>) -> PolarsResult<()>>(
     Ok(())
 }
 
-/// writes the rep levels to a `Vec<u8>`.
-fn write_rep_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -> PolarsResult<()> {
-    let max_level = max_rep_level(nested) as i16;
+/// Writes `levels` with the hybrid RLE encoding to `buffer`.
+fn write_levels<T: Level>(
+    buffer: &mut Vec<u8>,
+    levels: &[T],
+    max_level: usize,
+    version: Version,
+) -> PolarsResult<()> {
     if max_level == 0 {
         return Ok(());
     }
-    let num_bits = get_bit_width(max_level);
-
-    let levels = dremel::BufferedDremelIter::new(nested).map(|d| u32::from(d.rep));
+    let num_bits = get_bit_width(max_level as i16) as usize;
 
     match version {
-        Version::V1 => {
-            write_levels_v1(buffer, |buffer: &mut Vec<u8>| {
-                encode::<u32, _, _>(buffer, levels, num_bits)?;
-                Ok(())
-            })?;
-        },
-        Version::V2 => {
-            encode::<u32, _, _>(buffer, levels, num_bits)?;
-        },
-    }
-
-    Ok(())
-}
-
-/// writes the def levels to a `Vec<u8>`.
-fn write_def_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -> PolarsResult<()> {
-    let max_level = max_def_level(nested) as i16;
-    if max_level == 0 {
-        return Ok(());
-    }
-    let num_bits = get_bit_width(max_level);
-
-    let levels = dremel::BufferedDremelIter::new(nested).map(|d| u32::from(d.def));
-
-    match version {
-        Version::V1 => write_levels_v1(buffer, move |buffer: &mut Vec<u8>| {
-            encode::<u32, _, _>(buffer, levels, num_bits)?;
+        Version::V1 => write_levels_v1(buffer, |buffer: &mut Vec<u8>| {
+            levels_encoder::encode(buffer, levels, num_bits);
             Ok(())
         }),
-        Version::V2 => Ok(encode::<u32, _, _>(buffer, levels, num_bits)?),
+        Version::V2 => {
+            levels_encoder::encode(buffer, levels, num_bits);
+            Ok(())
+        },
     }
 }
 
@@ -102,16 +82,41 @@ fn max_rep_level(nested: &[Nested]) -> usize {
 }
 
 /// Write `repetition_levels` and `definition_levels` to buffer.
+///
+/// Returns the byte lengths of the repetition and definition levels and the number of values.
 pub fn write_rep_and_def(
     page_version: Version,
     nested: &[Nested],
     buffer: &mut Vec<u8>,
-) -> PolarsResult<(usize, usize)> {
-    write_rep_levels(buffer, nested, page_version)?;
+) -> PolarsResult<(usize, usize, usize)> {
+    let max_rep = max_rep_level(nested);
+    let max_def = max_def_level(nested);
+    // Every list adds a definition-level, so `max_rep <= max_def`.
+    if max_def <= u8::MAX as usize {
+        write_levels_typed::<u8>(page_version, nested, max_rep, max_def, buffer)
+    } else {
+        write_levels_typed::<u16>(page_version, nested, max_rep, max_def, buffer)
+    }
+}
+
+fn write_levels_typed<T: Level>(
+    page_version: Version,
+    nested: &[Nested],
+    max_rep: usize,
+    max_def: usize,
+    buffer: &mut Vec<u8>,
+) -> PolarsResult<(usize, usize, usize)> {
+    let levels = Levels::<T>::new(nested, max_rep > 0);
+
+    write_levels(buffer, &levels.rep, max_rep, page_version)?;
     let repetition_levels_byte_length = buffer.len();
 
-    write_def_levels(buffer, nested, page_version)?;
+    write_levels(buffer, &levels.def, max_def, page_version)?;
     let definition_levels_byte_length = buffer.len() - repetition_levels_byte_length;
 
-    Ok((repetition_levels_byte_length, definition_levels_byte_length))
+    Ok((
+        repetition_levels_byte_length,
+        definition_levels_byte_length,
+        levels.num_values(),
+    ))
 }

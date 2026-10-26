@@ -786,6 +786,23 @@ pub fn is_in(
     );
 
     if haystack.len() == 1 {
+        // For a single needle, scanning the haystack is cheaper than building a lookup of it.
+        if needle.len() == 1
+            && needle.null_count() == 0
+            && haystack.null_count() == 0
+            && haystack.dtype().inner_dtype() == Some(needle.dtype())
+            && (needle.dtype().to_physical().is_primitive_numeric()
+                || matches!(needle.dtype(), DataType::String | DataType::Binary))
+        {
+            let flat = haystack.explode(ExplodeOptions {
+                empty_as_null: false,
+                keep_nulls: true,
+            })?;
+            let found = IsInHaystack::new(&needle.implode()?.into_series(), flat.dtype())?
+                .probe(&flat, false)?
+                .any();
+            return Ok(BooleanChunked::from_slice(needle.name().clone(), &[found]));
+        }
         return IsInHaystack::new(haystack, needle.dtype())?.probe(needle, nulls_equal);
     }
 

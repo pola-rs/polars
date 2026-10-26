@@ -54,6 +54,8 @@ where
 /// Returns whether the data type supports creating a NumPy view.
 pub(super) fn dtype_supports_view(dtype: &DataType) -> bool {
     match dtype {
+        // NumPy has no 128-bit integer types.
+        DataType::Int128 | DataType::UInt128 => false,
         dt if dt.is_primitive_numeric() => true,
         DataType::Datetime(_, _) | DataType::Duration(_) => true,
         DataType::Array(inner, _) => dtype_supports_view(inner.as_ref()),

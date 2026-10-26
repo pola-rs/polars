@@ -152,7 +152,7 @@ def _patched_cloud(
         import uuid
         from pathlib import Path
 
-        from polars_cloud import ClusterContext, DirectQuery, set_compute_context
+        from polars._dependencies import polars_cloud as pc
 
         TIMEOUT_SECS = 20
 
@@ -168,8 +168,8 @@ def _patched_cloud(
 
             return f()
 
-        ctx = ClusterContext(uri="http://localhost")
-        set_compute_context(ctx)
+        ctx = pc.ClusterContext(uri="http://localhost")
+        pc.set_compute_context(ctx)
 
         prev_collect = pl.LazyFrame.collect
 
@@ -189,7 +189,7 @@ def _patched_cloud(
         class LazyExe:
             def __init__(
                 self,
-                query: DirectQuery,
+                query: pc.DirectQuery,
                 prev_tgt: io.BytesIO | io.StringIO | io.TextIOBase | None,
                 path: str | Path,
             ) -> None:
@@ -325,7 +325,7 @@ def _patched_cloud(
                     lf.remote(plan_type="plain").distributed(), f"sink_{ext}"
                 )
                 q = sink(*args, **kwargs)
-                assert isinstance(q, DirectQuery)
+                assert isinstance(q, pc.DirectQuery)
                 query = LazyExe(
                     q,
                     prev_tgt,
