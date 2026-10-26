@@ -363,13 +363,11 @@ def test_rolling_by_non_temporal_window_size() -> None:
 def test_rolling_extrema(dtype: PolarsDataType) -> None:
     # sorted data and nulls flags trigger different kernels
     df = (
-        (
-            pl.DataFrame(
-                {
-                    "col1": pl.int_range(0, 7, eager=True),
-                    "col2": pl.int_range(0, 7, eager=True).reverse(),
-                }
-            )
+        pl.DataFrame(
+            {
+                "col1": pl.int_range(0, 7, eager=True),
+                "col2": pl.int_range(0, 7, eager=True).reverse(),
+            }
         )
         .with_columns(
             pl.when(pl.int_range(0, pl.len(), eager=False) < 2)
@@ -426,6 +424,163 @@ def test_rolling_extrema(dtype: PolarsDataType) -> None:
     assert result.to_dict(as_series=False) == {
         k: pl.Series(v, dtype=dtype).to_list() for k, v in expected.items()
     }
+
+
+def _rolling_extrema_naive(
+    values: list[float | None], window_size: int, center: bool
+) -> tuple[dict[str, np.ndarray], np.ndarray]:
+    """Per-index windowed min, max and non-null count.
+
+    A row is null when its count is below ``max(min_samples, 1)``, which makes
+    these three cover any ``min_samples`` and operation of one window/center.
+    """
+    n = len(values)
+    # A wider window only sees out-of-range pads, which the sentinel fill and
+    # the count both already ignore.
+    limit = 2 * n if center else n
+    w = min(window_size, limit)
+    if not w:
+        return {"min": np.zeros(n), "max": np.zeros(n)}, np.zeros(n)
+    left, right = (w // 2, w - 1 - w // 2) if center else (w - 1, 0)
+    is_null = np.fromiter((v is None for v in values), dtype=bool, count=n)
+    nums = np.array(values, dtype=np.float64)
+    cum = np.concatenate([[0], np.cumsum(~is_null)])
+    edge = np.arange(n) - left
+    counts = cum[np.minimum(edge + w, n)] - cum[np.maximum(edge, 0)]
+    # Nulls and pads become +-inf sentinels that never win the reduction.
+    lo, hi = (np.where(is_null, x, nums) for x in (np.inf, -np.inf))
+    if w == limit:
+        # The window covers each row's whole prefix, or the whole series, so the
+        # extremes are a prefix scan that is then flattened for the centered case.
+        scan = {"min": np.minimum.accumulate(lo), "max": np.maximum.accumulate(hi)}
+        return (
+            {k: np.full(n, v[-1]) for k, v in scan.items()} if center else scan
+        ), counts
+
+    def windows(a: np.ndarray, fill: float) -> np.ndarray:
+        padded = np.concatenate([np.full(left, fill), a, np.full(right, fill)])
+        return np.lib.stride_tricks.sliding_window_view(padded, w)
+
+    return {
+        "min": windows(lo, np.inf).min(axis=1),
+        "max": windows(hi, -np.inf).max(axis=1),
+    }, counts
+
+
+@pytest.mark.parametrize(
+    ("length", "stride", "invert", "with_nan"),
+    [
+        (length, stride, invert, with_nan)
+        # Sample representative lengths near window and bitmap word boundaries.
+        for length in (0, 1, 2, 3, 9, 63, 64, 65, 130, 513)
+        # Minimum length at which each stride adds a distinct null mask.
+        for stride, min_length in ((0, 0), (1024, 2), (67, 68))
+        # NaN variant runs with the mask that leaves the NaN un-nulled.
+        for invert, with_nan in ((False, False), (True, False), (stride == 0, True))
+        # NaN only where it survives masking and truncation; the all-null mask
+        # only needs the empty and single-element series, as its output is null
+        # at every index whatever the length.
+        if length >= min_length
+        and (length > 0 or not invert)
+        and (not with_nan or length in (130, 513))
+        and (stride or invert or length in (0, 1))
+    ],
+)
+def test_rolling_extrema_matches_naive(
+    invert: bool, with_nan: bool, stride: int, length: int
+) -> None:
+    values: list[float | None] = [float((i * 17) % 23 - 11) for i in range(513)]
+    values[79], values[101] = float("inf"), -float("inf")
+    if with_nan:
+        values[17] = float("nan")
+    values = values[:length]
+    for i in range(length):
+        if (stride == 0 or i % stride == 0) != invert:
+            values[i] = None
+
+    # Same series at different memory offsets; the offset is rotated over
+    # the window sizes instead of crossed with every combination.
+    slices = [
+        pl.Series([0.0] * offset + values + [0.0] * 64).slice(offset, length)
+        for offset in (*range(9), 63, 65)
+    ]
+    window_sizes = sorted(
+        {0, 1, 2, 3, 9, 100, 130, 131, 385, 1024, 2**64 - 1}
+        | {n + d for n in (64, 128, 192, 256) for d in (-1, 0, 1)}
+    )
+    null_literal = pl.Series([None], dtype=pl.Float64)
+    for window_idx, window_size in enumerate(window_sizes):
+        # One select and one comparison per window: the alias carries the
+        # parameters, so every (center, min_samples, operation) is a column.
+        exprs: list[pl.Expr] = []
+        expected: dict[str, pl.Series] = {}
+        for center in (False, True):
+            windowed, counts = _rolling_extrema_naive(values, window_size, center)
+            for min_samples in sorted(
+                {min(p, window_size) for p in (0, 1, 2, window_size // 2, window_size)}
+            ):
+                # An empty window is null for any min_samples.
+                valid = pl.Series(counts >= max(min_samples, 1))
+                for op, result in windowed.items():
+                    alias = f"w{window_size}-{op}-c{center}-p{min_samples}"
+                    exprs.append(
+                        getattr(pl.col(""), f"rolling_{op}")(
+                            window_size, min_samples=min_samples, center=center
+                        ).alias(alias)
+                    )
+                    expected[alias] = pl.Series(result).zip_with(valid, null_literal)
+        frame = slices[(window_idx + length) % len(slices)]
+        assert_frame_equal(frame.to_frame().select(exprs), pl.DataFrame(expected))
+
+
+def test_rolling_extrema_edge_cases() -> None:
+    s = pl.Series("a", [None, 1.0, 5.0])
+    assert_series_equal(s.rolling_min(1), s)
+    assert_series_equal(s.rolling_max(1), s)
+    # A window of one is the element itself, centered or not.
+    assert_series_equal(s.rolling_min(1, center=True), s)
+    # A window of zero covers nothing: the output is all null.
+    assert_series_equal(
+        s.rolling_min(0, min_samples=0), pl.Series("a", [None] * 3, dtype=s.dtype)
+    )
+
+    for center, min_values, max_values in (
+        (False, [None, 1.0, 1.0], [None, 1.0, 5.0]),
+        (True, [1.0, 1.0, 1.0], [5.0, 5.0, 5.0]),
+    ):
+        result = s.to_frame().select(
+            pl.col("a")
+            .rolling_min(2**64 - 1, min_samples=1, center=center)
+            .alias("min"),
+            pl.col("a")
+            .rolling_max(2**64 - 1, min_samples=1, center=center)
+            .alias("max"),
+        )
+        assert_frame_equal(result, pl.DataFrame({"min": min_values, "max": max_values}))
+
+    sliced = pl.Series("a", [9.9, None, 1.0, 5.0, None, 3.0, 4.0]).slice(1)
+    assert_series_equal(
+        sliced.rolling_min(2, min_samples=1),
+        pl.Series("a", [None, 1.0, 1.0, 5.0, 3.0, 3.0]),
+    )
+
+    u8 = pl.Series("a", [255, 0, 1, 200, 50], dtype=pl.UInt8)
+    result = u8.to_frame().select(
+        pl.col("a").rolling_min(9, min_samples=1).alias("min"),
+        pl.col("a").rolling_max(9, min_samples=1).alias("max"),
+    )
+    expected = pl.DataFrame(
+        {
+            "min": pl.Series([255, 0, 0, 0, 0], dtype=pl.UInt8),
+            "max": pl.Series([255] * 5, dtype=pl.UInt8),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    assert_series_equal(
+        pl.Series([None, None, 3.0]).rolling_min(2, min_samples=0),
+        pl.Series([None, None, 3.0]),
+    )
 
 
 @pytest.mark.parametrize(
