@@ -291,7 +291,10 @@ pub fn phys_props(
         } => (
             PhysicalPropsDescription::Window {
                 partition_by: partition_by.iter().map(ToString::to_string).collect(),
-                order_by: order_by.as_ref().map(|(name, _)| name.to_string()),
+                order_by: order_by
+                    .iter()
+                    .flat_map(|(names, _)| names.iter().map(ToString::to_string))
+                    .collect(),
                 exprs: fmt_exprs(exprs, expr_arena),
                 ordered_eval: *ordered_eval,
                 maintain_order: *maintain_order,

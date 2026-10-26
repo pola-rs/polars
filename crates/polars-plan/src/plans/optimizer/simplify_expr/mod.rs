@@ -466,7 +466,7 @@ impl OptimizationRule for SimplifyBooleanRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        _schema: &Schema,
+        schema: &Schema,
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
@@ -478,6 +478,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                     *left,
                     *op,
                     *right,
+                    schema,
                     ctx,
                     self.maintain_errors,
                     expr_arena,
@@ -489,7 +490,13 @@ impl OptimizationRule for SimplifyBooleanRule {
                 falsy,
             } => {
                 return Ok(arity::simplify_ternary(
-                    *predicate, *truthy, *falsy, expr_arena,
+                    *predicate,
+                    *truthy,
+                    *falsy,
+                    schema,
+                    ctx,
+                    self.maintain_errors,
+                    expr_arena,
                 ));
             },
             AExpr::Function {
@@ -715,6 +722,13 @@ impl OptimizationRule for SimplifyExprRule {
             if let Some(out) = optimize_len_or_null_count_cmp(left, op, right, expr_arena) {
                 return Ok(Some(out));
             }
+            #[cfg(all(feature = "temporal", feature = "is_between"))]
+            if ctx.is_filter_predicate
+                && let Some(out) =
+                    arity::simplify_year_comparison(left, op, right, schema, expr_arena)
+            {
+                return Ok(Some(out));
+            }
         }
 
         let expr = expr_arena.get(expr_node);
@@ -728,12 +742,25 @@ impl OptimizationRule for SimplifyExprRule {
             } => sum_null_on_empty(*predicate, *truthy, *falsy, expr_arena),
             // drop_nulls().len() -> len() - null_count()
             // drop_nulls().count() -> len() - null_count()
+            // unique().len() -> n_unique()
             AExpr::Agg(IRAggExpr::Count {
                 input,
-                include_nulls: _,
+                include_nulls,
             }) => {
                 let input_expr = expr_arena.get(*input);
                 match input_expr {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::Unique(_),
+                        options: _,
+                    } if *include_nulls
+                        && input.len() == 1
+                        && input[0]
+                            .dtype(schema, expr_arena)
+                            .is_ok_and(|dtype| !dtype.contains_objects()) =>
+                    {
+                        Some(AExpr::Agg(IRAggExpr::NUnique(input[0].node())))
+                    },
                     AExpr::Function {
                         input,
                         function: IRFunctionExpr::DropNulls,

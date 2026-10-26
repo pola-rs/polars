@@ -400,7 +400,12 @@ impl IRFunctionExpr {
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "cov")]
-            Correlation { .. } => mapper.map_to_float_dtype(),
+            Correlation { .. } => mapper.try_map_dtypes(|dtypes| {
+                Ok(match try_get_supertype(dtypes[0], dtypes[1])? {
+                    dt if dt.is_float() => dt,
+                    _ => DataType::Float64,
+                })
+            }),
             #[cfg(feature = "peaks")]
             PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]

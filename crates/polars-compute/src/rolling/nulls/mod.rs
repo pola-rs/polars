@@ -4,6 +4,7 @@ mod moment;
 mod quantile;
 mod rank;
 mod sum;
+mod van_herk;
 
 pub use mean::*;
 pub use min_max::*;

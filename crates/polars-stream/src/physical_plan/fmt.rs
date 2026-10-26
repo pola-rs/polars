@@ -399,8 +399,14 @@ fn visualize_plan_rec(
                 }
                 label.push_str(&escape_graphviz(name));
             }
-            if let Some((name, _)) = order_by {
-                write!(&mut label, "\\norder by: {}", escape_graphviz(name)).unwrap();
+            if let Some((names, _)) = order_by {
+                label.push_str("\\norder by: ");
+                for (i, name) in names.iter().enumerate() {
+                    if i > 0 {
+                        label.push_str(", ");
+                    }
+                    label.push_str(&escape_graphviz(name));
+                }
             }
             write!(
                 &mut label,
@@ -892,6 +898,7 @@ fn visualize_plan_rec(
             args,
             output_bool: _,
             runtime_filters: _,
+            estimated_rows: _,
         } => {
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",

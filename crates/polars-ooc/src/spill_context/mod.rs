@@ -416,7 +416,7 @@ impl StrongSpillContext {
         };
 
         // Important: mark as live (refcnt >= 1) before registering.
-        inner.refcount.store(1, Ordering::Relaxed);
+        inner.refcount.store(1, Ordering::Release);
         let slf = Self(inner);
         memory_manager().register_ctx(slf.downgrade());
         slf
@@ -471,7 +471,23 @@ impl WeakSpillContext {
             return None;
         }
 
-        self.0.refcount.fetch_add(1, Ordering::Relaxed);
+        // A context without strong references is on its way to the reuse arena and may not
+        // come back to life.
+        let mut refcount = self.0.refcount.load(Ordering::Relaxed);
+        loop {
+            if refcount == 0 {
+                return None;
+            }
+            match self.0.refcount.compare_exchange_weak(
+                refcount,
+                refcount + 1,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(current) => refcount = current,
+            }
+        }
         let strong = StrongSpillContext(self.0);
 
         // To avoid race conditions, we must check again.
@@ -482,13 +498,14 @@ impl WeakSpillContext {
         Some(strong)
     }
 
+    /// Whether the context was dropped, even if it was not re-used yet.
     pub(crate) fn is_dead(&self) -> bool {
-        self.0.context_id() != self.1
+        self.0.context_id() != self.1 || self.0.refcount.load(Ordering::Relaxed) == 0
     }
 
     pub(crate) fn task_metrics(&self) -> Option<Arc<TaskMetricAggregator>> {
         let shared = self.0.shared.lock().unwrap();
-        if self.is_dead() {
+        if self.0.context_id() != self.1 {
             return None;
         }
         shared.task_metrics.clone()
@@ -539,6 +556,11 @@ impl MostRecentSpillContext {
             SpillContextPolicy::MostRecent,
             task_metrics,
         ))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn downgrade(&self) -> WeakSpillContext {
+        self.0.downgrade()
     }
 }
 
@@ -622,5 +644,25 @@ impl Debug for RandomSpillContext {
         f.debug_struct("RandomSpillContext")
             .field("name", &self.0.0.stats.name())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dropped_context_stays_dead() {
+        let _guard = crate::test_lock();
+        let ctx = MostRecentSpillContext::new("test".into(), None);
+        let weak = ctx.downgrade();
+        drop(ctx);
+        assert!(weak.is_dead());
+        assert!(weak.upgrade().is_none());
+
+        // The context is in the reuse arena once, so two new contexts do not share it.
+        let a = MostRecentSpillContext::new("a".into(), None);
+        let b = MostRecentSpillContext::new("b".into(), None);
+        assert!(!std::ptr::eq(a.downgrade().0, b.downgrade().0));
     }
 }

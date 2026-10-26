@@ -1,4 +1,4 @@
-//! Moves `over` windows out of `Select` and `HStack` nodes into [`IR::Window`] nodes.
+//! Moves `over` windows out of `Select`, `HStack` and `Filter` nodes into [`IR::Window`] nodes.
 //!
 //! ```text
 //! SELECT [a, (x - x.mean().over(g)) as b]
@@ -28,7 +28,7 @@ use recursive::recursive;
 
 use crate::plans::{
     AExpr, ArenaExprIter, CanonicalExprId, CanonicalExprMap, ExprIR, IR, IRAggExpr, OutputName,
-    ToFieldContext, is_elementwise_rec, is_length_preserving_ae, is_splittable,
+    ToFieldContext, is_elementwise_rec, is_length_preserving_ae, is_splittable, window_order_keys,
 };
 use crate::prelude::{ProjectionOptions, WindowMapping};
 use crate::unique_column_name;
@@ -37,14 +37,29 @@ pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: 
     let mut visited = PlIndexSet::new();
     let mut stack = vec![root];
     let mut projections = Vec::new();
+    let mut filters = Vec::new();
 
     while let Some(node) = stack.pop() {
         if !visited.insert(node) {
             continue;
         }
         let ir = ir_arena.get(node);
-        if matches!(ir, IR::Select { .. } | IR::HStack { .. }) {
-            projections.push(node);
+        match ir {
+            IR::Select { .. } | IR::HStack { .. } => projections.push(node),
+            IR::Filter { predicate, .. }
+                if expr_arena.iter(predicate.node()).any(|(_, ae)| {
+                    matches!(
+                        ae,
+                        AExpr::Over {
+                            mapping: WindowMapping::GroupsToRows,
+                            ..
+                        }
+                    )
+                }) =>
+            {
+                filters.push(node)
+            },
+            _ => {},
         }
         stack.extend(ir.inputs());
     }
@@ -52,6 +67,50 @@ pub(super) fn extract_windows(root: Node, ir_arena: &mut Arena<IR>, expr_arena: 
     for node in projections {
         extract_from_projection(node, ir_arena, expr_arena);
     }
+    for node in filters {
+        extract_from_filter(node, ir_arena, expr_arena);
+    }
+}
+
+/// Computes the predicate of a filter in an `HStack` below it, so its windows can be extracted
+/// like those of a projection.
+/// ```text
+/// FILTER pred            SIMPLE_PROJECTION [input columns]
+///   input        →         FILTER col(tmp)
+///                            HSTACK [pred as tmp]
+///                              input
+/// ```
+fn extract_from_filter(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+    let IR::Filter { input, predicate } = ir_arena.get(node) else {
+        unreachable!()
+    };
+    let input = *input;
+    let name = unique_column_name();
+    let hstack = add_hstack(
+        input,
+        vec![ExprIR::new(
+            predicate.node(),
+            OutputName::Alias(name.clone()),
+        )],
+        ProjectionOptions::default(),
+        ir_arena,
+        expr_arena,
+    );
+    if !extract_from_projection(hstack, ir_arena, expr_arena) {
+        return;
+    }
+    let filter = ir_arena.add(IR::Filter {
+        input: hstack,
+        predicate: ExprIR::from_column_name(name, expr_arena),
+    });
+    let columns = ir_arena.get(input).schema(ir_arena).into_owned();
+    ir_arena.replace(
+        node,
+        IR::SimpleProjection {
+            input: filter,
+            columns,
+        },
+    );
 }
 
 #[derive(PartialEq)]
@@ -64,6 +123,17 @@ struct ExtractedWindow {
     name: PlSmallStr,
     function: Node,
     id: CanonicalExprId,
+}
+
+/// The order of an `IR::Window` node.
+struct WindowOrder {
+    /// The sort keys.
+    keys: Vec<CanonicalExprId>,
+    options: SortMultipleOptions,
+    /// The row encoding the keys were split from, see [`window_order_keys`].
+    encoded: Option<Node>,
+    /// The order options of the windows.
+    window_options: SortOptions,
 }
 
 /// A window expression of an `IR::Window` node.
@@ -353,15 +423,13 @@ impl Extractor {
             return None;
         };
 
-        let is_valid_key = |key: Node| {
-            !matches!(expr_arena.get(key), AExpr::Literal(_))
-                && is_length_preserving_ae(key, expr_arena)
-                && !expr_arena.iter(key).any(|(_, ae)| is_window(ae))
-        };
-
         if partition_by.is_empty()
-            || !partition_by.iter().all(|key| is_valid_key(*key))
-            || !order_by.as_ref().is_none_or(|(key, _)| is_valid_key(*key))
+            || !partition_by
+                .iter()
+                .all(|key| is_valid_key(*key, expr_arena))
+            || !order_by
+                .as_ref()
+                .is_none_or(|(key, _)| is_valid_key(*key, expr_arena))
         {
             return None;
         }
@@ -415,6 +483,13 @@ pub fn is_scalar_window_reduction(
     }
 }
 
+/// Whether `key` can be a partition or order key of a window node.
+fn is_valid_key(key: Node, expr_arena: &Arena<AExpr>) -> bool {
+    !matches!(expr_arena.get(key), AExpr::Literal(_))
+        && is_length_preserving_ae(key, expr_arena)
+        && !expr_arena.iter(key).any(|(_, ae)| is_window(ae))
+}
+
 fn is_window(ae: &AExpr) -> bool {
     match ae {
         AExpr::Over { .. } => true,
@@ -424,7 +499,12 @@ fn is_window(ae: &AExpr) -> bool {
     }
 }
 
-fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
+/// Returns whether any window was moved.
+fn extract_from_projection(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> bool {
     let (input, exprs, options) = match ir_arena.get(node) {
         IR::Select {
             input,
@@ -464,7 +544,7 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         .collect::<Vec<_>>();
 
     if extractor.specs.is_empty() {
-        return;
+        return false;
     }
 
     let input_schema = ir_arena.get(input).schema(ir_arena).into_owned();
@@ -533,17 +613,55 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     };
 
     let Extractor {
-        canonical, specs, ..
+        mut canonical,
+        specs,
+        ..
     } = extractor;
+
+    // An encoded order key is split into its keys if each of them can be a key of the node. Equal
+    // keys share one column, so keys that differ each time they are evaluated are not split.
+    let orders = specs
+        .iter()
+        .map(|s| {
+            let (id, window_options) = s.order_by.as_ref()?;
+            let key = canonical.representative(*id);
+            let (keys, options) = window_order_keys(key, *window_options, expr_arena);
+            let key_ids = keys
+                .iter()
+                .map(|k| canonical.resolve(*k, expr_arena))
+                .collect::<Vec<_>>();
+            let split = keys != [key]
+                && keys.iter().all(|k| is_valid_key(*k, expr_arena))
+                && !key_ids
+                    .iter()
+                    .any(|id| canonical.is_nondeterministic_excluding_udfs(*id));
+            let order = if split {
+                WindowOrder {
+                    keys: key_ids,
+                    options,
+                    encoded: Some(key),
+                    window_options: *window_options,
+                }
+            } else {
+                WindowOrder {
+                    keys: vec![*id],
+                    options: window_options.into(),
+                    encoded: None,
+                    window_options: *window_options,
+                }
+            };
+            Some(order)
+        })
+        .collect::<Vec<_>>();
 
     // Keys and reduction inputs that are not plain columns are computed below the windows.
     let mut column_names: PlIndexMap<CanonicalExprId, PlSmallStr> = PlIndexMap::new();
     let mut hstack_exprs = Vec::new();
-    let key_ids = specs.iter().flat_map(|s| {
+    let key_ids = specs.iter().zip(&orders).flat_map(|(s, order)| {
         s.partition_by
             .iter()
             .copied()
-            .chain(s.order_by.as_ref().map(|(id, _)| *id))
+            .chain(order.iter().flat_map(|o| o.keys.iter().copied()))
     });
     let input_ids = spec_windows
         .iter()
@@ -594,10 +712,11 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             .iter()
             .map(|id| column_names[id].clone())
             .collect::<Vec<_>>();
-        let order_by = spec
-            .order_by
-            .as_ref()
-            .map(|(id, options)| (column_names[id].clone(), *options));
+        let order = orders[idx].as_ref();
+        let order_by = order.map(|o| {
+            let names = o.keys.iter().map(|id| column_names[id].clone()).collect();
+            (names, o.options.clone())
+        });
 
         let window_exprs = parts
             .into_iter()
@@ -616,8 +735,20 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
                         .iter()
                         .map(|name| expr_arena.add(AExpr::Column(name.clone())))
                         .collect(),
-                    order_by: order_by.as_ref().map(|(name, options)| {
-                        (expr_arena.add(AExpr::Column(name.clone())), *options)
+                    order_by: order.map(|o| {
+                        let columns = o
+                            .keys
+                            .iter()
+                            .map(|id| expr_arena.add(AExpr::Column(column_names[id].clone())))
+                            .collect::<Vec<_>>();
+                        let key = match o.encoded {
+                            Some(encoded) => {
+                                let ae = expr_arena.get(encoded).clone();
+                                expr_arena.add(ae.replace_inputs(&columns))
+                            },
+                            None => columns[0],
+                        };
+                        (key, o.window_options)
                     }),
                     mapping: WindowMapping::GroupsToRows,
                 };
@@ -692,6 +823,7 @@ fn extract_from_projection(node: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         _ => unreachable!(),
     };
     ir_arena.replace(node, new_ir);
+    true
 }
 
 /// Replaces the columns in `exprs` by their expressions.

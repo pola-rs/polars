@@ -273,10 +273,6 @@ def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
 @pytest.mark.parametrize(
     "statement",
     [
-        "CREATE TABLE lake.tpch.t AS SELECT 1 AS x",
-        "CREATE TABLE tpch.t AS SELECT 1 AS x",
-        "CREATE TABLE t AS SELECT 1 AS x",
-        "CREATE TABLE IF NOT EXISTS tpch.t (x INT)",
         "TRUNCATE TABLE lake.tpch.lineitem",
         "TRUNCATE TABLE tpch.lineitem",
         "TRUNCATE TABLE IF EXISTS lake.tpch.lineitem",
@@ -291,27 +287,342 @@ def test_catalog_ddl_is_not_supported(lake: CountingCatalog, statement: str) -> 
         lake_ctx(lake).execute(statement)
 
 
+def table_fields(catalog: CountingCatalog, *identifier: str) -> list[Any]:
+    schema = catalog.load_table(identifier).schema()
+    return [(f.name, str(f.field_type), f.required) for f in schema.fields]
+
+
 @pytest.mark.write_disk
-def test_create_table_resolves_like_a_read(lake: CountingCatalog) -> None:
-    # #29892: a name of the default catalog doesn't silently create a registered table
+@pytest.mark.parametrize(
+    "name", ["lake.tpch.t", "tpch.t", "t", "LAKE.tpch.t", "lake.t"]
+)
+def test_create_catalog_table(lake: CountingCatalog, name: str) -> None:
+    # #29892
     ctx = lake_ctx(lake)
-    ctx.register("t", pl.LazyFrame({"x": [1]}))
-    for statement, name in (
-        ("CREATE TABLE sales.t2 (id BIGINT)", "'sales.t2' is 'lake.sales.t2'"),
-        ("CREATE TABLE t AS SELECT * FROM lineitem", "'t' is 'lake.tpch.t'"),
+    res = ctx.execute(
+        f"CREATE TABLE {name} (id BIGINT NOT NULL, v VARCHAR NULL, d DATE, "
+        "s STRUCT<a INT, b VARCHAR>, l INT[])",
+        eager=True,
+    )
+    assert res.item() == "CREATE TABLE lake.tpch.t"
+    assert ctx.tables() == []
+    fields = table_fields(lake, "tpch", "t")
+    assert [f[0] for f in fields] == ["id", "v", "d", "s", "l"]
+    assert [f[2] for f in fields] == [True, False, False, False, False]
+    assert fields[:3] == [
+        ("id", "long", True),
+        ("v", "string", False),
+        ("d", "date", False),
+    ]
+
+    # the new table is read like any catalog table, and can be written to
+    schema = pl.Schema(
+        {
+            "id": pl.Int64(),
+            "v": pl.String(),
+            "d": pl.Date(),
+            "s": pl.Struct({"a": pl.Int32, "b": pl.String}),
+            "l": pl.List(pl.Int32),
+        }
+    )
+    assert ctx.execute("SELECT * FROM t", eager=True).schema == schema
+    df = pl.DataFrame(
+        {"id": [1], "v": ["x"], "d": [None], "s": [None], "l": [[1, 2]]},
+        schema=schema,
+    )
+    df.lazy().sink_iceberg(lake.load_table(("tpch", "t")), mode="append")
+    assert_frame_equal(ctx.execute("SELECT * FROM t", eager=True), df)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_if_not_exists(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import TableAlreadyExistsError
+
+    ctx = lake_ctx(lake)
+    res = ctx.execute("CREATE TABLE IF NOT EXISTS lineitem (x INT)", eager=True)
+    assert res.item() == "CREATE TABLE lake.tpch.lineitem"
+    res = ctx.execute("SELECT * FROM lineitem", eager=True)
+    assert_frame_equal(res, LINEITEM, check_row_order=False)
+    with pytest.raises(
+        TableAlreadyExistsError,
+        match=r"table 'lineitem' already exists: catalog table 'tpch\.lineitem'",
     ):
-        with pytest.raises(SQLInterfaceError, match=name):
+        ctx.execute("CREATE TABLE lineitem (x INT)")
+
+    # the columns are checked also when the table exists
+    with pytest.raises(TypeError, match="columns without a lossless Iceberg type"):
+        ctx.execute("CREATE TABLE IF NOT EXISTS lineitem (x UBIGINT)")
+
+    # a table created after the existence check
+    monkeypatch.setattr(lake, "table_exists", lambda identifier: False)
+    res = ctx.execute("CREATE TABLE IF NOT EXISTS lineitem (x INT)", eager=True)
+    assert res.item() == "CREATE TABLE lake.tpch.lineitem"
+    assert table_fields(lake, "tpch", "lineitem")[0][0] == "k"
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> None:
+    ctx = lake_ctx(lake)
+    location = f"file://{tmp_path / 'custom'}"
+    ctx.execute(
+        f"CREATE TABLE t1 (x INT) WITH ('location' = '{location}', "
+        "'format-version' = 1, 'write.parquet.compression-codec' = 'zstd', "
+        "flag = true, n = -3)"
+    )
+    table = lake.load_table(("tpch", "t1"))
+    assert table.location() == location
+    assert table.format_version == 1
+    assert table.properties["write.parquet.compression-codec"] == "zstd"
+    assert table.properties["flag"] == "true"
+    assert table.properties["n"] == "-3"
+
+    location = f"file://{tmp_path / 'other'}"
+    ctx.execute(f"CREATE TABLE t2 (x INT) LOCATION '{location}' WITH ('k' = 'v')")
+    table = lake.load_table(("tpch", "t2"))
+    assert table.location() == location
+    assert table.properties["k"] == "v"
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        (
+            "CREATE OR REPLACE TABLE t (x INT)",
+            "`CREATE OR REPLACE TABLE` is not supported for catalog tables",
+        ),
+        (
+            "CREATE TABLE t AS SELECT 1 AS x",
+            r"`CREATE TABLE \.\.\. AS SELECT` is not yet supported for catalog tables",
+        ),
+        (
+            "CREATE TABLE t LIKE lineitem",
+            r"`CREATE TABLE \.\.\. LIKE` is not supported for catalog tables",
+        ),
+        (
+            "CREATE TEMP TABLE t LIKE lineitem",
+            r"`CREATE TABLE \.\.\. LIKE` is not supported for catalog tables",
+        ),
+        (
+            "CREATE TABLE t (x INT UNIQUE)",
+            "only NOT NULL constraints are supported for catalog tables",
+        ),
+        (
+            "CREATE TABLE t (x INT DEFAULT 1)",
+            "only NOT NULL constraints are supported for catalog tables",
+        ),
+        (
+            "CREATE TABLE t (x INT, PRIMARY KEY (x))",
+            "only NOT NULL constraints are supported for catalog tables",
+        ),
+        ("CREATE TABLE t (x INT NULL NOT NULL)", "conflicting NULL/NOT NULL"),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (x)",
+            "`PARTITION BY` is not yet supported for catalog tables; create the "
+            "table unpartitioned",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITIONED BY (x)",
+            "`PARTITIONED BY` is not yet supported for catalog tables",
+        ),
+        (
+            "CREATE TABLE t (x INT) TBLPROPERTIES ('k' = 'v')",
+            r"`TBLPROPERTIES` is not supported; use `WITH \(\.\.\.\)` instead",
+        ),
+        (
+            "CREATE TABLE t (x INT) WITH ('Location' = '/x')",
+            "'Location' is not a table option; did you mean 'location'",
+        ),
+        (
+            "CREATE TABLE t (x INT) WITH ('FORMAT-VERSION' = 2)",
+            "did you mean 'format-version'",
+        ),
+        (
+            "CREATE TABLE t (x INT) WITH ('uuid' = 'x')",
+            "table option 'uuid' is reserved by Iceberg",
+        ),
+        (
+            "CREATE TABLE t (x INT) WITH ('k' = 1 + 1)",
+            "table option values must be string, number or boolean literals",
+        ),
+        (
+            "CREATE TABLE t (x INT) WITH ('k' = NULL)",
+            "table option values must be string, number or boolean literals",
+        ),
+        (
+            "CREATE TABLE t (x INT) WITH ('k' = 'a', 'k' = 'b')",
+            "duplicate table option 'k'",
+        ),
+        (
+            "CREATE TABLE t (x INT) WITH ('' = 'a')",
+            "table option names must not be empty",
+        ),
+        (
+            "CREATE TABLE t (x INT) LOCATION '/a' WITH ('location' = '/b')",
+            "`LOCATION` and table option 'location' cannot be combined",
+        ),
+        (
+            "CREATE TABLE t (x INT) WITH ('location' = 'relative/path')",
+            "location must be an absolute path or a URI",
+        ),
+    ],
+)
+def test_create_catalog_table_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    ctx = lake_ctx(lake)
+    with pytest.raises(SQLInterfaceError, match=error):
+        ctx.execute(statement)
+    assert not lake.table_exists(("tpch", "t"))
+    assert ctx.tables() == []
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_type_errors(lake: CountingCatalog) -> None:
+    from polars.exceptions import DuplicateError
+
+    ctx = lake_ctx(lake)
+    with pytest.raises(DuplicateError, match="column 'x' is defined more than once"):
+        ctx.execute("CREATE TABLE t (x INT, x BIGINT)")
+    with pytest.raises(
+        TypeError,
+        match=r"CREATE TABLE: columns without a lossless Iceberg type: 'x' \(UInt64\)",
+    ):
+        ctx.execute("CREATE TABLE t (x UBIGINT)")
+    with pytest.raises(TypeError, match="microsecond precision"):
+        ctx.execute("CREATE TABLE t (x TIMESTAMP(9))")
+    assert not lake.table_exists(("tpch", "t"))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_missing_namespace(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    ctx = lake_ctx(lake)
+    for name, namespace in (("sales.t", "sales"), ("TPCH.t", "TPCH")):
+        with pytest.raises(
+            NoSuchNamespaceError,
+            match=(
+                f"table '{name}' could not be created: namespace '{namespace}' "
+                "does not exist in catalog 'lake'.*case-sensitive"
+            ),
+        ):
+            ctx.execute(f"CREATE TABLE {name} (x INT)")
+
+    # a catalog that raises another error for a missing namespace
+    def create_table(*args: Any, **kwargs: Any) -> None:
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(lake, "create_table", create_table)
+    with pytest.raises(NoSuchNamespaceError, match=r"namespace 'sales'.*\(boom\)"):
+        ctx.execute("CREATE TABLE sales.t (x INT)")
+    with pytest.raises(RuntimeError, match="boom") as exc:
+        ctx.execute("CREATE TABLE t (x INT)")
+    assert exc.value.__notes__ == [
+        "table 't' could not be created: catalog table 'tpch.t'"
+    ]
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_without_warehouse(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    from pyiceberg.exceptions import TableAlreadyExistsError
+
+    catalog = SqlCatalog("bare", uri=f"sqlite:///{tmp_path / 'bare.db'}")
+    catalog.create_namespace("ns")
+    ctx = pl.SQLContext().register_catalog("bare", catalog, default=True)
+    # the catalog's error, with the table named in a note
+    with pytest.raises(ValueError) as exc:
+        ctx.execute("CREATE TABLE ns.t (x INT)")
+    assert exc.value.__notes__ == [
+        "table 'ns.t' could not be created: catalog table 'ns.t'"
+    ]
+    location = f"file://{tmp_path / 't'}"
+    ctx.execute(f"CREATE TABLE ns.t (x INT) WITH ('location' = '{location}')")
+    assert catalog.load_table(("ns", "t")).location() == location
+    # an existing table, though the catalog would first report the missing location
+    with pytest.raises(TableAlreadyExistsError, match=r"table 'ns\.t' already exists"):
+        ctx.execute("CREATE TABLE ns.t (x INT)")
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_from_catalog_config(lake: CountingCatalog) -> None:
+    from polars.io.iceberg import IcebergCatalogConfig
+
+    config = IcebergCatalogConfig.from_catalog(lake)
+    ctx = pl.SQLContext().register_catalog(
+        "lake", config, default_namespace="tpch", default=True
+    )
+    ctx.execute("CREATE TABLE t (x INT NOT NULL)")
+    assert table_fields(lake, "tpch", "t") == [("x", "int", True)]
+
+
+@pytest.mark.write_disk
+def test_create_catalog_table_hidden_by_registered_table(
+    lake: CountingCatalog,
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.register_many({"t": pl.LazyFrame({"x": [1]}), "lake.tpch.u": pl.LazyFrame()})
+    for statement, name in (
+        ("CREATE TABLE t (x INT)", "t"),
+        ("CREATE TABLE T (x INT)", "T"),
+        ("CREATE TABLE IF NOT EXISTS t (x INT)", "t"),
+    ):
+        with pytest.raises(
+            SQLInterfaceError,
+            match=(
+                rf"table '{name}' would be hidden by registered table 't'; write the "
+                rf"full name 'lake\.tpch\.{name}', or unregister it"
+            ),
+        ):
             ctx.execute(statement)
+    for name in ("lake.tpch.u", "u"):
+        with pytest.raises(
+            SQLInterfaceError,
+            match=rf"table '{name}' would be hidden by registered table "
+            r"'lake\.tpch\.u'; unregister it$",
+        ):
+            ctx.execute(f"CREATE TABLE {name} (x INT)")
+    assert not lake.table_exists(("tpch", "u"))
+    assert not lake.table_exists(("tpch", "t"))
+
+    # the full name creates the catalog table, which the registered table still hides
+    ctx.execute("CREATE TABLE lake.tpch.t (y INT)")
+    assert ctx.execute("SELECT * FROM t", eager=True).columns == ["x"]
+    assert ctx.execute("SELECT * FROM lake.tpch.t", eager=True).columns == ["y"]
+
+
+@pytest.mark.write_disk
+def test_create_table_without_namespace(lake: CountingCatalog) -> None:
+    # a name the default catalog applies to doesn't silently create a registered table
+    ctx = lake_ctx(lake, default_namespace=None)
+    for statement in ("CREATE TABLE t (x INT)", "CREATE TABLE t AS SELECT 1 AS x"):
+        with pytest.raises(
+            SQLInterfaceError,
+            match=(
+                r"table 't' has no namespace: catalog 'lake' has no default "
+                r"namespace; write 'lake\.<namespace>\.t', or use `CREATE TEMP TABLE`"
+            ),
+        ):
+            ctx.execute(statement)
+    with pytest.raises(SQLInterfaceError, match=r"write 'lake\.<namespace>\.t'$"):
+        ctx.execute("CREATE TABLE lake.t (x INT)")
+    ctx.execute("CREATE TEMP TABLE t AS SELECT 1 AS x")
+    ctx.execute("CREATE TABLE tpch.t2 (x INT)")
     assert ctx.tables() == ["t"]
+    assert lake.table_exists(("tpch", "t2"))
 
     # a name that no catalog applies to creates a registered table
-    ctx = lake_ctx(lake, default_namespace=None)
-    ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
-    with pytest.raises(SQLInterfaceError, match="'lake' has no default namespace"):
-        ctx.execute("CREATE TABLE lake.t (x INT)")
     ctx = lake_ctx(lake, default=False)
     ctx.execute("CREATE TABLE tpch.t AS SELECT 1 AS x")
     assert ctx.execute("SELECT x FROM tpch.t", eager=True).item() == 1
+    assert not lake.table_exists(("tpch", "t"))
 
 
 @pytest.mark.write_disk

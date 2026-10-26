@@ -343,7 +343,7 @@ def test_to_numpy_df_masked_zero_copy_16398() -> None:
     assert np.shares_memory(result.data, df.to_series().to_numpy(masked=True).data)
     assert_array_equal(result.mask, [[False], [True], [False]])
 
-    df = pl.DataFrame({"a": [1, None], "b": [3, 4]})
+    df = pl.DataFrame({"a": [1, None], "b": [3.0, 4.0]})
     with pytest.raises(RuntimeError, match="copy not allowed"):
         df.to_numpy(masked=True, allow_copy=False)
 
