@@ -25,8 +25,8 @@ impl DataFrameIsSorted for DataFrame {
         nulls_last: &[bool],
     ) -> PolarsResult<bool> {
         polars_ensure!(!by.is_empty(), InvalidOperation: "by must specify at least one column");
-        polars_ensure!(descending.len() == by.len(), InvalidOperation: "descending must be of same length as by");
-        polars_ensure!(nulls_last.len() == by.len(), InvalidOperation: "nulls_last must be of same length as by");
+        polars_ensure!(descending.len() == by.len(), InvalidOperation: "descending must be of same length as by (got {} and {})", descending.len(), by.len());
+        polars_ensure!(nulls_last.len() == by.len(), InvalidOperation: "nulls_last must be of same length as by (got {} and {})", nulls_last.len(), by.len());
 
         if let [by] = by {
             let col = self.column(by)?;

@@ -1338,6 +1338,8 @@ fn lower_ir_inner(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let runtime_filters = options.runtime_filters.clone();
+            #[cfg(feature = "semi_anti_join")]
+            let estimated_rows = options.estimated_rows;
             let options = options.options.clone();
             // Only the hash equi join evaluates a fused predicate natively; other strategies get
             // a `Filter` on top, and the in-memory fallback applies it from `options`.
@@ -1671,6 +1673,7 @@ fn lower_ir_inner(
                             args: args.clone(),
                             output_bool: false,
                             runtime_filters: runtime_filters.clone(),
+                            estimated_rows,
                         },
                     )),
                     _ if args.how.is_equi() => {

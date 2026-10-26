@@ -128,7 +128,11 @@ impl DataFrame {
                     new_names.no_null_iter().map(PlSmallStr::from_str).collect()
                 },
                 Either::Right(names) => {
-                    polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");
+                    polars_ensure!(
+                        names.len() == self.height(),
+                        ShapeMismatch: "Length of new column names must be the same as the row count (got {} names for {} rows)",
+                        names.len(), self.height()
+                    );
                     names
                 },
             },
