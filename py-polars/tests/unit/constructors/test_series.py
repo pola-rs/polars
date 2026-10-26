@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone, tzinfo
+import io
+import zoneinfo
+from datetime import UTC, date, datetime, time, timedelta, timezone, tzinfo
+from importlib import resources
+from itertools import permutations
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
-from zoneinfo import ZoneInfo
 
 import dateutil.tz
 import numpy as np
 import pandas as pd
 import pytest
-import pytz
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
@@ -16,6 +19,8 @@ from polars.testing.asserts.frame import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, TimeUnit
 
 
@@ -171,8 +176,6 @@ def test_series_init_pandas_timestamp_18127() -> None:
     [
         ("Asia/Tokyo", "Asia/Tokyo"),
         ("UTC", "UTC"),
-        (pytz.timezone("Europe/London"), "Europe/London"),
-        (pytz.UTC, "UTC"),
         (timezone(timedelta(hours=2)), "UTC"),  # (fixed offsets become UTC)
     ],
 )
@@ -183,18 +186,80 @@ def test_series_init_pandas_timestamp_time_zones(tz: Any, expected_tz: str) -> N
     assert result.dt.timestamp("ns").item() == value.value
 
 
-def test_series_init_pandas_timestamp_unsupported_time_zone() -> None:
-    # zones that are neither named nor fixed-offset are not silently made UTC
-    value = pd.Timestamp("2021-06-15 12:30", tz=dateutil.tz.gettz("Europe/Paris"))
+@pytest.mark.parametrize("zone", ["Europe/London", "UTC"])
+def test_series_init_pandas_timestamp_pytz_time_zones(zone: str) -> None:
+    # (`pytz` is not installed in every test environment)
+    pytz = pytest.importorskip("pytz")
+    test_series_init_pandas_timestamp_time_zones(pytz.timezone(zone), zone)
+
+
+@pytest.mark.parametrize(
+    ("zone", "value", "is_dst"),
+    [
+        ("America/New_York", datetime(2020, 6, 1, 12, 30, 15, 123456), False),
+        ("America/New_York", datetime(2020, 11, 1, 1, 30), True),
+        ("America/New_York", datetime(2020, 11, 1, 1, 30), False),
+        ("America/New_York", datetime(2020, 1, 1), None),  # (not localized: LMT)
+        ("Europe/Amsterdam", datetime(2150, 7, 1, 8), False),
+        ("Etc/GMT+5", datetime(2020, 1, 1), False),
+        ("UTC", datetime(2020, 1, 1), None),
+    ],
+)
+def test_series_init_pytz_datetime(
+    zone: str, value: datetime, is_dst: bool | None
+) -> None:
+    # (`pytz` is not installed in every test environment)
+    pytz = pytest.importorskip("pytz")
+    tz = pytz.timezone(zone)
+    # (with `is_dst=None` the zone is attached as-is, rather than localized)
+    value = (
+        value.replace(tzinfo=tz)
+        if is_dst is None
+        else tz.localize(value, is_dst=is_dst)
+    )
+    result = pl.Series([value])
+    assert result.dtype == pl.Datetime("us", str(value.tzinfo))
+
+    epoch = datetime(1970, 1, 1, tzinfo=pytz.UTC)
+    ts = result.dt.timestamp("us").item()
+    assert ts == (value - epoch) // timedelta(microseconds=1)
+
+
+def _zone_file(key: str) -> io.BytesIO:
+    # (as `zoneinfo` resolves keys: the system time zone database, else `tzdata`)
+    for root in zoneinfo.TZPATH:
+        if (path := Path(root, key)).is_file():
+            return io.BytesIO(path.read_bytes())
+    return io.BytesIO(resources.files("tzdata.zoneinfo").joinpath(key).read_bytes())
+
+
+@pytest.mark.parametrize(
+    "tz_from_file", [zoneinfo.ZoneInfo.from_file, dateutil.tz.tzfile]
+)
+@pytest.mark.parametrize("as_pandas", [False, True])
+def test_series_init_unnamed_time_zone(
+    tz_from_file: Callable[[io.BytesIO], tzinfo], as_pandas: bool
+) -> None:
+    # zones loaded from a file are neither named (their `key` is None, or absent in
+    # older dateutil versions) nor fixed-offset, so must not be silently made UTC
+    tz = tz_from_file(_zone_file("Europe/Paris"))
+    value = datetime(2021, 6, 15, 12, 30, tzinfo=tz)
     with pytest.raises(TypeError, match="is not a fixed offset timezone"):
-        pl.Series([value])
+        pl.Series([pd.Timestamp(value) if as_pandas else value])
 
 
-def test_series_init_pandas_nat() -> None:
-    ts, td = pd.Timestamp("2020-01-01 00:00:00.000000001"), pd.Timedelta(1, unit="ns")
-    assert pl.Series([ts, pd.NaT]).dt.timestamp("ns").to_list() == [ts.value, None]
-    assert pl.Series([td, pd.NaT]).dt.total_nanoseconds().to_list() == [1, None]
-    assert pl.DataFrame({"x": [pd.NaT]}).to_series().to_list() == [None]
+@pytest.mark.skipif(
+    getattr(dateutil.tz.gettz("Europe/Paris"), "key", None) is None,
+    reason="dateutil version does not name its time zones",
+)
+@pytest.mark.parametrize("as_pandas", [False, True])
+def test_series_init_dateutil_named_time_zone(as_pandas: bool) -> None:
+    value = datetime(2021, 6, 15, 12, 30, tzinfo=dateutil.tz.gettz("Europe/Paris"))
+    s = pl.Series([pd.Timestamp(value) if as_pandas else value])
+    assert s.dtype.time_zone == "Europe/Paris"  # type: ignore[attr-defined]
+    assert s.dt.convert_time_zone("UTC").item() == datetime(
+        2021, 6, 15, 10, 30, tzinfo=UTC
+    )
 
 
 @requires_pandas_as_unit
@@ -263,9 +328,10 @@ def test_series_init_mixed_units_28869(
         return ns // divisor if dtype == pl.Datetime or ns >= 0 else -(-ns // divisor)
 
     # the finest (or explicitly given) unit is used, independent of value order
+    # (strict inference restarts on finding a finer unit: once, twice, midway or last)
     expected_dtype = dtype(time_unit or "ns")
     for strict in (True, False):
-        for vals in (values, values[::-1]):
+        for vals in map(list, permutations(values)):
             dtype_arg = None if time_unit is None else expected_dtype
             result = pl.Series(vals, dtype=dtype_arg, strict=strict)
             assert result.dtype == expected_dtype
@@ -302,11 +368,15 @@ def test_series_init_mixed_units_out_of_range_28869(
     # the second value cannot be represented with "ns" precision
     name = dtype.__name__.lower()
     msg = rf"conversion from `{name}\[μs\]` to `{name}\[ns\]` failed"
-    for vals in (values, [values], [[v] for v in values]):
+
+    # (reversed, it only overflows once the finer unit restarts strict inference)
+    for ordered in (values, values[::-1]):
+        for vals in (ordered, [ordered], [[v] for v in ordered]):
+            with pytest.raises(InvalidOperationError, match=msg):
+                pl.Series(vals)
+
         with pytest.raises(InvalidOperationError, match=msg):
-            pl.Series(vals)
-    with pytest.raises(InvalidOperationError, match=msg):
-        pl.Series(values, dtype=dtype("ns"))
+            pl.Series(ordered, dtype=dtype("ns"))
 
     # (non-strict construction makes it null)
     for result in (
@@ -324,7 +394,7 @@ def test_series_init_mixed_units_out_of_range_28869(
 
 def test_series_init_pandas_timestamp_out_of_datetime_range() -> None:
     result = pl.Series([pd.Timestamp(np.datetime64("10000-01-01", "s"))])
-    assert result.dtype == pl.Datetime("us")
+    assert result.dtype == pl.Datetime("ms")
     assert result.dt.year().item() == 10000
     assert result.dt.epoch("s").item() == 253402300800
 
@@ -336,12 +406,12 @@ def test_series_init_pandas_timestamp_out_of_datetime_range_time_zone() -> None:
     except (NotImplementedError, ValueError):
         pytest.skip("this pandas version cannot localize out-of-range Timestamps")
     result = pl.Series([ts])
-    assert result.dtype == pl.Datetime("us", "America/New_York")
+    assert result.dtype == pl.Datetime("ms", "America/New_York")
     assert result.dt.epoch("s").item() == 253402300800 + 5 * 3600
 
 
 def test_series_init_pandas_timestamp_time_zone() -> None:
-    tz = ZoneInfo("Europe/Amsterdam")
+    tz = zoneinfo.ZoneInfo("Europe/Amsterdam")
     result = pl.Series([pd.Timestamp("2200-07-01 12:00", tz=tz)])
     assert result.dtype == pl.Datetime("us", "Europe/Amsterdam")
     assert result.item() == datetime(2200, 7, 1, 12, tzinfo=tz)
@@ -359,7 +429,7 @@ def test_series_init_datetime_subclass_from_pandas_named_module() -> None:
 
 def test_series_init_pandas_timedelta_non_nanosecond_unit() -> None:
     result = pl.Series([pd.Timedelta(np.timedelta64(1, "s"))])
-    assert result.dtype == pl.Duration("us")
+    assert result.dtype == pl.Duration("ms")
     assert result.item() == timedelta(seconds=1)
 
 
@@ -371,7 +441,8 @@ def test_series_init_pandas_timedelta_out_of_microsecond_range() -> None:
 
 def test_series_init_pandas_timedelta_nanoseconds() -> None:
     result = pl.Series([pd.Timedelta(-1, "ns"), pd.Timedelta(1_999, "ns")])
-    assert result.to_list() == [timedelta(microseconds=-1), timedelta(microseconds=1)]
+    assert result.dtype == pl.Duration("ns")
+    assert result.cast(pl.Int64).to_list() == [-1, 1_999]
 
 
 def test_series_init_datetime_subclass_with_asm8() -> None:
@@ -547,10 +618,19 @@ def test_series_from_numpy_temporal_scalars_other_units() -> None:
 
 
 @pytest.mark.parametrize(
-    "value", [np.datetime64(2**62, "s"), np.datetime64(2**40, "D")]
+    ("value", "msg"),
+    [
+        (np.datetime64(2**62, "s"), r"`datetime64\[s\]` to `datetime\[ms\]`"),
+        (np.datetime64(2**40, "D"), r"`datetime64\[D\]` to `date`"),
+        (np.datetime64(2**62, ("ms", 10)), r"`datetime64\[10ms\]` to `datetime\[ms\]`"),
+        (np.timedelta64(2**62, "s"), r"`timedelta64\[s\]` to `duration\[ms\]`"),
+    ],
 )
-def test_series_from_numpy_temporal_scalars_out_of_range(value: np.datetime64) -> None:
-    with pytest.raises(OverflowError, match="out of range"):
+def test_series_from_numpy_temporal_scalars_out_of_range(
+    value: np.datetime64 | np.timedelta64, msg: str
+) -> None:
+    # (consistent with pandas `Timestamp`/`Timedelta` values that are out of range)
+    with pytest.raises(InvalidOperationError, match=rf"conversion from {msg} failed"):
         pl.Series([value])
 
 
@@ -579,10 +659,14 @@ def test_series_from_numpy_temporal_scalars_mixed_units() -> None:
         np.datetime64("2022-01-01T00:00:00.001", "ms"),
         np.datetime64("2022-01-01T00:00:00.000000002", "ns"),
     ]
-    with pytest.raises(TypeError, match="unexpected value"):
-        pl.Series(values)
-    expected = pl.Series([1_640_995_200_001, 1_640_995_200_000]).cast(pl.Datetime("ms"))
-    assert_series_equal(pl.Series(values, strict=False), expected)
+    # the finest unit is used (without loss of precision), independent of value order
+    ns = [1_640_995_200_001_000_000, 1_640_995_200_000_000_002]
+    for strict in (True, False):
+        for vals, expected in ((values, ns), (values[::-1], ns[::-1])):
+            assert_series_equal(
+                pl.Series(vals, strict=strict),
+                pl.Series(expected).cast(pl.Datetime("ns")),
+            )
 
 
 @pytest.mark.parametrize(

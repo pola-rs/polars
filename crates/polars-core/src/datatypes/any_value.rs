@@ -553,11 +553,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (AnyValue::Date(v), DataType::Datetime(tu, _)) => AnyValue::Datetime(
-                (*v as i64).checked_mul(match tu {
-                    TimeUnit::Nanoseconds => NS_IN_DAY,
-                    TimeUnit::Microseconds => US_IN_DAY,
-                    TimeUnit::Milliseconds => MS_IN_DAY,
-                })?,
+                (*v as i64).checked_mul(NS_IN_DAY / tu.nanoseconds())?,
                 *tu,
                 None,
             ),
@@ -578,14 +574,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Date) => {
-                AnyValue::Date(
-                    i32::try_from(v.div_euclid(match tu {
-                        TimeUnit::Nanoseconds => NS_IN_DAY,
-                        TimeUnit::Microseconds => US_IN_DAY,
-                        TimeUnit::Milliseconds => MS_IN_DAY,
-                    }))
-                    .ok()?,
-                )
+                AnyValue::Date(i32::try_from(v.div_euclid(NS_IN_DAY / tu.nanoseconds())).ok()?)
             },
 
             // to time
@@ -595,11 +584,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Time) => {
-                AnyValue::Time(match tu {
-                    TimeUnit::Nanoseconds => v.rem_euclid(NS_IN_DAY),
-                    TimeUnit::Microseconds => v.rem_euclid(US_IN_DAY) * 1_000i64,
-                    TimeUnit::Milliseconds => v.rem_euclid(MS_IN_DAY) * 1_000_000i64,
-                })
+                AnyValue::Time(v.rem_euclid(NS_IN_DAY / tu.nanoseconds()) * tu.nanoseconds())
             },
 
             // to duration

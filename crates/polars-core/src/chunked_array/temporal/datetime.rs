@@ -119,7 +119,7 @@ impl DatetimeChunked {
         match current_unit.rescale_to(tu) {
             TimeUnitRescale::Unchanged => {},
             TimeUnitRescale::Multiply(k) => out.phys = (&self.phys).checked_mul_scalar(k),
-            TimeUnitRescale::Divide(k) => out.phys = (&self.phys).wrapping_floor_div_scalar(k),
+            TimeUnitRescale::Divide(k) => out.phys = self.phys.apply_values(|v| v.div_euclid(k)),
         }
         out
     }

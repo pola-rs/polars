@@ -831,17 +831,24 @@ impl DataType {
 
     /// Check if this [`DataType`] is, or contains, a type with a [`TimeUnit`].
     pub fn contains_time_units(&self) -> bool {
+        self.any_time_unit(|_| true)
+    }
+
+    /// Check if any (possibly nested) [`TimeUnit`] in this [`DataType`] satisfies `f`.
+    fn any_time_unit(&self, f: impl Fn(TimeUnit) -> bool + Copy) -> bool {
         use DataType::*;
         match self {
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_, _) => true,
+            Datetime(tu, _) => f(*tu),
             #[cfg(feature = "dtype-duration")]
-            Duration(_) => true,
-            List(inner) => inner.contains_time_units(),
+            Duration(tu) => f(*tu),
+            List(inner) => inner.any_time_unit(f),
             #[cfg(feature = "dtype-array")]
-            Array(inner, _) => inner.contains_time_units(),
+            Array(inner, _) => inner.any_time_unit(f),
             #[cfg(feature = "dtype-struct")]
-            Struct(fields) => fields.iter().any(|field| field.dtype.contains_time_units()),
+            Struct(fields) => fields.iter().any(|field| field.dtype.any_time_unit(f)),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.any_time_unit(f) || value.any_time_unit(f),
             _ => false,
         }
     }
@@ -852,7 +859,10 @@ impl DataType {
         &mut self,
         others: impl IntoIterator<Item = impl Borrow<DataType>>,
     ) {
-        for other in others {
+        let mut others = others.into_iter();
+        while self.any_time_unit(|tu| tu != TimeUnit::Nanoseconds)
+            && let Some(other) = others.next()
+        {
             self.merge_finest_time_units(other.borrow());
         }
     }
@@ -870,11 +880,23 @@ impl DataType {
             (Array(inner, _), Array(other_inner, _)) => inner.merge_finest_time_units(other_inner),
             #[cfg(feature = "dtype-struct")]
             (Struct(fields), Struct(other_fields)) => {
-                for field in fields.iter_mut() {
-                    if let Some(other) = other_fields.iter().find(|f| f.name == field.name) {
+                for (i, field) in fields.iter_mut().enumerate() {
+                    if !field.dtype.contains_time_units() {
+                        continue;
+                    }
+                    let other = match other_fields.get(i) {
+                        Some(other) if other.name == field.name => Some(other),
+                        _ => other_fields.iter().find(|f| f.name == field.name),
+                    };
+                    if let Some(other) = other {
                         field.dtype.merge_finest_time_units(&other.dtype);
                     }
                 }
+            },
+            #[cfg(feature = "dtype-map")]
+            (Map(key, value), Map(other_key, other_value)) => {
+                key.merge_finest_time_units(other_key);
+                value.merge_finest_time_units(other_value);
             },
             _ => {},
         }

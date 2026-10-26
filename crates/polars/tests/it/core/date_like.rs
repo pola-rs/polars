@@ -215,3 +215,34 @@ fn test_any_value_temporal_casts() {
         None
     );
 }
+
+#[test]
+#[cfg(all(feature = "dtype-datetime", feature = "dtype-map"))]
+fn test_series_from_any_values_finest_map_time_units() -> PolarsResult<()> {
+    use TimeUnit::*;
+
+    let map = |tu: TimeUnit, value: i64| -> PolarsResult<AnyValue<'static>> {
+        let keys = Series::new("key".into(), ["a"]);
+        let values = Series::new("value".into(), [value]).cast(&DataType::Datetime(tu, None))?;
+        Ok(AnyValue::Map(pack_map_entries(&keys, &values)))
+    };
+    let dtype = DataType::Map(
+        Box::new(DataType::String),
+        Box::new(DataType::Datetime(Nanoseconds, None)),
+    );
+    let expected = Series::from_any_values_and_dtype(
+        "x".into(),
+        &[map(Nanoseconds, 1_000_000)?, map(Nanoseconds, 1)?],
+        &dtype,
+        true,
+    )?;
+
+    // as for lists, mixed-unit map values adopt the finest time unit
+    for strict in [true, false] {
+        let values = [map(Milliseconds, 1)?, map(Nanoseconds, 1)?];
+        let s = Series::from_any_values("x".into(), &values, strict)?;
+        assert_eq!(s.dtype(), &dtype);
+        assert_series_eq(&s, &expected);
+    }
+    Ok(())
+}
