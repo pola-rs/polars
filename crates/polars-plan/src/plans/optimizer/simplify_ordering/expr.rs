@@ -275,7 +275,7 @@ impl ExprOrderSimplifier<'_> {
             AExpr::BinaryExpr { .. } | AExpr::Ternary { .. } => {
                 check_return_cached!();
 
-                let (nodes, ternary_mask_node) = match self.expr_arena.get(current_ae_node) {
+                let (nodes, predicate) = match self.expr_arena.get(current_ae_node) {
                     AExpr::BinaryExpr { left, op: _, right } => ([*left, *right], None),
                     AExpr::Ternary {
                         predicate,
@@ -287,19 +287,12 @@ impl ExprOrderSimplifier<'_> {
 
                 let mut acc = ExprOrderAcc::default();
 
-                for node in nodes {
+                // The predicate positions the output rows, so its order is observable too.
+                for node in nodes.into_iter().chain(predicate) {
                     acc.add(self.rec(node, RS::NO_DEORDER), node);
                 }
 
                 let mut output_observable = acc.accumulated_orders();
-
-                if let Some(ternary_mask_node) = ternary_mask_node {
-                    acc.add(
-                        self.rec(ternary_mask_node, RS::NO_DEORDER),
-                        ternary_mask_node,
-                    );
-                }
-
                 let mut should_cache = false;
 
                 if acc.saw_mixed_inputs() {
@@ -309,11 +302,6 @@ impl ExprOrderSimplifier<'_> {
                     && recursion.allows_deorder()
                 {
                     output_observable = self.rec(node, RS::ALLOW_DEORDER);
-
-                    if Some(node) == ternary_mask_node {
-                        output_observable = O::empty();
-                    }
-
                     should_cache = true;
                 }
 
