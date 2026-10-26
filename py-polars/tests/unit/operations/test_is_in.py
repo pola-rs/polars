@@ -2125,3 +2125,25 @@ def test_is_in_null_needle_in_null_data_keeps_null_containers_null(
     else:
         for column in out.columns:
             assert out[column].to_list() == [None, None, None]
+
+
+def test_is_in_single_row_series_over_groups_23995() -> None:
+    df = pl.DataFrame({"g": [1, 1, 2, 2, 3], "x": [1, 2, 3, 4, 1]})
+    haystack = pl.Series([[1, 2, 4]])
+
+    out = df.filter(pl.col("x").is_in(haystack).all().over("g"))
+    assert out.to_dict(as_series=False) == {"g": [1, 1, 3], "x": [1, 2, 1]}
+
+    out = df.group_by("g", maintain_order=True).agg(
+        a=pl.col("x").is_in(haystack),
+        b=pl.col("x").first().is_in(haystack),
+        c=pl.col("x") + pl.lit(pl.Series([10])),
+        d=pl.lit(pl.Series([1])) + pl.lit(pl.Series([2])),
+    )
+    assert out.to_dict(as_series=False) == {
+        "g": [1, 2, 3],
+        "a": [[True, True], [False, True], [True]],
+        "b": [[True], [False], [True]],
+        "c": [[11, 12], [13, 14], [11]],
+        "d": [[3], [3], [3]],
+    }
