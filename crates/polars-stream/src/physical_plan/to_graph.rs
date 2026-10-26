@@ -1488,6 +1488,7 @@ fn to_graph_rec<'a>(
                     args: args.clone(),
                     options: options.clone(),
                     runtime_filters: Vec::new(),
+                    estimated_rows: None,
                 }),
             });
 
@@ -1536,6 +1537,7 @@ fn to_graph_rec<'a>(
             args,
             output_bool: _,
             runtime_filters: _,
+            estimated_rows: _,
         } => {
             let args = args.clone();
             let output_schema = node.output_schema(0).clone();
@@ -1592,6 +1594,7 @@ fn to_graph_rec<'a>(
                 SemiAntiJoin {
                     output_bool,
                     ref runtime_filters,
+                    estimated_rows,
                     ..
                 } => ctx.try_add_node_with_metrics(
                     |registry| {
@@ -1601,6 +1604,7 @@ fn to_graph_rec<'a>(
                             left_key_selectors,
                             right_key_selectors,
                             runtime_filters.clone(),
+                            estimated_rows,
                             args,
                             output_bool,
                             num_pipelines,
