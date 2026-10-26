@@ -32,6 +32,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::{BeginReadArgs, File
 #[cfg(feature = "parquet")]
 use crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum DeletionFilesProvider {
     None,
