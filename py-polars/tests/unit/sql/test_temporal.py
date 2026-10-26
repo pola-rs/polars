@@ -1122,3 +1122,65 @@ def test_timestamp_array_literal_invalid_value() -> None:
 def test_at_time_zone_string_forms(zone: str) -> None:
     res = pl.sql(f"SELECT TIMESTAMP '2026-01-01' AT TIME ZONE {zone} AS x", eager=True)
     assert res.item() == datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_current_date_and_time() -> None:
+    before = datetime.now()
+    res = pl.sql(
+        """
+        SELECT
+          CURRENT_DATE AS d,
+          CURRENT_TIME AS t,
+          CURRENT_TIMESTAMP AS ts,
+          NOW() AS now,
+          LOCALTIME AS lt,
+          LOCALTIMESTAMP AS lts,
+          CURRENT_TIMESTAMP = (SELECT NOW()) AS same_in_subquery,
+          CURRENT_DATE = CAST(CURRENT_TIMESTAMP AS DATE) AS same_date,
+          CURRENT_TIME = CAST(CURRENT_TIMESTAMP AS TIME) AS same_time
+        """,
+        eager=True,
+    )
+    after = datetime.now()
+    assert res.schema == {
+        "d": pl.Date,
+        "t": pl.Time,
+        "ts": pl.Datetime("us"),
+        "now": pl.Datetime("us"),
+        "lt": pl.Time,
+        "lts": pl.Datetime("us"),
+        "same_in_subquery": pl.Boolean,
+        "same_date": pl.Boolean,
+        "same_time": pl.Boolean,
+    }
+    row = res.row(0, named=True)
+    assert before <= row["ts"] <= after
+    assert row["now"] == row["lts"] == row["ts"]
+    assert row["d"] == row["ts"].date()
+    assert row["t"] == row["lt"] == row["ts"].time()
+    assert row["same_in_subquery"]
+    assert row["same_date"]
+    assert row["same_time"]
+
+
+def test_current_date_arithmetic() -> None:
+    today = date.today()
+    df = pl.DataFrame({"d": [today - timedelta(days=400), today, None]})
+    res = df.sql(
+        """
+        SELECT
+          d,
+          d >= CURRENT_DATE - INTERVAL '6 months' AS recent,
+          CURRENT_DATE - d AS age,
+          EXTRACT(YEAR FROM CURRENT_DATE) AS year,
+        FROM self
+        """
+    )
+    assert res["recent"].to_list() == [False, True, None]
+    assert res["age"].to_list() == [timedelta(days=400), timedelta(0), None]
+    assert res["year"].to_list() == [today.year] * 3
+
+
+def test_current_timestamp_precision_unsupported() -> None:
+    with pytest.raises(SQLInterfaceError):
+        pl.sql("SELECT CURRENT_TIMESTAMP(3)", eager=True)

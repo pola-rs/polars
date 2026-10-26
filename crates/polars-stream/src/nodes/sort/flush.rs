@@ -5,17 +5,34 @@ use parking_lot::Mutex;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::chunked_array::ops::sort::options::SortMultipleOptions;
+use polars_core::datatypes::DataType;
 use polars_core::frame::DataFrame;
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::PolarsResult;
-use polars_ooc::{MostRecentSpillContext, SpillFrame};
+use polars_ooc::{MostRecentSpillContext, SpillFrame, memory_manager};
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use tokio::sync::Notify;
 
 use super::{drop_parallel, sort_range};
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::PortSender;
+
+/// Memory per row for sorting by a key of this type, besides the loaded and
+/// the sorted rows: an (index, key) pair and the output index.
+pub fn sort_index_row_bytes(key_dtype: &DataType) -> u64 {
+    let idx = size_of::<IdxSize>() as u64;
+    let pair = match key_dtype.to_physical().byte_width() {
+        Some(width) => {
+            let width = width.ceil() as u64;
+            (idx + width).next_multiple_of(idx.max(width).max(1))
+        },
+        // Other keys sort (index, slice) pairs.
+        None => idx.max(8) + 16,
+    };
+    pair + idx
+}
 
 /// A bucket of the partitioned input, in emission order.
 pub struct PendingBucket {
@@ -26,15 +43,40 @@ pub struct PendingBucket {
     pub needs_sort: bool,
 }
 
+#[derive(Clone, Copy)]
+struct BucketMemory {
+    /// Held at once while loading and sorting the bucket.
+    sort: u64,
+    /// Kept by its sorted rows until they are all emitted. The emitted rows
+    /// can be a slice of all the sorted or loaded rows, which keeps them all.
+    kept: u64,
+}
+
+impl PendingBucket {
+    fn memory(&self, row_bytes: u64, index_row_bytes: u64) -> BucketMemory {
+        let rows = self.frames.iter().map(SpillFrame::height).sum::<usize>() as u64;
+        let kept = rows * row_bytes;
+        let sort = if self.needs_sort {
+            2 * kept + rows * index_row_bytes
+        } else {
+            kept
+        };
+        BucketMemory { sort, kept }
+    }
+}
+
 struct FlushInner {
     /// Buckets not yet sorted, in output order, with the sequence number of
-    /// their first morsel.
-    unsorted: VecDeque<(PendingBucket, u64)>,
+    /// their first morsel and their memory.
+    unsorted: VecDeque<(PendingBucket, u64, BucketMemory)>,
     /// Sorted rows waiting to be emitted, by the sequence number of their
-    /// first morsel.
-    sorted: BTreeMap<u64, DataFrame>,
+    /// first morsel, with the memory counted for them until they are all
+    /// emitted.
+    sorted: BTreeMap<u64, (DataFrame, u64)>,
     /// The sequence number of the next morsel to emit.
     next_seq: u64,
+    /// The memory of the buckets sorted or being sorted.
+    ahead_bytes: u64,
     num_sorting: usize,
     /// Set when a sort failed, so that the other tasks stop instead of waiting
     /// for it.
@@ -49,19 +91,21 @@ impl FlushInner {
 
 /// Emits the partitioned buckets in order. The sender tasks share one
 /// emission cursor; a task with nothing to emit sorts a bucket ahead, up to
-/// `max_ahead` buckets sorted or being sorted.
+/// `max_ahead` buckets and `max_ahead_bytes` sorted or being sorted, and at
+/// least one.
 pub struct Flush {
     inner: Mutex<FlushInner>,
     notify: Notify,
     morsel_size: usize,
     max_ahead: usize,
+    max_ahead_bytes: u64,
     /// Keeps the bucket frames spillable while they wait to be sorted.
     _spill_ctx: MostRecentSpillContext,
 }
 
 enum Step<'a> {
     Emit(DataFrame, u64),
-    Sort(PendingBucket, u64),
+    Sort(PendingBucket, u64, BucketMemory),
     Wait(tokio::sync::futures::Notified<'a>),
     Stop,
 }
@@ -70,14 +114,17 @@ impl Flush {
     pub fn new(
         buckets: Vec<PendingBucket>,
         morsel_size: usize,
-        max_ahead: usize,
+        (max_ahead, max_ahead_bytes): (usize, u64),
+        row_bytes: u64,
+        index_row_bytes: u64,
         spill_ctx: MostRecentSpillContext,
     ) -> Self {
         let mut seq = 0;
         let mut unsorted = VecDeque::with_capacity(buckets.len());
         for bucket in buckets {
             let num_morsels = bucket.local.1.div_ceil(morsel_size) as u64;
-            unsorted.push_back((bucket, seq));
+            let memory = bucket.memory(row_bytes, index_row_bytes);
+            unsorted.push_back((bucket, seq, memory));
             seq += num_morsels;
         }
         Self {
@@ -85,12 +132,14 @@ impl Flush {
                 unsorted,
                 sorted: BTreeMap::new(),
                 next_seq: 0,
+                ahead_bytes: 0,
                 num_sorting: 0,
                 failed: false,
             }),
             notify: Notify::new(),
             morsel_size,
             max_ahead,
+            max_ahead_bytes,
             _spill_ctx: spill_ctx,
         }
     }
@@ -108,19 +157,29 @@ impl Flush {
         if let Some(entry) = inner.sorted.first_entry()
             && *entry.key() == seq
         {
-            let df = entry.remove();
+            let (df, bytes) = entry.remove();
             inner.next_seq += 1;
             if df.height() > self.morsel_size {
                 let rest = df.slice(self.morsel_size as i64, usize::MAX);
-                inner.sorted.insert(seq + 1, rest);
+                inner.sorted.insert(seq + 1, (rest, bytes));
+            } else {
+                inner.ahead_bytes -= bytes;
+                if !inner.unsorted.is_empty() {
+                    self.notify.notify_waiters();
+                }
             }
             return Step::Emit(df.slice(0, self.morsel_size), seq);
         }
 
-        if inner.sorted.len() + inner.num_sorting < self.max_ahead {
-            if let Some((bucket, seq)) = inner.unsorted.pop_front() {
+        if let Some((_, _, memory)) = inner.unsorted.front()
+            && inner.sorted.len() + inner.num_sorting < self.max_ahead
+        {
+            let nothing_ahead = inner.sorted.is_empty() && inner.num_sorting == 0;
+            if nothing_ahead || inner.ahead_bytes + memory.sort <= self.max_ahead_bytes {
+                let (bucket, seq, memory) = inner.unsorted.pop_front().unwrap();
+                inner.ahead_bytes += memory.sort;
                 inner.num_sorting += 1;
-                return Step::Sort(bucket, seq);
+                return Step::Sort(bucket, seq, memory);
             }
         }
         if inner.is_drained() {
@@ -130,13 +189,19 @@ impl Flush {
         Step::Wait(self.notify.notified())
     }
 
-    fn finish_sort(&self, seq: u64, sorted: PolarsResult<DataFrame>) -> PolarsResult<()> {
+    fn finish_sort(
+        &self,
+        seq: u64,
+        memory: BucketMemory,
+        sorted: PolarsResult<DataFrame>,
+    ) -> PolarsResult<()> {
         let result = {
             let mut inner = self.inner.lock();
             inner.num_sorting -= 1;
             match sorted {
                 Ok(df) => {
-                    inner.sorted.insert(seq, df);
+                    inner.ahead_bytes -= memory.sort - memory.kept;
+                    inner.sorted.insert(seq, (df, memory.kept));
                     Ok(())
                 },
                 Err(e) => {
@@ -180,9 +245,9 @@ impl Flush {
                             }
                             wait_group.wait().await;
                         },
-                        Step::Sort(bucket, seq) => {
-                            let sorted = sort_bucket(bucket, key, &sort_options).await;
-                            self.finish_sort(seq, sorted)?;
+                        Step::Sort(bucket, seq, memory) => {
+                            let sorted = sort_bucket(bucket, memory.sort, key, &sort_options).await;
+                            self.finish_sort(seq, memory, sorted)?;
                         },
                         Step::Wait(notified) => notified.await,
                         Step::Stop => return Ok(()),
@@ -200,7 +265,7 @@ impl Drop for Flush {
             inner
                 .unsorted
                 .drain(..)
-                .flat_map(|(bucket, _)| bucket.frames),
+                .flat_map(|(bucket, _, _)| bucket.frames),
         );
     }
 }
@@ -208,9 +273,11 @@ impl Drop for Flush {
 /// Loads a bucket and sorts it.
 async fn sort_bucket(
     bucket: PendingBucket,
+    bytes: u64,
     key: &PlSmallStr,
     sort_options: &SortMultipleOptions,
 ) -> PolarsResult<DataFrame> {
+    let _reservation = memory_manager().reserve(bytes).await;
     let dfs = join_all(bucket.frames.into_iter().map(SpillFrame::into_df)).await;
     let df = accumulate_dataframes_vertical_unchecked(dfs);
     let (offset, len) = bucket.local;

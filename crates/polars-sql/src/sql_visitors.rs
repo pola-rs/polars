@@ -8,12 +8,13 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use sqlparser::ast::{
     Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
-    FunctionArguments, ObjectName, Query, SetExpr, Statement, TableFactor, Visit,
-    Visitor as SQLVisitor, visit_expressions,
+    FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visitor as SQLVisitor, VisitorMut,
+    With,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
-use crate::context::{RelationName, match_qualifier};
+use crate::context::{RelationName, match_qualifier, object_name_to_string};
+use crate::dyn_visit::{self, visit_expressions};
 
 // ---------------------------------------------------------------------------
 // FindTableIdentifier
@@ -61,7 +62,7 @@ pub(crate) fn expr_refers_to_table(
     relations: &[RelationName],
 ) -> bool {
     let mut table_finder = FindTableIdentifier::new(table_name, relations);
-    let _ = expr.visit(&mut table_finder);
+    let _ = dyn_visit::visit(expr, &mut table_finder);
     table_finder.found
 }
 
@@ -107,7 +108,7 @@ impl<'a> SQLVisitor for UnqualifiedColumnsInSchema<'a> {
 /// identifier, and that every unqualified identifier it contains exists in `schema`.
 pub(crate) fn sql_expr_cols_all_in_schema(expr: &SQLExpr, schema: &Schema) -> bool {
     let mut visitor = UnqualifiedColumnsInSchema::new(schema);
-    let _ = expr.visit(&mut visitor);
+    let _ = dyn_visit::visit(expr, &mut visitor);
     visitor.found_any && visitor.all_in_schema
 }
 
@@ -132,7 +133,7 @@ impl QualifyExpression {
 
     pub(crate) fn analyze(expr: &SQLExpr) -> (bool, PlHashSet<String>) {
         let mut analyzer = Self::new();
-        let _ = expr.visit(&mut analyzer);
+        let _ = dyn_visit::visit(expr, &mut analyzer);
         (analyzer.has_window_functions, analyzer.column_refs)
     }
 }
@@ -279,13 +280,16 @@ pub(crate) fn check_for_ambiguous_column_refs(
     using_cols: &[(String, String)],
     relations: &[RelationName],
 ) -> PolarsResult<()> {
-    match expr.visit(&mut AmbiguousColumnVisitor {
-        joined_aliases,
-        base_table_name,
-        using_cols,
-        relations,
-        subquery_depth: 0,
-    }) {
+    match dyn_visit::visit(
+        expr,
+        &mut AmbiguousColumnVisitor {
+            joined_aliases,
+            base_table_name,
+            using_cols,
+            relations,
+            subquery_depth: 0,
+        },
+    ) {
         ControlFlow::Break(err) => Err(err),
         ControlFlow::Continue(()) => Ok(()),
     }
@@ -357,6 +361,142 @@ impl SQLVisitor for TableIdentifierCollector {
 }
 
 // ---------------------------------------------------------------------------
+// CteReferenceCollector
+// ---------------------------------------------------------------------------
+
+/// Visitor that collects which of the CTEs `ctes` a query reads, as `FROM`/`TABLE` resolve
+/// names: the whole name, ignoring case, unless a nested `WITH` defines the same name.
+struct CteReferenceCollector<'a> {
+    ctes: &'a [String],
+    // The CTE names that each nested `WITH` being visited makes visible.
+    scopes: Vec<Vec<String>>,
+    with_stack: Vec<Option<With>>,
+    found: PlHashSet<usize>,
+}
+
+impl CteReferenceCollector<'_> {
+    fn reference(&mut self, name: &str) {
+        let shadowed = self
+            .scopes
+            .iter()
+            .flatten()
+            .any(|n| n.eq_ignore_ascii_case(name));
+        if !shadowed {
+            if let Some(idx) = self.ctes.iter().position(|c| c.eq_ignore_ascii_case(name)) {
+                self.found.insert(idx);
+            }
+        }
+    }
+
+    fn reference_set_expr_tables(&mut self, body: &SetExpr) {
+        match body {
+            SetExpr::SetOperation { left, right, .. } => {
+                self.reference_set_expr_tables(left);
+                self.reference_set_expr_tables(right);
+            },
+            SetExpr::Table(tbl) => {
+                if let Some(table_name) = &tbl.table_name {
+                    match &tbl.schema_name {
+                        Some(schema_name) => self.reference(&format!("{schema_name}.{table_name}")),
+                        None => self.reference(table_name),
+                    }
+                }
+            },
+            _ => {},
+        }
+    }
+}
+
+impl VisitorMut for CteReferenceCollector<'_> {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, query: &mut Query) -> ControlFlow<()> {
+        // Visit the CTE bodies here, each with the names it can see, and hide the `WITH` from
+        // the generic traversal until `post_visit_query`.
+        let mut with = query.with.take();
+        let mut names = Vec::new();
+        if let Some(with) = with.as_mut() {
+            let all: Vec<String> = with
+                .cte_tables
+                .iter()
+                .map(|cte| cte.alias.name.value.clone())
+                .collect();
+            for (idx, cte) in with.cte_tables.iter_mut().enumerate() {
+                let visible = if with.recursive {
+                    all.clone()
+                } else {
+                    all[..idx].to_vec()
+                };
+                self.scopes.push(visible);
+                let _ = dyn_visit::visit_mut(&mut *cte.query, self);
+                self.scopes.pop();
+            }
+            names = all;
+        }
+        self.scopes.push(names);
+        self.with_stack.push(with);
+        self.reference_set_expr_tables(&query.body);
+
+        // The CTEs of a parenthesized query stay visible to the clauses wrapping it.
+        let mut inner_names = Vec::new();
+        let mut body = &*query.body;
+        while let SetExpr::Query(inner) = body {
+            if let Some(inner_with) = &inner.with {
+                inner_names.extend(
+                    inner_with
+                        .cte_tables
+                        .iter()
+                        .map(|cte| cte.alias.name.value.clone()),
+                );
+            }
+            body = &inner.body;
+        }
+        if !inner_names.is_empty() {
+            self.scopes.push(inner_names);
+            let _ = dyn_visit::visit_mut(&mut query.order_by, self);
+            let _ = dyn_visit::visit_mut(&mut query.limit_clause, self);
+            let _ = dyn_visit::visit_mut(&mut query.fetch, self);
+            self.scopes.pop();
+            // Already visited; the visitor works on a copy.
+            query.order_by = None;
+            query.limit_clause = None;
+            query.fetch = None;
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, query: &mut Query) -> ControlFlow<()> {
+        self.scopes.pop();
+        query.with = self.with_stack.pop().flatten();
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_table_factor(&mut self, factor: &mut TableFactor) -> ControlFlow<()> {
+        // A name with arguments is a table function.
+        if let TableFactor::Table {
+            name, args: None, ..
+        } = factor
+        {
+            self.reference(&object_name_to_string(name));
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// The indices of the CTEs in `ctes` that `query` reads.
+pub(crate) fn referenced_ctes(query: &Query, ctes: &[String]) -> PlHashSet<usize> {
+    let mut collector = CteReferenceCollector {
+        ctes,
+        scopes: Vec::new(),
+        with_stack: Vec::new(),
+        found: PlHashSet::new(),
+    };
+    // The visitor takes each `WITH` out while visiting, so it works on a copy.
+    let _ = dyn_visit::visit_mut(&mut query.clone(), &mut collector);
+    collector.found
+}
+
+// ---------------------------------------------------------------------------
 // WindowFunctionFinder
 // ---------------------------------------------------------------------------
 
@@ -378,7 +518,7 @@ impl SQLVisitor for WindowFunctionFinder {
 
 /// Check if a SQL expression contains explicit window functions.
 pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
-    expr.visit(&mut WindowFunctionFinder).is_break()
+    dyn_visit::visit(expr, &mut WindowFunctionFinder).is_break()
 }
 
 // ---------------------------------------------------------------------------
@@ -422,7 +562,7 @@ impl SQLVisitor for ColumnRefFinder {
 /// Check if a SQL expression references any column (as opposed to being a
 /// constant expression composed only of literals/operators/functions).
 pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
-    expr.visit(&mut ColumnRefFinder).is_break()
+    dyn_visit::visit(expr, &mut ColumnRefFinder).is_break()
 }
 
 /// Whether this expression node is itself a subquery, in any of its forms.
@@ -515,38 +655,6 @@ pub(crate) fn collect_grouping_calls(expr: &SQLExpr) -> Vec<Vec<SQLExpr>> {
         subquery_depth: 0,
         calls: Vec::new(),
     };
-    let _ = expr.visit(&mut collector);
+    let _ = dyn_visit::visit(expr, &mut collector);
     collector.calls
-}
-
-// ---------------------------------------------------------------------------
-// TableRegisteringFinder
-// ---------------------------------------------------------------------------
-
-/// Visitor that detects a relation whose execution inserts into the context's table map:
-/// an aliased derived table, an aliased `UNNEST`, or a table function.
-struct TableRegisteringFinder;
-
-impl SQLVisitor for TableRegisteringFinder {
-    type Break = ();
-
-    fn pre_visit_table_factor(&mut self, table_factor: &TableFactor) -> ControlFlow<Self::Break> {
-        let registers = match table_factor {
-            TableFactor::Derived { alias, .. } | TableFactor::UNNEST { alias, .. } => {
-                alias.is_some()
-            },
-            TableFactor::Table { args, .. } => args.is_some(),
-            _ => false,
-        };
-        if registers {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        }
-    }
-}
-
-/// Check whether executing `stmt` registers a relation into the context's table map.
-pub(crate) fn statement_registers_table(stmt: &Statement) -> bool {
-    stmt.visit(&mut TableRegisteringFinder).is_break()
 }

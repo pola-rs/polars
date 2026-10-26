@@ -4,6 +4,7 @@ import operator
 import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any
 
@@ -32,7 +33,7 @@ from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import EngineType, PolarsIntegerType
+    from polars._typing import EngineType, PolarsDataType, PolarsIntegerType
 
 
 @pytest.mark.parametrize(
@@ -241,6 +242,95 @@ def test_floor_division_float_int_consistency() -> None:
     assert (pl.Series(a, dtype=pl.Int32) // 5).to_list() == list(
         (a.astype(int) // 5).astype(int)
     )
+
+
+def test_truncdiv_int() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [7, -7, 7, -7, -128, -128, 5, None],
+            "b": [2, 2, -2, -2, 2, -1, 0, 1],
+        },
+        schema={"a": pl.Int8, "b": pl.Int8},
+    )
+    # `MIN // -1` wraps and division by zero is null, as for `floordiv`.
+    expected = pl.Series("a", [3, -3, -3, 3, -64, -128, None, None], dtype=pl.Int8)
+    assert_series_equal(
+        lf.select(pl.col("a").truncdiv(pl.col("b"))).collect().to_series(), expected
+    )
+
+
+@pytest.mark.parametrize(("dtype", "bits"), [(pl.Int64, 64), (pl.Int128, 128)])
+def test_truncdiv_signed_min(dtype: pl.DataType, bits: int) -> None:
+    minimum = -(2 ** (bits - 1))
+    lf = pl.LazyFrame(
+        {"a": [minimum, minimum], "b": [2, 3]}, schema={"a": dtype, "b": dtype}
+    )
+    out = lf.select(pl.col("a").truncdiv(pl.col("b"))).collect().to_series()
+    assert out.to_list() == [minimum // 2, -(-minimum // 3)]
+
+
+def test_truncdiv_float() -> None:
+    lf = pl.LazyFrame(
+        {"a": [7.0, -7.0, -7.5, 1.0, -1.0, 0.0], "b": [2.0, 2.0, 2.0, 0.0, 0.0, 0.0]}
+    )
+    out = lf.select(pl.col("a").truncdiv(pl.col("b"))).collect().to_series()
+    expected = pl.Series(
+        "a", [3.0, -3.0, -3.0, float("inf"), float("-inf"), float("nan")]
+    )
+    assert_series_equal(out, expected)
+
+
+def test_truncdiv_decimal() -> None:
+    lf = pl.LazyFrame(
+        {"a": [PyDecimal("7.50"), PyDecimal("-7.50")]},
+        schema={"a": pl.Decimal(10, 2)},
+    )
+    out = lf.select(pl.col("a").truncdiv(2)).collect().to_series()
+    assert out.dtype == lf.select(pl.col("a") // 2).collect_schema()["a"]
+    assert out.to_list() == [PyDecimal("3.00"), PyDecimal("-3.00")]
+    with pytest.raises(pl.exceptions.ComputeError, match="division by zero"):
+        lf.select(pl.col("a").truncdiv(PyDecimal("0"))).collect()
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        (pl.Int8, pl.UInt8),
+        (pl.Int32, pl.Int64),
+        (pl.Int8, pl.UInt64),
+        (pl.Int32, pl.Float32),
+        (pl.Float32, pl.UInt8),
+        (pl.Decimal(10, 2), pl.Int16),
+        (pl.Decimal(10, 2), pl.Decimal(12, 4)),
+        (pl.Decimal(10, 2), pl.Float64),
+    ],
+)
+def test_truncdiv_dtype_matches_floordiv(left: pl.DataType, right: pl.DataType) -> None:
+    lf = pl.LazyFrame({"a": [-7, 7], "b": [2, 2]}).cast({"a": left, "b": right})
+    floor = lf.select(pl.col("a") // pl.col("b"), lit=pl.col("a") // 2)
+    trunc = lf.select(pl.col("a").truncdiv(pl.col("b")), lit=pl.col("a").truncdiv(2))
+    assert_schema_equal(trunc.collect_schema(), floor.collect_schema())
+    out = trunc.collect()
+    assert_schema_equal(out.schema, floor.collect().schema)
+    assert out["a"].cast(pl.Float64).to_list() == [-3.0, 3.0]
+
+
+def test_truncdiv_nested() -> None:
+    df = pl.DataFrame(
+        {"l": [[7, -7]], "s": [{"x": -7, "y": 7}]},
+        schema={
+            "l": pl.List(pl.Int64),
+            "s": pl.Struct({"x": pl.Int64, "y": pl.Int64}),
+        },
+    )
+    out = df.lazy().select(
+        pl.col("l").truncdiv(2),
+        pl.col("l").cast(pl.Array(pl.Int64, 2)).truncdiv(2).alias("arr"),
+        pl.col("s").truncdiv(pl.lit({"x": 2, "y": 2})),
+    )
+    assert out.collect().to_dicts() == [
+        {"l": [3, -3], "arr": [3, -3], "s": {"x": -3, "y": 3}}
+    ]
 
 
 def test_series_expr_arithm() -> None:
@@ -1212,3 +1302,45 @@ def test_string_numeric_arithmetic_raises(
 def test_string_add_concatenates(other: Any, expected: list[str]) -> None:
     s = pl.Series(["a"])
     assert (s + other).to_list() == expected
+
+
+@pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32])
+def test_truediv_int_literal_float_schema(float_dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"f": [4.0]}, schema={"f": float_dtype}).select(
+        f_lit=pl.col.f / 2,
+        lit_f=2 / pl.col.f,
+    )
+    expected = pl.DataFrame(
+        {"f_lit": [2.0], "lit_f": [0.5]},
+        schema={"f_lit": float_dtype, "lit_f": float_dtype},
+    )
+    assert_schema_equal(lf.collect_schema(), expected.schema)
+    assert_frame_equal(lf.collect(), expected)
+
+
+@pytest.mark.parametrize("float_dtype", [pl.Float16, pl.Float32, pl.Float64])
+def test_truediv_float_decimal_schema(float_dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame(
+        {"f": [3.0], "d": [Decimal("1.50")]},
+        schema={"f": float_dtype, "d": pl.Decimal(10, 2)},
+    ).select(
+        f_d=pl.col.f / pl.col.d,
+        d_f=pl.col.d / pl.col.f,
+    )
+    expected = pl.DataFrame(
+        {"f_d": [2.0], "d_f": [0.5]},
+        schema={"f_d": pl.Float64, "d_f": pl.Float64},
+    )
+    assert_schema_equal(lf.collect_schema(), expected.schema)
+    assert_frame_equal(lf.collect(), expected)
+
+
+def test_reflected_arithmetic_series_27752() -> None:
+    lhs = pl.Series("lhs", [2, 3, 4])
+    rhs = pl.Series("rhs", [-5, 7, 9])
+    assert_series_equal(lhs.__rsub__(rhs), rhs - lhs)
+    assert_series_equal(lhs.__rtruediv__(rhs), rhs / lhs)
+    assert_series_equal(lhs.__rfloordiv__(rhs), rhs // lhs)
+    assert_series_equal(lhs.__rmod__(rhs), rhs % lhs)
+    assert_series_equal(lhs.__rpow__(rhs), rhs**lhs)
+    assert_series_equal(lhs.__rsub__(np.array([5, 7, 9])), pl.Series("lhs", [3, 4, 5]))

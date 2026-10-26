@@ -89,30 +89,22 @@ def test_sql_defers_with_case_insensitive_table_name() -> None:
     ]
 
 
-def test_unnest_alias_stays_registered() -> None:
+def test_unnest_alias_is_not_registered() -> None:
     with pl.SQLContext(eager=True) as ctx:
         assert ctx.execute(
             "SELECT x FROM UNNEST([1,2,3]) AS u(x)"
-        ).to_series().to_list() == [
-            1,
-            2,
-            3,
-        ]
-        assert "u" in ctx.tables()
+        ).to_series().to_list() == [1, 2, 3]
+        assert ctx.tables() == []
 
 
-def test_table_function_stays_registered(tmp_path: Path) -> None:
+def test_table_function_is_not_registered(tmp_path: Path) -> None:
     path = tmp_path / "data.csv"
     path.write_text("a\n1\n2\n")
 
     with pl.SQLContext(eager=True) as ctx:
-        ctx.execute(f"SELECT a FROM read_csv('{path.as_posix()}')")
-
-        # the name a table function registers under is the path it was given, whose
-        # spelling is platform-dependent; only the registration itself matters here
-        tables = ctx.tables()
-        assert len(tables) == 1
-        assert tables[0].endswith("data.csv")
+        res = ctx.execute(f"SELECT a FROM read_csv('{path.as_posix()}')")
+        assert res.to_series().to_list() == [1, 2]
+        assert ctx.tables() == []
 
 
 def test_quantified_subquery_survives_roundtrip() -> None:

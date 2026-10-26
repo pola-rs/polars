@@ -96,6 +96,7 @@ dependencies = [
  "strum_macros 0.27.2",
  "thiserror",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -1065,9 +1066,9 @@ dependencies = [
 
 [[package]]
 name = "clipboard-win"
-version = "5.4.1"
+version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
+checksum = "052af7878466feccda12ba7a6a67d019d712f296809559b47c12c8cc196d3a9a"
 dependencies = [
  "error-code",
 ]
@@ -1342,9 +1343,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
 dependencies = [
  "cmov",
 ]
@@ -3121,7 +3122,6 @@ dependencies = [
  "strum_macros 0.28.0",
  "tokio",
  "version_check",
- "zstd",
 ]
 
 [[package]]
@@ -3534,6 +3534,7 @@ dependencies = [
  "rand 0.10.2",
  "rand_distr",
  "thread_local",
+ "tikv-jemalloc-sys",
  "tikv-jemallocator",
  "tokio",
  "uuid",
@@ -3614,7 +3615,6 @@ dependencies = [
  "snap",
  "streaming-decompression",
  "xxhash-rust",
- "zstd",
 ]
 
 [[package]]
@@ -3752,7 +3752,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "either",
  "libc",
@@ -3763,7 +3763,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "either",
  "libc",
@@ -3774,7 +3774,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "either",
  "libc",
@@ -3800,6 +3800,7 @@ name = "polars-sql"
 version = "0.55.1"
 dependencies = [
  "bitflags",
+ "chrono",
  "hex",
  "polars-compute",
  "polars-core",
@@ -3941,6 +3942,7 @@ dependencies = [
  "tokio",
  "uuid",
  "version_check",
+ "zstd",
 ]
 
 [[package]]
@@ -5421,9 +5423,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.53.1"
+version = "1.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
 dependencies = [
  "bytes",
  "libc",

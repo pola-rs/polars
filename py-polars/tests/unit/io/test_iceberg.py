@@ -17,7 +17,7 @@ import uuid
 import warnings
 import zoneinfo
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
@@ -62,6 +62,7 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
+    TimestampNanoType,
     TimestampType,
     TimestamptzType,
     TimeType,
@@ -799,8 +800,6 @@ class _TableDataAllTypes:
 
     @staticmethod
     def new(*, exclude_uuid: bool = False) -> _TableDataAllTypes:
-        from datetime import time
-
         include_decimal_and_fixed = parse_version(pyiceberg.__version__) >= (0, 10, 0)
         next_field_id = partial(next, itertools.count(1))
 
@@ -947,6 +946,251 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
     )
 
 
+def _scan_sorted(tbl: pyiceberg.table.Table) -> pl.DataFrame:
+    tbl.refresh()
+    return pl.scan_iceberg(tbl).collect().sort(pl.all(), nulls_last=True)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "overwrite_filter",
+    [
+        "a != 2",
+        pyiceberg.expressions.NotEqualTo("a", 2),  # type: ignore[call-arg, arg-type]
+        pl.col("a") != 2,
+    ],
+)
+def test_sink_iceberg_overwrite_filter(tmp_path: Path, overwrite_filter: Any) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()), NestedField(2, "s", StringType())
+        ),
+    )
+    pl.DataFrame({"a": [1, 2, None], "s": ["x", "y", "z"]}).lazy().sink_iceberg(
+        tbl, mode="append"
+    )
+    snapshot_count = len(tbl.metadata.snapshots)
+
+    pl.DataFrame({"a": [5], "s": ["new"]}).lazy().sink_iceberg(
+        tbl, mode="overwrite", overwrite_filter=overwrite_filter
+    )
+
+    # Null does not match `a != 2`, same as a Polars filter.
+    assert_frame_equal(
+        _scan_sorted(tbl),
+        pl.DataFrame({"a": [2, 5, None], "s": ["y", "new", "z"]}),
+    )
+    # The delete and the append are committed together.
+    new_snapshots = tbl.metadata.snapshots[snapshot_count:]
+    assert [s.summary.operation.value for s in new_snapshots] == [  # type: ignore[union-attr]
+        "overwrite",
+        "append",
+    ]
+    assert len({s.sequence_number for s in new_snapshots}) == 2
+    assert tbl.metadata.snapshot_log[-1].snapshot_id == new_snapshots[-1].snapshot_id
+
+
+def _overwrite_filter_table(
+    tmp_path: Path,
+) -> tuple[pyiceberg.table.Table, pl.DataFrame]:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "s", StringType()),
+            NestedField(3, "d", DateType()),
+            NestedField(4, "f", DoubleType()),
+            NestedField(5, "t", TimestampType()),
+            NestedField(6, "tz", TimestamptzType()),
+            NestedField(7, "n", StructType(NestedField(8, "x", LongType()))),
+        ),
+    )
+    t1, t2 = datetime(2026, 10, 1, 1, 2, 3, 456789), datetime(2026, 10, 2)
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, None, 1, 4],
+            "s": ["x", "y", None, "xz", "y", "x"],
+            "d": [date(2026, 10, 1), None, date(2026, 10, 2)] * 2,
+            "f": [1.0, float("nan"), None, 2.0, 3.0, 4.0],
+            "t": [t1, t2, None] * 2,
+            "tz": pl.Series([t1, None, t2] * 2).dt.replace_time_zone("UTC"),
+            "n": [{"x": 1}, None, {"x": None}] * 2,
+        }
+    )
+    # Multiple files, so that both whole-file deletes and rewrites happen.
+    for i in range(0, df.height, 2):
+        df.slice(i, 2).lazy().sink_iceberg(tbl, mode="append")
+    return tbl, df
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        pl.col("a") == 1,
+        pl.col("a") != 1,
+        pl.col("a") > 1,
+        pl.col("a").is_in([1, 3]),
+        ~pl.col("a").is_in([1, 3]),
+        pl.col("a").is_null(),
+        pl.col("a").is_not_null(),
+        pl.col("a").is_between(1, 3),
+        (pl.col("a") == 1) | (pl.col("a") == 3),
+        (pl.col("a") == 1) | pl.col("a").is_null(),
+        (pl.col("a") == 1) & (pl.col("s") == "x"),
+        (pl.col("a") > 1) & ~(pl.col("s") == "y"),
+        pl.col("s").str.starts_with("x"),
+        pl.col("d") == date(2026, 10, 1),
+        pl.col("d") >= date(2026, 10, 2),
+        (pl.col("d") == date(2026, 10, 1)) & pl.col("s").is_null(),
+        # Nulls in one column must not decide the other side of `|`.
+        (pl.col("a") == 1) | (pl.col("s") == "x"),
+        (pl.col("a") != 1) | (pl.col("s") != "x"),
+        ~((pl.col("a") == 1) & (pl.col("s") == "x")),
+        ~((pl.col("a") > 2) | pl.col("d").is_null()),
+        ~pl.col("s").str.starts_with("x") & (pl.col("d") != date(2026, 10, 2)),
+        pl.col("t") == datetime(2026, 10, 1, 1, 2, 3, 456789),
+        pl.col("t") > datetime(2026, 10, 1, 1, 2, 3, 456789),
+        pl.col("tz")
+        == datetime(2026, 10, 1, 1, 2, 3, 456789, tzinfo=zoneinfo.ZoneInfo("UTC")),
+        pl.col("tz") < datetime(2026, 10, 2, tzinfo=zoneinfo.ZoneInfo("UTC")),
+        pl.col("f") < 2.0,
+        pl.col("f").is_nan(),
+        ~pl.col("f").is_nan(),
+        pl.col("f").is_null() | (pl.col("a") == 1),
+    ],
+)
+def test_sink_iceberg_overwrite_filter_polars_semantics(
+    tmp_path: Path, predicate: pl.Expr
+) -> None:
+    tbl, df = _overwrite_filter_table(tmp_path)
+
+    df.clear().lazy().sink_iceberg(tbl, mode="overwrite", overwrite_filter=predicate)
+
+    assert_frame_equal(
+        _scan_sorted(tbl), df.remove(predicate).sort(pl.all(), nulls_last=True)
+    )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("pass_table", [True, False])
+@pytest.mark.parametrize(
+    ("predicate", "match"),
+    [
+        (pl.col("f") > 1.0, "GreaterThan on floating-point field"),
+        (pl.col("s").str.contains("x"), "unsupported expression"),
+        (pl.col("a") + 1 == 2, "unsupported expression"),
+        (pl.col("a") == pl.col("a"), "cannot convert predicate"),
+        (pl.col("n").struct.field("x") == 1, "has an optional parent"),
+        (pl.col("a"), "must be a single boolean expression"),
+    ],
+)
+def test_sink_iceberg_overwrite_filter_polars_unsupported(
+    tmp_path: Path, predicate: pl.Expr, match: str, pass_table: bool
+) -> None:
+    tbl, df = _overwrite_filter_table(tmp_path)
+    files_before = set(tmp_path.rglob("*.parquet"))
+    target: Any = tbl if pass_table else ".".join(tbl.name())
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        df.lazy().sink_iceberg(
+            target, mode="overwrite", overwrite_filter=predicate, catalog=tbl.catalog
+        )
+
+    # Rejected before any data is written.
+    assert set(tmp_path.rglob("*.parquet")) == files_before
+    assert_frame_equal(_scan_sorted(tbl), df.sort(pl.all(), nulls_last=True))
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_filter_serialization(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    pl.DataFrame({"a": [1, 2]}).lazy().sink_iceberg(tbl, mode="append")
+
+    state = IcebergSinkState.new(tbl, mode="overwrite", overwrite_filter="a = 1")
+    lf = state.attach_sink(pl.LazyFrame({"a": [3]}))
+    pl.LazyFrame.deserialize(io.BytesIO(lf.serialize())).collect()
+
+    assert_frame_equal(_scan_sorted(tbl), pl.DataFrame({"a": [2, 3]}))
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_dynamic_partition_overwrite(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "p", StringType()),
+            NestedField(2, "d", DateType()),
+            NestedField(3, "v", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "p"),
+            PartitionField(2, 1001, IdentityTransform(), "d"),
+        ),
+    )
+    d1, d2 = date(2026, 10, 1), date(2026, 10, 2)
+    pl.DataFrame(
+        {
+            "p": ["a", "a", "b", None, "b"],
+            "d": [d1, d2, d1, d1, None],
+            "v": [1, 2, 3, 4, 5],
+        }
+    ).lazy().sink_iceberg(tbl, mode="append")
+
+    pl.DataFrame(
+        {"p": ["a", None, "b", "c"], "d": [d1, d1, None, d2], "v": [10, 11, 12, 13]}
+    ).lazy().sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
+
+    assert_frame_equal(
+        _scan_sorted(tbl),
+        pl.DataFrame(
+            {
+                "p": ["a", "a", "b", "b", "c", None],
+                "d": [d1, d2, d1, None, d2, d1],
+                "v": [10, 2, 3, 12, 13, 11],
+            }
+        ),
+    )
+
+    # No incoming data: nothing is deleted.
+    pl.DataFrame(
+        schema={"p": pl.String, "d": pl.Date, "v": pl.Int64}
+    ).lazy().sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
+    assert _scan_sorted(tbl).height == 6
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_dynamic_partition_overwrite_nested_source(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(
+                1,
+                "s",
+                StructType(NestedField(2, "x", LongType(), required=True)),
+                required=True,
+            ),
+            NestedField(3, "v", LongType()),
+        ),
+        partition_spec=PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "x")),
+    )
+    df = pl.DataFrame({"s": [{"x": 1}, {"x": 2}], "v": [1, 2]})
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    pl.DataFrame({"s": [{"x": 2}], "v": [20]}).lazy().sink_iceberg(
+        tbl, mode="overwrite", partition_overwrite="dynamic"
+    )
+    assert_frame_equal(
+        _scan_sorted(tbl).select(pl.col("s").struct.field("x"), "v"),
+        pl.DataFrame({"x": [1, 2], "v": [1, 20]}),
+    )
+
+
 @pytest.mark.write_disk
 def test_sink_iceberg_create_if_not_exists(tmp_path: Path) -> None:
     catalog = SqlCatalog(
@@ -995,6 +1239,131 @@ def test_sink_iceberg_create_if_not_exists(tmp_path: Path) -> None:
     lf = state.attach_sink(df.lazy())
     pl.LazyFrame.deserialize(io.BytesIO(lf.serialize())).collect()
     assert_frame_equal(pl.scan_iceberg(catalog.load_table("ns.t2")).collect(), df)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_create_namespace_if_not_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path / 'iceberg_catalog.sqlite'}",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+
+    df = pl.DataFrame({"a": [1, 2]})
+
+    with pytest.raises(pyiceberg.exceptions.NoSuchTableError):
+        df.lazy().sink_iceberg("ns.t", mode="append", catalog=catalog)
+
+    with pytest.raises(pyiceberg.exceptions.NoSuchNamespaceError):
+        df.lazy().sink_iceberg(
+            "ns.t", mode="append", create_if_not_exists=True, catalog=catalog
+        )
+
+    with pytest.raises(ValueError, match="requires create_if_not_exists=True"):
+        df.lazy().sink_iceberg(
+            "ns.t", mode="append", create_namespace_if_not_exists=True, catalog=catalog
+        )
+
+    assert not catalog.namespace_exists("ns")
+
+    df.lazy().sink_iceberg(
+        "ns.t",
+        mode="append",
+        create_if_not_exists=True,
+        create_namespace_if_not_exists=True,
+        catalog=catalog,
+    )
+    assert catalog.namespace_exists("ns")
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("ns.t")).collect(), df)
+
+    # Missing parent namespaces are created first. Like the REST catalog, report a
+    # missing parent as a `RESTError` rather than a `NoSuchNamespaceError`.
+    create_namespace = SqlCatalog.create_namespace
+    created = []
+
+    def create_namespace_requires_parent(
+        self: SqlCatalog, namespace: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        namespace = self.identifier_to_tuple(namespace)
+        if len(namespace) > 1 and not self.namespace_exists(namespace[:-1]):
+            raise pyiceberg.exceptions.RESTError(namespace[:-1])
+        created.append(namespace)
+        return create_namespace(self, namespace, *args, **kwargs)
+
+    monkeypatch.setattr(
+        SqlCatalog, "create_namespace", create_namespace_requires_parent
+    )
+
+    df.lazy().sink_iceberg(
+        "a.b.t",
+        mode="append",
+        create_if_not_exists=True,
+        create_namespace_if_not_exists=True,
+        catalog=catalog,
+    )
+    assert created == [("a",), ("a", "b")]
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("a.b.t")).collect(), df)
+
+    # The retried child create may land with its response lost.
+    def create_namespace_requires_parent_lost_response(
+        self: SqlCatalog, namespace: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        create_namespace_requires_parent(self, namespace, *args, **kwargs)
+        if len(self.identifier_to_tuple(namespace)) > 1:
+            msg = "lost response"
+            raise ConnectionError(msg)
+
+    monkeypatch.setattr(
+        SqlCatalog, "create_namespace", create_namespace_requires_parent_lost_response
+    )
+
+    created.clear()
+    df.lazy().sink_iceberg(
+        "c.d.t",
+        mode="append",
+        create_if_not_exists=True,
+        create_namespace_if_not_exists=True,
+        catalog=catalog,
+    )
+    assert created == [("c",), ("c", "d")]
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("c.d.t")).collect(), df)
+
+    # The namespace create may land with its response lost.
+    def create_namespace_lost_response(
+        self: SqlCatalog, *args: Any, **kwargs: Any
+    ) -> Any:
+        create_namespace(self, *args, **kwargs)
+        msg = "lost response"
+        raise ConnectionError(msg)
+
+    monkeypatch.setattr(SqlCatalog, "create_namespace", create_namespace_lost_response)
+
+    df.lazy().sink_iceberg(
+        "ns2.t",
+        mode="append",
+        create_if_not_exists=True,
+        create_namespace_if_not_exists=True,
+        catalog=catalog,
+    )
+    assert_frame_equal(pl.scan_iceberg(catalog.load_table("ns2.t")).collect(), df)
+
+    # Errors are raised if the namespace was not created.
+    def create_namespace_fails(self: SqlCatalog, *args: Any, **kwargs: Any) -> Any:
+        msg = "create failed"
+        raise ConnectionError(msg)
+
+    monkeypatch.setattr(SqlCatalog, "create_namespace", create_namespace_fails)
+
+    with pytest.raises(ConnectionError, match="create failed"):
+        df.lazy().sink_iceberg(
+            "ns3.t",
+            mode="append",
+            create_if_not_exists=True,
+            create_namespace_if_not_exists=True,
+            catalog=catalog,
+        )
 
 
 @pytest.mark.write_disk
@@ -1117,6 +1486,99 @@ def test_sink_iceberg_create_if_not_exists_dtypes(
     } == {name: c[2] for name, c in columns.items()}
 
     assert_frame_equal(pl.scan_iceberg(tbl).collect(), pl.concat([expected, expected]))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("schema", "partition_spec", "error", "match"),
+    [
+        (
+            IcebergSchema(NestedField(1, "a", LongType())),
+            None,
+            ValueError,
+            "requires a partitioned",
+        ),
+        (
+            IcebergSchema(NestedField(1, "a", DateType())),
+            PartitionSpec(PartitionField(1, 1000, DayTransform(), "a_day")),
+            NotImplementedError,
+            "only supports identity",
+        ),
+        (
+            IcebergSchema(NestedField(1, "a", DoubleType())),
+            PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "a")),
+            NotImplementedError,
+            "floating-point",
+        ),
+        (
+            IcebergSchema(
+                NestedField(
+                    1,
+                    "s",
+                    StructType(NestedField(2, "x", LongType(), required=True)),
+                    required=False,
+                )
+            ),
+            PartitionSpec(PartitionField(2, 1000, IdentityTransform(), "x")),
+            NotImplementedError,
+            "nested within an optional struct",
+        ),
+    ],
+)
+def test_sink_iceberg_dynamic_partition_overwrite_unsupported(
+    tmp_path: Path,
+    schema: IcebergSchema,
+    partition_spec: PartitionSpec | None,
+    error: type[Exception],
+    match: str,
+) -> None:
+    tbl, _ = new_iceberg_table(tmp_path, schema=schema, partition_spec=partition_spec)
+    lf = pl.LazyFrame(schema=pl.Schema(schema.as_arrow()))
+    with pytest.raises(error, match=match):
+        lf.sink_iceberg(tbl, mode="overwrite", partition_overwrite="dynamic")
+    # Rejected before any data is written.
+    assert not list((tmp_path).rglob("*.parquet"))
+
+
+def test_sink_iceberg_dynamic_partition_overwrite_timestamp_ns() -> None:
+    from polars.io.iceberg._sink import _check_dynamic_overwrite_spec
+
+    # Nanosecond timestamps require V3 tables, which PyIceberg cannot write yet.
+    with pytest.raises(NotImplementedError, match="nanosecond"):
+        _check_dynamic_overwrite_spec(
+            PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "t")),
+            IcebergSchema(NestedField(1, "t", TimestampNanoType())),
+        )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_overwrite_filter_validation(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    lf = pl.LazyFrame({"a": [1]})
+
+    with pytest.raises(ValueError, match="require mode='overwrite'"):
+        lf.sink_iceberg(tbl, mode="append", overwrite_filter="a = 1")
+    with pytest.raises(ValueError, match="require mode='overwrite'"):
+        lf.sink_iceberg(tbl, mode="append", partition_overwrite="dynamic")
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        lf.sink_iceberg(
+            tbl,
+            mode="overwrite",
+            overwrite_filter="a = 1",
+            partition_overwrite="dynamic",
+        )
+    with pytest.raises(ValueError, match="cannot be combined"):
+        lf.sink_iceberg(
+            tbl, mode="overwrite", schema_mode="overwrite", overwrite_filter="a = 1"
+        )
+    with pytest.raises(ValueError, match="invalid partition_overwrite"):
+        lf.sink_iceberg(tbl, mode="overwrite", partition_overwrite="static")  # type: ignore[arg-type]
+    # Unknown columns fail when resolving the sink, before writing data.
+    with pytest.raises(ValueError, match="Could not find field"):
+        lf.sink_iceberg(tbl, mode="overwrite", overwrite_filter="b = 1")
+    assert not list((tmp_path).rglob("*.parquet"))
 
 
 @pytest.mark.write_disk
@@ -1806,6 +2268,73 @@ def test_sink_iceberg_parquet_writer_options(tmp_path: Path) -> None:
             ],
             id="year-timestamptz-utc-boundary",
         ),
+        pytest.param(
+            LongType(),
+            BucketTransform(4),
+            [34, -1, 0, 10, 35, -100, 2**63 - 1, -(2**63)],
+            id="bucket-long",
+        ),
+        pytest.param(
+            IntegerType(),
+            BucketTransform(3),
+            pl.Series([34, -1, 0, 2**31 - 1, -(2**31)], dtype=pl.Int32),
+            id="bucket-integer",
+        ),
+        pytest.param(
+            StringType(),
+            BucketTransform(4),
+            ["iceberg", "a", "", "😁", "aa"],
+            id="bucket-string",
+        ),
+        pytest.param(
+            BinaryType(),
+            BucketTransform(4),
+            [b"\x00\x01\x02\x03", b"", b"\xff", b"abcde"],
+            id="bucket-binary",
+        ),
+        pytest.param(
+            DecimalType(9, 2),
+            BucketTransform(4),
+            pl.Series(
+                [
+                    D("14.20"),
+                    D("0"),
+                    D("-0.01"),
+                    D("1.28"),
+                    D("-1.29"),
+                    D("9999999.99"),
+                ],
+                dtype=pl.Decimal(9, 2),
+            ),
+            id="bucket-decimal",
+        ),
+        pytest.param(
+            DateType(),
+            BucketTransform(4),
+            [date(2017, 11, 16), date(1969, 12, 31), date(1970, 1, 1)],
+            id="bucket-date",
+        ),
+        pytest.param(
+            TimeType(),
+            BucketTransform(4),
+            [time(22, 31, 8), time(0), time(23, 59, 59, 999999)],
+            id="bucket-time",
+        ),
+        pytest.param(
+            TimestampType(),
+            BucketTransform(4),
+            [datetime(2017, 11, 16, 22, 31, 8), datetime(1969, 12, 31, 23, 59, 59)],
+            id="bucket-timestamp",
+        ),
+        pytest.param(
+            TimestamptzType(),
+            BucketTransform(4),
+            [
+                datetime(2017, 11, 16, 22, 31, 8, tzinfo=zoneinfo.ZoneInfo("UTC")),
+                datetime(1969, 12, 31, 23, 59, tzinfo=zoneinfo.ZoneInfo("UTC")),
+            ],
+            id="bucket-timestamptz",
+        ),
     ],
 )
 @pytest.mark.write_disk
@@ -1813,7 +2342,7 @@ def test_sink_iceberg_partitioned_transforms(
     tmp_path: Path,
     iceberg_type: Any,
     transform: Any,
-    values: list[Any],
+    values: list[Any] | pl.Series,
 ) -> None:
     tbl, _ = new_iceberg_table(
         tmp_path,
@@ -1830,9 +2359,152 @@ def test_sink_iceberg_partitioned_transforms(
     df.lazy().sink_iceberg(tbl, mode="append")
 
     assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
-    expected_partitions = {transform.transform(iceberg_type)(value) for value in values}
-    actual_partitions = {task.file.partition[0] for task in tbl.scan().plan_files()}
-    assert actual_partitions == expected_partitions
+    partition_of = transform.transform(iceberg_type)
+    expected_partitions = [partition_of(value) for value in values]
+    tasks = list(tbl.scan().plan_files())
+    assert {task.file.partition[0] for task in tasks} == set(expected_partitions)
+    # Every row is in the file of its partition.
+    for task in tasks:
+        with tbl.io.new_input(task.file.file_path).open() as file:
+            rows = pq.read_table(file).column("value").to_pylist()
+        assert {expected_partitions[i] for i in rows} == {task.file.partition[0]}
+
+
+@pytest.mark.parametrize(
+    ("iceberg_type", "values"),
+    [
+        pytest.param(UUIDType(), [uuid.UUID(int=i).bytes for i in range(8)], id="uuid"),
+        pytest.param(FixedType(3), [bytes([i, i, i]) for i in range(8)], id="fixed"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_bucket_fixed_binary(
+    tmp_path: Path, iceberg_type: Any, values: list[bytes]
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "partition_col", iceberg_type),
+            NestedField(2, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, BucketTransform(4), "partition_col_bucket")
+        ),
+    )
+    df = pl.DataFrame(
+        {"partition_col": values, "value": range(len(values))},
+        schema={"partition_col": pl.Binary, "value": pl.Int64},
+    )
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
+    bucket = BucketTransform(4).transform(iceberg_type)
+    expected_partitions = [bucket(v) for v in values]
+    tasks = list(tbl.scan().plan_files())
+    assert {task.file.partition[0] for task in tasks} == set(expected_partitions)
+    assert len(tasks) > 1
+    for task in tasks:
+        with tbl.io.new_input(task.file.file_path).open() as file:
+            rows = pq.read_table(file).column("value").to_pylist()
+        assert {expected_partitions[i] for i in rows} == {task.file.partition[0]}
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_bucket(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "nested", StructType(NestedField(3, "id", LongType()))),
+            NestedField(2, "s", StringType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(3, 1000, BucketTransform(8), "id_bucket"),
+            PartitionField(2, 1001, BucketTransform(3), "s_bucket"),
+        ),
+    )
+    n = 1000
+    df = pl.DataFrame(
+        {
+            "nested": pl.int_range(n, eager=True).to_frame("id").to_struct(),
+            "s": pl.int_range(n, eager=True).cast(pl.String),
+        }
+    ).with_columns(pl.col("nested").struct.with_fields(pl.field("id") * 7919 - 9))
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), df, check_row_order=False)
+
+    id_bucket = BucketTransform(8).transform(LongType())
+    s_bucket = BucketTransform(3).transform(StringType())
+    tasks = list(tbl.scan().plan_files())
+    assert len(tasks) == 24
+    for task in tasks:
+        with tbl.io.new_input(task.file.file_path).open() as file:
+            file_df = pl.from_arrow(pq.read_table(file))
+        assert isinstance(file_df, pl.DataFrame)
+        assert {
+            (id_bucket(row["nested"]["id"]), s_bucket(row["s"]))
+            for row in file_df.iter_rows(named=True)
+        } == {(task.file.partition[0], task.file.partition[1])}
+
+    # PyIceberg prunes files by their bucket.
+    some_id = df["nested"].struct.field("id")[123]
+    tasks = list(tbl.scan(row_filter=f"nested.id == {some_id}").plan_files())
+    assert len(tasks) == 3
+    assert {task.file.partition[0] for task in tasks} == {id_bucket(some_id)}
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="pyiceberg")
+        .filter(pl.col("nested").struct.field("id") == some_id)
+        .collect(),
+        df[123],
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_bucket_schema_merge(tmp_path: Path) -> None:
+    # The partition keys are of the data as written, with the merged schema.
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "c", DecimalType(9, 2))),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, BucketTransform(4), "c_bucket")
+        ),
+    )
+    # Values that only fit the widened decimal(18, 2).
+    values = [D("1234567890.12"), D("-1234567890.12"), D("1.23")]
+    pl.LazyFrame({"c": pl.Series(values, dtype=pl.Decimal(18, 2))}).sink_iceberg(
+        tbl, mode="append", schema_mode="merge"
+    )
+
+    tbl.refresh()
+    assert tbl.schema().find_field(1).field_type == DecimalType(18, 2)
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("c"),
+        pl.DataFrame({"c": pl.Series(values, dtype=pl.Decimal(18, 2))}).sort("c"),
+    )
+    bucket = BucketTransform(4).transform(DecimalType(18, 2))
+    assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {
+        bucket(v) for v in values
+    }
+
+
+def test_sink_iceberg_bucket_timestamp_ns() -> None:
+    from pyiceberg.types import TimestamptzNanoType
+
+    from polars.io.iceberg._sink import _bucket_transform_expr
+
+    nanos = [0, 1, 999, 1000, -1, -999, -1000, -1001, 1510871468123456789]
+    for iceberg_type, time_zone in [
+        (TimestampNanoType(), None),
+        (TimestamptzNanoType(), "UTC"),
+    ]:
+        bucket = BucketTransform(16).transform(iceberg_type)
+        s = pl.Series("a", nanos).cast(pl.Datetime("ns", time_zone))
+        expr = _bucket_transform_expr(pl.col("a"), iceberg_type, 16)
+        assert expr is not None
+        assert s.to_frame().select(expr).to_series().to_list() == [
+            bucket(v) for v in nanos
+        ]
 
 
 @pytest.mark.write_disk
@@ -2133,8 +2805,8 @@ def test_sink_iceberg_partitioned_nested_source_overwrite(tmp_path: Path) -> Non
 @pytest.mark.parametrize(
     ("iceberg_type", "transform", "values"),
     [
-        pytest.param(LongType(), BucketTransform(16), [1, 2], id="bucket"),
         pytest.param(LongType(), VoidTransform(), [1, 2], id="void"),
+        pytest.param(DoubleType(), BucketTransform(4), [1.0, 2.0], id="bucket-double"),
         pytest.param(
             DecimalType(10, 2),
             TruncateTransform(10),
@@ -3202,6 +3874,40 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
     expected = df.vstack(df)
     actual = pl.scan_iceberg(table).collect()
     assert_frame_equal(expected, actual, check_dtypes=False)
+
+
+@pytest.mark.write_disk
+def test_write_iceberg_required_columns(tmp_path: Path) -> None:
+    catalog = SqlCatalog(
+        "default", uri="sqlite:///:memory:", warehouse=format_file_uri_iceberg(tmp_path)
+    )
+    catalog.create_namespace("ns")
+    tbl = catalog.create_table(
+        "ns.t",
+        IcebergSchema(
+            NestedField(1, "id", LongType(), required=True),
+            NestedField(2, "v", LongType(), required=False),
+        ),
+    )
+
+    pl.DataFrame({"id": [1, 2], "v": [None, 2]}).write_iceberg(tbl, mode="append")
+    # the null is outside the slice
+    pl.DataFrame({"id": [None, 3], "v": [3, 3]}).slice(1).write_iceberg(
+        tbl, mode="append"
+    )
+    pl.DataFrame({"id": [4]}).write_iceberg(tbl, mode="append")
+    with pytest.raises(pl.exceptions.SchemaError, match="column 'id' contains nulls"):
+        pl.DataFrame({"id": [None, 5]}).write_iceberg(tbl, mode="append")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("id"),
+        pl.DataFrame({"id": [1, 2, 3, 4], "v": [None, 2, 3, None]}),
+    )
+
+    pl.DataFrame({"id": [6], "v": [6]}).write_iceberg(tbl, mode="overwrite")
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect(), pl.DataFrame({"id": [6], "v": [6]})
+    )
 
 
 @pytest.mark.write_disk
@@ -8311,3 +9017,87 @@ def test_scan_iceberg_reader_pyiceberg_negated_predicates_keep_nulls(
             df.filter(predicate),
             check_row_order=False,
         )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "iceberg_type", "values"),
+    [
+        (pl.Int8, IntegerType(), [0, 1, -1, 127, -128]),
+        (pl.Int32, IntegerType(), [0, 34, -1, 2**31 - 1, -(2**31)]),
+        (pl.Int64, LongType(), [0, 34, -1, 2**63 - 1, -(2**63)]),
+        (pl.UInt32, LongType(), [0, 34, 2**32 - 1]),
+        (pl.UInt64, LongType(), [0, 34, 2**63 - 1]),
+        (pl.Date, DateType(), [date(2017, 11, 16), date(1969, 12, 31), date(1, 1, 1)]),
+        (pl.Time, TimeType(), [time(22, 31, 8), time(0), time(23, 59, 59, 999999)]),
+        *[
+            (
+                dtype,
+                TimestampType(),
+                [datetime(2017, 11, 16, 22, 31, 8), datetime(1969, 12, 31, 23, 59)],
+            )
+            for dtype in [pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")]
+        ],
+        (
+            pl.Datetime("us", "UTC"),
+            TimestamptzType(),
+            [datetime(2017, 11, 16, 22, 31, 8, tzinfo=zoneinfo.ZoneInfo("UTC"))],
+        ),
+        (
+            pl.Decimal(38, 2),
+            DecimalType(38, 2),
+            [
+                D("14.20"),
+                D("0"),
+                D("-0.01"),
+                D("1.27"),
+                D("1.28"),
+                D("-1.28"),
+                D("-1.29"),
+                D("999999999999999999999999999999999999.99"),
+                D("-999999999999999999999999999999999999.99"),
+            ],
+        ),
+        (pl.String, StringType(), ["iceberg", "", "a", "😁", "abcd", "abcde"]),
+        (pl.Binary, BinaryType(), [b"\x00\x01\x02\x03", b"", b"\xff", b"abcdefg"]),
+    ],
+)
+def test_mm3_hash_matches_iceberg_bucket_hash(
+    dtype: pl.DataType, iceberg_type: Any, values: list[Any]
+) -> None:
+    hash_func = BucketTransform(16).transform(iceberg_type, bucket=False)
+
+    s = pl.Series("a", [*values, None], dtype=dtype)
+    expected = pl.Series("a", [*map(hash_func, values), None], dtype=pl.Int32)
+
+    assert_series_equal(
+        s.to_frame().select(pl.col("a")._mm3_hash()).to_series(), expected
+    )
+    assert_series_equal(
+        s.to_frame().lazy().select(pl.col("a")._mm3_hash()).collect().to_series(),
+        expected,
+    )
+
+
+def test_mm3_hash_timestamp_ns_truncates_to_micros() -> None:
+    hash_func = BucketTransform(16).transform(TimestampNanoType(), bucket=False)
+    nanos = [0, 1, 999, 1000, -1, -999, -1000, -1001, 1510871468123456789]
+
+    s = pl.Series("a", nanos, dtype=pl.Int64).cast(pl.Datetime("ns"))
+    expected = pl.Series("a", [hash_func(v) for v in nanos], dtype=pl.Int32)
+
+    assert_series_equal(
+        s.to_frame().select(pl.col("a")._mm3_hash()).to_series(), expected
+    )
+
+
+def test_mm3_hash_null_and_unsupported() -> None:
+    assert_series_equal(
+        pl.select(pl.lit(None)._mm3_hash()).to_series(),
+        pl.Series("literal", [None], dtype=pl.Int32),
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(pl.lit(1.0)._mm3_hash())
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.LazyFrame({"a": [1.0]}).select(pl.col("a")._mm3_hash()).collect_schema()

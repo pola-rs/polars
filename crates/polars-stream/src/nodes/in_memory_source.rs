@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -52,9 +53,7 @@ impl ComputeNode for InMemorySourceNode {
 
         if self.morsel_size == 0 {
             let len = self.source.as_ref().unwrap().height();
-            let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
-            let morsel_count = ideal_morsel_count.next_multiple_of(state.num_pipelines);
-            self.morsel_size = len.div_ceil(morsel_count).max(1);
+            self.morsel_size = in_memory_morsel_size(len, state.num_pipelines);
             self.seq = AtomicU64::new(0);
         }
 
@@ -96,40 +95,70 @@ impl ComputeNode for InMemorySourceNode {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);
         let senders = send_ports[0].take().unwrap().parallel();
         let source = self.source.as_ref().unwrap();
+        let morsel_size = self.morsel_size;
 
         // TODO: can this just be serial, using the work distributor?
-        let source_token = SourceToken::new();
-        for mut send in senders {
-            let slf = &*self;
-            let source_token = source_token.clone();
-            join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                let wait_group = WaitGroup::default();
-                loop {
-                    let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
-                    let offset = (seq as usize * slf.morsel_size) as i64;
-                    let df = source.slice(offset, slf.morsel_size);
+        spawn_in_memory_senders(
+            scope,
+            senders,
+            &self.seq,
+            self.seq_offset,
+            move |seq| {
+                let df = source.slice((seq as usize * morsel_size) as i64, morsel_size);
+                // TODO: remove this 'always sent at least one morsel'
+                // condition, see update_state.
+                std::future::ready((df.height() > 0 || seq == 0).then_some(df))
+            },
+            join_handles,
+        );
+    }
+}
 
-                    // TODO: remove this 'always sent at least one morsel'
-                    // condition, see update_state.
-                    if df.height() == 0 && seq > 0 {
-                        break;
-                    }
+/// The size of the morsels to split `len` rows in memory into.
+pub fn in_memory_morsel_size(len: usize, num_pipelines: usize) -> usize {
+    let ideal_morsel_count = (len / get_ideal_morsel_size()).max(1);
+    let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
+    len.div_ceil(morsel_count).max(1)
+}
 
-                    let morsel_seq = MorselSeq::new(seq).offset_by(slf.seq_offset);
-                    let mut morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
-                    morsel.set_consume_token(wait_group.token());
-                    if send.send(morsel).await.is_err() {
-                        break;
-                    }
+/// Spawns a task for every sender. Each task takes the next sequence number from `seq` and sends
+/// the frame that `get_df` gives for it, until `get_df` gives `None`.
+pub fn spawn_in_memory_senders<'env, 's, F, Fut>(
+    scope: &'s TaskScope<'s, 'env>,
+    senders: Vec<PortSender>,
+    seq: &'s AtomicU64,
+    seq_offset: MorselSeq,
+    get_df: F,
+    join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+) where
+    F: Fn(u64) -> Fut + Copy + Send + 's,
+    Fut: Future<Output = Option<DataFrame>> + Send + 's,
+{
+    let source_token = SourceToken::new();
+    for mut send in senders {
+        let source_token = source_token.clone();
+        join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+            let wait_group = WaitGroup::default();
+            loop {
+                let seq = seq.fetch_add(1, Ordering::Relaxed);
+                let Some(df) = get_df(seq).await else {
+                    break;
+                };
 
-                    wait_group.wait().await;
-                    if source_token.stop_requested() {
-                        break;
-                    }
+                let morsel_seq = MorselSeq::new(seq).offset_by(seq_offset);
+                let mut morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
+                morsel.set_consume_token(wait_group.token());
+                if send.send(morsel).await.is_err() {
+                    break;
                 }
 
-                Ok(())
-            }));
-        }
+                wait_group.wait().await;
+                if source_token.stop_requested() {
+                    break;
+                }
+            }
+
+            Ok(())
+        }));
     }
 }

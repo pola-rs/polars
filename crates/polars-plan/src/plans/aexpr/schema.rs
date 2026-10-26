@@ -537,6 +537,7 @@ pub(crate) fn get_struct_numeric_dtype(
                         Operator::Multiply => NumericListOp::mul(),
                         Operator::TrueDivide | Operator::RustDivide => NumericListOp::div(),
                         Operator::FloorDivide => NumericListOp::floor_div(),
+                        Operator::TruncDivide => NumericListOp::trunc_div(),
                         Operator::Modulus => NumericListOp::rem(),
                         _ => unreachable!(),
                     };
@@ -894,6 +895,14 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (String, _) | (_, String) => polars_bail!(
             InvalidOperation: "division with 'String' datatypes is not allowed"
         ),
+        #[cfg(feature = "dtype-decimal")]
+        (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_primitive_numeric() => {
+            if dtype.is_float() {
+                Float64
+            } else {
+                Decimal(DEC128_MAX_PREC, *scale)
+            }
+        },
         #[cfg(feature = "dtype-struct")]
         (Struct(a), Struct(b)) => {
             polars_ensure!(a.len() == b.len() || b.len() == 1,
@@ -951,7 +960,9 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
         (Float16, UInt16 | Int16) => Float32,
         #[cfg(feature = "dtype-f16")]
-        (Float16, Unknown(UnknownKind::Int(_))) => Float16,
+        (Float16, Unknown(UnknownKind::Int(_))) | (Unknown(UnknownKind::Int(_)), Float16) => {
+            Float16
+        },
         #[cfg(feature = "dtype-f16")]
         (Float16, other) if other.is_integer() => Float64,
         #[cfg(feature = "dtype-f16")]
@@ -964,21 +975,15 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Float32, UInt8 | Int8) => Float32,
         #[cfg(feature = "dtype-u16")]
         (Float32, UInt16 | Int16) => Float32,
-        (Float32, Unknown(UnknownKind::Int(_))) => Float32,
+        (Float32, Unknown(UnknownKind::Int(_))) | (Unknown(UnknownKind::Int(_)), Float32) => {
+            Float32
+        },
         (Float32, other) if other.is_integer() => Float64,
         (Float32, Float64) => Float64,
         (Float32, _) => Float32,
         #[cfg(feature = "dtype-decimal")]
         (Decimal(_, scale_left), Decimal(_, scale_right)) => {
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
-        },
-        #[cfg(feature = "dtype-decimal")]
-        (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_primitive_numeric() => {
-            if dtype.is_float() {
-                Float64
-            } else {
-                Decimal(DEC128_MAX_PREC, *scale)
-            }
         },
         #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]
         (UInt8 | Int8, Float16) => Float16,

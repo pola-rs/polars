@@ -365,6 +365,12 @@ pub fn resolve_join(
     if let JoinType::AsOf(options) = &mut options.args.how {
         use polars_core::utils::polars_arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 
+        let key_dtype = || {
+            ctxt.expr_arena
+                .get(left_on[0].node())
+                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))
+        };
+
         // prepare the tolerance
         // we must ensure that we use the right units
         if let Some(tol) = &options.tolerance_str {
@@ -375,11 +381,7 @@ pub fn resolve_join(
                 consider using 4 weeks"
             );
             use DataType::*;
-            match ctxt
-                .expr_arena
-                .get(left_on[0].node())
-                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))?
-            {
+            match key_dtype()? {
                 Datetime(tu, _) | Duration(tu) => {
                     let tolerance = duration.duration(tu);
                     options.tolerance = Some(Scalar::from(tolerance))
@@ -398,6 +400,12 @@ pub fn resolve_join(
                     )
                 },
             }
+        }
+
+        if let Some(tolerance) = &options.tolerance
+            && let Some(normalized) = normalize_asof_tolerance(tolerance, &key_dtype()?)
+        {
+            options.tolerance = Some(normalized);
         }
     }
 
@@ -748,4 +756,24 @@ fn build_upcast_node_list(
         _ => ExprOrigin::None,
     };
     Ok(expr_origin)
+}
+
+/// The tolerance of an asof join on integer keys (by physical type) as the largest distance
+/// two matching keys may have: an unsigned value, capped at the largest distance two keys of
+/// that type can have. The asof engines accept this form, and the optimizer relies on it.
+#[cfg(feature = "asof_join")]
+fn normalize_asof_tolerance(tolerance: &Scalar, key_dtype: &DataType) -> Option<Scalar> {
+    let max_distance = match key_dtype.to_physical() {
+        DataType::Int8 | DataType::UInt8 => u8::MAX as u128,
+        DataType::Int16 | DataType::UInt16 => u16::MAX as u128,
+        DataType::Int32 | DataType::UInt32 => u32::MAX as u128,
+        DataType::Int64 | DataType::UInt64 => u64::MAX as u128,
+        _ => return None,
+    };
+    let value = tolerance.as_any_value();
+    let distance = match value.extract::<i128>() {
+        Some(v) => v.unsigned_abs(),
+        None => value.extract::<u128>()?,
+    };
+    Some(Scalar::from(distance.min(max_distance) as u64))
 }

@@ -24,6 +24,61 @@ pub struct SpillContextStatistics {
     spill_score_cache: RelaxedCell<u64>,
     prefetch_score_cache: RelaxedCell<u64>,
     stats: Mutex<Statistics>,
+    io: IoCounters,
+}
+
+/// Spill file and prefetch counters, printed with the metrics.
+#[derive(Default)]
+struct IoCounters {
+    file_bytes_written: RelaxedCell<u64>,
+    file_bytes_read: RelaxedCell<u64>,
+    demand_unspills: RelaxedCell<u64>,
+    demand_unspill_bytes: RelaxedCell<u64>,
+    prefetches: RelaxedCell<u64>,
+    prefetch_bytes: RelaxedCell<u64>,
+    // Prefetched values used by a consumer before being spilled again.
+    prefetch_hits: RelaxedCell<u64>,
+    // Prefetched values spilled again or dropped without being used.
+    prefetch_wasted: RelaxedCell<u64>,
+}
+
+impl IoCounters {
+    fn reset(&self) {
+        for c in [
+            &self.file_bytes_written,
+            &self.file_bytes_read,
+            &self.demand_unspills,
+            &self.demand_unspill_bytes,
+            &self.prefetches,
+            &self.prefetch_bytes,
+            &self.prefetch_hits,
+            &self.prefetch_wasted,
+        ] {
+            c.store(0);
+        }
+    }
+
+    fn print(&self, name: &str) {
+        const MB: f64 = 1024.0 * 1024.0;
+        let (peak_prefetch, peak_reserved) = crate::memory_manager::peak_prefetch_and_reserved();
+        eprintln!(
+            "prefetch_stats({name}): \
+            file_mb(written={:.1}, read={:.1}), \
+            unspill(demand={}/{:.1}mb, prefetch={}/{:.1}mb), \
+            prefetch(hit={}, wasted={}), \
+            process_peak_mb(prefetch_in_flight={:.1}, reserved={:.1})",
+            self.file_bytes_written.load() as f64 / MB,
+            self.file_bytes_read.load() as f64 / MB,
+            self.demand_unspills.load(),
+            self.demand_unspill_bytes.load() as f64 / MB,
+            self.prefetches.load(),
+            self.prefetch_bytes.load() as f64 / MB,
+            self.prefetch_hits.load(),
+            self.prefetch_wasted.load(),
+            peak_prefetch as f64 / MB,
+            peak_reserved as f64 / MB,
+        )
+    }
 }
 
 impl SpillContextStatistics {
@@ -42,13 +97,37 @@ impl SpillContextStatistics {
                 name,
                 ..Default::default()
             }),
+            io: IoCounters::default(),
         }
     }
 
     pub(crate) fn on_drop(&self) {
         if polars_config::config().ooc_log_metrics() {
-            self.stats.lock().unwrap().print_metrics();
+            let stats = self.stats.lock().unwrap();
+            stats.print_metrics();
+            self.io.print(&stats.name);
         }
+    }
+
+    pub(crate) fn add_spill_file_write(&self, bytes: u64) {
+        self.io.file_bytes_written.fetch_add(bytes);
+    }
+
+    pub(crate) fn add_spill_file_read(&self, bytes: u64) {
+        self.io.file_bytes_read.fetch_add(bytes);
+    }
+
+    pub(crate) fn add_prefetch_hit(&self) {
+        self.io.prefetch_hits.fetch_add(1);
+    }
+
+    pub(crate) fn add_prefetch_waste(&self) {
+        self.io.prefetch_wasted.fetch_add(1);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prefetch_hits_and_waste(&self) -> (u64, u64) {
+        (self.io.prefetch_hits.load(), self.io.prefetch_wasted.load())
     }
 
     pub(crate) fn reset(&self, name: PlSmallStr) {
@@ -57,6 +136,7 @@ impl SpillContextStatistics {
         self.prefetch_without_spill_streak.store(0);
         self.spill_score_cache.store(UNEXPLORED_SCORE.to_bits());
         self.prefetch_score_cache.store(UNEXPLORED_SCORE.to_bits());
+        self.io.reset();
         *stats = Statistics {
             name,
             ..Default::default()
@@ -277,8 +357,13 @@ impl SpillContextStatistics {
         let now = Instant::now();
         stats.step_time(now); // Important: step time before mutating.
 
-        if !prefetch {
+        if prefetch {
+            self.io.prefetches.fetch_add(1);
+            self.io.prefetch_bytes.fetch_add(n_bytes as u64);
+        } else {
             stats.bandit_non_prefetch_unspill_weight += 1.0;
+            self.io.demand_unspills.fetch_add(1);
+            self.io.demand_unspill_bytes.fetch_add(n_bytes as u64);
         }
 
         let mean_b_before = stats.active_spills_bytes as f64 / stats.active_spills as f64;

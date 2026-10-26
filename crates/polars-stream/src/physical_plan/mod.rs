@@ -9,9 +9,7 @@ use polars_core::frame::DataFrame;
     feature = "dtype-time"
 ))]
 use polars_core::prelude::DataType;
-use polars_core::prelude::{
-    IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions, SortOptions,
-};
+use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
@@ -279,7 +277,7 @@ pub enum PhysNodeKind {
     Window {
         input: PhysStream,
         partition_by: Vec<PlSmallStr>,
-        order_by: Option<(PlSmallStr, SortOptions)>,
+        order_by: Option<(Vec<PlSmallStr>, SortMultipleOptions)>,
         exprs: Vec<ExprIR>,
         /// Evaluate the rows of a partition in input order.
         ordered_eval: bool,
@@ -589,6 +587,20 @@ pub enum PhysNodeKind {
         maintain_order: bool,
     },
 
+    /// Frames held by a recursive query, which stay spillable while they are read.
+    SpillFrameSource {
+        frames: Arc<[polars_ooc::SpillFrame]>,
+        schema: SchemaRef,
+    },
+
+    /// Recursive query: collects the anchor and the caches the step reads, then runs the step
+    /// as its own streaming query once per round.
+    Recursive {
+        anchor: PhysStream,
+        externals: Vec<PhysStream>,
+        step: Arc<crate::nodes::recursive::RecursiveStep>,
+    },
+
     Gather {
         input: PhysStream,
         idxs: PhysStream,
@@ -656,6 +668,7 @@ fn _visit_nodes_impl(
     while let Some(node) = to_visit.pop() {
         match &mut phys_sm[node].kind {
             PhysNodeKind::InMemorySource { .. }
+            | PhysNodeKind::SpillFrameSource { .. }
             | PhysNodeKind::MultiScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
             #[cfg(feature = "python")]
@@ -839,6 +852,17 @@ fn _visit_nodes_impl(
                 rec!(repeats.node);
                 visit_input(value);
                 visit_input(repeats);
+            },
+
+            PhysNodeKind::Recursive {
+                anchor, externals, ..
+            } => {
+                rec!(anchor.node);
+                visit_input(anchor);
+                for input in externals {
+                    rec!(input.node);
+                    visit_input(input);
+                }
             },
 
             PhysNodeKind::GroupBy { inputs, .. }

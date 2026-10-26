@@ -124,6 +124,7 @@ if TYPE_CHECKING:
 
     import deltalake
     import pyiceberg.catalog
+    import pyiceberg.expressions
     import pyiceberg.table
 
     import polars.io.iceberg
@@ -177,6 +178,7 @@ if TYPE_CHECKING:
     from polars.config import TableFormatNames
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.parquet.encryption import ParquetEncryptionProperties
     from polars.lazyframe.in_process import InProcessQuery
     from polars.lazyframe.query_result import QueryResult
 
@@ -2419,6 +2421,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
@@ -2444,6 +2447,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
@@ -2473,6 +2477,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption: ParquetEncryptionProperties | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -2579,6 +2584,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+        encryption
+            Properties for writing Parquet files encrypted with Parquet modular
+            encryption. See :class:`ParquetEncryptionProperties`.
+
+            When partitioning, the partition key values are written unencrypted in
+            the file paths. Columns with their own encryption key can't be used as
+            partition keys.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -2675,6 +2691,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 sync_on_close=sync_on_close,
                 metadata=metadata,
                 arrow_schema=arrow_schema,
+                encryption=encryption,
                 mkdir=mkdir,
                 sinked_paths_callback=sinked_paths_callback,
             )
@@ -2693,6 +2710,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sync_on_close=sync_on_close,
             metadata=metadata,
             arrow_schema=arrow_schema,
+            encryption=encryption,
             mkdir=mkdir,
             optimizations=optimizations,
             sinked_paths_callback=sinked_paths_callback,
@@ -3025,7 +3043,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         mode: Literal["append", "overwrite"],
         schema_mode: Literal["merge", "overwrite"] | None = None,
+        overwrite_filter: Expr
+        | pyiceberg.expressions.BooleanExpression
+        | str
+        | None = None,
+        partition_overwrite: Literal["dynamic"] | None = None,
         create_if_not_exists: bool = False,
+        create_namespace_if_not_exists: bool = False,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
@@ -3065,6 +3089,37 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - If 'overwrite', replace the table schema with the incoming schema.
               This requires ``mode='overwrite'``.
             - If None, require the schemas to match.
+        overwrite_filter
+            With ``mode='overwrite'``, only delete the existing rows matching this
+            filter instead of all rows. Incoming rows are not checked against the
+            filter.
+
+            - A Polars expression, e.g. ``pl.col("date") == date(2026, 10, 1)``,
+              deletes the rows for which it evaluates to true. It must be
+              convertible to an Iceberg expression with the same semantics,
+              otherwise an error is raised before any data is written: it may
+              only use comparisons with literals, ``is_in``, ``is_between``,
+              ``is_null``, ``is_not_null``, ``is_nan``, ``is_not_nan`` and
+              ``str.starts_with`` combined with ``&``, ``|`` and ``~``, as with
+              :func:`polars.delete_iceberg`. Columns nested within a nullable
+              struct are not supported.
+            - A PyIceberg ``BooleanExpression`` or filter string, e.g.
+              ``"date = '2026-10-01'"``, is used as-is, with the semantics of
+              PyIceberg's ``Table.overwrite(overwrite_filter=...)``.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        partition_overwrite : {'dynamic'}
+            With ``mode='overwrite'``, only delete the existing rows of the
+            partitions that the incoming data is written to. Requires a table
+            whose partition spec uses only identity transforms, on source columns
+            that are not floating-point, nanosecond timestamps, or nested within a
+            nullable struct. If there is no incoming data, nothing is deleted.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         create_if_not_exists
             Create the table if it does not exist in the catalog. The table schema
             is derived from the LazyFrame schema, and is created unpartitioned and
@@ -3080,6 +3135,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             The table is created before the query runs, so it remains (empty)
             if the query fails.
+        create_namespace_if_not_exists
+            Create the table's namespace, and any missing parent namespaces, if
+            they do not exist when the table is created. Requires
+            `create_if_not_exists=True`.
         snapshot_properties
             Custom properties to add to the Iceberg snapshot summary.
         catalog
@@ -3112,23 +3171,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        Partitioned writes support identity, year, month, day, hour, and truncate
-        transforms. Truncation is supported for integer, long, string, and binary
-        source columns, including fields nested within structs. Top-level partition
-        source columns must use an Iceberg metrics mode that records lower and upper
-        bounds (``full`` or ``truncate``). Bucket, void, and decimal truncation are
-        not supported.
+        Partitioned writes support identity, year, month, day, hour, truncate, and
+        bucket transforms, including on fields nested within structs. Truncation is
+        supported for integer, long, string, and binary source columns. Void and
+        decimal truncation are not supported.
 
-        ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
-        is not supported. ``schema_mode="overwrite"`` is not supported for
+        ``mode="overwrite"`` replaces all table data, unless ``overwrite_filter`` or
+        ``partition_overwrite`` is given. The delete and the append are committed
+        in a single transaction. Data files that only partially match the delete
+        filter are rewritten by PyIceberg during the commit.
+        ``schema_mode="overwrite"`` is not supported for
         partitioned tables or tables with a sort order. Custom location providers
         are not supported.
 
         The table's default sort order is applied to incoming rows and recorded on
         each new data file. Existing files are not rewritten. Sorting materializes
-        the incoming data in memory. Bucket sort transforms require
-        ``pyiceberg-core``; their sort keys are computed in batches while Parquet
-        I/O remains native. This does not guarantee a globally sorted table scan.
+        the incoming data in memory. This does not guarantee a globally sorted table
+        scan.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
@@ -3136,7 +3195,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             target,
             mode=mode,
             schema_mode=schema_mode,
+            overwrite_filter=overwrite_filter,
+            partition_overwrite=partition_overwrite,
             create_if_not_exists=create_if_not_exists,
+            create_namespace_if_not_exists=create_namespace_if_not_exists,
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
@@ -6330,8 +6392,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
-        how : {'inner', 'left', 'right'}
-            Join strategy.
+        how : {'inner', 'left', 'right', 'full'}
+            Join strategy. `'left'` and `'right'` also keep the rows of that input
+            without a match, and `'full'` keeps them from both inputs. The columns of
+            the other input are null in those rows.
         suffix
             Suffix to append to columns with a duplicate name.
 

@@ -544,6 +544,10 @@ impl AExprBuilder {
         self.binary_op(other, Operator::FloorDivide, arena)
     }
 
+    pub fn trunc_divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        self.binary_op(other, Operator::TruncDivide, arena)
+    }
+
     pub fn modulus(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
         self.binary_op(other, Operator::Modulus, arena)
     }

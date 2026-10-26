@@ -26,10 +26,10 @@ def monitoring_organization() -> str | None:
 
 def activate_monitoring() -> None:
     """Ensure `polars_cloud` is installed and this session is authenticated."""
-    from polars._dependencies import import_optional
+    from polars._dependencies import import_optional, polars_cloud
 
     import_optional(
-        "polars_cloud",
+        polars_cloud.__name__,
         err_prefix="query monitoring requires the",
         install_message=(
             "Please install using the command `pip install 'polars-cloud>=0.13.0'`."

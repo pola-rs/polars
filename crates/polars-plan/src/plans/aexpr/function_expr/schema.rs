@@ -45,6 +45,18 @@ impl IRFunctionExpr {
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
             Hash(..) => mapper.with_dtype(DataType::UInt64),
+            Mm3Hash => mapper
+                .ensure_satisfies(
+                    |_, dt| {
+                        dt.is_null()
+                            || dt.is_integer()
+                            || dt.is_decimal()
+                            || (dt.is_temporal() && !dt.is_duration())
+                            || matches!(dt, DataType::String | DataType::Binary)
+                    },
+                    "mm3_hash",
+                )?
+                .with_dtype(DataType::Int32),
             #[cfg(feature = "arg_where")]
             ArgWhere => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "index_of")]
@@ -388,7 +400,12 @@ impl IRFunctionExpr {
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "cov")]
-            Correlation { .. } => mapper.map_to_float_dtype(),
+            Correlation { .. } => mapper.try_map_dtypes(|dtypes| {
+                Ok(match try_get_supertype(dtypes[0], dtypes[1])? {
+                    dt if dt.is_float() => dt,
+                    _ => DataType::Float64,
+                })
+            }),
             #[cfg(feature = "peaks")]
             PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]

@@ -81,17 +81,14 @@ pub(crate) fn arg_sort_multiple_impl<T: TotalOrd + IsNull + Send + Copy>(
 
 pub(crate) fn argsort_multiple_row_fmt(
     by: &[Column],
-    mut descending: Vec<bool>,
-    mut nulls_last: Vec<bool>,
-    parallel: bool,
+    options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
-    _broadcast_bools(by.len(), &mut descending);
-    _broadcast_bools(by.len(), &mut nulls_last);
+    let options = options.clone().expand_flags(by.len())?;
 
-    let rows_encoded = _get_rows_encoded(by, &descending, &nulls_last)?;
+    let rows_encoded = _get_rows_encoded(by, &options.descending, &options.nulls_last)?;
     let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
 
-    if parallel {
+    if options.multithreaded {
         RAYON.install(|| items.par_sort_by_key(|i| i.1));
     } else {
         items.sort_by_key(|i| i.1);

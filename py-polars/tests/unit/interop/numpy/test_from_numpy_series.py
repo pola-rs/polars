@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -119,3 +119,34 @@ def test_from_numpy_unaligned_ndarray_view_27794() -> None:
     assert not view.flags["ALIGNED"]
     s = pl.Series(view)
     assert s.to_list() == view.tolist()
+
+
+@pytest.mark.parametrize(
+    "data",
+    [[1.0, 2.0, 3.0], [1, 2, 3], ["a", "b", "c"], [True, False, True]],
+)
+def test_from_numpy_masked_array_30197(data: list[Any]) -> None:
+    arr = np.ma.masked_array(data, mask=[False, True, False])
+    assert pl.Series(arr).to_list() == [data[0], None, data[2]]
+    assert pl.DataFrame({"a": arr}).to_series().to_list() == [data[0], None, data[2]]
+
+
+def test_from_numpy_masked_array_2d_30197() -> None:
+    arr = np.ma.masked_array(
+        [[1, 2], [3, 4], [5, 6]],
+        mask=[[False, True], [False, False], [True, True]],
+    )
+    assert pl.Series(arr).to_list() == [[1, None], [3, 4], [None, None]]
+    assert pl.DataFrame(arr).rows() == [(1, None), (3, 4), (None, None)]
+    assert pl.DataFrame(arr, orient="col").rows() == [(1, 3, None), (None, 4, None)]
+
+
+def test_from_numpy_masked_array_in_list_30197() -> None:
+    arr = np.ma.masked_array([1, 2], mask=[False, True])
+    assert pl.Series([arr, arr]).to_list() == [[1, None], [1, None]]
+    assert pl.Series([arr, np.array([3, 4])]).to_list() == [[1, None], [3, 4]]
+
+
+def test_from_numpy_masked_array_no_mask_30197() -> None:
+    arr = np.ma.masked_array([1, 2, 3])
+    assert pl.Series(arr).to_list() == [1, 2, 3]

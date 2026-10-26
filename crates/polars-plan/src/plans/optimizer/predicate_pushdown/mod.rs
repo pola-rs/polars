@@ -5,8 +5,9 @@ mod join;
 mod keys;
 pub(super) mod utils;
 
-pub(crate) use dynamic::new_dynamic_pred;
-pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
+pub use dynamic::{
+    DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr, new_dynamic_pred,
+};
 use polars_buffer::Buffer;
 use polars_io::predicates::ReadOrder;
 use polars_utils::idx_vec::UnitVec;
@@ -736,6 +737,14 @@ impl PredicatePushDown {
             #[cfg(feature = "merge_sorted")]
             lp @ MergeSorted { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+            },
+            // Each round reads the rows of the round before, so filters can't move into or out
+            // of a recursive query.
+            lp @ Recursive { .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            lp @ WorkingTableScan { .. } => {
+                self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
             },
             UnoptimizedDispatch { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)

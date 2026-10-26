@@ -71,6 +71,31 @@ def test_cov_corr_f32_type() -> None:
     assert df.select(pl.corr("a", "b")).dtypes == [pl.Float32]
 
 
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.cov("a", "b"),
+        pl.cov("b", "a"),
+        pl.corr("a", "b"),
+        pl.corr("b", "a"),
+        pl.corr("a", "b", method="spearman"),
+        pl.corr("b", "a", method="spearman"),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_cov_corr_mixed_float_schema(expr: pl.Expr, engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": [1, 1, 2, 2],
+            "a": pl.Series([1.0, 2.0, 3.0, 5.0], dtype=pl.Float32),
+            "b": [2.0, 1.0, 4.0, 7.0],
+        }
+    )
+    for q in (lf.select(expr), lf.group_by("g").agg(expr)):
+        assert q.collect_schema().dtypes()[-1] == pl.Float64
+        assert q.collect(engine=engine).dtypes[-1] == pl.Float64
+
+
 def test_cov(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     for cov_ab in (pl.cov(pl.col("A"), pl.col("B")), pl.cov("A", "B")):

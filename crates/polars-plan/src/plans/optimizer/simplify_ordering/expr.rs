@@ -3,6 +3,7 @@ use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 
 use crate::dsl::{EvalVariant, WindowMapping};
+use crate::plans::optimizer::repeated_keys::retain_row_encode_keys;
 use crate::plans::{
     AExpr, IRAggExpr, IRFunctionExpr, is_length_preserving_ae, is_order_insensitive_ae,
     is_scalar_ae,
@@ -817,12 +818,9 @@ pub(super) fn non_scalar_keys(
     (kept.len() < num_keys).then_some(kept)
 }
 
-/// The flags of the keys at `positions`, where a single flag applies to every key.
+/// The flags of the keys at `positions`.
 pub(super) fn flags_at(flags: &[bool], positions: &[usize]) -> Vec<bool> {
-    positions
-        .iter()
-        .map(|&i| flags.get(i).or(flags.first()) == Some(&true))
-        .collect()
+    positions.iter().map(|&i| flags[i]).collect()
 }
 
 /// Drops the scalar ordering keys of a `sort_by`, `top_k_by` or window.
@@ -892,14 +890,27 @@ fn drop_scalar_order_keys(node: Node, arena: &mut Arena<AExpr>) -> Option<AExpr>
         AExpr::Over {
             function,
             partition_by,
-            order_by: Some((order_by, _)),
+            order_by: Some((order_by, options)),
             mapping,
-        } if is_scalar_ae(*order_by, arena) => Some(AExpr::Over {
-            function: *function,
-            partition_by: partition_by.clone(),
-            order_by: None,
-            mapping: *mapping,
-        }),
+        } => {
+            let (function, partition_by, mapping) = (*function, partition_by.clone(), *mapping);
+            let order_by = if is_scalar_ae(*order_by, arena) {
+                None
+            } else {
+                Some(retain_row_encode_keys(
+                    *order_by,
+                    *options,
+                    arena,
+                    |keys, arena| non_scalar_keys(keys.iter().map(|e| e.node()), arena),
+                )?)
+            };
+            Some(AExpr::Over {
+                function,
+                partition_by,
+                order_by,
+                mapping,
+            })
+        },
         _ => None,
     }
 }

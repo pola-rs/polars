@@ -3,11 +3,12 @@ use std::sync::Arc;
 use apache_avro::types::{Record, Value};
 use apache_avro::{
     Codec, Days, DeflateSettings, Duration, Millis, Months, Schema as AvroSchema, Writer,
+    ZstandardSettings,
 };
 use polars_arrow::array::*;
 use polars_arrow::datatypes::*;
-use polars_arrow::io::avro::avro_schema::read::read_metadata;
 use polars_arrow::io::avro::read;
+use polars_arrow::io::avro::read::read_metadata;
 use polars_arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 
@@ -251,6 +252,17 @@ fn read_deflate() -> PolarsResult<()> {
 #[test]
 fn read_snappy() -> PolarsResult<()> {
     test(Codec::Snappy)
+}
+
+#[test]
+fn read_unsupported_codec() {
+    let avro = write_avro(Codec::Zstandard(ZstandardSettings::default())).unwrap();
+    let err = read_avro(&avro, None).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("unsupported Avro codec \"zstandard\""),
+        "{err}"
+    );
 }
 
 #[test]

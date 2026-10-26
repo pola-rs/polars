@@ -20,7 +20,7 @@ pub fn array_to_page(
     let encode_options = EncodeNullability::new(is_optional);
 
     let mut buffer = vec![];
-    let (repetition_levels_byte_length, definition_levels_byte_length) =
+    let (repetition_levels_byte_length, definition_levels_byte_length, num_values) =
         nested::write_rep_and_def(options.version, nested, &mut buffer)?;
 
     encode_plain(array, encode_options, &mut buffer);
@@ -30,8 +30,6 @@ pub fn array_to_page(
     } else {
         None
     };
-
-    let num_values = nested::num_values(nested);
     utils::build_plain_page(
         buffer,
         num_values,

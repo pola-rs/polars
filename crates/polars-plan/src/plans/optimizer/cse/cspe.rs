@@ -186,6 +186,13 @@ impl NodeVisitor for InsertCachesVisitor<'_> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
+        // A cache inside a recursive query would be computed once instead of in every round.
+        let visit_inputs = if matches!(storage.get(key), IR::Recursive { .. }) {
+            SubtreeVisit::Skip
+        } else {
+            SubtreeVisit::Visit
+        };
+
         let entry_idx_curr_node = edges.outputs()[0];
         let entry_idx_output_node = self
             .id_map
@@ -197,7 +204,7 @@ impl NodeVisitor for InsertCachesVisitor<'_> {
         if entry_idx_output_node == usize::MAX {
             // We are at the root node
             assert_eq!(entry_idx_curr_node, self.id_map.len() - 1);
-            return ControlFlow::Continue(SubtreeVisit::Visit);
+            return ControlFlow::Continue(visit_inputs);
         }
 
         let [(_, output_state), (_, curr_state)] = self
@@ -239,7 +246,7 @@ impl NodeVisitor for InsertCachesVisitor<'_> {
             }
         }
 
-        ControlFlow::Continue(SubtreeVisit::Visit)
+        ControlFlow::Continue(visit_inputs)
     }
 
     fn post_visit(

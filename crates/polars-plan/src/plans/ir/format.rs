@@ -1,7 +1,7 @@
 use std::fmt::{self, Display, Formatter, Write};
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::SortOptions;
+use polars_core::prelude::SortMultipleOptions;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_utils::aliases::{InitHashMaps as _, PlIndexMap, PlIndexSet};
@@ -70,7 +70,7 @@ impl AsExpr for ExprIR {
 
 pub(crate) struct WindowHeaderDisplay<'a> {
     pub(crate) partition_by: &'a [PlSmallStr],
-    pub(crate) order_by: Option<&'a (PlSmallStr, SortOptions)>,
+    pub(crate) order_by: Option<&'a (Vec<PlSmallStr>, SortMultipleOptions)>,
     pub(crate) maintain_order: bool,
     pub(crate) ordered_eval: bool,
 }
@@ -89,13 +89,19 @@ impl Display for WindowHeaderDisplay<'_> {
             write!(f, "\"{name}\"")?;
         }
         f.write_char(']')?;
-        if let Some((name, options)) = self.order_by {
-            write!(f, " ORDER BY \"{name}\"")?;
-            if options.descending {
-                f.write_str(" DESC")?;
-            }
-            if options.nulls_last {
-                f.write_str(" NULLS LAST")?;
+        if let Some((names, options)) = self.order_by {
+            f.write_str(" ORDER BY ")?;
+            for (i, name) in names.iter().enumerate() {
+                if i > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "\"{name}\"")?;
+                if options.descending[i] {
+                    f.write_str(" DESC")?;
+                }
+                if options.nulls_last[i] {
+                    f.write_str(" NULLS LAST")?;
+                }
             }
         }
         Ok(())
@@ -357,6 +363,17 @@ impl<'a> IRDisplay<'a> {
                 self.with_root(*input_right)
                     ._format(f, sub_indent, seen_caches)?;
                 write!(f, "\n{:indent$}END MERGE_SORTED", "")
+            },
+            Recursive { anchor, step, .. } => {
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
+                write!(f, ":")?;
+
+                write!(f, "\n{:indent$}ANCHOR:", "")?;
+                self.with_root(*anchor)
+                    ._format(f, sub_indent, seen_caches)?;
+                write!(f, "\n{:indent$}STEP:", "")?;
+                self.with_root(*step)._format(f, sub_indent, seen_caches)?;
+                write!(f, "\n{:indent$}END RECURSIVE", "")
             },
             ir_node => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
@@ -1229,6 +1246,8 @@ pub fn write_ir_non_recursive(
                 .collect::<Vec<_>>()
                 .join(", "),
         ),
+        IR::Recursive { id, .. } => write!(f, "{:indent$}RECURSIVE[id: {id}]", ""),
+        IR::WorkingTableScan { id, .. } => write!(f, "{:indent$}WORKING TABLE[id: {id}]", ""),
         IR::UnoptimizedDispatch {
             inputs: _,
             arg_map: _,

@@ -122,7 +122,8 @@ make test
 
 This will do a number of things:
 
-- Use Python to create a virtual environment in the `.venv` folder.
+- Use Python to create a virtual environment in the `.venv` folder. This uses `python3` from your
+  `PATH`; set `PYTHON` to use another interpreter, e.g. `PYTHON=python3.13 make test`.
 - Use [pip](https://pip.pypa.io/) and [uv](https://github.com/astral-sh/uv) to install all Python
   dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is
@@ -140,6 +141,16 @@ Check if linting also works correctly by running:
 ```bash
 make pre-commit
 ```
+
+!!! note
+
+    `make pre-commit` compiles the Rust crates with all features enabled.
+    This requires [autoconf](https://www.gnu.org/software/autoconf/),
+    [automake](https://www.gnu.org/software/automake/),
+    and [libtool](https://www.gnu.org/software/libtool/).
+    On a Debian-based linux distro, you can install them with
+    `sudo apt install autoconf automake libtool`.
+    On macOS, you can use `brew install autoconf automake libtool`.
 
 Note that we do not actually use the [pre-commit](https://pre-commit.com/) tool. We use the Makefile
 to conveniently run the following formatting and linting tools:

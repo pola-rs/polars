@@ -450,10 +450,12 @@ impl JoinOptionsIR {
                     || how.is_range()
                     || how.is_inner()
                     || how.is_cross()
-                    || matches!(how, JoinType::Left | JoinType::Right)
+                    || matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
             },
             CrossAndFilter { .. } => {
-                how.is_inner() || how.is_cross() || matches!(how, JoinType::Left)
+                how.is_inner()
+                    || how.is_cross()
+                    || matches!(how, JoinType::Left | JoinType::Right | JoinType::Full)
             },
         };
 
