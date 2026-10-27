@@ -139,6 +139,7 @@ impl PySQLContext {
                 table,
                 if_not_exists,
                 schema,
+                query,
                 required,
                 location,
                 properties,
@@ -149,6 +150,7 @@ impl PySQLContext {
                 dict.set_item("identifier", table.identifier)?;
                 dict.set_item("if_not_exists", if_not_exists)?;
                 dict.set_item("schema", Wrap(schema))?;
+                dict.set_item("query", query)?;
                 dict.set_item("required", required)?;
                 dict.set_item("location", location)?;
                 let props = PyDict::new(py);

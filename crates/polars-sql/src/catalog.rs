@@ -40,7 +40,7 @@ pub enum CatalogDdl {
         /// `PURGE`: also delete the data files.
         purge: bool,
     },
-    /// `CREATE TABLE [IF NOT EXISTS] <name> (<column>, ...)`.
+    /// `CREATE TABLE [IF NOT EXISTS] <name> (<column>, ...)`, or `... <name> AS <query>`.
     CreateTable {
         /// The table name as the statement wrote it.
         name: String,
@@ -48,8 +48,10 @@ pub enum CatalogDdl {
         table: CatalogTable,
         /// `IF NOT EXISTS`.
         if_not_exists: bool,
-        /// The columns.
+        /// The columns; empty with a query.
         schema: Schema,
+        /// The query that fills the table, as SQL.
+        query: Option<String>,
         /// The columns declared `NOT NULL`.
         required: Vec<String>,
         /// The table location, from `LOCATION` or the `location` option.
