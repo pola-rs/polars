@@ -363,6 +363,7 @@ mod tests {
                 statistics,
                 bloom_filter_offset: None,
                 bloom_filter_length: None,
+                dictionary_fallback: None,
             }),
             offset_index_offset: None,
             offset_index_length: None,
