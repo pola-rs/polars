@@ -2774,7 +2774,7 @@ def test_nested_subquery_reading_outermost_query() -> None:
     )
     query = """
         SELECT a.id FROM t AS a
-        WHERE EXISTS (SELECT 1 FROM c WHERE EXISTS (SELECT 1 FROM d WHERE d.id = a.id))
+        WHERE EXISTS (SELECT 1 FROM c WHERE EXISTS (SELECT 1 FROM d WHERE d.id > a.id))
     """
     with pytest.raises(pl.exceptions.SQLInterfaceError) as exc:
         ctx.execute(query, eager=True)

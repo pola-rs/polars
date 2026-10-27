@@ -2130,22 +2130,59 @@ def test_ambiguous_struct_path_in_joins(query: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "query",
+    ("query", "expected"),
     [
-        "SELECT s.f FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id",
-        "SELECT s.f FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id "
-        "JOIN c AS d USING (s)",
+        (
+            "SELECT s.f FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id",
+            30,
+        ),
+        (
+            "SELECT s.* FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id",
+            30,
+        ),
+        (
+            "SELECT s.f FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id "
+            "JOIN c AS d USING (s)",
+            30,
+        ),
+        ("SELECT id FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id", 1),
     ],
 )
-def test_struct_path_after_right_semi_join(query: str) -> None:
-    # only the columns of `c` survive the right semi join
+def test_columns_after_right_semi_join(query: str, expected: int) -> None:
+    # only the columns of `c` survive the right semi join, also one named like the
+    # joined `b.s`
     frames = {
         "a": pl.DataFrame({"id": [1], "s": [{"f": 10}]}),
         "b": pl.DataFrame({"id": [1], "s": [{"f": 20}]}),
-        "c": pl.DataFrame({"id": [1], "s": [{"f": 30}]}),
+        "c": pl.DataFrame({"id": [1], "s": [{"f": 30}], "s:b": [{"f": 40}]}),
     }
     res = pl.SQLContext(frames).execute(query, eager=True)
-    assert res.rows() == [(30,)]
+    assert res.rows() == [(expected,)]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT b.x FROM a JOIN b ON a.id = b.id, c RIGHT SEMI JOIN d ON c.id = d.id",
+            2,
+        ),
+        (
+            "SELECT id FROM o WHERE EXISTS (SELECT 1 FROM a JOIN b ON a.id = b.id, "
+            "c RIGHT SEMI JOIN d ON c.id = d.id WHERE b.x = 2 AND o.id = a.id)",
+            1,
+        ),
+    ],
+)
+def test_right_semi_join_keeps_earlier_from_item(query: str, expected: int) -> None:
+    # the right semi join drops `c`, not `b` of the earlier FROM item
+    frames = {
+        name: pl.DataFrame({"id": [1], "x": [x]})
+        for name, x in [("a", 1), ("b", 2), ("c", 3), ("d", 4)]
+    }
+    frames["o"] = pl.DataFrame({"id": [1]})
+    res = pl.SQLContext(frames).execute(query, eager=True)
+    assert res.rows() == [(expected,)]
 
 
 def test_join_relations_sharing_last_name_part() -> None:

@@ -193,19 +193,10 @@ impl AmbiguousColumnVisitor<'_> {
     /// Check a struct path whose first part `name` names no relation: it is ambiguous if
     /// the joined frame has more than one column `name`, one of them a struct.
     fn check_struct_path(&self, name: &str) -> PolarsResult<()> {
-        // A later semi join can drop the columns of earlier joins.
-        let present: PlHashMap<String, PlHashMap<String, String>> = self
+        let columns: PlHashSet<&str> = self
             .joined_aliases
-            .iter()
-            .filter_map(|(tbl, cols)| {
-                let aliased = cols.get(name).filter(|c| self.schema.contains(c))?;
-                let cols = PlHashMap::from_iter([(name.to_string(), aliased.clone())]);
-                Some((tbl.clone(), cols))
-            })
-            .collect();
-        let columns: PlHashSet<&str> = present
             .values()
-            .flat_map(|cols| cols.values().map(String::as_str))
+            .filter_map(|cols| cols.get(name).map(String::as_str))
             .chain(self.schema.contains(name).then_some(name))
             .collect();
         let has_struct = columns
@@ -214,7 +205,7 @@ impl AmbiguousColumnVisitor<'_> {
         if columns.len() > 1 && has_struct {
             check_ambiguous_column(
                 name,
-                &present,
+                self.joined_aliases,
                 self.base_table_name,
                 self.using_cols,
                 self.relations,

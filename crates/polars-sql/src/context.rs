@@ -2329,6 +2329,10 @@ impl SQLContext {
                 let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);
                 if !keep_left {
                     kept.clear();
+                    // The columns of the left relations are gone, so are their aliases.
+                    for relation in &left_relations {
+                        self.joined_aliases.remove(relation);
+                    }
                 }
                 if keep_right {
                     kept.push(&join.relation);
