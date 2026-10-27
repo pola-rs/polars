@@ -112,6 +112,24 @@ def test_catalog_table_deferred_plan_round_trip(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("qualifier", ["lake.tpch.orders", "tpch.orders", "orders"])
+def test_catalog_table_read_by_nested_subquery(
+    lake: CountingCatalog, qualifier: str
+) -> None:
+    # The innermost subquery reads the catalog table two levels up.
+    ctx = lake_ctx(lake)
+    ctx.register("b", pl.DataFrame({"k": [1, 2]}))
+    ctx.register("c", pl.DataFrame({"k": [1, 3]}))
+    query = (
+        f"SELECT {qualifier}.k FROM orders WHERE {qualifier}.k IN "
+        f"(SELECT b.k FROM b WHERE b.k IN (SELECT c.k FROM c WHERE c.k = {qualifier}.k))"
+    )
+    assert ctx.execute(query, eager=True).rows() == [(1,)]
+    assert ctx.execute(query).collect().rows() == [(1,)]
+    assert ctx.execute(f"EXPLAIN {query}", eager=True).height > 0
+
+
+@pytest.mark.write_disk
 def test_catalog_namespaces(lake: CountingCatalog) -> None:
     ctx = lake_ctx(lake)
     assert ctx.execute("SELECT v FROM CH0010.lineitem", eager=True).item() == "upper"
