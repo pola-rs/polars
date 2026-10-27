@@ -219,6 +219,30 @@ opt-level = "s"
 [profile.release.package.polars-sql]
 opt-level = "s"
 
+[profile.release.package.object_store]
+opt-level = "s"
+
+[profile.release.package.reqwest]
+opt-level = "s"
+
+[profile.release.package.rustls]
+opt-level = "s"
+
+[profile.release.package.rustls-webpki]
+opt-level = "s"
+
+[profile.release.package.h2]
+opt-level = "s"
+
+[profile.release.package.hyper]
+opt-level = "s"
+
+[profile.release.package.hyper-util]
+opt-level = "s"
+
+[profile.release.package.quick-xml]
+opt-level = "s"
+
 [profile.nodebug-release]
 inherits = "release"
 debug = false
