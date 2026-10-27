@@ -109,6 +109,11 @@ impl Default for ControllerConfig {
                 Ok("ttfb") => (BdpModel::Ttfb, init_byte_budget),
                 Ok(v) => panic!("invalid value for POLARS_INFLIGHT_BYTE_BUDGET_MODEL: {v}"),
             };
+        let admission_order = match std::env::var("POLARS_INFLIGHT_ADMISSION_ORDER").as_deref() {
+            Err(_) | Ok("issue") => AdmissionOrder::Issue,
+            Ok("arrival") => AdmissionOrder::Arrival,
+            Ok(v) => panic!("invalid value for POLARS_INFLIGHT_ADMISSION_ORDER: {v}"),
+        };
         Self {
             window: Duration::from_millis(1000),
 
@@ -134,11 +139,7 @@ impl Default for ControllerConfig {
             control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
             bdp_model,
-            admission_order: match std::env::var("POLARS_INFLIGHT_ADMISSION_ORDER").as_deref() {
-                Err(_) | Ok("issue") => AdmissionOrder::Issue,
-                Ok("arrival") => AdmissionOrder::Arrival,
-                Ok(v) => panic!("invalid value for POLARS_INFLIGHT_ADMISSION_ORDER: {v}"),
-            },
+            admission_order,
         }
     }
 }
