@@ -984,7 +984,12 @@ pub(super) fn convert_functions(
                 .materialize_unknown(false)?;
             let sketch = AExprBuilder::function(
                 vec![e[0].clone()],
-                I::ApproxQuantileSketch { method, error },
+                I::ApproxQuantileSketch {
+                    method,
+                    error,
+                    failure_probability:
+                        polars_compute::approx_quantile::DEFAULT_FAILURE_PROBABILITY,
+                },
                 ctx.arena,
             );
             let estimate = AExprBuilder::function(
