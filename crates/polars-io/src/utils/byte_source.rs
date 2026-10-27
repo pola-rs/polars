@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::ops::Range;
 #[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
@@ -267,6 +268,64 @@ fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<
     Ok(Buffer::from(buf))
 }
 
+/// Fill `dst` with the bytes at `offset` through the page cache.
+#[cfg(feature = "nightly")]
+fn pread_into(file: &std::fs::File, dst: &mut [MaybeUninit<u8>], offset: u64) -> PolarsResult<()> {
+    let mut buf = std::io::BorrowedBuf::from(dst);
+    pread_exact_uninit(file, buf.unfilled(), offset)?;
+    Ok(())
+}
+
+#[cfg(not(feature = "nightly"))]
+fn pread_into(file: &std::fs::File, dst: &mut [MaybeUninit<u8>], offset: u64) -> PolarsResult<()> {
+    dst.fill(MaybeUninit::new(0));
+    // Safety: initialized above.
+    let dst = unsafe { &mut *(dst as *mut [MaybeUninit<u8>] as *mut [u8]) };
+    pread_exact(file, dst, offset)?;
+    Ok(())
+}
+
+/// Allocation whose disjoint parts are filled by concurrent blocking reads. The reads share
+/// ownership of it, so that it outlives them when the future waiting on them is dropped.
+struct ConcurrentFill(*mut [MaybeUninit<u8>]);
+
+// Safety: the allocation is only accessed through `part`, whose callers keep the parts disjoint.
+unsafe impl Send for ConcurrentFill {}
+unsafe impl Sync for ConcurrentFill {}
+
+impl ConcurrentFill {
+    fn new(len: usize) -> Self {
+        Self(Box::into_raw(Box::new_uninit_slice(len)))
+    }
+
+    /// # Safety
+    /// Parts that are accessed at the same time must not overlap.
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn part(&self, range: Range<usize>) -> &mut [MaybeUninit<u8>] {
+        assert!(range.start <= range.end && range.end <= self.0.len());
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                self.0.cast::<MaybeUninit<u8>>().add(range.start),
+                range.len(),
+            )
+        }
+    }
+
+    /// # Safety
+    /// Every byte must be initialized.
+    unsafe fn assume_init(self) -> Vec<u8> {
+        let ptr = self.0 as *mut [u8];
+        std::mem::forget(self);
+        unsafe { Box::from_raw(ptr) }.into_vec()
+    }
+}
+
+impl Drop for ConcurrentFill {
+    fn drop(&mut self) {
+        drop(unsafe { Box::from_raw(self.0) });
+    }
+}
+
 /// Read `len` bytes at `offset`, through direct I/O when `align` says the file
 /// supports it and through the page cache otherwise.
 #[cfg(target_os = "linux")]
@@ -454,6 +513,58 @@ impl FileByteSource {
 
         let _ = ranges;
         false
+    }
+
+    /// Reads `range` like [`ByteSource::get_range`], split into concurrent reads of at most
+    /// `max_read_size` bytes that fill a single buffer. A single read only keeps one request in
+    /// flight, which leaves fast storage underutilized.
+    pub async fn get_range_concurrent(
+        &self,
+        range: Range<usize>,
+        max_read_size: usize,
+    ) -> PolarsResult<Buffer<u8>> {
+        // Direct I/O needs aligned offsets, so these reads are not split.
+        if self.o_direct_align.is_some() || range.len() <= max_read_size {
+            return self.get_range(range).await;
+        }
+
+        assert!(range.end as u64 <= self.size);
+
+        let len = range.len();
+        let out = Arc::new(ConcurrentFill::new(len));
+
+        let reads = (0..len).step_by(max_read_size).map(|start| {
+            let part = start..(start + max_read_size).min(len);
+            let offset = (range.start + start) as u64;
+            let file = self.file.clone();
+            let permits = self.permits.clone();
+            let out = out.clone();
+
+            async move {
+                let permit = permits.acquire_owned().await.unwrap();
+
+                ASYNC
+                    .spawn_blocking(move || {
+                        let _permit = permit;
+                        // Safety: the parts are disjoint.
+                        let result = pread_into(&file, unsafe { out.part(part) }, offset);
+                        // Released before the read completes, so that `out` is unique once all
+                        // reads have completed.
+                        drop(out);
+                        result
+                    })
+                    .await
+                    .expect("blocking task panicked")
+            }
+        });
+
+        self.io_metrics()
+            .record_io_read(len as u64, futures::future::try_join_all(reads))
+            .await?;
+
+        let out = Arc::into_inner(out).unwrap();
+        // Safety: the reads filled every part.
+        Ok(Buffer::from(unsafe { out.assume_init() }))
     }
 
     /// Reads `range` on the calling thread.
@@ -1034,6 +1145,26 @@ mod tests {
         for r in [0..0, 0..1, 100..4096, MIB - 7..MIB + 9, 0..3 * MIB] {
             let got = source.read_blocking(r.clone()).unwrap();
             assert_eq!(got.as_ref(), &contents[r.clone()], "{r:?}");
+        }
+    }
+
+    #[test]
+    fn get_range_concurrent_reads_the_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let (source, contents) = source(dir.path(), 3 * MIB);
+        let rt = runtime();
+
+        // Not split, split into equal parts, and split with a shorter last part.
+        for (r, max_read_size) in [
+            (0..0, 4096),
+            (100..4096, 4096),
+            (0..3 * MIB, MIB),
+            (MIB - 7..3 * MIB, 4096 + 1),
+        ] {
+            let got = rt
+                .block_on(source.get_range_concurrent(r.clone(), max_read_size))
+                .unwrap();
+            assert_eq!(got.as_ref(), &contents[r.clone()], "{r:?}, {max_read_size}");
         }
     }
 
