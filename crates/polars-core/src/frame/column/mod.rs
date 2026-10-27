@@ -790,7 +790,11 @@ impl Column {
 
                 // Use dtype-aware validity updates so Struct fields see the nulls.
                 let s = scalar_col.take_materialized_series().rechunk();
-                s.with_validity(validity.into_opt_validity()).into_column()
+                let mut out = s.with_validity(validity.into_opt_validity());
+                // Nulls inserted for empty groups can sit between equal
+                // values, so the result can no longer claim to be sorted.
+                out.set_sorted_flag(IsSorted::Not);
+                out.into_column()
             },
         }
     }

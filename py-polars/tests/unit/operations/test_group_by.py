@@ -3770,3 +3770,15 @@ def test_group_by_per_group_scalar_small_and_large_groups(
         .agg(pl.col(list(exprs(over=True))))
     )
     assert_frame_equal(out.collect(engine=engine), expected.collect(engine=engine))
+
+
+def test_group_by_literal_agg_empty_groups_sorted_flag_30326() -> None:
+    df = pl.DataFrame({"g": [1, 2, 3, 4], "keep": [True, False, True, False]})
+    df = df.with_columns(v=pl.lit(5))
+    out = df.group_by("g", maintain_order=True).agg(pl.col("v").filter("keep").first())
+    v = out["v"]
+
+    assert v.to_list() == [5, None, 5, None]
+    assert v.max() == 5
+    assert v.n_unique() == 2
+    assert v.unique().sort().to_list() == [None, 5]
