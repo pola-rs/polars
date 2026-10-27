@@ -70,6 +70,68 @@ const GROWING_STATES_MIN_ROWS_PER_GROUP: u64 = 8;
 /// do not shrink.
 const GROWING_STATES_MIN_GROUPS_PER_PIPELINE: usize = 2;
 
+/// An input stops using its hot table if the cold rows plus this many times the evictions make
+/// up at least `MIN_MISS_SCORE` of the rows in a window, and the table does not grow. An
+/// evicted group comes back as a pre-aggregate row, so the rows it took in saved little.
+const EVICTION_WEIGHT: f64 = 3.0;
+const MIN_MISS_SCORE: f64 = 0.4;
+/// Hot rows with fixed-width keys are cheap, so these inputs need more misses, and an evicted
+/// group counts as one missed row.
+const MIN_MISS_SCORE_FIXED_WIDTH: f64 = 0.65;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GrowOutcome {
+    Grew,
+    /// Too few missed rows to decide.
+    NeedMoreData,
+    Declined,
+    AtLimit,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum HotTableMode {
+    #[default]
+    Hot,
+    /// The hot table missed too many rows and does not grow.
+    Bypass,
+    /// The growing states of the hot table do not pay off.
+    ColdGrowing,
+}
+
+/// The windows in which the misses of a hot table are counted double in length up to this many
+/// morsels.
+const MAX_WINDOW_MORSELS: u64 = 16;
+
+/// Whether an input uses its hot table, and how often a full table missed its rows. The
+/// misses are counted in windows of rows that double in length.
+#[derive(Clone)]
+struct HotTableStats {
+    mode: HotTableMode,
+    window_rows: u64,
+    window_cold_rows: u64,
+    window_evictions: u64,
+    window_target: u64,
+}
+
+impl HotTableStats {
+    fn new() -> Self {
+        Self {
+            mode: HotTableMode::Hot,
+            window_rows: 0,
+            window_cold_rows: 0,
+            window_evictions: 0,
+            window_target: 2 * get_ideal_morsel_size() as u64,
+        }
+    }
+
+    fn reset_window(&mut self, target: u64) {
+        self.window_rows = 0;
+        self.window_cold_rows = 0;
+        self.window_evictions = 0;
+        self.window_target = target;
+    }
+}
+
 /// Whether an input whose hot states can grow uses its hot table, and what it received so far.
 /// The size of the states is checked after every morsel. Whether they pay off is first checked
 /// after a morsel of hot rows, then each time the number of hot rows doubles.
@@ -79,8 +141,6 @@ struct GrowingStates {
     may_go_cold: bool,
     /// The number of reductions of the input with growing states.
     num_growing: u64,
-    /// Every row of the input is stored as a cold row.
-    cold_only: bool,
     hot_rows: u64,
     next_check_rows: u64,
     /// The values and bytes held by the pre-aggregates of the input.
@@ -97,6 +157,10 @@ struct LocalSink {
     // The number of slots of each hot grouper, and the rows missed by them.
     hot_table_size: usize,
     miss_f2: F2Sketch,
+    miss_sketch: CardinalitySketch,
+    hot_table_stats_per_input: Vec<HotTableStats>,
+    eviction_weight: f64,
+    min_miss_score: f64,
 
     // The keys of the cold rows and the pre-aggregates.
     key_sketch: CardinalitySketch,
@@ -120,7 +184,21 @@ struct LocalSink {
 impl LocalSink {
     fn new(params: &GroupByParams, hot_table_size: usize) -> Self {
         let num_inputs = params.reductions_per_input.len();
+        let fixed_width_keys = params.key_schema.iter_values().all(|dt| {
+            let dt = dt.to_physical();
+            dt.is_primitive_numeric() || dt.is_bool()
+        });
         Self {
+            eviction_weight: if fixed_width_keys {
+                1.0
+            } else {
+                EVICTION_WEIGHT
+            },
+            min_miss_score: if fixed_width_keys {
+                MIN_MISS_SCORE_FIXED_WIDTH
+            } else {
+                MIN_MISS_SCORE
+            },
             hot_grouper_per_input: (0..num_inputs).map(|_| None).collect(),
             hot_grouped_reductions: params
                 .grouped_reductions
@@ -129,6 +207,8 @@ impl LocalSink {
                 .collect(),
             hot_table_size,
             miss_f2: F2Sketch::new(),
+            miss_sketch: CardinalitySketch::new(),
+            hot_table_stats_per_input: vec![HotTableStats::new(); num_inputs],
             key_sketch: CardinalitySketch::new(),
             cold_row_builders: (0..num_inputs).map(|_| None).collect(),
             all_row_idxs: Vec::new(),
@@ -166,6 +246,9 @@ impl LocalSink {
     }
 
     fn flush_evictions(&mut self, input_idx: usize, reduction_idxs: &[usize]) {
+        if self.hot_grouper(input_idx).num_evictions() == 0 {
+            return;
+        }
         let keys = self.hot_grouper(input_idx).take_evicted_keys();
         let reductions = reduction_idxs
             .iter()
@@ -188,6 +271,7 @@ impl LocalSink {
                 self.key_sketch.insert(h);
                 if is_miss {
                     self.miss_f2.insert(h);
+                    self.miss_sketch.insert(h);
                 }
             }
         });
@@ -219,7 +303,9 @@ impl LocalSink {
         num_pipelines: usize,
     ) {
         let growing = &self.growing_states_per_input[input_idx];
-        if !growing.may_go_cold || growing.cold_only {
+        if !growing.may_go_cold
+            || self.hot_table_stats_per_input[input_idx].mode != HotTableMode::Hot
+        {
             return;
         }
         let hot_rows = growing.hot_rows;
@@ -257,17 +343,20 @@ impl LocalSink {
         if !keeps_too_much && !too_large {
             return;
         }
-        growing.cold_only = true;
         if polars_config::config().verbose() {
             eprintln!(
                 "[group-by]: input {input_idx} stops using its hot table (hot rows: {}, values kept: {values}, state bytes: {bytes})",
                 growing.hot_rows
             );
         }
+        self.stop_hot_table(input_idx, r_idxs, HotTableMode::ColdGrowing);
+    }
 
-        if self.hot_grouper(input_idx).num_evictions() > 0 {
-            self.flush_evictions(input_idx, r_idxs);
-        }
+    /// Stores every later row of `input_idx` as a cold row. Its evictions and hot groups become
+    /// pre-aggregates.
+    fn stop_hot_table(&mut self, input_idx: usize, r_idxs: &[usize], mode: HotTableMode) {
+        self.hot_table_stats_per_input[input_idx].mode = mode;
+        self.flush_evictions(input_idx, r_idxs);
         let hot_grouper = self.hot_grouper_per_input[input_idx].take().unwrap();
         let reductions = r_idxs
             .iter()
@@ -279,30 +368,46 @@ impl LocalSink {
         self.add_pre_agg(input_idx, hot_grouper.keys(), r_idxs, reductions, false);
     }
 
-    /// Stores the cold rows `cold_idxs` of a slice `df` of a morsel of `input_idx`, all rows if
-    /// `None`, and adds their hashes to the sketches. A whole morsel that may be stored as it is and has mostly
-    /// cold rows becomes a frame with a mask of its cold rows; otherwise the cold rows are
-    /// gathered into the builder of the input, which becomes a frame once it holds a morsel's
-    /// worth of rows.
-    async fn store_cold_rows(
+    /// Adds the hashes of the rows `cold_idxs` of `keys`, all rows if `None`, to the sketches,
+    /// which count them as missed by the hot table if `is_miss`.
+    fn insert_cold_hashes(
         &mut self,
-        input_idx: usize,
-        df: DataFrame,
-        keys: HashKeys,
+        keys: &HashKeys,
         cold_idxs: Option<&[IdxSize]>,
-        may_store_whole: bool,
-        spill_ctx: &MostRecentSpillContext,
+        is_miss: bool,
     ) {
         let insert_hash = |_, opt_h: Option<u64>| {
             if let Some(h) = opt_h {
                 self.key_sketch.insert(h);
-                self.miss_f2.insert(h);
+                if is_miss {
+                    self.miss_f2.insert(h);
+                    self.miss_sketch.insert(h);
+                }
             }
         };
         match cold_idxs {
             Some(idxs) => unsafe { keys.for_each_hash_subset(idxs, insert_hash) },
             None => keys.for_each_hash(insert_hash),
         }
+    }
+
+    /// Stores the cold rows `cold_idxs` of a slice `df` of a morsel of `input_idx`, all rows if
+    /// `None`, and adds their hashes to the sketches, see `insert_cold_hashes`. A whole morsel that may be stored as it is and has mostly
+    /// cold rows becomes a frame with a mask of its cold rows; otherwise the cold rows are
+    /// gathered into the builder of the input, which becomes a frame once it holds a morsel's
+    /// worth of rows.
+    #[allow(clippy::too_many_arguments)]
+    async fn store_cold_rows(
+        &mut self,
+        input_idx: usize,
+        df: DataFrame,
+        keys: HashKeys,
+        cold_idxs: Option<&[IdxSize]>,
+        is_miss: bool,
+        may_store_whole: bool,
+        spill_ctx: &MostRecentSpillContext,
+    ) {
+        self.insert_cold_hashes(&keys, cold_idxs, is_miss);
 
         // 75% or more cold, don't gather.
         let num_cold = cold_idxs.map_or(df.height(), |idxs| idxs.len());
@@ -367,33 +472,33 @@ impl LocalSink {
 
     /// Grows the hot tables at once to a size that holds the frequently missed keys,
     /// if there are few enough of them and they make up enough of the missed rows.
-    fn maybe_grow_hot_tables(&mut self, max_size: usize) {
+    fn maybe_grow_hot_tables(&mut self, max_size: usize) -> GrowOutcome {
         let size = self.hot_table_size;
         if size >= max_size {
-            return;
+            return GrowOutcome::AtLimit;
         }
 
         // Cheap early exit before estimating the number of distinct missed keys.
         let misses = self.miss_f2.num_inserts() as f64;
         if misses < HOT_TABLE_GROW_MIN_REPEAT * size as f64 {
-            return;
+            return GrowOutcome::NeedMoreData;
         }
 
         // Model the missed rows as `heavy` keys missed `repeat` times each plus keys
         // missed once. The row count, the distinct key count and F2 then determine
         // both.
         let f2 = self.miss_f2.estimate();
-        let distinct = (self.key_sketch.estimate() as f64).min(misses);
+        let distinct = (self.miss_sketch.estimate() as f64).min(misses);
         let excess = misses - distinct;
         let denom = f2 - 2.0 * misses + distinct;
         if excess <= 0.0 || denom <= 0.0 {
-            return;
+            return GrowOutcome::Declined;
         }
         let repeat = (f2 - misses) / excess;
         let heavy = excess * excess / denom;
         let heavy_share = heavy * repeat / misses;
         if repeat < HOT_TABLE_GROW_MIN_REPEAT || heavy_share < HOT_TABLE_GROW_MIN_HEAVY_SHARE {
-            return;
+            return GrowOutcome::Declined;
         }
 
         let num_hot_keys = self
@@ -408,7 +513,7 @@ impl LocalSink {
             .next_power_of_two()
             .min(max_size);
         if new_size <= size || want > HOT_TABLE_GROW_MAX_LOAD * new_size as f64 {
-            return;
+            return GrowOutcome::Declined;
         }
 
         for hot_grouper in self.hot_grouper_per_input.iter_mut().flatten() {
@@ -422,6 +527,98 @@ impl LocalSink {
                 "[group-by]: hot table {size} -> {new_size} slots (missed rows: {misses}, distinct: {distinct:.0}, heavy keys: {heavy:.0}, repeat: {repeat:.1}, heavy share: {heavy_share:.2})"
             );
         }
+        for stats in &mut self.hot_table_stats_per_input {
+            if stats.mode == HotTableMode::Hot {
+                stats.reset_window(2 * get_ideal_morsel_size() as u64);
+            }
+        }
+        GrowOutcome::Grew
+    }
+
+    /// Grows the hot tables if that pays off. Otherwise, once a window of rows of `input_idx` is
+    /// complete, stops using its hot table if enough of the rows missed the full table.
+    fn after_hot_morsel(
+        &mut self,
+        input_idx: usize,
+        reductions_per_input: &[Vec<usize>],
+        has_order_sensitive_agg: bool,
+        max_size: usize,
+    ) {
+        if self.maybe_grow_hot_tables(max_size) == GrowOutcome::Grew {
+            return;
+        }
+        let stats = &mut self.hot_table_stats_per_input[input_idx];
+        if stats.mode != HotTableMode::Hot || stats.window_rows < stats.window_target {
+            return;
+        }
+        // Cold rows drop the order of the rows.
+        if has_order_sensitive_agg {
+            return;
+        }
+        let window_rows = stats.window_rows;
+        let miss_score = (stats.window_cold_rows as f64
+            + self.eviction_weight * stats.window_evictions as f64)
+            / window_rows as f64;
+        if miss_score < self.min_miss_score || memory_manager().has_activity() {
+            let max_target = MAX_WINDOW_MORSELS * get_ideal_morsel_size() as u64;
+            stats.reset_window((2 * stats.window_target).min(max_target));
+            return;
+        }
+
+        let mut outcome = GrowOutcome::AtLimit;
+        if self.hot_table_size < max_size {
+            // Until the missed keys were missed well over the times growth needs, more rows may
+            // show that they repeat enough to grow, if they fit in the largest table.
+            let num_hot_keys = self
+                .hot_grouper_per_input
+                .iter()
+                .flatten()
+                .map(|g| g.num_groups() as usize)
+                .max()
+                .unwrap_or(0);
+            let may_grow_later = |max_missed_keys: usize, min_missed_keys: usize, misses: u64| {
+                (num_hot_keys + max_missed_keys) as f64 <= HOT_TABLE_GROW_MAX_LOAD * max_size as f64
+                    && (misses as f64) < 2.0 * HOT_TABLE_GROW_MIN_REPEAT * min_missed_keys as f64
+            };
+            // Growth statistics only see evictions once flushed.
+            let pending: usize = self
+                .hot_grouper_per_input
+                .iter()
+                .flatten()
+                .map(|g| g.num_evictions())
+                .sum();
+            let misses = self.miss_f2.num_inserts() + pending as u64;
+            let missed_keys = self.miss_sketch.estimate();
+            if (misses as f64) < HOT_TABLE_GROW_MIN_REPEAT * self.hot_table_size as f64
+                || may_grow_later(missed_keys + pending, missed_keys, misses)
+            {
+                return;
+            }
+            for (i, r_idxs) in reductions_per_input.iter().enumerate() {
+                if self.hot_grouper_per_input[i].is_some() {
+                    self.flush_evictions(i, r_idxs);
+                }
+            }
+            outcome = self.maybe_grow_hot_tables(max_size);
+            if matches!(outcome, GrowOutcome::Grew | GrowOutcome::NeedMoreData) || {
+                let missed_keys = self.miss_sketch.estimate();
+                may_grow_later(missed_keys, missed_keys, self.miss_f2.num_inserts())
+            } {
+                return;
+            }
+        }
+
+        if polars_config::config().verbose() {
+            eprintln!(
+                "[group-by]: input {input_idx} bypasses its hot table (window rows: {window_rows}, miss score: {miss_score:.2}, hot table: {} slots, growth: {outcome:?})",
+                self.hot_table_size
+            );
+        }
+        self.stop_hot_table(
+            input_idx,
+            &reductions_per_input[input_idx],
+            HotTableMode::Bypass,
+        );
     }
 
     /// Ends the input of this pipeline: stores the cold rows left in the builders, flushes the
@@ -442,8 +639,7 @@ impl LocalSink {
         }
 
         for (input_idx, r_idxs) in reductions_per_input.iter().enumerate() {
-            let hot_grouper = &self.hot_grouper_per_input[input_idx];
-            if hot_grouper.as_ref().is_some_and(|g| g.num_evictions() > 0) {
+            if self.hot_grouper_per_input[input_idx].is_some() {
                 self.flush_evictions(input_idx, r_idxs);
             }
         }
@@ -521,7 +717,8 @@ impl GroupBySink {
                     }
                     let local =
                         opt_local.get_or_insert_with(|| LocalSink::new(params, hot_table_size));
-                    let cold_only = local.growing_states_per_input[input_idx].cold_only;
+                    let cold_only =
+                        local.hot_table_stats_per_input[input_idx].mode != HotTableMode::Hot;
                     if !cold_only && local.hot_grouper_per_input[input_idx].is_none() {
                         local.hot_grouper_per_input[input_idx] = Some(new_hash_hot_grouper(
                             params.key_schema.clone(),
@@ -557,6 +754,7 @@ impl GroupBySink {
                                 df,
                                 hash_keys,
                                 None,
+                                false,
                                 may_store_whole,
                                 spill_ctx,
                             )
@@ -577,6 +775,8 @@ impl GroupBySink {
                             <= MAX_SLICE_REDUCTION_GROUPS;
                     all_hot_per_input[input_idx] = true;
                     let mut evictions_before = 0;
+                    let evictions_at_start = local.hot_grouper(input_idx).num_evictions();
+                    let mut num_cold = 0;
                     for offset in (0..df.height()).step_by(slice_size) {
                         // Compute hot group indices from key.
                         let hot_grouper = local.hot_grouper(input_idx);
@@ -605,12 +805,14 @@ impl GroupBySink {
 
                         if !cold_idxs.is_empty() {
                             all_hot_per_input[input_idx] = false;
+                            num_cold += cold_idxs.len();
                             local
                                 .store_cold_rows(
                                     input_idx,
                                     df.slice(offset as i64, slice_size),
                                     hash_keys,
                                     Some(&cold_idxs),
+                                    true,
                                     may_store_whole,
                                     spill_ctx,
                                 )
@@ -660,13 +862,24 @@ impl GroupBySink {
                         }
                     }
 
+                    let num_evictions = local.hot_grouper(input_idx).num_evictions();
+                    let stats = &mut local.hot_table_stats_per_input[input_idx];
+                    stats.window_rows += df.height() as u64;
+                    stats.window_cold_rows += num_cold as u64;
+                    stats.window_evictions += (num_evictions - evictions_at_start) as u64;
+
                     // If we have too many evicted rows, flush them.
-                    if local.hot_grouper(input_idx).num_evictions() >= get_ideal_morsel_size() {
+                    if num_evictions >= get_ideal_morsel_size() {
                         local.flush_evictions(input_idx, &params.reductions_per_input[input_idx]);
                     }
 
                     local.maybe_go_cold(input_idx, &params.reductions_per_input, num_pipelines);
-                    local.maybe_grow_hot_tables(max_hot_table_size);
+                    local.after_hot_morsel(
+                        input_idx,
+                        &params.reductions_per_input,
+                        params.has_order_sensitive_agg,
+                        max_hot_table_size,
+                    );
                 }
                 Ok(())
             }));
@@ -723,5 +936,137 @@ impl GroupBySink {
         }
         stats.estimated_groups = sketch.estimate() as u64;
         Ok((stats, frames, pre_aggs))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use polars_core::prelude::{Column, DataType, Field, Schema};
+    use polars_expr::groups::new_hash_grouper;
+    use polars_expr::reduce::new_max_reduction;
+
+    use super::*;
+    use crate::nodes::group_by::InputPayload;
+
+    fn params(num_inputs: usize) -> GroupByParams {
+        let key_schema = Arc::new(Schema::from_iter([Field::new("k".into(), DataType::Int64)]));
+        GroupByParams {
+            key_schema: key_schema.clone(),
+            output_schema: key_schema.clone(),
+            reductions_per_input: (0..num_inputs).map(|i| vec![i]).collect(),
+            grouped_reduction_cols: (0..num_inputs).map(|_| vec!["v".into()]).collect(),
+            payload_per_input: (0..num_inputs)
+                .map(|_| InputPayload {
+                    stored_cols: Vec::new(),
+                    gather_cols: Vec::new(),
+                    fused_selectors: Vec::new(),
+                    direct_reductions: Vec::new(),
+                    fused_reductions: Vec::new(),
+                })
+                .collect(),
+            grouper: new_hash_grouper(key_schema),
+            grouped_reductions: (0..num_inputs)
+                .map(|_| new_max_reduction(DataType::Int64, false).unwrap())
+                .collect(),
+            has_order_sensitive_agg: false,
+        }
+    }
+
+    fn local_sink(params: &GroupByParams, table_size: usize) -> LocalSink {
+        let mut local = LocalSink::new(params, table_size);
+        for grouper in &mut local.hot_grouper_per_input {
+            *grouper = Some(new_hash_hot_grouper(params.key_schema.clone(), table_size));
+        }
+        local
+    }
+
+    /// Sends `keys` through the hot table of `input_idx` and counts its misses, as the sink does.
+    fn insert(local: &mut LocalSink, input_idx: usize, keys: &[i64]) {
+        let df = DataFrame::new_infer_height(vec![Column::new("k".into(), keys)]).unwrap();
+        let keys = HashKeys::from_df(&df, PlRandomState::default(), true, false);
+        let (mut hot_idxs, mut hot_group_idxs, mut cold_idxs) =
+            (Vec::new(), Vec::new(), Vec::new());
+        let grouper = local.hot_grouper(input_idx);
+        let evictions_before = grouper.num_evictions();
+        grouper.insert_keys(
+            &keys,
+            &mut hot_idxs,
+            &mut hot_group_idxs,
+            &mut cold_idxs,
+            false,
+        );
+        let evictions = grouper.num_evictions() - evictions_before;
+        local.insert_cold_hashes(&keys, Some(&cold_idxs), true);
+        let stats = &mut local.hot_table_stats_per_input[input_idx];
+        stats.window_rows += df.height() as u64;
+        stats.window_cold_rows += cold_idxs.len() as u64;
+        stats.window_evictions += evictions as u64;
+    }
+
+    fn unique_keys(n: i64) -> Vec<i64> {
+        (1_000_000..1_000_000 + n).collect()
+    }
+
+    /// Input 1 holds unflushed evictions of frequent keys while input 0 only misses unique keys.
+    fn decide_with_other_input(evictions: bool) -> LocalSink {
+        let params = params(2);
+        let mut local = local_sink(&params, 4);
+        if evictions {
+            // Runs of equal keys evict the key in their slot.
+            let runs: Vec<i64> = (0..200)
+                .flat_map(|_| (0..30).flat_map(|k| [k, k]))
+                .collect();
+            insert(&mut local, 1, &runs);
+            assert!(local.hot_grouper(1).num_evictions() > 1000);
+        }
+        insert(&mut local, 0, &unique_keys(1000));
+        local.hot_table_stats_per_input[0].window_target = 1000;
+        local.after_hot_morsel(0, &params.reductions_per_input, false, 1024);
+        local
+    }
+
+    #[test]
+    fn test_bypass_unique_keys() {
+        let local = decide_with_other_input(false);
+        assert!(local.hot_table_stats_per_input[0].mode == HotTableMode::Bypass);
+        assert_eq!(local.hot_table_size, 4);
+    }
+
+    #[test]
+    fn test_pending_evictions_of_other_input_grow() {
+        let local = decide_with_other_input(true);
+        assert!(local.hot_table_size > 4);
+        for stats in &local.hot_table_stats_per_input {
+            assert!(stats.mode == HotTableMode::Hot);
+            assert_eq!(stats.window_rows, 0);
+        }
+    }
+
+    #[test]
+    fn test_wait_while_missed_keys_fit() {
+        let params = params(1);
+        let mut local = local_sink(&params, 4);
+        let max_size = 64;
+        // Fill the largest table to more keys than the slots per key allow, but at most its
+        // maximum load.
+        let keys = unique_keys(100);
+        let mut num_inserted = 0;
+        let num_keys = |local: &mut LocalSink| {
+            local.hot_grouper(0).num_groups() as usize + local.miss_sketch.estimate()
+        };
+        while num_keys(&mut local) as f64 <= max_size as f64 / HOT_TABLE_GROW_SLOTS_PER_KEY {
+            insert(&mut local, 0, &keys[num_inserted..num_inserted + 1]);
+            num_inserted += 1;
+        }
+        assert!(num_keys(&mut local) as f64 <= HOT_TABLE_GROW_MAX_LOAD * max_size as f64);
+        local.hot_table_stats_per_input[0].window_target = num_inserted as u64;
+        local.after_hot_morsel(0, &params.reductions_per_input, false, max_size);
+        assert!(local.hot_table_stats_per_input[0].mode == HotTableMode::Hot);
+
+        insert(&mut local, 0, &keys[num_inserted..]);
+        local.after_hot_morsel(0, &params.reductions_per_input, false, max_size);
+        assert!(local.hot_table_stats_per_input[0].mode == HotTableMode::Bypass);
     }
 }

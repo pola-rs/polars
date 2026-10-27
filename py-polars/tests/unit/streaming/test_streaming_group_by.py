@@ -940,6 +940,8 @@ def test_streaming_group_by_unique_hot_table_switch(
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "32")
     plmonkeypatch.setenv("POLARS_MAX_THREADS", "4")
+    # The hot table holds every key.
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "256")
     i = pl.int_range(8192)
     v = i % 3 if repeats else i
     df = pl.select(k=i % 64, v=v, s=v.cast(pl.String))
@@ -962,3 +964,173 @@ def test_streaming_group_by_unique_hot_table_switch(
         x.sort("k").with_columns(pl.col("v").list.sort()) for x in (out, expected)
     )
     assert_frame_equal(out, expected)
+
+
+def _bypass_env(
+    plmonkeypatch: PlMonkeyPatch, morsel_size: int, table_size: int, max_size: int
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str(morsel_size))
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", str(table_size))
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", str(max_size))
+    # Keep the in-memory engine from running the streaming group-by.
+    plmonkeypatch.setenv("POLARS_NO_PARTITION", "1")
+
+
+@pytest.mark.parametrize("runs", [False, True])
+@pytest.mark.parametrize("morsel_size", [32, 256])
+@pytest.mark.parametrize(
+    "dtype", ["int", "short_string", "string", "struct", "multiple"]
+)
+def test_streaming_group_by_hot_table_bypass(
+    dtype: str,
+    morsel_size: int,
+    runs: bool,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    _bypass_env(plmonkeypatch, morsel_size, 4, 4)
+    g = pl.col("g")
+    if dtype == "int":
+        keys = {"k": pl.when(g != 0).then(g)}
+    elif dtype == "short_string":
+        keys = {"k": pl.when(g != 0).then(g.cast(pl.String))}
+    else:
+        keys = _keys(dtype)
+
+    # Each key occurs every 500 rows, so its group spans the switch. Runs of equal keys
+    # evict other keys.
+    i = pl.int_range(100 * morsel_size)
+    v = pl.col("v")
+    aggs = [
+        pl.len(),
+        v.sum().alias("sum"),
+        v.mean().alias("mean"),
+        v.min().alias("min"),
+        v.max().alias("max"),
+    ]
+    if not runs:
+        # With runs its growing states stop the hot table first.
+        aggs.append(v.n_unique().alias("n_unique"))
+    lf = (
+        pl.select(g=(i // 3 if runs else i) % 500, v=pl.when(i % 7 != 0).then(i % 13))
+        .lazy()
+        .with_columns(**keys)
+        .group_by(list(keys))
+        .agg(aggs)
+    )
+
+    capfd.readouterr()
+    out = lf.collect(engine="streaming")
+    err = capfd.readouterr().err
+    # Runs of fixed-width keys are cheap to aggregate in the hot table.
+    assert ("bypasses its hot table" in err) != (runs and dtype == "int")
+    assert "stops using its hot table" not in err
+    assert_frame_equal(out, lf.collect(engine="in-memory"), check_row_order=False)
+
+
+@pytest.mark.parametrize("case", ["identical", "few_keys", "first_last"])
+def test_streaming_group_by_hot_table_no_bypass(
+    case: str, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    i = pl.int_range(4000)
+    v = pl.col("v")
+    if case == "identical":
+        # The table holds every key.
+        _bypass_env(plmonkeypatch, 2, 2, 2)
+        df = pl.select(k=pl.lit(7), v=i)
+    elif case == "few_keys":
+        _bypass_env(plmonkeypatch, 32, 64, 64)
+        df = pl.select(k=i % 16, v=i)
+    else:
+        # Order-sensitive aggregations never store cold rows.
+        _bypass_env(plmonkeypatch, 32, 4, 4)
+        df = pl.select(k=i % 500, v=pl.when(i % 7 != 0).then(i))
+    lf = (
+        df.lazy()
+        .group_by("k")
+        .agg(pl.len(), v.sum().alias("sum"), v.first().alias("first"), v.last())
+        if case == "first_last"
+        else df.lazy().group_by("k").agg(pl.len(), v.sum())
+    )
+
+    capfd.readouterr()
+    out = lf.collect(engine="streaming")
+    assert "bypasses its hot table" not in capfd.readouterr().err
+    assert_frame_equal(out, lf.collect(engine="in-memory"), check_row_order=False)
+
+
+@pytest.mark.parametrize("then_unique", [False, True])
+def test_streaming_group_by_hot_table_growth_and_bypass(
+    then_unique: bool,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    _bypass_env(plmonkeypatch, 32, 4, 256)
+    # Frequent keys the grown table holds, then keys that occur once.
+    n = 40_000
+    rng = np.random.default_rng(0)
+    key = rng.integers(0, 30, n)
+    if then_unique:
+        key = np.concatenate([key, np.arange(10**6, 10**6 + n // 2)])
+    lf = (
+        pl.DataFrame({"k": key, "v": np.arange(len(key))})
+        .lazy()
+        .group_by("k")
+        .agg(pl.len(), pl.col("v").sum(), pl.col("v").max().alias("max"))
+    )
+
+    capfd.readouterr()
+    out = lf.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert "[group-by]: hot table 4 ->" in err
+    assert ("bypasses its hot table" in err) == then_unique
+    assert_frame_equal(out, lf.collect(engine="in-memory"), check_row_order=False)
+
+
+def test_streaming_group_by_hot_table_bypass_phases(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    _bypass_env(plmonkeypatch, 32, 4, 1024)
+    # Unique keys first, then frequent keys the grown table holds.
+    n = 40_000
+    rng = np.random.default_rng(0)
+    key = np.concatenate([np.arange(10**6, 10**6 + 2000), rng.integers(0, 40, n)])
+    lf = (
+        pl.DataFrame({"k": key, "v": np.arange(len(key))})
+        .lazy()
+        .group_by("k")
+        .agg(pl.len(), pl.col("v").sum())
+    )
+
+    assert_frame_equal(
+        lf.collect(engine="streaming"),
+        lf.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("max_size", [8, 64])
+def test_streaming_group_by_hot_table_bypass_multiple_inputs(
+    max_size: int, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    _bypass_env(plmonkeypatch, 32, 8, max_size)
+    i = pl.int_range(8000)
+    k = pl.col("k")
+    v = pl.col("v")
+    lf = (
+        pl.select(k=pl.when(i % 2 == 0).then(i % 500).otherwise((i // 4) % 40), v=i)
+        .lazy()
+        .group_by("k")
+        .agg(
+            pl.len(),
+            v.filter(k < 2).sum().alias("few"),
+            v.filter(v < 0).sum().alias("none"),
+            v.filter(v % 3 == 0).max().alias("some"),
+        )
+    )
+
+    capfd.readouterr()
+    out = lf.collect(engine="streaming")
+    assert "bypasses its hot table" in capfd.readouterr().err
+    assert_frame_equal(out, lf.collect(engine="in-memory"), check_row_order=False)

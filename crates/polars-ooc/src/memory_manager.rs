@@ -101,7 +101,7 @@ impl MemoryManager {
     }
 
     /// Whether a spill is running, selected or done and still on disk.
-    pub(crate) fn has_activity(&self) -> bool {
+    pub fn has_activity(&self) -> bool {
         self.activity.load(Ordering::SeqCst) != 0
     }
 
