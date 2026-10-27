@@ -9,20 +9,21 @@ use tokio::sync::{Notify, oneshot};
 /// Order in which parked acquires of the in-flight byte budget are admitted.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AdmissionOrder {
-    /// Lowest issue number first (`in_issue_order`); requests without one go first.
+    /// Lowest issue number first (see `in_issue_order`); acquires without one go first.
     Issue,
-    /// Whichever waiter wins the race after a release; new arrivals may pass parked waiters.
+    /// Whichever waiter wins the race after a release; new acquires may pass parked waiters.
     Arrival,
 }
 
+/// One issue number per fetch, in the order fetches are issued.
 static NEXT_ISSUE_SEQ: AtomicU64 = AtomicU64::new(1);
 
 tokio::task_local! {
     static ISSUE_SEQ: u64;
 }
 
-/// Runs `fut` with the next issue number, taken now, for its in-flight byte budget acquires. Call
-/// it where fetches are issued in order, not where their tasks start.
+/// Takes the next issue number now and uses it for the byte budget acquires of `fut`. Call it
+/// where fetches are issued in order, not inside their tasks.
 pub fn in_issue_order<F: Future>(fut: F) -> impl Future<Output = F::Output> {
     ISSUE_SEQ.scope(NEXT_ISSUE_SEQ.fetch_add(1, Relaxed), fut)
 }
@@ -38,16 +39,18 @@ struct Waiter {
     granted: oneshot::Sender<()>,
 }
 
-/// Parked acquires keyed by (issue number, arrival number).
+/// Parked acquires in admission order, keyed by (issue number, park number).
 #[derive(Debug, Default)]
 struct IssueQueue {
-    next_arrival: u64,
+    /// Next park number. It orders acquires with the same issue number (the ranges of one fetch,
+    /// or acquires without one) by when they parked, and keeps the keys unique.
+    next_park: u64,
     waiters: BTreeMap<(u64, u64), Waiter>,
 }
 
 /// Byte-granularity budget with dynamic resize.
 ///
-/// Uses atomic counters with a Notify (arrival order) or a queue of grants (issue order) rather
+/// Uses atomic counters with a Notify (wake-up order) or a queue of grants (issue order) rather
 /// than tokio::Semaphore because we need instant shrink semantics (tokio::Semaphore requires
 /// "stealing" permits by acquiring them, which blocks under saturation).
 #[derive(Debug)]
@@ -135,9 +138,10 @@ impl ByteBudget {
         }
     }
 
-    /// Waits behind every parked acquire with a lower issue number; passes parked acquires with an
-    /// equal or higher issue number if the bytes fit. Returns whether it parked. The queue is only
-    /// non-empty while its front does not fit, so every parked acquire waits on the budget.
+    /// FIFO by issue number: parks while a lower issue number is parked, otherwise takes the bytes
+    /// if they fit. Equal issue numbers are admitted in the order they parked. Returns whether it
+    /// parked. A parked acquire always waits on the budget: the queue is only non-empty while its
+    /// front does not fit.
     async fn acquire_in_issue_order(&self, n_bytes: u64, issue_seq: u64) -> bool {
         if self.queued.load(SeqCst) == 0 && self.try_take(n_bytes) {
             return false;
@@ -153,8 +157,8 @@ impl ByteBudget {
             if !lower_waits && self.try_take(n_bytes) {
                 return false;
             }
-            let key = (issue_seq, queue.next_arrival);
-            queue.next_arrival += 1;
+            let key = (issue_seq, queue.next_park);
+            queue.next_park += 1;
             let (tx, rx) = oneshot::channel();
             queue.waiters.insert(
                 key,
@@ -163,12 +167,12 @@ impl ByteBudget {
                     granted: tx,
                 },
             );
-            // Counted before the grant below re-reads the bytes in use: a release that read
-            // `queued == 0` freed its bytes before this re-read.
+            // Count it before the grant pass below reads the bytes in use, so a release that saw
+            // `queued == 0` has already freed its bytes.
             self.queued.fetch_add(1, SeqCst);
             self.grant_locked(&mut queue);
             if !queue.waiters.contains_key(&key) {
-                // Granted by the call above: the bytes are taken.
+                // Admitted by the grant pass above.
                 return false;
             }
             (key, rx)
@@ -256,8 +260,8 @@ impl ByteBudget {
     }
 }
 
-/// A parked `AdmissionOrder::Issue` acquire. Dropped before its grant (cancelled), it leaves the
-/// queue; dropped after a grant it did not observe, it returns the bytes.
+/// A parked issue-order acquire. If dropped before its grant, it leaves the queue; if dropped
+/// after a grant it did not see, it returns the bytes.
 struct QueuedAcquire<'a> {
     budget: &'a ByteBudget,
     key: (u64, u64),
