@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use polars_async::executor::{TaskMetricAggregator, TaskPriority};
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
+use polars_core::prelude::{
+    ArrowDataType, ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IDX_DTYPE, IntoColumn,
+};
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::utils::polars_arrow::bitmap::{Bitmap, MutableBitmap};
@@ -19,6 +21,7 @@ use polars_utils::{IdxSize, UnitVec};
 
 use super::passes::{Selectivity, keeps_most_rows, plan_passes, promote};
 use super::row_group_data_fetch::RowGroupData;
+use super::statistics::RuntimeRangeSkipper;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Where a column of a row group comes from. Sorts in output order.
@@ -121,6 +124,7 @@ pub(super) struct RowGroupDecoder {
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) non_predicate_field_indices: Arc<[usize]>,
     pub(super) target_values_per_thread: usize,
+    pub(super) runtime_range_skipper: Option<Arc<RuntimeRangeSkipper>>,
 }
 
 impl RowGroupDecoder {
@@ -128,6 +132,14 @@ impl RowGroupDecoder {
         &self,
         mut row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
+        if self
+            .runtime_range_skipper
+            .as_ref()
+            .is_some_and(|s| s.skips(row_group_data.row_group_idx))
+        {
+            return Ok(self.empty_df());
+        }
+
         row_group_data.fetched_bytes.fetch_if_evicted().await?;
 
         // If the slice consumes the entire row-group. Don't slice. This allows for prefiltering to
@@ -147,6 +159,21 @@ impl RowGroupDecoder {
             self.row_group_data_to_df_impl(row_group_data, nothing_to_evaluate)
                 .await
         }
+    }
+
+    /// The output of a row group without rows.
+    fn empty_df(&self) -> DataFrame {
+        let columns = self
+            .row_index
+            .iter()
+            .map(|ri| Column::new_empty(ri.name.clone(), &IDX_DTYPE))
+            .chain(
+                self.projected_arrow_fields
+                    .iter()
+                    .map(|p| Column::new_empty(p.output_name().clone(), &p.output_dtype())),
+            )
+            .collect();
+        unsafe { DataFrame::new_unchecked(0, columns) }
     }
 
     /// Whether the predicate keeps every row for now: it has no static part
@@ -367,7 +394,7 @@ fn decode_column(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
             Ok((
                 col_md,
@@ -953,7 +980,7 @@ fn decode_column_prefiltered(
 
     let columns_to_deserialize = iter
         .map(|col_md| {
-            let byte_range = col_md.byte_range();
+            let byte_range = col_md.byte_range()?;
 
             Ok((
                 col_md,
@@ -964,7 +991,8 @@ fn decode_column_prefiltered(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let prefilter = !arrow_field.dtype.is_nested();
+    let prefilter = !arrow_field.dtype.is_nested()
+        || matches!(arrow_field.dtype, ArrowDataType::Dictionary(..));
 
     let deserialize_filter =
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));

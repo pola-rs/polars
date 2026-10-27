@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
 import pytest
 from hypothesis import given
 
@@ -493,3 +494,118 @@ def test_row_encoding_group_context(engine: EngineType) -> None:
         {"g": [1, 2], "n": [2, 2]}, schema_overrides={"n": pl.UInt32}
     )
     assert_frame_equal(out.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_row_encoding_distinct(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": ["x", "y", "x", None]})
+    k = pl.col("a")._row_encode()
+    out = lf.select(
+        n_unique=k.n_unique(),
+        unique=k.unique().len(),
+        first=k.is_first_distinct().implode(),
+        last=k.is_last_distinct().implode(),
+    )
+    expected = pl.DataFrame(
+        {
+            "n_unique": [3],
+            "unique": [3],
+            "first": [[True, True, False, True]],
+            "last": [[False, True, True, True]],
+        },
+        schema_overrides={
+            "n_unique": pl.get_index_type(),
+            "unique": pl.get_index_type(),
+        },
+    )
+    assert_frame_equal(out.collect(engine=engine), expected)
+
+    out = (
+        lf.group_by(k)
+        .agg(pl.len())
+        .select(pl.col("a")._row_decode(["a"], [pl.String]), "len")
+        .unnest("a")
+        .sort("a")
+    )
+    expected = pl.DataFrame(
+        {"a": [None, "x", "y"], "len": [1, 2, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(out.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize(
+    ("value", "shape"),
+    [
+        ([[1, 2, 3], [4, 5, 6]], (2, 3)),
+        ([[[1, 2], [3, 4]], [[5, 6], [7, 8]]], (2, 2, 2)),
+    ],
+)
+def test_null_array_row_hash_after_gather_30022(
+    value: list[Any], shape: tuple[int, ...]
+) -> None:
+    s = pl.Series("a", [None, value], dtype=pl.Array(pl.Int32, shape))
+    out = pl.concat([s, s.gather([0, 1])])
+    assert out.hash()[0] == out.hash()[2]
+    assert out.n_unique() == 2
+    assert out.unique().len() == 2
+    assert out.to_frame().group_by("a").len().height == 2
+
+
+def _array_2d(hidden: bool) -> pa.Array:
+    # [None, [[1, 2, 3], [4, 5, 6]]]; the null row's leaves are valid zeros if hidden.
+    leaves = pa.array(
+        [0] * 6 + [1, 2, 3, 4, 5, 6],
+        pa.int32(),
+        mask=pa.array([not hidden] * 6 + [False] * 6),
+    )
+    inner = pa.FixedSizeListArray.from_arrays(
+        leaves, 3, mask=pa.array([True, True, False, False])
+    )
+    return pa.FixedSizeListArray.from_arrays(inner, 2, mask=pa.array([True, False]))
+
+
+def _hidden_values(case: str, hidden: bool) -> pa.Array:
+    x = _array_2d(hidden)
+    if case == "array":
+        return x
+    if case == "list_null_row":
+        offsets = pa.array([0, 0, 2], pa.int64())
+        return pa.LargeListArray.from_arrays(offsets, x, mask=pa.array([True, False]))
+    if case == "list_no_validity":
+        return pa.LargeListArray.from_arrays(pa.array([0, 2], pa.int64()), x)
+    if case == "struct_all_valid":
+        return pa.StructArray.from_arrays([x], ["x"], mask=pa.array([False, False]))
+    if case == "struct_masked_field":
+        y = pa.array([None, 7], pa.int32())
+        return pa.StructArray.from_arrays(
+            [y, x], ["y", "x"], mask=pa.array([True, False])
+        )
+    if case == "struct_field_with_nulls":
+        a = pa.array([1, 5, 9], pa.int32())
+        b = pa.array([1 if hidden else None, 7, None], pa.int32())
+        return pa.StructArray.from_arrays(
+            [a, b], ["a", "b"], mask=pa.array([True, False, True])
+        )
+    raise ValueError(case)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "array",
+        "list_null_row",
+        "list_no_validity",
+        "struct_all_valid",
+        "struct_masked_field",
+        "struct_field_with_nulls",
+    ],
+)
+def test_hidden_values_under_nulls_hash_equal_30022(case: str) -> None:
+    hidden = pl.from_arrow(_hidden_values(case, hidden=True))
+    clean = pl.from_arrow(_hidden_values(case, hidden=False))
+    assert isinstance(hidden, pl.Series)
+    assert isinstance(clean, pl.Series)
+    assert_series_equal(hidden, clean)
+    assert hidden.hash().to_list() == clean.hash().to_list()
+    assert pl.concat([hidden, clean]).n_unique() == clean.n_unique()

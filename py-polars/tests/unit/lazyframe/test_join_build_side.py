@@ -7,7 +7,10 @@ import pytest
 import polars as pl
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
+
+    from polars._typing import JoinStrategy
 
 
 @pytest.fixture
@@ -214,3 +217,29 @@ def test_no_cross_join_build_side_for_similar_sizes(tmp_path: Path) -> None:
     a = pl.scan_parquet(tmp_path / "a.parquet")
     b = pl.scan_parquet(tmp_path / "b.parquet")
     assert cross_join_build_side(a.join(b, how="cross").explain()) is None
+
+
+@pytest.mark.parametrize(
+    "aggregate",
+    [
+        lambda lf: lf.unique(),
+        lambda lf: lf.unique("k"),
+        lambda lf: lf.group_by("k").agg(pl.col("v").first()),
+        lambda lf: lf.group_by("k", "v").len(),
+    ],
+)
+@pytest.mark.parametrize("how", ["inner", "left"])
+def test_aggregation_of_an_empty_scan_is_estimated(
+    tmp_path: Path,
+    aggregate: Callable[[pl.LazyFrame], pl.LazyFrame],
+    how: JoinStrategy,
+) -> None:
+    path = tmp_path / "empty.parquet"
+    pl.DataFrame(schema={"k": pl.String, "v": pl.Int64}).write_parquet(path)
+    empty = pl.scan_parquet(path)
+    aggregated = aggregate(empty)
+    for q in [
+        aggregated.join(empty, on="k", how=how),
+        empty.join(aggregated, on="k", how=how),
+    ]:
+        assert q.collect().height == 0

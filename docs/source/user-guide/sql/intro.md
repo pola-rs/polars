@@ -56,6 +56,65 @@ Dataframes with:
 - `register_many`
 - `unregister`
 
+### Attach an Iceberg catalog
+
+Instead of registering each table, you can attach an Iceberg catalog with `register_catalog`.
+Queries then read its tables by name:
+
+```python
+from pyiceberg.catalog import load_catalog
+
+ctx = pl.SQLContext()
+ctx.register_catalog("lake", load_catalog("lake"), default_namespace="tpch", default=True)
+
+ctx.execute("SELECT * FROM lineitem")            # lake: tpch.lineitem
+ctx.execute("SELECT * FROM tpch.lineitem")       # the default catalog: tpch.lineitem
+ctx.execute("SELECT * FROM lake.tpch.lineitem")  # catalog lake: tpch.lineitem
+```
+
+A table name is resolved in this order:
+
+1. a CTE, or a table registered in the context;
+2. a table of the attached catalog that the name starts with;
+3. a table of the default catalog (with `default=True`), where a name without a namespace gets
+   `default_namespace`.
+
+Catalog tables are scanned lazily, like `scan_iceberg`: a table loads when the query's schema is
+first needed. The name after the catalog is passed to the catalog as written, so catalog identifiers
+are case-sensitive. A column can be qualified by any trailing part of the table's full name:
+`lineitem.k`, `tpch.lineitem.k` or `lake.tpch.lineitem.k`.
+
+With a default catalog, a table name that is neither a CTE nor a registered table goes to the
+catalog, so a misspelled name is looked up there too. A catalog table that does not exist raises
+`NoSuchTableError` when it loads, which can be as late as `collect()`. A name that no catalog can
+resolve raises "relation ... was not found" instead: for example `lineitem` when the default catalog
+has no `default_namespace`, or `tpch.lineitem` when an attached catalog named `tpch` without a
+`default_namespace` takes precedence over that namespace. Writing the full name, such as
+`lake.tpch.lineitem`, makes the catalog explicit.
+
+Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
+registered there. If that detaches the default catalog, the default catalog on entry is restored.
+
+`DROP TABLE [IF EXISTS] <name> [PURGE]` resolves the name as a query does: a registered table of
+that name is dropped from the context, else the catalog table is dropped from its catalog. Once no
+registered table matches, `DROP TABLE IF EXISTS` of a name reaches the catalog. The drop is
+permanent and runs at `execute()`. `PURGE` also asks the catalog to delete the table's data files,
+and only applies to catalog tables. A `DROP TABLE` of a catalog table takes one name.
+
+`CREATE TABLE <name> (<column>, ...)` resolves the name as a query does and creates an empty table
+in the catalog it resolves to, at `execute()`. With a default catalog, that includes names such as
+`tpch.t`; `CREATE TEMP TABLE` always creates a registered table instead, and its name cannot start
+with an attached catalog. `NOT NULL` makes a column a required field, and `LOCATION '...'` or
+`WITH ('location' = '...', 'format-version' = 2)` sets the table's location and properties.
+`CREATE TABLE ... AS SELECT`, `TRUNCATE` and `DELETE` on catalog tables are not supported yet.
+`TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached catalog only acts on a
+registered table.
+
+!!! warning "Serialized plans"
+
+    A serialized plan over catalog tables can contain the catalog's properties and storage
+    options, which may include credentials. Treat serialized plans as secret.
+
 ## Execute queries and collect results
 
 SQL queries are always executed in lazy mode to take advantage of the full set of query planning

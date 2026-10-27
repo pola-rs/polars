@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use ir_graph::{IRNodeEdgeKeys, build_ir_traversal_graph, unpack_edges_mut};
 use polars_core::frame::UniqueKeepStrategy;
-use polars_core::prelude::PlIndexMap;
+use polars_core::prelude::{IdxSize, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use slotmap::{SlotMap, new_key_type};
 
 use crate::dsl::{SinkTypeIR, UnionOptions};
 use crate::plans::simplify_ordering::expr::{
-    ExprOrderSimplifier, ObservableOrders, is_order_insensitive_window,
+    ExprOrderSimplifier, ObservableOrders, flags_at, is_order_insensitive_window, non_scalar_keys,
 };
 use crate::plans::simplify_ordering::ir_node_key::IRNodeKey;
 use crate::plans::{IRAggExpr, is_scalar_ae};
@@ -199,6 +199,27 @@ impl SimplifyIRNodeOrder<'_> {
             } => {
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
+                if let Some(kept) =
+                    non_scalar_keys(by_column.iter().map(|e| e.node()), self.expr_arena)
+                {
+                    if kept.is_empty() {
+                        let input = *input;
+                        let Some((offset, len, _)) = *slice else {
+                            *in_edge = out_edge.clone();
+                            return self.unlink_node(current_ir_node, input);
+                        };
+                        *self.ir_arena.get_mut(current_ir_node) = IR::Slice {
+                            input,
+                            offset,
+                            len: len.try_into().unwrap_or(IdxSize::MAX),
+                        };
+                        return self.simplify_ir_node_orders(current_ir_node);
+                    }
+                    *by_column = kept.iter().map(|&i| by_column[i].clone()).collect();
+                    sort_options.descending = flags_at(&sort_options.descending, &kept);
+                    sort_options.nulls_last = flags_at(&sort_options.nulls_last, &kept);
+                }
+
                 if out_edge.is_unordered() && slice.is_none() {
                     *in_edge = out_edge.clone();
                     let input = *input;
@@ -287,12 +308,12 @@ impl SimplifyIRNodeOrder<'_> {
                     || eos.internally_observed_orders().contains(O::COLUMN)
                     || (*maintain_order
                         && keys_observable.contains(O::COLUMN)
-                        && !out_edge.is_unordered()))
+                        && (!out_edge.is_unordered() || options.slice.is_some())))
                 {
                     *in_edge = Edge::Unordered;
                 }
 
-                if out_edge.is_unordered()
+                if (out_edge.is_unordered() && options.slice.is_none())
                     || !*maintain_order
                     || (in_edge.is_unordered() && !keys_observable.contains(O::INDEPENDENT))
                 {
@@ -592,6 +613,8 @@ impl SimplifyIRNodeOrder<'_> {
             IR::Scan { .. }
             | IR::DataFrameScan { .. }
             | IR::UnoptimizedDispatch { .. }
+            | IR::Recursive { .. }
+            | IR::WorkingTableScan { .. }
             | IR::Resolver { .. } => {},
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         };

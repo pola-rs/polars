@@ -15,7 +15,11 @@ pub(super) fn lower_sql_function(
         #[cfg(feature = "is_in")]
         SqlFunction::IsIn { nulls_equal } => {
             let needle = e[0].dtype(ctx.schema, ctx.arena)?.clone();
-            adapt_decimal_literal(&mut e[1], &needle, ctx)?;
+            if let Some(element) = e[1].dtype(ctx.schema, ctx.arena)?.inner_dtype().cloned() {
+                adapt_decimal_literal(&mut e[0], &element, ctx)?;
+            }
+            adapt_literal_list(&mut e[1], &needle, ctx)?;
+            compare_as_supertype(&mut e, ctx)?;
             let function = IRFunctionExpr::Boolean(IRBooleanFunction::IsIn {
                 nulls_equal,
                 needle_cast: None,
@@ -113,13 +117,96 @@ fn adapt_decimal_literal(
     let target = match e.dtype(ctx.schema, ctx.arena)? {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => other.clone(),
-        DataType::List(inner) if inner.is_decimal() => DataType::List(Box::new(other.clone())),
         _ => return Ok(()),
     };
     if is_literal_valued(e.node(), ctx.arena) {
         cast_to(e, &target, ctx)?;
     }
     Ok(())
+}
+
+/// A literal `IN` list of SQL numbers, such as `(1, 2.5)`, holds integers or decimals. Tested
+/// against a float, it takes the float's type, as each literal would with `=`.
+#[cfg(feature = "is_in")]
+fn adapt_literal_list(
+    e: &mut ExprIR,
+    needle: &DataType,
+    ctx: &mut ExprToIRContext,
+) -> PolarsResult<()> {
+    if !needle.is_float() {
+        return Ok(());
+    }
+    let DataType::List(inner) = e.dtype(ctx.schema, ctx.arena)? else {
+        return Ok(());
+    };
+    if (inner.is_integer() || inner.is_decimal()) && is_literal_valued(e.node(), ctx.arena) {
+        cast_to(e, &DataType::List(Box::new(needle.clone())), ctx)?;
+    }
+    Ok(())
+}
+
+/// `is_in` does not compare a float with an integer or decimal, a date with a datetime, or
+/// nested values with other inner types. For these pairs, cast the needle and the elements to
+/// their supertype, as `=` would. Nested values are only cast when they have the same shape
+/// (see [`same_shape`]); other nested pairs still raise. The casts are strict: the SQL `IN`
+/// null check looks at the values before the cast, so a cast must not add a null.
+#[cfg(feature = "is_in")]
+fn compare_as_supertype(e: &mut [ExprIR], ctx: &mut ExprToIRContext) -> PolarsResult<()> {
+    let needle = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+    let container = e[1].dtype(ctx.schema, ctx.arena)?.clone();
+    let Some(element) = container.inner_dtype() else {
+        return Ok(());
+    };
+    let is_float =
+        |dt: &DataType| dt.is_float() || matches!(dt, DataType::Unknown(UnknownKind::Float));
+    let is_exact = |dt: &DataType| {
+        dt.is_integer() || dt.is_decimal() || matches!(dt, DataType::Unknown(UnknownKind::Int(_)))
+    };
+    let compare = (is_float(&needle) && is_exact(element))
+        || (is_exact(&needle) && is_float(element))
+        || matches!(
+            (&needle, element),
+            (DataType::Date, DataType::Datetime(_, _)) | (DataType::Datetime(_, _), DataType::Date)
+        )
+        || (&needle != element && needle.is_nested() && same_shape(&needle, element));
+    if !compare {
+        return Ok(());
+    }
+    let Ok(dtype) = try_get_supertype(&needle, element) else {
+        return Ok(());
+    };
+    let dtype = dtype.materialize_unknown(true)?;
+    let container_dtype = match &container {
+        DataType::List(_) => DataType::List(Box::new(dtype.clone())),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(_, width) => DataType::Array(Box::new(dtype.clone()), *width),
+        _ => return Ok(()),
+    };
+    cast_to(&mut e[0], &dtype, ctx)?;
+    cast_to(&mut e[1], &container_dtype, ctx)
+}
+
+/// Whether `a` and `b` nest the same way: a List in a List, an Array in an Array of the same
+/// width and Structs with the same field names in the same order. Other nested types, such as
+/// a Map, never match. Casts between other shapes can change values, e.g. a supertype of
+/// Structs with other names holds the fields of both, filled with nulls.
+#[cfg(feature = "is_in")]
+fn same_shape(a: &DataType, b: &DataType) -> bool {
+    match (a, b) {
+        (DataType::List(a), DataType::List(b)) => same_shape(a, b),
+        #[cfg(feature = "dtype-array")]
+        (DataType::Array(a, a_width), DataType::Array(b, b_width)) => {
+            a_width == b_width && same_shape(a, b)
+        },
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(a), DataType::Struct(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|(a, b)| a.name() == b.name() && same_shape(a.dtype(), b.dtype()))
+        },
+        _ => !a.is_nested() && !b.is_nested(),
+    }
 }
 
 fn cast_to(e: &mut ExprIR, dtype: &DataType, ctx: &mut ExprToIRContext) -> PolarsResult<()> {

@@ -20,12 +20,27 @@ use crate::reduce::has_nulls::HasNullsReduce;
 use crate::reduce::implode::new_unordered_implode_reduction;
 use crate::reduce::is_empty::IsEmptyReduce;
 use crate::reduce::mean::new_mean_reduction;
-use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
+use crate::reduce::min_max::{new_max_reduction, new_min_reduction, null_if_has_nulls};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 #[cfg(feature = "moment")]
 use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
 use crate::reduce::sum::{IdxTypeCheckedSumReducer, new_sum_reduction};
+use crate::reduce::unique::{
+    new_n_unique_reduction, new_unique_reduction, supports_unique_reduction,
+};
 use crate::reduce::var_std::new_var_std_reduction;
+
+/// Returns `x` if `node` is `x.unique()` without `maintain_order`.
+pub fn unordered_unique_input(node: Node, expr_arena: &Arena<AExpr>) -> Option<Node> {
+    match expr_arena.get(node) {
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::Unique(false),
+            ..
+        } => Some(input[0].node()),
+        _ => None,
+    }
+}
 
 /// Converts a node into a reduction + its associated selector expression.
 pub fn into_reduction(
@@ -49,12 +64,20 @@ pub fn into_reduction(
             IRAggExpr::Mean(input) => (new_mean_reduction(get_dt(*input)?)?, *input),
             IRAggExpr::Min {
                 propagate_nans,
+                propagate_nulls,
                 input,
-            } => (new_min_reduction(get_dt(*input)?, *propagate_nans)?, *input),
+            } => {
+                let min = new_min_reduction(get_dt(*input)?, *propagate_nans)?;
+                (null_if_has_nulls(min, *propagate_nulls), *input)
+            },
             IRAggExpr::Max {
                 propagate_nans,
+                propagate_nulls,
                 input,
-            } => (new_max_reduction(get_dt(*input)?, *propagate_nans)?, *input),
+            } => {
+                let max = new_max_reduction(get_dt(*input)?, *propagate_nans)?;
+                (null_if_has_nulls(max, *propagate_nulls), *input)
+            },
             IRAggExpr::Var(input, ddof) => (
                 new_var_std_reduction(get_dt(*input)?, false, *ddof)?,
                 *input,
@@ -81,9 +104,18 @@ pub fn into_reduction(
             IRAggExpr::Implode {
                 input,
                 maintain_order: false,
-            } => (new_unordered_implode_reduction(get_dt(*input)?), *input),
+            } => {
+                let unique_input = unordered_unique_input(*input, expr_arena);
+                let unique_dtype = unique_input.map(get_dt).transpose()?;
+                match (unique_input, unique_dtype) {
+                    (Some(x), Some(dt)) if supports_unique_reduction(&dt) => {
+                        (new_unique_reduction(dt), x)
+                    },
+                    _ => (new_unordered_implode_reduction(get_dt(*input)?), *input),
+                }
+            },
+            IRAggExpr::NUnique(input) => (new_n_unique_reduction(get_dt(*input)?), *input),
             IRAggExpr::Median(_) => todo!(),
-            IRAggExpr::NUnique(_) => todo!(),
             IRAggExpr::Implode { .. } => todo!(),
         },
         AExpr::Len => {
@@ -189,9 +221,10 @@ pub fn into_reduction(
 
         AExpr::Function {
             input: inner_exprs,
-            function: IRFunctionExpr::MinBy,
+            function: IRFunctionExpr::MinBy { order },
             options: _,
         } => {
+            let order = *order;
             assert!(inner_exprs.len() == 2);
             let input = inner_exprs[0].node();
             let mut by = inner_exprs[1].node();
@@ -211,15 +244,20 @@ pub fn into_reduction(
                 .node();
                 by_dtype = DataType::BinaryOffset;
             }
-            let gr = new_min_by_reduction(input_dtype, by_dtype)?;
+            if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {
+                // All keys are null, so they tie.
+                return Ok((new_first_reduction(input_dtype), vec![input]));
+            }
+            let gr = new_min_by_reduction(input_dtype, by_dtype, order)?;
             return Ok((gr, vec![input, by]));
         },
 
         AExpr::Function {
             input: inner_exprs,
-            function: IRFunctionExpr::MaxBy,
+            function: IRFunctionExpr::MaxBy { order },
             options: _,
         } => {
+            let order = *order;
             assert!(inner_exprs.len() == 2);
             let input = inner_exprs[0].node();
             let mut by = inner_exprs[1].node();
@@ -239,7 +277,11 @@ pub fn into_reduction(
                 .node();
                 by_dtype = DataType::BinaryOffset;
             }
-            let gr = new_max_by_reduction(input_dtype, by_dtype)?;
+            if by_dtype.is_null() && order != MinMaxByOrder::SkipNulls {
+                // All keys are null, so they tie.
+                return Ok((new_first_reduction(input_dtype), vec![input]));
+            }
+            let gr = new_max_by_reduction(input_dtype, by_dtype, order)?;
             return Ok((gr, vec![input, by]));
         },
 
@@ -249,13 +291,14 @@ pub fn into_reduction(
             function,
         } => {
             let ann_agg = function.materialize()?;
-            assert!(inner_exprs.len() == 1);
-            let input = inner_exprs[0].node();
             let reduction = ann_agg.as_any();
             let reduction = reduction
                 .downcast_ref::<Box<dyn GroupedReduction>>()
                 .unwrap();
-            (reduction.new_empty(), input)
+            return Ok((
+                reduction.new_empty(),
+                inner_exprs.iter().map(|e| e.node()).collect(),
+            ));
         },
 
         #[cfg(feature = "cov")]

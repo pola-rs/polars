@@ -10,7 +10,7 @@ use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::{Grouper, new_hash_grouper};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::reduce::GroupedReduction;
-use polars_ooc::{MostRecentSpillContext, SpillFrame, memory_manager};
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame, memory_manager};
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -19,8 +19,10 @@ use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
-use super::window::{PARTITIONS_PER_PIPELINE, PartitionedMorsels};
 use crate::morsel::{MorselSeq, SourceToken};
+
+/// The number of hash partitions per pipeline.
+const PARTITIONS_PER_PIPELINE: usize = 16;
 
 /// Up to this many estimated groups, every pipeline reduces its own morsels and the results are
 /// merged.
@@ -78,6 +80,78 @@ struct LocalBuilder {
     /// The hashed keys of `input.morsels[i]`.
     hash_keys: Vec<HashKeys>,
     sketch_per_p: Vec<CardinalitySketch>,
+}
+
+/// The input morsels of one pipeline, with their rows split into hash partitions.
+struct PartitionedMorsels {
+    pub morsels: Vec<(MorselSeq, SpillFrame)>,
+    record_bytes: bool,
+    /// The estimated size of each morsel, only if `record_bytes`.
+    pub morsel_bytes: Vec<usize>,
+    // The rows of morsels[i] in partition p are
+    // idxs_per_p[p][offsets_per_p[i * num_partitions + p]..offsets_per_p[(i + 1) * num_partitions + p]].
+    pub idxs_per_p: Vec<Vec<IdxSize>>,
+    offsets_per_p: Vec<usize>,
+}
+
+impl PartitionedMorsels {
+    pub fn new(num_partitions: usize, record_bytes: bool) -> Self {
+        Self {
+            morsels: Vec::new(),
+            record_bytes,
+            morsel_bytes: Vec::new(),
+            idxs_per_p: vec![Vec::new(); num_partitions],
+            offsets_per_p: vec![0; num_partitions],
+        }
+    }
+
+    /// The range in `idxs_per_p[p]` of the rows of morsel `i` in partition `p`.
+    pub fn partition_range(&self, i: usize, p: usize) -> std::ops::Range<usize> {
+        let num_partitions = self.idxs_per_p.len();
+        self.offsets_per_p[i * num_partitions + p]..self.offsets_per_p[(i + 1) * num_partitions + p]
+    }
+
+    /// Splits the rows of `morsel` into partitions on the hash of its keys and keeps it as a
+    /// spillable frame. Returns the hashed keys.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn push<C: ParameterFreeSpillContext>(
+        &mut self,
+        mut morsel: Morsel,
+        partition_by: impl IntoIterator<Item = impl AsRef<str>>,
+        read_schema: &Schema,
+        partitioner: &HashPartitioner,
+        random_state: &PlRandomState,
+        sketches: &mut [CardinalitySketch],
+        spill_ctx: &C,
+    ) -> PolarsResult<HashKeys> {
+        morsel.take_consume_token();
+        {
+            let mut df = morsel.df_mut().await;
+            // SAFETY: the lengths and names of the columns do not change.
+            let columns = unsafe { df.columns_mut_retain_schema() };
+            // Reading rows by index needs single-chunk columns.
+            for c in columns
+                .iter_mut()
+                .filter(|c| c.n_chunks() > 1 && read_schema.contains(c.name()))
+            {
+                *c = c.rechunk();
+            }
+            if self.record_bytes {
+                self.morsel_bytes.push(df.estimated_size(false));
+            }
+        }
+        let keys = morsel.df().await.select(partition_by)?;
+        let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+        hash_keys.gen_idxs_per_partition(partitioner, &mut self.idxs_per_p, sketches, None, true);
+        self.offsets_per_p
+            .extend(self.idxs_per_p.iter().map(|idxs| idxs.len()));
+        let seq = morsel.seq();
+        let sf = morsel.into_sf();
+        spill_ctx.register_no_spill_check(&sf);
+        memory_manager().spill().await;
+        self.morsels.push((seq, sf));
+        Ok(hash_keys)
+    }
 }
 
 impl ScalarWindowNode {

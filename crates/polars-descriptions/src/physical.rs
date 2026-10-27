@@ -70,12 +70,13 @@ pub enum PhysicalPropsDescription {
     },
     Window {
         partition_by: Vec<String>,
-        order_by: Option<String>,
+        order_by: Vec<String>,
         exprs: Vec<String>,
         ordered_eval: bool,
         maintain_order: bool,
     },
     InMemorySink,
+    Reverse,
     InMemorySource {
         n_rows: usize,
         schema_names: Vec<String>,
@@ -188,6 +189,9 @@ pub enum PhysicalPropsDescription {
     },
     OrderedUnion {
         num_inputs: usize,
+    },
+    Recursive {
+        num_external_inputs: usize,
     },
     UnorderedUnion {
         num_inputs: usize,

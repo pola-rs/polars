@@ -322,7 +322,12 @@ impl BoundConversion {
             (Self::Float64, P::Double(v)) => return Ok((!v.is_nan()).then_some(A::Float64(v))),
             (Self::Decimal128, P::Int32(v)) => A::Int128(v as i128),
             (Self::Decimal128, P::Int64(v)) => A::Int128(v as i128),
-            (Self::Decimal128, P::Bytes(v)) => A::Int128(convert_i128(v, v.len())),
+            // Out-of-spec widths leave the bound unknown.
+            (Self::Decimal128, P::Bytes(v)) => {
+                return Ok((1..=16)
+                    .contains(&v.len())
+                    .then(|| A::Int128(convert_i128(v))));
+            },
             (Self::Decimal256, P::Int32(v)) => A::Int256(i256(I256::new(v.into()))),
             (Self::Decimal256, P::Int64(v)) => A::Int256(i256(I256::new(v.into()))),
             (Self::Decimal256, P::Bytes(v)) => A::Int256(convert_i256(v)),

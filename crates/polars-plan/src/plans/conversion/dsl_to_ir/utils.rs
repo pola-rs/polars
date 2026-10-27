@@ -11,6 +11,8 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) pushdown_maintain_errors: bool,
     pub(super) verbose: bool,
     pub(super) seen_caches: PlIndexMap<UniqueId, Node>,
+    /// The `Recursive` nodes whose step is being converted, with their working table schema.
+    pub(super) recursions: Vec<(UniqueId, SchemaRef)>,
 }
 
 pub(super) fn expand_expressions(

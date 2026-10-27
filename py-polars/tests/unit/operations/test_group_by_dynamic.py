@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -993,10 +993,10 @@ def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> 
         data={
             "t": pl.Series(
                 [
-                    datetime(2024, 3, 22, 3, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 4, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
-                    datetime(2024, 3, 22, 6, 0, tzinfo=timezone.utc),
+                    datetime(2024, 3, 22, 3, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 4, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 5, 0, tzinfo=UTC),
+                    datetime(2024, 3, 22, 6, 0, tzinfo=UTC),
                 ]
             ),
             "v": [1, 10, 100, 1000],
@@ -1011,8 +1011,8 @@ def test_earliest_point_included_when_offset_is_set_15241(start_by: StartBy) -> 
     expected = pl.DataFrame(
         {
             "t": [
-                datetime(2024, 3, 21, 5, 0, tzinfo=timezone.utc),
-                datetime(2024, 3, 22, 5, 0, tzinfo=timezone.utc),
+                datetime(2024, 3, 21, 5, 0, tzinfo=UTC),
+                datetime(2024, 3, 22, 5, 0, tzinfo=UTC),
             ],
             "v": [[1, 10], [100, 1000]],
         }

@@ -3,7 +3,7 @@ use polars_arrow::array::{Array, FixedSizeListArray};
 use polars_arrow::bitmap::BitmapBuilder;
 use polars_core::chunked_array::builder::fixed_size_list::get_fixed_size_list_builder;
 use polars_core::prelude::arity::unary_kernel;
-use polars_core::utils::slice_offsets;
+use polars_utils::slice::slice_offsets;
 
 use super::min_max::AggType;
 use super::*;
@@ -26,9 +26,7 @@ pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
 }
 
 fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> Series {
-    let values = ca.get_inner();
-    let width = ca.width();
-    min_max::array_dispatch(ca.name().clone(), &values, width, agg_type)
+    min_max::array_dispatch(ca, agg_type)
 }
 
 pub trait ArrayNameSpace: AsArray {

@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 
 use polars_arrow::bitmap::Bitmap;
+use polars_compute::nan::first_nan_idx;
 use polars_core::frame::group_by::aggregations::{_use_rolling_kernels, rolling_numeric_minmax_by};
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
-use polars_core::utils::_split_offsets;
+use polars_core::utils::{_split_offsets, first_null};
+use polars_core::with_match_physical_float_polars_type;
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
@@ -22,6 +24,8 @@ use crate::reduce::GroupedReduction;
 pub struct AggregationType {
     pub(crate) groupby: GroupByMethod,
     pub(crate) allow_threading: bool,
+    /// Only used by min and max.
+    pub(crate) propagate_nulls: bool,
 }
 
 pub(crate) struct AggregationExpr {
@@ -31,6 +35,20 @@ pub(crate) struct AggregationExpr {
 }
 
 impl AggregationExpr {
+    /// Sets the groups of `values` that contain a null to null, if the aggregation propagates
+    /// nulls.
+    ///
+    /// # Safety
+    /// `groups` must be in bounds for `values`.
+    unsafe fn propagate_nulls(&self, agg: Column, values: &Column, groups: &GroupsType) -> Column {
+        if !self.agg_type.propagate_nulls || !values.has_nulls() {
+            return agg;
+        }
+        let has_nulls = unsafe { values.is_null().agg_any(groups, true) };
+        let validity: Bitmap = has_nulls.iter().map(|b| b != Some(true)).collect();
+        agg.mask(&validity)
+    }
+
     pub fn new(
         expr: Arc<dyn PhysicalExpr>,
         agg_type: AggregationType,
@@ -55,7 +73,12 @@ impl PhysicalExpr for AggregationExpr {
         let AggregationType {
             groupby,
             allow_threading,
+            propagate_nulls,
         } = self.agg_type;
+
+        if propagate_nulls && s.has_nulls() {
+            return Ok(Column::full_null(s.name().clone(), 1, s.dtype()));
+        }
 
         let is_float = s.dtype().is_float();
         let group_by = match groupby {
@@ -227,11 +250,13 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Min => {
                     let (c, groups) = ac.get_final_aggregation();
                     let agg_c = c.agg_min(&groups);
+                    let agg_c = self.propagate_nulls(agg_c, &c, &groups);
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Max => {
                     let (c, groups) = ac.get_final_aggregation();
                     let agg_c = c.agg_max(&groups);
+                    let agg_c = self.propagate_nulls(agg_c, &c, &groups);
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::ArgMin => {
@@ -358,6 +383,7 @@ impl PhysicalExpr for AggregationExpr {
                         } else {
                             c.agg_min(&groups)
                         };
+                        let agg_c = self.propagate_nulls(agg_c, &c, &groups);
                         AggregatedScalar(agg_c.with_name(keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
@@ -378,6 +404,7 @@ impl PhysicalExpr for AggregationExpr {
                         } else {
                             c.agg_max(&groups)
                         };
+                        let agg_c = self.propagate_nulls(agg_c, &c, &groups);
                         AggregatedScalar(agg_c.with_name(keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
@@ -403,26 +430,81 @@ impl PhysicalExpr for AggregationExpr {
     }
 }
 
+/// The index of the minimum or the maximum of `s` in the order `sort` uses: NaN is the largest
+/// value, and null is the smallest or the largest value. Returns `None` only if `s` is empty.
+pub(crate) fn arg_min_max_total(
+    s: &Series,
+    is_max: bool,
+    nulls_largest: bool,
+) -> PolarsResult<Option<usize>> {
+    if s.is_empty() {
+        return Ok(None);
+    }
+    if is_max == nulls_largest && s.has_nulls() {
+        return Ok(first_null(s.chunks().iter().map(|arr| arr.as_ref())));
+    }
+    if is_max && s.dtype().is_float() {
+        let nan_idx = with_match_physical_float_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            first_nan(ca)
+        });
+        if nan_idx.is_some() {
+            return Ok(nan_idx);
+        }
+    }
+    let idx = if is_max { s.arg_max() } else { s.arg_min() };
+    Ok(Some(idx.unwrap_or(0)))
+}
+
+/// The index of the first NaN that is not null.
+pub(crate) fn first_nan<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Option<usize> {
+    let mut offset = 0;
+    for arr in ca.downcast_iter() {
+        let values = arr.values().as_slice();
+        let mut start = 0;
+        while let Some(i) = first_nan_idx(&values[start..]) {
+            let i = start + i;
+            if arr.validity().is_none_or(|validity| validity.get_bit(i)) {
+                return Some(offset + i);
+            }
+            start = i + 1;
+        }
+        offset += arr.len();
+    }
+    None
+}
+
 pub struct AggMinMaxByExpr {
     input: Arc<dyn PhysicalExpr>,
     by: Arc<dyn PhysicalExpr>,
     is_max_by: bool,
+    order: MinMaxByOrder,
 }
 
 impl AggMinMaxByExpr {
-    pub fn new_min_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+    pub fn new_min_by(
+        input: Arc<dyn PhysicalExpr>,
+        by: Arc<dyn PhysicalExpr>,
+        order: MinMaxByOrder,
+    ) -> Self {
         Self {
             input,
             by,
             is_max_by: false,
+            order,
         }
     }
 
-    pub fn new_max_by(input: Arc<dyn PhysicalExpr>, by: Arc<dyn PhysicalExpr>) -> Self {
+    pub fn new_max_by(
+        input: Arc<dyn PhysicalExpr>,
+        by: Arc<dyn PhysicalExpr>,
+        order: MinMaxByOrder,
+    ) -> Self {
         Self {
             input,
             by,
             is_max_by: true,
+            order,
         }
     }
 }
@@ -433,18 +515,26 @@ impl PhysicalExpr for AggMinMaxByExpr {
     }
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let input = self.input.evaluate(df, state)?;
-        let by = self.by.evaluate(df, state)?;
+        let mut input = self.input.evaluate(df, state)?;
+        let mut by = self.by.evaluate(df, state)?;
+        if by.len() == 1 && self.by.is_scalar() {
+            by = by.new_from_index(0, input.len());
+        } else if input.len() == 1 && self.input.is_scalar() {
+            input = input.new_from_index(0, by.len());
+        }
         let name = if self.is_max_by { "max_by" } else { "min_by" };
         polars_ensure!(
             input.len() == by.len(),
             ShapeMismatch: "'by' column in {} expression has incorrect length: expected {}, got {}",
             name, input.len(), by.len()
         );
-        let arg_extremum = if self.is_max_by {
-            by.as_materialized_series_maintain_scalar().arg_max()
-        } else {
-            by.as_materialized_series_maintain_scalar().arg_min()
+        let by = by.as_materialized_series_maintain_scalar();
+        let arg_extremum = match self.order {
+            MinMaxByOrder::SkipNulls if self.is_max_by => by.arg_max(),
+            MinMaxByOrder::SkipNulls => by.arg_min(),
+            MinMaxByOrder::Total { nulls_largest } => {
+                arg_min_max_total(&by, self.is_max_by, nulls_largest)?
+            },
         };
         let out = if let Some(idx) = arg_extremum {
             input.slice(idx as i64, 1)
@@ -462,16 +552,43 @@ impl PhysicalExpr for AggMinMaxByExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let ac = self.input.evaluate_on_groups(df, groups, state)?;
-        let ac_by = self.by.evaluate_on_groups(df, groups, state)?;
+        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        let mut ac_by = self.by.evaluate_on_groups(df, groups, state)?;
         assert!(ac.groups.len() == ac_by.groups.len());
 
         // Don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
+        ac.set_groups_for_undefined_agg_states();
+        ac_by.set_groups_for_undefined_agg_states();
+        if self.input.is_scalar() && ac.broadcast_unit_groups_to(&mut ac_by) {
+            ac.normalize_values();
+        }
+        if self.by.is_scalar() && ac_by.broadcast_unit_groups_to(&mut ac) {
+            ac_by.normalize_values();
+        }
+
         let (input_col, input_groups) = ac.get_final_aggregation();
         let (by_col, by_groups) = ac_by.get_final_aggregation();
         GroupsType::check_lengths(&input_groups, &by_groups)?;
+
+        let nulls_largest = match self.order {
+            MinMaxByOrder::SkipNulls => None,
+            MinMaxByOrder::Total { nulls_largest } => Some(nulls_largest),
+        };
+        // The arg max kernels may skip NaN, but `sort` puts NaN after all other values.
+        let nan_mask = match nulls_largest {
+            Some(_) if self.is_max_by && by_col.dtype().is_float() => {
+                let is_nan = by_col
+                    .as_materialized_series()
+                    .is_nan()?
+                    .rechunk()
+                    .into_owned();
+                is_nan.any().then_some(is_nan)
+            },
+            _ => None,
+        };
+        let is_exact = nulls_largest.is_none() || (!by_col.has_nulls() && nan_mask.is_none());
 
         // Fast path: rolling context with numeric by column — O(n) via deque.
         if let GroupsType::Slice {
@@ -479,6 +596,8 @@ impl PhysicalExpr for AggMinMaxByExpr {
             overlapping,
             monotonic,
         } = by_groups.as_ref().as_ref()
+            && input_groups.is_same(&by_groups)
+            && is_exact
         {
             let by_phys = by_col.as_materialized_series().to_physical_repr();
             if by_phys.dtype().is_primitive_numeric()
@@ -486,7 +605,8 @@ impl PhysicalExpr for AggMinMaxByExpr {
                 && _use_rolling_kernels(slices, *overlapping, *monotonic, by_phys.chunks())
             {
                 let gather_idxs = rolling_numeric_minmax_by(&by_col, slices, self.is_max_by);
-                let gathered = input_col.take(&gather_idxs)?;
+                // SAFETY: The indices come from the same groups as `input_col`.
+                let gathered = unsafe { input_col.take_unchecked(&gather_idxs) };
                 let agg_state = AggregatedScalar(gathered.with_name(keep_name));
                 return Ok(AggregationContext::from_agg_state(
                     agg_state,
@@ -500,6 +620,8 @@ impl PhysicalExpr for AggMinMaxByExpr {
             let encoded =
                 _get_rows_encoded_ca(by_col.name().clone(), &[by_col], &[false], &[false], true)?;
             encoded.cast(&DataType::Binary)?.into_column()
+        } else if by_col.dtype() == &DataType::BinaryOffset {
+            by_col.cast(&DataType::Binary)?
         } else {
             by_col
         };
@@ -510,20 +632,59 @@ impl PhysicalExpr for AggMinMaxByExpr {
             unsafe { by_col.agg_arg_min(&by_groups) }
         };
         let idxs_in_groups: &IdxCa = idxs_in_groups.as_materialized_series().as_ref().as_ref();
-        let gather_idxs: IdxCa = match input_groups.as_ref().as_ref() {
-            GroupsType::Idx(g) => idxs_in_groups
-                .iter()
-                .enumerate()
-                .map(|(group_idx, idx_in_group)| {
-                    idx_in_group.map(|i| g.all()[group_idx][i as usize])
-                })
-                .collect(),
-            GroupsType::Slice { groups, .. } => idxs_in_groups
-                .iter()
-                .enumerate()
-                .map(|(group_idx, idx_in_group)| idx_in_group.map(|i| groups[group_idx][0] + i))
-                .collect(),
+
+        // In the total order these rows come before the pick of the kernel, in this order.
+        let mut before = Vec::new();
+        if nulls_largest == Some(self.is_max_by) && by_col.has_nulls() {
+            before.push(by_col.is_null());
+        }
+        before.extend(nan_mask);
+        let before = before
+            .into_iter()
+            .map(|mask| {
+                // SAFETY: Groups are correct.
+                let pos = unsafe { mask.clone().into_series().agg_arg_max(&by_groups) };
+                let pos = pos.idx()?.rechunk().downcast_as_array().clone();
+                Ok((pos, mask.rechunk().downcast_as_array().clone()))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        // SAFETY: Callers pass a group and a position within that group.
+        let to_global = |groups: &GroupsType, group_idx: usize, i: IdxSize| unsafe {
+            match groups {
+                GroupsType::Idx(g) => *g.all().get_unchecked(group_idx).get_unchecked(i as usize),
+                GroupsType::Slice { groups, .. } => groups.get_unchecked(group_idx)[0] + i,
+            }
         };
+        let group_len = |group_idx: usize| match by_groups.as_ref().as_ref() {
+            GroupsType::Idx(g) => g.all()[group_idx].len(),
+            GroupsType::Slice { groups, .. } => groups[group_idx][1] as usize,
+        };
+        let first_before = |group_idx: usize| {
+            before.iter().find_map(|(pos, mask)| {
+                // SAFETY: There is one position per group, and it is within the group.
+                unsafe {
+                    let i = pos.get_unchecked(group_idx)?;
+                    let by_idx = to_global(by_groups.as_ref().as_ref(), group_idx, i);
+                    mask.get_unchecked(by_idx as usize)?.then_some(i)
+                }
+            })
+        };
+        let gather_idxs: IdxCa = idxs_in_groups
+            .iter()
+            .enumerate()
+            .map(|(group_idx, idx_in_group)| {
+                // A group without a pick that is not empty only has null keys.
+                let fallback =
+                    || (nulls_largest.is_some() && group_len(group_idx) > 0).then_some(0);
+                let idx_in_group = first_before(group_idx).or(idx_in_group).or_else(fallback)?;
+                Some(to_global(
+                    input_groups.as_ref().as_ref(),
+                    group_idx,
+                    idx_in_group,
+                ))
+            })
+            .collect();
 
         // SAFETY: All non-null indices are within input_col's groups.
         let gathered = unsafe { input_col.take_unchecked(&gather_idxs) };
@@ -569,17 +730,27 @@ impl PhysicalExpr for AnonymousAggregationExpr {
     }
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        let mut cols = self
+            .inputs
+            .iter()
+            .map(|e| e.evaluate(df, state))
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let len = cols.iter().map(Column::len).max().unwrap();
+        for (col, e) in cols.iter_mut().zip(&self.inputs) {
+            if col.len() == 1 && e.is_scalar() {
+                *col = col.new_from_index(0, len);
+            }
+        }
         polars_ensure!(
-            self.inputs.len() == 1,
-            ComputeError: "AnonymousAggregationExpr with more than one input is not supported"
+            cols.iter().all(|c| c.len() == len),
+            ShapeMismatch: "inputs of an anonymous aggregation have different lengths"
         );
 
-        let col = self.inputs[0].evaluate(df, state)?;
         let mut gr = self.grouped_reduction.new_empty();
         gr.resize(1);
-        gr.update_group(&[&col], 0, 0)?;
+        gr.update_group(&cols.iter().collect::<Vec<_>>(), 0, 0)?;
         let out_series = gr.finalize()?;
-        Ok(Column::new(col.name().clone(), out_series))
+        Ok(Column::new(cols[0].name().clone(), out_series))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -589,71 +760,102 @@ impl PhysicalExpr for AnonymousAggregationExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        polars_ensure!(
-            self.inputs.len() == 1,
-            ComputeError: "AnonymousAggregationExpr with more than one input is not supported"
-        );
-
-        let input = &self.inputs[0];
-        let mut ac = input.evaluate_on_groups(df, groups, state)?;
+        let mut acs = self
+            .inputs
+            .iter()
+            .map(|e| e.evaluate_on_groups(df, groups, state))
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         // don't change names by aggregations as is done in polars-core
-        let input_column_name = ac.get_values().name().clone();
+        let input_column_name = acs[0].get_values().name().clone();
 
-        if let AggState::LiteralScalar(input_column) = &mut ac.state {
-            *input_column = self.evaluate(df, state)?;
+        if acs
+            .iter()
+            .all(|ac| matches!(ac.state, AggState::LiteralScalar(_)))
+        {
+            let mut ac = acs.swap_remove(0);
+            ac.state = AggState::LiteralScalar(self.evaluate(df, state)?);
             return Ok(ac);
         }
 
-        let (input_column, resolved_groups) = ac.get_final_aggregation();
+        for ac in &mut acs {
+            ac.set_groups_for_undefined_agg_states();
+        }
+        if let Some(i) = self.inputs.iter().position(|e| !e.is_scalar()) {
+            for j in (0..acs.len()).filter(|&j| j != i && self.inputs[j].is_scalar()) {
+                let [ac, target] = acs.get_disjoint_mut([j, i]).unwrap();
+                if ac.broadcast_unit_groups_to(target) {
+                    ac.normalize_values();
+                }
+            }
+        }
+
+        let (columns, mut input_groups): (Vec<_>, Vec<_>) =
+            acs.into_iter().map(|ac| ac.get_final_aggregation()).unzip();
+        let resolved_groups = &input_groups[0];
+        for g in &input_groups[1..] {
+            resolved_groups.check_lengths(g)?;
+        }
 
         let mut gr = self.grouped_reduction.new_empty();
-        gr.resize(groups.len() as IdxSize);
+        gr.resize(resolved_groups.len() as IdxSize);
 
-        assert!(
-            !resolved_groups.is_overlapping(),
-            "Aggregating with overlapping groups is a logic error"
-        );
-
-        let subset = (0..input_column.len() as IdxSize).collect::<Vec<IdxSize>>();
-
-        let mut group_idxs = Vec::with_capacity(input_column.len());
-        match &**resolved_groups {
-            GroupsType::Idx(group_indices) => {
-                group_idxs.resize(input_column.len(), 0);
-                for (group_idx, indices_in_group) in group_indices.all().iter().enumerate() {
-                    for pos in indices_in_group.iter() {
-                        group_idxs[*pos as usize] = group_idx as IdxSize;
-                    }
-                }
-            },
-            GroupsType::Slice { groups, .. } => {
-                for (group_idx, [_start, len]) in groups.iter().enumerate() {
-                    group_idxs.extend(std::iter::repeat_n(group_idx as IdxSize, *len as usize));
-                }
-            },
+        let total = resolved_groups.iter().map(|g| g.len()).sum::<usize>();
+        // The positions of each input's values, group after group.
+        let positions = |groups: &GroupsType| -> Vec<IdxSize> {
+            let mut out = Vec::with_capacity(total);
+            match groups {
+                GroupsType::Idx(idx) => {
+                    out.extend(idx.all().iter().flat_map(|g| g.iter().copied()))
+                },
+                GroupsType::Slice { groups, .. } => {
+                    out.extend(groups.iter().flat_map(|&[start, len]| start..start + len))
+                },
+            }
+            out
         };
-        assert_eq!(group_idxs.len(), input_column.len());
-
-        // `update_groups_subset` needs a single chunk.
-        let input_column_rechunked = input_column.rechunk();
+        // `update_groups_subset` needs single chunks. Inputs with their own groups are gathered
+        // into group order, so that their values line up.
+        let (columns, subset): (Vec<_>, _) =
+            if input_groups.iter().all(|g| g.is_same(resolved_groups)) {
+                let columns = columns.iter().map(Column::rechunk).collect();
+                (columns, positions(resolved_groups))
+            } else {
+                let columns = columns
+                    .iter()
+                    .zip(&input_groups)
+                    .map(|(c, g)| c.take_slice(&positions(g)))
+                    .collect::<PolarsResult<_>>()?;
+                (columns, (0..total as IdxSize).collect())
+            };
+        let mut group_idxs = Vec::with_capacity(total);
+        for (group_idx, g) in resolved_groups.iter().enumerate() {
+            group_idxs.extend(std::iter::repeat_n(group_idx as IdxSize, g.len()));
+        }
 
         // Single call so no need to resolve ordering.
         let seq_id = 0;
 
         // SAFETY:
-        // - `subset` is in-bounds because it is 0..N
-        // - `group_idxs` is in-bounds because we checked that it matches `input_column.len()` *and*
-        //   is filled with values <= `input_column.len()` since they are derived from it via
-        //   `enumerate`.
+        // - `subset` holds the group positions into `columns`, or `0..total` into the gathered
+        //   columns, so it is in-bounds.
+        // - Each `group_idxs` entry is `< resolved_groups.len()`, the size passed to `gr.resize`.
         unsafe {
-            gr.update_groups_subset(&[&input_column_rechunked], &subset, &group_idxs, seq_id)?;
+            gr.update_groups_subset(
+                &columns.iter().collect::<Vec<_>>(),
+                &subset,
+                &group_idxs,
+                seq_id,
+            )?;
         }
 
         let out_series = gr.finalize()?;
         let out = AggregatedScalar(Column::new(input_column_name, out_series));
 
-        Ok(AggregationContext::from_agg_state(out, resolved_groups))
+        Ok(AggregationContext::from_agg_state(
+            out,
+            input_groups.swap_remove(0),
+        ))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {

@@ -19,6 +19,11 @@ pub fn estimate_memory_usage() -> u64 {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn add_test_usage(bytes: i64) {
+    GLOBAL_ALLOC_SIZE.fetch_add(bytes as u64, Ordering::Relaxed);
+}
+
 thread_local! {
     static LOCAL_ALLOC_DRIFT: Cell<i64> = const {
         Cell::new(0)
@@ -36,9 +41,10 @@ fn update_alloc_size(bytes: i64) {
     })
 }
 
+/// Adds the allocations of this thread that are not yet counted to the total.
 #[cold]
 #[inline(never)]
-fn flush_local_drift() {
+pub(crate) fn flush_local_drift() {
     LOCAL_ALLOC_DRIFT.with(|drift| {
         let drift_bytes = drift.get();
         let old = GLOBAL_ALLOC_SIZE.fetch_add(drift_bytes as u64, Ordering::AcqRel);
@@ -55,7 +61,7 @@ fn flush_local_drift() {
 #[inline(never)]
 fn oomkill() -> ! {
     // Can't allocate here, so write directly to stderr.
-    const MSG: &[u8] = b"polars: memory usage exceeded POLARS_OOMKILL_THRESHOLD_MB, aborting\n";
+    const MSG: &[u8] = b"polars: memory usage exceeded POLARS_OOMKILL_THRESHOLD_MB or POLARS_OOMKILL_THRESHOLD_FRACTION, aborting\n";
     unsafe {
         libc::write(2, MSG.as_ptr().cast(), MSG.len() as _);
         libc::abort()

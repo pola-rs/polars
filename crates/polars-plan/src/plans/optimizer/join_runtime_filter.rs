@@ -312,7 +312,7 @@ fn trace_probe_keys(
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));
-        let (dyn_node, pred) = new_dynamic_pred(column, expr_arena);
+        let (dyn_node, pred) = new_dynamic_pred(column, expr_arena, None);
         let predicate = ExprIR::from_node(dyn_node, expr_arena);
         let origins = scan_origins(probe_input, predicate, ir_arena, expr_arena, scratch);
         if !origins.is_empty() {
@@ -493,11 +493,14 @@ fn attach_to_scan(
 ) {
     let IR::Scan {
         predicate: existing,
+        predicate_file_skip_applied,
         ..
     } = ir_arena.get_mut(scan)
     else {
         unreachable!()
     };
+    // Files are skipped by the scan predicate after these filters are attached.
+    debug_assert!(predicate_file_skip_applied.is_none());
     *existing = Some(match existing.take() {
         None => predicate,
         Some(existing) => {

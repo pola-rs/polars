@@ -29,7 +29,8 @@ pub fn build_streaming_query_executor(
         }),
     };
 
-    crate::StreamingQuery::build(node, ir_arena, expr_arena, false)
+    let num_pipelines = polars_config::config().max_threads();
+    crate::StreamingQuery::build(node, ir_arena, expr_arena, false, num_pipelines, None)
         .map(Some)
         .map(Mutex::new)
         .map(Arc::new)

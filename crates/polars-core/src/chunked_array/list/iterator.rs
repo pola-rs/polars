@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
+use polars_compute::gather::sublist::list::{sublist_gather, sublist_slice_var};
+
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
@@ -459,6 +461,79 @@ impl ListChunked {
             ca.set_fast_explode();
         }
         Ok(ca)
+    }
+}
+
+impl ListChunked {
+    /// Slice every list with the same `offset` and `length`.
+    pub fn lst_slice(&self, offset: i64, length: usize) -> Self {
+        self.lst_slice_var(&[offset], 0, &[length], 0)
+    }
+
+    /// Slice list `i` with offset `offsets[i * offset_stride]` and length
+    /// `lengths[i * lengths_stride]`.
+    pub fn lst_slice_var(
+        &self,
+        offsets: &[i64],
+        offset_stride: usize,
+        lengths: &[usize],
+        lengths_stride: usize,
+    ) -> Self {
+        let mut fast_explode = true;
+        let mut row = 0;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let (out, chunk_fast_explode) = sublist_slice_var(
+                    arr,
+                    &offsets[row * offset_stride..],
+                    offset_stride,
+                    &lengths[row * lengths_stride..],
+                    lengths_stride,
+                );
+                fast_explode &= chunk_fast_explode;
+                row += arr.len();
+                out.boxed()
+            })
+            .collect();
+
+        // SAFETY: the chunks have the same dtype as `self`.
+        let mut out = unsafe { self.copy_with_chunks(chunks) };
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        out
+    }
+
+    /// Gather from list `i * list_stride` the elements at the indices in list
+    /// `i * idx_stride` of `idxs`, for `i` in `0..len`. `idxs` must have `i64`
+    /// values. Negative indices count from the end. Out-of-bounds indices give
+    /// null if `null_on_oob`, and an error otherwise.
+    pub fn lst_gather_var(
+        &self,
+        list_stride: usize,
+        idxs: &ListChunked,
+        idx_stride: usize,
+        len: usize,
+        null_on_oob: bool,
+    ) -> PolarsResult<Self> {
+        let lists = self.rechunk();
+        let idxs = idxs.rechunk();
+        let (arr, fast_explode) = sublist_gather(
+            lists.downcast_as_array(),
+            list_stride,
+            idxs.downcast_as_array(),
+            idx_stride,
+            len,
+            null_on_oob,
+        )?;
+
+        // SAFETY: the chunk has the same dtype as `self`.
+        let mut out = unsafe { self.copy_with_chunks(vec![arr.boxed()]) };
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        Ok(out)
     }
 }
 

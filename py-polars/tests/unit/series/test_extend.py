@@ -1,3 +1,5 @@
+import random
+
 import pytest
 
 import polars as pl
@@ -60,3 +62,28 @@ def test_extend_sliced_12968() -> None:
         "a",
         "c",
     ]
+
+
+def test_extend_boolean_offset_slice_30105() -> None:
+    s = pl.Series("b", [True, True, False, False]).slice(2)
+    s.extend(pl.Series("b", [False]))
+    assert s.to_list() == [False, False, False]
+
+    s = pl.Series("b", [True] * 61 + [False, None, False]).slice(61)
+    s.extend(pl.Series("b", [False]))
+    assert s.to_list() == [False, None, False, False]
+
+
+@pytest.mark.parametrize("offset", [1, 2, 7, 8, 9, 63, 64, 65, 100])
+@pytest.mark.parametrize("other", [[], [False, None]])
+def test_extend_boolean_offset_slice_all_offsets_30105(
+    offset: int, other: list[bool | None]
+) -> None:
+    # non-periodic so values read from the wrong position don't match by accident.
+    values = random.Random(0).choices([True, False, None], k=200)
+
+    # The slice is the only owner of its buffers.
+    s = pl.Series("b", values).slice(offset, 50)
+    s.extend(pl.Series("b", other, dtype=pl.Boolean))
+
+    assert s.to_list() == values[offset : offset + 50] + other

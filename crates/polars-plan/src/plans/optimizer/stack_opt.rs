@@ -4,10 +4,13 @@ use polars_core::prelude::PolarsResult;
 use polars_core::schema::Schema;
 
 use crate::constants::get_pl_structfields_name;
+use crate::dsl::Operator;
 use crate::plans::aexpr::AExpr;
 use crate::plans::ir::IR;
-use crate::plans::{ExprIR, ToFieldContext, get_input, get_input_schema};
+use crate::plans::ir::inputs::ExprSchema;
+use crate::plans::{ExprIR, ToFieldContext, get_input_schema};
 use crate::prelude::{Arena, Node};
+use crate::utils::is_scan;
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion
 pub struct StackOptimizer {}
@@ -56,14 +59,31 @@ impl StackOptimizer {
                     continue;
                 }
 
-                let input_schema = get_input_schema(lp_arena, current_node);
+                let is_filter = matches!(plan, IR::Filter { .. });
 
                 schema_stack.clear();
-                let schema_idx = 0;
-                schema_stack.push(input_schema.into_owned());
+                for input in plan.inputs() {
+                    schema_stack.push(lp_arena.get(input).schema(lp_arena).into_owned());
+                }
+                let has_inputs = !schema_stack.is_empty() || is_scan(plan);
+                if schema_stack.is_empty() {
+                    schema_stack.push(get_input_schema(lp_arena, current_node).into_owned());
+                }
 
-                while let Some(expr_ir) = scratch.pop() {
-                    exprs.push((expr_ir.node(), schema_idx));
+                let output_schema_idx = schema_stack.len();
+                let mut uses_output_schema = false;
+                for (idx, expr_ir) in scratch.drain(..).enumerate().rev() {
+                    let schema_idx = match plan.expr_schema(idx) {
+                        ExprSchema::Input(input_idx) => input_idx,
+                        ExprSchema::Output => {
+                            uses_output_schema = true;
+                            output_schema_idx
+                        },
+                    };
+                    exprs.push((expr_ir.node(), schema_idx, is_filter));
+                }
+                if uses_output_schema {
+                    schema_stack.push(plan.schema(lp_arena).into_owned());
                 }
 
                 let mut ctx = OptimizeExprContext::default();
@@ -73,11 +93,11 @@ impl StackOptimizer {
                     ctx.in_pyarrow_scan = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow);
                     ctx.in_io_plugin = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin);
                 };
-                ctx.in_filter = matches!(plan, IR::Filter { .. });
-                ctx.has_inputs = !get_input(lp_arena, current_node).is_empty();
+                ctx.has_inputs = has_inputs;
 
                 // process the expressions on the stack and apply optimizations.
-                while let Some((current_expr_node, schema_idx)) = exprs.pop() {
+                while let Some((current_expr_node, schema_idx, is_filter_predicate)) = exprs.pop() {
+                    ctx.is_filter_predicate = is_filter_predicate;
                     {
                         let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                         if expr.is_leaf() {
@@ -111,16 +131,18 @@ impl StackOptimizer {
                             let eval_schema_idx = schema_stack.len();
                             schema_stack.push(Arc::new(eval_schema));
 
-                            exprs.push((*expr, schema_idx));
+                            exprs.push((*expr, schema_idx, false));
                             for node in evaluation.iter().map(ExprIR::node).rev() {
-                                exprs.push((node, eval_schema_idx));
+                                exprs.push((node, eval_schema_idx, false));
                             }
                         },
                         expr => {
+                            let is_filter_predicate =
+                                is_filter_predicate && passes_on_filter_predicate(expr);
                             children.clear();
                             expr.inputs_rev(&mut children);
                             for node in children.drain(..) {
-                                exprs.push((node, schema_idx));
+                                exprs.push((node, schema_idx, is_filter_predicate));
                             }
                         },
                     }
@@ -135,8 +157,27 @@ impl StackOptimizer {
 pub struct OptimizeExprContext {
     pub in_pyarrow_scan: bool,
     pub in_io_plugin: bool,
-    pub in_filter: bool,
+    /// The expression is the predicate of a filter, or is reachable from it only through AND/OR.
+    ///
+    /// Such an expression only matters through whether it evaluates to `true`: a filter keeps a
+    /// row iff its predicate is `true`, and under Kleene logic `a & b` is `true` iff both `a` and
+    /// `b` are, and `a | b` iff either is. So rewrites may treat `null` and `false` as the same
+    /// value here and may replace a column by a broadcasting scalar. Neither is valid for any
+    /// other sub-expression of a filter, e.g. under `NOT`, `XOR`, `is_null` or an aggregation.
+    pub is_filter_predicate: bool,
     pub has_inputs: bool,
+}
+
+/// Whether the inputs of `expr` are filter predicates if `expr` is one, see
+/// [`OptimizeExprContext::is_filter_predicate`].
+pub fn passes_on_filter_predicate(expr: &AExpr) -> bool {
+    matches!(
+        expr,
+        AExpr::BinaryExpr {
+            op: Operator::And | Operator::Or,
+            ..
+        }
+    )
 }
 
 pub trait OptimizationRule {

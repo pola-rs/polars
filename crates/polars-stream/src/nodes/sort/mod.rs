@@ -16,16 +16,18 @@ use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
 use polars_core::series::{IntoSeries, Series};
-use polars_core::utils::{accumulate_dataframes_vertical_unchecked, slice_offsets};
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::PolarsResult;
 use polars_ooc::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame,
+    memory_manager,
 };
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice::slice_offsets;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use self::flush::{Flush, PendingBucket};
+use self::flush::{Flush, PendingBucket, sort_index_row_bytes};
 use self::sample::{KeySample, split_keys};
 use self::split_tree::BucketClassifier;
 use self::tuning::SortTuning;
@@ -187,6 +189,8 @@ impl SortNode {
         let flush_rows =
             self.tuning
                 .flush_rows(total_bytes, total_rows, num_tasks * (num_buckets + 1));
+        // The rows a builder receives if the keys are spread evenly.
+        let reserve_rows = flush_rows.min(total_rows.div_ceil(num_tasks * num_buckets));
         let spill_ctx =
             MostRecentSpillContext::new("sort-partition".into(), state.task_metrics.clone());
 
@@ -213,6 +217,16 @@ impl SortNode {
             }
         }
 
+        // Register frames in the order the tasks read them.
+        let max_task_frames = frames_per_task.iter().map(Vec::len).max().unwrap_or(0);
+        for i in 0..max_task_frames {
+            for task_frames in &frames_per_task {
+                if let Some(frame) = task_frames.get(i) {
+                    spill_ctx.register_no_spill_check(frame);
+                }
+            }
+        }
+
         let out_per_task = executor::task_scope(state.task_metrics(), |scope| {
             let mut join_handles = Vec::new();
             for task_frames in frames_per_task {
@@ -227,6 +241,7 @@ impl SortNode {
                         input_schema,
                         key,
                         flush_rows,
+                        reserve_rows,
                         maintain_order,
                         spill_ctx,
                     )
@@ -292,11 +307,13 @@ impl SortNode {
         }
         drop_parallel(dropped);
 
-        let bucket_bytes = total_bytes / (num_buckets as u64 + 1);
         Ok(Flush::new(
             pending,
             get_ideal_morsel_size().max(1),
-            self.tuning.flush_ahead(bucket_bytes, num_tasks),
+            self.tuning.flush_ahead(num_tasks),
+            // Rounded up, so that no bucket with rows is free.
+            total_bytes.div_ceil(total_rows.max(1) as u64).max(1),
+            sort_index_row_bytes(&self.key_dtype),
             spill_ctx,
         ))
     }
@@ -476,12 +493,14 @@ fn drop_parallel<T: Send>(items: impl IntoIterator<Item = T>) {
 }
 
 /// Partitions one task's share of the buffered frames into per-bucket frames.
+#[allow(clippy::too_many_arguments)]
 async fn partition_frames(
     frames: Vec<SpillFrame>,
     classifier: &BucketClassifier,
     input_schema: &Arc<Schema>,
     key: &str,
     flush_rows: usize,
+    reserve_rows: usize,
     maintain_order: bool,
     spill_ctx: &MostRecentSpillContext,
 ) -> PolarsResult<Vec<Vec<SpillFrame>>> {
@@ -498,6 +517,7 @@ async fn partition_frames(
         }
         let mut df = frame.into_df().await;
         df.rechunk_mut();
+        memory_manager().spill().await;
 
         for idxs in idxs_per_bucket.iter_mut() {
             idxs.clear();
@@ -525,7 +545,7 @@ async fn partition_frames(
             }
             // Reserving up front avoids repeated reallocation while growing.
             if builders[b].is_empty() {
-                builders[b].reserve(flush_rows + idxs_per_bucket[b].len());
+                builders[b].reserve(reserve_rows + idxs_per_bucket[b].len());
             }
             // SAFETY: the indices are row offsets within the rechunked frame.
             unsafe {

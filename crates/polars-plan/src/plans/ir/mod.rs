@@ -155,7 +155,7 @@ pub enum IR {
     Window {
         input: Node,
         partition_by: Vec<PlSmallStr>,
-        order_by: Option<(PlSmallStr, SortOptions)>,
+        order_by: Option<(Vec<PlSmallStr>, SortMultipleOptions)>,
         exprs: Vec<ExprIR>,
         schema: SchemaRef,
         maintain_order: bool,
@@ -196,6 +196,25 @@ pub enum IR {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    /// Recursive query. The output is the anchor rows followed by the rows of each round: a
+    /// round runs `step` with the `WorkingTableScan` of `id` holding the rows of the round
+    /// before. It ends when a round has no rows.
+    ///
+    /// The schema of `step` equals the schema of `anchor`.
+    Recursive {
+        anchor: Node,
+        step: Node,
+        id: UniqueId,
+        /// The caches in `step` that are computed again in every round. All other caches in
+        /// `step` are computed once for the whole query.
+        round_local_caches: Arc<[UniqueId]>,
+    },
+    /// The rows of the round before, inside the `step` of the `Recursive` with this `id`. In the
+    /// plan of a single round it also reads the value of a cache that is computed once.
+    WorkingTableScan {
+        id: UniqueId,
+        schema: SchemaRef,
+    },
     UnoptimizedDispatch {
         inputs: Vec<Node>,
         arg_map: FunctionArgMap,
@@ -221,12 +240,51 @@ pub enum IR {
     Invalid,
 }
 
+/// The sort keys of the order key `key` of an `over`. An ordered row encoding of several keys
+/// is split into its keys, so they can be sorted without encoding them.
+pub fn window_order_keys(
+    key: Node,
+    options: SortOptions,
+    expr_arena: &Arena<AExpr>,
+) -> (Vec<Node>, SortMultipleOptions) {
+    // Only split encodings sorted in the default order: a descending order on the encoding
+    // would reverse every key.
+    if !options.descending
+        && !options.nulls_last
+        && let AExpr::Function {
+            input,
+            function:
+                IRFunctionExpr::RowEncode(
+                    _,
+                    RowEncodingVariant::Ordered {
+                        descending: Some(descending),
+                        nulls_last: Some(nulls_last),
+                        broadcast_nulls: None | Some(false),
+                    },
+                ),
+            ..
+        } = expr_arena.get(key)
+        && descending.len() == input.len()
+        && nulls_last.len() == input.len()
+    {
+        let options = SortMultipleOptions {
+            descending: descending.clone(),
+            nulls_last: nulls_last.clone(),
+            multithreaded: options.multithreaded,
+            maintain_order: options.maintain_order,
+            limit: None,
+        };
+        return (input.iter().map(|e| e.node()).collect(), options);
+    }
+    (vec![key], (&options).into())
+}
+
 /// Whether every expression is an `over` with `GroupsToRows` mapping on exactly `partition_by`
 /// and `order_by`, as [`IR::Window`] requires.
 pub fn window_exprs_match_keys(
     exprs: &[ExprIR],
     partition_by: &[PlSmallStr],
-    order_by: Option<&(PlSmallStr, SortOptions)>,
+    order_by: Option<&(Vec<PlSmallStr>, SortMultipleOptions)>,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
     let is_column = |node: &Node, name: &PlSmallStr| match expr_arena.get(*node) {
@@ -247,8 +305,15 @@ pub fn window_exprs_match_keys(
                     .all(|(node, name)| is_column(node, name))
                 && match (expr_order_by, order_by) {
                     (None, None) => true,
-                    (Some((node, expr_options)), Some((name, options))) => {
-                        is_column(node, name) && expr_options == options
+                    (Some((key, expr_options)), Some((names, options))) => {
+                        let (keys, expr_options) =
+                            window_order_keys(*key, *expr_options, expr_arena);
+                        keys.len() == names.len()
+                            && keys
+                                .iter()
+                                .zip(names)
+                                .all(|(node, name)| is_column(node, name))
+                            && &expr_options == options
                     },
                     _ => false,
                 }

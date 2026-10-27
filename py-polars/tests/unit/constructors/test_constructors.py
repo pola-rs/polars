@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict, UserDict, namedtuple
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -25,18 +25,11 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable
+    from typing import Self, assert_type
 
     from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
-    from typing_extensions import assert_type
 
 
 # -----------------------------------------------------------------------------------
@@ -466,6 +459,56 @@ def test_dataclasses_initvar_typing() -> None:
 
     # ...but should not load the initvar field into the DataFrame
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
+
+
+def test_dataclasses_flat_and_nested_fields() -> None:
+    @dataclasses.dataclass
+    class One:
+        x: int
+
+    @dataclasses.dataclass
+    class Flat:
+        x: int
+        y: str | None
+
+    @dataclasses.dataclass
+    class Nested:
+        x: int
+        y: list[int]
+
+    assert pl.DataFrame([One(1), One(2)]).to_dict(as_series=False) == {"x": [1, 2]}
+    assert pl.DataFrame([Flat(1, "a"), Flat(2, None)]).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": ["a", None],
+    }
+    assert pl.DataFrame([Nested(1, [1, 2]), Nested(2, [])]).to_dict(
+        as_series=False
+    ) == {"x": [1, 2], "y": [[1, 2], []]}
+
+    @dataclasses.dataclass
+    class Other:
+        z: int
+        w: str | None
+
+    # Rows of other dataclasses are read by position.
+    assert pl.DataFrame([Flat(1, "a"), Other(2, "b")]).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": ["a", "b"],
+    }
+
+    @dataclasses.dataclass
+    class Empty:
+        pass
+
+    assert pl.DataFrame([Empty(), Empty()]).shape == (2, 0)
+
+    @dataclasses.dataclass
+    class WithObject:
+        x: int
+        y: object
+
+    df = pl.DataFrame([WithObject(1, One(2))], schema_overrides={"y": pl.Object})
+    assert df.item(0, "y") == [2]
 
 
 @pytest.mark.parametrize(
@@ -937,7 +980,7 @@ def test_init_1d_sequence() -> None:
     df = pl.DataFrame([datetime(2020, 1, 1)], schema={"ts": pl.Datetime("ms")})
     assert df.schema == {"ts": pl.Datetime("ms")}
     df = pl.DataFrame(
-        [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
+        [datetime(2020, 1, 1, tzinfo=UTC)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
     df = pl.DataFrame(
@@ -1226,6 +1269,24 @@ def test_from_dicts_missing_columns() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_from_dicts_extra_keys_after_inference_23190() -> None:
+    data = [{"a": 1}] * 3 + [{"a": 10, "b": 20}]
+    for strict in [True, False]:
+        with pytest.raises(
+            pl.exceptions.ComputeError, match='extra key in dict 3: "b"'
+        ):
+            pl.from_dicts(data, infer_schema_length=3, strict=strict)
+
+    assert_frame_equal(
+        pl.from_dicts(data, infer_schema_length=3, schema=["a"]),
+        pl.DataFrame({"a": [1, 1, 1, 10]}),
+    )
+    assert_frame_equal(
+        pl.from_dicts(data, infer_schema_length=None),
+        pl.DataFrame({"a": [1, 1, 1, 10], "b": [None, None, None, 20]}),
+    )
+
+
 def test_from_dicts_schema_columns_do_not_match() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
@@ -1363,6 +1424,26 @@ def test_from_rows_owned_values() -> None:
         "bin": pl.Binary,
         "st": pl.Struct({"a": pl.String}),
     }
+    assert df.rows() == rows
+
+
+def test_from_rows_nested_across_batches() -> None:
+    rows = [(i, [i, None], {"x": i}, [i, i + 1]) for i in range(3000)]
+    df = pl.DataFrame(
+        rows,
+        schema=["id", "list", "struct", "array"],
+        schema_overrides={"array": pl.Array(pl.Int64, 2)},
+        orient="row",
+        infer_schema_length=1500,
+    )
+    assert df.dtypes == [
+        pl.Int64,
+        pl.List(pl.Int64),
+        pl.Struct({"x": pl.Int64}),
+        pl.Array(pl.Int64, 2),
+    ]
+    assert df.n_chunks("all") == [1, 1, 1, 1]
+    assert df["list"].flags["FAST_EXPLODE"]
     assert df.rows() == rows
 
 
@@ -1868,7 +1949,7 @@ def test_pycapsule_interface(df: pl.DataFrame) -> None:
         ZoneInfo("Asia/Tokyo"),
         ZoneInfo("Europe/Amsterdam"),
         ZoneInfo("UTC"),
-        timezone.utc,
+        UTC,
     ],
 )
 def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
@@ -1888,7 +1969,7 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
         ZoneInfo("Asia/Tokyo"),
         ZoneInfo("Europe/Amsterdam"),
         ZoneInfo("UTC"),
-        timezone.utc,
+        UTC,
     ],
 )
 def test_init_list_of_nested_dicts_with_timezone(tz: Any) -> None:

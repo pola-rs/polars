@@ -27,8 +27,10 @@ pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
 mod extract_window;
+pub use expand_datasets::attach_dataset_scan_statistics;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
+pub use extract_window::is_scalar_window_reduction;
 mod collapse_sort;
 pub mod deep_copy;
 mod filter_constraint;
@@ -36,6 +38,8 @@ mod ir_traversal;
 mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod recursive_caches;
+mod repeated_keys;
 mod simplify_expr;
 pub mod simplify_ordering;
 mod slice_pushdown_expr;
@@ -49,13 +53,16 @@ pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
 pub use predicate_pushdown::{
     DynamicPred, DynamicPredWeakRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
+    new_dynamic_pred,
 };
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{
     AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
 };
-pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
+pub use stack_opt::{
+    OptimizationRule, OptimizeExprContext, StackOptimizer, passes_on_filter_predicate,
+};
 
 #[cfg(feature = "merge_sorted")]
 use self::flatten_merge_sorted::FlattenMergeSortedRule;
@@ -104,7 +111,7 @@ pub struct ExecutionHooks {
 #[recursive::recursive]
 pub fn optimize(
     mut root: Node,
-    opt_flags: OptFlags,
+    mut opt_flags: OptFlags,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
@@ -142,8 +149,16 @@ pub fn optimize(
 
     macro_rules! get_or_init_members {
         () => {
-            _get_or_init_members(_opt_members, root, ir_arena, expr_arena)
+            _get_or_init_members(_opt_members, root, ir_arena, expr_arena, comm_subplan_elim)
         };
+    }
+
+    // A recursive query runs on the streaming engine, and some optimizations depend on the
+    // engine.
+    let has_recursive = get_or_init_members!().has_recursive;
+    if has_recursive {
+        opt_flags |= OptFlags::STREAMING;
+        opt_flags &= !OptFlags::GPU;
     }
 
     // Run before slice pushdown
@@ -176,6 +191,13 @@ pub fn optimize(
             }
         });
     };
+
+    // Caches block predicate pushdown. A recursive query keeps caches that have one reader in
+    // its step, so their inputs must be optimized by the cache pass.
+    #[cfg(feature = "cse")]
+    if has_recursive {
+        run_set_cache_states = true;
+    }
 
     let mut repeat_slice_pd_after_filter_pd = false;
 
@@ -214,18 +236,33 @@ pub fn optimize(
             opt_flags.streaming(),
             opt_flags.partition_hive(),
             opt_flags.row_estimate(),
+            has_recursive,
             hooks,
         )?;
     }
 
     // Must run before projection pushdown, as that can insert simple-projections between the sorts
-    // on unused columns.
+    // on unused columns. Repeated keys are removed first, so that the sort rewrites only see the
+    // keys that matter.
+    let mut sort_rules: Vec<Box<dyn OptimizationRule>> = Vec::new();
+    if opt_flags.simplify_expr() {
+        sort_rules.push(Box::new(repeated_keys::RemoveRepeatedKeys {}));
+    }
     if opt_flags.contains(OptFlags::SORT_COLLAPSE) {
-        root = opt.optimize_loop(
-            &mut [Box::new(collapse_sort::CollapseSort {}) as _],
-            expr_arena,
-            ir_arena,
+        sort_rules.push(Box::new(collapse_sort::CollapseSort {}));
+    }
+    if !sort_rules.is_empty() {
+        root = opt.optimize_loop(&mut sort_rules, expr_arena, ir_arena, root)?;
+    }
+
+    // Gives the dataset scans the statistics that the join passes need.
+    #[cfg(feature = "python")]
+    if opt_flags.join_order() && get_or_init_members!().has_joins {
+        expand_datasets::expand_datasets_early(
             root,
+            ir_arena,
+            expr_arena,
+            expand_datasets::EarlyExpansion::ForJoinOrder,
         )?;
     }
 
@@ -245,7 +282,7 @@ pub fn optimize(
     }
 
     if opt_flags.projection_pushdown() {
-        projection_pushdown(root, ir_arena, expr_arena);
+        projection_pushdown(root, ir_arena, expr_arena, has_recursive);
     }
 
     if opt_flags.fast_projection() {
@@ -321,6 +358,7 @@ pub fn optimize(
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
         match ir_arena.get(root) {
             IR::SinkMultiple { inputs } => {
+                let inputs = inputs.clone();
                 let mut roots = inputs.clone();
                 for root in &mut roots {
                     if !matches!(ir_arena.get(*root), IR::Sink { .. }) {
@@ -331,6 +369,21 @@ pub fn optimize(
                     }
                 }
                 simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
+                // The pass may have unlinked the input of a temporary sink.
+                let new_inputs = roots
+                    .iter()
+                    .zip(inputs)
+                    .map(|(&tmp_top, input)| match ir_arena.get(tmp_top) {
+                        IR::Sink {
+                            input: new_input, ..
+                        } if tmp_top != input => *new_input,
+                        _ => input,
+                    })
+                    .collect();
+                let IR::SinkMultiple { inputs } = ir_arena.get_mut(root) else {
+                    unreachable!()
+                };
+                *inputs = new_inputs;
             },
             ir => {
                 let mut tmp_top = root;
@@ -341,6 +394,13 @@ pub fn optimize(
                     });
                 }
                 simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
+                // The pass may have unlinked the input of the temporary sink.
+                if tmp_top != root {
+                    let IR::Sink { input, .. } = ir_arena.get(tmp_top) else {
+                        unreachable!()
+                    };
+                    root = *input;
+                }
             },
         }
     }
@@ -354,6 +414,11 @@ pub fn optimize(
     )?;
 
     call_dsl_resolvers::call_dsl_resolvers(root, ir_arena, expr_arena, opt_flags, hooks)?;
+
+    // Needs the final plan, with the predicates that are set while the query runs.
+    if has_recursive {
+        recursive_caches::cache_round_independent_parts(root, ir_arena, expr_arena);
+    }
 
     prune_parquet_metadata(root, ir_arena, expr_arena);
 
@@ -386,10 +451,11 @@ fn _get_or_init_members<'a>(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    comm_subplan_elim: bool,
 ) -> &'a mut MemberCollector {
     opt_members.get_or_insert_with(|| {
         let mut members = MemberCollector::new();
-        members.collect(root, ir_arena, expr_arena);
+        members.collect(root, ir_arena, expr_arena, comm_subplan_elim);
 
         members
     })

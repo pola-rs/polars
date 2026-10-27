@@ -13,13 +13,11 @@ use polars_async::executor::{AbortOnDropHandle, TaskMetricAggregator, spawn};
 use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::linearizer::Linearizer;
 use polars_async::primitives::oneshot_channel;
-use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::OptIOMetrics;
-use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
-use polars_io::utils::compression::SupportedCompression;
+use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_io::utils::stream_buf_reader::{ReaderSource, StreamBufReader};
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
@@ -31,6 +29,7 @@ use row_index_limit_pass::ApplyRowIndexOrLimit;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
 use super::shared::chunk_data_fetch::ChunkDataFetcher;
+use super::shared::file_init::{ChunkPrefetchSync, InitializedState};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
@@ -58,24 +57,6 @@ pub struct NDJsonFileReader {
     pub task_metrics: Option<Arc<TaskMetricAggregator>>,
 }
 
-pub struct ChunkPrefetchSync {
-    pub(crate) prefetch_limit: usize,
-    pub(crate) prefetch_semaphore: Arc<tokio::sync::Semaphore>,
-    pub(crate) shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
-
-    /// Waits for the previous reader to finish spawning prefetches.
-    pub(crate) prev_all_spawned: Option<WaitGroup>,
-    /// Dropped once the current reader has finished spawning prefetches.
-    pub(crate) current_all_spawned: Option<WaitToken>,
-}
-
-#[derive(Clone)]
-pub struct InitializedState {
-    file_size: usize,
-    compression: Option<SupportedCompression>,
-    byte_source: Arc<DynByteSource>,
-}
-
 #[async_trait]
 impl FileReader for NDJsonFileReader {
     async fn initialize(&mut self) -> PolarsResult<()> {
@@ -83,71 +64,27 @@ impl FileReader for NDJsonFileReader {
             return Ok(());
         }
 
-        let scan_source = self.scan_source.clone();
-        let byte_source_builder = self.byte_source_builder.clone();
-        let cloud_options = self.cloud_options.clone();
-        let io_metrics = self.io_metrics.clone();
-
-        let byte_source = ASYNC
-            .spawn(async move {
-                scan_source
-                    .as_scan_source_ref()
-                    .to_dyn_byte_source(
-                        &byte_source_builder,
-                        cloud_options.as_deref(),
-                        io_metrics.0,
-                    )
-                    .await
-            })
-            .await
-            .unwrap()?;
-        let byte_source = Arc::new(byte_source);
-
-        // @TODO: Refactor FileInfo so we can re-use the file_size value from the planning stage.
-        let file_size = {
-            let byte_source = byte_source.clone();
-            ASYNC
-                .spawn(async move { byte_source.get_size().await })
-                .await
-                .unwrap()?
-        };
-
-        let compression = if file_size >= 4 {
-            let byte_source = byte_source.clone();
-            let magic_range = 0..4;
-            let magic_bytes = ASYNC
-                .spawn(async move { byte_source.get_range(magic_range).await })
-                .await
-                .unwrap()?;
-            SupportedCompression::check(&magic_bytes)
-        } else {
-            None
-        };
-
-        self.init_data = Some(InitializedState {
-            file_size,
-            compression,
-            byte_source,
-        });
+        self.init_data = Some(
+            InitializedState::initialize(
+                self.scan_source.clone(),
+                self.byte_source_builder.clone(),
+                self.cloud_options.clone(),
+                self.io_metrics.clone(),
+            )
+            .await?,
+        );
 
         Ok(())
     }
 
     fn prepare_read(&mut self) -> PolarsResult<()> {
-        let wait_group_this_reader = WaitGroup::default();
-        let prefetch_all_spawned_token = wait_group_this_reader.token();
-
-        let prev_wait_group: Option<WaitGroup> = self
-            .chunk_prefetch_sync
-            .shared_prefetch_wait_group_slot
-            .try_lock()
-            .unwrap()
-            .replace(wait_group_this_reader);
-
-        self.chunk_prefetch_sync.prev_all_spawned = prev_wait_group;
-        self.chunk_prefetch_sync.current_all_spawned = Some(prefetch_all_spawned_token);
-
+        self.chunk_prefetch_sync
+            .prepare_read(self.init_data.as_ref().unwrap());
         Ok(())
+    }
+
+    fn local_read_size(&self) -> Option<usize> {
+        self.init_data.as_ref()?.local_read_size()
     }
 
     fn begin_read(
@@ -161,6 +98,7 @@ impl FileReader for NDJsonFileReader {
             file_size,
             compression,
             byte_source,
+            prefix,
         } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
@@ -192,11 +130,12 @@ impl FileReader for NDJsonFileReader {
         let is_negative_slice = matches!(pre_slice, Some(Slice::Negative { .. }));
 
         // There are two byte sourcing strategies `ReaderSource`: (a) async parallel prefetch using a
-        // streaming pipeline, or (b) memory-mapped, only to be used for uncompressed local files.
+        // streaming pipeline, or (b) an in-memory buffer, only to be used for uncompressed data
+        // that is memory-mapped (local files) or fully fetched during initialization (small cloud
+        // files).
         // The `compressed_reader` (of type `ByteSourceReader`) abstracts these source types.
         // The `use_async_prefetch` flag controls the optional pipeline startup behavior.
-        let use_async_prefetch =
-            !(matches!(byte_source.as_ref(), &DynByteSource::Buffer(_)) && compression.is_none());
+        let use_async_prefetch = self.init_data.as_ref().unwrap().uses_async_prefetch();
 
         // NDJSON: We just use the projected schema - the parser will automatically append NULL if
         // the field is not found.
@@ -464,6 +403,7 @@ impl FileReader for NDJsonFileReader {
                         byte_source,
                         file_size,
                         chunk_size,
+                        prefix,
                         prefetch_send,
                         prefetch_semaphore,
                         prefetch_current_all_spawned,
@@ -482,12 +422,11 @@ impl FileReader for NDJsonFileReader {
             let stream_buf_reader = StreamBufReader::new(prefetch_recv, prefetch_task);
             ReaderSource::Streaming(stream_buf_reader)
         } else {
-            let memslice = self
-                .scan_source
-                .as_scan_source_ref()
-                .to_buffer_async_assume_latest(self.scan_source.run_async())?;
+            let DynByteSource::Buffer(buffer) = byte_source.as_ref() else {
+                unreachable!()
+            };
 
-            ReaderSource::Memory(Cursor::new(memslice))
+            ReaderSource::Memory(Cursor::new(buffer.0.clone()))
         };
 
         const ASSUMED_COMPRESSION_RATIO: usize = 4;

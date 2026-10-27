@@ -9,6 +9,7 @@ use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::broadcast::{BroadcastLength, broadcast_len};
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice::slice_offsets;
 pub use scalar::ScalarColumn;
 
 use self::compare_inner::TotalOrdInner;
@@ -19,7 +20,7 @@ use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted};
-use crate::utils::{Container, slice_offsets};
+use crate::utils::Container;
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 mod arithmetic;
@@ -1750,7 +1751,9 @@ impl Column {
             .quantiles_reduce(quantiles, method)
     }
 
-    pub(crate) fn estimated_size(&self, expanded: bool) -> usize {
+    /// The estimated memory of the column in bytes. Without `expanded`, a scalar column that is
+    /// not materialized counts only its value.
+    pub fn estimated_size(&self, expanded: bool) -> usize {
         match self {
             Column::Series(s) => s.estimated_size(),
             Column::Scalar(s) => s.estimated_size(expanded),

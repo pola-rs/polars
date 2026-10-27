@@ -8,6 +8,7 @@ use polars_arrow::types::{
     Bytes12Alignment4, Bytes16Alignment16, Bytes32Alignment16,
 };
 use polars_buffer::{Buffer, SharedStorage};
+use polars_error::PolarsResult;
 
 use super::Filter;
 use super::dictionary_encoded::append_validity;
@@ -549,7 +550,7 @@ impl Decoder for BinaryDecoder {
         &self,
         _dict: &Self::Dict,
         _predicate: &PredicateFilter,
-    ) -> ParquetResult<Bitmap> {
+    ) -> PolarsResult<Bitmap> {
         // Dispatch to this codepath disabled from crates/polars-stream/src/nodes/io_sources/parquet/init.rs
         //
         // This would panic attempting to create a polars DataType::Binary Series from a

@@ -25,8 +25,8 @@ use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSl
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
-    ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReader,
-    StartedReaderState, UnorderedFiles,
+    ExtraOperations, ReadBytesLimit, StartReaderArgsConstant, StartReaderArgsPerFile,
+    StartedReader, StartedReaderState, UnorderedFiles,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::tasks::post_apply_extra_ops::PostApplyExtraOps;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -41,6 +41,7 @@ pub struct ReaderStarter {
     pub n_sources: usize,
     pub started_reader_tx: tokio::sync::mpsc::Sender<StartedReader>,
     pub max_concurrent_scans: usize,
+    pub read_bytes_limit: ReadBytesLimit,
     pub unordered_files: Option<UnorderedFiles>,
     pub skip_files_mask: Option<SkipFilesMask>,
     pub extra_ops: ExtraOperations,
@@ -64,6 +65,7 @@ impl ReaderStarter {
             n_sources,
             started_reader_tx,
             max_concurrent_scans,
+            read_bytes_limit,
             unordered_files,
             skip_files_mask,
             extra_ops,
@@ -274,6 +276,8 @@ impl ReaderStarter {
                         panic!();
                     }
 
+                    let slice_end = pre_slice_this_file.as_ref().map(Slice::end_position);
+
                     let get_row_count = async {
                         let num_physical_rows =
                             reader.row_position_after_slice(pre_slice_this_file).await?;
@@ -301,7 +305,24 @@ impl ReaderStarter {
                     if let Some(n_rows_in_file) = n_rows_in_file
                         && cfg!(debug_assertions)
                     {
-                        assert_eq!(n_rows_in_file, get_row_count.await?)
+                        let row_count = get_row_count.await?;
+
+                        // `row_position_after_slice` may stop counting at the end of the slice
+                        // (external readers may also return a full count cached from an earlier
+                        // call), so it is only guaranteed to be the full row count if the slice
+                        // does not end inside this file. Advancing by either count is fine: if
+                        // the slice ends here, no rows of later files are read.
+                        if slice_end.is_none_or(|end| end >= n_rows_in_file.num_physical_rows()) {
+                            assert_eq!(n_rows_in_file, row_count)
+                        } else {
+                            let end = slice_end.unwrap();
+                            let n = row_count.num_physical_rows();
+                            assert!(
+                                (end..=n_rows_in_file.num_physical_rows()).contains(&n),
+                                "row_position_after_slice: {n}, slice end: {end}, \
+                                n_rows_in_file: {n_rows_in_file:?}"
+                            )
+                        }
                     } else {
                         n_rows_in_file = Some(get_row_count.await?)
                     }
@@ -329,6 +350,21 @@ impl ReaderStarter {
                 Some(u) => Some(u.reader_slots.clone().acquire_owned().await.unwrap()),
                 None => None,
             };
+            let (read_bytes, max_concurrent_scans_this_file) = match reader.local_read_size() {
+                Some(bytes) => {
+                    let permit = read_bytes_limit.acquire(bytes).await;
+                    if verbose {
+                        eprintln!(
+                            "[ReaderStarter]: acquired read bytes \
+                            (scan_source_idx: {scan_source_idx}, KiB: {})",
+                            permit.num_permits()
+                        )
+                    }
+                    let max_files = read_bytes_limit.max_files(bytes);
+                    (Some(permit), max_concurrent_scans.min(max_files))
+                },
+                None => (None, max_concurrent_scans),
+            };
 
             reader.prepare_read()?;
 
@@ -340,6 +376,7 @@ impl ReaderStarter {
                 extra_ops_this_file,
                 callbacks,
                 external_filter_mask: external_filter_mask.clone(),
+                max_concurrent_scans: max_concurrent_scans_this_file,
             };
 
             let reader_start_task_handle = AbortOnDropHandle::new(executor::spawn(
@@ -353,6 +390,7 @@ impl ReaderStarter {
                     handle: reader_start_task_handle,
                     wait_token: wait_group.token(),
                     slot,
+                    read_bytes,
                 })
                 .await
                 .is_err()
@@ -429,7 +467,6 @@ async fn start_reader_impl(
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
-        max_concurrent_scans,
         disable_morsel_split,
         maintain_order,
         last_morsel_pipelines,
@@ -445,18 +482,29 @@ async fn start_reader_impl(
         extra_ops_this_file,
         mut callbacks,
         external_filter_mask,
+        max_concurrent_scans,
     } = args_this_file;
 
-    let file_iceberg_schema: Option<IcebergSchema> =
-        if matches!(&file_projection_builder, ProjectionBuilder::Iceberg { .. }) {
-            reader
-                .file_arrow_schema()
-                .await?
-                .map(|x| IcebergSchema::from_arrow_schema(x.as_ref()))
-                .transpose()?
-        } else {
-            None
-        };
+    let file_iceberg_schema: Option<IcebergSchema> = if let ProjectionBuilder::Iceberg {
+        projected_iceberg_schema,
+        table_has_name_mapping,
+        ..
+    } = &file_projection_builder
+    {
+        reader
+            .file_arrow_schema()
+            .await?
+            .map(|x| {
+                IcebergSchema::from_arrow_schema_with_name_mapping(
+                    x.as_ref(),
+                    projected_iceberg_schema,
+                    *table_has_name_mapping,
+                )
+            })
+            .transpose()?
+    } else {
+        None
+    };
 
     let file_projection = file_projection_builder.build_projection(
         None,

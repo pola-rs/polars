@@ -10,9 +10,9 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "2.0.0"
+version = "2.1.0"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
@@ -24,16 +24,16 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 2.0.0"]
+dependencies = ["polars-runtime-32 == 2.1.0"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -44,11 +44,12 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 2.0.0"]
-rtcompat = ["polars-runtime-compat == 2.0.0"]
+rt64 = ["polars-runtime-64 == 2.1.0"]
+rtcompat = ["polars-runtime-compat == 2.1.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-polars_cloud = ["polars_cloud >= 0.11.0"]
+polars_cloud = ["polars_cloud >= 0.13.0"]
+polars_nanook = ["polars_nanook"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -72,8 +73,10 @@ database = ["polars[adbc,connectorx,sqlalchemy]"]
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 1.0.0, != 1.5.*"]
-iceberg = ["pyiceberg >= 0.12.0"]
+deltalake = ["deltalake >= 1.2.0, != 1.5.*"]
+# `polars-iceberg` is the native Iceberg scan planning plugin, up to (excluding) its next major
+# version. `release-python` runs the test suite against the lower bound installed from PyPI.
+iceberg = ["pyiceberg >= 0.12.0", "polars-iceberg >= 0.1.0, < 1.0.0"]
 
 # Other
 async = ["gevent"]
@@ -101,6 +104,7 @@ ignore-missing-imports = [
   "IPython.*",
   "altair.*",
   "duckdb.*",
+  "polars_iceberg",
   "pyiceberg.*",
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
@@ -163,6 +167,7 @@ module = [
   "polars.polars",
   "polars._plr",
   "polars_cloud",
+  "polars_iceberg",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",

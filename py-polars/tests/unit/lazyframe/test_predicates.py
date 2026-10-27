@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -16,6 +17,7 @@ from polars.testing.asserts.series import assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1745,6 +1747,62 @@ def test_filter_contradiction_keeps_nondeterministic_eval_body() -> None:
     assert plan.count("shuffle") == 2, plan
 
 
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        (pl.col("b") & ~pl.col("b")) ^ True,
+        ((pl.col("x") > 1) & (pl.col("x") <= 1)) ^ True,
+        (pl.col("b") & ~pl.col("b")) == False,  # noqa: E712
+        (pl.col("b") & ~pl.col("b")).is_null(),
+        ~((~pl.col("b") | pl.col("b")).not_() ^ False),
+        ~pl.col("s").is_in(pl.Series([], dtype=pl.String)),
+        pl.col("s").is_in(pl.Series([], dtype=pl.String)).is_null(),
+        pl.col("c") | ((pl.col("b") & ~pl.col("b")) ^ True),
+        # Rewrites that replace a column with a scalar change the length.
+        (pl.col("b") | True).sum() == 3,
+        (pl.col("b") & False).len() == 3,
+        pl.col("s").is_in(pl.Series([], dtype=pl.String)).len() == 3,
+    ],
+)
+def test_filter_simplify_only_at_predicate_root(predicate: pl.Expr) -> None:
+    # Rewrites like `A & ~A -> false` treat null as false, which is only valid where
+    # the value is used as the filter predicate, not when nested under e.g. NOT/XOR.
+    df = pl.DataFrame(
+        {
+            "b": [True, False, None],
+            "c": [False, False, False],
+            "x": [0, 2, None],
+            "s": ["a", "b", None],
+        }
+    )
+    expected = df.filter(df.select(predicate.fill_null(False)).to_series())
+    assert_frame_equal(df.filter(predicate), expected)
+    assert_frame_equal(df.lazy().filter(predicate).collect(), expected)
+
+
+def test_filter_simplify_through_and_or_at_predicate_root() -> None:
+    # Below AND/OR at the root only whether a value is true matters, so the
+    # null-as-false rewrites still apply there.
+    lf = pl.LazyFrame({"a": [1, None, 3], "b": [True, None, False]})
+    contradiction = pl.col("b") & ~pl.col("b")
+    for predicate, removed in [
+        ((pl.col("a") > 1) | contradiction, 'col("b")'),
+        ((pl.col("a") > 1) | pl.col("a").is_in([]), "is_in"),
+        ((pl.col("a") > 1) & ((pl.col("a") < 3) | contradiction), 'col("b")'),
+    ]:
+        q = lf.filter(predicate)
+        assert removed not in q.explain()
+        assert removed in q.explain(
+            optimizations=pl.QueryOptFlags(simplify_expression=False)
+        )
+        assert_frame_equal(
+            q.collect(),
+            lf.collect().filter(
+                lf.select(predicate.fill_null(False)).collect().to_series()
+            ),
+        )
+
+
 def test_filter_range_tightening() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
 
@@ -1879,10 +1937,8 @@ def test_filter_cross_column_equality_propagation() -> None:
 
 
 def test_filter_constraint_nested_scalar_no_panic() -> None:
-    # Repeated comparisons against a List scalar reach the constraint model's
-    # scalar ordering, and `AnyValue`'s partial ordering panics on nested dtypes
-    # ("ordering for List dtype is not supported"). Nested scalars must be
-    # treated as incomparable (no tightening, no contradiction) instead.
+    # Nested dtypes have no order, so comparisons on them are kept as they are
+    # (`AnyValue`'s ordering panics on them).
     lf = pl.LazyFrame({"a": [[1, 2], [3]], "b": [1, 2]})
 
     q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") == [1, 2]))
@@ -1890,6 +1946,127 @@ def test_filter_constraint_nested_scalar_no_panic() -> None:
 
     q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") != [3]))
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [[1, 2]], "b": [1]}))
+
+    q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") == [3]))
+    assert q.collect().is_empty()
+
+    q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") != [1, 2]))
+    assert q.collect().is_empty()
+
+    lf = pl.LazyFrame({"a": [[1], [3]], "b": [[2], [3]]})
+    q = lf.filter(
+        (pl.col("a") == pl.col("b")) & (pl.col("a") == [1]) & (pl.col("b") == [2])
+    )
+    assert q.collect().is_empty()
+
+
+def test_filter_constraint_decimal_mixed_scale_29901() -> None:
+    lf = pl.LazyFrame({"d": [Decimal("1")]})
+
+    # 0.5 is not a value of the scale-0 column, so its bound is kept as is.
+    q = lf.filter((pl.col("d") >= Decimal("0.5")) & (pl.col("d") >= Decimal("6")))
+    assert q.explain().count('col("d")') == 2
+    assert q.collect().is_empty()
+
+    q = lf.filter((pl.col("d") <= Decimal("6")) & (pl.col("d") <= Decimal("0.5")))
+    assert q.collect().is_empty()
+
+    # 6.00 is exactly 6 at scale 0, so the bounds merge.
+    q = lf.filter((pl.col("d") >= Decimal("0")) & (pl.col("d") >= Decimal("6.00")))
+    assert q.explain() == lf.filter(pl.col("d") >= Decimal("6")).explain()
+    assert q.collect().is_empty()
+
+    # Same value at different scales: the exclusive bound wins.
+    q = lf.filter((pl.col("d") >= Decimal("1.0")) & (pl.col("d") > Decimal("1")))
+    assert q.collect().is_empty()
+
+    q = lf.filter((pl.col("d") == Decimal("1.00")) & (pl.col("d") >= Decimal("0.5")))
+    assert_frame_equal(q.collect(), lf.collect())
+
+    # 100 doesn't fit the column's precision, so it isn't a value of the column.
+    lf = pl.LazyFrame({"d": [Decimal("1")]}, schema={"d": pl.Decimal(1, 0)})
+    q = lf.filter((pl.col("d") < Decimal("100")) & (pl.col("d") < Decimal("200")))
+    assert_frame_equal(q.collect(), lf.collect())
+
+    # `b != 0` carries over to `a` but resolves away against `a >= 0.5`, which
+    # can't carry over to the scale-0 `b`. This must not rewrite on every pass.
+    lf = pl.LazyFrame(
+        {"a": [Decimal("1.0")], "b": [Decimal("1")]},
+        schema={"a": pl.Decimal(10, 1), "b": pl.Decimal(10, 0)},
+    )
+    q = lf.filter(
+        (pl.col("a") == pl.col("b"))
+        & (pl.col("a") >= Decimal("0.5"))
+        & (pl.col("b") != Decimal("0"))
+    )
+    assert_frame_equal(q.collect(), lf.collect())
+
+    # An `is_between` with endpoints that aren't values of the column is kept.
+    lf_d = pl.LazyFrame({"d": [0, 1, 2]}, schema={"d": pl.Decimal(38, 0)})
+    q = lf_d.filter(
+        pl.col("d").is_between(Decimal("0"), Decimal("1.5")) & (pl.col("d") <= 2)
+    )
+    assert q.collect()["d"].to_list() == [Decimal("0"), Decimal("1")]
+    lf_i = pl.LazyFrame({"i": [0, 1, 2, 3]})
+    q = lf_i.filter(
+        pl.col("i").is_between(pl.lit(1, pl.Int32), pl.lit(5, pl.Int16))
+        & (pl.col("i") <= 2)
+    )
+    assert q.collect()["i"].to_list() == [1, 2]
+
+    # Across `a == b`, set members that aren't values of the other column drop out.
+    lf_ab = pl.LazyFrame(
+        {"a": [Decimal("1.0"), Decimal("2.5")], "b": [Decimal("1"), Decimal("2")]},
+        schema={"a": pl.Decimal(10, 1), "b": pl.Decimal(10, 0)},
+    )
+    q = lf_ab.filter(
+        (pl.col("a") == pl.col("b"))
+        & pl.col("a").is_in([Decimal("1.0"), Decimal("2.5")])
+    )
+    assert_frame_equal(q.collect(), lf_ab.head(1).collect())
+    q = lf_ab.filter((pl.col("a") == pl.col("b")) & pl.col("a").is_in([Decimal("2.5")]))
+    assert "FILTER" not in q.explain()
+    assert q.collect().is_empty()
+
+    # `is_in` sets of different scales hold equal values that don't hash the same.
+    lf = pl.LazyFrame(
+        {"a": [Decimal("1.0")], "b": [Decimal("1.00")]},
+        schema={"a": pl.Decimal(10, 1), "b": pl.Decimal(10, 2)},
+    )
+    q = lf.filter(
+        (pl.col("a") == pl.col("b"))
+        & pl.col("a").is_in([Decimal("1.0")])
+        & pl.col("b").is_in([Decimal("1.00")])
+    )
+    assert_frame_equal(q.collect(), lf.collect())
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        (pl.col("x") < Decimal("-0.0001"))
+        & (pl.col("x") <= pl.lit(Decimal("-1"), pl.Decimal(18, 4))),
+        (pl.col("x") < pl.lit(Decimal("0"), pl.Decimal(10, 4)))
+        & (pl.col("x") <= pl.lit(Decimal("-1"), pl.Decimal(18, 4))),
+        (pl.col("x") < pl.lit(Decimal("0"), pl.Decimal(10, 4)))
+        & pl.col("x").is_between(
+            pl.lit(Decimal("-3"), pl.Decimal(18, 4)),
+            pl.lit(Decimal("-1"), pl.Decimal(18, 4)),
+        ),
+    ],
+)
+def test_filter_constraint_literals_of_other_decimal_precision(
+    predicate: pl.Expr,
+) -> None:
+    # Bounds that don't order against each other are kept, not dropped.
+    lf = pl.LazyFrame(
+        {"x": [Decimal("-0.5"), Decimal("-2")]}, schema={"x": pl.Decimal(18, 4)}
+    )
+    assert_frame_equal(
+        lf.filter(predicate).collect(),
+        lf.filter(predicate).collect(optimizations=pl.QueryOptFlags.none()),
+    )
+    assert lf.filter(predicate).collect().height == 1
 
 
 def test_filter_constraint_column_with_its_own_order() -> None:
@@ -2019,3 +2196,66 @@ def test_predicate_pushdown_fallible_inside_list_eval() -> None:
     assert plan.index("list.eval") < plan.index('FILTER col("k")')
 
     assert_frame_equal(q.collect(), pl.DataFrame({"k": [1], "a": [["1"]]}))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_predicate_not_pushed_below_scalar_select(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"g": [1, 2], "x": [1, 2]})
+
+    q = lf.select(pl.lit(None).alias("g")).filter(pl.lit(False))
+    assert q.collect(engine=engine).height == 0
+
+    q = lf.select(pl.len()).select(pl.lit(1).alias("g")).filter(pl.lit(False))
+    assert q.collect(engine=engine).height == 0
+
+    q = pl.sql(
+        "SELECT g, SUM(x) AS s FROM lf GROUP BY GROUPING SETS ((g), ()) HAVING FALSE",
+        eager=False,
+    )
+    assert q.collect(engine=engine).height == 0
+
+
+_NOT_NULL_LF = pl.LazyFrame({"a": [1, None, 4, 7], "b": [None, 2, 3, 4]})
+
+
+@pytest.mark.parametrize(
+    ("q", "kept"),
+    [
+        (_NOT_NULL_LF.drop_nulls("a").filter(pl.col("a") > 3), 0),
+        (_NOT_NULL_LF.filter(pl.col("a").is_not_null() & pl.col("a").is_in([1, 4])), 0),
+        (_NOT_NULL_LF.filter(~pl.col("a").is_null() & (pl.col("a") != 4)), 0),
+        (
+            _NOT_NULL_LF.filter(
+                pl.col("a").is_not_null()
+                & pl.col("b").is_not_null()
+                & (pl.col("a") < 5)
+            ),
+            1,
+        ),
+        (_NOT_NULL_LF.filter(pl.col("a").is_not_null() & ~pl.col("a").is_in([1])), 0),
+        # These keep the null rows, so the null check stays.
+        (_NOT_NULL_LF.filter(pl.col("a").is_not_null() & pl.col("a").eq_missing(4)), 1),
+        (
+            _NOT_NULL_LF.filter(
+                pl.col("a").is_not_null() & ~pl.col("a").is_in([1], nulls_equal=True)
+            ),
+            1,
+        ),
+    ],
+)
+def test_filter_drops_redundant_is_not_null(q: pl.LazyFrame, kept: int) -> None:
+    assert q.explain().count("is_not_null") == kept
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+    )
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_filter_is_null_and_not_is_in(nulls_equal: bool) -> None:
+    lf = pl.LazyFrame({"a": [1, None, 4]})
+    q = lf.filter(
+        pl.col("a").is_null() & ~pl.col("a").is_in([1], nulls_equal=nulls_equal)
+    )
+    expected = lf.collect().filter(pl.col("a").is_null() if nulls_equal else False)
+    assert_frame_equal(q.collect(), expected)

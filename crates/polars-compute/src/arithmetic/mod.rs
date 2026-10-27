@@ -149,6 +149,13 @@ impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PrimitiveArray<T> {
     fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div_scalar_lhs(lhs, rhs) }
 }
 
+/// How an integer division rounds its quotient; the remainder takes the matching sign.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DivRounding {
+    Floor,
+    Trunc,
+}
+
 mod float;
 pub mod pl_num;
 mod signed;

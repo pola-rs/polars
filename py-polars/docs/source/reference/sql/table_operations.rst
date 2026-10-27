@@ -17,6 +17,10 @@ Table Operations
      - Returns the Polars execution plan for a given SQL query.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables registered in the given context.
+   * - :ref:`GENERATE_SERIES <generate_series_table_func>`
+     - Create a table with one column of values from start to stop, stop included.
+   * - :ref:`RANGE <range_table_func>`
+     - Create a table with one column of values from start to stop, stop not included.
    * - :ref:`UNNEST <unnest_table_func>`
      - Unnest one or more arrays as columns in a new table object.
    * - :ref:`TRUNCATE <truncate>`
@@ -35,7 +39,7 @@ an empty table from the schema of an existing table.
 
 .. code-block:: sql
 
-    CREATE TABLE tbl(colx VARCHAR, coly DATE, colz ARRAY<DOUBLE>)
+    CREATE TABLE tbl(colx VARCHAR, coly DATE, colz ARRAY<DOUBLE>, cols STRUCT<a INT, b VARCHAR>)
 
 .. code-block:: sql
 
@@ -45,6 +49,30 @@ an empty table from the schema of an existing table.
 .. code-block:: sql
 
     CREATE TABLE new_table LIKE existing_table
+
+``CREATE TEMP TABLE`` (or ``TEMPORARY``) always registers the table in the context,
+also when a default catalog is attached; its name cannot start with an attached
+catalog. Unlike ``CREATE TABLE``, it raises an error if the table already exists,
+unless ``IF NOT EXISTS`` (leave it as it is) or ``OR REPLACE`` (replace it) is given.
+
+.. code-block:: sql
+
+    CREATE OR REPLACE TEMP TABLE staging AS
+    SELECT * FROM existing_table WHERE value > 42
+
+With an attached Iceberg catalog (see :meth:`SQLContext.register_catalog`), a
+``CREATE TABLE`` whose name resolves to the catalog, as in a query, creates an empty
+table in the catalog from its column definitions. ``NOT NULL`` makes a column a
+required field; other constraints are not supported. ``LOCATION '...'`` or
+``WITH ('location' = '...')`` sets the table location, and the other ``WITH`` options
+become table properties, such as ``'format-version'``. ``IF NOT EXISTS`` leaves an
+existing table as it is. ``CREATE TABLE ... AS SELECT`` and partitioning are not
+supported for catalog tables yet, nor are ``LIKE`` and ``OR REPLACE``.
+
+.. code-block:: sql
+
+    CREATE TABLE lake.sales.orders (id BIGINT NOT NULL, amount DECIMAL(10, 2))
+    WITH ('format-version' = 2)
 
 .. _delete_from_table:
 
@@ -97,6 +125,34 @@ Returns a list of all tables registered in the given context.
 .. code-block:: sql
 
     SHOW TABLES
+
+.. _generate_series_table_func:
+
+GENERATE_SERIES
+---------------
+Create a table with one column of values from start to stop, stop included. Takes the
+same arguments as the :ref:`GENERATE_SERIES <generate_series>` function; the arguments
+must be constants. The column is named ``generate_series`` unless renamed by an alias.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT * FROM
+      GENERATE_SERIES(DATE '2026-01-01', DATE '2026-12-31', INTERVAL '1 day') AS cal (d)
+
+.. _range_table_func:
+
+RANGE
+-----
+Like :ref:`GENERATE_SERIES <generate_series_table_func>`, but stop is not included. The
+column is named ``range`` unless renamed by an alias.
+
+**Example:**
+
+.. code-block:: sql
+
+    SELECT * FROM RANGE(0, 10, 2)
 
 .. _unnest_table_func:
 

@@ -284,6 +284,10 @@ impl ExprIR {
         is_known_length_ae(self.node, expr_arena)
     }
 
+    pub fn is_order_insensitive(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_order_insensitive_ae(self.node, expr_arena)
+    }
+
     pub fn dtype(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<&DataType> {
         match self.output_dtype.get() {
             Some(dtype) => Ok(dtype),

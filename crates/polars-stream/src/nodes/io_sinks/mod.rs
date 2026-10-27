@@ -18,6 +18,7 @@ use crate::nodes::io_sinks::components::partitioner::Partitioner;
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks::pipeline_initialization::partition_by::start_partition_sink_pipeline;
 use crate::nodes::io_sinks::pipeline_initialization::single_file::start_single_file_sink_pipeline;
+use crate::nodes::io_sinks::writers::interface::{FinishSender, finish_signal};
 use crate::pipe::PortReceiver;
 pub mod components;
 pub mod config;
@@ -27,7 +28,7 @@ pub mod writers;
 pub struct IOSinkNode {
     name: PlSmallStr,
     state: IOSinkNodeState,
-    metrics_registry: NodeMetricsRegistry,
+    io_metrics: Option<Arc<IOMetrics>>,
     verbose: bool,
     partitioned_by_key: bool,
 }
@@ -55,7 +56,7 @@ impl IOSinkNode {
         IOSinkNode {
             name,
             state: IOSinkNodeState::Uninitialized { config },
-            metrics_registry,
+            io_metrics: metrics_registry.new_io_metrics(),
             verbose,
             partitioned_by_key,
         }
@@ -79,13 +80,13 @@ impl ComputeNode for IOSinkNode {
         recv[0] = if recv[0] == PortState::Done {
             // Ensure initialize / writes empty file for empty output.
             self.state
-                .initialize(&self.name, execution_state, self.metrics_registry.is_some())?;
+                .initialize(&self.name, execution_state, self.io_metrics.clone())?;
 
             match std::mem::replace(&mut self.state, IOSinkNodeState::Finished) {
                 IOSinkNodeState::Initialized {
                     phase_channel_tx,
                     task_handle,
-                    io_metrics: _,
+                    finish_tx,
                 } => {
                     if self.verbose {
                         eprintln!(
@@ -93,6 +94,7 @@ impl ComputeNode for IOSinkNode {
                             self.name()
                         );
                     }
+                    finish_tx.send();
                     drop(phase_channel_tx);
                     ASYNC.block_in_place_on(task_handle)?;
                 },
@@ -143,27 +145,20 @@ impl ComputeNode for IOSinkNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             self.state
-                .initialize(&self.name, execution_state, self.metrics_registry.is_some())?;
+                .initialize(&self.name, execution_state, self.io_metrics.clone())?;
 
             let IOSinkNodeState::Initialized {
-                phase_channel_tx,
-                io_metrics,
-                ..
+                phase_channel_tx, ..
             } = &mut self.state
             else {
                 unreachable!()
             };
 
-            if let Some(io_metrics) = io_metrics.as_ref() {
-                self.metrics_registry
-                    .register_io_metrics(io_metrics.clone())
-            }
-
             if phase_channel_tx.send(phase_morsel_rx).await.is_err() {
                 let IOSinkNodeState::Initialized {
                     phase_channel_tx,
                     task_handle,
-                    io_metrics: _,
+                    finish_tx,
                 } = std::mem::replace(&mut self.state, IOSinkNodeState::Finished)
                 else {
                     unreachable!()
@@ -177,6 +172,8 @@ impl ComputeNode for IOSinkNode {
                 }
 
                 drop(phase_channel_tx);
+                // Before the join, or the writers waiting on it hang.
+                drop(finish_tx);
 
                 return Err(task_handle.await.unwrap_err());
             }
@@ -195,7 +192,8 @@ enum IOSinkNodeState {
         phase_channel_tx: connector::Sender<PortReceiver>,
         /// Join handle for all background tasks.
         task_handle: AbortOnDropHandle<PolarsResult<()>>,
-        io_metrics: Option<Arc<IOMetrics>>,
+        /// Sent once the input ended cleanly; files are finished only then.
+        finish_tx: FinishSender,
     },
 
     Finished,
@@ -207,7 +205,7 @@ impl IOSinkNodeState {
         &mut self,
         node_name: &PlSmallStr,
         execution_state: &StreamingExecutionState,
-        track_io_metrics: bool,
+        io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<()> {
         use IOSinkNodeState::*;
 
@@ -218,8 +216,6 @@ impl IOSinkNodeState {
         let Uninitialized { config } = std::mem::replace(self, Finished) else {
             unreachable!()
         };
-
-        let io_metrics: Option<Arc<IOMetrics>> = track_io_metrics.then(Default::default);
 
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();
@@ -246,13 +242,16 @@ impl IOSinkNodeState {
             }
         });
 
+        let (finish_tx, finish_rx) = finish_signal();
+
         let task_handle = match &config.target {
             IOSinkTarget::File(_) => start_single_file_sink_pipeline(
                 node_name.clone(),
                 multi_phase_rx,
                 *config,
                 execution_state,
-                io_metrics.clone(),
+                io_metrics,
+                finish_rx,
             )?,
 
             IOSinkTarget::Partitioned { .. } => start_partition_sink_pipeline(
@@ -260,14 +259,15 @@ impl IOSinkNodeState {
                 multi_phase_rx,
                 *config,
                 execution_state,
-                io_metrics.clone(),
+                io_metrics,
+                finish_rx,
             )?,
         };
 
         *self = Initialized {
             phase_channel_tx,
             task_handle,
-            io_metrics,
+            finish_tx,
         };
 
         Ok(())
