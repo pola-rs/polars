@@ -24,7 +24,7 @@ use crate::nodes::io_sinks::components::sinked_path_info_list::{
 use crate::nodes::io_sinks::components::size::{NonZeroRowCountAndSize, SplitMode};
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget, PartitionedTarget};
 use crate::nodes::io_sinks::writers::create_file_writer_starter;
-use crate::nodes::io_sinks::writers::interface::FileWriterStarter;
+use crate::nodes::io_sinks::writers::interface::{FileWriterStarter, FinishSignal};
 
 pub fn start_partition_sink_pipeline(
     node_name: &PlSmallStr,
@@ -32,6 +32,7 @@ pub fn start_partition_sink_pipeline(
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
+    finish: FinishSignal,
 ) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
     let task_metrics = execution_state.task_metrics();
@@ -198,6 +199,7 @@ pub fn start_partition_sink_pipeline(
             open_sinks_semaphore,
             partition_sink_starter,
             no_partition_keys,
+            finish,
             verbose,
         }
         .run(),

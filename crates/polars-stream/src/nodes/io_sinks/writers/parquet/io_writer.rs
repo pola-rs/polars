@@ -41,7 +41,7 @@ impl IOWriter {
             encryption_properties,
         } = self;
 
-        let (mut file, sync_on_close) = file.await?;
+        let (mut file, sync_on_close, finish) = file.await?;
         let mut buffered_file = file.as_buffered_writable();
 
         let mut parquet_writer = BatchedWriter::new(
@@ -70,6 +70,7 @@ impl IOWriter {
             drop(morsel_permit);
         }
 
+        finish.wait().await?;
         parquet_writer.finish()?;
         // Encrypted files have no plaintext metadata to expose.
         let parquet_metadata = {
