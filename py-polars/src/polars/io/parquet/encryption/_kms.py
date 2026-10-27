@@ -77,7 +77,8 @@ class KmsClient:
         Returns
         -------
         bytes
-            The unwrapped key.
+            The unwrapped key. Other bytes-like objects such as `bytearray` are
+            also accepted.
         """
         raise NotImplementedError
 

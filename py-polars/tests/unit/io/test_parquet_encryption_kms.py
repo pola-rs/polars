@@ -20,6 +20,7 @@ from polars.io.parquet.encryption import (
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from polars._typing import EngineType
@@ -507,6 +508,60 @@ def test_unwrap_key_error(tmp_path: Path) -> None:
     kms.unwrap_error = RuntimeError("the KMS is unavailable")
     with pytest.raises(pl.exceptions.ComputeError, match="the KMS is unavailable"):
         pl.read_parquet(path, decryption=decryption_config(kms))
+
+
+class ConvertingKmsClient(InMemoryKmsClient):
+    """Returns unwrapped keys converted to another type."""
+
+    def __init__(self, kms: InMemoryKms, convert: Callable[[bytes], Any]) -> None:
+        super().__init__(kms)
+        self.convert = convert
+
+    def unwrap_key(self, wrapped_key: str, master_key_identifier: str) -> Any:
+        return self.convert(super().unwrap_key(wrapped_key, master_key_identifier))
+
+
+@pytest.mark.parametrize("convert", [bytearray, memoryview])
+def test_unwrap_key_returns_bytes_like(
+    tmp_path: Path, convert: Callable[[bytes], Any]
+) -> None:
+    kms = InMemoryKms()
+    path = tmp_path / "out.parquet"
+    basic_data().write_parquet(path, encryption=encryption_config(kms))
+
+    decryption = ParquetDecryptionConfig(
+        CryptoFactory(lambda _: ConvertingKmsClient(kms, convert)),
+        KmsConnectionConfig(),
+        DecryptionConfiguration(),
+    )
+    assert_frame_equal(pl.read_parquet(path, decryption=decryption), basic_data())
+
+
+@pytest.mark.parametrize(
+    ("convert", "type_name"),
+    [
+        (lambda key: key.hex(), "str"),
+        (list, "list"),
+        (lambda key: memoryview(key).cast("I"), "memoryview"),
+    ],
+)
+def test_unwrap_key_returns_invalid_type(
+    tmp_path: Path, convert: Callable[[bytes], Any], type_name: str
+) -> None:
+    kms = InMemoryKms()
+    path = tmp_path / "out.parquet"
+    basic_data().write_parquet(path, encryption=encryption_config(kms))
+
+    decryption = ParquetDecryptionConfig(
+        CryptoFactory(lambda _: ConvertingKmsClient(kms, convert)),
+        KmsConnectionConfig(),
+        DecryptionConfiguration(),
+    )
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=f"`unwrap_key` must return a bytes-like object, got '{type_name}'",
+    ):
+        pl.read_parquet(path, decryption=decryption)
 
 
 def test_unwrap_with_unknown_master_key(tmp_path: Path) -> None:

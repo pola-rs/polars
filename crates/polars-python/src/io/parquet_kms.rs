@@ -18,7 +18,8 @@ use polars_io::parquet::encryption::{
 use polars_parquet::parquet::encryption::decrypt::{FileDecryptionProperties, KeyRetriever};
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use pyo3::exceptions::PyValueError;
+use pyo3::buffer::PyBuffer;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyString};
 
@@ -64,7 +65,18 @@ impl KmsClient for PyKmsClient {
             let key =
                 self.0
                     .call_method1(py, "unwrap_key", (wrapped_key, master_key_identifier))?;
-            Ok(key.bind(py).cast::<PyBytes>()?.as_bytes().to_vec())
+            // Accept any bytes-like object, such as a bytearray or memoryview.
+            let key = key.bind(py);
+            let buffer = PyBuffer::<u8>::get(key).map_err(|_| {
+                let type_name = key
+                    .get_type()
+                    .qualname()
+                    .map_or_else(|_| "unknown".to_string(), |name| name.to_string());
+                PyTypeError::new_err(format!(
+                    "`unwrap_key` must return a bytes-like object, got '{type_name}'"
+                ))
+            })?;
+            buffer.to_vec(py)
         })
         .map_err(|err: PyErr| KmsError::General(err.to_string()))
     }
