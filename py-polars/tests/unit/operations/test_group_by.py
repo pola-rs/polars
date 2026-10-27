@@ -3700,7 +3700,7 @@ def test_group_by_per_group_scalar_float_division() -> None:
         mod=x % x.max().over("g"),
         div=x / x.sum().over("g"),
     )
-    assert_frame_equal(out.drop("g").explode(pl.all()), over, check_exact=True)
+    assert_frame_equal(out.drop("g").explode(cs.all()), over, check_exact=True)
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
