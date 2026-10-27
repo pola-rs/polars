@@ -35,8 +35,9 @@ struct InputHead {
 }
 
 impl InputHead {
-    fn new(schema: Arc<Schema>, zip_behavior: ZipBehavior) -> Self {
-        let infer_broadcast = matches!(zip_behavior, ZipBehavior::Broadcast) || schema.is_empty();
+    fn new(schema: Arc<Schema>, zip_behavior: ZipBehavior, may_broadcast: bool) -> Self {
+        let infer_broadcast =
+            (matches!(zip_behavior, ZipBehavior::Broadcast) && may_broadcast) || schema.is_empty();
 
         Self {
             schema,
@@ -137,12 +138,23 @@ impl ZipNode {
     pub fn new(
         zip_behavior: ZipBehavior,
         schemas: Vec<Arc<Schema>>,
+        can_broadcast: Option<Vec<bool>>,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
     ) -> Self {
-        let input_heads = schemas
-            .into_iter()
-            .map(|s| InputHead::new(s, zip_behavior))
-            .collect();
+        let input_heads = match can_broadcast {
+            Some(cb) => {
+                assert_eq!(cb.len(), schemas.len());
+                schemas
+                    .into_iter()
+                    .zip(cb)
+                    .map(|(s, may_broadcast)| InputHead::new(s, zip_behavior, may_broadcast))
+                    .collect()
+            },
+            None => schemas
+                .into_iter()
+                .map(|s| InputHead::new(s, zip_behavior, true))
+                .collect(),
+        };
         Self {
             zip_behavior,
             out_seq: MorselSeq::new(0),

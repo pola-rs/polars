@@ -1053,6 +1053,7 @@ fn to_graph_rec<'a>(
         Zip {
             inputs,
             zip_behavior,
+            can_broadcast,
         } => {
             let input_schemas = inputs
                 .iter()
@@ -1064,7 +1065,12 @@ fn to_graph_rec<'a>(
                 .try_collect_vec()?;
             ctx.add_node_with_metrics(
                 |registry| {
-                    nodes::zip::ZipNode::new(*zip_behavior, input_schemas, registry.task_metrics())
+                    nodes::zip::ZipNode::new(
+                        *zip_behavior,
+                        input_schemas,
+                        can_broadcast.clone(),
+                        registry.task_metrics(),
+                    )
                 },
                 input_keys,
             )
