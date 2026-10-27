@@ -53,14 +53,13 @@ impl DecryptionPropertiesFactory for Arc<FileDecryptionProperties> {
 ///
 /// This may hold secret keys, so can't be serialized, and is compared and hashed
 /// by pointer.
-// The factory is double-boxed for consistency with `ParquetDecryption`.
 #[derive(Clone)]
-pub struct ParquetEncryption(Arc<Box<dyn EncryptionPropertiesFactory>>);
+pub struct ParquetEncryption(Arc<dyn EncryptionPropertiesFactory>);
 
 impl ParquetEncryption {
     /// Create properties for each file using a factory.
     pub fn new(factory: impl EncryptionPropertiesFactory + 'static) -> Self {
-        Self(Arc::new(Box::new(factory)))
+        Self(Arc::new(factory))
     }
 
     /// Get the properties to use for encrypting a single file.
@@ -93,7 +92,7 @@ impl From<Arc<FileEncryptionProperties>> for ParquetEncryption {
 ///
 /// This may hold secret keys, so can't be serialized, and is compared and hashed
 /// by pointer.
-// The factory is double-boxed to make this is a thin pointer, keeping `FileScanIR` small.
+// The factory is double-boxed to make this a thin pointer, keeping `FileScanIR` small.
 #[derive(Clone)]
 pub struct ParquetDecryption(Arc<Box<dyn DecryptionPropertiesFactory>>);
 
@@ -143,7 +142,7 @@ macro_rules! impl_opaque_traits {
 
         impl Hash for $t {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                state.write_usize(Arc::as_ptr(&self.0) as usize)
+                state.write_usize(Arc::as_ptr(&self.0).cast::<()>() as usize)
             }
         }
 
