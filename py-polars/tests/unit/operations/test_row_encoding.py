@@ -222,6 +222,15 @@ def test_list(field: Any) -> None:
 
 
 @pytest.mark.parametrize("field", FIELD_COMBS_ARGS)
+def test_nested_categorical(field: Any) -> None:
+    values = [["b", None], ["a"], None, []]
+    roundtrip_series_re(values, pl.List(pl.Categorical), **field)
+    roundtrip_series_re(
+        [["b", None], ["a", "c"], None], pl.Array(pl.Categorical, 2), **field
+    )
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS_ARGS)
 def test_array(field: Any) -> None:
     dtype = pl.Array(pl.Int32, 0)
     roundtrip_series_re([], dtype, **field)
