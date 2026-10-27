@@ -146,7 +146,8 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(
             self.0.dtype() == other.dtype(),
-            SchemaMismatch: "cannot extend Series: data types don't match",
+            SchemaMismatch: "cannot extend Series: data types don't match (expected {}, got {})",
+            self.0.dtype(), other.dtype(),
         );
         self.0.extend(other.as_ref().as_ref())?;
         Ok(())

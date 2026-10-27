@@ -101,6 +101,15 @@ fn dtype_and_data_to_encoded_item_len(
     }
 
     use ArrowDataType as D;
+
+    // Lexically ordered categoricals are encoded as their string.
+    if let Some(RowEncodingContext::Categorical(ctx)) = dict
+        && !ctx.is_enum
+        && matches!(dtype, D::UInt8 | D::UInt16 | D::UInt32)
+    {
+        return unsafe { utf8::len_from_buffer(data, opt) };
+    }
+
     match dtype {
         D::Binary | D::LargeBinary | D::BinaryView | D::Utf8 | D::LargeUtf8 | D::Utf8View
             if opt.contains(RowEncodingOptions::NO_ORDER) =>

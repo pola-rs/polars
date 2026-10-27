@@ -50,29 +50,41 @@ an empty table from the schema of an existing table.
 
     CREATE TABLE new_table LIKE existing_table
 
-``CREATE TEMP TABLE`` (or ``TEMPORARY``) always registers the table in the context,
-also when a default catalog is attached; its name cannot start with an attached
-catalog. Unlike ``CREATE TABLE``, it raises an error if the table already exists,
-unless ``IF NOT EXISTS`` (leave it as it is) or ``OR REPLACE`` (replace it) is given.
+**Temporary tables:** ``CREATE TEMP TABLE`` (or ``TEMPORARY``) always registers the
+table in the context, also when a default catalog is attached. Unlike ``CREATE TABLE``,
+it raises an error if the table already exists, unless ``IF NOT EXISTS`` (leave it as it
+is) or ``OR REPLACE`` (replace it) is given.
 
 .. code-block:: sql
 
     CREATE OR REPLACE TEMP TABLE staging AS
     SELECT * FROM existing_table WHERE value > 42
 
-With an attached Iceberg catalog (see :meth:`SQLContext.register_catalog`), a
-``CREATE TABLE`` whose name resolves to the catalog, as in a query, creates an empty
-table in the catalog from its column definitions. ``NOT NULL`` makes a column a
-required field; other constraints are not supported. ``LOCATION '...'`` or
-``WITH ('location' = '...')`` sets the table location, and the other ``WITH`` options
-become table properties, such as ``'format-version'``. ``IF NOT EXISTS`` leaves an
-existing table as it is. ``CREATE TABLE ... AS SELECT`` and partitioning are not
-supported for catalog tables yet, nor are ``LIKE`` and ``OR REPLACE``.
+**Catalog tables:** with an attached Iceberg catalog (see
+:meth:`SQLContext.register_catalog`), a name that resolves to the catalog, as in a query,
+creates the table in the catalog.
 
 .. code-block:: sql
 
     CREATE TABLE lake.sales.orders (id BIGINT NOT NULL, amount DECIMAL(10, 2))
     WITH ('format-version' = 2)
+
+.. code-block:: sql
+
+    CREATE TABLE IF NOT EXISTS lake.sales.big_orders
+    LOCATION 's3://bucket/big_orders'
+    AS SELECT * FROM lake.sales.orders WHERE amount > 1000
+
+- ``NOT NULL`` makes a column a required field; other constraints are not supported.
+- ``LOCATION`` (or the ``'location'`` option) sets the table location; the other
+  ``WITH`` options become table properties.
+- ``AS SELECT`` commits the rows together with the create, so a failed query creates
+  no table. A catalog that cannot stage a create gets an empty table first, dropped
+  again if filling it fails, unless another writer changed it. The columns are never required. The rows are written as by
+  :meth:`LazyFrame.sink_iceberg`: write properties such as
+  ``write.parquet.compression-codec`` are stored, but not applied to them.
+- ``IF NOT EXISTS`` leaves an existing table as it is; its query is checked, but not run.
+- ``LIKE``, ``OR REPLACE`` and partitioning are not supported for catalog tables.
 
 .. _delete_from_table:
 
@@ -101,6 +113,14 @@ which case the statement is a no-op.
 
     DROP TABLE actual_table
     DROP TABLE IF EXISTS possible_table
+
+**Catalog tables:** a name that resolves to an attached catalog, and to no registered
+table, drops the table from the catalog, permanently. ``PURGE`` also deletes its data
+files.
+
+.. code-block:: sql
+
+    DROP TABLE lake.sales.orders_old PURGE
 
 .. _explain:
 
