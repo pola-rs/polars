@@ -195,8 +195,8 @@ impl PhysicalExpr for RollingExpr {
             },
             GroupsType::Slice {
                 groups,
-                overlapping: _,
-                monotonic: _,
+                overlapping,
+                monotonic,
             } => {
                 let mut nested_groups = Vec::with_capacity(num_elements);
                 let mut i = 0;
@@ -209,7 +209,8 @@ impl PhysicalExpr for RollingExpr {
                     i += *length as usize;
                 }
                 // Windows of overlapping outer groups can step back.
-                let monotonic = slice_groups_are_monotonic(&nested_groups);
+                let monotonic =
+                    (*monotonic && !*overlapping) || slice_groups_are_monotonic(&nested_groups);
                 GroupsType::new_slice(nested_groups, true, monotonic)
             },
         };
