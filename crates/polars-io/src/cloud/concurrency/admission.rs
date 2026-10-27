@@ -136,14 +136,14 @@ impl ByteBudget {
     }
 
     /// Waits behind every parked acquire with a lower issue number; passes parked acquires with an
-    /// equal or higher issue number if the bytes fit. Returns whether it parked because the bytes
-    /// did not fit; a wait behind a lower issue number while the bytes fit does not count.
+    /// equal or higher issue number if the bytes fit. Returns whether it parked. The queue is only
+    /// non-empty while its front does not fit, so every parked acquire waits on the budget.
     async fn acquire_in_issue_order(&self, n_bytes: u64, issue_seq: u64) -> bool {
         if self.queued.load(SeqCst) == 0 && self.try_take(n_bytes) {
             return false;
         }
 
-        let (key, granted, budget_bound) = {
+        let (key, granted) = {
             let mut queue = self.queue.lock().unwrap();
             let lower_waits = queue
                 .waiters
@@ -153,8 +153,6 @@ impl ByteBudget {
             if !lower_waits && self.try_take(n_bytes) {
                 return false;
             }
-            let budget_bound =
-                self.inflight_in_use.load(SeqCst) + n_bytes > self.current_budget.load(SeqCst);
             let key = (issue_seq, queue.next_arrival);
             queue.next_arrival += 1;
             let (tx, rx) = oneshot::channel();
@@ -173,7 +171,7 @@ impl ByteBudget {
                 // Granted by the call above: the bytes are taken.
                 return false;
             }
-            (key, rx, budget_bound)
+            (key, rx)
         };
 
         let mut wait = QueuedAcquire {
@@ -182,11 +180,11 @@ impl ByteBudget {
             n_bytes,
             granted: false,
         };
-        let _parked = budget_bound.then(|| Parked::new(&self.acquires_parked));
+        let _parked = Parked::new(&self.acquires_parked);
         // The sender is only dropped unsent when `wait` removes its own entry.
         let _ = granted.await;
         wait.granted = true;
-        budget_bound
+        true
     }
 
     /// Takes `n_bytes` if they fit.
@@ -566,9 +564,10 @@ mod tests {
         assert_eq!(b.queued.load(SeqCst), 2);
 
         b.release(2);
-        // Fits, but a lower issue number waits: parks, not counted as bound by the budget.
+        // Fits, but a lower issue number waits: parks, counted.
         let mut a9 = Box::pin(b.acquire_strict(2, 9));
         assert!(poll(&mut a9).is_pending());
+        assert_eq!(b.acquires_parked.load(Relaxed), 3);
         // No issue number: passes the queue when it fits.
         assert_eq!(
             poll(&mut Box::pin(b.acquire_strict(2, 0))),
@@ -581,7 +580,7 @@ mod tests {
 
         b.release(4);
         assert_eq!(poll(&mut a3), Poll::Ready(true));
-        assert_eq!(poll(&mut a9), Poll::Ready(false));
+        assert_eq!(poll(&mut a9), Poll::Ready(true));
         assert_eq!(b.queued.load(SeqCst), 0);
         assert_eq!(b.inflight_in_use(), 10);
     }
