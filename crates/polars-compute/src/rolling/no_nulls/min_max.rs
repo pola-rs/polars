@@ -1,6 +1,7 @@
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
 use super::super::min_max::MinMaxWindow;
+use super::super::van_herk;
 use super::*;
 
 pub type MinWindow<'a, T> = MinMaxWindow<'a, T, MinPropagateNan>;
