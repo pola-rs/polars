@@ -1250,6 +1250,37 @@ pub(super) fn convert_functions(
             return_dtype: return_dtype.try_map(|dtype| dtype.into_datatype(ctx.schema))?,
             include_init,
         },
+        #[cfg(feature = "dtype-struct")]
+        F::CumSumHorizontal => {
+            let mut dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            for e in &e[1..] {
+                dtype = try_get_supertype(&dtype, e.dtype(ctx.schema, ctx.arena)?)?;
+            }
+            let mut dtype = dtype.materialize_unknown(false)?;
+            if dtype == DataType::Boolean {
+                dtype = IDX_DTYPE;
+            }
+
+            let mut acc = AExprBuilder::lit_scalar(Scalar::from(0i32), ctx.arena)
+                .cast(dtype.clone(), ctx.arena);
+            let fields = e
+                .iter()
+                .map(|e| {
+                    acc = AExprBuilder::new_from_aexpr(
+                        AExpr::Cast {
+                            expr: acc.plus(e.node(), ctx.arena).node(),
+                            dtype: dtype.clone(),
+                            options: CastOptions::NonStrict,
+                        },
+                        ctx.arena,
+                    );
+                    acc.expr_ir(e.output_name().clone())
+                })
+                .collect();
+            let output_name = e[0].output_name().clone();
+            let out = AExprBuilder::function(fields, I::AsStruct, ctx.arena);
+            return Ok((out.node(), output_name));
+        },
 
         F::MaxHorizontal => I::MaxHorizontal,
         F::MinHorizontal => I::MinHorizontal,

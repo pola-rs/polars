@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
-import polars.functions as F
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 
@@ -289,10 +288,4 @@ def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     └─────┴──────┴─────┴───────────┘
     """
     pyexprs = parse_into_list_of_expressions(*exprs)
-    exprs_wrapped = [wrap_expr(e) for e in pyexprs]
-
-    return F.cum_fold(
-        F.lit(0).cast(F.dtype_of(F.sum_horizontal(list(exprs)))),
-        lambda a, b: a + b,
-        exprs_wrapped,
-    ).alias("cum_sum")
+    return wrap_expr(plr.cum_sum_horizontal(pyexprs)).alias("cum_sum")

@@ -424,6 +424,8 @@ pub enum FunctionExpr {
         return_dtype: Option<DataTypeExpr>,
         include_init: bool,
     },
+    #[cfg(feature = "dtype-struct")]
+    CumSumHorizontal,
 
     MaxHorizontal,
     MinHorizontal,
@@ -580,6 +582,8 @@ impl Hash for FunctionExpr {
             SumHorizontal { ignore_nulls } | MeanHorizontal { ignore_nulls } => {
                 ignore_nulls.hash(state)
             },
+            #[cfg(feature = "dtype-struct")]
+            CumSumHorizontal => {},
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
             | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
             Append { upcast } => upcast.hash(state),
@@ -1011,6 +1015,8 @@ impl Display for FunctionExpr {
             CumReduceHorizontal { .. } => "cum_reduce",
             #[cfg(feature = "dtype-struct")]
             CumFoldHorizontal { .. } => "cum_fold",
+            #[cfg(feature = "dtype-struct")]
+            CumSumHorizontal => "cum_sum_horizontal",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",
