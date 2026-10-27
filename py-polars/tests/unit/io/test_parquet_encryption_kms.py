@@ -604,7 +604,17 @@ def test_serialize_raises(tmp_path: Path) -> None:
         (
             {"column_keys": {"column_key": []}},
             ValueError,
-            "either `column_keys` or `uniform_encryption` must be set",
+            "no columns given for master key 'column_key'",
+        ),
+        (
+            {"column_keys": {"column_key": []}, "uniform_encryption": True},
+            ValueError,
+            "no columns given for master key 'column_key'",
+        ),
+        (
+            {"column_keys": {"column_key": ["a"], "column_key_2": []}},
+            ValueError,
+            "no columns given for master key 'column_key_2'",
         ),
         (
             {"column_keys": {"column_key": ["a"]}, "uniform_encryption": True},
@@ -623,6 +633,11 @@ def test_serialize_raises(tmp_path: Path) -> None:
         ),
         (
             {"column_keys": {"column_key": [1]}},
+            TypeError,
+            "the columns for master key 'column_key' must be a sequence of column names",
+        ),
+        (
+            {"column_keys": {"column_key": 1}},
             TypeError,
             "the columns for master key 'column_key' must be a sequence of column names",
         ),
@@ -677,8 +692,7 @@ def test_configuration_properties() -> None:
         "footer_key",
         column_keys={
             "column_key": ("a", "b"),
-            "column_key_2": [],
-            "column_key_3": ["c"],
+            "column_key_3": (c for c in ["c"]),  # type: ignore[dict-item]
         },
         plaintext_footer=True,
         double_wrapping=False,

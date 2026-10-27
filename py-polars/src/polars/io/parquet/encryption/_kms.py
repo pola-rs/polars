@@ -252,9 +252,6 @@ class EncryptionConfiguration:
         cache_lifetime: timedelta = _DEFAULT_CACHE_LIFETIME,
     ) -> None:
         column_keys_dict = _check_column_keys(column_keys)
-        # A master key without columns doesn't encrypt anything, rather than
-        # meaning uniform encryption.
-        column_keys_dict = {k: v for k, v in column_keys_dict.items() if v}
         if column_keys_dict and uniform_encryption:
             msg = "cannot set both `column_keys` and `uniform_encryption`"
             raise ValueError(msg)
@@ -502,14 +499,25 @@ def _check_column_keys(
         raise TypeError(msg)
     result = {}
     for master_key_id, columns in column_keys.items():
+        msg = (
+            f"the columns for master key {master_key_id!r} must be a "
+            f"sequence of column names, got {columns!r}"
+        )
         # A string is a sequence of characters, but is almost certainly a mistake.
-        if isinstance(columns, str) or not all(isinstance(c, str) for c in columns):
-            msg = (
-                f"the columns for master key {master_key_id!r} must be a "
-                f"sequence of column names, got {columns!r}"
-            )
+        if isinstance(columns, str):
             raise TypeError(msg)
-        result[master_key_id] = list(columns)
+        # Materialize first so that one-shot iterables aren't consumed by the
+        # type check.
+        try:
+            column_list = list(columns)
+        except TypeError:
+            raise TypeError(msg) from None
+        if not all(isinstance(c, str) for c in column_list):
+            raise TypeError(msg)
+        if not column_list:
+            msg = f"no columns given for master key {master_key_id!r}"
+            raise ValueError(msg)
+        result[master_key_id] = column_list
     return result
 
 
