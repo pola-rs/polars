@@ -12,6 +12,7 @@ use parquet_key_management::kms::{
     KmsClient, KmsClientFactory, KmsClientRef, KmsConnectionConfig, KmsConnectionInfo,
 };
 use polars::prelude::{PolarsError, PolarsResult, polars_err};
+use polars_core::runtime::ASYNC;
 use polars_io::parquet::encryption::{
     DecryptionPropertiesFactory, EncryptionPropertiesFactory, ParquetDecryption, ParquetEncryption,
 };
@@ -273,12 +274,15 @@ struct KmsEncryptionFactory {
 
 impl EncryptionPropertiesFactory for KmsEncryptionFactory {
     fn file_encryption_properties(&self) -> PolarsResult<Arc<FileEncryptionProperties>> {
-        let keys = self
-            .crypto_factory
-            .file_encryption_keys(
-                Arc::clone(&self.kms_connection_config),
-                &self.encryption_configuration,
-            )
+        // Wrapping keys may block on KMS calls, or on another thread making the same
+        // call, so let other tasks use this executor thread in the meantime.
+        let keys = ASYNC
+            .block_in_place(|| {
+                self.crypto_factory.file_encryption_keys(
+                    Arc::clone(&self.kms_connection_config),
+                    &self.encryption_configuration,
+                )
+            })
             .map_err(kms_error_to_polars)?;
         let footer_key = keys.footer_key();
         let mut builder = FileEncryptionProperties::builder(footer_key.key().to_vec())
@@ -309,8 +313,10 @@ struct KeyUnwrapperRetriever(KeyUnwrapper);
 
 impl KeyRetriever for KeyUnwrapperRetriever {
     fn retrieve_key(&self, key_metadata: &[u8]) -> ParquetResult<Vec<u8>> {
-        self.0
-            .unwrap_key(key_metadata)
+        // Unwrapping keys may block on KMS calls, or on another thread making the
+        // same call, so let other tasks use this executor thread in the meantime.
+        ASYNC
+            .block_in_place(|| self.0.unwrap_key(key_metadata))
             .map_err(|err| ParquetError::Encryption(err.to_string()))
     }
 }

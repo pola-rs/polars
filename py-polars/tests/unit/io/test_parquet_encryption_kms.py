@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import re
+import subprocess
+import sys
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -838,3 +840,132 @@ def test_config_wrong_direction(tmp_path: Path) -> None:
         ),
     ):
         pl.scan_parquet(path, decryption=encryption_config(kms))  # type: ignore[arg-type]
+
+
+# Run with a single executor thread. KMS calls made off the main thread wait
+# for another call to be in flight at the same time, which can only happen if a
+# blocked KMS call doesn't block the executor thread. Calls on the main thread,
+# such as reading footers while planning, don't wait.
+_SINGLE_THREAD_KMS_PRELUDE = """\
+from __future__ import annotations
+
+import os
+import sys
+import threading
+
+os.environ["POLARS_MAX_THREADS"] = "1"
+
+import polars as pl
+from polars.io.parquet.encryption import (
+    CryptoFactory,
+    DecryptionConfiguration,
+    EncryptionConfiguration,
+    KmsConnectionConfig,
+    ParquetDecryptionConfig,
+    ParquetEncryptionConfig,
+)
+
+assert pl.thread_pool_size() == 1
+
+condition = threading.Condition()
+wait_enabled = False
+in_flight = 0
+overlapped = False
+
+
+def wait_for_concurrent_call() -> None:
+    global in_flight, overlapped
+    if not wait_enabled or threading.current_thread() is threading.main_thread():
+        return
+    with condition:
+        in_flight += 1
+        if in_flight > 1:
+            overlapped = True
+            condition.notify_all()
+        condition.wait_for(lambda: overlapped, timeout=5)
+        in_flight -= 1
+
+
+class WaitingKmsClient:
+    # Keys are "wrapped" by hex-encoding them, which is only for testing.
+    def wrap_key(self, key_bytes: bytes, master_key_identifier: str) -> str:
+        wait_for_concurrent_call()
+        return key_bytes.hex()
+
+    def unwrap_key(self, wrapped_key: str, master_key_identifier: str) -> bytes:
+        wait_for_concurrent_call()
+        return bytes.fromhex(wrapped_key)
+
+
+crypto_factory = CryptoFactory(lambda _: WaitingKmsClient())
+
+
+# Without double wrapping, each file's key is wrapped by the KMS directly,
+# rather than all files waiting for one key encryption key to be wrapped.
+encryption = ParquetEncryptionConfig(
+    crypto_factory,
+    KmsConnectionConfig(),
+    EncryptionConfiguration(
+        "footer_key", uniform_encryption=True, double_wrapping=False
+    ),
+)
+
+
+decryption = ParquetDecryptionConfig(
+    crypto_factory, KmsConnectionConfig(), DecryptionConfiguration()
+)
+"""
+
+
+def _run_single_threaded(script: str) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", _SINGLE_THREAD_KMS_PRELUDE + script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=60,
+    )
+    output = result.stdout.decode()
+    assert result.returncode == 0, output
+    assert output.endswith("OK"), output
+
+
+def test_kms_wrap_does_not_block_executor(tmp_path: Path) -> None:
+    _run_single_threaded(
+        f"""
+path = {str(tmp_path / "out")!r}
+df = pl.DataFrame({{"part": [0, 1], "x": [1, 2]}})
+
+wait_enabled = True
+df.lazy().sink_parquet(
+    pl.PartitionBy(path, key="part"), encryption=encryption, mkdir=True
+)
+wait_enabled = False
+assert overlapped, "KMS calls for different files never overlapped"
+
+result = pl.read_parquet(path, decryption=decryption).sort("part")
+assert result.equals(df), result
+print("OK", end="", file=sys.stderr)
+"""
+    )
+
+
+def test_kms_unwrap_does_not_block_executor(tmp_path: Path) -> None:
+    _run_single_threaded(
+        f"""
+tmp_path = {str(tmp_path)!r}
+# Planning reads footers on the main thread, and execution reuses the first
+# file's footer, so use enough files for several to be read during execution.
+dfs = [pl.DataFrame({{"x": [i]}}) for i in range(4)]
+paths = [os.path.join(tmp_path, f"{{i}}.parquet") for i in range(4)]
+for df, path in zip(dfs, paths):
+    df.write_parquet(path, encryption=encryption)
+
+wait_enabled = True
+result = pl.scan_parquet(paths, decryption=decryption).collect(engine="streaming")
+wait_enabled = False
+assert overlapped, "KMS calls for different files never overlapped"
+
+assert result.equals(pl.concat(dfs)), result
+print("OK", end="", file=sys.stderr)
+"""
+    )
