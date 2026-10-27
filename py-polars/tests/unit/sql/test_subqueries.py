@@ -1341,3 +1341,11 @@ def test_scalar_subquery_as_aggregate_parameter(
         expected=expected,
         engines=["in-memory", "streaming"],
     )
+
+
+def test_scalar_subquery_from_table_without_columns() -> None:
+    empty = pl.LazyFrame({"x": [1]}).filter(False).select([])
+    other = pl.LazyFrame({"y": [10, 20]})
+    with pl.SQLContext(t1=empty, t2=other) as ctx:
+        result = ctx.execute("SELECT (SELECT max(y) FROM t2) AS m FROM t1").collect()
+    assert_frame_equal(result, pl.DataFrame(schema={"m": pl.Int64}))

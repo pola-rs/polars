@@ -370,7 +370,13 @@ impl ComputeNode for ZipNode {
                 .input_heads
                 .iter()
                 .all(|h| h.is_broadcast == Some(true));
-            if all_broadcast {
+            // An empty input without columns also counts as a broadcast, but the others
+            // broadcast to its length of zero, so there is nothing to send.
+            if all_broadcast && self.input_heads.iter().any(|h| h.total_len == 0) {
+                for input_head in &mut self.input_heads {
+                    input_head.clear();
+                }
+            } else if all_broadcast {
                 for input_head in &mut self.input_heads {
                     out.push(input_head.consume_broadcast().await);
                 }
