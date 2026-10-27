@@ -14,9 +14,6 @@ ignore = [
   # supports it yet. Only reached through polars-doc-examples.
   # Remove once aws-sigv4 / p256 move to crypto-bigint >= 0.7.
   "RUSTSEC-2026-0387",
-
-  # Irrelevant issue in zstd for us, waiting on update of dep-of-dep.
-  "RUSTSEC-2026-0391",
 ]
 
 [licenses]
