@@ -190,6 +190,20 @@ class CryptoFactory:
     kms_client_factory
         Called with a :class:`KmsConnectionConfig` to create a KMS client: an
         object with the methods of :class:`KmsClient`.
+
+    Notes
+    -----
+    The `kms_client_factory` and the KMS clients it creates are kept alive by
+    this `CryptoFactory`, and by every :class:`ParquetEncryptionConfig`,
+    :class:`ParquetDecryptionConfig` and LazyFrame that uses it. Python's garbage
+    collector can't see these references, so a reference cycle through them is
+    never freed. For example, if `kms_client_factory` is a method of an object
+    that also stores this `CryptoFactory`, a `ParquetEncryptionConfig` or a
+    `ParquetDecryptionConfig`, neither that object nor the factory is ever
+    freed. To avoid this, neither the `kms_client_factory` nor the KMS clients
+    it creates should hold a reference, directly or indirectly, to this
+    `CryptoFactory` or to a `ParquetEncryptionConfig`, `ParquetDecryptionConfig`
+    or LazyFrame that uses it. If they need one, hold it with a :mod:`weakref`.
     """
 
     def __init__(
