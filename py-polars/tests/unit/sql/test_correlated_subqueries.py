@@ -1840,6 +1840,108 @@ def test_exists_subquery_struct_field_is_not_correlated(
     )
 
 
+def _struct_scope_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "o": pl.DataFrame({"id": [1, 2], "f": [10, 2]}),
+        "o2": pl.DataFrame({"id": [1, 2], "s": [{"f": 10}, {"f": 2}]}),
+        "i": pl.DataFrame({"k": [1, 2], "s": [{"f": 1}, {"f": 5}]}),
+        "i_plain": pl.DataFrame({"k": [1, 2], "s": [1, 5]}),
+        "tf": pl.DataFrame({"f": [2]}),
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        # a plain column `s` is no struct path, so `s.f` reads the outer relation
+        (
+            "SELECT id FROM o AS s WHERE EXISTS (SELECT 1 FROM i_plain WHERE s.f = i_plain.k)",
+            {"id": [2]},
+        ),
+        # the inner struct column hides the outer one
+        (
+            "SELECT id FROM o2 WHERE EXISTS (SELECT 1 FROM i WHERE s.f = i.k)",
+            {"id": [1, 2]},
+        ),
+        # in one scope, the relation `s` wins over the struct column `s`
+        (
+            "SELECT id, (SELECT MAX(s.f) FROM i JOIN tf AS s ON TRUE) AS m FROM o",
+            {"id": [1, 2], "m": [2, 2]},
+        ),
+    ],
+)
+def test_subquery_struct_path_scope(query: str, expected: dict[str, Any]) -> None:
+    assert_sql_matches(
+        frames=_struct_scope_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        expected=expected,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id FROM o AS s WHERE EXISTS (SELECT 1 FROM i WHERE s.g = i.k)",
+        # an aggregate returns one row whatever WHERE keeps, but WHERE is still checked
+        "SELECT id FROM o WHERE EXISTS (SELECT COUNT(*) FROM i WHERE s.g = 1)",
+        "SELECT id FROM o WHERE EXISTS (SELECT COUNT(*) FROM i WHERE i.s.g = 1)",
+        "SELECT id FROM o WHERE NOT EXISTS "
+        "(SELECT COUNT(*) FROM i WHERE i.k = o.id AND s.g = 1)",
+    ],
+)
+def test_subquery_missing_struct_field_is_an_error(query: str) -> None:
+    with pytest.raises(pl.exceptions.StructFieldNotFoundError):
+        pl.SQLContext(_struct_scope_frames()).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT id FROM a AS k WHERE EXISTS "
+            "(SELECT 1 FROM c JOIN d ON c.k = d.k WHERE k.id = c.id)",
+            [(1,)],
+        ),
+        (
+            "SELECT id, (SELECT MAX(c.id) FROM c JOIN d ON c.k = d.k WHERE k.id = c.id) "
+            "AS m FROM a AS k ORDER BY id",
+            [(1, 1), (2, None)],
+        ),
+    ],
+)
+def test_subquery_dotted_name_over_joined_plain_columns(
+    query: str, expected: list[tuple[Any, ...]]
+) -> None:
+    # `k` is a plain column of both joined relations, so `k.id` reads the outer `k`
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3], "k": [7, 8]}),
+        d=pl.DataFrame({"id": [1, 3], "k": [7, 9]}),
+    )
+    assert ctx.execute(query, eager=True).rows() == expected
+
+
+@pytest.mark.parametrize("join", ["d JOIN cs", "cs JOIN d"])
+def test_subquery_dotted_name_over_joined_struct_and_plain_column(join: str) -> None:
+    # `k.f` can read the struct `cs.k` or the outer `k`
+    ctx = pl.SQLContext(
+        o=pl.DataFrame({"id": [1, 2], "f": [10, 2]}),
+        cs=pl.DataFrame({"id": [1, 3], "k": [{"f": 1}, {"f": 3}]}),
+        d=pl.DataFrame({"id": [1, 3], "k": [2, 9]}),
+    )
+    query = f"""
+        SELECT id FROM o AS k
+        WHERE EXISTS (SELECT 1 FROM {join} ON cs.id = d.id WHERE k.f = d.k)
+    """
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError, match=r'ambiguous reference to column "k"'
+    ):
+        ctx.execute(query, eager=True)
+
+
 @pytest.mark.parametrize(
     ("query", "expected"),
     [

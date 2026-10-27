@@ -580,8 +580,8 @@ impl SQLContext {
             )?;
         }
         self.set_join_base(&select.from);
-        self.check_select_column_refs(select)?;
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
+        self.check_select_column_refs(select, &inner_schema)?;
         Ok(Some((inner_names, inner_lf, inner_schema)))
     }
 
@@ -2381,34 +2381,40 @@ impl SQLContext {
 
         let flag_name = format_pl_smallstr!("{prefix}exists");
         let uncorrelated_where = corr_preds.is_empty() && general.is_empty();
+        let Some(aggregates) =
+            exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema)
+        else {
+            return Ok(None);
+        };
+        if aggregates {
+            // The rows are not read, but the inner filters must still be valid.
+            let mut filtered = local_filters
+                .iter()
+                .cloned()
+                .fold(inner_lf.clone(), LazyFrame::filter);
+            ctx.get_frame_schema(&mut filtered)?;
+        }
         // An uncorrelated subquery is one value, which `visit_exists` takes.
         if uncorrelated_where && !is_correlated_subquery(subquery, self.catalog_spellings()) {
-            let exists =
-                match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
-                    None => return Ok(None),
-                    Some(true) => lit(true),
-                    Some(false) => {
-                        let inner = local_filters
-                            .into_iter()
-                            .fold(inner_lf, LazyFrame::filter)
-                            .select([len().gt(lit(0))]);
-                        inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
-                        reduced_subquery(inner, first().as_expr().item(true))
-                    },
-                };
+            let exists = if aggregates {
+                lit(true)
+            } else {
+                let inner = local_filters
+                    .into_iter()
+                    .fold(inner_lf, LazyFrame::filter)
+                    .select([len().gt(lit(0))]);
+                inner.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+                reduced_subquery(inner, first().as_expr().item(true))
+            };
             self.exists_values.push((subquery.clone(), exists));
             return Ok(None);
         }
-        match exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) {
-            None => return Ok(None),
-            // An aggregate without GROUP BY returns one row, even over no rows.
-            Some(true) => {
-                return Ok(Some((
-                    lf.with_column(lit(true).alias(flag_name.clone())),
-                    flag_name,
-                )));
-            },
-            Some(false) => {},
+        // An aggregate without GROUP BY returns one row, even over no rows.
+        if aggregates {
+            return Ok(Some((
+                lf.with_column(lit(true).alias(flag_name.clone())),
+                flag_name,
+            )));
         }
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 

@@ -185,7 +185,43 @@ struct AmbiguousColumnVisitor<'a> {
     base_table_name: &'a str,
     using_cols: &'a [(String, String)],
     relations: &'a [RelationName],
+    schema: &'a Schema,
     subquery_depth: usize,
+}
+
+impl AmbiguousColumnVisitor<'_> {
+    /// Check a struct path whose first part `name` names no relation: it is ambiguous if
+    /// the joined frame has more than one column `name`, one of them a struct.
+    fn check_struct_path(&self, name: &str) -> PolarsResult<()> {
+        // A later semi join can drop the columns of earlier joins.
+        let present: PlHashMap<String, PlHashMap<String, String>> = self
+            .joined_aliases
+            .iter()
+            .filter_map(|(tbl, cols)| {
+                let aliased = cols.get(name).filter(|c| self.schema.contains(c))?;
+                let cols = PlHashMap::from_iter([(name.to_string(), aliased.clone())]);
+                Some((tbl.clone(), cols))
+            })
+            .collect();
+        let columns: PlHashSet<&str> = present
+            .values()
+            .flat_map(|cols| cols.values().map(String::as_str))
+            .chain(self.schema.contains(name).then_some(name))
+            .collect();
+        let has_struct = columns
+            .iter()
+            .any(|c| matches!(self.schema.get(c), Some(DataType::Struct(_))));
+        if columns.len() > 1 && has_struct {
+            check_ambiguous_column(
+                name,
+                &present,
+                self.base_table_name,
+                self.using_cols,
+                self.relations,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 impl SQLVisitor for AmbiguousColumnVisitor<'_> {
@@ -211,7 +247,10 @@ impl SQLVisitor for AmbiguousColumnVisitor<'_> {
             SQLExpr::CompoundIdentifier(parts)
                 if match_qualifier(parts, self.relations.iter()).is_none() =>
             {
-                parts.first()
+                if let Err(err) = self.check_struct_path(&parts[0].value) {
+                    return ControlFlow::Break(err);
+                }
+                None
             },
             _ => None,
         };
@@ -289,6 +328,7 @@ pub(crate) fn check_for_ambiguous_column_refs(
     base_table_name: &str,
     using_cols: &[(String, String)],
     relations: &[RelationName],
+    schema: &Schema,
 ) -> PolarsResult<()> {
     match dyn_visit::visit(
         expr,
@@ -297,6 +337,7 @@ pub(crate) fn check_for_ambiguous_column_refs(
             base_table_name,
             using_cols,
             relations,
+            schema,
             subquery_depth: 0,
         },
     ) {

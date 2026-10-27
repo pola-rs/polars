@@ -2100,6 +2100,7 @@ def test_ambiguous_column_detection_in_joins() -> None:
     [
         "SELECT s.f FROM a JOIN c ON a.k = c.k",
         "SELECT a.k FROM a JOIN c ON a.k = c.k WHERE s.f > 15",
+        "SELECT s.* FROM a JOIN c ON a.k = c.k",
     ],
 )
 def test_ambiguous_struct_path_in_joins(query: str) -> None:
@@ -2126,6 +2127,25 @@ def test_ambiguous_struct_path_in_joins(query: str) -> None:
         "SELECT s.f FROM a JOIN c USING (s)", eager=True
     )
     assert res.rows() == [(10,)]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT s.f FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id",
+        "SELECT s.f FROM a JOIN b ON a.id = b.id RIGHT SEMI JOIN c ON a.id = c.id "
+        "JOIN c AS d USING (s)",
+    ],
+)
+def test_struct_path_after_right_semi_join(query: str) -> None:
+    # only the columns of `c` survive the right semi join
+    frames = {
+        "a": pl.DataFrame({"id": [1], "s": [{"f": 10}]}),
+        "b": pl.DataFrame({"id": [1], "s": [{"f": 20}]}),
+        "c": pl.DataFrame({"id": [1], "s": [{"f": 30}]}),
+    }
+    res = pl.SQLContext(frames).execute(query, eager=True)
+    assert res.rows() == [(30,)]
 
 
 def test_join_relations_sharing_last_name_part() -> None:

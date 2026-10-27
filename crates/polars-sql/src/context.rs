@@ -1270,27 +1270,45 @@ impl SQLContext {
     }
 
     /// Check the SELECT and WHERE expressions of a block for ambiguous unqualified
-    /// columns (if there were joins).
-    pub(crate) fn check_select_column_refs(&self, select_stmt: &Select) -> PolarsResult<()> {
+    /// columns (if there were joins). `schema` is the schema of the joined frame.
+    pub(crate) fn check_select_column_refs(
+        &self,
+        select_stmt: &Select,
+        schema: &Schema,
+    ) -> PolarsResult<()> {
         let Some(base) = &self.join_base else {
             return Ok(());
         };
         if self.joined_aliases.is_empty() {
             return Ok(());
         }
-        let check_expr = |e| {
+        let check_expr = |e: &SQLExpr| {
             check_for_ambiguous_column_refs(
                 e,
                 &self.joined_aliases,
                 &base.table_name,
                 &base.using_cols,
                 &self.active_relations,
+                schema,
             )
         };
         for item in &select_stmt.projection {
             match item {
                 SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => {
                     check_expr(e)?
+                },
+                // `s.*` reads a struct column `s` when no relation is named `s`.
+                SelectItem::QualifiedWildcard(
+                    SelectItemQualifiedWildcardKind::ObjectName(name),
+                    _,
+                ) => {
+                    let parts = name
+                        .0
+                        .iter()
+                        .filter_map(|p| p.as_ident().cloned())
+                        .chain([Ident::new("*")])
+                        .collect();
+                    check_expr(&SQLExpr::CompoundIdentifier(parts))?
                 },
                 _ => {},
             }
@@ -2903,7 +2921,8 @@ impl SQLContext {
         };
 
         self.set_join_base(&select_stmt.from);
-        self.check_select_column_refs(select_stmt)?;
+        let mut schema = self.get_frame_schema(&mut lf)?;
+        self.check_select_column_refs(select_stmt, &schema)?;
 
         // Apply `WHERE` constraint (using residual filter for implicit joins)
         let where_expr = if implicit_join_filter.is_some() {
@@ -2911,7 +2930,6 @@ impl SQLContext {
         } else {
             select_stmt.selection.as_ref()
         };
-        let mut schema = self.get_frame_schema(&mut lf)?;
 
         // Shared by every pass over this frame: WHERE, the projection list and HAVING.
         let mut bindings = SubqueryBindings::new();
