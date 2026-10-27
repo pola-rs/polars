@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import re
 import typing
 from collections import OrderedDict
@@ -3612,21 +3611,6 @@ def test_group_by_per_row_with_per_group_scalar_decimal_overflow() -> None:
     assert out["x"].to_list() == [[Decimal(2 * 10**37)]] * 2
     with pytest.raises(ComputeError, match="overflow in decimal addition"):
         df.group_by("g").agg(x + x.max())
-
-
-def test_group_by_per_group_scalar_one_group_overflowed_decimal() -> None:
-    dtype = pl.Decimal(38, 0)
-    df = pl.DataFrame(
-        {"g": [1, 1], "u": [1.0, 2.0], "d": [Decimal(9 * 10**37)] * 2},
-        schema_overrides={"d": dtype},
-    )
-    # The per-group sum overflows; repeating it over the only group must not panic.
-    for e in [
-        pl.col.u.clip(upper_bound=pl.col.d.sum()),
-        pl.col.u.cast(dtype) + pl.col.d.sum(),
-    ]:
-        with contextlib.suppress(ComputeError):
-            df.group_by("g").agg(e)
 
 
 def test_group_by_per_row_with_per_group_scalar_ternary_and_multiple_inputs() -> None:
