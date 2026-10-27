@@ -17,42 +17,53 @@ pub trait QuantileAggSeries {
     -> PolarsResult<Scalar>;
 }
 
-/// helper
+/// Returns the ranks among `n_nonnull` sorted non-null values that `quantile` needs, and the
+/// interpolation fraction between them: `(lower_rank, upper_rank, fraction)`.
+///
+/// `upper_rank == lower_rank` unless `method` interpolates between two distinct ranks.
+pub fn quantile_ranks(
+    n_nonnull: usize,
+    quantile: f64,
+    method: QuantileMethod,
+) -> (usize, usize, f64) {
+    assert!(n_nonnull > 0);
+    let float_idx = (n_nonnull as f64 - 1.0) * quantile;
+    let floor_idx = float_idx as usize;
+    let ceil_idx = (float_idx.ceil() as usize).min(n_nonnull - 1);
+    match method {
+        QuantileMethod::Nearest => {
+            let idx = float_idx.round() as usize;
+            (idx, idx, 0.0)
+        },
+        QuantileMethod::Lower => (floor_idx, floor_idx, 0.0),
+        QuantileMethod::Higher => (ceil_idx, ceil_idx, 0.0),
+        QuantileMethod::Midpoint | QuantileMethod::Linear => {
+            (floor_idx, ceil_idx, float_idx - floor_idx as f64)
+        },
+        QuantileMethod::Equiprobable => {
+            let idx = ((n_nonnull as f64 * quantile).ceil() - 1.0).max(0.0) as usize;
+            (idx, idx, 0.0)
+        },
+    }
+}
+
+/// [`quantile_ranks`] as indices into `length` sorted values with the `null_count` nulls first.
 fn quantile_idx(
     quantile: f64,
     length: usize,
     null_count: usize,
     method: QuantileMethod,
 ) -> (usize, f64, usize) {
-    let nonnull_count = (length - null_count) as f64;
-    let float_idx = (nonnull_count - 1.0) * quantile + null_count as f64;
-    let mut base_idx = match method {
-        QuantileMethod::Nearest => {
-            let idx = float_idx.round() as usize;
-            return (idx, 0.0, idx);
-        },
-        QuantileMethod::Lower | QuantileMethod::Midpoint | QuantileMethod::Linear => {
-            float_idx as usize
-        },
-        QuantileMethod::Higher => float_idx.ceil() as usize,
-        QuantileMethod::Equiprobable => {
-            let idx = ((nonnull_count * quantile).ceil() - 1.0).max(0.0) as usize + null_count;
-            return (idx, 0.0, idx);
-        },
-    };
-
-    base_idx = base_idx.clamp(0, length - 1);
-    let top_idx = f64::ceil(float_idx) as usize;
-
-    (base_idx, float_idx, top_idx)
+    let (lower, upper, fraction) = quantile_ranks(length - null_count, quantile, method);
+    (lower + null_count, fraction, upper + null_count)
 }
 
 /// helper
-fn linear_interpol<T: Float>(lower: T, upper: T, idx: usize, float_idx: f64) -> T {
+fn linear_interpol<T: Float>(lower: T, upper: T, fraction: f64) -> T {
     if lower == upper {
         lower
     } else {
-        let proportion: T = T::from(float_idx).unwrap() - T::from(idx).unwrap();
+        let proportion: T = T::from(fraction).unwrap();
         proportion * (upper - lower) + lower
     }
 }
@@ -82,7 +93,7 @@ fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
     if vals.len() == 1 {
         return Ok(vals[0].to_f64());
     }
-    let (idx, float_idx, top_idx) = quantile_idx(quantile, vals.len(), 0, method);
+    let (idx, fraction, top_idx) = quantile_idx(quantile, vals.len(), 0, method);
 
     let (_lhs, lower, rhs) = vals.select_nth_unstable_by(idx, TotalOrd::tot_cmp);
     if idx == top_idx {
@@ -98,13 +109,10 @@ fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
             },
             QuantileMethod::Linear => {
                 let upper = rhs.iter().copied().min_by(TotalOrd::tot_cmp).unwrap();
-                Ok(linear_interpol(
-                    lower.to_f64().unwrap(),
-                    upper.to_f64().unwrap(),
-                    idx,
-                    float_idx,
+                Ok(
+                    linear_interpol(lower.to_f64().unwrap(), upper.to_f64().unwrap(), fraction)
+                        .to_f64(),
                 )
-                .to_f64())
             },
             _ => Ok(lower.to_f64()),
         }
@@ -144,7 +152,7 @@ fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
     let mut out = Vec::with_capacity(quantiles.len());
 
     for &q in quantiles {
-        let (idx, float_idx, top_idx) = quantile_idx(q, n, 0, method);
+        let (idx, fraction, top_idx) = quantile_idx(q, n, 0, method);
 
         // No nulls here, so unwrap is safe
         let lower = vals[idx].to_f64().unwrap();
@@ -163,7 +171,7 @@ fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
                     Some(lower)
                 } else {
                     let upper = vals[idx + 1].to_f64().unwrap();
-                    linear_interpol(lower, upper, idx, float_idx).to_f64()
+                    linear_interpol(lower, upper, fraction).to_f64()
                 }
             },
             _ => Some(lower),
@@ -203,7 +211,7 @@ where
     let mut out = Vec::with_capacity(quantiles.len());
 
     for &q in quantiles {
-        let (idx, float_idx, top_idx) = quantile_idx(q, length, null_count, method);
+        let (idx, fraction, top_idx) = quantile_idx(q, length, null_count, method);
 
         let lower = sorted.get(idx).map(|v| v.to_f64().unwrap());
 
@@ -221,7 +229,7 @@ where
                     lower
                 } else {
                     let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
-                    linear_interpol(lower.unwrap(), upper.unwrap(), idx, float_idx).to_f64()
+                    linear_interpol(lower.unwrap(), upper.unwrap(), fraction).to_f64()
                 }
             },
             _ => lower,
