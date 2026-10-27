@@ -423,6 +423,26 @@ def test_write_json_sliced_nested_30178(
     assert df.select(pl.struct("a").struct.json_encode())["a"].to_list() == rows
 
 
+@pytest.mark.parametrize("chunk_lens", [[0, 3, 3], [3, 0, 3], [3, 3, 0], [0, 0, 0]])
+def test_write_json_empty_chunks_30309(chunk_lens: list[int]) -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}),
+            pl.DataFrame({"x": [4, 5, 6], "y": ["d", "e", "f"]}),
+            pl.DataFrame({"x": [7, 8, 9], "y": ["g", "h", "i"]}),
+        ],
+        rechunk=False,
+    )
+    # A boolean Series mask keeps the chunk layout, including empty chunks.
+    mask = pl.Series([n > 0 for n in chunk_lens for _ in range(3)])
+    out = df.filter(mask)
+    for s in out.iter_columns():
+        assert [len(c) for c in s.get_chunks()] == chunk_lens
+
+    assert out.write_json() == out.rechunk().write_json()
+    assert json.loads(out.write_json()) == out.to_dicts()
+
+
 def test_write_ndjson_sliced_masked_nested_list() -> None:
     # Null rows that keep non-empty ranges of masked-out values, at both levels.
     inner = pa.LargeListArray.from_arrays(
