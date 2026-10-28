@@ -14,14 +14,9 @@ impl BinaryOffsetChunked {
         assert_eq!(fields.len(), descending.len());
         assert_eq!(fields.len(), nulls_last.len());
 
-        let mut opts = Vec::with_capacity(fields.len());
-        opts.extend(
-            descending
-                .iter()
-                .zip(nulls_last)
-                .map(|(d, n)| RowEncodingOptions::new_sorted(*d, *n)),
-        );
-        self.row_decode(fields, &opts)
+        use super::ops::row_encode::ordered_opts;
+
+        self.row_decode(fields, &ordered_opts(descending, nulls_last))
     }
 
     pub fn row_decode_unordered(&self, fields: &[Field]) -> PolarsResult<super::StructChunked> {

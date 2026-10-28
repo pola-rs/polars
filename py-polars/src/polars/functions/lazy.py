@@ -1302,6 +1302,7 @@ def _row_encode(
     nulls_last: list[bool] | None = None,
     output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
     encode_nulls: Sequence[bool] | None = None,
+    propagate_nulls: bool = False,
 ) -> Expr:
     if isinstance(exprs, pl.Selector):
         exprs = [exprs.as_expr()]
@@ -1314,10 +1315,12 @@ def _row_encode(
         assert descending is None
         assert nulls_last is None
 
-        result = plr.PyExpr.row_encode_unordered(pyexprs, output, encode_nulls)
+        result = plr.PyExpr.row_encode_unordered(
+            pyexprs, output, encode_nulls, propagate_nulls
+        )
     else:
         result = plr.PyExpr.row_encode_ordered(
-            pyexprs, descending, nulls_last, output, encode_nulls
+            pyexprs, descending, nulls_last, output, encode_nulls, propagate_nulls
         )
 
     return wrap_expr(result)

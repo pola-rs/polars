@@ -13499,6 +13499,7 @@ class DataFrame:
         nulls_last: list[bool] | None = None,
         output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
         encode_nulls: Sequence[bool] | None = None,
+        propagate_nulls: bool = False,
     ) -> Series:
         """
         Row encode the given DataFrame.
@@ -13519,6 +13520,7 @@ class DataFrame:
                 nulls_last=nulls_last,
                 output=output,
                 encode_nulls=encode_nulls,
+                propagate_nulls=propagate_nulls,
             )
         ).to_series()
 

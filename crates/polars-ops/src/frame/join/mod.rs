@@ -29,7 +29,6 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
 use polars_arrow::trusted_len::TrustedLen;
-#[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_with_layout_par, get_binary_offset_row_encoding_layout,
     get_optimal_row_encoding_layout,

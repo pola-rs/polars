@@ -1540,7 +1540,10 @@ class PyExpr:
     def to_pyarrow_predicate(self, schema: Any) -> str | None: ...
     @staticmethod
     def row_encode_unordered(
-        exprs: Sequence[PyExpr], output: str, encode_nulls: Sequence[bool] | None
+        exprs: Sequence[PyExpr],
+        output: str,
+        encode_nulls: Sequence[bool] | None,
+        propagate_nulls: bool,
     ) -> PyExpr: ...
     @staticmethod
     def row_encode_ordered(
@@ -1549,6 +1552,7 @@ class PyExpr:
         nulls_last: Sequence[bool] | None,
         output: str,
         encode_nulls: Sequence[bool] | None,
+        propagate_nulls: bool,
     ) -> PyExpr: ...
     def row_decode_unordered(
         self,

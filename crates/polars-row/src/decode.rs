@@ -70,7 +70,7 @@ pub unsafe fn decode_rows(
     rows: &mut [&[u8]],
     layout: &RowEncodingLayout,
 ) -> Vec<ArrayRef> {
-    assert!(!layout.is_pass_through() && layout.packing().is_none());
+    assert!(!layout.is_pass_through() && !layout.is_packed());
     layout
         .fields()
         .iter()

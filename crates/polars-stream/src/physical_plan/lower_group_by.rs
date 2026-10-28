@@ -1299,18 +1299,14 @@ pub fn try_build_sorted_group_by(
             .iter()
             .map(|k| k.field(input_schema, expr_arena))
             .collect::<PolarsResult<Vec<_>>>()?;
-        let expr = AExprBuilder::function(
+        let expr = AExprBuilder::row_encode(
             keys.to_vec(),
-            IRFunctionExpr::RowEncode {
-                dtypes: key_fields.iter().map(|k| k.dtype().clone()).collect(),
-                variant: RowEncodingVariant::Ordered {
-                    descending: None,
-                    nulls_last: None,
-                },
-                output: RowEncodingOutputType::AlwaysBinaryOffset,
-                encode_nulls: None,
-                propagate_nulls: false,
+            key_fields.iter().map(|k| k.dtype().clone()).collect(),
+            RowEncodingVariant::Ordered {
+                descending: None,
+                nulls_last: None,
             },
+            false,
             expr_arena,
         )
         .expr_ir(input_column.clone());

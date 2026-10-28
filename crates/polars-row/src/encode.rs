@@ -36,7 +36,7 @@ pub fn convert_columns(
     for (column, field) in columns.iter().zip(layout.fields()) {
         assert_eq!(column.len(), num_rows);
         assert!(
-            field.encode_nulls || propagate_nulls || column.null_count() == 0,
+            field.opt.encode_nulls() || propagate_nulls || column.null_count() == 0,
             "row encoding got a null in a column that does not encode nulls"
         );
     }
@@ -67,7 +67,7 @@ fn convert_columns_no_propagate(
             _ => column.clone(),
         };
     }
-    if layout.packing().is_some() {
+    if layout.is_packed() {
         return packed::encode(num_rows, columns, layout);
     }
 
@@ -1075,7 +1075,6 @@ mod tests {
                 dtype: a.dtype().clone(),
                 opt: *opt,
                 ctx: None,
-                encode_nulls: true,
             })
             .collect();
         RowEncodingLayout::new(fields, RowEncodingOutput::AlwaysBinaryOffset)
