@@ -198,10 +198,10 @@
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
 //!       Can be used for JSON and more serde supported serialization formats.
-//!     - `serde-lazy` - Everything in `serde`, plus [serde](https://crates.io/crates/serde) support for
-//!       lazy query plans (`DslPlan`), expressions (`Expr`) and their option types (the plan types require `lazy`).
-//!       Only needed to serialize lazy queries; `serde` alone covers `DataFrame`, `Series` and `Schema`
-//!       and builds noticeably faster.
+//!     - `serde-lazy` - Everything in `serde`, plus [serde](https://crates.io/crates/serde) support
+//!       for lazy query plans (`DslPlan`), expressions (`Expr`) and their option types (the plan
+//!       types require `lazy`) Only needed to serialize lazy queries; `serde` alone covers
+//!       `DataFrame`, `Series` and `Schema` and builds noticeably faster.
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
