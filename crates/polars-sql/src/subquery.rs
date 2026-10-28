@@ -797,23 +797,25 @@ impl SQLContext {
     // only the inner relations to `inner_lf`, after its plain inner-only conjuncts. They
     // are planned in this inner context with strict relations, where no reference to the
     // outer query resolves. `None` if that planning fails.
-    fn filter_inner_subquery_conjuncts(
+    fn filter_inner_subquery_conjuncts<'a>(
         &mut self,
         subquery: &Query,
         inner_lf: LazyFrame,
-        selection: Option<&SQLExpr>,
+        selection: Option<&'a SQLExpr>,
         inner_names: &[RelationName],
         inner_schema: &SchemaRef,
-    ) -> PolarsResult<Option<InnerWhere>> {
+    ) -> PolarsResult<Option<InnerWhere<'a>>> {
         let unchanged = |inner_lf| InnerWhere {
             inner_lf,
-            selection: selection.cloned(),
+            selection: selection.map(Cow::Borrowed),
             filtered: false,
         };
         let Some(selection) = selection else {
             return Ok(Some(unchanged(inner_lf)));
         };
-        if !is_correlated_subquery(subquery, self.catalog_spellings()) {
+        if !expr_contains_subquery(selection)
+            || !is_correlated_subquery(subquery, self.catalog_spellings())
+        {
             return Ok(Some(unchanged(inner_lf)));
         }
         let factored = factored_selection(selection);
@@ -823,14 +825,14 @@ impl SQLContext {
         for conj in MintermIter::new(&factored) {
             if !expr_contains_subquery(conj) {
                 if binds_to_inner_relation(conj, inner_names, inner_schema) {
-                    plain.push(conj.clone());
+                    plain.push(conj);
                 } else {
-                    rest.push(conj.clone());
+                    rest.push(conj);
                 }
             } else if binds_to_inner_outside_subqueries(conj, inner_names, inner_schema) {
                 with_subquery.push(conj.clone());
             } else {
-                rest.push(conj.clone());
+                rest.push(conj);
             }
         }
         if with_subquery.is_empty() {
@@ -840,7 +842,7 @@ impl SQLContext {
         let strict_relations = std::mem::replace(&mut self.strict_relations, true);
         let filtered = (|| {
             let mut lf = inner_lf;
-            for conj in &plain {
+            for conj in plain {
                 lf = lf.filter(parse_sql_expr(conj, self, Some(inner_schema))?);
             }
             let combined = combine_conditions(with_subquery, SQLBinaryOperator::And);
@@ -859,7 +861,11 @@ impl SQLContext {
         };
         Ok(Some(InnerWhere {
             inner_lf,
-            selection: combine_conditions(rest, SQLBinaryOperator::And),
+            selection: combine_conditions(
+                rest.into_iter().cloned().collect(),
+                SQLBinaryOperator::And,
+            )
+            .map(Cow::Owned),
             filtered: true,
         }))
     }
@@ -2396,9 +2402,9 @@ enum CorrelationSide {
 }
 
 // A subquery's inner frame and WHERE after `filter_inner_subquery_conjuncts`.
-struct InnerWhere {
+struct InnerWhere<'a> {
     inner_lf: LazyFrame,
-    selection: Option<SQLExpr>,
+    selection: Option<Cow<'a, SQLExpr>>,
     /// Whether conjuncts moved from `selection` into `inner_lf`.
     filtered: bool,
 }
