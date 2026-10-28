@@ -295,6 +295,16 @@ def test_corr_cov_lit_produces_zero_nan_26633() -> None:
     assert math.isclose(result_cov.item(), 0.0)
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_corr_cov_lit_broadcast(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"a": [float(i) for i in range(100)]})
+    out = lf.select(
+        cov=pl.cov("a", pl.lit(1.0)), corr=pl.corr(pl.lit(1.0), "a")
+    ).collect(engine=engine)
+    assert out["cov"].item() == 0.0
+    assert math.isnan(out["corr"].item())
+
+
 _NUMERIC_DTYPES = [
     pl.Int8,
     pl.Int16,

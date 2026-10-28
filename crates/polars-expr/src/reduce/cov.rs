@@ -15,6 +15,22 @@ fn out_dtype(dtype_x: &DataType, dtype_y: &DataType) -> DataType {
     }
 }
 
+/// Both inputs as `Float64`, with a unit-length one (e.g. a literal) broadcast to the other.
+fn broadcast_f64(values: &[&Column]) -> PolarsResult<(Column, Column)> {
+    assert!(values.len() == 2);
+    let (x, y) = (values[0], values[1]);
+    let broadcast = |c: &Column, len: usize| {
+        if c.len() == 1 && len != 1 {
+            c.new_from_index(0, len)
+        } else {
+            c.clone()
+        }
+    };
+    let x = broadcast(x, y.len()).cast(&DataType::Float64)?;
+    let y = broadcast(y, x.len()).cast(&DataType::Float64)?;
+    Ok((x, y))
+}
+
 pub fn new_cov_reduction(
     dtype_x: DataType,
     dtype_y: DataType,
@@ -68,9 +84,7 @@ impl GroupedReduction for CovGroupedReduction {
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        assert!(values.len() == 2);
-        let sx = values[0].cast(&DataType::Float64)?;
-        let sy = values[1].cast(&DataType::Float64)?;
+        let (sx, sy) = broadcast_f64(values)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
         let (cx, cy) = align_chunks_binary(cx, cy);
@@ -214,9 +228,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        assert!(values.len() == 2);
-        let sx = values[0].cast(&DataType::Float64)?;
-        let sy = values[1].cast(&DataType::Float64)?;
+        let (sx, sy) = broadcast_f64(values)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
         let (cx, cy) = align_chunks_binary(cx, cy);
