@@ -357,8 +357,9 @@ impl PhysicalExpr for BinaryExpr {
                 || self.right.evaluate_on_groups(df, groups, state),
             )
         });
-        let mut ac_l = result_a?;
-        let mut ac_r = result_b?;
+        let mut acs = [result_a?, result_b?];
+        broadcast_uniform_lists(&mut acs);
+        let [mut ac_l, mut ac_r] = acs;
 
         // Aggregate NotAggregated into AggregatedList, but only if strictly required AND
         // when there is no risk of memory explosion.
