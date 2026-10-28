@@ -378,9 +378,10 @@ impl FileReader for ParquetFileReader {
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
 
         // Ordered scans hold completed fetches behind the head of line.
-        self.row_group_prefetch_sync
-            .pipeline_budget
-            .begin_file(byte_source.window_inflight_budget(), maintain_order);
+        self.row_group_prefetch_sync.pipeline_budget.begin_file(
+            byte_source.window_inflight_budget().is_some(),
+            maintain_order,
+        );
         let row_group_prefetch_size = self
             .row_group_prefetch_sync
             .pipeline_budget

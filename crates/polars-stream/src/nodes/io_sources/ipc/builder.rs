@@ -64,11 +64,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         );
 
         if config::verbose() {
-            eprintln!(
-                "[IpcReaderBuilder]: prefetch_limit: {}, prefetch_kbytes_limit: {}",
-                pipeline_budget.count_limit(),
-                pipeline_budget.kbytes_limit()
-            );
+            eprintln!("[IpcReaderBuilder]: {}", pipeline_budget.describe_limits());
         }
 
         self.pipeline_budget.set(pipeline_budget).unwrap()

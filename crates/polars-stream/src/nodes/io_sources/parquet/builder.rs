@@ -83,9 +83,8 @@ impl FileReaderBuilder for ParquetReaderBuilder {
 
         if config::verbose() {
             eprintln!(
-                "[ParquetReaderBuilder]: prefetch_limit: {}, prefetch_kbytes_limit: {}",
-                pipeline_budget.count_limit(),
-                pipeline_budget.kbytes_limit()
+                "[ParquetReaderBuilder]: {}",
+                pipeline_budget.describe_limits()
             );
         }
 

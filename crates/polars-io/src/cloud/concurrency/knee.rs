@@ -617,8 +617,9 @@ impl KneeController {
         self.stats.last_bw_round
     }
 
-    /// Highest bandwidth sustained over `SUSTAINED_ROUNDS` rounds in this run, in bytes/s; 0 until
-    /// measured.
+    /// Highest bandwidth sustained over `SUSTAINED_ROUNDS` rounds since the last reset (idle longer
+    /// than `IDLE_RESET`), in bytes/s; 0 until measured. It does not drop when the bandwidth does,
+    /// e.g. after an EC2 burst allowance runs out.
     pub fn sustained_bw_max(&self) -> f64 {
         self.stats.sustained_bw_max
     }

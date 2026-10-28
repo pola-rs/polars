@@ -68,7 +68,7 @@ impl DeletionFilesProvider {
     ) -> PolarsResult<Self> {
         match deletion_files {
             Some(DeletionFilesList::Iceberg(paths)) => feature_gated!("parquet", {
-                let reader_builder = ParquetReaderBuilder {
+                let mut reader_builder = ParquetReaderBuilder {
                     bytes_per_source: None,
                     first_metadata: None,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
@@ -90,6 +90,12 @@ impl DeletionFilesProvider {
                 };
 
                 reader_builder.set_execution_state(execution_state);
+                // Deletion files keep a fixed byte window: no growth, no pool draw.
+                let pipeline_budget = reader_builder.pipeline_budget.take().unwrap();
+                reader_builder
+                    .pipeline_budget
+                    .set(pipeline_budget.with_fixed_kbytes())
+                    .unwrap();
 
                 let ScanSources::Paths(data_paths) = selected_sources else {
                     polars_bail!(
