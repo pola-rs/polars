@@ -236,15 +236,15 @@ def test_to_pandas_no_deadlock_multithreaded_27396() -> None:
 def test_to_pandas_no_deadlock_with_concurrent_map_elements_30358() -> None:
     from concurrent.futures import ThreadPoolExecutor
 
-    df = pl.DataFrame({"a": range(1000), "s": [str(i) for i in range(1000)]})
+    df = pl.DataFrame({"a": range(10), "s": [str(i) for i in range(10)]})
     chunked = pl.concat([df] * (2 * pl.thread_pool_size()), rechunk=False)
 
     def to_pandas() -> None:
-        for _ in range(100):
+        for _ in range(400):
             df.to_pandas()
 
     def map_elements() -> None:
-        for _ in range(100):
+        for _ in range(400):
             chunked.with_columns(
                 pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64)
             )
