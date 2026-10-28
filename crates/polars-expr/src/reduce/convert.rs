@@ -247,8 +247,8 @@ pub fn into_reduction(
                     RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
-                        broadcast_nulls: None,
                     },
+                    false,
                     expr_arena,
                 )
                 .node();
@@ -280,8 +280,8 @@ pub fn into_reduction(
                     RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
-                        broadcast_nulls: None,
                     },
+                    false,
                     expr_arena,
                 )
                 .node();

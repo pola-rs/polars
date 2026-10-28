@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 use polars_async::executor::TaskMetricAggregator;
-use polars_core::prelude::row_encode::{_get_rows_encoded, get_row_encoding_context};
+use polars_core::prelude::row_encode::{_get_rows_encoded, get_row_encoding_layout};
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
@@ -12,7 +12,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_io::predicates::RuntimeRange;
 use polars_plan::plans::{DynamicPred, PredicateExpr};
-use polars_row::RowEncodingOptions;
+use polars_row::{RowEncodingOptions, RowEncodingOutput};
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 use polars_utils::sort::ReorderWithNulls;
@@ -637,9 +637,8 @@ impl DfByKeyReducer for RowEncodedBottomK {
     }
 
     fn add(&mut self, df: DataFrame, keys: DataFrame) {
-        let keys_encoded = _get_rows_encoded(keys.columns(), &self.reverse, &self.nulls_last)
-            .unwrap()
-            .into_array();
+        let keys_encoded =
+            _get_rows_encoded(keys.columns(), &self.reverse, &self.nulls_last).unwrap();
         self.inner.add_df(
             df,
             keys_encoded.values_iter(),
@@ -677,7 +676,7 @@ impl PredicateExpr for FirstKeyBottomKPredicate {
         // first key of the threshold is a prefix of it and compares below it.
         let encoded = _get_rows_encoded(&columns[0..1], &[self.descending], &[self.nulls_last])?;
         let pred: BooleanChunked = encoded
-            .iter()
+            .values_iter()
             .map(|row| row < threshold.as_slice())
             .collect_ca(PlSmallStr::EMPTY);
         Ok(Some(Column::from(pred.into_series())))
@@ -699,19 +698,18 @@ impl PredicateExpr for FirstKeyBottomKPredicate {
         let Some(threshold) = self.shared_optimum.read().clone() else {
             return RuntimeRange::Pending;
         };
-        let arrow_dtype = self.dtype.to_physical().to_arrow(CompatLevel::newest());
-        let opt = RowEncodingOptions::new_sorted(self.descending, self.nulls_last);
-        let ctxt = get_row_encoding_context(&self.dtype);
-        let [first_key] = unsafe {
-            polars_row::decode::decode_rows(
-                &mut [threshold.as_slice()],
-                &[opt],
-                &[ctxt],
-                &[arrow_dtype],
-            )
-        }
-        .try_into()
-        .unwrap();
+        let layout = get_row_encoding_layout(
+            std::slice::from_ref(&self.dtype),
+            &[RowEncodingOptions::new_sorted(
+                self.descending,
+                self.nulls_last,
+            )],
+            RowEncodingOutput::AlwaysBinaryOffset,
+        );
+        let [first_key] =
+            unsafe { polars_row::decode::decode_rows(&mut [threshold.as_slice()], &layout) }
+                .try_into()
+                .unwrap();
         let Ok(value) = Series::try_from((PlSmallStr::EMPTY, first_key))
             .and_then(|s| unsafe { s.from_physical_unchecked(&self.dtype) })
             .and_then(|s| s.get(0).map(|v| v.into_static()))

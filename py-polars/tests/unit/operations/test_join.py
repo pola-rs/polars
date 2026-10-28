@@ -346,6 +346,21 @@ def test_join_on_cast() -> None:
     }
 
 
+def test_join_multiple_keys_right_chunks_differ_from_key() -> None:
+    n = pl.thread_pool_size()
+    parts = [pl.DataFrame({"g": [i], "h": [i], "v": [f"v{i}"]}) for i in range(n - 1)]
+    rest = range(n - 1, 2 * n)
+    parts.append(
+        pl.DataFrame({"g": list(rest), "h": list(rest), "v": [f"v{i}" for i in rest]})
+    )
+    right = pl.concat(parts, rechunk=False)
+    left = pl.DataFrame({"g": range(2 * n), "h": range(2 * n)})
+
+    out = left.join(right, on=["g", "h"], how="left")
+    expected = left.with_columns(v=pl.format("v{}", "g"))
+    assert_frame_equal(out, expected)
+
+
 def test_join_chunks_alignment_4720() -> None:
     # https://github.com/pola-rs/polars/issues/4720
 
