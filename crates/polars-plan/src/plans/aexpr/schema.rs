@@ -10,6 +10,9 @@ use crate::constants::{
     get_pl_structfields_name,
 };
 
+/// Largest finite value representable in Float16.
+const F16_MAX_INT: i128 = 65_504;
+
 fn validate_expr(node: Node, ctx: &ToFieldContext) -> PolarsResult<()> {
     ctx.arena.get(node).to_field_impl(ctx).map(|_| ())
 }
@@ -960,8 +963,12 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
         (Float16, UInt16 | Int16) => Float32,
         #[cfg(feature = "dtype-f16")]
-        (Float16, Unknown(UnknownKind::Int(_))) | (Unknown(UnknownKind::Int(_)), Float16) => {
-            Float16
+        (Float16, Unknown(UnknownKind::Int(v))) | (Unknown(UnknownKind::Int(v)), Float16) => {
+            if (-F16_MAX_INT..=F16_MAX_INT).contains(v) {
+                Float16
+            } else {
+                Float64
+            }
         },
         #[cfg(feature = "dtype-f16")]
         (Float16, other) if other.is_integer() => Float64,
