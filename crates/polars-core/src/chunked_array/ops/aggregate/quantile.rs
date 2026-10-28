@@ -17,11 +17,12 @@ pub trait QuantileAggSeries {
     -> PolarsResult<Scalar>;
 }
 
-/// Returns the ranks among `n_nonnull` sorted non-null values that `quantile` needs, and the
-/// interpolation fraction between them: `(lower_rank, upper_rank, fraction)`.
+/// Returns the 0-based indices into `n_nonnull` sorted non-null values that `quantile` needs, and
+/// the fraction of the way from the lower to the upper one: `(lower_idx, upper_idx, fraction)`.
 ///
-/// `upper_rank == lower_rank` unless `method` interpolates between two distinct ranks.
-pub fn quantile_ranks(
+/// `upper_idx == lower_idx` unless `method` combines two distinct values. Only `Linear` uses
+/// `fraction`; `Midpoint` averages the two values.
+pub fn quantile_indices(
     n_nonnull: usize,
     quantile: f64,
     method: QuantileMethod,
@@ -47,14 +48,14 @@ pub fn quantile_ranks(
     }
 }
 
-/// [`quantile_ranks`] as indices into `length` sorted values with the `null_count` nulls first.
+/// [`quantile_indices`] as indices into `length` sorted values with the `null_count` nulls first.
 fn quantile_idx(
     quantile: f64,
     length: usize,
     null_count: usize,
     method: QuantileMethod,
 ) -> (usize, f64, usize) {
-    let (lower, upper, fraction) = quantile_ranks(length - null_count, quantile, method);
+    let (lower, upper, fraction) = quantile_indices(length - null_count, quantile, method);
     (lower + null_count, fraction, upper + null_count)
 }
 
