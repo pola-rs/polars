@@ -77,6 +77,11 @@ impl AExprBuilder {
         propagate_nulls: bool,
         arena: &mut Arena<AExpr>,
     ) -> Self {
+        // The layout needs concrete types, such as for a key of untyped literals.
+        let dtypes = dtypes
+            .into_iter()
+            .map(|dtype| dtype.materialize_unknown(true).unwrap())
+            .collect();
         Self::function(
             exprs,
             IRFunctionExpr::RowEncode {
