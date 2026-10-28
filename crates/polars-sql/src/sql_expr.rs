@@ -274,6 +274,46 @@ fn literal_like_match(pattern: &str) -> Option<(StringMatch, &str)> {
     plain(needle).then_some((matches, needle))
 }
 
+/// The `x` of a LIKE pattern `'%' || x || '%'`.
+fn substring_like_needle(pattern: &SQLExpr) -> Option<&SQLExpr> {
+    let is_percent = |e: &SQLExpr| {
+        matches!(e, SQLExpr::Value(ValueWithSpan {
+            value: SQLValue::SingleQuotedString(s), ..
+        }) if s == "%")
+    };
+    let SQLExpr::BinaryOp {
+        left,
+        op: SQLBinaryOperator::StringConcat,
+        right: end,
+    } = pattern
+    else {
+        return None;
+    };
+    let SQLExpr::BinaryOp {
+        left: start,
+        op: SQLBinaryOperator::StringConcat,
+        right: needle,
+    } = &**left
+    else {
+        return None;
+    };
+    (is_percent(start) && is_percent(end)).then_some(&**needle)
+}
+
+/// A regex that finds the LIKE pattern `pattern` anywhere in a string, as
+/// `'%' || pattern || '%'` does.
+fn unanchored_like_regex(pattern: Expr, case_insensitive: bool) -> Expr {
+    let flags = if case_insensitive { "(?is)" } else { "(?s)" };
+    let rx = pattern
+        .str()
+        .escape_regex()
+        .str()
+        .replace_all(lit("%"), lit(".*"), true)
+        .str()
+        .replace_all(lit("_"), lit("."), true);
+    lit(flags) + rx
+}
+
 /// `expr`, a string, as a value of temporal `dtype`: folded when it is a literal
 /// that parses, else parsed when the query runs. `None` if `dtype` is not temporal.
 fn string_to_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr> {
@@ -726,6 +766,29 @@ impl SQLExprVisitor<'_> {
     ) -> PolarsResult<Expr> {
         if escape_char.is_some() {
             polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not currently supported; found '{}'", escape_char.clone().unwrap());
+        }
+        if let Some(needle) = substring_like_needle(pattern) {
+            let expr = self.visit_expr(expr)?;
+            // A '%' at either end of the value adds nothing to the surrounding ones.
+            let needle = self
+                .visit_expr(needle)?
+                .cast(DataType::String)
+                .str()
+                .strip_chars(lit("%"));
+            let matches = if case_insensitive {
+                expr.str()
+                    .contains(unanchored_like_regex(needle, true), true)
+            } else {
+                // Only values holding a wildcard need a regex.
+                let has_wildcard = needle.clone().str().contains(lit("[%_]"), true);
+                let rx = when(has_wildcard.clone())
+                    .then(unanchored_like_regex(needle.clone(), false))
+                    .otherwise(lit(NULL));
+                when(has_wildcard)
+                    .then(expr.clone().str().contains(rx, true))
+                    .otherwise(expr.str().contains_literal(needle))
+            };
+            return Ok(if negated { matches.not() } else { matches });
         }
         let pat = match self.visit_expr(pattern) {
             Ok(Expr::Literal(lv)) if lv.extract_str().is_some() => {
