@@ -5,6 +5,9 @@ use polars_compute::decimal::{DEC128_MAX_PREC, i128_to_dec128};
 
 use super::*;
 
+/// Largest finite value representable in Float16.
+const F16_MAX_INT: i128 = 65_504;
+
 /// Given two data types, determine the data type that both types can safely be cast to.
 ///
 /// Returns a [`PolarsError::ComputeError`] if no such data type exists.
@@ -517,7 +520,8 @@ pub fn get_supertype_with_options(
                         }
                     },
                     // Materialize float to float
-                    UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Int(v) if dt.is_float() && (*dt != Float16 || (-F16_MAX_INT..=F16_MAX_INT).contains(v)) => Some(dt.clone()),
                     UnknownKind::Float if dt.is_bool() => Some(Unknown(UnknownKind::Float)),
                     UnknownKind::Float if dt.is_integer() => {
                         if dt.is_known() {
