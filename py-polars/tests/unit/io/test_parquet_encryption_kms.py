@@ -752,11 +752,13 @@ def test_decryption_configuration_invalid(
 
 
 def test_configuration_properties() -> None:
+    # A generator isn't a sequence, but is accepted and only iterated once.
+    generated_columns: Any = (c for c in ["c"])
     config = EncryptionConfiguration(
         "footer_key",
         column_keys={
             "column_key": ("a", "b"),
-            "column_key_3": (c for c in ["c"]),  # type: ignore[dict-item]
+            "column_key_3": generated_columns,
         },
         plaintext_footer=True,
         double_wrapping=False,
