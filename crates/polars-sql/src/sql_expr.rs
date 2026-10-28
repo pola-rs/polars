@@ -28,9 +28,10 @@ use polars_plan::prelude::{has_expr, typed_lit};
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
-    DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, OrderByOptions,
-    OrderBySort, Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField,
-    TypedString, UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
+    DateTimeField, Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr,
+    FunctionArgumentList, FunctionArguments, Ident, Interval, OrderByOptions, OrderBySort,
+    Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
+    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords;
@@ -274,35 +275,15 @@ fn literal_like_match(pattern: &str) -> Option<(StringMatch, &str)> {
     plain(needle).then_some((matches, needle))
 }
 
-/// The `x` of a LIKE pattern `'%' || x || '%'`.
-fn substring_like_needle(pattern: &SQLExpr) -> Option<&SQLExpr> {
-    let is_percent = |e: &SQLExpr| {
-        matches!(e, SQLExpr::Value(ValueWithSpan {
-            value: SQLValue::SingleQuotedString(s), ..
-        }) if s == "%")
-    };
-    let SQLExpr::BinaryOp {
-        left,
-        op: SQLBinaryOperator::StringConcat,
-        right: end,
-    } = pattern
-    else {
-        return None;
-    };
-    let SQLExpr::BinaryOp {
-        left: start,
-        op: SQLBinaryOperator::StringConcat,
-        right: needle,
-    } = &**left
-    else {
-        return None;
-    };
-    (is_percent(start) && is_percent(end)).then_some(&**needle)
+fn is_percent_literal(e: &SQLExpr) -> bool {
+    matches!(e, SQLExpr::Value(ValueWithSpan {
+        value: SQLValue::SingleQuotedString(s), ..
+    }) if s == "%")
 }
 
-/// A regex that finds the LIKE pattern `pattern` anywhere in a string, as
-/// `'%' || pattern || '%'` does.
-fn unanchored_like_regex(pattern: Expr, case_insensitive: bool) -> Expr {
+/// A regex for the LIKE pattern in the string expression `pattern`. It must match the
+/// whole string, or any part of it when `unanchored`, as `'%' || pattern || '%'` does.
+fn like_pattern_regex(pattern: Expr, case_insensitive: bool, unanchored: bool) -> Expr {
     let flags = if case_insensitive { "(?is)" } else { "(?s)" };
     let rx = pattern
         .str()
@@ -311,7 +292,11 @@ fn unanchored_like_regex(pattern: Expr, case_insensitive: bool) -> Expr {
         .replace_all(lit("%"), lit(".*"), true)
         .str()
         .replace_all(lit("_"), lit("."), true);
-    lit(flags) + rx
+    if unanchored {
+        lit(flags) + rx
+    } else {
+        lit(format!("{flags}^")) + rx + lit("$")
+    }
 }
 
 /// `expr`, a string, as a value of temporal `dtype`: folded when it is a literal
@@ -772,22 +757,22 @@ impl SQLExprVisitor<'_> {
         if escape_char.is_some() {
             polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not currently supported; found '{}'", escape_char.clone().unwrap());
         }
-        if let Some(needle) = substring_like_needle(pattern) {
+        if let Some((needle, null_as_empty)) = self.substring_like_needle(pattern) {
             let expr = self.visit_expr(expr)?;
+            let mut needle = self.visit_expr(needle)?.cast(DataType::String);
+            if null_as_empty {
+                needle = needle.fill_null(lit(""));
+            }
             // A '%' at either end of the value adds nothing to the surrounding ones.
-            let needle = self
-                .visit_expr(needle)?
-                .cast(DataType::String)
-                .str()
-                .strip_chars(lit("%"));
+            let needle = needle.str().strip_chars(lit("%"));
             let matches = if case_insensitive {
                 expr.str()
-                    .contains(unanchored_like_regex(needle, true), true)
+                    .contains(like_pattern_regex(needle, true, true), true)
             } else {
                 // Only values holding a wildcard need a regex.
                 let has_wildcard = needle.clone().str().contains(lit("[%_]"), true);
                 let rx = when(has_wildcard.clone())
-                    .then(unanchored_like_regex(needle.clone(), false))
+                    .then(like_pattern_regex(needle.clone(), false, true))
                     .otherwise(lit(NULL));
                 when(has_wildcard)
                     .then(expr.clone().str().contains(rx, true))
@@ -795,12 +780,15 @@ impl SQLExprVisitor<'_> {
             };
             return Ok(if negated { matches.not() } else { matches });
         }
-        let pat = match self.visit_expr(pattern) {
-            Ok(Expr::Literal(lv)) if lv.extract_str().is_some() => {
+        let pat = match self.visit_expr(pattern)? {
+            Expr::Literal(lv) if lv.extract_str().is_some() => {
                 PlSmallStr::from_str(lv.extract_str().unwrap())
             },
-            _ => {
-                polars_bail!(SQLSyntax: "LIKE/ILIKE pattern must be a string literal; found {}", pattern)
+            pattern => {
+                let rx =
+                    like_pattern_regex(pattern.cast(DataType::String), case_insensitive, false);
+                let matches = self.visit_expr(expr)?.str().contains(rx, true);
+                return Ok(if negated { matches.not() } else { matches });
             },
         };
         if pat.is_empty() || (!case_insensitive && pat.chars().all(|c| !matches!(c, '%' | '_'))) {
@@ -832,6 +820,57 @@ impl SQLExprVisitor<'_> {
             let expr = self.visit_expr(expr)?;
             let matches = expr.str().contains(lit(rx), true);
             Ok(if negated { matches.not() } else { matches })
+        }
+    }
+
+    /// The `x` of a LIKE pattern `'%' || x || '%'` or `CONCAT('%', x, '%')`, and whether
+    /// a null `x` counts as an empty string, as it does in `CONCAT`.
+    fn substring_like_needle<'p>(&self, pattern: &'p SQLExpr) -> Option<(&'p SQLExpr, bool)> {
+        match pattern {
+            SQLExpr::Nested(inner) => self.substring_like_needle(inner),
+            SQLExpr::BinaryOp {
+                left,
+                op: SQLBinaryOperator::StringConcat,
+                right: end,
+            } => {
+                let SQLExpr::BinaryOp {
+                    left: start,
+                    op: SQLBinaryOperator::StringConcat,
+                    right: needle,
+                } = &**left
+                else {
+                    return None;
+                };
+                (is_percent_literal(start) && is_percent_literal(end)).then_some((&**needle, false))
+            },
+            SQLExpr::Function(function)
+                if function.over.is_none()
+                    && function.filter.is_none()
+                    && matches!(
+                        PolarsSQLFunctions::try_from_sql(function, self.ctx),
+                        Ok(PolarsSQLFunctions::Concat)
+                    ) =>
+            {
+                let FunctionArguments::List(FunctionArgumentList {
+                    args,
+                    duplicate_treatment: None,
+                    clauses,
+                }) = &function.args
+                else {
+                    return None;
+                };
+                let [start, needle, end] = args.as_slice() else {
+                    return None;
+                };
+                let arg = |a: &'p FunctionArg| match a {
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) => Some(e),
+                    _ => None,
+                };
+                let (start, needle, end) = (arg(start)?, arg(needle)?, arg(end)?);
+                (clauses.is_empty() && is_percent_literal(start) && is_percent_literal(end))
+                    .then_some((needle, true))
+            },
+            _ => None,
         }
     }
 

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 # TODO: Do not rely on I/O for these tests
@@ -312,8 +316,16 @@ def test_string_like_wildcards(pattern: str) -> None:
     assert res == [None if s is None else rx.fullmatch(s) is None for s in txt]
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "'%' || needle || '%'",
+        "('%' || needle || '%')",
+        "CONCAT('%', needle, '%')",
+    ],
+)
 @pytest.mark.parametrize("like", ["LIKE", "NOT LIKE", "ILIKE", "NOT ILIKE"])
-def test_string_like_column_substring(like: str) -> None:
+def test_string_like_column_substring(like: str, pattern: str) -> None:
     txt = ["abc", "a.c", "a%c", "AbC", "a\nc", "(a)", "a\\c", "x$0y", "", None]
     needle = [
         "b", ".", "%", "_", "B", "", None, "\n", "(", "\\", "a_c", "a%c", "*",
@@ -324,22 +336,72 @@ def test_string_like_column_substring(like: str) -> None:
         schema={"txt": pl.String, "needle": pl.String},
         orient="row",
     )
-    q = f"SELECT txt {like} '%' || needle || '%' AS m FROM self"
+    q = f"SELECT txt {like} {pattern} AS m FROM self"
+    res = df.lazy().sql(q).collect(engine="in-memory")["m"]
+    assert_series_equal(df.lazy().sql(q).collect(engine="streaming")["m"], res)
+
+    # CONCAT reads a null as an empty string.
+    null_needle = "" if pattern.startswith("CONCAT") else None
+    flags = re.DOTALL | (re.IGNORECASE if "ILIKE" in like else 0)
+    expected: list[bool | None] = []
+    for t, n in df.rows():
+        n = null_needle if n is None else n
+        if t is None or n is None:
+            expected.append(None)
+            continue
+        rx = re.escape(n).replace("%", ".*").replace("_", ".")
+        expected.append((re.search(rx, t, flags) is not None) != like.startswith("NOT"))
+    assert res.to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("pattern", "value"),
+    [
+        ("needle", lambda n: n),
+        ("needle || '%'", lambda n: n + "%"),
+        ("'%' || needle", lambda n: "%" + n),
+        ("'a' || needle || 'c'", lambda n: "a" + n + "c"),
+        ("UPPER(needle)", lambda n: n.upper()),
+        ("CONCAT('a', needle)", lambda n: "a" + n),
+    ],
+)
+@pytest.mark.parametrize("like", ["LIKE", "NOT LIKE", "ILIKE", "NOT ILIKE"])
+def test_string_like_column_pattern(
+    like: str, pattern: str, value: Callable[[str], str]
+) -> None:
+    txt = ["abc", "a.c", "a%c", "AbC", "a\nc", "(a)", "a\\c", "x$0y", "", None]
+    needle = ["b", ".", "%", "_", "B", "", None, "abc", "a_c", "(", "\\", "$0", "%b%"]
+    df = pl.DataFrame(
+        [(t, n) for t in txt for n in needle],
+        schema={"txt": pl.String, "needle": pl.String},
+        orient="row",
+    )
+    q = f"SELECT txt {like} {pattern} AS m FROM self"
     res = df.lazy().sql(q).collect(engine="in-memory")["m"]
     assert_series_equal(df.lazy().sql(q).collect(engine="streaming")["m"], res)
 
     flags = re.DOTALL | (re.IGNORECASE if "ILIKE" in like else 0)
-    expected = [
-        None
-        if t is None or n is None
-        else (
-            re.search(re.escape(n).replace("%", ".*").replace("_", "."), t, flags)
-            is not None
+    expected: list[bool | None] = []
+    for t, n in df.rows():
+        if n is None and pattern.startswith("CONCAT"):
+            n = ""
+        elif n is None:
+            expected.append(None)
+            continue
+        if t is None:
+            expected.append(None)
+            continue
+        rx = re.escape(value(n)).replace("%", ".*").replace("_", ".")
+        expected.append(
+            (re.fullmatch(rx, t, flags) is not None) != like.startswith("NOT")
         )
-        != like.startswith("NOT")
-        for t, n in df.rows()
-    ]
     assert res.to_list() == expected
+
+
+def test_string_like_constant_concat_pattern() -> None:
+    df = pl.DataFrame({"txt": ["Brand#12", "brand#1", "Other"]})
+    res = df.sql("SELECT txt FROM self WHERE txt LIKE CONCAT('Brand%', '%')")
+    assert res["txt"].to_list() == ["Brand#12"]
 
 
 def test_string_like_column_substring_non_string() -> None:
