@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import pickle
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -416,10 +417,6 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             r"`CREATE TABLE \.\.\. AS SELECT` does not take column definitions",
         ),
         (
-            "CREATE TABLE t PARTITION BY (x) AS SELECT 1 AS x",
-            "`PARTITION BY` is not yet supported for catalog tables",
-        ),
-        (
             "CREATE TABLE t LIKE lineitem",
             r"`CREATE TABLE \.\.\. LIKE` is not supported for catalog tables",
         ),
@@ -441,13 +438,112 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
         ),
         ("CREATE TABLE t (x INT NULL NOT NULL)", "conflicting NULL/NOT NULL"),
         (
-            "CREATE TABLE t (x INT) PARTITION BY (x)",
-            "`PARTITION BY` is not yet supported for catalog tables; create the "
-            "table unpartitioned",
+            "CREATE TABLE t (x INT) PARTITION BY RANGE (x)",
+            r"unsupported partition field `RANGE\(x\)`; expected a column, or year",
+        ),
+        ("CREATE TABLE t (x INT) PARTITION BY (x + 1)", "unsupported partition field"),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (bucket(4))",
+            "unsupported partition field",
         ),
         (
-            "CREATE TABLE t (x INT) PARTITIONED BY (x)",
-            "`PARTITIONED BY` is not yet supported for catalog tables",
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (s.a)",
+            r"`PARTITION BY` takes unqualified column names; found `s\.a`; "
+            "partitioning by a nested field is not yet supported",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (bucket(4, s.a))",
+            r"`PARTITION BY` takes unqualified column names; found `s\.a`",
+        ),
+        (
+            "CREATE TABLE t (f INT) PARTITION BY (t.f)",
+            r"`PARTITION BY` takes unqualified column names; found `t\.f`",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (bucket(s.a, 4))",
+            r"`bucket\(s\.a, 4\)` takes the number first, as in `bucket\(4, s\.a\)`",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY ((s).a)",
+            r"unsupported partition field `\(s\)\.a`",
+        ),
+        (
+            "CREATE TABLE t (d DATE) PARTITION BY (date(d))",
+            r"unsupported partition field `date\(d\)`",
+        ),
+        (
+            "CREATE TABLE t (ts TIMESTAMP) PARTITION BY (date_hour(ts))",
+            r"unsupported partition field `date_hour\(ts\)`",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (bucket(x, 4))",
+            r"`bucket\(x, 4\)` takes the number first, as in `bucket\(4, x\)`",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (bucket(0, x))",
+            r"the first argument of `bucket\(0, x\)` must be an integer from 1 to "
+            "2147483647",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (truncate(-2, x))",
+            "must be an integer from 1 to 2147483647",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (bucket(2147483648, x))",
+            "must be an integer from 1 to 2147483647",
+        ),
+        ("CREATE TABLE t (x INT) PARTITION BY (x, x)", "duplicate partition field `x`"),
+        (
+            "CREATE TABLE t (d DATE) PARTITION BY (year(d), days(d))",
+            r"partition fields `year\(d\)` and `days\(d\)` both partition column 'd' "
+            "by time",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITIONED BY (x INT)",
+            "`PARTITIONED BY` takes column names only; found `x INT`; types and "
+            "constraints belong in the column list",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITIONED BY (x) PARTITION BY (x)",
+            "`PARTITION BY` and `PARTITIONED BY` cannot be combined",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (y)",
+            "partition column 'y' is not a column of table 't'",
+        ),
+        (
+            'CREATE TABLE t (x INT) PARTITION BY ("X")',
+            r"partition column 'X' is not a column of table 't'; "
+            r"valid columns: \['x'\]",
+        ),
+        (
+            "CREATE TABLE t PARTITION BY (y) AS SELECT 1 AS x, 2 AS z",
+            r"partition column 'y' is not a column of table 't'; "
+            r"valid columns: \['x', 'z'\]",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (day(x))",
+            "cannot partition table 't' by day of column 'x' with type int",
+        ),
+        (
+            "CREATE TABLE t (b BOOLEAN) PARTITION BY (bucket(4, b))",
+            r"by bucket\[4\] of column 'b' with type boolean",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (s)",
+            "by identity of column 's' with type struct",
+        ),
+        (
+            "CREATE TABLE t (d DATE, d_day INT) PARTITION BY (day(d))",
+            "partition field 'd_day' of table 't' would have the name of a column",
+        ),
+        (
+            "CREATE TEMP TABLE t (x INT) PARTITION BY (x)",
+            "table `PARTITION BY` clauses are not supported",
+        ),
+        (
+            "CREATE TEMP TABLE t (x INT) PARTITIONED BY (x)",
+            "Hive table distribution clauses are not supported",
         ),
         (
             "CREATE TABLE t (x INT) TBLPROPERTIES ('k' = 'v')",
@@ -548,6 +644,145 @@ def test_create_catalog_table_missing_namespace(
     assert exc.value.__notes__ == [
         "table 't' could not be created: catalog table 'tpch.t'"
     ]
+
+
+def partition_fields(catalog: CountingCatalog, *identifier: str) -> list[Any]:
+    table = catalog.load_table(identifier)
+    schema = table.schema()
+    return [
+        (f.name, str(f.transform), schema.find_column_name(f.source_id))
+        for f in table.spec().fields
+    ]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("clause", "expected"),
+    [
+        (
+            "PARTITION BY (p, bucket(4, id), truncate(2, x), day(ts))",
+            [
+                ("p", "identity", "p"),
+                ("id_bucket_4", "bucket[4]", "id"),
+                ("x_trunc_2", "truncate[2]", "x"),
+                ("ts_day", "day", "ts"),
+            ],
+        ),
+        ("PARTITION BY p", [("p", "identity", "p")]),
+        ("PARTITIONED BY (p, x)", [("p", "identity", "p"), ("x", "identity", "x")]),
+        (
+            "PARTITION BY (YEARS(d), Bucket(8, id), bucket(4, id), hours(ts))",
+            [
+                ("d_year", "year", "d"),
+                ("id_bucket_8", "bucket[8]", "id"),
+                ("id_bucket_4", "bucket[4]", "id"),
+                ("ts_hour", "hour", "ts"),
+            ],
+        ),
+        (
+            "PARTITION BY (month(d), hour(ts))",
+            [("d_month", "month", "d"), ("ts_hour", "hour", "ts")],
+        ),
+        ("PARTITION BY (days(d))", [("d_day", "day", "d")]),
+        (
+            "WITH ('format-version' = 1) PARTITION BY (bucket(4, id), day(ts))",
+            [("id_bucket_4", "bucket[4]", "id"), ("ts_day", "day", "ts")],
+        ),
+        (
+            "PARTITION BY ((p), day((ts)), bucket(4, (id)))",
+            [
+                ("p", "identity", "p"),
+                ("ts_day", "day", "ts"),
+                ("id_bucket_4", "bucket[4]", "id"),
+            ],
+        ),
+        # a quoted name with a dot is a top-level column
+        ('PARTITION BY ("s.f")', [("s.f", "identity", "s.f")]),
+    ],
+)
+def test_create_partitioned_catalog_table(
+    lake: CountingCatalog, clause: str, expected: list[Any]
+) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE t (id BIGINT, p VARCHAR, x VARCHAR, d DATE, ts TIMESTAMP, "
+        '"s.f" INT) ' + clause
+    )
+    assert partition_fields(lake, "tpch", "t") == expected
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("staged", [True, False])
+def test_create_partitioned_catalog_table_as_select(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, staged: bool
+) -> None:
+    if not staged:
+        monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    ctx = lake_ctx(lake)
+    src = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "p": ["a", "b", "a", None],
+            "d": [date(2024, 1, 1), date(2024, 1, 2), date(2024, 2, 1), None],
+        }
+    )
+    ctx.register("src", src)
+    ctx.execute("CREATE TABLE t PARTITION BY (p, month(d)) AS SELECT * FROM src")
+    assert partition_fields(lake, "tpch", "t") == [
+        ("p", "identity", "p"),
+        ("d_month", "month", "d"),
+    ]
+    table = lake.load_table(("tpch", "t"))
+    assert len(table.metadata.snapshots) == 1
+    # months since 1970
+    partitions = table.inspect.files().column("partition").to_pylist()
+    assert sorted(partitions, key=str) == sorted(
+        [
+            {"p": "a", "d_month": 648},
+            {"p": "b", "d_month": 648},
+            {"p": "a", "d_month": 649},
+            {"p": None, "d_month": None},
+        ],
+        key=str,
+    )
+    res = ctx.execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, src, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_partitioned_catalog_table_checks(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    with pytest.raises(
+        NotImplementedError,
+        match=r"partitioning by truncate\[2\] of a decimal column \('x'\)",
+    ):
+        ctx.execute("CREATE TABLE t (x DECIMAL(10, 2)) PARTITION BY (truncate(2, x))")
+    assert not lake.table_exists(("tpch", "t"))
+
+    # checked also when the table exists, and before the query runs: the cast fails
+    error = "partition column 'x' is not a column of table 'lineitem'"
+    with pytest.raises(SQLInterfaceError, match=error):
+        ctx.execute("CREATE TABLE IF NOT EXISTS lineitem (k INT) PARTITION BY (x)")
+    with pytest.raises(SQLInterfaceError, match="by day of column 'k' with type int"):
+        ctx.execute(
+            "CREATE TABLE t PARTITION BY (day(k)) AS "
+            "SELECT CAST(v AS INT) AS k FROM lineitem"
+        )
+    assert not lake.table_exists(("tpch", "t"))
+
+
+def test_create_partition_spec_duplicate_name() -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField
+
+    from polars.sql.context import _create_partition_spec
+
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    with pytest.raises(
+        SQLInterfaceError,
+        match="duplicate partition field name 'id_bucket_4' in table 't'",
+    ):
+        _create_partition_spec(schema, [("id", "bucket[4]"), ("id", "bucket[4]")], "t")
 
 
 def table_files(tmp_path: Path, *identifier: str) -> set[Path]:

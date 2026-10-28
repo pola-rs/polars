@@ -73,9 +73,13 @@ creates the table in the catalog.
 
     CREATE TABLE IF NOT EXISTS lake.sales.big_orders
     LOCATION 's3://bucket/big_orders'
+    PARTITION BY (region, day(ordered_at), bucket(16, id))
     AS SELECT * FROM lake.sales.orders WHERE amount > 1000
 
 - ``NOT NULL`` makes a column a required field; other constraints are not supported.
+- ``PARTITION BY (...)`` sets the partition spec: a column (identity), ``year``,
+  ``month``, ``day`` or ``hour`` of a column, ``bucket(N, column)`` or
+  ``truncate(W, column)``. ``PARTITIONED BY (column, ...)`` takes column names only.
 - ``LOCATION`` (or the ``'location'`` option) sets the table location; the other
   ``WITH`` options become table properties.
 - ``AS SELECT`` commits the rows together with the create, so a failed query creates
@@ -84,7 +88,7 @@ creates the table in the catalog.
   :meth:`LazyFrame.sink_iceberg`: write properties such as
   ``write.parquet.compression-codec`` are stored, but not applied to them.
 - ``IF NOT EXISTS`` leaves an existing table as it is; its query is checked, but not run.
-- ``LIKE``, ``OR REPLACE`` and partitioning are not supported for catalog tables.
+- ``LIKE`` and ``OR REPLACE`` are not supported for catalog tables.
 
 .. _delete_from_table:
 

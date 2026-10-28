@@ -19,6 +19,7 @@ from polars._utils.various import _get_stack_locals, qualified_type_name
 from polars._utils.wrap import wrap_ldf
 from polars.convert import from_pandas
 from polars.dataframe import DataFrame
+from polars.exceptions import SQLInterfaceError
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     from typing import Any, Final, Literal, Self, TypeAlias
 
     import pyiceberg.catalog
+    import pyiceberg.partitioning
     import pyiceberg.schema
     import pyiceberg.table
 
@@ -947,6 +949,7 @@ def _create_catalog_table(
         required=ddl["required"],
         context="CREATE TABLE",
     )
+    spec = _create_partition_spec(schema, ddl["partition_by"], name)
     # checked first, as some catalogs report other errors before an existing table
     if catalog.table_exists(identifier):
         if ddl["if_not_exists"]:
@@ -966,11 +969,12 @@ def _create_catalog_table(
                 identifier,
                 schema=schema,
                 location=ddl["location"],
+                partition_spec=spec,
                 properties=ddl["properties"],
             )
         else:
             created = _create_filled_table(
-                catalog, identifier, schema, lf, ddl, storage_options
+                catalog, identifier, schema, spec, lf, ddl, storage_options
             )
     except Exception as error:
         if _created_meanwhile(catalog, identifier, error):
@@ -1006,10 +1010,81 @@ def _create_catalog_table(
     return response
 
 
+def _create_partition_spec(
+    schema: pyiceberg.schema.Schema, partition_by: list[tuple[str, str]], name: str
+) -> pyiceberg.partitioning.PartitionSpec:
+    """The partition spec of the new table `name`, checked against its `schema`."""
+    from pyiceberg.partitioning import (
+        PARTITION_FIELD_ID_START,
+        PartitionField,
+        PartitionSpec,
+    )
+    from pyiceberg.transforms import (
+        BucketTransform,
+        IdentityTransform,
+        TruncateTransform,
+        parse_transform,
+    )
+    from pyiceberg.types import DecimalType
+
+    # top-level columns only: `find_field` resolves dotted names into structs
+    columns = {field.name: field for field in schema.fields}
+    fields: list[PartitionField] = []
+    for column, transform_name in partition_by:
+        transform = parse_transform(transform_name)
+        if (source := columns.get(column)) is None:
+            msg = (
+                f"partition column '{column}' is not a column of table '{name}'; "
+                f"valid columns: {list(columns)}"
+            )
+            raise SQLInterfaceError(msg)
+        source_type = source.field_type
+        if not source_type.is_primitive or not transform.can_transform(source_type):
+            msg = (
+                f"cannot partition table '{name}' by {transform} of column "
+                f"'{column}' with type {source_type}"
+            )
+            raise SQLInterfaceError(msg)
+        if isinstance(transform, TruncateTransform) and isinstance(
+            source_type, DecimalType
+        ):
+            msg = f"partitioning by {transform} of a decimal column ('{column}')"
+            raise NotImplementedError(msg)
+        # the names of PyIceberg's `update_spec`
+        if isinstance(transform, IdentityTransform):
+            field_name = column
+        elif isinstance(transform, BucketTransform):
+            field_name = f"{column}_bucket_{transform.num_buckets}"
+        elif isinstance(transform, TruncateTransform):
+            field_name = f"{column}_trunc_{transform.width}"
+        else:
+            field_name = f"{column}_{transform}"
+        if field_name != column and field_name in columns:
+            msg = (
+                f"partition field '{field_name}' of table '{name}' would have the "
+                "name of a column"
+            )
+            raise SQLInterfaceError(msg)
+        # PyIceberg's create does not check partition names for duplicates
+        if any(field.name == field_name for field in fields):
+            msg = f"duplicate partition field name '{field_name}' in table '{name}'"
+            raise SQLInterfaceError(msg)
+        fields.append(
+            PartitionField(
+                source_id=source.field_id,
+                field_id=PARTITION_FIELD_ID_START + len(fields),
+                transform=transform,
+                name=field_name,
+            )
+        )
+    return PartitionSpec(*fields)
+
+
 def _create_filled_table(
     catalog: pyiceberg.catalog.Catalog,
     identifier: tuple[str, ...],
     schema: pyiceberg.schema.Schema,
+    spec: pyiceberg.partitioning.PartitionSpec,
     lf: LazyFrame,
     ddl: dict[str, Any],
     storage_options: StorageOptionsDict | None,
@@ -1037,6 +1112,7 @@ def _create_filled_table(
             identifier,
             schema=schema,
             location=ddl["location"],
+            partition_spec=spec,
             properties=ddl["properties"],
         )
     # some REST catalogs reject staged creates (400, or 501 per the spec)
@@ -1045,6 +1121,7 @@ def _create_filled_table(
             identifier,
             schema=schema,
             location=ddl["location"],
+            partition_spec=spec,
             properties=ddl["properties"],
         )
     state = IcebergSinkState.new_create(transaction, storage_options=storage_options)

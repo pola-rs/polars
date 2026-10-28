@@ -108,6 +108,8 @@ ctx.execute("DROP TABLE big_orders")  # dropped from the catalog
   table first, dropped again if filling it fails, unless another writer changed it.
 - `NOT NULL` makes a column a required field. `LOCATION '...'` and
   `WITH ('format-version' = 2, ...)` set the table's location and properties.
+- `PARTITION BY (region, day(ordered_at), bucket(16, id))` partitions the table, with Iceberg's
+  transforms: `year`, `month`, `day`, `hour`, `bucket(N, column)` and `truncate(W, column)`.
 - `CREATE TEMP TABLE` always creates a registered table instead.
 - `DROP TABLE` drops a registered table of that name first, else the catalog table, permanently.
   `DROP TABLE ... PURGE` also deletes the table's data files.
