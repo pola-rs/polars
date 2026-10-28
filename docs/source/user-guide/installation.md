@@ -205,8 +205,8 @@ The opt-in features are:
 - IO related:
     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
     Can be used for JSON and more serde supported serialization formats.
-    - `serde-lazy` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
-    Can be used for JSON and more serde supported serialization formats.
+    - `serde-lazy` - Everything in `serde`, plus [serde](https://crates.io/crates/serde) support
+    for lazy query plans (`DslPlan`) and expressions (`Expr`) when `lazy` is enabled.
     - `parquet` - Read Apache Parquet format.
     - `json` - JSON serialization.
     - `ipc` - Arrow's IPC format serialization.
