@@ -11,7 +11,7 @@ pub struct EWMOptions {
     pub alpha: f64,
     pub adjust: bool,
     pub bias: bool,
-    pub min_periods: usize,
+    pub min_samples: usize,
     pub ignore_nulls: bool,
 }
 
@@ -21,7 +21,7 @@ impl Default for EWMOptions {
             alpha: 0.5,
             adjust: true,
             bias: false,
-            min_periods: 1,
+            min_samples: 1,
             ignore_nulls: true,
         }
     }
@@ -32,14 +32,14 @@ impl Hash for EWMOptions {
         self.alpha.to_bits().hash(state);
         self.adjust.hash(state);
         self.bias.hash(state);
-        self.min_periods.hash(state);
+        self.min_samples.hash(state);
         self.ignore_nulls.hash(state);
     }
 }
 
 impl EWMOptions {
-    pub fn and_min_periods(mut self, min_periods: usize) -> Self {
-        self.min_periods = min_periods;
+    pub fn and_min_samples(mut self, min_samples: usize) -> Self {
+        self.min_samples = min_samples;
         self
     }
     pub fn and_adjust(mut self, adjust: bool) -> Self {

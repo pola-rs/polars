@@ -176,8 +176,8 @@ impl<'a, T: NativeType + PartialOrd> SortedBufNulls<'a, T> {
         self.null_count
     }
 
-    pub fn is_valid(&self, min_periods: usize) -> bool {
-        ((self.end - self.start) - self.null_count) >= min_periods
+    pub fn is_valid(&self, min_samples: usize) -> bool {
+        ((self.end - self.start) - self.null_count) >= min_samples
     }
 
     pub fn len(&self) -> usize {

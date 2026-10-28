@@ -7,14 +7,14 @@ pub fn ewm_mean<I, T>(
     xs: I,
     alpha: T,
     adjust: bool,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 ) -> PrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
     T: num_traits::Float + NativeType + std::ops::MulAssign,
 {
-    let mut state: EwmMeanState<T> = EwmMeanState::new(alpha, adjust, min_periods, ignore_nulls);
+    let mut state: EwmMeanState<T> = EwmMeanState::new(alpha, adjust, min_samples, ignore_nulls);
     state.update_iter(xs).collect()
 }
 
@@ -24,7 +24,7 @@ pub struct EwmMeanState<T> {
     alpha: T,
     non_null_count: usize,
     adjust: bool,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 }
 
@@ -32,14 +32,14 @@ impl<T> EwmMeanState<T>
 where
     T: NativeType + num_traits::Float + std::ops::MulAssign,
 {
-    pub fn new(alpha: T, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    pub fn new(alpha: T, adjust: bool, min_samples: usize, ignore_nulls: bool) -> Self {
         Self {
             weighted_mean: T::zero(),
             weight: T::zero(),
             alpha,
             non_null_count: 0,
             adjust,
-            min_periods: min_periods.max(1),
+            min_samples: min_samples.max(1),
             ignore_nulls,
         }
     }
@@ -84,7 +84,7 @@ where
                 }
             }
 
-            (opt_v.is_some() && self.non_null_count >= self.min_periods)
+            (opt_v.is_some() && self.non_null_count >= self.min_samples)
                 .then_some(self.weighted_mean)
         })
     }
@@ -115,8 +115,8 @@ mod test {
         let xs: Vec<Option<f64>> = vec![Some(1.0), Some(2.0), Some(3.0)];
         for adjust in [false, true] {
             for ignore_nulls in [false, true] {
-                for min_periods in [0, 1] {
-                    let result = ewm_mean(xs.clone(), ALPHA, adjust, min_periods, ignore_nulls);
+                for min_samples in [0, 1] {
+                    let result = ewm_mean(xs.clone(), ALPHA, adjust, min_samples, ignore_nulls);
                     let expected = match adjust {
                         false => PrimitiveArray::from([Some(1.0f64), Some(1.5f64), Some(2.25f64)]),
                         true => PrimitiveArray::from([

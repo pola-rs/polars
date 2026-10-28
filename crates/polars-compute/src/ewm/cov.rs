@@ -19,7 +19,7 @@ pub struct EwmCovState<T> {
     non_null_count: usize,
     adjust: bool,
     bias: bool,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 }
 
@@ -27,7 +27,7 @@ impl<T> EwmCovState<T>
 where
     T: num_traits::Float,
 {
-    pub fn new(alpha: T, adjust: bool, bias: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    pub fn new(alpha: T, adjust: bool, bias: bool, min_samples: usize, ignore_nulls: bool) -> Self {
         Self {
             mean_x: T::zero(),
             mean_y: T::zero(),
@@ -39,7 +39,7 @@ where
             non_null_count: 0,
             adjust,
             bias,
-            min_periods: min_periods.max(1),
+            min_samples: min_samples.max(1),
             ignore_nulls,
         }
     }
@@ -109,7 +109,7 @@ where
                 }
             }
 
-            (opt_xy.is_some() && self.non_null_count >= self.min_periods)
+            (opt_xy.is_some() && self.non_null_count >= self.min_samples)
                 .then_some(self.cov)
                 .and_then(|cov| {
                     if self.bias {
@@ -191,7 +191,7 @@ pub fn ewm_var<I, T>(
     alpha: T,
     adjust: bool,
     bias: bool,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 ) -> PrimitiveArray<T>
 where
@@ -199,7 +199,7 @@ where
     I::IntoIter: TrustedLen,
     T: Float + NativeType + AddAssign + MulAssign + DivAssign,
 {
-    let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+    let mut state = EwmCovState::new(alpha, adjust, bias, min_samples, ignore_nulls);
     let iter = state.update_iter(xs.into_iter().map(|x| x.map(|x| (x, x))));
 
     iter.collect()
@@ -210,7 +210,7 @@ pub fn ewm_std<I, T>(
     alpha: T,
     adjust: bool,
     bias: bool,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 ) -> PrimitiveArray<T>
 where
@@ -221,7 +221,7 @@ where
         + std::ops::DivAssign
         + std::ops::MulAssign,
 {
-    let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+    let mut state = EwmCovState::new(alpha, adjust, bias, min_samples, ignore_nulls);
     let iter = state.update_iter(xs.into_iter().map(|x| x.map(|x| (x, x))));
 
     iter.map(|opt_x| opt_x.map(|x| x.sqrt())).collect()
@@ -252,7 +252,7 @@ mod test {
         alpha: T,
         adjust: bool,
         bias: bool,
-        min_periods: usize,
+        min_samples: usize,
         ignore_nulls: bool,
     ) -> PrimitiveArray<T>
     where
@@ -260,7 +260,7 @@ mod test {
         I::IntoIter: TrustedLen,
         T: Float + NativeType + AddAssign + MulAssign + DivAssign,
     {
-        let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
+        let mut state = EwmCovState::new(alpha, adjust, bias, min_samples, ignore_nulls);
         let iter = state.update_iter(xs.into_iter().zip(ys).map(|(x, y)| x.zip(y)));
 
         iter.collect()
@@ -796,7 +796,7 @@ mod test {
     }
 
     #[test]
-    fn test_ewm_min_periods() {
+    fn test_ewm_min_samples() {
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, true, 0, false),
             PrimitiveArray::from([

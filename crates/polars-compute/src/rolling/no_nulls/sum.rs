@@ -5,7 +5,7 @@ use super::*;
 pub fn rolling_sum<T>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     _params: Option<RollingFnParams>,
@@ -25,14 +25,14 @@ where
         (true, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _, _>(
             values,
             window_size,
-            min_periods,
+            min_samples,
             det_offsets_center,
             None,
         ),
         (false, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _, _>(
             values,
             window_size,
-            min_periods,
+            min_samples,
             det_offsets,
             None,
         ),
@@ -41,7 +41,7 @@ where
             no_nulls::rolling_apply_weights(
                 values,
                 window_size,
-                min_periods,
+                min_samples,
                 det_offsets_center,
                 no_nulls::compute_sum_weights,
                 &weights,
@@ -53,7 +53,7 @@ where
             no_nulls::rolling_apply_weights(
                 values,
                 window_size,
-                min_periods,
+                min_samples,
                 det_offsets,
                 no_nulls::compute_sum_weights,
                 &weights,

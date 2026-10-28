@@ -25,7 +25,7 @@ macro_rules! rolling_minmax_func {
         pub fn $rolling_m<T>(
             values: &[T],
             window_size: usize,
-            min_periods: usize,
+            min_samples: usize,
             center: bool,
             weights: Option<&[f64]>,
             _params: Option<RollingFnParams>,
@@ -35,7 +35,7 @@ macro_rules! rolling_minmax_func {
         {
             match weights {
                 None => {
-                    rolling_minmax_van_herk::<T, $policy>(values, window_size, min_periods, center)
+                    rolling_minmax_van_herk::<T, $policy>(values, window_size, min_samples, center)
                 },
                 Some(weights) => {
                     assert!(
@@ -53,7 +53,7 @@ macro_rules! rolling_minmax_func {
                     no_nulls::rolling_apply_weights(
                         values,
                         window_size,
-                        min_periods,
+                        min_samples,
                         offset_fn,
                         weighted_min_max::<T, $policy>,
                         &weights,

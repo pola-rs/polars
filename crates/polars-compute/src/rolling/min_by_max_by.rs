@@ -19,7 +19,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
     by: &[B],
     validity: Option<&Bitmap>,
     windows: &[[IdxSize; 2]],
-    min_periods: usize,
+    min_samples: usize,
 ) -> PrimitiveArray<IdxSize> {
     let n = windows.len();
 
@@ -46,7 +46,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
                 let start = start as usize;
                 let end = start + len as usize;
 
-                if end <= start || (end - start) < min_periods {
+                if end <= start || (end - start) < min_samples {
                     return None;
                 }
 
@@ -80,7 +80,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
                 // SAFETY: The windows are within bounds (rolling context).
                 unsafe { RollingAggWindowNulls::<B, IdxSize>::update(&mut window, start, end) };
 
-                if !RollingAggWindowNulls::<B, IdxSize>::is_valid(&window, min_periods) {
+                if !RollingAggWindowNulls::<B, IdxSize>::is_valid(&window, min_samples) {
                     return None;
                 }
 
@@ -97,16 +97,16 @@ pub fn rolling_argmin_by<B: NativeType>(
     by: &[B],
     validity: Option<&Bitmap>,
     windows: &[[IdxSize; 2]],
-    min_periods: usize,
+    min_samples: usize,
 ) -> PrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MinIgnoreNan>(by, validity, windows, min_periods)
+    rolling_arg_extremum_by::<B, MinIgnoreNan>(by, validity, windows, min_samples)
 }
 
 pub fn rolling_argmax_by<B: NativeType>(
     by: &[B],
     validity: Option<&Bitmap>,
     windows: &[[IdxSize; 2]],
-    min_periods: usize,
+    min_samples: usize,
 ) -> PrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MaxIgnoreNan>(by, validity, windows, min_periods)
+    rolling_arg_extremum_by::<B, MaxIgnoreNan>(by, validity, windows, min_samples)
 }

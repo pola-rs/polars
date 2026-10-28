@@ -3,12 +3,12 @@ use polars_arrow::types::NativeType;
 
 use crate::ewm::EwmStateUpdate;
 
-pub fn ewm_sum<I, T>(xs: I, alpha: T, min_periods: usize, ignore_nulls: bool) -> PrimitiveArray<T>
+pub fn ewm_sum<I, T>(xs: I, alpha: T, min_samples: usize, ignore_nulls: bool) -> PrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
     T: num_traits::Float + NativeType + std::ops::MulAssign,
 {
-    let mut state: EwmSumState<T> = EwmSumState::new(alpha, min_periods, ignore_nulls);
+    let mut state: EwmSumState<T> = EwmSumState::new(alpha, min_samples, ignore_nulls);
     state.update_iter(xs).collect()
 }
 
@@ -16,7 +16,7 @@ pub struct EwmSumState<T> {
     sum: T,
     alpha: T,
     non_null_count: usize,
-    min_periods: usize,
+    min_samples: usize,
     ignore_nulls: bool,
 }
 
@@ -24,12 +24,12 @@ impl<T> EwmSumState<T>
 where
     T: NativeType + num_traits::Float + std::ops::MulAssign,
 {
-    pub fn new(alpha: T, min_periods: usize, ignore_nulls: bool) -> Self {
+    pub fn new(alpha: T, min_samples: usize, ignore_nulls: bool) -> Self {
         Self {
             sum: T::zero(),
             alpha,
             non_null_count: 0,
-            min_periods: min_periods.max(1),
+            min_samples: min_samples.max(1),
             ignore_nulls,
         }
     }
@@ -56,7 +56,7 @@ where
                 self.sum *= T::one() - self.alpha;
             }
 
-            (opt_v.is_some() && self.non_null_count >= self.min_periods).then_some(self.sum)
+            (opt_v.is_some() && self.non_null_count >= self.min_samples).then_some(self.sum)
         })
     }
 }
@@ -85,8 +85,8 @@ mod test {
         let xs: Vec<Option<f64>> = vec![Some(1.0), Some(2.0), Some(3.0)];
 
         for ignore_nulls in [false, true] {
-            for min_periods in [0, 1] {
-                let result = ewm_sum(xs.clone(), ALPHA, min_periods, ignore_nulls);
+            for min_samples in [0, 1] {
+                let result = ewm_sum(xs.clone(), ALPHA, min_samples, ignore_nulls);
                 let expected =
                     PrimitiveArray::from(vec![Some(1.0f64), Some(2.5f64), Some(4.25f64)]);
                 assert_allclose!(result, expected, EPS);

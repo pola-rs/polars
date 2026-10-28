@@ -8,7 +8,7 @@ use super::*;
 pub fn rolling_var<T>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
@@ -24,7 +24,7 @@ where
         None => rolling_apply_agg_window::<MomentWindow<_, VarianceMoment>, _, _, _>(
             values,
             window_size,
-            min_periods,
+            min_samples,
             offset_fn,
             params,
         ),
@@ -41,7 +41,7 @@ where
             super::rolling_apply_weights(
                 values,
                 window_size,
-                min_periods,
+                min_samples,
                 offset_fn,
                 compute_var_weights,
                 &wts,
@@ -54,7 +54,7 @@ where
 pub fn rolling_skew<T>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
@@ -68,7 +68,7 @@ where
     rolling_apply_agg_window::<MomentWindow<_, SkewMoment>, _, _, _>(
         values,
         window_size,
-        min_periods,
+        min_samples,
         offset_fn,
         params,
     )
@@ -77,7 +77,7 @@ where
 pub fn rolling_kurtosis<T>(
     values: &[T],
     window_size: usize,
-    min_periods: usize,
+    min_samples: usize,
     center: bool,
     params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
@@ -91,7 +91,7 @@ where
     rolling_apply_agg_window::<MomentWindow<_, KurtosisMoment>, _, _, _>(
         values,
         window_size,
-        min_periods,
+        min_samples,
         offset_fn,
         params,
     )
