@@ -31,6 +31,9 @@ use super::{
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
+/// How many times fewer estimated rows an incomplete left side needs to be built.
+const LOPSIDED_ESTIMATE_FACTOR: usize = 8;
+
 fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
 }
@@ -60,6 +63,8 @@ struct SemiAntiJoinParams {
     runtime_filters: RuntimeFilters,
     random_state: PlRandomState,
     sample_limit: usize,
+    /// See `JoinOptionsIR::estimated_rows`.
+    estimated_rows: Option<[u64; 2]>,
 }
 
 impl SemiAntiJoinParams {
@@ -112,6 +117,7 @@ impl SemiAntiJoinNode {
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         runtime_filters: Vec<RuntimeFilter>,
+        estimated_rows: Option<[u64; 2]>,
         args: JoinArgs,
         return_bool: bool,
         num_pipelines: usize,
@@ -155,6 +161,7 @@ impl SemiAntiJoinNode {
             build_side: args.build_side,
             runtime_filters: RuntimeFilters::new(runtime_filters, &unique_key_schema),
             sample_limit,
+            estimated_rows,
         };
         let state = if left_is_build.is_some() {
             SemiAntiJoinState::Build(BuildState::new(
@@ -272,40 +279,18 @@ impl SampleState {
         // side is built when the right side is still being read, as that side
         // could be arbitrarily big. When both are complete, the left side is
         // only built when its estimated bytes are no more than the key bytes
-        // of the right side.
+        // of the right side. When neither is, the plan's row estimates decide.
         let left_complete = recv[0] == PortState::Done;
         let right_complete = recv[1] == PortState::Done;
         let left_is_build = match (left_complete, right_complete) {
+            (false, false) if params.build_side.is_none() && params.estimated_rows.is_some() => {
+                self.incomplete_sides_favor_left(params, state)?
+            },
             (false, _) => right_saturated && left_saturated && prefer_left,
             (true, false) => true,
             (true, true) => {
-                let left = JoinSampleStats::from_sample(
-                    &self.left,
-                    &params.left_key_selectors,
-                    None,
-                    false,
-                    params.null_is_valid_when_built(true),
-                    &params.random_state,
-                    params.sample_limit,
-                    &state.in_memory_exec_state,
-                )?;
-                let right = JoinSampleStats::from_sample(
-                    &self.right,
-                    &params.right_key_selectors,
-                    None,
-                    false,
-                    params.null_is_valid_when_built(false),
-                    &params.random_state,
-                    params.sample_limit,
-                    &state.in_memory_exec_state,
-                )?;
-                let left_bytes = left.all_rows_build_bytes(self.left_len);
-                let right_bytes = right.distinct_keys_build_bytes(self.right_len);
-                if config::verbose() {
-                    eprintln!(
-                        "estimated retained bytes are: {left_bytes:.0} (left, keys and rows) vs. {right_bytes:.0} (right, keys)"
-                    );
-                }
+                let (left_bytes, right_bytes) =
+                    self.build_bytes(self.left_len, self.right_len, params, state)?;
                 left_bytes <= right_bytes
             },
         };
@@ -323,6 +308,77 @@ impl SampleState {
             state,
             spill_ctx,
         )?))
+    }
+
+    /// Whether to build the left side when neither side is complete. A side has at
+    /// least the rows sampled from it, which overrides an estimate the sample
+    /// already exceeds. The left side is only built when it is much smaller in
+    /// rows and its retained bytes are no more than those of the right side.
+    fn incomplete_sides_favor_left(
+        &self,
+        params: &SemiAntiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<bool> {
+        let [left_estimate, right_estimate] = params.estimated_rows.unwrap();
+        let left_rows = usize::try_from(left_estimate)
+            .unwrap_or(usize::MAX)
+            .max(self.left_len);
+        let right_rows = usize::try_from(right_estimate)
+            .unwrap_or(usize::MAX)
+            .max(self.right_len);
+        if config::verbose() {
+            eprintln!(
+                "semi/anti-join sides are incomplete, estimated rows are: {left_rows} vs. {right_rows}"
+            );
+        }
+        if left_rows
+            .checked_mul(LOPSIDED_ESTIMATE_FACTOR)
+            .is_none_or(|rows| rows > right_rows)
+        {
+            return Ok(false);
+        }
+        let (left_bytes, right_bytes) = self.build_bytes(left_rows, right_rows, params, state)?;
+        Ok(left_bytes <= right_bytes)
+    }
+
+    /// The bytes retained when building `left_rows` rows of the left side
+    /// (keys and rows) or `right_rows` rows of the right side (keys), from the
+    /// samples of both sides.
+    fn build_bytes(
+        &self,
+        left_rows: usize,
+        right_rows: usize,
+        params: &SemiAntiJoinParams,
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<(f64, f64)> {
+        let left = JoinSampleStats::from_sample(
+            &self.left,
+            &params.left_key_selectors,
+            None,
+            false,
+            params.null_is_valid_when_built(true),
+            &params.random_state,
+            params.sample_limit,
+            &state.in_memory_exec_state,
+        )?;
+        let right = JoinSampleStats::from_sample(
+            &self.right,
+            &params.right_key_selectors,
+            None,
+            false,
+            params.null_is_valid_when_built(false),
+            &params.random_state,
+            params.sample_limit,
+            &state.in_memory_exec_state,
+        )?;
+        let left_bytes = left.all_rows_build_bytes(left_rows);
+        let right_bytes = right.distinct_keys_build_bytes(right_rows);
+        if config::verbose() {
+            eprintln!(
+                "estimated retained bytes are: {left_bytes:.0} (left, keys and rows) vs. {right_bytes:.0} (right, keys)"
+            );
+        }
+        Ok((left_bytes, right_bytes))
     }
 
     /// Hand the keys of a completely sampled side to the runtime filters.

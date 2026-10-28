@@ -284,10 +284,30 @@ impl OptimizationRule for TypeCoercionRule {
 
                 let needle_dtype = unpack!(try_get_dtype(expr_arena, needle.node(), schema).ok());
 
+                // Rounding a fractional bound of an integer needle must not change how the
+                // other bound is compared, nor drop a cast of it that can raise.
+                let is_fractional_bound = |bound_dtype: &DataType| {
+                    needle_dtype.is_integer()
+                        && (bound_dtype.is_float() || bound_dtype.is_decimal())
+                };
+                let keeps_other_cmp = |bound_dtype: &DataType, other_dtype: &DataType| {
+                    (bound_dtype.is_float() && other_dtype.is_float())
+                        || (bound_dtype.is_decimal()
+                            && (other_dtype == bound_dtype || *other_dtype == needle_dtype))
+                };
+
                 let (low_ae, low_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, low.node(), schema));
+                let early_high_dtype = if is_fractional_bound(&low_dtype) {
+                    Some(unpack!(try_get_dtype(expr_arena, high.node(), schema).ok()))
+                } else {
+                    None
+                };
 
                 if low_dtype != needle_dtype
+                    && early_high_dtype
+                        .as_ref()
+                        .is_none_or(|high_dtype| keeps_other_cmp(&low_dtype, high_dtype))
                     && let AExpr::Literal(lv) = low_ae
                 {
                     use crate::plans::type_coercion::binary::BoolValueAlways;
@@ -322,10 +342,15 @@ impl OptimizationRule for TypeCoercionRule {
                     }
                 }
 
-                let (high_ae, high_dtype) =
-                    unpack!(get_aexpr_and_type(expr_arena, high.node(), schema));
+                let high_dtype = match early_high_dtype {
+                    Some(high_dtype) => high_dtype,
+                    None => unpack!(try_get_dtype(expr_arena, high.node(), schema).ok()),
+                };
+                let high_ae = expr_arena.get(high.node());
 
                 if high_dtype != needle_dtype
+                    && (!is_fractional_bound(&high_dtype)
+                        || keeps_other_cmp(&high_dtype, &low_dtype))
                     && let AExpr::Literal(lv) = high_ae
                 {
                     if let LiteralValue::Scalar(lit) = lv.clone().materialize()

@@ -53,13 +53,23 @@ def assert_semi(
 
 
 def build_side_chosen(
-    q: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+    q: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    *,
+    from_estimates: bool = False,
 ) -> str | None:
-    """Collect on the streaming engine and report the sampled build side."""
+    """
+    Collect on the streaming engine and report the sampled build side.
+
+    With `from_estimates`, only a side the plan's row estimates chose is reported.
+    """
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()
     q.collect(engine="streaming")
     err = capfd.readouterr().err
+    if from_estimates and "sides are incomplete, estimated rows" not in err:
+        return None
     lines = [line for line in err.splitlines() if "join build side chosen" in line]
     assert len(lines) <= 1, err
     return lines[0].rsplit(" ", 1)[1] if lines else None
@@ -243,6 +253,107 @@ def test_sampling_keeps_right_build_for_incomplete_left(
     left = register_io_source(source, schema={"k": pl.String, "v": pl.Int64})
     right = pl.LazyFrame({"k": ["x" * 8_000_000]})
     q = assert_semi(left, right, left.clear().collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
+def test_incomplete_sides_use_estimates(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Both sides are still being read when the left side reaches the sample
+    # limit, so the plan's row estimates pick the side.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    small = pl.LazyFrame({"k": np.arange(2_000), "v": np.arange(2_000)})
+    large = pl.LazyFrame({"k": np.arange(100_000) // 2})
+
+    q = assert_semi(small, large, small.collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+    q = small.join(large, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+
+    expected = large.collect().filter(pl.col("k") < 2_000)
+    q = assert_semi(large, small, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "right"
+
+    # An order that is not needed is dropped after the estimates are set.
+    q = small.join(large, on="k", how="semi", maintain_order="left").select(pl.len())
+    assert q.collect(engine="streaming").item() == 2_000
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+
+
+def test_incomplete_sides_need_lopsided_rows(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left side retains fewer bytes, but has only five times fewer rows,
+    # so the right side is built without comparing bytes.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    left = pl.LazyFrame({"k": np.arange(20_000)})
+    right = pl.LazyFrame({"k": np.arange(100_000)})
+    q = assert_semi(left, right, left.collect(), on="k")
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert "sides are incomplete, estimated rows are: 20000 vs. 100000" in err
+    assert "estimated retained bytes" not in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_keep_right_build_for_wide_left(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left side has far fewer rows, but they retain more bytes than the
+    # few distinct keys of the right side.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    wide = pl.LazyFrame({"k": np.arange(2_000), "payload": ["x" * 2_000] * 2_000})
+    right = pl.LazyFrame({"k": np.arange(100_000) % 10})
+    expected = wide.collect().filter(pl.col("k") < 10)
+    q = assert_semi(wide, right, expected, on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "right"
+
+
+def test_incomplete_sides_sample_overrides_low_estimate(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Each filter is estimated to keep a fifth of the rows but keeps all of
+    # them, so the left side is estimated at 32 rows and the right side at
+    # 320. The left sample alone has more than an eighth of 320 rows.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+
+    def filtered(n: int, num_filters: int) -> pl.LazyFrame:
+        names = [f"c{i}" for i in range(num_filters)]
+        lf = pl.LazyFrame({"k": np.arange(n), **{c: np.zeros(n) for c in names}})
+        return lf.filter([pl.col(c) < 1 for c in names]).select("k")
+
+    left = filtered(100_000, 5)
+    right = filtered(200_000, 4)
+    q = assert_semi(left, right, left.collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "right"
+
+
+def test_incomplete_sides_without_estimates(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # An IO plugin has no row estimate, so the right side is built as before.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+
+    def source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        for i in range(20):
+            yield pl.DataFrame({"k": np.arange(100) + i * 100})
+
+    left = register_io_source(source, schema={"k": pl.Int64})
+    right = pl.LazyFrame({"k": np.arange(100_000)})
+    q = assert_semi(left, right, left.collect(), on="k")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) is None
     assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
 
 

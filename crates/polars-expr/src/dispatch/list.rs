@@ -369,26 +369,9 @@ pub(super) fn set_operation(
     let s0 = &s[0];
     let s1 = &s[1];
 
+    // A single row broadcasts to an empty input.
     if s0.is_empty() || s1.is_empty() {
-        use polars_defs::expr::SetOperation;
-
-        return match set_type {
-            SetOperation::Intersection => {
-                if s0.is_empty() {
-                    Ok(s0.clone())
-                } else {
-                    Ok(s1.clone().with_name(s0.name().clone()))
-                }
-            },
-            SetOperation::Difference => Ok(s0.clone()),
-            SetOperation::Union | SetOperation::SymmetricDifference => {
-                if s0.is_empty() {
-                    Ok(s1.clone().with_name(s0.name().clone()))
-                } else {
-                    Ok(s0.clone())
-                }
-            },
-        };
+        return Ok(s0.clear());
     }
 
     polars_ops::prelude::list_set_operation(s0.list()?, s1.list()?, set_type)
@@ -406,7 +389,7 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
     if let DataType::List(inner) = s.dtype() {
         s.cast(&DataType::Array(inner.clone(), width))
     } else {
-        polars_bail!(ComputeError: "expected List dtype")
+        polars_bail!(ComputeError: "expected List dtype, got {}", s.dtype())
     }
 }
 

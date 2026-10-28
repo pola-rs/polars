@@ -378,6 +378,38 @@ def test_cum_sum_horizontal() -> None:
     assert q.collect_schema() == q.collect().schema
 
 
+def test_cum_sum_horizontal_literal_and_agg() -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 2], "a": [1, 2, None], "b": [3.0, None, 5.0]})
+
+    result = lf.select(pl.cum_sum_horizontal(pl.lit(1), "a")).collect()
+    expected = pl.DataFrame(
+        {
+            "cum_sum": [
+                {"literal": 1, "a": 2},
+                {"literal": 1, "a": 3},
+                {"literal": 1, "a": None},
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    result = (
+        lf.group_by("g", maintain_order=True)
+        .agg(pl.cum_sum_horizontal("a", "b"))
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "cum_sum": [
+                [{"a": 1.0, "b": 4.0}, {"a": 2.0, "b": None}],
+                [{"a": None, "b": None}],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_sum_dtype_12028() -> None:
     result = pl.select(
         pl.sum_horizontal([pl.duration(seconds=10)]).alias("sum_duration")

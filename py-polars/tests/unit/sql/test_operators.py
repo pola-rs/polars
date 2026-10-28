@@ -81,6 +81,19 @@ def test_equal_not_equal() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        ("a IS DISTINCT FROM b AND c > 1", [False, False, True]),
+        ("a IS NOT DISTINCT FROM b OR c > 1", [True, True, True]),
+        ("c > 0 AND a IS DISTINCT FROM b OR c = 1", [True, False, True]),
+    ],
+)
+def test_is_distinct_from_precedence(predicate: str, expected: list[bool]) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 4], "c": [1, 2, 3]})
+    assert df.sql(f"SELECT {predicate} AS m FROM self")["m"].to_list() == expected
+
+
 def test_string_compared_with_integer_literals() -> None:
     # integer literals tested for (in)equality against a string are compared as strings
     df = pl.DataFrame({"phone": ["13-123", "31-456", "22-789", "22"]})

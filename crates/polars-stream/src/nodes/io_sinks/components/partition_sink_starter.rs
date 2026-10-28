@@ -13,7 +13,9 @@ use crate::nodes::io_sinks::components::file_provider::FileProvider;
 use crate::nodes::io_sinks::components::file_sink::{FileSinkPermit, FileSinkTaskData};
 use crate::nodes::io_sinks::components::sinked_path_info_list::SinkedPathInfoList;
 use crate::nodes::io_sinks::components::size::RowCountAndSize;
-use crate::nodes::io_sinks::writers::interface::{FileOpenTaskHandle, FileWriterStarter};
+use crate::nodes::io_sinks::writers::interface::{
+    FileOpenTaskHandle, FileWriterStarter, finish_signal,
+};
 use crate::utils::tokio_handle_ext;
 
 #[derive(Clone)]
@@ -49,10 +51,11 @@ impl PartitionSinkStarter {
         }));
 
         let (morsel_tx, morsel_rx) = connector::connector();
+        let (finish_tx, finish_rx) = finish_signal();
 
         let writer_handle = self.writer_starter.start_file_writer(
             morsel_rx,
-            FileOpenTaskHandle::new(file_open_task, self.sync_on_close),
+            FileOpenTaskHandle::new(file_open_task, self.sync_on_close, finish_rx),
             self.num_pipelines_per_sink,
             self.task_metrics.clone(),
         )?;
@@ -68,6 +71,7 @@ impl PartitionSinkStarter {
             start_position,
             task_handle,
             path_info_entry,
+            finish_tx,
         ))
     }
 }

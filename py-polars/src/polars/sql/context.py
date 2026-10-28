@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from typing import Any, Final, Literal, Self, TypeAlias
 
     import pyiceberg.catalog
+    import pyiceberg.schema
+    import pyiceberg.table
 
     from polars._plr import PyLazyFrame
     from polars._typing import StorageOptionsDict
@@ -489,7 +491,7 @@ class SQLContext(Generic[FrameType]):
 
     def _execute_catalog_ddl(self, ddl: dict[str, Any]) -> LazyFrame:
         """Perform the catalog DDL that `catalog_ddl` returned."""
-        config, instance, _ = self._catalogs[ddl["catalog"]]
+        config, instance, storage_options = self._catalogs[ddl["catalog"]]
         catalog = (
             instance
             if instance is not None
@@ -498,7 +500,12 @@ class SQLContext(Generic[FrameType]):
         if ddl["kind"] == "drop_table":
             response = _drop_catalog_table(catalog, ddl)
         elif ddl["kind"] == "create_table":
-            response = _create_catalog_table(catalog, ddl)
+            response = _create_catalog_table(
+                catalog,
+                ddl,
+                lambda query: wrap_ldf(self._execute_with_catalogs(query)),
+                storage_options,
+            )
         else:
             msg = f"unsupported catalog statement {ddl['kind']!r}"
             raise NotImplementedError(msg)
@@ -553,7 +560,8 @@ class SQLContext(Generic[FrameType]):
             catalog leaves it. Only `unregister_catalog` leaves no default.
         storage_options
             Options for the storage of the catalog's tables, as for
-            :func:`scan_iceberg`. Pass the storage credentials here when a plan is
+            :func:`scan_iceberg`; `CREATE TABLE ... AS` also writes the rows with
+            them. Pass the storage credentials here when a plan is
             serialized after its tables loaded: the serialized plan then reads the
             tables' metadata directly, with these options rather than the catalog's
             properties. `DROP TABLE ... PURGE` does not use them: the catalog
@@ -561,31 +569,30 @@ class SQLContext(Generic[FrameType]):
 
         Notes
         -----
-        A serialized query plan over catalog tables can contain the catalog's
-        properties and the storage options, which may include credentials: treat
-        serialized plans as secret.
+        Catalog tables can be created and dropped with SQL, at `execute()`. The
+        table name resolves as in a query: with a default catalog,
+        `CREATE TABLE tpch.t ...` creates `tpch.t` in it. `CREATE TEMP TABLE`
+        creates a registered table instead.
 
-        `DROP TABLE [IF EXISTS] <name> [PURGE]` resolves the name as a query does: a
-        registered table of that name is dropped from the context, else the catalog
-        table is dropped from its catalog, permanently. Once no registered table
-        matches, `DROP TABLE IF EXISTS` of a name reaches the catalog. `PURGE` also
-        asks the catalog to delete the table's data files, and only applies to
-        catalog tables. A `DROP TABLE` of a catalog table takes one name.
-
-        `CREATE TABLE <name> (<column>, ...)` resolves the name as a query does and
-        creates an empty table in the catalog it resolves to: with a default catalog,
-        `CREATE TABLE tpch.t (...)` creates `tpch.t` there rather than a registered
-        table; use `CREATE TEMP TABLE` for that. A registered table of that name is
-        an error, as it would hide the new table. `NOT NULL` columns become required
-        fields, and `LOCATION` and `WITH (...)` options set the table location and
-        properties. `CREATE TABLE ... AS SELECT`, `TRUNCATE` and `DELETE` on a table
-        of an attached catalog are not supported yet.
-        `TRUNCATE TABLE IF EXISTS` of a name that does not start with an attached
-        catalog only acts on a registered table, and is a no-op otherwise.
+        * `CREATE TABLE <name> (<column>, ...)` creates an empty table, and
+          `CREATE TABLE <name> AS <query>` one holding the query's rows. The rows
+          are committed together with the create, so a failed query creates no
+          table; a catalog that cannot stage a create gets an empty table first,
+          dropped again if filling it fails, unless another writer changed it. A
+          registered table of that name is an error, as it would hide the new
+          table. See :ref:`CREATE TABLE <create_table>` for the options.
+        * `DROP TABLE [IF EXISTS] <name> [PURGE]` drops a registered table of that
+          name, else the catalog table, permanently. `PURGE` also deletes the
+          table's data files.
+        * `TRUNCATE` and `DELETE` are not supported on catalog tables.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
         like the tables registered there. If that detaches the default catalog, the
         default catalog on entry is restored.
+
+        A serialized query plan over catalog tables can contain the catalog's
+        properties and the storage options, which may include credentials: treat
+        serialized plans as secret.
 
         `SQLContext` is not thread-safe: do not register catalogs or tables while
         another thread executes a query on the same context.
@@ -598,6 +605,13 @@ class SQLContext(Generic[FrameType]):
         ...     "lake", load_catalog("lake"), default_namespace="tpch", default=True
         ... )  # doctest: +SKIP
         >>> ctx.execute("SELECT COUNT(*) FROM lineitem")  # doctest: +SKIP
+
+        Create a catalog table holding a query's rows, then drop it:
+
+        >>> ctx.execute(
+        ...     "CREATE TABLE big_orders AS SELECT * FROM orders WHERE amount > 1000"
+        ... )  # doctest: +SKIP
+        >>> ctx.execute("DROP TABLE big_orders")  # doctest: +SKIP
         """
         from polars.io.iceberg import IcebergCatalogConfig
 
@@ -908,10 +922,17 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
 
 
 def _create_catalog_table(
-    catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]
+    catalog: pyiceberg.catalog.Catalog,
+    ddl: dict[str, Any],
+    query_frame: Callable[[str], LazyFrame],
+    storage_options: StorageOptionsDict | None,
 ) -> str:
     """Create the catalog table of a `CREATE TABLE`, returning the response."""
-    from pyiceberg.exceptions import NoSuchNamespaceError, TableAlreadyExistsError
+    from pyiceberg.exceptions import (
+        CommitStateUnknownException,
+        NoSuchNamespaceError,
+        TableAlreadyExistsError,
+    )
 
     from polars.io.iceberg._sink import _create_table_schema
     from polars.schema import Schema
@@ -919,8 +940,12 @@ def _create_catalog_table(
     identifier: tuple[str, ...] = tuple(ddl["identifier"])
     name, table_name = ddl["name"], _display_name(identifier)
     response = f"CREATE TABLE {_display_name([ddl['catalog'], *identifier])}"
-    schema, _ = _create_table_schema(
-        Schema(ddl["schema"]), required=ddl["required"], context="CREATE TABLE"
+    # a query is planned, but not run, when the table exists
+    lf = None if ddl["query"] is None else query_frame(ddl["query"])
+    schema, casts = _create_table_schema(
+        Schema(ddl["schema"]) if lf is None else lf.collect_schema(),
+        required=ddl["required"],
+        context="CREATE TABLE",
     )
     # checked first, as some catalogs report other errors before an existing table
     if catalog.table_exists(identifier):
@@ -931,25 +956,37 @@ def _create_catalog_table(
             "could not be created"
         )
         raise TableAlreadyExistsError(msg)
+    namespace = identifier[:-1]
+    if lf is not None and casts:
+        lf = lf.cast(casts)  # type: ignore[arg-type]
+    created = None
     try:
-        catalog.create_table(
-            identifier,
-            schema=schema,
-            location=ddl["location"],
-            properties=ddl["properties"],
-        )
-    except TableAlreadyExistsError as error:
-        # a concurrent create of the same table
-        if ddl["if_not_exists"]:
-            return response
-        msg = (
-            f"table '{name}' already exists: catalog table '{table_name}' "
-            f"could not be created ({error})"
-        )
-        raise TableAlreadyExistsError(msg) from error
+        if lf is None:
+            catalog.create_table(
+                identifier,
+                schema=schema,
+                location=ddl["location"],
+                properties=ddl["properties"],
+            )
+        else:
+            created = _create_filled_table(
+                catalog, identifier, schema, lf, ddl, storage_options
+            )
     except Exception as error:
+        if _created_meanwhile(catalog, identifier, error):
+            if ddl["if_not_exists"]:
+                return response
+            msg = (
+                f"table '{name}' already exists: catalog table '{table_name}' "
+                f"could not be created ({error})"
+            )
+            raise TableAlreadyExistsError(msg) from error
+        if isinstance(error, CommitStateUnknownException):
+            error.add_note(
+                f"table '{name}' may not have been created: catalog table '{table_name}'"
+            )
+            raise
         prefix = f"table '{name}' could not be created"
-        namespace = identifier[:-1]
         # not every catalog raises NoSuchNamespaceError for a missing namespace
         if isinstance(error, NoSuchNamespaceError) or not _namespace_exists(
             catalog, namespace
@@ -962,7 +999,153 @@ def _create_catalog_table(
             raise NoSuchNamespaceError(msg) from error
         error.add_note(f"{prefix}: catalog table '{table_name}'")
         raise
+    if created is not None:
+        assert lf is not None
+        # outside the create's error handling: the table exists, it is ours
+        _fill_created_table(catalog, identifier, created, lf, storage_options, name)
     return response
+
+
+def _create_filled_table(
+    catalog: pyiceberg.catalog.Catalog,
+    identifier: tuple[str, ...],
+    schema: pyiceberg.schema.Schema,
+    lf: LazyFrame,
+    ddl: dict[str, Any],
+    storage_options: StorageOptionsDict | None,
+) -> pyiceberg.table.Table | None:
+    """Create a catalog table holding the rows of `lf`, in one commit.
+
+    A failed query or commit leaves no table, and its data files are deleted. If the
+    catalog does not stage creates, the table is created empty and returned, to be
+    filled by the caller.
+    """
+    from pyiceberg.exceptions import (
+        BadRequestError,
+        CommitStateUnknownException,
+        NoSuchNamespaceError,
+    )
+
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    # a staged create does not check the namespace on every catalog
+    if not _namespace_exists(catalog, identifier[:-1]):
+        msg = f"Namespace does not exist: {identifier[:-1]}"
+        raise NoSuchNamespaceError(msg)
+    try:
+        transaction = catalog.create_table_transaction(
+            identifier,
+            schema=schema,
+            location=ddl["location"],
+            properties=ddl["properties"],
+        )
+    # some REST catalogs reject staged creates (400, or 501 per the spec)
+    except (BadRequestError, NotImplementedError):
+        return catalog.create_table(
+            identifier,
+            schema=schema,
+            location=ddl["location"],
+            properties=ddl["properties"],
+        )
+    state = IcebergSinkState.new_create(transaction, storage_options=storage_options)
+    try:
+        state.attach_sink(lf).collect()
+    except CommitStateUnknownException as error:
+        location, _ = state.written_files_dir()
+        error.add_note(
+            f"the create may have landed; data files kept under '{location}'"
+        )
+        raise
+    except Exception as error:
+        if (remaining := state.remove_written_files()) is not None:
+            error.add_note(f"data files may remain under '{remaining}'")
+        raise
+    return None
+
+
+def _fill_created_table(
+    catalog: pyiceberg.catalog.Catalog,
+    identifier: tuple[str, ...],
+    table: pyiceberg.table.Table,
+    lf: LazyFrame,
+    storage_options: StorageOptionsDict | None,
+    name: str,
+) -> None:
+    """Append the rows of `lf` to the new, empty `table`, dropping it on failure."""
+    from pyiceberg.exceptions import CommitStateUnknownException
+
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    table_name = _display_name(identifier)
+    created_location = table.metadata_location
+    state = None
+    try:
+        state = IcebergSinkState.new(
+            table, mode="append", storage_options=storage_options
+        )
+        state.attach_sink(lf).collect()
+    except CommitStateUnknownException as error:
+        assert state is not None
+        location, _ = state.written_files_dir()
+        error.add_note(f"the rows may have landed; data files kept under '{location}'")
+        error.add_note(
+            f"table '{name}' was created, its rows may be missing: catalog table "
+            f"'{table_name}'"
+        )
+        raise
+    except Exception as error:
+        if state is not None and (remaining := state.remove_written_files()):
+            error.add_note(f"data files may remain under '{remaining}'")
+        if _drop_if_unchanged(catalog, identifier, created_location):
+            error.add_note(
+                f"table '{name}' could not be created: catalog table '{table_name}'"
+            )
+        else:
+            error.add_note(
+                f"table '{name}' could not be filled: catalog table '{table_name}' "
+                "was left in the catalog"
+            )
+        raise
+
+
+def _drop_if_unchanged(
+    catalog: pyiceberg.catalog.Catalog,
+    identifier: tuple[str, ...],
+    metadata_location: str,
+) -> bool:
+    """Drop a table only if no other writer changed it since `metadata_location`.
+
+    Iceberg has no conditional drop: a write landing just before the drop is lost.
+    """
+    try:
+        current = catalog.load_table(identifier)
+        if (
+            current.metadata_location != metadata_location
+            or current.current_snapshot() is not None
+        ):
+            return False
+        catalog.drop_table(identifier)
+    except Exception:
+        return False
+    return True
+
+
+def _created_meanwhile(
+    catalog: pyiceberg.catalog.Catalog,
+    identifier: tuple[str, ...],
+    error: Exception,
+) -> bool:
+    """Whether a create failed because another writer created the table."""
+    from pyiceberg.exceptions import CommitFailedException, TableAlreadyExistsError
+
+    if isinstance(error, TableAlreadyExistsError):
+        return True
+    if not isinstance(error, CommitFailedException):
+        return False
+    try:
+        return bool(catalog.table_exists(identifier))
+    except Exception:
+        return False
 
 
 def _namespace_exists(

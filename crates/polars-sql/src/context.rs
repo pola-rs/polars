@@ -57,6 +57,7 @@ use crate::sql_visitors::{
     expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema,
 };
 use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
+use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 use crate::unique_column_name;
@@ -261,6 +262,9 @@ pub struct SQLContext {
     /// The local time that `CURRENT_DATE` and friends read in the current statement, set on
     /// first use. Shared with the contexts of its subqueries.
     statement_time: Arc<OnceLock<NaiveDateTime>>,
+    /// Whether a qualifier may only name a relation that a `FROM` declares, also before any
+    /// `FROM` is processed. Kept by the contexts of subqueries.
+    pub(crate) strict_relations: bool,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -325,6 +329,7 @@ impl Default for SQLContext {
             catalog_names: Default::default(),
             catalog_spellings: Default::default(),
             statement_time: Default::default(),
+            strict_relations: false,
         }
     }
 }
@@ -487,9 +492,10 @@ impl SQLContext {
             ..
         } = create_table;
         polars_ensure!(like.is_none(), SQLInterface: "`CREATE TABLE ... LIKE` is not supported for catalog tables");
-        polars_ensure!(query.is_none(), SQLInterface: "`CREATE TABLE ... AS SELECT` is not yet supported for catalog tables");
-        polars_ensure!(!columns.is_empty(), SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause");
+        polars_ensure!(query.is_none() || columns.is_empty(), SQLInterface: "`CREATE TABLE ... AS SELECT` does not take column definitions");
+        polars_ensure!(query.is_some() || !columns.is_empty(), SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause");
         let (schema, required) = create_table_columns(columns)?;
+        let query = query.as_ref().map(|q| q.to_string());
         let location = hive_formats.as_ref().and_then(|f| f.location.as_deref());
         let (location, properties) = create_table_options(table_options, location)?;
 
@@ -520,6 +526,7 @@ impl SQLContext {
             table,
             if_not_exists: *if_not_exists,
             schema,
+            query,
             required,
             location,
             properties,
@@ -825,6 +832,7 @@ impl SQLContext {
             catalog_names: self.catalog_names.clone(),
             catalog_spellings: self.catalog_spellings.clone(),
             statement_time: self.statement_time.clone(),
+            strict_relations: self.strict_relations,
 
             ..Default::default()
         }
@@ -892,6 +900,9 @@ impl SQLContext {
         idents: &[Ident],
     ) -> PolarsResult<Option<(String, usize)>> {
         if self.active_relations.is_empty() {
+            if self.strict_relations {
+                return Ok(None);
+            }
             for len in (1..idents.len()).rev() {
                 let qualifier = join_idents(&idents[..len]);
                 if self.get_relation_frame(&qualifier)?.is_some() {
@@ -2275,6 +2286,9 @@ impl SQLContext {
 
             // Unsupported `CREATE [...] TABLE` modifiers
             ref copy_grants,
+            ref unlogged,
+            ref multiset,
+            ref fallback,
             ref dynamic,
             ref external,
             ref global,
@@ -2328,6 +2342,8 @@ impl SQLContext {
             ref with_row_access_policy,
             ref with_storage_lifecycle_policy,
             ref with_tags,
+            ref with_connection,
+            ref with_data,
         } = *create_table;
 
         polars_ensure!(!copy_grants, SQLInterface: "`COPY GRANTS` is not supported");
@@ -2343,6 +2359,9 @@ impl SQLContext {
         polars_ensure!(!transient, SQLInterface: "`CREATE TRANSIENT TABLE` is not supported");
         polars_ensure!(!volatile, SQLInterface: "`CREATE VOLATILE TABLE` is not supported");
         polars_ensure!(!without_rowid, SQLInterface: "`WITHOUT ROWID` is not supported");
+        polars_ensure!(!unlogged, SQLInterface: "`CREATE UNLOGGED TABLE` is not supported");
+        polars_ensure!(multiset.is_none(), SQLInterface: "`MULTISET`/`SET` tables are not supported");
+        polars_ensure!(fallback.is_none(), SQLInterface: "`FALLBACK` is not supported");
         polars_ensure!(backup.is_none(), SQLInterface: "`BACKUP` is not supported");
         polars_ensure!(base_location.is_none(), SQLInterface: "`BASE_LOCATION` is not supported");
         polars_ensure!(catalog.is_none(), SQLInterface: "`CATALOG` is not supported");
@@ -2397,6 +2416,8 @@ impl SQLContext {
         polars_ensure!(with_row_access_policy.is_none(), SQLInterface: "`WITH ROW ACCESS POLICY` is not supported");
         polars_ensure!(with_storage_lifecycle_policy.is_none(), SQLInterface: "`WITH STORAGE LIFECYCLE POLICY` is not supported");
         polars_ensure!(with_tags.is_none(), SQLInterface: "`WITH TAG` is not supported");
+        polars_ensure!(with_connection.is_none(), SQLInterface: "`WITH CONNECTION` is not supported");
+        polars_ensure!(with_data.is_none(), SQLInterface: "`WITH [NO] DATA` is not supported");
 
         Ok(())
     }
@@ -4298,7 +4319,13 @@ impl SQLContext {
 
                 // Execute the subquery in isolation so that outer join state
                 // doesn't leak into it and cause spurious ambiguous-column errors
-                let lf = self.execute_isolated(|ctx| ctx.execute_query(subquery))?;
+                let strict = alias
+                    .as_ref()
+                    .is_some_and(|alias| alias.name.value.starts_with(NESTED_PREFIX));
+                let lf = self.execute_isolated(|ctx| {
+                    ctx.strict_relations |= strict;
+                    ctx.execute_query(subquery)
+                })?;
                 if let Some(alias) = alias {
                     let lf = self.rename_columns_from_table_alias(lf, alias)?;
                     let name = alias.name.value.clone();
