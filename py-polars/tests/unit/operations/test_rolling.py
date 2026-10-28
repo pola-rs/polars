@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import ClosedInterval, PolarsIntegerType
+    from polars._typing import ClosedInterval, EngineType, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -861,6 +861,77 @@ def test_rolling_in_over_25280() -> None:
         .over("train_line")
     )
     assert_frame_equal(df, result)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("method", "kwargs", "expected"),
+    [
+        ("rolling", {"period": "2i"}, [[10], [10, 30], [20, 50], [30, 70], [40, 90]]),
+        (
+            "rolling",
+            {"period": "3i"},
+            [[10], [10, 30], [10, 30, 50], [20, 50, 70], [30, 70, 90]],
+        ),
+        # Windows with gaps, overlapping windows and tiling windows.
+        ("group_by_dynamic", {"every": "2i", "period": "1i"}, [[10], [30], [50]]),
+        (
+            "group_by_dynamic",
+            {"every": "1i", "period": "3i"},
+            [[10, 30, 50], [20, 50, 70], [30, 70, 90], [40, 90], [50]],
+        ),
+        (
+            "group_by_dynamic",
+            {"every": "2i", "period": "2i"},
+            [[10, 30], [30, 70], [50]],
+        ),
+    ],
+)
+def test_rolling_nested_in_slice_groups_30328(
+    method: str, kwargs: dict[str, str], expected: list[list[int]], engine: EngineType
+) -> None:
+    lf = pl.LazyFrame({"t": range(5), "x": [10, 20, 30, 40, 50]})
+    q = getattr(lf, method)("t", **kwargs)
+    inner = pl.col("x").sum().rolling("t", period="2i")
+
+    assert q.agg(inner).collect(engine=engine)["x"].to_list() == expected
+    out = q.agg(inner.first()).collect(engine=engine)["x"].to_list()
+    assert out == [v[0] for v in expected]
+    if method == "rolling":
+        nested = lf.select(inner.rolling("t", period=kwargs["period"]))
+        assert nested.collect(engine=engine)["x"].to_list() == expected
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_rolling_nested_in_rolling_30328(engine: EngineType) -> None:
+    lf = pl.LazyFrame({"t": range(5), "x": [10, 20, 30, 40, 50]})
+    inner = pl.col("x").sum().rolling("t", period="2i")
+
+    # Empty outer windows.
+    q = lf.rolling("t", period="1i", closed="none").agg(inner)
+    assert q.collect(engine=engine)["x"].to_list() == [[]] * 5
+
+    # Combined with an outer column.
+    q = lf.rolling("t", period="2i").agg(inner + pl.col("x"))
+    expected = [[20], [20, 50], [40, 80], [60, 110], [80, 140]]
+    assert q.collect(engine=engine)["x"].to_list() == expected
+
+    # Nested windows of overlapping outer windows are not monotonic.
+    q = lf.rolling("t", period="3i").agg(pl.col("x").min().rolling("t", period="2i"))
+    expected = [[10], [10, 10], [10, 10, 20], [20, 20, 30], [30, 30, 40]]
+    assert q.collect(engine=engine)["x"].to_list() == expected
+
+    # Empty nested windows.
+    inner = pl.col("x").min().rolling("t", period="1i", offset="1i")
+    q = lf.rolling("t", period="3i").agg(inner)
+    out = q.collect(engine=engine)["x"].to_list()
+    assert out == [
+        [None],
+        [None, None],
+        [30, None, None],
+        [40, None, None],
+        [50, None, None],
+    ]
 
 
 def test_rolling_with_slice() -> None:
