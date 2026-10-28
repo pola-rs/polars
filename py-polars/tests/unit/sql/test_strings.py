@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLSyntaxError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -346,6 +346,14 @@ def test_string_like_column_substring_non_string() -> None:
     df = pl.DataFrame({"txt": ["a12b", "a3b", None], "n": [12, 4, 3]})
     res = df.sql("SELECT txt FROM self WHERE txt LIKE '%' || n || '%'")
     assert res["txt"].to_list() == ["a12b"]
+
+
+@pytest.mark.parametrize("escape", ["'!'", "('!')", "UPPER('!')"])
+@pytest.mark.parametrize("like", ["LIKE", "ILIKE"])
+def test_string_like_escape_unsupported(like: str, escape: str) -> None:
+    df = pl.DataFrame({"txt": ["a_b"]})
+    with pytest.raises(SQLInterfaceError, match="ESCAPE char for LIKE/ILIKE"):
+        df.sql(f"SELECT txt {like} 'a!_b' ESCAPE {escape} FROM self")
 
 
 @pytest.mark.parametrize("form", ["NFKC", "NFKD"])

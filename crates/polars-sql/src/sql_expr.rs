@@ -29,8 +29,8 @@ use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
     DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, OrderByOptions,
-    Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
-    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
+    OrderBySort, Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField,
+    TypedString, UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::keywords;
@@ -65,7 +65,7 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
 /// If not given, 'NULLS FIRST' is the default for DESC and 'NULLS LAST' otherwise;
 /// see <https://www.postgresql.org/docs/current/queries-order.html>.
 pub(crate) fn order_by_sort_options(options: &OrderByOptions) -> SortOptions {
-    let descending = !options.asc.unwrap_or(true);
+    let descending = matches!(options.sort, Some(OrderBySort::Desc));
     SortOptions::default()
         .with_order_descending(descending)
         .with_nulls_last(!options.nulls_first.unwrap_or(descending))
@@ -464,7 +464,6 @@ impl SQLExprVisitor<'_> {
                 expr,
                 data_type,
                 format,
-                array: _,
             } => self.visit_cast(expr, data_type, format, kind),
             SQLExpr::AtTimeZone {
                 timestamp,
@@ -563,9 +562,12 @@ impl SQLExprVisitor<'_> {
                 if *any {
                     polars_bail!(SQLSyntax: "LIKE ANY is not a supported syntax")
                 }
-                let escape_str = escape_char.as_ref().and_then(|v| match &**v {
-                    SQLValue::SingleQuotedString(s) => Some(s.clone()),
-                    _ => None,
+                let escape_str = escape_char.as_ref().map(|v| match &**v {
+                    SQLExpr::Value(ValueWithSpan {
+                        value: SQLValue::SingleQuotedString(s),
+                        ..
+                    }) => s.clone(),
+                    e => e.to_string(),
                 });
                 self.visit_like(*negated, expr, pattern, &escape_str, false)
             },
@@ -579,9 +581,12 @@ impl SQLExprVisitor<'_> {
                 if *any {
                     polars_bail!(SQLSyntax: "ILIKE ANY is not a supported syntax")
                 }
-                let escape_str = escape_char.as_ref().and_then(|v| match &**v {
-                    SQLValue::SingleQuotedString(s) => Some(s.clone()),
-                    _ => None,
+                let escape_str = escape_char.as_ref().map(|v| match &**v {
+                    SQLExpr::Value(ValueWithSpan {
+                        value: SQLValue::SingleQuotedString(s),
+                        ..
+                    }) => s.clone(),
+                    e => e.to_string(),
                 });
                 self.visit_like(*negated, expr, pattern, &escape_str, true)
             },
