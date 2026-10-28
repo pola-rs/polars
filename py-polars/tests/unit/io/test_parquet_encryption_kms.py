@@ -233,14 +233,20 @@ def test_sink_parquet_roundtrip(
 
 def test_kms_wrap_calls(tmp_path: Path) -> None:
     df = basic_data()
+    # Two columns share a master key, so wrapping each data encryption key can be
+    # told apart from wrapping one key encryption key per master key.
+    column_keys = {"column_key": ["secret", "public"]}
 
     # With single wrapping, the KMS wraps every data encryption key
     kms = InMemoryKms()
     df.write_parquet(
         tmp_path / "single.parquet",
-        encryption=encryption_config(kms, double_wrapping=False),
+        encryption=encryption_config(
+            kms, column_keys=column_keys, double_wrapping=False
+        ),
     )
     assert sorted(kms.calls) == [
+        ("wrap_key", "column_key"),
         ("wrap_key", "column_key"),
         ("wrap_key", "footer_key"),
     ]
@@ -248,17 +254,18 @@ def test_kms_wrap_calls(tmp_path: Path) -> None:
     assert material["doubleWrapping"] is False
     assert material["masterKeyID"] == "footer_key"
 
-    # With double wrapping, the KMS wraps key encryption keys, which are cached and
-    # reused for later files.
+    # With double wrapping, the KMS wraps one key encryption key per master key,
+    # and these are cached and reused for later files.
     kms = InMemoryKms()
-    encryption = encryption_config(kms)
+    encryption = encryption_config(kms, column_keys=column_keys)
     df.write_parquet(tmp_path / "double_1.parquet", encryption=encryption)
-    assert sorted(kms.calls) == [
+    expected_calls = [
         ("wrap_key", "column_key"),
         ("wrap_key", "footer_key"),
     ]
+    assert sorted(kms.calls) == expected_calls
     df.write_parquet(tmp_path / "double_2.parquet", encryption=encryption)
-    assert kms.count_calls("wrap_key") == 2
+    assert sorted(kms.calls) == expected_calls
     assert footer_key_material(tmp_path / "double_1.parquet")["doubleWrapping"] is True
 
 
