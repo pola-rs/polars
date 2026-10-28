@@ -94,7 +94,7 @@ struct LocalSink {
     hot_grouper_per_input: Vec<Option<Box<dyn HotGrouper>>>,
     hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
 
-    // The number of slots of each hot grouper, and the rows missed by them.
+    // The number of slots the hot groupers grow to, and the rows they missed at that size.
     hot_table_size: usize,
     miss_f2: F2Sketch,
 
@@ -174,19 +174,19 @@ impl LocalSink {
         self.add_pre_agg(input_idx, keys, reduction_idxs, reductions, true);
     }
 
-    /// Adds a pre-aggregate over `keys`, which count as missed by the hot table if `is_miss`.
+    /// Adds a pre-aggregate over `keys`, which count as missed by the hot table if `count_miss`.
     fn add_pre_agg(
         &mut self,
         input_idx: usize,
         keys: HashKeys,
         reduction_idxs: &[usize],
         reductions: Vec<Box<dyn GroupedReduction>>,
-        is_miss: bool,
+        count_miss: bool,
     ) {
         keys.for_each_hash(|_, opt_h| {
             if let Some(h) = opt_h {
                 self.key_sketch.insert(h);
-                if is_miss {
+                if count_miss {
                     self.miss_f2.insert(h);
                 }
             }
@@ -280,23 +280,26 @@ impl LocalSink {
     }
 
     /// Stores the cold rows `cold_idxs` of a slice `df` of a morsel of `input_idx`, all rows if
-    /// `None`, and adds their hashes to the sketches. A whole morsel that may be stored as it is and has mostly
-    /// cold rows becomes a frame with a mask of its cold rows; otherwise the cold rows are
-    /// gathered into the builder of the input, which becomes a frame once it holds a morsel's
-    /// worth of rows.
+    /// `None`, and adds their hashes to the key sketch, and to the miss sketch if `count_miss`. A
+    /// whole morsel that may be stored as it is and has mostly cold rows becomes a frame with a
+    /// mask of its cold rows; otherwise the cold rows are gathered into the builder of the input,
+    /// which becomes a frame once it holds a morsel's worth of rows.
     async fn store_cold_rows(
         &mut self,
         input_idx: usize,
         df: DataFrame,
         keys: HashKeys,
         cold_idxs: Option<&[IdxSize]>,
+        count_miss: bool,
         may_store_whole: bool,
         spill_ctx: &MostRecentSpillContext,
     ) {
         let insert_hash = |_, opt_h: Option<u64>| {
             if let Some(h) = opt_h {
                 self.key_sketch.insert(h);
-                self.miss_f2.insert(h);
+                if count_miss {
+                    self.miss_f2.insert(h);
+                }
             }
         };
         match cold_idxs {
@@ -323,11 +326,8 @@ impl LocalSink {
             }
         } else {
             let frame_rows = get_ideal_morsel_size();
-            let builder = self.cold_row_builders[input_idx].get_or_insert_with(|| {
-                let mut builder = FrameWithKeysBuilder::new(df.schema().clone(), &keys);
-                builder.reserve(frame_rows);
-                builder
-            });
+            let builder = self.cold_row_builders[input_idx]
+                .get_or_insert_with(|| FrameWithKeysBuilder::new(df.schema().clone(), &keys));
             let idxs = match cold_idxs {
                 Some(idxs) => idxs,
                 None => {
@@ -365,17 +365,16 @@ impl LocalSink {
         }
     }
 
-    /// Grows the hot tables at once to a size that holds the frequently missed keys,
+    /// Grows the hot tables at full size at once to a size that holds the frequently missed keys,
     /// if there are few enough of them and they make up enough of the missed rows.
     fn maybe_grow_hot_tables(&mut self, max_size: usize) {
-        let size = self.hot_table_size;
-        if size >= max_size {
+        if self.hot_table_size >= max_size {
             return;
         }
 
         // Cheap early exit before estimating the number of distinct missed keys.
         let misses = self.miss_f2.num_inserts() as f64;
-        if misses < HOT_TABLE_GROW_MIN_REPEAT * size as f64 {
+        if misses < HOT_TABLE_GROW_MIN_REPEAT * self.hot_table_size as f64 {
             return;
         }
 
@@ -407,21 +406,25 @@ impl LocalSink {
         let new_size = ((HOT_TABLE_GROW_SLOTS_PER_KEY * want) as usize)
             .next_power_of_two()
             .min(max_size);
-        if new_size <= size || want > HOT_TABLE_GROW_MAX_LOAD * new_size as f64 {
+        if new_size <= self.hot_table_size || want > HOT_TABLE_GROW_MAX_LOAD * new_size as f64 {
             return;
         }
 
         for hot_grouper in self.hot_grouper_per_input.iter_mut().flatten() {
+            if hot_grouper.num_slots() < self.hot_table_size {
+                continue;
+            }
             while hot_grouper.num_slots() < new_size {
                 hot_grouper.double();
             }
         }
-        self.hot_table_size = new_size;
         if polars_config::config().verbose() {
             eprintln!(
-                "[group-by]: hot table {size} -> {new_size} slots (missed rows: {misses}, distinct: {distinct:.0}, heavy keys: {heavy:.0}, repeat: {repeat:.1}, heavy share: {heavy_share:.2})"
+                "[group-by]: hot table {} -> {new_size} slots (missed rows: {misses}, distinct: {distinct:.0}, heavy keys: {heavy:.0}, repeat: {repeat:.1}, heavy share: {heavy_share:.2})",
+                self.hot_table_size
             );
         }
+        self.hot_table_size = new_size;
     }
 
     /// Ends the input of this pipeline: stores the cold rows left in the builders, flushes the
@@ -504,6 +507,9 @@ impl GroupBySink {
         spill_ctx: &'env MostRecentSpillContext,
     ) {
         let num_pipelines = self.locals.len();
+        let min_hot_table_size = (polars_config::config().min_hot_table_size() as usize)
+            .next_power_of_two()
+            .max(2);
         for (mut recv, opt_local) in receivers.into_iter().zip(&mut self.locals) {
             let key_selectors_per_input = &self.key_selectors_per_input;
             let random_state = &self.random_state;
@@ -515,6 +521,7 @@ impl GroupBySink {
                 let mut cold_idxs = Vec::new();
                 let mut identity_idxs: Vec<IdxSize> = Vec::new();
                 let mut all_hot_per_input = vec![true; key_selectors_per_input.len()];
+                let mut fast_growth_slice_limit_per_input = vec![true; key_selectors_per_input.len()];
                 while let Some((input_idx, morsel)) = recv.recv().await {
                     if morsel.height() == 0 {
                         continue;
@@ -525,7 +532,7 @@ impl GroupBySink {
                     if !cold_only && local.hot_grouper_per_input[input_idx].is_none() {
                         local.hot_grouper_per_input[input_idx] = Some(new_hash_hot_grouper(
                             params.key_schema.clone(),
-                            local.hot_table_size,
+                            min_hot_table_size.min(local.hot_table_size),
                         ));
                     }
 
@@ -557,6 +564,7 @@ impl GroupBySink {
                                 df,
                                 hash_keys,
                                 None,
+                                true,
                                 may_store_whole,
                                 spill_ctx,
                             )
@@ -564,24 +572,31 @@ impl GroupBySink {
                         continue;
                     }
 
-                    let slice_size = if all_hot_per_input[input_idx] {
+                    let max_slice_size = if all_hot_per_input[input_idx] {
                         KEY_SLICE_SIZE
                     } else {
                         df.height()
                     };
-                    // A large enough morsel processed as one slice may be stored as it is.
-                    let may_store_whole = slice_size >= df.height()
-                        && df.height() >= local.min_rows_stored_whole(num_pipelines);
-                    let reduce_per_slice = slice_size < df.height()
+                    let reduce_per_slice = max_slice_size < df.height()
                         && local.hot_grouper(input_idx).num_groups() as usize
                             <= MAX_SLICE_REDUCTION_GROUPS;
                     all_hot_per_input[input_idx] = true;
                     let mut evictions_before = 0;
-                    for offset in (0..df.height()).step_by(slice_size) {
+                    let mut offset = 0;
+                    while offset < df.height() {
+                        let num_slots = local.hot_grouper(input_idx).num_slots();
+                        let fast_growth = num_slots < local.hot_table_size;
+                        let slice_size = if fast_growth && fast_growth_slice_limit_per_input[input_idx] {
+                            max_slice_size.min(num_slots)
+                        } else {
+                            max_slice_size
+                        };
+
                         // Compute hot group indices from key.
                         let hot_grouper = local.hot_grouper(input_idx);
+                        let slice_evictions_before = hot_grouper.num_evictions();
                         if hot_idxs.is_empty() {
-                            evictions_before = hot_grouper.num_evictions();
+                            evictions_before = slice_evictions_before;
                         }
                         let slice_keys = keys.slice(offset as i64, slice_size);
                         let hash_keys =
@@ -595,6 +610,14 @@ impl GroupBySink {
                             &mut cold_idxs,
                             params.has_order_sensitive_agg,
                         );
+                        if fast_growth {
+                            let missed = !cold_idxs.is_empty()
+                                || hot_grouper.num_evictions() != slice_evictions_before;
+                            if missed {
+                                hot_grouper.double();
+                            }
+                            fast_growth_slice_limit_per_input[input_idx] = missed;
+                        }
                         if !reduce_per_slice {
                             for idx in &mut hot_idxs[hot_start..] {
                                 *idx += offset as IdxSize;
@@ -605,12 +628,16 @@ impl GroupBySink {
 
                         if !cold_idxs.is_empty() {
                             all_hot_per_input[input_idx] = false;
+                            // A large enough morsel processed as one slice may be stored as it is.
+                            let may_store_whole = slice_size >= df.height()
+                                && df.height() >= local.min_rows_stored_whole(num_pipelines);
                             local
                                 .store_cold_rows(
                                     input_idx,
                                     df.slice(offset as i64, slice_size),
                                     hash_keys,
                                     Some(&cold_idxs),
+                                    !fast_growth,
                                     may_store_whole,
                                     spill_ctx,
                                 )
@@ -658,6 +685,7 @@ impl GroupBySink {
                             hot_idxs.clear();
                             hot_group_idxs.clear();
                         }
+                        offset += slice_size;
                     }
 
                     // If we have too many evicted rows, flush them.
