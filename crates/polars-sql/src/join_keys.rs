@@ -61,7 +61,7 @@ pub(crate) fn sql_join_key_pair(
 
 /// `predicate` with each comparison of a left and a right operand that `join_where`
 /// rejects cast to their supertype: a primitive numeric pair without a lossless upcast,
-/// such as an integer and a float, or a Null operand. Columns `left_schema` has are left
+/// such as an integer and a float, or a Null and a primitive numeric operand. Columns `left_schema` has are left
 /// ones; `joined_schema` holds both inputs as `join_where` resolves them. The predicate
 /// itself when nothing is cast.
 pub(crate) fn sql_join_where_predicate(
@@ -143,10 +143,11 @@ fn comparison_casts(
                 let ctx = ToFieldContext::new(arena, joined_schema);
                 let left_dtype = arena.get(left).to_dtype(&ctx)?;
                 let right_dtype = arena.get(right).to_dtype(&ctx)?;
+                // Only the rejected pairs a SQL comparison compares numerically.
+                let numeric_or_null = |dt: &DataType| dt.is_primitive_numeric() || dt.is_null();
                 let rejected = left_dtype != right_dtype
-                    && !left_dtype.is_decimal()
-                    && !right_dtype.is_decimal()
-                    && (left_dtype.is_primitive_numeric() || right_dtype.is_primitive_numeric())
+                    && numeric_or_null(&left_dtype)
+                    && numeric_or_null(&right_dtype)
                     && get_numeric_upcast_supertype_lossless(&left_dtype, &right_dtype).is_none();
                 if rejected {
                     let dtype = try_get_supertype(&left_dtype, &right_dtype)?;

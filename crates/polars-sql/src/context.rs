@@ -3492,14 +3492,19 @@ impl SQLContext {
         let (mut left_frame, mut right_frame) = (tbl_left.frame.clone(), tbl_right.frame.clone());
         if predicates.is_empty() {
             let natural = matches!(constraint, Some(JoinConstraint::Natural));
+            let key_dtype = |key: &Expr, schema: &Schema| match key {
+                Expr::Column(name) => schema.get(name).cloned(),
+                key => key.to_field(schema).ok().map(|f| f.dtype),
+            };
             for (l, r) in left_on.iter_mut().zip(right_on.iter_mut()) {
-                let (Ok(l_field), Ok(r_field)) =
-                    (l.to_field(&tbl_left.schema), r.to_field(&tbl_right.schema))
-                else {
+                let (Some(l_dtype), Some(r_dtype)) = (
+                    key_dtype(l, &tbl_left.schema),
+                    key_dtype(r, &tbl_right.schema),
+                ) else {
                     continue;
                 };
                 let Some((l_cast, r_cast)) =
-                    sql_join_key_pair(l.clone(), l_field.dtype(), r.clone(), r_field.dtype(), true)
+                    sql_join_key_pair(l.clone(), &l_dtype, r.clone(), &r_dtype, true)
                 else {
                     continue;
                 };

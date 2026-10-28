@@ -13,6 +13,7 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
+    SchemaError,
     SQLInterfaceError,
     SQLSyntaxError,
 )
@@ -3256,3 +3257,16 @@ def test_semi_join_decimal_scales_not_rescaled(
     )
     result = pl.SQLContext(o=o, i=i).execute(query).collect(engine=engine)
     assert result["k"].to_list() == [Decimal(expected)]
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["a.k IS NOT DISTINCT FROM b.s", "a.k > b.s", "a.k = b.s AND a.k > b.n"],
+)
+def test_join_where_number_with_string_raises(condition: str) -> None:
+    a = pl.DataFrame({"k": [2]})
+    b = pl.DataFrame({"s": ["02"], "n": [1]})
+    with pytest.raises(SchemaError, match="cannot compare"):
+        pl.SQLContext(a=a, b=b).execute(
+            f"SELECT a.k, b.s FROM a JOIN b ON {condition}", eager=True
+        )
