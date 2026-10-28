@@ -3053,14 +3053,15 @@ fn window_sort_key(mut keys: Vec<(Expr, SortOptions)>) -> Option<(Expr, SortOpti
                 .map(|(_, options)| (options.descending, options.nulls_last))
                 .unzip();
             let key = Expr::n_ary(
-                FunctionExpr::RowEncode(
-                    RowEncodingVariant::Ordered {
+                FunctionExpr::RowEncode {
+                    variant: RowEncodingVariant::Ordered {
                         descending: Some(descending),
                         nulls_last: Some(nulls_last),
-                        broadcast_nulls: None,
                     },
-                    RowEncodingOutputType::AlwaysBinaryOffset,
-                ),
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                    propagate_nulls: false,
+                },
                 keys.into_iter().map(|(key, _)| key).collect(),
             );
             Some((key, SortOptions::default().with_maintain_order(false)))

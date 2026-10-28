@@ -13498,7 +13498,7 @@ class DataFrame:
         descending: list[bool] | None = None,
         nulls_last: list[bool] | None = None,
         output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
-        nullable: Sequence[bool] | None = None,
+        encode_nulls: Sequence[bool] | None = None,
     ) -> Series:
         """
         Row encode the given DataFrame.
@@ -13518,7 +13518,7 @@ class DataFrame:
                 descending=descending,
                 nulls_last=nulls_last,
                 output=output,
-                nullable=nullable,
+                encode_nulls=encode_nulls,
             )
         ).to_series()
 

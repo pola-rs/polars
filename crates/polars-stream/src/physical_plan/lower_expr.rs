@@ -3253,8 +3253,8 @@ pub(crate) fn build_sort_stream_with_ctx(
                 RowEncodingVariant::Ordered {
                     descending: Some(std::mem::take(&mut sort_options.descending)),
                     nulls_last: Some(std::mem::take(&mut sort_options.nulls_last)),
-                    broadcast_nulls: None,
                 },
+                false,
                 ctx.expr_arena,
             );
             // The order is folded into the encoding, which has no nulls.

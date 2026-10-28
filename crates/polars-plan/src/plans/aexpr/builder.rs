@@ -74,11 +74,18 @@ impl AExprBuilder {
         exprs: Vec<ExprIR>,
         dtypes: Vec<DataType>,
         variant: RowEncodingVariant,
+        propagate_nulls: bool,
         arena: &mut Arena<AExpr>,
     ) -> Self {
         Self::function(
             exprs,
-            IRFunctionExpr::RowEncode(dtypes, variant, RowEncodingOutputType::AlwaysBinaryOffset),
+            IRFunctionExpr::RowEncode {
+                dtypes,
+                variant,
+                output: RowEncodingOutputType::AlwaysBinaryOffset,
+                encode_nulls: None,
+                propagate_nulls,
+            },
             arena,
         )
     }

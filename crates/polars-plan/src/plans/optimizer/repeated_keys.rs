@@ -129,15 +129,17 @@ pub(super) fn retain_row_encode_keys(
     let AExpr::Function {
         input,
         function:
-            IRFunctionExpr::RowEncode(
+            IRFunctionExpr::RowEncode {
                 dtypes,
-                RowEncodingVariant::Ordered {
-                    descending,
-                    nulls_last,
-                    broadcast_nulls,
-                },
-                RowEncodingOutputType::AlwaysBinaryOffset,
-            ),
+                variant:
+                    RowEncodingVariant::Ordered {
+                        descending,
+                        nulls_last,
+                    },
+                output: RowEncodingOutputType::AlwaysBinaryOffset,
+                encode_nulls: None,
+                propagate_nulls,
+            },
         ..
     } = &mut encode
     else {
@@ -150,9 +152,9 @@ pub(super) fn retain_row_encode_keys(
         *flags = gather(flags, &keep);
     }
 
-    // Without null broadcasting a single key sorts the same as its row encoding.
+    // Without null propagation a single key sorts the same as its row encoding.
     if let [key] = &input[..]
-        && !broadcast_nulls.unwrap_or(false)
+        && !*propagate_nulls
     {
         let flag = |flags: &Option<Vec<bool>>| flags.as_ref().is_some_and(|f| f[0]);
         let options = SortOptions {

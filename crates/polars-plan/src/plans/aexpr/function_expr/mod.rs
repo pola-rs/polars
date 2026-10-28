@@ -448,9 +448,23 @@ pub enum IRFunctionExpr {
     Reinterpret(DataType),
     ExtendConstant,
 
-    RowEncode(Vec<DataType>, RowEncodingVariant, RowEncodingOutputType),
+    RowEncode {
+        dtypes: Vec<DataType>,
+        variant: RowEncodingVariant,
+        output: RowEncodingOutputType,
+        /// Per column whether its nulls are encoded, `None` means for all columns.
+        encode_nulls: Option<Vec<bool>>,
+        /// Whether a row is null if any of its values is null.
+        propagate_nulls: bool,
+    },
     #[cfg(feature = "dtype-struct")]
-    RowDecode(Vec<Field>, RowEncodingVariant, RowEncodingOutputType),
+    RowDecode {
+        fields: Vec<Field>,
+        variant: RowEncodingVariant,
+        output: RowEncodingOutputType,
+        /// Per column whether its nulls are encoded, `None` means for all columns.
+        encode_nulls: Option<Vec<bool>>,
+    },
     DynamicPred {
         pred: DynamicPredWeakRef,
     },
@@ -790,16 +804,30 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
 
-            RowEncode(dts, variants, output) => {
-                dts.hash(state);
-                variants.hash(state);
+            RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            } => {
+                dtypes.hash(state);
+                variant.hash(state);
                 output.hash(state);
+                encode_nulls.hash(state);
+                propagate_nulls.hash(state);
             },
             #[cfg(feature = "dtype-struct")]
-            RowDecode(fs, variants, output) => {
-                fs.hash(state);
-                variants.hash(state);
+            RowDecode {
+                fields,
+                variant,
+                output,
+                encode_nulls,
+            } => {
+                fields.hash(state);
+                variant.hash(state);
                 output.hash(state);
+                encode_nulls.hash(state);
             },
             DynamicPred { pred } => {
                 pred.id().hash(state);
@@ -1068,9 +1096,9 @@ impl IRFunctionExpr {
             Reinterpret(_) => "reinterpret",
             ExtendConstant => "extend_constant",
 
-            RowEncode(..) => "row_encode",
+            RowEncode { .. } => "row_encode",
             #[cfg(feature = "dtype-struct")]
-            RowDecode(..) => "row_decode",
+            RowDecode { .. } => "row_decode",
             DynamicPred { .. } => "dynamic_predicate",
             DynamicSkipBatch { .. } => "dynamic_skip_batch",
         };
@@ -1508,9 +1536,9 @@ impl IRFunctionExpr {
             F::Reinterpret(_) => FunctionOptions::elementwise(),
             F::ExtendConstant => FunctionOptions::groupwise(),
 
-            F::RowEncode(..) => FunctionOptions::elementwise(),
+            F::RowEncode { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
-            F::RowDecode(..) => FunctionOptions::elementwise(),
+            F::RowDecode { .. } => FunctionOptions::elementwise(),
             F::DynamicPred { .. } | F::DynamicSkipBatch { .. } => FunctionOptions::elementwise(),
         }
     }
