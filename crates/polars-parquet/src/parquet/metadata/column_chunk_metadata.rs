@@ -184,6 +184,14 @@ impl ColumnChunkMetadata {
         Ok(self.compact_metadata()?.dictionary_page_offset)
     }
 
+    /// Whether some data pages are not dictionary-encoded although the chunk has a
+    /// dictionary page. Writers such as Arrow and parquet-mr switch to plain encoding
+    /// once the dictionary grows too large. `None` when the writer doesn't record page
+    /// encoding stats; Polars doesn't.
+    pub fn dictionary_fallback(&self) -> ParquetResult<Option<bool>> {
+        Ok(self.compact_metadata()?.dictionary_fallback)
+    }
+
     /// Bloom filter byte offset, if present.
     pub fn bloom_filter_offset(&self) -> ParquetResult<Option<i64>> {
         Ok(self.compact_metadata()?.bloom_filter_offset)

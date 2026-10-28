@@ -576,6 +576,7 @@ fn create_physical_expr_inner(
                 output_field,
                 is_scalar,
                 true,
+                false,
             )))
         },
         Eval {
@@ -678,6 +679,7 @@ fn create_physical_expr_inner(
                 output_field,
                 is_scalar,
                 is_fallible,
+                inputs_are_row_wise(&function),
             )))
         },
 
@@ -717,7 +719,44 @@ fn create_physical_expr_inner(
                 output_field,
                 false,
                 false,
+                false,
             )))
         },
+    }
+}
+
+/// Whether the per-group scalar inputs of `function` can be repeated over their groups
+/// (`ApplyExpr::apply_multiple_scalar_broadcast`). Being elementwise is not enough:
+/// - every output row must depend only on the same row of every input (not `is_in`, `replace`);
+/// - the kernel must give the same values for a unit input as for its repeat (not `pow`);
+/// - a full-length input must cost about as much as a call per group (not `str.contains`).
+///
+/// TODO: formalize as a `FunctionFlags` bit, see also `is_fake_elementwise_function` in
+/// polars-stream.
+fn inputs_are_row_wise(function: &IRFunctionExpr) -> bool {
+    use IRFunctionExpr as F;
+    match function {
+        F::FillNull
+        | F::Coalesce
+        | F::MaxHorizontal
+        | F::MinHorizontal
+        | F::SumHorizontal { .. }
+        | F::MeanHorizontal { .. }
+        | F::TruncArith(_) => true,
+        #[cfg(feature = "round_series")]
+        F::Clip { .. } => true,
+        #[cfg(feature = "trigonometry")]
+        F::Atan2 => true,
+        #[cfg(feature = "log")]
+        F::Log => true,
+        #[cfg(feature = "dtype-decimal")]
+        F::DecimalArith { .. } => true,
+        #[cfg(feature = "is_between")]
+        F::Boolean(IRBooleanFunction::IsBetween { .. }) => true,
+        #[cfg(feature = "is_close")]
+        F::Boolean(IRBooleanFunction::IsClose { .. }) => true,
+        #[cfg(feature = "concat_str")]
+        F::StringExpr(IRStringFunction::ConcatHorizontal { .. }) => true,
+        _ => false,
     }
 }

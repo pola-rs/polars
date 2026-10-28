@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from polars._typing import (
         ApproxQuantileMethod,
         PolarsDataType,
+        QuantileMethod,
         TimeUnit,
     )
     from tests.conftest import PlMonkeyPatch
@@ -158,6 +159,16 @@ def test_quantile() -> None:
     assert_frame_equal(
         df.select(pl.col("a").quantile([0.5], interpolation="linear")), expected
     )
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("quantile", [5e-324, 0.24999999999999997, 0.9999999999999998])
+def test_quantile_ignores_nulls(method: QuantileMethod, quantile: float) -> None:
+    s = pl.Series([0.0, 1.0, 2.0])
+    with_nulls = pl.Series([None, 0.0, 1.0, None, 2.0, None])
+    assert with_nulls.quantile(quantile, method) == s.quantile(quantile, method)
 
 
 def test_quantile_error_checking() -> None:

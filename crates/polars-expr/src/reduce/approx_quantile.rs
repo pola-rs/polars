@@ -54,8 +54,9 @@ pub fn new_approx_quantile_sketch_reduction(
     dtype: DataType,
     method: ApproxQuantileMethod,
     error: f64,
+    failure_probability: f64,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    new_sketch_reduction(dtype, method, error, true)
+    new_sketch_reduction(dtype, method, error, failure_probability, true)
 }
 
 /// Like [`new_approx_quantile_sketch_reduction`], but outputs the serialized
@@ -64,18 +65,20 @@ pub fn new_approx_quantile_state_reduction(
     dtype: DataType,
     method: ApproxQuantileMethod,
     error: f64,
+    failure_probability: f64,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
-    new_sketch_reduction(dtype, method, error, false)
+    new_sketch_reduction(dtype, method, error, failure_probability, false)
 }
 
 fn new_sketch_reduction(
     dtype: DataType,
     method: ApproxQuantileMethod,
     error: f64,
+    failure_probability: f64,
     finalize: bool,
 ) -> PolarsResult<Box<dyn GroupedReduction>> {
     Ok(with_match_sketch_item!(&dtype, |T, B| {
-        let reducer = SketchReducer::<T, B>::new(method, error, finalize);
+        let reducer = SketchReducer::<T, B>::new(method, error, failure_probability, finalize);
         Box::new(VecGroupedReduction::new(dtype.clone(), reducer))
     }))
 }
@@ -105,9 +108,14 @@ impl<T, B: ToOwned + ?Sized> SketchReducer<T, B>
 where
     B::Owned: fmt::Debug + Clone + TotalOrd,
 {
-    fn new(method: ApproxQuantileMethod, error: f64, finalize: bool) -> Self {
+    fn new(
+        method: ApproxQuantileMethod,
+        error: f64,
+        failure_probability: f64,
+        finalize: bool,
+    ) -> Self {
         Self {
-            template: Sketch::new(&method, error),
+            template: Sketch::new(&method, error, failure_probability),
             finalize,
             dtype: PhantomData,
         }
