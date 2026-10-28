@@ -312,6 +312,37 @@ def test_string_like_wildcards(pattern: str) -> None:
     assert res == [None if s is None else rx.fullmatch(s) is None for s in txt]
 
 
+@pytest.mark.parametrize("like", ["LIKE", "NOT LIKE", "ILIKE", "NOT ILIKE"])
+def test_string_like_column_substring(like: str) -> None:
+    txt = ["abc", "a.c", "a%c", "AbC", "a\nc", "(a)", "a\\c", None]
+    needle = ["b", ".", "%", "_", "B", "", None, "\n", "(", "\\", "a_c", "a%c", "*"]
+    df = pl.DataFrame(
+        [(t, n) for t in txt for n in needle],
+        schema={"txt": pl.String, "needle": pl.String},
+        orient="row",
+    )
+    res = df.sql(f"SELECT txt {like} '%' || needle || '%' AS m FROM self")["m"]
+
+    flags = re.DOTALL | (re.IGNORECASE if "ILIKE" in like else 0)
+    expected = [
+        None
+        if t is None or n is None
+        else (
+            re.search(re.escape(n).replace("%", ".*").replace("_", "."), t, flags)
+            is not None
+        )
+        != like.startswith("NOT")
+        for t, n in df.rows()
+    ]
+    assert res.to_list() == expected
+
+
+def test_string_like_column_substring_non_string() -> None:
+    df = pl.DataFrame({"txt": ["a12b", "a3b", None], "n": [12, 4, 3]})
+    res = df.sql("SELECT txt FROM self WHERE txt LIKE '%' || n || '%'")
+    assert res["txt"].to_list() == ["a12b"]
+
+
 @pytest.mark.parametrize("form", ["NFKC", "NFKD"])
 def test_string_normalize(form: str) -> None:
     df = pl.DataFrame({"txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"]})  # noqa: RUF001
