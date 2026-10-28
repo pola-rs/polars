@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import JoinStrategy
+    from polars._typing import JoinStrategy, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -468,3 +468,29 @@ def test_log_metrics_reports_query_io_time(
     assert " IO active: " in header
     assert " rx, " in header
     assert " tx), detailed breakdown:" in header
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.UInt64, pl.Int128, pl.Int32])
+@pytest.mark.parametrize(
+    ("length", "height"),
+    [(pl.len(), 4), (pl.col("a").count(), 3)],
+    ids=["len", "count"],
+)
+def test_streaming_int_range_over_length(
+    dtype: PolarsIntegerType, length: pl.Expr, height: int
+) -> None:
+    q = pl.LazyFrame({"a": [1, None, 3, 4]}).select(
+        pl.int_range(0, length, dtype=dtype)
+    )
+    plan = q.show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True, show=False
+    )
+    assert isinstance(plan, str)
+    # A strict cast of the length to a narrower dtype fails on one more row than a
+    # cast of the row index would, so that one keeps evaluating `int_range`.
+    is_row_index = dtype != pl.Int32
+    assert ("with-row-index" in plan) == is_row_index
+    assert ("columnar-function" in plan) != is_row_index
+
+    expected = pl.DataFrame({"literal": range(height)}, schema={"literal": dtype})
+    assert_frame_equal(q.collect(), expected)
