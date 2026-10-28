@@ -34,6 +34,7 @@ use crate::context::{
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{has_marked_aggregate, strip_aggregate_marks};
+use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::sql_expr::{
     order_by_sort_options, parse_sql_expr, reduced_subquery, sql_in_membership, sql_is_in,
 };
@@ -354,11 +355,12 @@ impl SQLContext {
         let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(self.lp_arena, self.expr_arena);
 
-        let join_preds: Vec<Expr> = corr_preds
-            .iter()
-            .map(|p| p.to_expr(&prefix))
-            .chain(general)
-            .collect();
+        let join_preds = correlated_join_predicates(
+            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+            outer_schema,
+            inner_schema,
+            &prefix,
+        );
 
         let outer_indexed = row_indexed_once(lf.clone(), idx_name.clone());
         let matched = outer_indexed
@@ -1634,11 +1636,14 @@ impl SQLContext {
             });
 
         if equality_only {
-            let outer_on: Vec<Expr> = corr_preds.iter().map(|p| col(p.outer.clone())).collect();
-            let inner_on: Vec<Expr> = corr_preds
-                .iter()
-                .map(|p| col(prefixed_inner(&prefix, &p.inner)))
-                .collect();
+            let (outer_on, inner_on, added) = correlation_keys(
+                &corr_preds,
+                &mut lf,
+                &mut inner_renamed,
+                outer_schema,
+                &inner_schema,
+                &prefix,
+            );
             let joined = equality_correlated_aggregate(
                 lf,
                 inner_renamed,
@@ -1647,14 +1652,15 @@ impl SQLContext {
                 &aggregate,
                 restrict,
             )?;
-            return Ok(Some((joined, result_name)));
+            return Ok(Some((drop_added_keys(joined, added), result_name)));
         }
 
-        let join_preds: Vec<Expr> = corr_preds
-            .iter()
-            .map(|p| p.to_expr(&prefix))
-            .chain(general)
-            .collect();
+        let join_preds = correlated_join_predicates(
+            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+            outer_schema,
+            &inner_schema,
+            &prefix,
+        );
         let idx_name = format_pl_smallstr!("{prefix}idx");
 
         let outer_indexed = row_indexed_once(lf, idx_name.clone());
@@ -1767,7 +1773,7 @@ impl SQLContext {
             .iter()
             .map(|name| prefixed_inner(&prefix, name))
             .collect();
-        let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        let mut inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
         let value = value.map_expr(|e| match e {
@@ -1781,21 +1787,26 @@ impl SQLContext {
         let equality_only =
             general.is_empty() && corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq);
         let joined = if equality_only {
-            let outer_on: Vec<Expr> = corr_preds.iter().map(|p| col(p.outer.clone())).collect();
-            let inner_on: Vec<Expr> = corr_preds
-                .iter()
-                .map(|p| col(prefixed_inner(&prefix, &p.inner)))
-                .collect();
+            let mut lf = lf;
+            let (outer_on, inner_on, added) = correlation_keys(
+                &corr_preds,
+                &mut lf,
+                &mut inner_renamed,
+                outer_schema,
+                &inner_schema,
+                &prefix,
+            );
             let grouped = inner_renamed
                 .group_by(inner_on.clone())
                 .agg([value.alias(set_name.clone())]);
-            left_join_aggregate(lf, grouped, outer_on, inner_on)?
+            drop_added_keys(left_join_aggregate(lf, grouped, outer_on, inner_on)?, added)
         } else {
-            let join_preds: Vec<Expr> = corr_preds
-                .iter()
-                .map(|p| p.to_expr(&prefix))
-                .chain(general)
-                .collect();
+            let join_preds = correlated_join_predicates(
+                corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+                outer_schema,
+                &inner_schema,
+                &prefix,
+            );
             let idx_name = format_pl_smallstr!("{prefix}idx");
             let outer_indexed = row_indexed_once(lf, idx_name.clone());
             let matched = outer_indexed
@@ -1979,11 +1990,12 @@ impl SQLContext {
         let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
         inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
 
-        let join_preds: Vec<Expr> = corr_preds
-            .iter()
-            .map(|p| p.to_expr(&prefix))
-            .chain(general)
-            .collect();
+        let join_preds = correlated_join_predicates(
+            corr_preds.iter().map(|p| p.to_expr(&prefix)).chain(general),
+            outer_schema,
+            &inner_schema,
+            &prefix,
+        );
 
         let outer_indexed = row_indexed_once(lf, idx_name.clone());
         let matched = outer_indexed
@@ -3285,6 +3297,75 @@ fn row_indexed_once(lf: LazyFrame, name: PlSmallStr) -> LazyFrame {
 
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
     format_pl_smallstr!("{prefix}c_{name}")
+}
+
+// The keys of an equality-correlated subquery that is grouped by its keys and joined
+// back: the outer and the prefixed inner column of each correlation. A pair the join
+// doesn't cast itself is cast exactly and added as new key columns, so grouping and the
+// join back read the same key. Returns the outer columns added, to drop after the join.
+fn correlation_keys(
+    corr_preds: &[CorrPredicate],
+    outer: &mut LazyFrame,
+    inner: &mut LazyFrame,
+    outer_schema: &Schema,
+    inner_schema: &Schema,
+    prefix: &str,
+) -> (Vec<Expr>, Vec<Expr>, Vec<PlSmallStr>) {
+    let mut outer_on = Vec::with_capacity(corr_preds.len());
+    let mut inner_on = Vec::with_capacity(corr_preds.len());
+    let mut added = Vec::new();
+    for (i, p) in corr_preds.iter().enumerate() {
+        let outer_key = col(p.outer.clone());
+        let inner_key = col(prefixed_inner(prefix, &p.inner));
+        let cast = match (outer_schema.get(&p.outer), inner_schema.get(&p.inner)) {
+            (Some(l), Some(r)) => {
+                sql_join_key_pair(outer_key.clone(), l, inner_key.clone(), r, false)
+            },
+            _ => None,
+        };
+        let Some((outer_cast, inner_cast)) = cast else {
+            outer_on.push(outer_key);
+            inner_on.push(inner_key);
+            continue;
+        };
+        let outer_name = format_pl_smallstr!("{prefix}key{i}");
+        let inner_name = format_pl_smallstr!("{prefix}ikey{i}");
+        *outer = std::mem::take(outer).with_column(outer_cast.alias(outer_name.clone()));
+        *inner = std::mem::take(inner).with_column(inner_cast.alias(inner_name.clone()));
+        outer_on.push(col(outer_name.clone()));
+        inner_on.push(col(inner_name));
+        added.push(outer_name);
+    }
+    (outer_on, inner_on, added)
+}
+
+// Drop the key columns `correlation_keys` added.
+fn drop_added_keys(lf: LazyFrame, added: Vec<PlSmallStr>) -> LazyFrame {
+    if added.is_empty() {
+        return lf;
+    }
+    lf.drop(Selector::ByName {
+        names: Arc::from(added),
+        strict: true,
+    })
+}
+
+// The `join_where` predicates of a correlated subquery over the outer frame and the
+// inner frame with prefixed names, with operands cast to the type a SQL comparison uses.
+fn correlated_join_predicates(
+    predicates: impl IntoIterator<Item = Expr>,
+    outer_schema: &Schema,
+    inner_schema: &Schema,
+    prefix: &str,
+) -> Vec<Expr> {
+    let mut joined_schema = outer_schema.clone();
+    for (name, dtype) in inner_schema.iter() {
+        joined_schema.insert(prefixed_inner(prefix, name), dtype.clone());
+    }
+    predicates
+        .into_iter()
+        .map(|p| sql_join_where_predicate(p, outer_schema, &joined_schema))
+        .collect()
 }
 
 // The inner frame has to be this many times larger than the outer frame for the

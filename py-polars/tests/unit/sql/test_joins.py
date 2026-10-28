@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
@@ -12,6 +13,7 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
+    SchemaError,
     SQLInterfaceError,
     SQLSyntaxError,
 )
@@ -3115,3 +3117,156 @@ def test_asof_join_errors(
     query = f"SELECT * FROM trades t ASOF JOIN quotes q {join}"
     with pytest.raises(SQLSyntaxError, match=error):
         pl.SQLContext(asof_frames).execute(query).collect()
+
+
+@pytest.fixture
+def key_dtype_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"k": [1, 2, 3, None], "x": [10, 20, 30, 40]}),
+        "b": pl.DataFrame(
+            {
+                "d": pl.Series(
+                    [Decimal("1.00"), Decimal("2.50"), Decimal("3.00"), None],
+                    dtype=pl.Decimal(15, 2),
+                ),
+                "y": [100, 200, 300, 400],
+            }
+        ),
+        "c": pl.DataFrame(
+            {
+                "d": pl.Series(
+                    [Decimal("1.0000"), Decimal("2.5000"), Decimal("4.0000")],
+                    dtype=pl.Decimal(38, 4),
+                ),
+                "z": [7, 8, 9],
+            }
+        ),
+        "f": pl.DataFrame({"x": [1.0, 2.5, 3.0, None], "w": [1, 2, 3, 4]}),
+        "f32": pl.DataFrame({"f": pl.Series([0.1, 0.5], dtype=pl.Float32)}),
+        "n": pl.DataFrame({"k": [1, 2], "nk": [None, None]}),
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT a.k, b.y FROM a LEFT JOIN b ON a.k = b.d ORDER BY a.k",
+            [(1, 100), (2, None), (3, 300), (None, None)],
+        ),
+        (
+            "SELECT b.y, c.z FROM b FULL JOIN c ON b.d = c.d ORDER BY b.y, c.z",
+            [(100, 7), (200, 8), (300, None), (400, None), (None, 9)],
+        ),
+        (
+            "SELECT a.k, f.w FROM a JOIN f ON a.k = f.x ORDER BY a.k",
+            [(1, 1), (3, 3)],
+        ),
+        (
+            "SELECT b.y, f.w FROM b JOIN f ON b.d = f.x ORDER BY b.y",
+            [(100, 1), (200, 2), (300, 3)],
+        ),
+        (
+            "SELECT a.k, n.k AS j FROM a LEFT JOIN n ON a.k = n.nk ORDER BY a.k",
+            [(1, None), (2, None), (3, None), (None, None)],
+        ),
+        (
+            "SELECT a.k FROM f32 JOIN a ON f32.f = 0.1 ORDER BY a.k",
+            [(1,), (2,), (3,), (None,)],
+        ),
+        # `join_where` conditions
+        (
+            "SELECT a.k, f.w FROM a LEFT JOIN f ON a.k > f.x / 2 AND f.w < 3 ORDER BY a.k, f.w",
+            [(1, 1), (2, 1), (2, 2), (3, 1), (3, 2), (None, None)],
+        ),
+        (
+            "SELECT a.k, f.w FROM a JOIN f ON a.k = f.w AND a.k <> f.x ORDER BY a.k",
+            [(2, 2)],
+        ),
+        (
+            "SELECT a.k, n.k AS j FROM a JOIN n ON a.k IS NOT DISTINCT FROM n.nk ORDER BY j",
+            [(None, 1), (None, 2)],
+        ),
+        # correlated subqueries
+        (
+            "SELECT a.k, (SELECT MAX(b.y) FROM b WHERE b.d = a.k) AS m FROM a ORDER BY a.k",
+            [(1, 100), (2, None), (3, 300), (None, None)],
+        ),
+        (
+            "SELECT a.k, (SELECT COUNT(*) FROM b WHERE b.d = a.k) AS m FROM a ORDER BY a.k",
+            [(1, 1), (2, 0), (3, 1), (None, 0)],
+        ),
+        (
+            "SELECT a.k FROM a WHERE a.x IN (SELECT b.y / 10 FROM b WHERE b.d = a.k) ORDER BY a.k",
+            [(1,), (3,)],
+        ),
+        (
+            "SELECT a.k FROM a WHERE NOT EXISTS (SELECT 1 FROM b WHERE b.d = a.k) ORDER BY a.k",
+            [(2,), (None,)],
+        ),
+        (
+            "SELECT a.k, (SELECT MAX(f.w) FROM f WHERE f.x > a.k + 1) AS m FROM a ORDER BY a.k",
+            [(1, 3), (2, None), (3, None), (None, None)],
+        ),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_keys_of_different_dtypes(
+    key_dtype_frames: dict[str, pl.DataFrame],
+    query: str,
+    expected: list[tuple[Any, ...]],
+    engine: Literal["in-memory", "streaming"],
+) -> None:
+    result = pl.SQLContext(key_dtype_frames).execute(query).collect(engine=engine)
+    assert result.rows() == expected
+
+
+def test_natural_join_decimal_scales(key_dtype_frames: dict[str, pl.DataFrame]) -> None:
+    result = pl.SQLContext(key_dtype_frames).execute(
+        "SELECT * FROM b NATURAL JOIN c ORDER BY y", eager=True
+    )
+    expected = pl.DataFrame(
+        {
+            "d": pl.Series([Decimal("1"), Decimal("2.5")], dtype=pl.Decimal(38, 4)),
+            "y": [100, 200],
+            "z": [7, 8],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT * FROM o WHERE EXISTS (SELECT 1 FROM i WHERE i.k = o.k)", 1),
+        ("SELECT * FROM o WHERE NOT EXISTS (SELECT 1 FROM i WHERE i.k = o.k)", 2),
+        ("SELECT * FROM o WHERE k IN (SELECT i.k FROM i)", 1),
+        ("SELECT * FROM o WHERE k NOT IN (SELECT i.k FROM i)", 2),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_semi_join_decimal_scales_not_rescaled(
+    query: str, expected: int, engine: Literal["in-memory", "streaming"]
+) -> None:
+    # Rescaling `10**36` to scale 4 overflows.
+    o = pl.DataFrame(
+        {"k": pl.Series([Decimal(1), Decimal(2)], dtype=pl.Decimal(38, 4))}
+    )
+    i = pl.DataFrame(
+        {"k": pl.Series([Decimal(1), Decimal(10**36)], dtype=pl.Decimal(38, 0))}
+    )
+    result = pl.SQLContext(o=o, i=i).execute(query).collect(engine=engine)
+    assert result["k"].to_list() == [Decimal(expected)]
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["a.k IS NOT DISTINCT FROM b.s", "a.k > b.s", "a.k = b.s AND a.k > b.n"],
+)
+def test_join_where_number_with_string_raises(condition: str) -> None:
+    a = pl.DataFrame({"k": [2]})
+    b = pl.DataFrame({"s": ["02"], "n": [1]})
+    with pytest.raises(SchemaError, match="cannot compare"):
+        pl.SQLContext(a=a, b=b).execute(
+            f"SELECT a.k, b.s FROM a JOIN b ON {condition}", eager=True
+        )
