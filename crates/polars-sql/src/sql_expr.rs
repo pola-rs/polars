@@ -306,7 +306,7 @@ fn unanchored_like_regex(pattern: Expr, case_insensitive: bool) -> Expr {
     let flags = if case_insensitive { "(?is)" } else { "(?s)" };
     let rx = pattern
         .str()
-        .replace_all(lit(r"[\\.+*?()|\[\]{}^$]"), lit(r"\$0"), false)
+        .escape_regex()
         .str()
         .replace_all(lit("%"), lit(".*"), true)
         .str()
@@ -769,7 +769,12 @@ impl SQLExprVisitor<'_> {
         }
         if let Some(needle) = substring_like_needle(pattern) {
             let expr = self.visit_expr(expr)?;
-            let needle = self.visit_expr(needle)?.cast(DataType::String);
+            // A '%' at either end of the value adds nothing to the surrounding ones.
+            let needle = self
+                .visit_expr(needle)?
+                .cast(DataType::String)
+                .str()
+                .strip_chars(lit("%"));
             let matches = if case_insensitive {
                 expr.str()
                     .contains(unanchored_like_regex(needle, true), true)

@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import SQLSyntaxError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 # TODO: Do not rely on I/O for these tests
@@ -314,14 +314,19 @@ def test_string_like_wildcards(pattern: str) -> None:
 
 @pytest.mark.parametrize("like", ["LIKE", "NOT LIKE", "ILIKE", "NOT ILIKE"])
 def test_string_like_column_substring(like: str) -> None:
-    txt = ["abc", "a.c", "a%c", "AbC", "a\nc", "(a)", "a\\c", None]
-    needle = ["b", ".", "%", "_", "B", "", None, "\n", "(", "\\", "a_c", "a%c", "*"]
+    txt = ["abc", "a.c", "a%c", "AbC", "a\nc", "(a)", "a\\c", "x$0y", "", None]
+    needle = [
+        "b", ".", "%", "_", "B", "", None, "\n", "(", "\\", "a_c", "a%c", "*",
+        "%b%", "%%", "_.", "(%)", "$0", "$0%", "\\_",
+    ]  # fmt: skip
     df = pl.DataFrame(
         [(t, n) for t in txt for n in needle],
         schema={"txt": pl.String, "needle": pl.String},
         orient="row",
     )
-    res = df.sql(f"SELECT txt {like} '%' || needle || '%' AS m FROM self")["m"]
+    q = f"SELECT txt {like} '%' || needle || '%' AS m FROM self"
+    res = df.sql(q)["m"]
+    assert_series_equal(df.lazy().sql(q).collect(engine="streaming")["m"], res)
 
     flags = re.DOTALL | (re.IGNORECASE if "ILIKE" in like else 0)
     expected = [
