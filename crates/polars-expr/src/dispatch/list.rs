@@ -4,7 +4,8 @@ use polars_arrow::compute::utils::combine_validities_and;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::{
-    ChunkCast, Column, DataType, IDX_DTYPE, Int64Chunked, IntoColumn, ListChunked, SortOptions,
+    ChunkCast, Column, DataType, ExplodeOptions, IDX_DTYPE, Int64Chunked, IntoColumn, ListChunked,
+    SortOptions,
 };
 use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
@@ -16,6 +17,7 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
     use IRListFunction::*;
     match func {
         Concat => wrap!(concat),
+        Explode(options) => map_as_slice!(explode, options),
         #[cfg(feature = "is_in")]
         Contains {
             nulls_equal,
@@ -405,4 +407,8 @@ fn to_map(c: &Column) -> PolarsResult<Column> {
         polars_bail!(InvalidOperation: "`list.to_map` requires a List dtype, got `{}`", c.dtype())
     };
     c.cast(&entries.map_from_named_entries_dtype()?)
+}
+
+fn explode(c: &[Column], options: ExplodeOptions) -> PolarsResult<Column> {
+    c[0].explode(options)
 }

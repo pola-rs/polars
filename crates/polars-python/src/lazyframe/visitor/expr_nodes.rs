@@ -1227,7 +1227,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         names.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     )
                         .into_py_any(py),
-                    IRListFunction::ToMap => {
+                    IRListFunction::Explode(_) | IRListFunction::ToMap => {
                         return Err(PyNotImplementedError::new_err(format!("{listfun}")));
                     },
                 },
