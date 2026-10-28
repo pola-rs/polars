@@ -538,12 +538,16 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             "partition field 'd_day' of table 't' would have the name of a column",
         ),
         (
+            'CREATE TABLE t ("s.f" DATE, s STRUCT<f_day INT>) PARTITION BY (day("s.f"))',
+            r"partition field 's\.f_day' of table 't' would have the name of a column",
+        ),
+        (
             "CREATE TEMP TABLE t (x INT) PARTITION BY (x)",
-            "table `PARTITION BY` clauses are not supported",
+            "`PARTITION BY` is supported only for catalog tables",
         ),
         (
             "CREATE TEMP TABLE t (x INT) PARTITIONED BY (x)",
-            "Hive table distribution clauses are not supported",
+            "`PARTITIONED BY` is supported only for catalog tables",
         ),
         (
             "CREATE TABLE t (x INT) TBLPROPERTIES ('k' = 'v')",
@@ -698,17 +702,21 @@ def partition_fields(catalog: CountingCatalog, *identifier: str) -> list[Any]:
         ),
         # a quoted name with a dot is a top-level column
         ('PARTITION BY ("s.f")', [("s.f", "identity", "s.f")]),
+        ('PARTITION BY (bucket(4, "s.f"))', [("s.f_bucket_4", "bucket[4]", "s.f")]),
     ],
 )
 def test_create_partitioned_catalog_table(
     lake: CountingCatalog, clause: str, expected: list[Any]
 ) -> None:
     ctx = lake_ctx(lake)
+    # a struct first: the create renumbers field ids
     ctx.execute(
-        "CREATE TABLE t (id BIGINT, p VARCHAR, x VARCHAR, d DATE, ts TIMESTAMP, "
-        '"s.f" INT) ' + clause
+        "CREATE TABLE t (s STRUCT<a INT, b INT>, id BIGINT, p VARCHAR, x VARCHAR, "
+        'd DATE, ts TIMESTAMP, "s.f" INT) ' + clause
     )
     assert partition_fields(lake, "tpch", "t") == expected
+    spec = lake.load_table(("tpch", "t")).spec()
+    assert [f.field_id for f in spec.fields] == list(range(1000, 1000 + len(expected)))
 
 
 @pytest.mark.write_disk
@@ -767,6 +775,18 @@ def test_create_partitioned_catalog_table_checks(lake: CountingCatalog) -> None:
         ctx.execute(
             "CREATE TABLE t PARTITION BY (day(k)) AS "
             "SELECT CAST(v AS INT) AS k FROM lineitem"
+        )
+    assert not lake.table_exists(("tpch", "t"))
+
+    # a partition name that is a nested field's
+    ctx.register("src", pl.DataFrame({"s.f": [date(2024, 1, 1)], "s": [{"f_day": 1}]}))
+    error = r"partition field 's\.f_day' of table '(t|lineitem)' would have the name"
+    with pytest.raises(SQLInterfaceError, match=error):
+        ctx.execute('CREATE TABLE t PARTITION BY (day("s.f")) AS SELECT * FROM src')
+    with pytest.raises(SQLInterfaceError, match=error):
+        ctx.execute(
+            'CREATE TABLE IF NOT EXISTS lineitem PARTITION BY (day("s.f")) '
+            "AS SELECT * FROM src"
         )
     assert not lake.table_exists(("tpch", "t"))
 

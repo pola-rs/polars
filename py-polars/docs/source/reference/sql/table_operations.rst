@@ -66,7 +66,9 @@ creates the table in the catalog.
 
 .. code-block:: sql
 
-    CREATE TABLE lake.sales.orders (id BIGINT NOT NULL, amount DECIMAL(10, 2))
+    CREATE TABLE lake.sales.orders (
+        id BIGINT NOT NULL, region VARCHAR, ordered_at TIMESTAMP, amount DECIMAL(10, 2)
+    )
     WITH ('format-version' = 2)
 
 .. code-block:: sql

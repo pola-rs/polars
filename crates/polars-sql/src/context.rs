@@ -2391,13 +2391,14 @@ impl SQLContext {
         polars_ensure!(initialize.is_none(), SQLInterface: "`INITIALIZE` is not supported");
         polars_ensure!(location.is_none(), SQLInterface: "table `LOCATION` clauses are not supported");
         let partitioned = matches!(hive_distribution, HiveDistributionStyle::PARTITIONED { .. });
-        polars_ensure!(matches!(hive_distribution, HiveDistributionStyle::NONE) || (partitioned && for_catalog), SQLInterface: "Hive table distribution clauses are not supported");
+        polars_ensure!(matches!(hive_distribution, HiveDistributionStyle::NONE) || partitioned, SQLInterface: "Hive table distribution clauses are not supported");
+        polars_ensure!(!partitioned || for_catalog, SQLInterface: "`PARTITIONED BY` is supported only for catalog tables");
         polars_ensure!(for_catalog || matches!(table_options, CreateTableOptions::None), SQLInterface: "table `WITH`/`OPTIONS` clauses are not supported");
         polars_ensure!(max_data_extension_time_in_days.is_none(), SQLInterface: "`MAX_DATA_EXTENSION_TIME_IN_DAYS` is not supported");
         polars_ensure!(on_cluster.is_none(), SQLInterface: "`ON CLUSTER` clauses are not supported");
         polars_ensure!(on_commit.is_none(), SQLInterface: "`ON COMMIT` clauses are not supported");
         polars_ensure!(order_by.is_none(), SQLInterface: "table `ORDER BY` clauses are not supported");
-        polars_ensure!(partition_by.is_none() || for_catalog, SQLInterface: "table `PARTITION BY` clauses are not supported");
+        polars_ensure!(partition_by.is_none() || for_catalog, SQLInterface: "`PARTITION BY` is supported only for catalog tables");
         polars_ensure!(partition_of.is_none(), SQLInterface: "`PARTITION OF` clauses are not supported");
         polars_ensure!(primary_key.is_none(), SQLInterface: "inline `PRIMARY KEY` clauses are not supported");
         polars_ensure!(refresh_mode.is_none(), SQLInterface: "`REFRESH_MODE` is not supported");

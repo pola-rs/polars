@@ -1019,6 +1019,7 @@ def _create_partition_spec(
         PartitionField,
         PartitionSpec,
     )
+    from pyiceberg.schema import index_by_name
     from pyiceberg.transforms import (
         BucketTransform,
         IdentityTransform,
@@ -1029,6 +1030,7 @@ def _create_partition_spec(
 
     # top-level columns only: `find_field` resolves dotted names into structs
     columns = {field.name: field for field in schema.fields}
+    names = index_by_name(schema)
     fields: list[PartitionField] = []
     for column, transform_name in partition_by:
         transform = parse_transform(transform_name)
@@ -1059,7 +1061,8 @@ def _create_partition_spec(
             field_name = f"{column}_trunc_{transform.width}"
         else:
             field_name = f"{column}_{transform}"
-        if field_name != column and field_name in columns:
+        # PyIceberg checks the name against nested fields too (`s.f_day`)
+        if names.get(field_name, source.field_id) != source.field_id:
             msg = (
                 f"partition field '{field_name}' of table '{name}' would have the "
                 "name of a column"
