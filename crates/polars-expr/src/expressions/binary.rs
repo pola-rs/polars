@@ -301,6 +301,31 @@ impl BinaryExpr {
         ac_l.with_agg_state(AggState::AggregatedList(ca.into_column()));
         Ok(ac_l)
     }
+
+    /// Applies the operator once on all values, with the scalars repeated over their groups.
+    fn apply_scalar_broadcast<'a>(
+        &self,
+        ac_l: AggregationContext<'a>,
+        ac_r: AggregationContext<'a>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let scalar_left = ac_l.agg_state().is_scalar();
+        let (ac_scalar, mut ac) = if scalar_left {
+            (ac_l, ac_r)
+        } else {
+            (ac_r, ac_l)
+        };
+        let target = ac.broadcast_target()?;
+        let scalars = target.repeat(ac_scalar.get_values())?;
+        let values = target.values.clone();
+        let (l, r) = if scalar_left {
+            (scalars, values)
+        } else {
+            (values, scalars)
+        };
+        let out = apply_operator_owned(l, r, self.op)?;
+        ac.finish_broadcast(target, out.with_name(self.output_field.name().clone()))?;
+        Ok(ac)
+    }
 }
 
 impl PhysicalExpr for BinaryExpr {
@@ -369,16 +394,19 @@ impl PhysicalExpr for BinaryExpr {
         let mut has_not_agg = false;
         let mut has_not_agg_with_overlapping_groups = false;
         let mut not_agg_groups_may_diverge = false;
+        let mut has_large_groups = false;
 
         let mut previous: Option<&AggregationContext<'_>> = None;
         for ac in [&ac_l, &ac_r] {
             match ac.state {
                 AggState::AggregatedList(_) => {
                     has_agg_list = true;
+                    has_large_groups |= ac.has_large_groups();
                 },
                 AggState::AggregatedScalar(_) => has_agg_scalar = true,
                 AggState::NotAggregated(_) => {
                     has_not_agg = true;
+                    has_large_groups |= ac.has_large_groups();
                     if let Some(p) = previous {
                         not_agg_groups_may_diverge |= !p.groups.is_same(&ac.groups)
                     }
@@ -394,6 +422,11 @@ impl PhysicalExpr for BinaryExpr {
         let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
         let elementwise_must_aggregate =
             has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
+        let mixes_scalars_and_values = has_agg_scalar && (has_agg_list || has_not_agg);
+        let may_broadcast_scalars = mixes_scalars_and_values
+            && !has_large_groups
+            && !has_not_agg_with_overlapping_groups
+            && !groups.is_empty();
         let mut aggregated = has_agg_list || has_agg_scalar;
 
         // Arithmetic on Decimal is fallible
@@ -421,7 +454,12 @@ impl PhysicalExpr for BinaryExpr {
         if all_literal {
             // Fast path
             self.apply_all_literal(ac_l, ac_r)
-        } else if has_agg_scalar && (has_agg_list || has_not_agg) {
+        } else if may_broadcast_scalars
+            && (!is_fallible || (ac_l.groups_cover_all_values() && ac_r.groups_cover_all_values()))
+        {
+            // A fallible operator must not see values outside the groups.
+            self.apply_scalar_broadcast(ac_l, ac_r)
+        } else if mixes_scalars_and_values {
             // Not compatible
             self.apply_group_aware(ac_l, ac_r)
         } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {
