@@ -381,6 +381,19 @@ def test_offset_null_out_of_range_payload(method: str, time_unit: TimeUnit) -> N
     assert out.to_list() == [timedelta(0), None]
 
 
+@pytest.mark.parametrize("time_unit", ["ms", "us"])
+@pytest.mark.parametrize(
+    ("method", "payload"), [("truncate", -(2**63)), ("round", 2**63 - 1)]
+)
+def test_round_truncate_null_out_of_range_payload(
+    method: str, payload: int, time_unit: TimeUnit
+) -> None:
+    # `round` overflows on i64::MAX and `truncate` on i64::MIN.
+    s = pl.Series([0, payload], dtype=pl.Int64).scatter(1, None)
+    out = getattr(s.cast(pl.Datetime(time_unit, "UTC")).dt, method)("1d")
+    assert out.to_list() == [datetime(1970, 1, 1, tzinfo=ZoneInfo("UTC")), None]
+
+
 @pytest.mark.parametrize(
     ("time_unit", "expected"),
     [
