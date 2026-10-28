@@ -2213,10 +2213,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::EwmSumBy { half_life } => {
                     (PyEwmFunction::SumBy, Wrap(*half_life)).into_py_any(py)
                 },
-                IRFunctionExpr::RowEncode(..) => {
+                IRFunctionExpr::RowEncode { .. } => {
                     return Err(PyNotImplementedError::new_err("row_encode"));
                 },
-                IRFunctionExpr::RowDecode(..) => {
+                IRFunctionExpr::RowDecode { .. } => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
                 #[cfg(feature = "approx_quantile")]

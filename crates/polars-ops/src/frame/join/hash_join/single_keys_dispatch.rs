@@ -1,6 +1,6 @@
 use polars_arrow::array::PrimitiveArray;
 use polars_core::chunked_array::ops::row_encode::{
-    encode_rows_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
+    encode_rows_unordered, encode_rows_vertical_par_unordered_propagate_nulls,
 };
 use polars_core::series::BitRepr;
 use polars_core::utils::split;
@@ -466,7 +466,7 @@ fn encode_join_nested_key(s: Series, nulls_equal: bool) -> PolarsResult<Series> 
     let encoded = if nulls_equal {
         encode_rows_unordered(&by)?
     } else {
-        encode_rows_vertical_par_unordered_broadcast_nulls(&by)?
+        encode_rows_vertical_par_unordered_propagate_nulls(&by)?
     };
     Ok(encoded.into_series())
 }

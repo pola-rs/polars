@@ -499,8 +499,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                 RowEncodingVariant::Ordered {
                     descending: None,
                     nulls_last: None,
-                    broadcast_nulls: Some(true),
                 },
+                true,
                 expr_arena,
             )
             .expr_ir_unnamed();
@@ -1299,16 +1299,14 @@ pub fn try_build_sorted_group_by(
             .iter()
             .map(|k| k.field(input_schema, expr_arena))
             .collect::<PolarsResult<Vec<_>>>()?;
-        let expr = AExprBuilder::function(
+        let expr = AExprBuilder::row_encode(
             keys.to_vec(),
-            IRFunctionExpr::RowEncode(
-                key_fields.iter().map(|k| k.dtype().clone()).collect(),
-                RowEncodingVariant::Ordered {
-                    descending: None,
-                    nulls_last: None,
-                    broadcast_nulls: None,
-                },
-            ),
+            key_fields.iter().map(|k| k.dtype().clone()).collect(),
+            RowEncodingVariant::Ordered {
+                descending: None,
+                nulls_last: None,
+            },
+            false,
             expr_arena,
         )
         .expr_ir(input_column.clone());
@@ -1385,14 +1383,15 @@ pub fn try_build_sorted_group_by(
                 AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
             let expr = AExprBuilder::function(
                 vec![expr],
-                IRFunctionExpr::RowDecode(
-                    key_fields,
-                    RowEncodingVariant::Ordered {
+                IRFunctionExpr::RowDecode {
+                    fields: key_fields,
+                    variant: RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
-                        broadcast_nulls: None,
                     },
-                ),
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                },
                 expr_arena,
             )
             .expr_ir(input_column.clone());

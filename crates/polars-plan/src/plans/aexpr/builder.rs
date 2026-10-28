@@ -6,7 +6,8 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{
-    AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, MinMaxByOrder, RowEncodingVariant,
+    AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, MinMaxByOrder, RowEncodingOutputType,
+    RowEncodingVariant,
 };
 use crate::dsl::Operator;
 use crate::plans::{ExprIR, LiteralValue, OutputName};
@@ -73,9 +74,20 @@ impl AExprBuilder {
         exprs: Vec<ExprIR>,
         dtypes: Vec<DataType>,
         variant: RowEncodingVariant,
+        propagate_nulls: bool,
         arena: &mut Arena<AExpr>,
     ) -> Self {
-        Self::function(exprs, IRFunctionExpr::RowEncode(dtypes, variant), arena)
+        Self::function(
+            exprs,
+            IRFunctionExpr::RowEncode {
+                dtypes,
+                variant,
+                output: RowEncodingOutputType::AlwaysBinaryOffset,
+                encode_nulls: None,
+                propagate_nulls,
+            },
+            arena,
+        )
     }
 
     pub fn cast(self, dtype: DataType, arena: &mut Arena<AExpr>) -> Self {
