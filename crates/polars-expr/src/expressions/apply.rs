@@ -24,6 +24,8 @@ pub struct ApplyExpr {
     allow_threading: bool,
     check_lengths: bool,
     is_fallible: bool,
+    /// Per-group scalar inputs may be broadcast, see `inputs_are_row_wise` in the planner.
+    row_wise_inputs: bool,
 
     /// Output field of the expression excluding potential aggregation.
     output_field: Field,
@@ -42,6 +44,7 @@ impl ApplyExpr {
         non_aggregated_output_field: Field,
         function_operates_on_scalar: bool,
         is_fallible: bool,
+        row_wise_inputs: bool,
     ) -> Self {
         debug_assert!(
             !options.is_length_preserving()
@@ -61,6 +64,7 @@ impl ApplyExpr {
             check_lengths: options.check_lengths(),
             output_field: non_aggregated_output_field,
             is_fallible,
+            row_wise_inputs,
         }
     }
 
@@ -415,6 +419,51 @@ impl ApplyExpr {
         let ac = acs.swap_remove(0);
         self.finish_apply_groups(ac, ca)
     }
+
+    /// Calls the function once on all values, with every per-group scalar repeated over its
+    /// group. Falls back to `apply_multiple_group_aware` for unaligned values.
+    fn apply_multiple_scalar_broadcast<'a>(
+        &self,
+        mut acs: Vec<AggregationContext<'a>>,
+        df: &DataFrame,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let is_values = |ac: &AggregationContext| !ac.is_literal() && !ac.agg_state().is_scalar();
+        let values_inputs = (0..acs.len())
+            .filter(|&i| is_values(&acs[i]))
+            .collect::<Vec<_>>();
+        let base = values_inputs[0];
+        let target = if values_inputs.len() == 1 {
+            Some(acs[base].broadcast_target()?)
+        } else if values_inputs
+            .iter()
+            .all(|&i| acs[i].is_aligned_with(&acs[base]))
+        {
+            // The other value inputs are aligned with the flat values only.
+            acs[base].flat_broadcast_target()
+        } else {
+            None
+        };
+        let Some(target) = target else {
+            return self.apply_multiple_group_aware(acs, df);
+        };
+
+        let mut cols = acs
+            .iter()
+            .enumerate()
+            .map(|(i, ac)| match ac.agg_state() {
+                // Before the other arms: in the list variant the base context holds the lists.
+                _ if i == base => Ok(target.values.clone()),
+                AggState::AggregatedScalar(c) => target.repeat(c),
+                // Unit literals and aligned value inputs.
+                _ => Ok(ac.get_values().clone()),
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let out = self.function.call_udf(&mut cols)?;
+
+        let mut ac = acs.swap_remove(base);
+        ac.finish_broadcast(target, out.with_name(self.output_field.name().clone()))?;
+        Ok(ac)
+    }
 }
 
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
@@ -526,14 +575,15 @@ impl PhysicalExpr for ApplyExpr {
                     // - el = elementwise, no need to aggregate() NotAgg
                     // - el + agg = elementwise, but must aggregate() NotAgg
                     // - ga = group_aware
+                    // - sb = scalar broadcast, may fall back to group_aware
                     // - alit = all_literal
                     // - * = broadcast falls back to group_aware
                     // - ~ = same a smirror pair (symmetric)
                     //
                     //              | AggList | NotAgg   | AggScalar | LitScalar
                     //   --------------------------------------------------------
-                    //    AggList   |   el*   | depends* |    ga     |     el
-                    //    NotAgg    |    ~    | depends* |    ga     |     el
+                    //    AggList   |   el*   | depends* |    sb     |     el
+                    //    NotAgg    |    ~    | depends* |    sb     |     el
                     //    AggScalar |    ~    |    ~     |    el     |     el
                     //    LitScalar |    ~    |    ~     |     ~     |    alit
                     //
@@ -562,16 +612,20 @@ impl PhysicalExpr for ApplyExpr {
                     let mut has_not_agg = false;
                     let mut has_not_agg_with_overlapping_groups = false;
                     let mut not_agg_groups_may_diverge = false;
+                    let mut has_non_unit_literal = false;
+                    let mut has_large_groups = false;
 
                     let mut previous: Option<&AggregationContext<'_>> = None;
                     for ac in &acs {
                         match ac.state {
                             AggState::AggregatedList(_) => {
                                 has_agg_list = true;
+                                has_large_groups |= ac.has_large_groups();
                             },
                             AggState::AggregatedScalar(_) => has_agg_scalar = true,
                             AggState::NotAggregated(_) => {
                                 has_not_agg = true;
+                                has_large_groups |= ac.has_large_groups();
                                 if let Some(p) = previous {
                                     not_agg_groups_may_diverge |=
                                         !std::ptr::eq(p.groups.as_ref(), ac.groups.as_ref());
@@ -581,18 +635,35 @@ impl PhysicalExpr for ApplyExpr {
                                     has_not_agg_with_overlapping_groups = true;
                                 }
                             },
-                            _ => {},
+                            AggState::LiteralScalar(_) => {
+                                has_non_unit_literal |= ac.get_values().len() != 1;
+                            },
                         }
                     }
 
                     let all_literal = !(has_agg_list || has_agg_scalar || has_not_agg);
                     let elementwise_must_aggregate =
                         has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
+                    let mixes_scalars_and_values = has_agg_scalar && (has_agg_list || has_not_agg);
+                    // The per-group loop matches a non-unit literal to each group's values.
+                    let may_broadcast_scalars = mixes_scalars_and_values
+                        && self.row_wise_inputs
+                        && !self.is_scalar()
+                        && !has_non_unit_literal
+                        && !has_large_groups
+                        && !has_not_agg_with_overlapping_groups
+                        && !groups.is_empty();
 
                     if all_literal {
                         // Fast path
                         self.apply_all_literal_elementwise(acs)
-                    } else if has_agg_scalar && (has_agg_list || has_not_agg) {
+                    } else if may_broadcast_scalars
+                        && (!self.is_fallible
+                            || acs.iter_mut().all(|ac| ac.groups_cover_all_values()))
+                    {
+                        // A fallible function must not see values outside the groups.
+                        self.apply_multiple_scalar_broadcast(acs, df)
+                    } else if mixes_scalars_and_values {
                         // Not compatible
                         self.apply_multiple_group_aware(acs, df)
                     } else if elementwise_must_aggregate && has_not_agg_with_overlapping_groups {

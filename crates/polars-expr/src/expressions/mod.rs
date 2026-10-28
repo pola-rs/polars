@@ -720,6 +720,83 @@ impl<'a> AggregationContext<'a> {
         true
     }
 
+    /// Whether all values, also those outside the groups, average more than
+    /// `SCALAR_BROADCAST_MAX_AVG_GROUP_LEN` per group.
+    pub(crate) fn has_large_groups(&self) -> bool {
+        self.flat_naive_length()
+            > SCALAR_BROADCAST_MAX_AVG_GROUP_LEN.saturating_mul(self.groups.len())
+    }
+
+    /// Whether the values of this `NotAggregated` context are aligned row by row with `other`.
+    pub(crate) fn is_aligned_with(&self, other: &AggregationContext) -> bool {
+        matches!(self.state, AggState::NotAggregated(_))
+            && self.update_groups == UpdateGroups::No
+            && std::ptr::eq(self.groups.as_ref(), other.groups.as_ref())
+            && self.get_values().len() == other.get_values().len()
+    }
+
+    /// The flat values, if every value is in exactly one group.
+    pub(crate) fn flat_broadcast_target(&mut self) -> Option<BroadcastTarget> {
+        let AggState::NotAggregated(values) = &self.state else {
+            return None;
+        };
+        let n_values = values.len();
+        let idx = group_idx_per_value(self.groups().as_ref().as_ref(), n_values)?;
+        Some(BroadcastTarget {
+            values: self.get_values().clone(),
+            idx,
+            n_groups: self.groups.len(),
+            lists: None,
+        })
+    }
+
+    /// Like `flat_broadcast_target`, but otherwise aggregates first and uses the inner values of
+    /// the lists.
+    pub(crate) fn broadcast_target(&mut self) -> PolarsResult<BroadcastTarget> {
+        if let Some(target) = self.flat_broadcast_target() {
+            return Ok(target);
+        }
+
+        let lists = self.aggregated();
+        let lists = lists.list()?;
+        // Values outside the offsets of the list array would be evaluated as well.
+        let lists = lists
+            .trim_lists_to_normalized_offsets()
+            .unwrap_or_else(|| lists.clone())
+            .rechunk()
+            .into_owned();
+        let arr = lists.downcast_as_array();
+        let idx = list_idx_per_value(arr.offsets().as_slice(), arr.values().len());
+        Ok(BroadcastTarget {
+            values: lists.get_inner().into_column(),
+            idx,
+            n_groups: lists.len(),
+            lists: Some(lists),
+        })
+    }
+
+    /// Puts the output computed from `target.values` back, keeping the state and groups.
+    pub(crate) fn finish_broadcast(
+        &mut self,
+        target: BroadcastTarget,
+        out: Column,
+    ) -> PolarsResult<()> {
+        polars_ensure!(
+            out.len() == target.idx.len(),
+            ComputeError: "elementwise function changed the length from {} to {}",
+            target.idx.len(), out.len()
+        );
+        match target.lists {
+            None => self.state = AggState::NotAggregated(out),
+            Some(lists) => {
+                let lists = lists.with_inner_values(out.as_materialized_series());
+                self.state = AggState::AggregatedList(lists.into_column());
+                self.update_groups = UpdateGroups::WithSeriesLen;
+            },
+        }
+        Ok(())
+    }
+
     pub fn into_static(&self) -> AggregationContext<'static> {
         let groups: GroupPositions = GroupPositions::to_owned(&self.groups);
         let groups: Cow<'static, GroupPositions> = Cow::Owned(groups);
@@ -730,6 +807,86 @@ impl<'a> AggregationContext<'a> {
             original_groups: self.original_groups,
         }
     }
+}
+
+/// Largest average group size for which per-group scalars are repeated over the values: a call
+/// per group costs about a microsecond, repeating a scalar a few nanoseconds per value.
+const SCALAR_BROADCAST_MAX_AVG_GROUP_LEN: usize = 256;
+
+/// The values of an `AggregationContext` that an elementwise operation runs on once for all groups.
+/// `finish_broadcast` puts the output in the context.
+pub(crate) struct BroadcastTarget {
+    /// The flat values, or the inner values of the lists.
+    pub(crate) values: Column,
+    /// The group (or list) of every value.
+    idx: Vec<IdxSize>,
+    n_groups: usize,
+    /// The lists whose inner values `values` are.
+    lists: Option<ListChunked>,
+}
+
+impl BroadcastTarget {
+    /// Repeats `scalars` (one value per group) over the values.
+    pub(crate) fn repeat(&self, scalars: &Column) -> PolarsResult<Column> {
+        // An `is_elementwise` UDF can return another length.
+        polars_ensure!(
+            scalars.len() == self.n_groups,
+            agg_len = scalars.len(),
+            self.n_groups
+        );
+        // Not `Column::take_slice_unchecked`: on a `Column::Scalar` (one group) it rebuilds the
+        // column from the value, which panics if the value is invalid (an overflowed Decimal sum).
+        let scalars = scalars.as_materialized_series();
+        // SAFETY: every index is < `n_groups`, the length of `scalars`.
+        Ok(unsafe { scalars.take_slice_unchecked(&self.idx) }.into())
+    }
+}
+
+/// The group of every value, if every value is in exactly one group (possibly more than once).
+fn group_idx_per_value(groups: &GroupsType, n_values: usize) -> Option<Vec<IdxSize>> {
+    if groups.num_elements() < n_values {
+        return None;
+    }
+
+    const UNSET: IdxSize = IdxSize::MAX;
+    let mut group_idx = vec![UNSET; n_values];
+    let mut n_set = 0;
+    match groups {
+        GroupsType::Idx(groups) => {
+            for (g, idx) in groups.all().iter().enumerate() {
+                for &i in idx.iter() {
+                    let slot = &mut group_idx[i as usize];
+                    if *slot == UNSET {
+                        n_set += 1;
+                    } else if *slot != g as IdxSize {
+                        return None;
+                    }
+                    *slot = g as IdxSize;
+                }
+            }
+        },
+        GroupsType::Slice { groups, .. } => {
+            for (g, &[start, len]) in groups.iter().enumerate() {
+                let slots = &mut group_idx[start as usize..(start + len) as usize];
+                if slots.iter().any(|&s| s != UNSET) {
+                    return None;
+                }
+                slots.fill(g as IdxSize);
+                n_set += len as usize;
+            }
+        },
+    }
+    (n_set == n_values).then_some(group_idx)
+}
+
+/// The list of every value, for offsets from 0 to `n_values`.
+fn list_idx_per_value(offsets: &[i64], n_values: usize) -> Vec<IdxSize> {
+    debug_assert!(offsets[0] == 0 && *offsets.last().unwrap() as usize == n_values);
+    let mut list_idx = Vec::with_capacity(n_values);
+    for (i, w) in offsets.windows(2).enumerate() {
+        list_idx.resize(w[1] as usize, i as IdxSize);
+    }
+    list_idx
 }
 
 /// Take a DataFrame and evaluate the expressions.

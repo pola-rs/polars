@@ -1034,3 +1034,18 @@ def test_rolling_window_size_zero_23434(
         getattr(s, method)(window_size=0),
         pl.Series(expected, dtype=pl.Float64),
     )
+
+
+def test_rolling_per_row_with_per_group_scalar() -> None:
+    df = pl.DataFrame(
+        {"t": [0, 1, 2, 0, 1], "g": [1, 1, 1, 2, 2], "x": [1, 2, 4, 3, 5]}
+    )
+    x = pl.col.x
+    out = df.rolling("t", period="2i", group_by="g").agg(
+        sub=x - x.first(),
+        fill_null=x.fill_null(x.max()),
+        shifted=x.shift(1) - x.first(),
+    )
+    assert out["sub"].to_list() == [[0], [0, 1], [0, 2], [0], [0, 2]]
+    assert out["fill_null"].to_list() == [[1], [1, 2], [2, 4], [3], [3, 5]]
+    assert out["shifted"].to_list() == [[None], [None, 0], [None, 0], [None], [None, 0]]
