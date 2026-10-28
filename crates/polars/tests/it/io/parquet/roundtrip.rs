@@ -1,7 +1,10 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-use polars_arrow::array::{ArrayRef, Utf8ViewArray};
+use polars_arrow::array::{
+    Array, ArrayRef, Int32Array, ListArray, MutableBinaryViewArray, MutableListArray, TryExtend,
+    Utf8Array, Utf8ViewArray,
+};
 use polars_arrow::datatypes::{ArrowSchema, Field};
 use polars_arrow::record_batch::RecordBatchT;
 use polars_buffer::Buffer;
@@ -88,4 +91,73 @@ fn roundtrip_binview() -> PolarsResult<()> {
         CompressionOptions::Uncompressed,
         vec![Encoding::Plain],
     )
+}
+
+/// Writes `array` as one column with `encoding`, and returns its size statistics.
+fn unencoded_bytes(array: ArrayRef, encoding: Encoding, version: Version) -> Option<i64> {
+    let schema = ArrowSchema::from_iter([Field::new("a".into(), array.dtype().clone(), true)]);
+    let options = WriteOptions {
+        statistics: StatisticsOptions::full(),
+        compression: CompressionOptions::Uncompressed,
+        version,
+        // Small pages, so that the size adds up over several.
+        data_page_size: Some(16),
+    };
+    let batch = RecordBatchT::try_new(array.len(), Arc::new(schema.clone()), vec![array]);
+    let row_groups = RowGroupIterator::try_new(
+        [batch].into_iter(),
+        &schema,
+        options,
+        Buffer::from_iter([vec![encoding]]),
+    )
+    .unwrap();
+    let mut writer = FileWriter::try_new(Cursor::new(vec![]), schema, options, None).unwrap();
+    for group in row_groups {
+        writer.write(u64::MAX, group.unwrap()).unwrap();
+    }
+    writer.end(None).unwrap();
+
+    let md = read_metadata(&mut Cursor::new(writer.into_inner().into_inner())).unwrap();
+    md.row_groups[0].parquet_columns()[0]
+        .unencoded_byte_array_data_bytes()
+        .unwrap()
+}
+
+#[test]
+fn size_statistics_strings() {
+    let values = [Some("foo"), Some("foo"), None, Some("hamlet"), Some("foo")];
+    let view = Utf8ViewArray::from_slice(values).boxed();
+    let large = Utf8Array::<i64>::from(values).boxed();
+    for version in [Version::V1, Version::V2] {
+        for encoding in [
+            Encoding::Plain,
+            Encoding::DeltaLengthByteArray,
+            Encoding::RleDictionary,
+        ] {
+            assert_eq!(unencoded_bytes(view.clone(), encoding, version), Some(15));
+            assert_eq!(unencoded_bytes(large.clone(), encoding, version), Some(15));
+        }
+    }
+}
+
+#[test]
+fn size_statistics_nested_strings() {
+    let mut list = MutableListArray::<i64, MutableBinaryViewArray<str>>::new();
+    list.try_extend([
+        Some(vec![Some("foo"), Some("bar")]),
+        None,
+        Some(vec![Some("hamlet"), None]),
+    ])
+    .unwrap();
+    let list: ListArray<i64> = list.into();
+    assert_eq!(
+        unencoded_bytes(list.boxed(), Encoding::Plain, Version::V1),
+        Some(12)
+    );
+}
+
+#[test]
+fn size_statistics_not_byte_array() {
+    let ints = Int32Array::from([Some(1), None, Some(3)]).boxed();
+    assert_eq!(unencoded_bytes(ints, Encoding::Plain, Version::V1), None);
 }
