@@ -529,6 +529,9 @@ def _outer_join_where_reference(
         pl.col("a") == pl.col("c"),
         (pl.col("a") == pl.col("c")) & (pl.col("b") < pl.col("d")),
         ((pl.col("a") + pl.col("c")) > 5) | pl.col("d").is_null(),
+        pl.col("a") < pl.col("c").cast(pl.Int32),
+        pl.col("a").cast(pl.String) < pl.col("c").cast(pl.String),
+        pl.col("d").cast(pl.String).str.len_bytes() > pl.col("a"),
     ],
 )
 def test_outer_join_where_matches_reference(
