@@ -2,6 +2,7 @@
 use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;
 use polars_core::utils::{align_chunks_binary, try_get_supertype};
+use polars_utils::broadcast::broadcast_len;
 
 use super::*;
 
@@ -18,10 +19,9 @@ fn out_dtype(dtype_x: &DataType, dtype_y: &DataType) -> DataType {
 /// Both inputs as `Float64`, with a unit-length one (e.g. a literal) broadcast to the other.
 fn broadcast_f64(values: &[&Column]) -> PolarsResult<(Column, Column)> {
     assert!(values.len() == 2);
-    let (x, y) = (values[0], values[1]);
-    let len = if x.len() == 1 { y.len() } else { x.len() };
-    let x = x.broadcast_to(len)?.cast(&DataType::Float64)?;
-    let y = y.broadcast_to(len)?.cast(&DataType::Float64)?;
+    let len = broadcast_len(values)?;
+    let x = values[0].broadcast_to(len)?.cast(&DataType::Float64)?;
+    let y = values[1].broadcast_to(len)?.cast(&DataType::Float64)?;
     Ok((x, y))
 }
 
