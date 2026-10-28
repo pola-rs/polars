@@ -325,7 +325,7 @@ def test_string_like_column_substring(like: str) -> None:
         orient="row",
     )
     q = f"SELECT txt {like} '%' || needle || '%' AS m FROM self"
-    res = df.sql(q)["m"]
+    res = df.lazy().sql(q).collect(engine="in-memory")["m"]
     assert_series_equal(df.lazy().sql(q).collect(engine="streaming")["m"], res)
 
     flags = re.DOTALL | (re.IGNORECASE if "ILIKE" in like else 0)
