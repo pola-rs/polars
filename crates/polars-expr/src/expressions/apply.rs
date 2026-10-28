@@ -554,6 +554,8 @@ impl PhysicalExpr for ApplyExpr {
                     //
                     //  * Finally, when broadcast is required in non-scalar we switch to group_aware
 
+                    broadcast_uniform_lists(&mut acs);
+
                     // Collect statistics on input aggstates
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
