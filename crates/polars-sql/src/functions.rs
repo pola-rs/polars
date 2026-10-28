@@ -2597,7 +2597,9 @@ impl SQLFunctionVisitor<'_> {
                 FunctionArgumentClause::Limit(limit_expr) => {
                     limit_clause = Some(limit_expr);
                 },
-                _ => {},
+                _ => {
+                    polars_bail!(SQLInterface: "'{}' is not supported in {}", clause, func_name)
+                },
             }
         }
         if is_distinct {

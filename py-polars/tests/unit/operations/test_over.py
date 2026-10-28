@@ -296,3 +296,37 @@ def test_over_literal_dtype(
     assert_frame_equal(
         lf.select(a=expr).collect(engine=engine), expected.head(n_rows).to_frame()
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_over_per_row_with_per_group_scalar(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 2, 1, 2, 1], "o": [3, 1, 2, 2, 1], "x": [1.0, 4.0, 2.0, None, 6.0]}
+    )
+    x = pl.col.x
+    q = lf.select(
+        sub=(x - x.mean()).over("g"),
+        ordered=(x - x.first()).over("g", order_by="o"),
+        fill_null=x.fill_null(x.mean()).over("g"),
+        join=(x - x.mean()).over("g", mapping_strategy="join"),
+        fill_null_join=x.fill_null(x.mean()).over("g", mapping_strategy="join"),
+        when_join=pl.when(x > x.mean())
+        .then(x)
+        .otherwise(x.mean())
+        .over("g", mapping_strategy="join"),
+    )
+    expected = pl.DataFrame(
+        {
+            "sub": [-2.0, 0.0, -1.0, None, 3.0],
+            "ordered": [-5.0, 0.0, -4.0, None, 0.0],
+            "fill_null": [1.0, 4.0, 2.0, 4.0, 6.0],
+            "join": [[-2.0, -1.0, 3.0], [0.0, None]] * 2 + [[-2.0, -1.0, 3.0]],
+            "fill_null_join": [[1.0, 2.0, 6.0], [4.0, 4.0]] * 2 + [[1.0, 2.0, 6.0]],
+            "when_join": [[3.0, 3.0, 6.0], [4.0, 4.0]] * 2 + [[3.0, 3.0, 6.0]],
+        }
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+    q = lf.sort("g").select((x - x.mean()).over("g", mapping_strategy="explode"))
+    expected = pl.DataFrame({"x": [-2.0, -1.0, 3.0, 0.0, None]})
+    assert_frame_equal(q.collect(engine=engine), expected)

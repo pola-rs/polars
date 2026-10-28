@@ -4879,6 +4879,27 @@ def test_literal_contains_prefiltering(
     assert "RegexMatch" in capfd.readouterr().err
 
 
+def test_regex_contains_prefiltering(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_OUTPUT_COLUMN_PREDS", "1")
+    values = ["", "foo", "xfoo", "x\nfoo", "foo\nbar", "FOO", "xf"]
+    df = pl.DataFrame({"a": values, "b": range(len(values))})
+    f = io.BytesIO()
+    pq.write_table(df.to_arrow(), f, use_dictionary=False)
+
+    for pat in [".*foo", "foo.*", ".*foo.*bar", "(?i).*FOO", ".*x(?:o{2}?)?f.*"]:
+        f.seek(0)
+        capfd.readouterr()
+        assert_frame_equal(
+            pl.scan_parquet(f, parallel="prefiltered")
+            .filter(pl.col.a.str.contains(pat))
+            .collect(),
+            df.filter(pl.Series([re.search(pat, v) is not None for v in values])),
+        )
+        assert "RegexMatch" in capfd.readouterr().err
+
+
 @given(
     s=series(
         name="a",

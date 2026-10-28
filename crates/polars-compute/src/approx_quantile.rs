@@ -112,7 +112,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
     }
 
     /// The number of items this sketch ingested.
-    fn num_items(&self) -> u64 {
+    pub fn num_items(&self) -> u64 {
         debug_assert!(self.total_weight().is_multiple_of(self.weight_factor));
         self.total_weight() / self.weight_factor
     }
