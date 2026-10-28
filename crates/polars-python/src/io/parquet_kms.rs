@@ -19,10 +19,9 @@ use polars_io::parquet::encryption::{
 use polars_parquet::parquet::encryption::decrypt::{FileDecryptionProperties, KeyRetriever};
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyString};
+use pyo3::types::{PyBytes, PyDict, PyMemoryView, PyString};
 
 use crate::io::parquet_encryption::{PyParquetDecryption, PyParquetEncryption};
 
@@ -66,9 +65,14 @@ impl KmsClient for PyKmsClient {
             let key =
                 self.0
                     .call_method1(py, "unwrap_key", (wrapped_key, master_key_identifier))?;
-            // Accept any bytes-like object, such as a bytearray or memoryview.
             let key = key.bind(py);
-            let buffer = PyBuffer::<u8>::get(key).map_err(|_| {
+            if let Ok(bytes) = key.cast::<PyBytes>() {
+                return Ok(bytes.as_bytes().to_vec());
+            }
+            // Accept any other bytes-like object, such as a bytearray or memoryview.
+            // This goes through a memoryview because `PyBuffer` isn't available with
+            // the limited API before Python 3.11.
+            let invalid_type = || {
                 let type_name = key
                     .get_type()
                     .qualname()
@@ -76,8 +80,13 @@ impl KmsClient for PyKmsClient {
                 PyTypeError::new_err(format!(
                     "`unwrap_key` must return a bytes-like object, got '{type_name}'"
                 ))
-            })?;
-            buffer.to_vec(py)
+            };
+            let view = PyMemoryView::from(key).map_err(|_| invalid_type())?;
+            if view.getattr("itemsize")?.extract::<usize>()? != 1 {
+                return Err(invalid_type());
+            }
+            let bytes = view.call_method0("tobytes")?;
+            Ok(bytes.cast::<PyBytes>()?.as_bytes().to_vec())
         })
         .map_err(|err: PyErr| KmsError::General(err.to_string()))
     }
