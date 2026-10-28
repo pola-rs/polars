@@ -562,12 +562,12 @@ impl SQLExprVisitor<'_> {
                 if *any {
                     polars_bail!(SQLSyntax: "LIKE ANY is not a supported syntax")
                 }
-                let escape_str = escape_char.as_ref().and_then(|v| match &**v {
+                let escape_str = escape_char.as_ref().map(|v| match &**v {
                     SQLExpr::Value(ValueWithSpan {
                         value: SQLValue::SingleQuotedString(s),
                         ..
-                    }) => Some(s.clone()),
-                    _ => None,
+                    }) => s.clone(),
+                    e => e.to_string(),
                 });
                 self.visit_like(*negated, expr, pattern, &escape_str, false)
             },
@@ -581,12 +581,12 @@ impl SQLExprVisitor<'_> {
                 if *any {
                     polars_bail!(SQLSyntax: "ILIKE ANY is not a supported syntax")
                 }
-                let escape_str = escape_char.as_ref().and_then(|v| match &**v {
+                let escape_str = escape_char.as_ref().map(|v| match &**v {
                     SQLExpr::Value(ValueWithSpan {
                         value: SQLValue::SingleQuotedString(s),
                         ..
-                    }) => Some(s.clone()),
-                    _ => None,
+                    }) => s.clone(),
+                    e => e.to_string(),
                 });
                 self.visit_like(*negated, expr, pattern, &escape_str, true)
             },
