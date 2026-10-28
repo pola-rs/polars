@@ -520,8 +520,17 @@ impl GroupBySink {
                 let mut hot_group_idxs = Vec::new();
                 let mut cold_idxs = Vec::new();
                 let mut identity_idxs: Vec<IdxSize> = Vec::new();
-                let mut all_hot_per_input = vec![true; key_selectors_per_input.len()];
-                let mut fast_growth_slice_limit_per_input = vec![true; key_selectors_per_input.len()];
+                let num_inputs = key_selectors_per_input.len();
+                let mut all_hot_per_input = vec![true; num_inputs];
+                let mut fast_growth_slice_limit_per_input: Vec<usize> = (0..num_inputs)
+                    .map(|i| {
+                        let local = opt_local.as_ref();
+                        let hot_grouper = local.and_then(|l| l.hot_grouper_per_input[i].as_ref());
+                        hot_grouper
+                            .map_or(0, |g| g.num_slots())
+                            .max(min_hot_table_size)
+                    })
+                    .collect();
                 while let Some((input_idx, morsel)) = recv.recv().await {
                     if morsel.height() == 0 {
                         continue;
@@ -584,10 +593,10 @@ impl GroupBySink {
                     let mut evictions_before = 0;
                     let mut offset = 0;
                     while offset < df.height() {
-                        let num_slots = local.hot_grouper(input_idx).num_slots();
-                        let fast_growth = num_slots < local.hot_table_size;
-                        let slice_size = if fast_growth && fast_growth_slice_limit_per_input[input_idx] {
-                            max_slice_size.min(num_slots)
+                        let fast_growth =
+                            local.hot_grouper(input_idx).num_slots() < local.hot_table_size;
+                        let slice_size = if fast_growth {
+                            max_slice_size.min(fast_growth_slice_limit_per_input[input_idx])
                         } else {
                             max_slice_size
                         };
@@ -611,12 +620,15 @@ impl GroupBySink {
                             params.has_order_sensitive_agg,
                         );
                         if fast_growth {
-                            let missed = !cold_idxs.is_empty()
-                                || hot_grouper.num_evictions() != slice_evictions_before;
-                            if missed {
+                            let limit = &mut fast_growth_slice_limit_per_input[input_idx];
+                            if !cold_idxs.is_empty()
+                                || hot_grouper.num_evictions() != slice_evictions_before
+                            {
                                 hot_grouper.double();
+                                *limit = hot_grouper.num_slots();
+                            } else {
+                                *limit = limit.saturating_mul(2);
                             }
-                            fast_growth_slice_limit_per_input[input_idx] = missed;
                         }
                         if !reduce_per_slice {
                             for idx in &mut hot_idxs[hot_start..] {
