@@ -16,7 +16,7 @@ const KLL_RANGE: RangeInclusive<f64> = 0.05..=0.95;
 /// The probability that a query exceeds `error`. KLL calls this `δ`.
 ///
 /// Taken from the 3-sigma rule.
-const FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
+pub const DEFAULT_FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 
 /// Smallest error a sketch can be parameterised for.
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
@@ -112,7 +112,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
     }
 
     /// The number of items this sketch ingested.
-    fn num_items(&self) -> u64 {
+    pub fn num_items(&self) -> u64 {
         debug_assert!(self.total_weight().is_multiple_of(self.weight_factor));
         self.total_weight() / self.weight_factor
     }
@@ -268,16 +268,20 @@ pub mod kll {
     const SAMPLER_CUTOFF: usize = 8;
 
     /// Some small `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta`
-    /// for a *single* query value, with `delta` = `FAILURE_PROBABILITY`.
+    /// for a *single* query value, with `delta` = `failure_probability`.
     #[inline(never)]
-    fn compute_k(error: f64) -> usize {
+    fn compute_k(error: f64, failure_probability: f64) -> usize {
         assert!((MIN_ERROR..1.0).contains(&error), "invalid error: {error}");
+        assert!(
+            0.0 < failure_probability && failure_probability < 1.0,
+            "invalid failure probability: {failure_probability}"
+        );
 
         // `Σ_{d >= 1} r^d` for `r < 1`.
         let geometric_tail = |r| r / (1.0 - r);
 
         // Hoeffding's tail `2 exp(-t² / 2Σw²)` (KLL Lemma 1) at `t = εn`, solved for `Σw²`.
-        let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY));
+        let z = f64::sqrt(2.0 * f64::ln(2.0 / failure_probability));
 
         // Solve `z * sqrt(Σw²) ≤ error * n` for `k`, with `Σw² = var * (n/k)²`.
         let k_from_total_variance = |var: f64| z * f64::sqrt(var) / error;
@@ -447,8 +451,8 @@ pub mod kll {
     pub struct KLLSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
-        pub fn new(error: f64) -> Self {
-            let k = compute_k(error);
+        pub fn new(error: f64, failure_probability: f64) -> Self {
+            let k = compute_k(error, failure_probability);
             let state = IngestingState {
                 items: Vec::new(),
                 levels: vec![Level::default()],
@@ -803,7 +807,7 @@ pub mod req {
     use super::*;
 
     /// Stream length to parameterise a fresh sketch for.
-    fn initial_n(error: f64) -> usize {
+    fn initial_n(error: f64, failure_probability: f64) -> usize {
         // Choose initial guess of n such that `error * n > 1`: at `error * n ==
         // 1` the `log2` in `compute_k` is zero and `k` overflows.
         let mut n = (f64::ceil(2.0 / error) as usize).next_power_of_two();
@@ -815,7 +819,7 @@ pub mod req {
         //      capacity of a compactor. Otherwise, we would not even fill up
         //      that first compactor.
         let n_is_ok = |n| {
-            let k = compute_k(error, n);
+            let k = compute_k(error, failure_probability, n);
             n > k && n > compute_b(k, n)
         };
         while !n_is_ok(n) {
@@ -824,13 +828,17 @@ pub mod req {
         n
     }
 
-    fn compute_k(error: f64, n: usize) -> usize {
+    fn compute_k(error: f64, failure_probability: f64, n: usize) -> usize {
         assert!((MIN_ERROR..1.0).contains(&error), "invalid error: {error}");
+        assert!(
+            0.0 < failure_probability && failure_probability < 1.0,
+            "invalid failure probability: {failure_probability}"
+        );
 
         // Eq. 6
         let k = 2 * f64::ceil(
             (4.0 / error)
-                * f64::sqrt((-f64::ln(FAILURE_PROBABILITY)) / f64::log2(error * n as f64)),
+                * f64::sqrt((-f64::ln(failure_probability)) / f64::log2(error * n as f64)),
         ) as usize;
         assert!(k >= 2);
         k
@@ -888,6 +896,7 @@ pub mod req {
         n: usize,
         /// The allowed error as a fraction of `n`.
         error: f64,
+        failure_probability: f64,
         /// k parameter of the paper: the size of a compactor section. Impacts
         /// how many items are protected during a compaction. Shrinks over time,
         /// see `close_out_if_needed`.
@@ -906,6 +915,7 @@ pub mod req {
                 is_hra: self.is_hra,
                 n: self.n,
                 error: self.error,
+                failure_probability: self.failure_probability,
                 k: self.k,
                 consumed_items: self.consumed_items,
                 rng: rand::make_rng(),
@@ -919,9 +929,9 @@ pub mod req {
     pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> ReqSketch<T> {
-        pub fn new(error: f64, hra: bool) -> Self {
-            let n = initial_n(error);
-            let k = compute_k(error, n);
+        pub fn new(error: f64, failure_probability: f64, hra: bool) -> Self {
+            let n = initial_n(error, failure_probability);
+            let k = compute_k(error, failure_probability, n);
             assert!(n > k, "n must be greater than k");
             let state = IngestingState {
                 items: Vec::new(),
@@ -930,6 +940,7 @@ pub mod req {
                 is_hra: hra,
                 n,
                 error,
+                failure_probability,
                 k,
                 consumed_items: 0,
                 rng: rand::make_rng(),
@@ -965,10 +976,10 @@ pub mod req {
     }
 
     impl<T: fmt::Debug + Clone + TotalOrd> DoubleReqSketch<T> {
-        pub fn new(error: f64) -> Self {
+        pub fn new(error: f64, failure_probability: f64) -> Self {
             DoubleReqSketch {
-                lra: ReqSketch::new(error, false),
-                hra: ReqSketch::new(error, true),
+                lra: ReqSketch::new(error, failure_probability, false),
+                hra: ReqSketch::new(error, failure_probability, true),
             }
         }
 
@@ -1012,7 +1023,7 @@ pub mod req {
             // so we just amortize by doubling.
             while sections_needed >= self.num_sections() as u32 {
                 self.n = self.n.checked_mul(2).expect("overflow");
-                self.k = compute_k(self.error, self.n);
+                self.k = compute_k(self.error, self.failure_probability, self.n);
             }
         }
 
@@ -1081,7 +1092,7 @@ pub mod req {
             self.items = items;
 
             self.n = usize::max(self.n, other.n);
-            self.k = compute_k(self.error, self.n);
+            self.k = compute_k(self.error, self.failure_probability, self.n);
             self.consumed_items += other.consumed_items;
 
             for level in 0..self.levels.len() {
@@ -1323,12 +1334,16 @@ pub enum Sketch<T: fmt::Debug + Clone + TotalOrd> {
 }
 
 impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
-    pub fn new(method: &ApproxQuantileMethod, error: f64) -> Self {
+    pub fn new(method: &ApproxQuantileMethod, error: f64, failure_probability: f64) -> Self {
         match method {
             ApproxQuantileMethod::Auto => unreachable!(),
-            ApproxQuantileMethod::KLL => Sketch::Kll(KLLSketch::new(error)),
-            ApproxQuantileMethod::ReqSketch { hra } => Sketch::Req(ReqSketch::new(error, *hra)),
-            ApproxQuantileMethod::DoubleReqSketch => Sketch::DoubleReq(DoubleReqSketch::new(error)),
+            ApproxQuantileMethod::KLL => Sketch::Kll(KLLSketch::new(error, failure_probability)),
+            ApproxQuantileMethod::ReqSketch { hra } => {
+                Sketch::Req(ReqSketch::new(error, failure_probability, *hra))
+            },
+            ApproxQuantileMethod::DoubleReqSketch => {
+                Sketch::DoubleReq(DoubleReqSketch::new(error, failure_probability))
+            },
         }
     }
 
@@ -1393,7 +1408,7 @@ mod tests {
         for method in [M::KLL, M::ReqSketch { hra: true }] {
             let agreed = (0..10)
                 .filter(|_| {
-                    let mut a = Sketch::new(&method, 0.5);
+                    let mut a = Sketch::new(&method, 0.5, DEFAULT_FAILURE_PROBABILITY);
                     let mut b = a.clone();
                     for v in 0..1_000 {
                         a.update(&v);

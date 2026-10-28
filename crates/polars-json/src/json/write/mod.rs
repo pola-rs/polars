@@ -49,10 +49,14 @@ where
 
     fn advance(&mut self) -> PolarsResult<()> {
         self.buffer.clear();
-        self.arrays
-            .next()
-            .map(|maybe_array| maybe_array.map(|array| serialize(array.as_ref(), &mut self.buffer)))
-            .transpose()?;
+        // `get` reads an empty buffer as end-of-stream, so skip empty arrays.
+        for array in self.arrays.by_ref() {
+            let array = array?;
+            if !array.as_ref().is_empty() {
+                serialize(array.as_ref(), &mut self.buffer);
+                break;
+            }
+        }
         Ok(())
     }
 

@@ -63,6 +63,21 @@ def test_array_agg_no_rows(query: str) -> None:
     assert_sql_matches({"t": df}, query=query, compare_with="duckdb")
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT ARRAY_AGG(x WHERE y > 10) FROM self",
+        "SELECT ARRAY_AGG(x IGNORE NULLS) FROM self",
+        "SELECT ARRAY_AGG(x HAVING MAX y) FROM self",
+        "SELECT STRING_AGG(CAST(x AS VARCHAR), ',' WHERE y > 10) FROM self",
+    ],
+)
+def test_array_agg_unsupported_clause(query: str) -> None:
+    df = pl.DataFrame({"x": [1, 2, None], "y": [10, 20, 30]})
+    with pytest.raises(SQLInterfaceError, match="is not supported in"):
+        df.sql(query)
+
+
 def test_array_literals() -> None:
     with pl.SQLContext(df=pl.DataFrame({"x": [0]}), eager=True) as ctx:
         res = ctx.execute(
