@@ -2286,6 +2286,9 @@ impl SQLContext {
 
             // Unsupported `CREATE [...] TABLE` modifiers
             ref copy_grants,
+            ref unlogged,
+            ref multiset,
+            ref fallback,
             ref dynamic,
             ref external,
             ref global,
@@ -2339,6 +2342,8 @@ impl SQLContext {
             ref with_row_access_policy,
             ref with_storage_lifecycle_policy,
             ref with_tags,
+            ref with_connection,
+            ref with_data,
         } = *create_table;
 
         polars_ensure!(!copy_grants, SQLInterface: "`COPY GRANTS` is not supported");
@@ -2354,6 +2359,9 @@ impl SQLContext {
         polars_ensure!(!transient, SQLInterface: "`CREATE TRANSIENT TABLE` is not supported");
         polars_ensure!(!volatile, SQLInterface: "`CREATE VOLATILE TABLE` is not supported");
         polars_ensure!(!without_rowid, SQLInterface: "`WITHOUT ROWID` is not supported");
+        polars_ensure!(!unlogged, SQLInterface: "`CREATE UNLOGGED TABLE` is not supported");
+        polars_ensure!(multiset.is_none(), SQLInterface: "`MULTISET`/`SET` tables are not supported");
+        polars_ensure!(fallback.is_none(), SQLInterface: "`FALLBACK` is not supported");
         polars_ensure!(backup.is_none(), SQLInterface: "`BACKUP` is not supported");
         polars_ensure!(base_location.is_none(), SQLInterface: "`BASE_LOCATION` is not supported");
         polars_ensure!(catalog.is_none(), SQLInterface: "`CATALOG` is not supported");
@@ -2408,6 +2416,8 @@ impl SQLContext {
         polars_ensure!(with_row_access_policy.is_none(), SQLInterface: "`WITH ROW ACCESS POLICY` is not supported");
         polars_ensure!(with_storage_lifecycle_policy.is_none(), SQLInterface: "`WITH STORAGE LIFECYCLE POLICY` is not supported");
         polars_ensure!(with_tags.is_none(), SQLInterface: "`WITH TAG` is not supported");
+        polars_ensure!(with_connection.is_none(), SQLInterface: "`WITH CONNECTION` is not supported");
+        polars_ensure!(with_data.is_none(), SQLInterface: "`WITH [NO] DATA` is not supported");
 
         Ok(())
     }

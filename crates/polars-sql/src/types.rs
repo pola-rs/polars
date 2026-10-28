@@ -105,7 +105,7 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
             DataType::Struct(fields)
         },
         #[cfg(feature = "dtype-map")]
-        SQLDataType::Map(key, value) => {
+        SQLDataType::Map(key, value, _) => {
             let dtype = DataType::Map(
                 Box::new(map_sql_dtype_to_polars(key)?),
                 Box::new(map_sql_dtype_to_polars(value)?),
@@ -114,7 +114,7 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
             dtype
         },
         #[cfg(not(feature = "dtype-map"))]
-        SQLDataType::Map(_, _) => {
+        SQLDataType::Map(..) => {
             polars_bail!(SQLInterface: "MAP requires the `dtype-map` feature")
         },
 
