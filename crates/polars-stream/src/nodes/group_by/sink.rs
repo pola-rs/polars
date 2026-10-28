@@ -284,6 +284,7 @@ impl LocalSink {
     /// whole morsel that may be stored as it is and has mostly cold rows becomes a frame with a
     /// mask of its cold rows; otherwise the cold rows are gathered into the builder of the input,
     /// which becomes a frame once it holds a morsel's worth of rows.
+    #[allow(clippy::too_many_arguments)]
     async fn store_cold_rows(
         &mut self,
         input_idx: usize,
