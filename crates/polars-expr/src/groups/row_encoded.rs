@@ -1,10 +1,10 @@
 use polars_arrow::array::Array;
-use polars_row::RowEncodingOptions;
+use polars_row::{RowEncodingOptions, RowEncodingOutput};
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
 
-use self::row_encode::get_row_encoding_context;
+use self::row_encode::get_row_encoding_layout;
 use super::*;
 use crate::hash_keys::HashKeys;
 
@@ -40,17 +40,14 @@ impl RowEncodedHashGrouper {
     }
 
     fn finalize_keys(&self, key_schema: &Schema, mut key_rows: Vec<&[u8]>) -> DataFrame {
-        let key_dtypes = key_schema
-            .iter()
-            .map(|(_name, dt)| dt.to_physical().to_arrow(CompatLevel::newest()))
-            .collect::<Vec<_>>();
-        let ctxts = key_schema
-            .iter()
-            .map(|(_, dt)| get_row_encoding_context(dt))
-            .collect::<Vec<_>>();
-        let fields = vec![RowEncodingOptions::new_unsorted(); key_dtypes.len()];
-        let key_columns =
-            unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &ctxts, &key_dtypes) };
+        let key_dtypes = key_schema.iter_values().cloned().collect::<Vec<_>>();
+        let layout = get_row_encoding_layout(
+            &key_dtypes,
+            &vec![RowEncodingOptions::new_unsorted(); key_dtypes.len()],
+            None,
+            RowEncodingOutput::AlwaysBinaryOffset,
+        );
+        let key_columns = unsafe { polars_row::decode::decode_rows(&mut key_rows, &layout) };
 
         let cols = key_schema
             .iter()

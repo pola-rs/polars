@@ -3647,6 +3647,7 @@ version = "0.55.1"
 dependencies = [
  "bitflags",
  "bytemuck",
+ "num-traits",
  "polars-arrow",
  "polars-buffer",
  "polars-compute",

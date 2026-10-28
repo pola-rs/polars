@@ -2,7 +2,10 @@ use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
-use crate::chunked_array::ops::row_encode::_get_rows_encoded;
+use crate::chunked_array::ops::row_encode::{
+    _get_rows_encoded, ROW_ENCODE_PAR_MIN_ROWS, encode_rows_with_layout,
+    encode_rows_with_layout_par, get_optimal_row_encoding_layout,
+};
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
@@ -84,9 +87,12 @@ pub(crate) fn argsort_multiple_row_fmt(
     options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
     let options = options.clone().expand_flags(by.len())?;
+    if let Some(idx) = arg_sort_packed_rows(by, &options, None)? {
+        return Ok(idx);
+    }
 
     let rows_encoded = _get_rows_encoded(by, &options.descending, &options.nulls_last)?;
-    let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
+    let mut items: Vec<_> = rows_encoded.values_iter().enumerate_idx().collect();
 
     if options.multithreaded {
         RAYON.install(|| items.par_sort_by_key(|i| i.1));
@@ -96,4 +102,36 @@ pub(crate) fn argsort_multiple_row_fmt(
 
     let ca: NoNull<IdxCa> = items.into_iter().map(|tpl| tpl.0).collect();
     Ok(ca.into_inner())
+}
+
+/// Sorts by `Optimal` rows if they are bit-packed. The flags in `options` must be
+/// expanded to the number of columns.
+pub(crate) fn arg_sort_packed_rows(
+    by: &[Column],
+    options: &SortMultipleOptions,
+    limit: Option<IdxSize>,
+) -> PolarsResult<Option<IdxCa>> {
+    let opts = options
+        .descending
+        .iter()
+        .zip(&options.nulls_last)
+        .map(|(desc, nulls_last)| RowEncodingOptions::new_sorted(*desc, *nulls_last))
+        .collect_vec();
+    let layout = get_optimal_row_encoding_layout(by, &[], &opts);
+    if !layout.is_packed() {
+        return Ok(None);
+    }
+
+    let rows = if options.multithreaded && by[0].len() >= ROW_ENCODE_PAR_MIN_ROWS {
+        encode_rows_with_layout_par(by, &layout, false)?
+    } else {
+        encode_rows_with_layout(by, &layout, false)?
+    };
+    Ok(Some(rows.arg_sort(SortOptions {
+        descending: false,
+        nulls_last: false,
+        multithreaded: options.multithreaded,
+        maintain_order: options.maintain_order,
+        limit,
+    })))
 }
