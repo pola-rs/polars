@@ -19,15 +19,9 @@ fn out_dtype(dtype_x: &DataType, dtype_y: &DataType) -> DataType {
 fn broadcast_f64(values: &[&Column]) -> PolarsResult<(Column, Column)> {
     assert!(values.len() == 2);
     let (x, y) = (values[0], values[1]);
-    let broadcast = |c: &Column, len: usize| {
-        if c.len() == 1 && len != 1 {
-            c.new_from_index(0, len)
-        } else {
-            c.clone()
-        }
-    };
-    let x = broadcast(x, y.len()).cast(&DataType::Float64)?;
-    let y = broadcast(y, x.len()).cast(&DataType::Float64)?;
+    let len = if x.len() == 1 { y.len() } else { x.len() };
+    let x = x.broadcast_to(len)?.cast(&DataType::Float64)?;
+    let y = y.broadcast_to(len)?.cast(&DataType::Float64)?;
     Ok((x, y))
 }
 
