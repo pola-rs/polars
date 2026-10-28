@@ -492,9 +492,10 @@ impl SQLContext {
             ..
         } = create_table;
         polars_ensure!(like.is_none(), SQLInterface: "`CREATE TABLE ... LIKE` is not supported for catalog tables");
-        polars_ensure!(query.is_none(), SQLInterface: "`CREATE TABLE ... AS SELECT` is not yet supported for catalog tables");
-        polars_ensure!(!columns.is_empty(), SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause");
+        polars_ensure!(query.is_none() || columns.is_empty(), SQLInterface: "`CREATE TABLE ... AS SELECT` does not take column definitions");
+        polars_ensure!(query.is_some() || !columns.is_empty(), SQLInterface: "CREATE TABLE expected a query, column definitions, or LIKE clause");
         let (schema, required) = create_table_columns(columns)?;
+        let query = query.as_ref().map(|q| q.to_string());
         let location = hive_formats.as_ref().and_then(|f| f.location.as_deref());
         let (location, properties) = create_table_options(table_options, location)?;
 
@@ -525,6 +526,7 @@ impl SQLContext {
             table,
             if_not_exists: *if_not_exists,
             schema,
+            query,
             required,
             location,
             properties,
