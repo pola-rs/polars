@@ -107,7 +107,10 @@ impl PartitionMorselSender {
                         executor::spawn(
                             TaskPriority::Low,
                             self.partition_sink_starter.task_metrics.as_deref(),
-                            self.error_capture.clone().wrap_future(handle),
+                            self.partition_sink_starter
+                                .tasks
+                                .clone()
+                                .hold_until_drop(self.error_capture.clone().wrap_future(handle)),
                         );
 
                         permit

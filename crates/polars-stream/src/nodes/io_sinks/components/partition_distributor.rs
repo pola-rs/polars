@@ -285,9 +285,14 @@ impl PartitionDistributor {
                 executor::spawn(
                     TaskPriority::Low,
                     partition_sink_starter.task_metrics.as_deref(),
-                    error_capture
+                    partition_sink_starter
+                        .tasks
                         .clone()
-                        .wrap_future(file_sink_task_data.close()),
+                        .hold_until_drop(
+                            error_capture
+                                .clone()
+                                .wrap_future(file_sink_task_data.close()),
+                        ),
                 );
             }
         }

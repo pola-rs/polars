@@ -3300,6 +3300,7 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "polars-arrow",
+ "polars-async",
  "polars-buffer",
  "polars-compute",
  "polars-config",

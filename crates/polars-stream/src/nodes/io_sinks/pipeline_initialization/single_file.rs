@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
@@ -31,6 +32,7 @@ pub fn start_single_file_sink_pipeline(
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
     finish: FinishSignal,
+    tasks: WaitToken,
 ) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
     let task_metrics = execution_state.task_metrics();
@@ -87,23 +89,27 @@ pub fn start_single_file_sink_pipeline(
     let file_open_task = {
         let io_metrics = io_metrics.clone();
         let sinked_path_info_entry = sinked_path_info_entry.clone();
-        tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
-            target
-                .open_into_writable_async(
-                    cloud_options.as_deref(),
-                    mkdir,
-                    upload_chunk_size,
-                    upload_max_concurrency.get(),
-                    io_metrics,
-                )
-                .await
-                .map(|x| {
-                    crate::nodes::io_sinks::components::writable::WriteTarget::new(
-                        x,
-                        sinked_path_info_entry,
+        let token = tasks.clone();
+        tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(tasks.clone().hold_until_drop(
+            async move {
+                target
+                    .open_into_writable_async(
+                        cloud_options.as_deref(),
+                        mkdir,
+                        upload_chunk_size,
+                        upload_max_concurrency.get(),
+                        io_metrics,
                     )
-                })
-        }))
+                    .await
+                    .map(|x| {
+                        crate::nodes::io_sinks::components::writable::WriteTarget::new(
+                            x,
+                            sinked_path_info_entry,
+                        )
+                        .holding(token)
+                    })
+            },
+        )))
     };
     // The writer finishes only once its input also passed the resize stage.
     let (writer_finish_tx, writer_finish_rx) = finish_signal();
@@ -137,6 +143,7 @@ pub fn start_single_file_sink_pipeline(
         file_open_task,
         num_pipelines_per_sink,
         execution_state.task_metrics.clone(),
+        tasks,
     )?;
 
     let schema = Arc::clone(&file_schema);

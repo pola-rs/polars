@@ -82,6 +82,16 @@ impl Clone for WaitToken {
     }
 }
 
+impl WaitToken {
+    /// Keeps this token alive until `future` is dropped or completes.
+    pub fn hold_until_drop<F: Future>(self, future: F) -> TokenHeld<F> {
+        TokenHeld {
+            future: Box::pin(future),
+            _token: self,
+        }
+    }
+}
+
 impl Drop for WaitToken {
     fn drop(&mut self) {
         // Token count was 1, we must notify.
@@ -90,5 +100,19 @@ impl Drop for WaitToken {
                 w.wake();
             }
         }
+    }
+}
+
+/// A future that holds a [`WaitToken`] until it is dropped or completes.
+pub struct TokenHeld<F: Future> {
+    future: Pin<Box<F>>,
+    _token: WaitToken,
+}
+
+impl<F: Future> Future for TokenHeld<F> {
+    type Output = F::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.future.as_mut().poll(cx)
     }
 }

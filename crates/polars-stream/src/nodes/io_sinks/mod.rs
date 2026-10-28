@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use futures::FutureExt;
 use polars_async::executor::{self, AbortOnDropHandle};
 use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
@@ -31,6 +33,8 @@ pub struct IOSinkNode {
     io_metrics: Option<Arc<IOMetrics>>,
     verbose: bool,
     partitioned_by_key: bool,
+    /// Held by the tasks that write to storage; dropping the node waits for them.
+    tasks: WaitGroup,
 }
 
 impl IOSinkNode {
@@ -59,6 +63,19 @@ impl IOSinkNode {
             io_metrics: metrics_registry.new_io_metrics(),
             verbose,
             partitioned_by_key,
+            tasks: WaitGroup::default(),
+        }
+    }
+}
+
+impl Drop for IOSinkNode {
+    fn drop(&mut self) {
+        // Cancels the tasks of an unfinished sink.
+        self.state = IOSinkNodeState::Finished;
+        // So that storage doesn't change after a failed query returns.
+        let mut wait = std::pin::pin!(self.tasks.wait());
+        if wait.as_mut().now_or_never().is_none() {
+            ASYNC.block_in_place_on(wait);
         }
     }
 }
@@ -79,8 +96,12 @@ impl ComputeNode for IOSinkNode {
 
         recv[0] = if recv[0] == PortState::Done {
             // Ensure initialize / writes empty file for empty output.
-            self.state
-                .initialize(&self.name, execution_state, self.io_metrics.clone())?;
+            self.state.initialize(
+                &self.name,
+                execution_state,
+                self.io_metrics.clone(),
+                &self.tasks,
+            )?;
 
             match std::mem::replace(&mut self.state, IOSinkNodeState::Finished) {
                 IOSinkNodeState::Initialized {
@@ -144,8 +165,12 @@ impl ComputeNode for IOSinkNode {
         let phase_morsel_rx = recv_ports[0].take().unwrap().serial();
 
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-            self.state
-                .initialize(&self.name, execution_state, self.io_metrics.clone())?;
+            self.state.initialize(
+                &self.name,
+                execution_state,
+                self.io_metrics.clone(),
+                &self.tasks,
+            )?;
 
             let IOSinkNodeState::Initialized {
                 phase_channel_tx, ..
@@ -206,6 +231,7 @@ impl IOSinkNodeState {
         node_name: &PlSmallStr,
         execution_state: &StreamingExecutionState,
         io_metrics: Option<Arc<IOMetrics>>,
+        tasks: &WaitGroup,
     ) -> PolarsResult<()> {
         use IOSinkNodeState::*;
 
@@ -252,6 +278,7 @@ impl IOSinkNodeState {
                 execution_state,
                 io_metrics,
                 finish_rx,
+                tasks.token(),
             )?,
 
             IOSinkTarget::Partitioned { .. } => start_partition_sink_pipeline(
@@ -261,6 +288,7 @@ impl IOSinkNodeState {
                 execution_state,
                 io_metrics,
                 finish_rx,
+                tasks.token(),
             )?,
         };
 

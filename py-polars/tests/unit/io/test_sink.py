@@ -1030,3 +1030,20 @@ def test_sink_failed_query_does_not_finish_gzip(tmp_path: Path, sink: Any) -> No
         # A file cut off inside the gzip magic raises BadGzipFile.
         with pytest.raises((EOFError, gzip.BadGzipFile)):
             gzip.decompress(data)
+
+
+@pytest.mark.parametrize("sink", [pl.LazyFrame.sink_csv, pl.LazyFrame.sink_ndjson])
+@pytest.mark.write_disk
+def test_failed_sink_does_not_corrupt_retry(tmp_path: Path, sink: Any) -> None:
+    # Regression test for https://github.com/pola-rs/polars/issues/30305
+    path = tmp_path / "out.gz"
+    rows = pl.LazyFrame({"x": pl.int_range(200_000, eager=True)})
+    bad = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.Int64))
+    failing = pl.concat([rows, bad], parallel=False)
+
+    for _ in range(200):
+        with pytest.raises(InvalidOperationError):
+            sink(failing, path, compression="gzip")
+        sink(rows, path, compression="gzip")
+        with open(path, "rb") as f:
+            gzip.decompress(f.read())

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use futures::FutureExt;
 use polars_async::executor::{self, TaskMetricAggregator};
 use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::WaitToken;
 use polars_error::{PolarsResult, polars_err};
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::index::NonZeroIdxSize;
@@ -29,6 +30,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
         file: FileOpenTaskHandle,
         num_pipelines: NonZeroUsize,
         task_metrics: Option<Arc<TaskMetricAggregator>>,
+        tasks: WaitToken,
     ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>>;
 }
 
