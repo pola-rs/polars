@@ -31,7 +31,8 @@ pub use merge_sorted::_merge_sorted_dfs;
 use polars_arrow::trusted_len::TrustedLen;
 #[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
-    encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
+    encode_rows_with_layout_par, get_binary_offset_row_encoding_layout,
+    get_optimal_row_encoding_layout,
 };
 use polars_core::datatypes::DataType;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
@@ -376,10 +377,7 @@ pub trait DataFrameJoinOps: IntoDf {
             (a.clone(), a)
         } else {
             // Row encode the keys.
-            (
-                prepare_keys_multiple(&selected_left, args.nulls_equal)?.into_series(),
-                prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series(),
-            )
+            prepare_keys_multiple(&selected_left, &selected_right, args.nulls_equal)?
         };
 
         let drop_names = if should_coalesce {
@@ -668,29 +666,49 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 impl DataFrameJoinOps for DataFrame {}
 impl DataFrameJoinOpsPrivate for DataFrame {}
 
-fn prepare_keys_multiple(s: &[Series], nulls_equal: bool) -> PolarsResult<BinaryOffsetChunked> {
-    let keys = s
-        .iter()
-        .map(|s| {
-            let phys = s.to_physical_repr();
-            match phys.dtype() {
-                #[cfg(feature = "dtype-f16")]
-                DataType::Float16 => phys.f16().unwrap().to_canonical().into_column(),
-                DataType::Float32 => phys.f32().unwrap().to_canonical().into_column(),
-                DataType::Float64 => phys.f64().unwrap().to_canonical().into_column(),
-                _ => phys.into_owned().into_column(),
-            }
-        })
-        .collect::<Vec<_>>();
+/// Row encodes the keys of both sides.
+fn prepare_keys_multiple(
+    left: &[Series],
+    right: &[Series],
+    nulls_equal: bool,
+) -> PolarsResult<(Series, Series)> {
+    let to_keys = |s: &[Series]| {
+        s.iter()
+            .map(|s| {
+                let phys = s.to_physical_repr();
+                match phys.dtype() {
+                    #[cfg(feature = "dtype-f16")]
+                    DataType::Float16 => phys.f16().unwrap().to_canonical().into_column(),
+                    DataType::Float32 => phys.f32().unwrap().to_canonical().into_column(),
+                    DataType::Float64 => phys.f64().unwrap().to_canonical().into_column(),
+                    _ => phys.into_owned().into_column(),
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let (left, right) = (to_keys(left), to_keys(right));
 
-    if nulls_equal {
-        encode_rows_vertical_par_unordered(&keys)
+    let opts = vec![RowEncodingOptions::new_unsorted(); left.len()];
+    let same_dtypes = left.iter().zip(&right).all(|(l, r)| l.dtype() == r.dtype());
+    let propagate_nulls = !nulls_equal;
+    let (left_layout, right_layout) = if same_dtypes {
+        let layout = get_optimal_row_encoding_layout(&left, &[&right], &opts);
+        (layout.clone(), layout)
     } else {
-        encode_rows_vertical_par_unordered_broadcast_nulls(&keys)
-    }
+        (
+            get_binary_offset_row_encoding_layout(&left, &opts),
+            get_binary_offset_row_encoding_layout(&right, &opts),
+        )
+    };
+    Ok((
+        encode_rows_with_layout_par(&left, &left_layout, propagate_nulls)?,
+        encode_rows_with_layout_par(&right, &right_layout, propagate_nulls)?,
+    ))
 }
 
-// Duplicate column names are allowed
+/// The returned right ids are plain row indices into `b`.
+///
+/// Duplicate column names are allowed.
 pub fn private_left_join_multiple_keys(
     a: &[Column],
     b: &[Column],
@@ -706,7 +724,12 @@ pub fn private_left_join_multiple_keys(
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();
 
-    let a = prepare_keys_multiple(&a_cols, nulls_equal)?.into_series();
-    let b = prepare_keys_multiple(&b_cols, nulls_equal)?.into_series();
-    sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, nulls_equal)
+    let (a, b) = prepare_keys_multiple(&a_cols, &b_cols, nulls_equal)?;
+    sort_or_hash_left(
+        &a,
+        &b.rechunk(),
+        false,
+        JoinValidation::ManyToMany,
+        nulls_equal,
+    )
 }

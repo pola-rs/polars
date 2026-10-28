@@ -659,9 +659,11 @@ impl PhysicalExpr for WindowExpr {
                                         .into_series(),
                                     )
                                 } else {
+                                    // A single-chunk right key gives join ids that are valid
+                                    // for any chunk layout of the aggregated output.
                                     (
                                         left.into_materialized_series().clone(),
-                                        right.into_materialized_series().clone(),
+                                        right.into_materialized_series().rechunk(),
                                     )
                                 };
 

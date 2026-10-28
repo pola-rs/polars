@@ -1243,6 +1243,8 @@ pub fn row_encode(
     dts: Vec<DataType>,
     variant: RowEncodingVariant,
     output: RowEncodingOutputType,
+    encode_nulls: Option<Vec<bool>>,
+    propagate_nulls: bool,
 ) -> PolarsResult<Column> {
     assert_eq!(c.len(), dts.len());
 
@@ -1261,18 +1263,11 @@ pub fn row_encode(
 
     let name = PlSmallStr::from_static("row_encoded");
     let parallel = length >= ROW_ENCODE_PAR_MIN_ROWS && RAYON.current_num_threads() > 1;
-    let layout = output.layout(&dts, &variant)?;
-    let broadcast_nulls = matches!(
-        variant,
-        RowEncodingVariant::Ordered {
-            broadcast_nulls: Some(true),
-            ..
-        }
-    );
+    let layout = output.layout(&dts, &variant, encode_nulls.as_deref())?;
     let rows = if parallel {
-        encode_rows_with_layout_par(c, &layout, broadcast_nulls)?.rechunk()
+        encode_rows_with_layout_par(c, &layout, propagate_nulls)?.rechunk()
     } else {
-        encode_rows_with_layout(c, &layout, broadcast_nulls)?
+        encode_rows_with_layout(c, &layout, propagate_nulls)?
     };
     Ok(rows.with_name(name).into_column())
 }
@@ -1283,20 +1278,13 @@ pub fn row_decode(
     fields: Vec<Field>,
     variant: RowEncodingVariant,
     output: RowEncodingOutputType,
+    encode_nulls: Option<Vec<bool>>,
 ) -> PolarsResult<Column> {
     use polars_core::prelude::row_encode::row_encoding_decode;
 
     assert_eq!(c.len(), 1);
-    if let RowEncodingVariant::Ordered {
-        broadcast_nulls: Some(_),
-        ..
-    } = variant
-    {
-        polars_bail!(InvalidOperation: "broadcast_nulls is not supported for row_decode.");
-    }
-
     let dtypes: Vec<DataType> = fields.iter().map(|f| f.dtype().clone()).collect();
-    let layout = output.layout(&dtypes, &variant)?;
+    let layout = output.layout(&dtypes, &variant, encode_nulls.as_deref())?;
     row_encoding_decode(c[0].as_materialized_series(), &fields, &layout)
         .map(IntoColumn::into_column)
 }
