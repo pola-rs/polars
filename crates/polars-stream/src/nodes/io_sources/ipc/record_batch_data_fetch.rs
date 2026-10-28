@@ -103,6 +103,7 @@ impl RecordBatchDataFetcher {
             rb_prefetch_current_all_spawned,
         } = self;
 
+        let inflight_budget = byte_source.window_inflight_budget();
         let global_slice = pre_slice.clone().map(Range::<usize>::from);
 
         polars_ensure!(
@@ -230,7 +231,11 @@ impl RecordBatchDataFetcher {
             let fetch_permit = if rb_fetch == RbFetch::None {
                 None
             } else {
-                Some(pipeline_budget.acquire(fetch_length).await)
+                Some(
+                    pipeline_budget
+                        .acquire(fetch_length, inflight_budget.as_deref())
+                        .await,
+                )
             };
 
             group_kbytes += permit_kbytes;
