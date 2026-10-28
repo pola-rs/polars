@@ -1,11 +1,8 @@
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_core::prelude::row_encode::{
-    ROW_ENCODE_PAR_MIN_ROWS, encode_rows_with_layout, encode_rows_with_layout_par,
-};
+use polars_core::prelude::row_encode::encode_rows_with_layout_par;
 use polars_core::prelude::*;
-use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
@@ -1262,13 +1259,8 @@ pub fn row_encode(
     }
 
     let name = PlSmallStr::from_static("row_encoded");
-    let parallel = length >= ROW_ENCODE_PAR_MIN_ROWS && RAYON.current_num_threads() > 1;
     let layout = output.layout(&dts, &variant, encode_nulls.as_deref())?;
-    let rows = if parallel {
-        encode_rows_with_layout_par(c, &layout, propagate_nulls)?.rechunk()
-    } else {
-        encode_rows_with_layout(c, &layout, propagate_nulls)?
-    };
+    let rows = encode_rows_with_layout_par(c, &layout, propagate_nulls)?.rechunk();
     Ok(rows.with_name(name).into_column())
 }
 

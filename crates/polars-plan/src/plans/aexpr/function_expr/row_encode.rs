@@ -34,7 +34,7 @@ impl RowEncodingOutputType {
         encode_nulls: Option<&[bool]>,
     ) -> PolarsResult<RowEncodingLayout> {
         let n = dtypes.len();
-        let opts = match variant {
+        let mut opts: Vec<RowEncodingOptions> = match variant {
             RowEncodingVariant::Unordered => vec![RowEncodingOptions::new_unsorted(); n],
             RowEncodingVariant::Ordered {
                 descending,
@@ -65,7 +65,10 @@ impl RowEncodingOutputType {
                 encode_nulls.len() == n,
                 ShapeMismatch: "row encoding got {} columns but {} encode_nulls options", n, encode_nulls.len()
             );
+            for (opt, encode) in opts.iter_mut().zip(encode_nulls) {
+                opt.set(RowEncodingOptions::SKIP_NULL_ENCODING, !encode);
+            }
         }
-        Ok(get_row_encoding_layout(dtypes, &opts, encode_nulls, output))
+        Ok(get_row_encoding_layout(dtypes, &opts, output))
     }
 }

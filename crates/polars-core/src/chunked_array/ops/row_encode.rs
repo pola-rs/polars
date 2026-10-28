@@ -15,7 +15,7 @@ pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryO
     encode_binary_offset_par(by, &unordered_opts(by.len()), false)
 }
 
-pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
+pub fn encode_rows_vertical_par_unordered_propagate_nulls(
     by: &[Column],
 ) -> PolarsResult<BinaryOffsetChunked> {
     encode_binary_offset_par(by, &unordered_opts(by.len()), true)
@@ -118,28 +118,31 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
     }
 }
 
-/// The layout for row encoding columns of these logical dtypes. `encode_nulls` says per column
-/// whether its nulls are encoded, `None` means for all columns.
+/// The layout for row encoding columns of these logical dtypes. Without `dtype-u128`,
+/// [`RowEncodingOutput::Optimal`] rows that would be `UInt128` are `LargeBinary` instead.
 pub fn get_row_encoding_layout(
     dtypes: &[DataType],
     opts: &[RowEncodingOptions],
-    encode_nulls: Option<&[bool]>,
     output: RowEncodingOutput,
 ) -> RowEncodingLayout {
     assert_eq!(dtypes.len(), opts.len());
-    assert!(encode_nulls.is_none_or(|n| n.len() == dtypes.len()));
     let fields = dtypes
         .iter()
         .zip(opts)
-        .enumerate()
-        .map(|(i, (dtype, opt))| RowEncodingField {
+        .map(|(dtype, opt)| RowEncodingField {
             dtype: dtype.to_physical().to_arrow(CompatLevel::newest()),
             opt: *opt,
             ctx: get_row_encoding_context(dtype),
-            encode_nulls: encode_nulls.is_none_or(|n| n[i]),
         })
-        .collect();
-    RowEncodingLayout::new(fields, output)
+        .collect_vec();
+    let layout = RowEncodingLayout::new(fields, output);
+    if *layout.dtype() == ArrowDataType::UInt128 && !cfg!(feature = "dtype-u128") {
+        return RowEncodingLayout::new(
+            layout.fields().to_vec(),
+            RowEncodingOutput::AlwaysBinaryOffset,
+        );
+    }
+    layout
 }
 
 /// The dtype of the rows of `layout`.
@@ -162,7 +165,7 @@ fn encode_columns(
     let mut cols = Vec::with_capacity(by.len());
     for (by, field) in by.iter().zip(layout.fields()) {
         polars_ensure!(
-            field.encode_nulls || propagate_nulls || !by.has_nulls(),
+            field.opt.encode_nulls() || propagate_nulls || !by.has_nulls(),
             ComputeError: "row encoding: column '{}' contains nulls, but its nulls are not encoded", by.name()
         );
 
@@ -180,7 +183,7 @@ fn unordered_opts(n: usize) -> Vec<RowEncodingOptions> {
     vec![RowEncodingOptions::new_unsorted(); n]
 }
 
-fn ordered_opts(descending: &[bool], nulls_last: &[bool]) -> Vec<RowEncodingOptions> {
+pub(crate) fn ordered_opts(descending: &[bool], nulls_last: &[bool]) -> Vec<RowEncodingOptions> {
     debug_assert_eq!(descending.len(), nulls_last.len());
     descending
         .iter()
@@ -195,7 +198,7 @@ pub fn get_binary_offset_row_encoding_layout(
     opts: &[RowEncodingOptions],
 ) -> RowEncodingLayout {
     let dtypes = by.iter().map(|c| c.dtype().clone()).collect_vec();
-    get_row_encoding_layout(&dtypes, opts, None, RowEncodingOutput::AlwaysBinaryOffset)
+    get_row_encoding_layout(&dtypes, opts, RowEncodingOutput::AlwaysBinaryOffset)
 }
 
 fn encode_binary_offset(
@@ -242,10 +245,11 @@ pub fn encode_rows_with_layout(
     })
 }
 
-/// Below this number of rows, encoding rows in parallel isn't worth it.
-pub const ROW_ENCODE_PAR_MIN_ROWS: usize = 1 << 16;
+/// Below this number of rows, encoding rows in parallel isn't worth it. Low in debug builds so
+/// that tests also cover multi-chunk rows.
+const ROW_ENCODE_PAR_MIN_ROWS: usize = if cfg!(debug_assertions) { 4 } else { 1 << 16 };
 
-/// [`encode_rows_with_layout`], encoding a slice of the rows per thread.
+/// [`encode_rows_with_layout`], encoding a slice of the rows per thread if there are enough rows.
 pub fn encode_rows_with_layout_par(
     by: &[Column],
     layout: &RowEncodingLayout,
@@ -253,6 +257,9 @@ pub fn encode_rows_with_layout_par(
 ) -> PolarsResult<Series> {
     let len = by.first().map_or(0, |c| c.len());
     let n_splits = RAYON.current_num_threads().min(len).max(1);
+    if len < ROW_ENCODE_PAR_MIN_ROWS || n_splits == 1 {
+        return encode_rows_with_layout(by, layout, propagate_nulls);
+    }
     let chunks = _split_offsets(len, n_splits)
         .into_par_iter()
         .map(|(offset, len)| {
@@ -270,35 +277,37 @@ pub fn encode_rows_with_layout_par(
 }
 
 /// The [`RowEncodingOutput::Optimal`] layout for these columns, with each column encoding nulls
-/// if it has nulls in `by` or in any of `others`. Falls back to the
-/// [`RowEncodingOutput::AlwaysBinaryOffset`] layout if the rows are not packed or passed through,
-/// or if this build does not support the dtype of the rows.
+/// if it has nulls in `by` or in any of `others`.
 pub fn get_optimal_row_encoding_layout(
     by: &[Column],
     others: &[&[Column]],
     opts: &[RowEncodingOptions],
 ) -> RowEncodingLayout {
     let dtypes = by.iter().map(|c| c.dtype().clone()).collect_vec();
-    let encode_nulls = (0..by.len())
-        .map(|i| by[i].has_nulls() || others.iter().any(|o| o[i].has_nulls()))
+    let opts = opts
+        .iter()
+        .enumerate()
+        .map(|(i, opt)| {
+            let encode_nulls = by[i].has_nulls() || others.iter().any(|o| o[i].has_nulls());
+            let mut opt = *opt;
+            opt.set(RowEncodingOptions::SKIP_NULL_ENCODING, !encode_nulls);
+            opt
+        })
         .collect_vec();
-    let layout = |output| get_row_encoding_layout(&dtypes, opts, Some(&encode_nulls), output);
-    let optimal = layout(RowEncodingOutput::Optimal);
-    let unsupported_u128 =
-        *optimal.dtype() == ArrowDataType::UInt128 && !cfg!(feature = "dtype-u128");
-    if unsupported_u128 || !(optimal.is_packed() || optimal.is_pass_through()) {
-        return layout(RowEncodingOutput::AlwaysBinaryOffset);
-    }
-    optimal
+    get_row_encoding_layout(&dtypes, &opts, RowEncodingOutput::Optimal)
 }
 
 pub fn encode_rows_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
-    let rows = _get_rows_encoded_unordered(by)?;
+    let rows = _get_rows_encoded_unordered(by, false)?;
     Ok(BinaryOffsetChunked::with_chunk(PlSmallStr::EMPTY, rows))
 }
 
-pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<BinaryArray<i64>> {
-    encode_binary_offset(by, &unordered_opts(by.len()), false)
+/// With `propagate_nulls` a row is null if any of its values is null.
+pub fn _get_rows_encoded_unordered(
+    by: &[Column],
+    propagate_nulls: bool,
+) -> PolarsResult<BinaryArray<i64>> {
+    encode_binary_offset(by, &unordered_opts(by.len()), propagate_nulls)
 }
 
 pub fn _get_rows_encoded(
@@ -334,7 +343,7 @@ pub fn _get_rows_encoded_ca_unordered(
     name: PlSmallStr,
     by: &[Column],
 ) -> PolarsResult<BinaryOffsetChunked> {
-    _get_rows_encoded_unordered(by).map(|rows| BinaryOffsetChunked::with_chunk(name, rows))
+    _get_rows_encoded_unordered(by, false).map(|rows| BinaryOffsetChunked::with_chunk(name, rows))
 }
 
 /// Decodes rows of `layout` into a struct with these fields.
@@ -348,6 +357,10 @@ pub fn row_encoding_decode(
     polars_ensure!(
         rows.dtype() == &expected,
         SchemaMismatch: "row decoding expected rows of type {}, got {}", expected, rows.dtype()
+    );
+    polars_ensure!(
+        layout.is_pass_through() || !rows.has_nulls(),
+        InvalidOperation: "cannot row decode null rows"
     );
 
     let struct_arrow_dtype = ArrowDataType::Struct(

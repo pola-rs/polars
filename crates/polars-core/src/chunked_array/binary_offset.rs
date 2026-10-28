@@ -36,8 +36,7 @@ impl BinaryOffsetChunked {
         use super::ops::row_encode::{get_row_encoding_layout, row_encoding_decode};
 
         let dtypes: Vec<DataType> = fields.iter().map(|f| f.dtype().clone()).collect();
-        let layout =
-            get_row_encoding_layout(&dtypes, opts, None, RowEncodingOutput::AlwaysBinaryOffset);
+        let layout = get_row_encoding_layout(&dtypes, opts, RowEncodingOutput::AlwaysBinaryOffset);
         row_encoding_decode(&self.clone().into_series(), fields, &layout)
     }
 }

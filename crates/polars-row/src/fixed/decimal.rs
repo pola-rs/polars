@@ -23,8 +23,8 @@ macro_rules! with_constant_num_bytes {
     };
 }
 
-pub fn len_from_precision(precision: usize) -> usize {
-    len_from_num_bits(num_bits_from_precision(precision))
+pub fn len_from_precision(precision: usize, opt: RowEncodingOptions) -> usize {
+    len_from_num_bits(num_bits_from_precision(precision), opt)
 }
 
 pub(crate) fn num_bits_from_precision(precision: usize) -> usize {
@@ -34,10 +34,9 @@ pub(crate) fn num_bits_from_precision(precision: usize) -> usize {
     ((precision as f32) * 10.0f32.log2()).ceil() as usize
 }
 
-fn len_from_num_bits(num_bits: usize) -> usize {
-    // 1 bit is used to indicate the nullability
-    // 1 bit is used to indicate the signedness
-    (num_bits + 2).div_ceil(8)
+fn len_from_num_bits(num_bits: usize, opt: RowEncodingOptions) -> usize {
+    // 1 bit is used to indicate the signedness and, unless left out, 1 bit for the validity.
+    (num_bits + 1 + opt.encode_nulls() as usize).div_ceil(8)
 }
 
 pub unsafe fn encode(
@@ -47,7 +46,7 @@ pub unsafe fn encode(
     offsets: &mut [usize],
     precision: usize,
 ) {
-    if input.null_count() == 0 {
+    if !opt.encode_nulls() || input.null_count() == 0 {
         unsafe { encode_slice(buffer, input.values(), opt, offsets, precision) }
     } else {
         unsafe {
@@ -77,9 +76,13 @@ pub unsafe fn encode_slice(
         return;
     }
 
-    let num_bytes = len_from_num_bits(num_bits);
+    let num_bytes = len_from_num_bits(num_bits, opt);
     let mask = (1 << (num_bits + 1)) - 1;
-    let valid_mask = ((!opt.null_sentinel() & 0x80) as i128) << ((num_bytes - 1) * 8);
+    let valid_mask = if opt.encode_nulls() {
+        ((!opt.null_sentinel() & 0x80) as i128) << ((num_bytes - 1) * 8)
+    } else {
+        0
+    };
     let sign_mask = 1 << num_bits;
     let invert_mask = if opt.contains(RowEncodingOptions::DESCENDING) {
         mask
@@ -117,7 +120,7 @@ pub unsafe fn encode_iter(
         return;
     }
 
-    let num_bytes = len_from_num_bits(num_bits);
+    let num_bytes = len_from_num_bits(num_bits, opt);
     let null_value = (opt.null_sentinel() as i128) << ((num_bytes - 1) * 8);
     let mask = (1 << (num_bits + 1)) - 1;
     let valid_mask = ((!opt.null_sentinel() & 0x80) as i128) << ((num_bytes - 1) * 8);
@@ -164,9 +167,10 @@ pub unsafe fn decode(
     }
 
     let mut values = Vec::with_capacity(rows.len());
+    let has_validity = opt.encode_nulls();
     let null_sentinel = opt.null_sentinel();
 
-    let num_bytes = len_from_num_bits(num_bits);
+    let num_bytes = len_from_num_bits(num_bits, opt);
     let mask = (1 << (num_bits + 1)) - 1;
     let sign_mask = 1 << num_bits;
     let invert_mask = if opt.contains(RowEncodingOptions::DESCENDING) {
@@ -178,7 +182,9 @@ pub unsafe fn decode(
     with_constant_num_bytes!(num_bytes, {
         values.extend(
             rows.iter_mut()
-                .take_while(|row| *unsafe { row.get_unchecked(0) } != null_sentinel)
+                .take_while(|row| {
+                    !has_validity || *unsafe { row.get_unchecked(0) } != null_sentinel
+                })
                 .map(|row| {
                     let mut value = 0i128;
                     let value_ref: &mut [u8; 16] = bytemuck::cast_mut(&mut value);

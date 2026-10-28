@@ -7,7 +7,6 @@ use polars_arrow::array::{
 };
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::aggregate::estimated_bytes_size;
-use polars_arrow::compute::utils::combine_validities_and_many;
 use polars_core::frame::DataFrame;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
@@ -143,16 +142,7 @@ impl HashKeys {
             || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.columns();
-            let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap();
-
-            if !null_is_valid {
-                let validities = keys
-                    .iter()
-                    .map(|c| c.as_materialized_series().rechunk_validity())
-                    .collect_vec();
-                let combined = combine_validities_and_many(&validities);
-                keys_encoded.set_validity(combined);
-            }
+            let keys_encoded = _get_rows_encoded_unordered(keys, !null_is_valid).unwrap();
 
             // TODO: use vechash? Not supported yet for lists.
             // let mut hashes = Vec::with_capacity(df.height());

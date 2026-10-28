@@ -43,6 +43,11 @@ bitflags::bitflags! {
         ///
         /// This is faster for several encodings
         const NO_ORDER                 = 0x04;
+
+        /// Don't encode nulls: encoding a null panics unless nulls are propagated, and
+        /// fixed-width values, structs and fixed-size lists take no validity byte. Not passed
+        /// on to nested values.
+        const SKIP_NULL_ENCODING       = 0x08;
     }
 }
 
@@ -63,6 +68,10 @@ impl RowEncodingOptions {
 
     pub fn is_ordered(self) -> bool {
         !self.contains(Self::NO_ORDER)
+    }
+
+    pub fn encode_nulls(self) -> bool {
+        !self.contains(Self::SKIP_NULL_ENCODING)
     }
 
     pub fn null_sentinel(self) -> u8 {
@@ -119,6 +128,7 @@ impl RowEncodingOptions {
             RowEncodingOptions::NULLS_LAST,
             self.contains(RowEncodingOptions::DESCENDING),
         );
+        self.remove(RowEncodingOptions::SKIP_NULL_ENCODING);
         self
     }
 }

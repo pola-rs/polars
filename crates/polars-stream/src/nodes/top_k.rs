@@ -704,7 +704,6 @@ impl PredicateExpr for FirstKeyBottomKPredicate {
                 self.descending,
                 self.nulls_last,
             )],
-            None,
             RowEncodingOutput::AlwaysBinaryOffset,
         );
         let [first_key] =

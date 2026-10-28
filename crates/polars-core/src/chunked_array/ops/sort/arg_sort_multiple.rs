@@ -3,8 +3,8 @@ use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
 use crate::chunked_array::ops::row_encode::{
-    _get_rows_encoded, ROW_ENCODE_PAR_MIN_ROWS, encode_rows_with_layout,
-    encode_rows_with_layout_par, get_optimal_row_encoding_layout,
+    _get_rows_encoded, encode_rows_with_layout, encode_rows_with_layout_par,
+    get_optimal_row_encoding_layout, ordered_opts,
 };
 
 pub(crate) fn args_validate<T: PolarsDataType>(
@@ -111,18 +111,13 @@ pub(crate) fn arg_sort_packed_rows(
     options: &SortMultipleOptions,
     limit: Option<IdxSize>,
 ) -> PolarsResult<Option<IdxCa>> {
-    let opts = options
-        .descending
-        .iter()
-        .zip(&options.nulls_last)
-        .map(|(desc, nulls_last)| RowEncodingOptions::new_sorted(*desc, *nulls_last))
-        .collect_vec();
+    let opts = ordered_opts(&options.descending, &options.nulls_last);
     let layout = get_optimal_row_encoding_layout(by, &[], &opts);
     if !layout.is_packed() {
         return Ok(None);
     }
 
-    let rows = if options.multithreaded && by[0].len() >= ROW_ENCODE_PAR_MIN_ROWS {
+    let rows = if options.multithreaded {
         encode_rows_with_layout_par(by, &layout, false)?
     } else {
         encode_rows_with_layout(by, &layout, false)?

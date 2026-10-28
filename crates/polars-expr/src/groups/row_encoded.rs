@@ -44,7 +44,6 @@ impl RowEncodedHashGrouper {
         let layout = get_row_encoding_layout(
             &key_dtypes,
             &vec![RowEncodingOptions::new_unsorted(); key_dtypes.len()],
-            None,
             RowEncodingOutput::AlwaysBinaryOffset,
         );
         let key_columns = unsafe { polars_row::decode::decode_rows(&mut key_rows, &layout) };

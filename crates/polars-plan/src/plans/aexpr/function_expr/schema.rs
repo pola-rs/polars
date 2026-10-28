@@ -610,13 +610,7 @@ impl IRFunctionExpr {
                 encode_nulls,
                 propagate_nulls: _,
             } => mapper.try_map_field(|_| {
-                let dtype = match output {
-                    RowEncodingOutputType::AlwaysBinaryOffset => DataType::BinaryOffset,
-                    RowEncodingOutputType::AlwaysBinary => DataType::Binary,
-                    RowEncodingOutputType::Optimal => {
-                        rows_dtype(&output.layout(dtypes, variant, encode_nulls.as_deref())?)
-                    },
-                };
+                let dtype = rows_dtype(&output.layout(dtypes, variant, encode_nulls.as_deref())?);
                 Ok(Field::new(PlSmallStr::from_static("row_encoded"), dtype))
             }),
             #[cfg(feature = "dtype-struct")]
