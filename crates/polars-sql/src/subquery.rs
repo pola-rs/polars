@@ -1580,10 +1580,17 @@ impl SQLContext {
         let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
-        let Some(value) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)? else {
+        let Some(value) = ctx.marking_aggregates(|ctx| {
+            ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)
+        })?
+        else {
             return Ok(None);
         };
-        let value = value.meta().undo_aliases();
+        // The candidates are the values of the inner rows, not one aggregate over them.
+        if has_marked_aggregate(&value) {
+            return Ok(None);
+        }
+        let value = strip_aggregate_marks(value).meta().undo_aliases();
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let Some((corr_preds, general, local_filters)) = ctx.split_correlation_conjuncts(

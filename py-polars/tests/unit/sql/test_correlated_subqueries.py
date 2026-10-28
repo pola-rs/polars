@@ -1878,3 +1878,16 @@ def test_correlated_subquery_general_condition_rejected(condition: str) -> None:
             f"SELECT k, EXISTS (SELECT COUNT(*) FROM i WHERE {condition}) AS n FROM o",
             eager=True,
         )
+
+
+@pytest.mark.parametrize("condition", ["cid = o.k", "cid = o.k + 1"])
+def test_correlated_in_subquery_aggregate_rejected(condition: str) -> None:
+    frames = {
+        "o": pl.DataFrame({"k": [0, 1, 2], "xs": [[20, 30], [10], []]}),
+        "i": pl.DataFrame({"cid": [1, 2, 2], "v": [10, 20, 30]}),
+    }
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(frames).execute(
+            f"SELECT xs IN (SELECT ARRAY_AGG(v) FROM i WHERE {condition}) FROM o",
+            eager=True,
+        )
