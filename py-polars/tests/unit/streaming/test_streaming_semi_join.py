@@ -289,14 +289,17 @@ def test_incomplete_sides_need_lopsided_rows(
     plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    left = pl.LazyFrame({"k": np.arange(20_000)})
-    right = pl.LazyFrame({"k": np.arange(100_000)})
+    left = pl.LazyFrame({"k": np.arange(100_000)})
+    right = pl.LazyFrame({"k": np.arange(500_000)})
     q = assert_semi(left, right, left.collect(), on="k")
     capfd.readouterr()
     q.collect(engine="streaming")
     err = capfd.readouterr().err
-    assert "sides are incomplete, estimated rows are: 20000 vs. 100000" in err
+    assert "sides are incomplete, estimated rows are: 100000 vs. 500000" in err
     assert "estimated retained bytes" not in err
+    # The left side is read on, but has more than an eighth of the right rows.
+    assert "sampling it up to 62500 rows" in err
+    assert "left side reached its sample limits" in err
     assert "build side chosen: right" in err
 
 
@@ -355,6 +358,115 @@ def test_incomplete_sides_without_estimates(
     q = assert_semi(left, right, left.collect(), on="k")
     assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) is None
     assert build_side_chosen(q, plmonkeypatch, capfd) == "right"
+
+
+def sparse(n: int, keep_every: int) -> pl.LazyFrame:
+    # The filter is estimated to keep a fifth of the rows.
+    lf = pl.LazyFrame({"k": np.arange(n), "c": np.arange(n) % keep_every})
+    return lf.filter(pl.col("c") < 1).drop("c")
+
+
+def test_incomplete_sides_sample_left_further(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left side is estimated at 200000 rows against 1000000, but keeps
+    # 5000, which only reading it to its end shows.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = sparse(1_000_000, 200)
+    right = pl.LazyFrame({"k": np.arange(1_000_000) // 2})
+    expected = left.collect().filter(pl.col("k") < 500_000)
+    q = assert_semi(left, right, expected, on="k")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert "estimated rows are: 200000 vs. 1000000" in err
+    assert "sampling it up to 125000 rows" in err
+    assert "estimated rows are: 5000 vs. 1000000" in err
+    assert "build side chosen: left" in err
+    q = left.join(right, on="k", how="anti")
+    assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
+
+
+def test_incomplete_sides_sample_left_byte_limit(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The first left rows are narrow and the later ones wide, so the left side
+    # reaches the byte limit of a 1 MB budget before its end.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    n = 1_000_000
+    k = np.arange(n)
+    s = pl.when(pl.col("k") >= 200_000).then(pl.lit("x" * 1_000)).otherwise(pl.lit(""))
+    df = pl.DataFrame({"k": k, "c": k % 200}).with_columns(
+        s=pl.when(pl.col("c") == 0).then(s).otherwise(pl.lit(""))
+    )
+    left = df.lazy().filter(pl.col("c") < 1).drop("c")
+    right = pl.LazyFrame({"k": k // 2})
+    expected = left.collect().filter(pl.col("k") < 500_000)
+    q = assert_semi(left, right, expected, on="k")
+    plmonkeypatch.setenv("POLARS_OOC_MEMORY_BUDGET_MB", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+    err = capfd.readouterr().err
+    assert "sampling it up to 125000 rows and 125000 bytes" in err
+    assert "left side reached its sample limits" in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_left_sample_already_at_limit(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The left side is estimated at 200 rows and the right side at 800. The
+    # left sample already has an eighth of the right rows, so it is not read on.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = pl.LazyFrame({"k": np.arange(1_000), "c": np.zeros(1_000)})
+    left = left.filter(pl.col("c") < 1).drop("c")
+    right = pl.LazyFrame({"k": np.arange(800)})
+    q = assert_semi(left, right, left.collect().filter(pl.col("k") < 800), on="k")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    assert "sampling it up to" not in err
+    assert "build side chosen: right" in err
+
+
+def test_incomplete_sides_sparse_right(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Both sides are estimated at 20000 rows. The right side keeps only 100,
+    # so it may end before or while the left side is read on.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    left = sparse(100_000, 200)
+    right = sparse(100_000, 1_000)
+    expected = left.collect().filter(pl.col("k") % 1_000 == 0)
+    assert_semi(left, right, expected, on="k")
+
+
+def test_incomplete_sides_sample_left_further_null_and_boolean(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Rows of a few bytes or none at all are counted against the byte limit.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "100")
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    n = 300_000
+    right = pl.LazyFrame({"k": np.arange(n) // 2})
+    for payload in [
+        pl.Series("p", [None] * n, dtype=pl.Null),
+        pl.Series("p", np.arange(n) % 3 == 0),
+    ]:
+        left = (
+            pl.LazyFrame({"k": np.arange(n), "c": np.arange(n) % 200})
+            .with_columns(payload)
+            .filter(pl.col("c") < 1)
+            .drop("c")
+        )
+        expected = left.collect().filter(pl.col("k") < 150_000)
+        q = assert_semi(left, right, expected, on="k")
+        assert build_side_chosen(q, plmonkeypatch, capfd, from_estimates=True) == "left"
 
 
 def test_sampling_hints(

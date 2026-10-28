@@ -60,17 +60,25 @@ async fn select_key_columns(
 /// Buffers the morsels of one side of a join until its stream ends or it has
 /// `limit` rows. When its stream ends, the other side is limited to
 /// `LOPSIDED_SAMPLE_FACTOR` times its rows: if this input is done, sampling ends
-/// there, and otherwise it continues in the next phase.
+/// there, and otherwise it continues in the next phase. With `byte_limit`, the
+/// estimated bytes of the received morsels held in memory are added to its
+/// counter, and sampling also stops once they reach its limit.
 async fn sample_sink(
     mut recv: PortReceiver,
     morsels: &mut Vec<Morsel>,
     len: &mut usize,
     limit: Arc<RelaxedCell<usize>>,
     other_limit: Arc<RelaxedCell<usize>>,
+    mut byte_limit: Option<(&mut usize, usize)>,
 ) -> PolarsResult<()> {
     while let Ok(mut morsel) = recv.recv().await {
         *len += morsel.height();
-        if *len >= limit.load() {
+        let mut stop = *len >= limit.load();
+        if let Some((bytes, limit)) = &mut byte_limit {
+            **bytes += in_memory_size(&morsel);
+            stop |= **bytes >= *limit;
+        }
+        if stop {
             morsel.source_token().stop();
         }
 
@@ -80,6 +88,14 @@ async fn sample_sink(
     let lopsided_limit = len.saturating_mul(LOPSIDED_SAMPLE_FACTOR);
     other_limit.store(other_limit.load().min(lopsided_limit));
     Ok(())
+}
+
+/// The estimated bytes of a morsel, or zero if its frame is not readable in memory.
+fn in_memory_size(morsel: &Morsel) -> usize {
+    morsel
+        .sf()
+        .try_get()
+        .map_or(0, |df| df.estimated_size(false))
 }
 
 /// Folds over the first `sample_limit` rows of the sampled morsels in

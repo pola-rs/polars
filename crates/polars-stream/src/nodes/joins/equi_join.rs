@@ -1781,6 +1781,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.left_len,
                             sample_state.limits[0].clone(),
                             sample_state.limits[1].clone(),
+                            None,
                         ),
                     ));
                 }
@@ -1793,6 +1794,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.right_len,
                             sample_state.limits[1].clone(),
                             sample_state.limits[0].clone(),
+                            None,
                         ),
                     ));
                 }
