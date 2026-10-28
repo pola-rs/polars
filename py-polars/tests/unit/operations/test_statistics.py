@@ -123,6 +123,19 @@ def test_cov_one_row(engine: EngineType) -> None:
     assert out.item() is None
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_corr_no_complete_pair(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2], "a": [1.0, 2.0, 3.0, 4.0], "b": [None, None, 1.0, 5.0]}
+    )
+    out = lf.group_by("g").agg(pl.corr("a", "b")).sort("g").collect(engine=engine)
+    assert_series_equal(out["a"], pl.Series("a", [float("nan"), 1.0]))
+    out = lf.filter(pl.col.g == 1).select(pl.corr("a", "b")).collect(engine=engine)
+    assert math.isnan(out.item())
+    out = lf.head(0).select(pl.corr("a", "b")).collect(engine=engine)
+    assert math.isnan(out.item())
+
+
 def test_std(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.lazy().std().collect()
     assert res["A"][0] == pytest.approx(1.5811388300841898)
