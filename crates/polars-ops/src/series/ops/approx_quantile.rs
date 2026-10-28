@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
+use std::sync::Arc;
 
 use polars_arrow::legacy::utils::CustomIterTools;
 use polars_compute::approx_quantile::{ApproxQuantileMethod, FinalizedSketch, Sketch};
@@ -35,8 +36,10 @@ where
 {
     const THREAD_BOUNDARY: usize = if cfg!(debug_assertions) { 1 } else { 100_000 };
 
+    let shared_count = Arc::default();
     let build = |items: &[T]| {
-        let mut sketch = Sketch::new(method, error, failure_probability);
+        let mut sketch = Sketch::new(method, error, failure_probability)
+            .with_shared_counter(Arc::clone(&shared_count));
         for item in items {
             sketch.update(item);
         }
