@@ -298,7 +298,13 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         let v = core::mem::take(&mut self.values);
         let ca: Float64Chunked = v
             .into_iter()
-            .map(|s| Some(s.finalize()))
+            .map(|s| {
+                if s.weight() == 0.0 {
+                    None
+                } else {
+                    Some(s.finalize())
+                }
+            })
             .collect_ca(PlSmallStr::EMPTY);
         ca.into_series().cast(&self.out_dtype)
     }

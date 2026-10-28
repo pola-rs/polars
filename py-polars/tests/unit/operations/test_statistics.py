@@ -12,7 +12,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from polars._typing import EngineType
+    from polars._typing import CorrelationMethod, EngineType
 
 
 def test_corr() -> None:
@@ -124,16 +124,32 @@ def test_cov_one_row(engine: EngineType) -> None:
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_corr_no_complete_pair(engine: EngineType) -> None:
+@pytest.mark.parametrize("method", ["pearson", "spearman"])
+def test_corr_no_complete_pair(engine: EngineType, method: CorrelationMethod) -> None:
     lf = pl.LazyFrame(
         {"g": [1, 1, 2, 2], "a": [1.0, 2.0, 3.0, 4.0], "b": [None, None, 1.0, 5.0]}
     )
-    out = lf.group_by("g").agg(pl.corr("a", "b")).sort("g").collect(engine=engine)
-    assert_series_equal(out["a"], pl.Series("a", [float("nan"), 1.0]))
-    out = lf.filter(pl.col.g == 1).select(pl.corr("a", "b")).collect(engine=engine)
-    assert math.isnan(out.item())
-    out = lf.head(0).select(pl.corr("a", "b")).collect(engine=engine)
-    assert math.isnan(out.item())
+    corr = pl.corr("a", "b", method=method)
+    out = lf.group_by("g").agg(corr).sort("g").collect(engine=engine)
+    assert_series_equal(out["a"], pl.Series("a", [None, 1.0]))
+    out = lf.filter(pl.col.g == 1).select(corr).collect(engine=engine)
+    assert out.item() is None
+    out = lf.head(0).select(corr).collect(engine=engine)
+    assert out.item() is None
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_corr_broadcast_no_complete_pair(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"a": [1.0, 2.0], "b": [None, None]}, schema_overrides={"b": pl.Float64}
+    )
+    out = lf.select(
+        null_lit=pl.corr("a", pl.lit(None, pl.Float64)),
+        all_null=pl.corr("b", pl.lit(1.0)),
+        constant=pl.corr("a", pl.lit(1.0)),
+    ).collect(engine=engine)
+    assert out.row(0)[:2] == (None, None)
+    assert math.isnan(out["constant"].item())
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
