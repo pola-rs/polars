@@ -3565,6 +3565,7 @@ dependencies = [
  "polars-io",
  "polars-json",
  "polars-parquet",
+ "polars-row",
  "polars-utils",
  "pyo3",
  "rayon",

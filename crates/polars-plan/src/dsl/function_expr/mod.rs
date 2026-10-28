@@ -473,9 +473,13 @@ pub enum FunctionExpr {
     Reinterpret(Option<bool>, Option<DataType>),
     ExtendConstant,
 
-    RowEncode(RowEncodingVariant),
+    RowEncode(RowEncodingVariant, RowEncodingOutputType),
     #[cfg(feature = "dtype-struct")]
-    RowDecode(Vec<(PlSmallStr, DataTypeExpr)>, RowEncodingVariant),
+    RowDecode(
+        Vec<(PlSmallStr, DataTypeExpr)>,
+        RowEncodingVariant,
+        RowEncodingOutputType,
+    ),
 }
 
 impl Hash for FunctionExpr {
@@ -806,11 +810,15 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
 
-            RowEncode(variants) => variants.hash(state),
+            RowEncode(variants, output) => {
+                variants.hash(state);
+                output.hash(state);
+            },
             #[cfg(feature = "dtype-struct")]
-            RowDecode(fs, variants) => {
+            RowDecode(fs, variants, output) => {
                 fs.hash(state);
                 variants.hash(state);
+                output.hash(state);
             },
         }
     }

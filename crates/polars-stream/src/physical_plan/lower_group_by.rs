@@ -1308,6 +1308,7 @@ pub fn try_build_sorted_group_by(
                     nulls_last: None,
                     broadcast_nulls: None,
                 },
+                RowEncodingOutputType::AlwaysBinaryOffset,
             ),
             expr_arena,
         )
@@ -1392,6 +1393,7 @@ pub fn try_build_sorted_group_by(
                         nulls_last: None,
                         broadcast_nulls: None,
                     },
+                    RowEncodingOutputType::AlwaysBinaryOffset,
                 ),
                 expr_arena,
             )

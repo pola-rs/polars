@@ -136,6 +136,7 @@ pub(super) fn retain_row_encode_keys(
                     nulls_last,
                     broadcast_nulls,
                 },
+                RowEncodingOutputType::AlwaysBinaryOffset,
             ),
         ..
     } = &mut encode

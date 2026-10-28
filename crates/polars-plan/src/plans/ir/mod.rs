@@ -261,6 +261,7 @@ pub fn window_order_keys(
                         nulls_last: Some(nulls_last),
                         broadcast_nulls: None | Some(false),
                     },
+                    RowEncodingOutputType::AlwaysBinaryOffset,
                 ),
             ..
         } = expr_arena.get(key)

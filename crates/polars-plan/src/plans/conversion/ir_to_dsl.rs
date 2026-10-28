@@ -1274,11 +1274,12 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Reinterpret(dtype) => F::Reinterpret(None, Some(dtype)),
         IF::ExtendConstant => F::ExtendConstant,
 
-        IF::RowEncode(_, v) => F::RowEncode(v),
+        IF::RowEncode(_, v, output) => F::RowEncode(v, output),
         #[cfg(feature = "dtype-struct")]
-        IF::RowDecode(fs, v) => F::RowDecode(
+        IF::RowDecode(fs, v, output) => F::RowDecode(
             fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
             v,
+            output,
         ),
         IF::DynamicPred { pred, .. } | IF::DynamicSkipBatch { pred } => {
             return Expr::Display {

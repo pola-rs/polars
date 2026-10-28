@@ -27,7 +27,7 @@ pub fn len_from_precision(precision: usize) -> usize {
     len_from_num_bits(num_bits_from_precision(precision))
 }
 
-fn num_bits_from_precision(precision: usize) -> usize {
+pub(crate) fn num_bits_from_precision(precision: usize) -> usize {
     assert!(precision <= 38);
     // This may seem random. But this is ceil(s * log2(10)) which is a reduction of
     // ceil(log2(10**s))

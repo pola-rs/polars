@@ -86,7 +86,7 @@ pub use self::range::IRRangeFunction;
 pub use self::rolling::IRRollingFunction;
 #[cfg(feature = "rolling_window_by")]
 pub use self::rolling_by::IRRollingFunctionBy;
-pub use self::row_encode::RowEncodingVariant;
+pub use self::row_encode::{RowEncodingOutputType, RowEncodingVariant};
 #[cfg(feature = "strings")]
 pub use self::strings::IRStringFunction;
 #[cfg(all(feature = "strings", feature = "regex", feature = "timezones"))]
@@ -448,9 +448,9 @@ pub enum IRFunctionExpr {
     Reinterpret(DataType),
     ExtendConstant,
 
-    RowEncode(Vec<DataType>, RowEncodingVariant),
+    RowEncode(Vec<DataType>, RowEncodingVariant, RowEncodingOutputType),
     #[cfg(feature = "dtype-struct")]
-    RowDecode(Vec<Field>, RowEncodingVariant),
+    RowDecode(Vec<Field>, RowEncodingVariant, RowEncodingOutputType),
     DynamicPred {
         pred: DynamicPredWeakRef,
     },
@@ -790,14 +790,16 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
 
-            RowEncode(dts, variants) => {
+            RowEncode(dts, variants, output) => {
                 dts.hash(state);
                 variants.hash(state);
+                output.hash(state);
             },
             #[cfg(feature = "dtype-struct")]
-            RowDecode(fs, variants) => {
+            RowDecode(fs, variants, output) => {
                 fs.hash(state);
                 variants.hash(state);
+                output.hash(state);
             },
             DynamicPred { pred } => {
                 pred.id().hash(state);

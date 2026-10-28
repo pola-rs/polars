@@ -863,11 +863,14 @@ impl Expr {
             // Row-encode the keys so the sort options apply to every key.
             let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
             let encoded = Expr::n_ary(
-                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                    descending: Some(vec![options.descending]),
-                    nulls_last: Some(vec![options.nulls_last]),
-                    broadcast_nulls: None,
-                }),
+                FunctionExpr::RowEncode(
+                    RowEncodingVariant::Ordered {
+                        descending: Some(vec![options.descending]),
+                        nulls_last: Some(vec![options.nulls_last]),
+                        broadcast_nulls: None,
+                    },
+                    RowEncodingOutputType::AlwaysBinaryOffset,
+                ),
                 e,
             );
             Some((

@@ -10101,6 +10101,8 @@ class Series(metaclass=_Meta):
         unordered: bool = False,
         descending: Sequence[bool] | None = None,
         nulls_last: Sequence[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        nullable: Sequence[bool] | None = None,
     ) -> Series:
         """Decode from the row encoding."""
         return (
@@ -10112,6 +10114,8 @@ class Series(metaclass=_Meta):
                     unordered=unordered,
                     descending=descending,
                     nulls_last=nulls_last,
+                    output=output,
+                    nullable=nullable,
                 )
             )
             .to_series()

@@ -647,16 +647,14 @@ impl PhysicalExpr for WindowExpr {
                                             "".into(),
                                             row_encode::_get_rows_encoded_unordered(&[
                                                 left.clone()
-                                            ])?
-                                            .into_array(),
+                                            ])?,
                                         )
                                         .into_series(),
                                         ChunkedArray::<BinaryOffsetType>::with_chunk(
                                             "".into(),
                                             row_encode::_get_rows_encoded_unordered(&[
                                                 right.clone()
-                                            ])?
-                                            .into_array(),
+                                            ])?,
                                         )
                                         .into_series(),
                                     )

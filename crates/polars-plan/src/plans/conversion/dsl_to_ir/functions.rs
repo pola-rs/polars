@@ -1381,7 +1381,7 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(mut v) => {
+        F::RowEncode(mut v, output) => {
             let dts = e
                 .iter()
                 .map(|e| {
@@ -1405,14 +1405,15 @@ pub(super) fn convert_functions(
                 *descending = Some(options.descending);
                 *nulls_last = Some(options.nulls_last);
             }
-            I::RowEncode(dts, v)
+            I::RowEncode(dts, v, output)
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, v) => I::RowDecode(
+        F::RowDecode(fs, v, output) => I::RowDecode(
             fs.into_iter()
                 .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))
                 .collect::<PolarsResult<Vec<_>>>()?,
             v,
+            output,
         ),
     };
 

@@ -569,12 +569,22 @@ pub fn function_expr_to_udf(
         F::Reinterpret(dtype) => map!(misc::reinterpret, &dtype),
         F::ExtendConstant => map_as_slice!(misc::extend_constant),
 
-        F::RowEncode(dts, variants) => {
-            map_as_slice!(misc::row_encode, dts.clone(), variants.clone())
+        F::RowEncode(dts, variants, output) => {
+            map_as_slice!(
+                misc::row_encode,
+                dts.clone(),
+                variants.clone(),
+                output.clone()
+            )
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, variants) => {
-            map_as_slice!(misc::row_decode, fs.clone(), variants.clone())
+        F::RowDecode(fs, variants, output) => {
+            map_as_slice!(
+                misc::row_decode,
+                fs.clone(),
+                variants.clone(),
+                output.clone()
+            )
         },
         F::DynamicPred { pred, .. } => {
             map_as_slice!(misc::dynamic_pred, &pred)

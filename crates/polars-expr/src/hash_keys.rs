@@ -143,7 +143,7 @@ impl HashKeys {
             || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.columns();
-            let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
+            let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap();
 
             if !null_is_valid {
                 let validities = keys

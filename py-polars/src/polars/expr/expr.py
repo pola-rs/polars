@@ -12998,6 +12998,8 @@ class Expr(metaclass=_Meta):
         unordered: bool = False,
         descending: Sequence[bool] | None = None,
         nulls_last: Sequence[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        nullable: Sequence[bool] | None = None,
     ) -> Expr:
         dtypes_pyexprs = [
             parse_into_datatype_expr(dtype)._pydatatype_expr for dtype in dtypes
@@ -13007,10 +13009,12 @@ class Expr(metaclass=_Meta):
             assert descending is None
             assert nulls_last is None
 
-            result = self._pyexpr.row_decode_unordered(names, dtypes_pyexprs)
+            result = self._pyexpr.row_decode_unordered(
+                names, dtypes_pyexprs, output, nullable
+            )
         else:
             result = self._pyexpr.row_decode_ordered(
-                names, dtypes_pyexprs, descending, nulls_last
+                names, dtypes_pyexprs, descending, nulls_last, output, nullable
             )
 
         return wrap_expr(result)

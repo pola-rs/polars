@@ -13497,6 +13497,8 @@ class DataFrame:
         unordered: bool = False,
         descending: list[bool] | None = None,
         nulls_last: list[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        nullable: Sequence[bool] | None = None,
     ) -> Series:
         """
         Row encode the given DataFrame.
@@ -13515,6 +13517,8 @@ class DataFrame:
                 unordered=unordered,
                 descending=descending,
                 nulls_last=nulls_last,
+                output=output,
+                nullable=nullable,
             )
         ).to_series()
 
