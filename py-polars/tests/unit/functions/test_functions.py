@@ -306,7 +306,7 @@ def test_spearman_propagate_nans_with_all_nulls_does_not_panic() -> None:
 
     out = df.select(pl.corr("x", "y", method="spearman", propagate_nans=True))
 
-    assert str(out.item()) == "nan"
+    assert out.item() is None
 
 
 def test_align_frames() -> None:

@@ -1539,15 +1539,27 @@ class PyExpr:
     def skip_batch_predicate(self, schema: Any) -> PyExpr | None: ...
     def to_pyarrow_predicate(self, schema: Any) -> str | None: ...
     @staticmethod
-    def row_encode_unordered(exprs: Sequence[PyExpr]) -> PyExpr: ...
+    def row_encode_unordered(
+        exprs: Sequence[PyExpr],
+        output: str,
+        encode_nulls: Sequence[bool] | None,
+        propagate_nulls: bool,
+    ) -> PyExpr: ...
     @staticmethod
     def row_encode_ordered(
         exprs: Sequence[PyExpr],
         descending: Sequence[bool] | None,
         nulls_last: Sequence[bool] | None,
+        output: str,
+        encode_nulls: Sequence[bool] | None,
+        propagate_nulls: bool,
     ) -> PyExpr: ...
     def row_decode_unordered(
-        self, names: Sequence[str], datatypes: Sequence[PyDataTypeExpr]
+        self,
+        names: Sequence[str],
+        datatypes: Sequence[PyDataTypeExpr],
+        output: str,
+        encode_nulls: Sequence[bool] | None,
     ) -> PyExpr: ...
     def row_decode_ordered(
         self,
@@ -1555,6 +1567,8 @@ class PyExpr:
         datatypes: Sequence[PyDataTypeExpr],
         descending: Sequence[bool] | None,
         nulls_last: Sequence[bool] | None,
+        output: str,
+        encode_nulls: Sequence[bool] | None,
     ) -> PyExpr: ...
     def into_selector(self) -> Any: ...
     @staticmethod
@@ -2393,6 +2407,7 @@ def any_horizontal(exprs: Sequence[PyExpr]) -> PyExpr: ...
 def max_horizontal(exprs: Sequence[PyExpr]) -> PyExpr: ...
 def min_horizontal(exprs: Sequence[PyExpr]) -> PyExpr: ...
 def sum_horizontal(exprs: Sequence[PyExpr], ignore_nulls: bool) -> PyExpr: ...
+def cum_sum_horizontal(exprs: Sequence[PyExpr]) -> PyExpr: ...
 def mean_horizontal(exprs: Sequence[PyExpr], ignore_nulls: bool) -> PyExpr: ...
 
 # functions.business

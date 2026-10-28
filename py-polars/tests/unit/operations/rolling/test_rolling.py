@@ -946,6 +946,73 @@ def test_rolling_cov_corr_nulls() -> None:
     assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
 
+_I = np.arange(400)
+
+
+@pytest.mark.parametrize(
+    ("x", "y"),
+    [
+        # Far from zero.
+        (1e8 + 1e-3 * np.sin(_I), 5e7 - 3e-3 * np.cos(_I)),
+        # The level jumps from 1 to 1e7 in steps, with small variation within a step.
+        (
+            10.0 ** (_I // 50) + 1e-3 * np.sin(_I),
+            10.0 ** (_I // 50) - 2e-3 * np.cos(_I),
+        ),
+    ],
+)
+def test_rolling_cov_corr_precision_29922(
+    x: np.ndarray[Any, Any], y: np.ndarray[Any, Any]
+) -> None:
+    w = 20
+    res = pl.DataFrame({"x": x, "y": y}).select(
+        cov_xx=pl.rolling_cov("x", "x", window_size=w),
+        corr_xx=pl.rolling_corr("x", "x", window_size=w),
+        cov_xy=pl.rolling_cov("x", "y", window_size=w),
+        corr_xy=pl.rolling_corr("x", "y", window_size=w),
+    )[w - 1 :]
+
+    # Subtracting a value of the window avoids cancellation in the reference.
+    c = np.array(
+        [
+            np.cov(x[k - w + 1 : k + 1] - x[k], y[k - w + 1 : k + 1] - y[k])
+            for k in range(w - 1, len(x))
+        ]
+    )
+    var_x, var_y, cov_xy = c[:, 0, 0], c[:, 1, 1], c[:, 0, 1]
+    scale = np.sqrt(var_x * var_y)
+
+    assert res["cov_xx"].to_list() == pytest.approx(var_x, rel=1e-4)
+    assert res["corr_xx"].to_list() == pytest.approx(np.ones(len(c)), abs=1e-6)
+    assert np.all(np.abs(res["cov_xy"].to_numpy() - cov_xy) <= 1e-4 * scale)
+    assert res["corr_xy"].to_list() == pytest.approx(cov_xy / scale, abs=1e-4)
+
+
+def test_rolling_cov_corr_edge_cases_29922() -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "y": [1.0, 3.0, 2.0, 5.0]})
+
+    out = df.select(
+        cov_lit=pl.rolling_cov("x", pl.lit(2.0), window_size=3),
+        corr_lit=pl.rolling_corr("x", pl.lit(2.0), window_size=3),
+        cov_ddof2=pl.rolling_cov("x", "y", window_size=3, min_samples=1, ddof=2),
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "cov_lit": [None, None, 0.0, 0.0],
+                "corr_lit": [None, None, float("nan"), float("nan")],
+                "cov_ddof2": [float("nan"), float("nan"), 1.0, 2.0],
+            }
+        ),
+    )
+
+    out = df.cast(pl.Float16).select(cov=pl.rolling_cov("x", "y", window_size=2))
+    assert_frame_equal(
+        out, pl.DataFrame({"cov": [None, 1.0, -0.5, 1.5]}, schema={"cov": pl.Float16})
+    )
+
+
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
     datecol = pl.Series(

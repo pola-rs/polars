@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 import polars as pl
 from polars._utils.logging import eprint
 from polars._utils.various import parse_version
+from polars.exceptions import ComputeError
 from polars.io.cloud.credential_provider._providers import (
     _get_credentials_from_provider_expiry_aware,
 )
@@ -239,17 +241,38 @@ class DeltaDataset:
         best_effort_statistics_columns = [
             c for c in statistics_columns or [] if c not in (filter_columns or [])
         ]
+        load_statistics = filter_columns is not None or bool(
+            best_effort_statistics_columns
+        )
+        # Partition values come from the log, as paths need not be hive-style, so
+        # partitioned tables load the add actions even when statistics are not needed.
+        add_actions = (
+            pl.DataFrame(table.get_add_actions())
+            if load_statistics or partition_columns
+            else None
+        )
         table_statistics = (
             _extract_table_statistics_from_delta_add_actions(
-                pl.DataFrame(table.get_add_actions()),
+                add_actions,
                 filter_columns=filter_columns or [],
                 best_effort_columns=best_effort_statistics_columns,
                 schema=schema,
                 verbose=verbose,
             )
-            if filter_columns is not None or best_effort_statistics_columns
+            if add_actions is not None and load_statistics
             else None
         )
+        hive_partitions = None
+        if add_actions is not None and partition_columns:
+            if not all(
+                path.endswith(unquote(add_path))
+                for path, add_path in zip(paths, add_actions["path"], strict=True)
+            ):
+                msg = "delta add actions are not in file_uris() order"
+                raise ComputeError(msg)
+            hive_partitions = add_actions.select(
+                pl.col("partition").struct.field(*hive_schema)
+            ).cast(hive_schema)
 
         reader_features = table.protocol().reader_features
         has_deletion_vectors = (
@@ -300,6 +323,7 @@ class DeltaDataset:
             storage_options=self.storage_options,
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             _table_statistics=table_statistics,
+            _hive_partitions=hive_partitions,
             _deletion_files=deletion_files,
             _source_sizes=source_sizes,
         ), version_key

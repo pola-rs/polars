@@ -1976,3 +1976,40 @@ def test_sort_head_streaming_top_k() -> None:
     ]:
         dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
         assert "top-k" in dot or "bottom-k" in dot
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").sum(),
+        pl.col("x").max(),
+        pl.col("s").min(),
+        pl.col("x").filter(pl.col("x") > 3).sum(),
+        pl.len(),
+        pl.lit(1),
+    ],
+)
+def test_sort_scalar_in_group_30325(expr: pl.Expr, engine: EngineType) -> None:
+    # Unsorted keys give index groups, which the sort used to gather from.
+    lf = pl.LazyFrame(
+        {"g": [2, 1, 2, 3, 1, 2], "x": [3, 1, None, None, 4, 6], "s": list("cabedf")}
+    )
+
+    def queries(e: pl.Expr) -> list[pl.LazyFrame]:
+        return [
+            lf.group_by("g", maintain_order=True).agg(e.alias("r")),
+            lf.group_by("g", maintain_order=True).agg(
+                pl.when(pl.col("x") > 2).then(e).alias("r")
+            ),
+            lf.select(e.over("g").alias("r")),
+            lf.select(e.over("g", mapping_strategy="explode").alias("r")),
+        ]
+
+    for opts in (pl.QueryOptFlags(), pl.QueryOptFlags.none()):
+        for sorted_expr in (expr.sort(), expr.sort(descending=True, nulls_last=True)):
+            for q, expected in zip(queries(sorted_expr), queries(expr), strict=True):
+                assert_frame_equal(
+                    q.collect(engine=engine, optimizations=opts),
+                    expected.collect(engine=engine, optimizations=opts),
+                )

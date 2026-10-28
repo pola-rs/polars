@@ -196,6 +196,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::sum_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::cum_sum_horizontal))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::mean_horizontal))
         .unwrap();
 

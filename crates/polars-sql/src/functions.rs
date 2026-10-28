@@ -17,7 +17,9 @@ use polars_plan::dsl::functions::{
     max_horizontal, min_horizontal, when,
 };
 use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
-use polars_plan::plans::{DynLiteralValue, LiteralValue, RowEncodingVariant, typed_lit};
+use polars_plan::plans::{
+    DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant, typed_lit,
+};
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
@@ -2597,7 +2599,9 @@ impl SQLFunctionVisitor<'_> {
                 FunctionArgumentClause::Limit(limit_expr) => {
                     limit_clause = Some(limit_expr);
                 },
-                _ => {},
+                _ => {
+                    polars_bail!(SQLInterface: "'{}' is not supported in {}", clause, func_name)
+                },
             }
         }
         if is_distinct {
@@ -3049,11 +3053,15 @@ fn window_sort_key(mut keys: Vec<(Expr, SortOptions)>) -> Option<(Expr, SortOpti
                 .map(|(_, options)| (options.descending, options.nulls_last))
                 .unzip();
             let key = Expr::n_ary(
-                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                    descending: Some(descending),
-                    nulls_last: Some(nulls_last),
-                    broadcast_nulls: None,
-                }),
+                FunctionExpr::RowEncode {
+                    variant: RowEncodingVariant::Ordered {
+                        descending: Some(descending),
+                        nulls_last: Some(nulls_last),
+                    },
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                    propagate_nulls: false,
+                },
                 keys.into_iter().map(|(key, _)| key).collect(),
             );
             Some((key, SortOptions::default().with_maintain_order(false)))

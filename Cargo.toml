@@ -134,7 +134,7 @@ sha2 = "0.11"
 simd-json = { version = "0.18", features = ["known-key", "128bit"] }
 simdutf8 = "0.1.4"
 slotmap = "1.1.1"
-sqlparser = { version = "0.62", features = ["visitor"] }
+sqlparser = { version = "0.63", features = ["visitor"] }
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"
@@ -148,7 +148,7 @@ uuid = { version = "1.15.1", features = ["v4", "v7"] }
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zmij = "1.0.0"
-zstd = "0.13"
+zstd = "0.14"
 
 polars = { version = "0.55.1", path = "crates/polars", default-features = false }
 polars-arrow = { version = "0.55.1", path = "crates/polars-arrow", default-features = false }

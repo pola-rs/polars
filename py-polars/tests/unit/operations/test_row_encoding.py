@@ -222,6 +222,15 @@ def test_list(field: Any) -> None:
 
 
 @pytest.mark.parametrize("field", FIELD_COMBS_ARGS)
+def test_nested_categorical(field: Any) -> None:
+    values = [["b", None], ["a"], None, []]
+    roundtrip_series_re(values, pl.List(pl.Categorical), **field)
+    roundtrip_series_re(
+        [["b", None], ["a", "c"], None], pl.Array(pl.Categorical, 2), **field
+    )
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS_ARGS)
 def test_array(field: Any) -> None:
     dtype = pl.Array(pl.Int32, 0)
     roundtrip_series_re([], dtype, **field)
@@ -609,3 +618,309 @@ def test_hidden_values_under_nulls_hash_equal_30022(case: str) -> None:
     assert_series_equal(hidden, clean)
     assert hidden.hash().to_list() == clean.hash().to_list()
     assert pl.concat([hidden, clean]).n_unique() == clean.n_unique()
+
+
+OUTPUT_DF = pl.DataFrame(
+    {
+        "b": [True, False, None, True, False, None, True, False],
+        "bn": [True, False, False, True, True, False, True, False],
+        "u8": pl.Series([0, 255, None, 7, 255, 0, 7, None], dtype=pl.UInt8),
+        "u8n": pl.Series([3, 0, 255, 3, 1, 0, 255, 3], dtype=pl.UInt8),
+        "i8": pl.Series([-128, 127, -1, None, 0, -1, 127, None], dtype=pl.Int8),
+        "i8n": pl.Series([0, -1, 1, -128, 127, 0, -1, 1], dtype=pl.Int8),
+        "i32": pl.Series(
+            [None, -(2**31), 2**31 - 1, 0, -1, 1, None, -1], dtype=pl.Int32
+        ),
+        "i32n": pl.Series([5, -5, 0, 5, -(2**31), 2**31 - 1, 0, -5], dtype=pl.Int32),
+        "i64": pl.Series(
+            [None, -(2**63), 2**63 - 1, 0, -1, 1, 0, None], dtype=pl.Int64
+        ),
+        "i64n": pl.Series([1, 1, -(2**63), 2**63 - 1, 0, 0, -1, 1], dtype=pl.Int64),
+        "i128n": pl.Series(
+            [0, -(2**127), 2**127 - 1, -1, 1, 0, -1, 1], dtype=pl.Int128
+        ),
+        "u128": pl.Series(
+            [0, 2**128 - 1, None, 1, 0, 2**128 - 1, None, 1], dtype=pl.UInt128
+        ),
+        "f32": pl.Series(
+            [1.5, float("-inf"), float("nan"), None, float("inf"), -2.0, 1.5, 0.0],
+            dtype=pl.Float32,
+        ),
+        "f64": pl.Series(
+            [float("nan"), -1e300, None, 1e300, -0.5, 0.0, float("nan"), None],
+            dtype=pl.Float64,
+        ),
+        "dec": pl.Series(
+            [D("1.50"), D("-99999999.99"), None, D("0.00")]
+            + [D("99999999.99"), D("-0.01"), D("1.50"), None],
+            dtype=pl.Decimal(10, 2),
+        ),
+        "decn": pl.Series(
+            [D("1.50"), D("-999999999999.99"), D("0.00"), D("999999999999.99")]
+            + [D("-0.01"), D("1.50"), D("0.01"), D("-1.50")],
+            dtype=pl.Decimal(14, 2),
+        ),
+        "enum": pl.Series(
+            ["b", "a", None, "c", "a", "b", None, "c"], dtype=pl.Enum(["c", "a", "b"])
+        ),
+        "enumn": pl.Series(
+            ["b", "a", "a", "c", "c", "b", "a", "c"], dtype=pl.Enum(["c", "a", "b"])
+        ),
+        "s": ["x", "", None, "a string that is too long to inline", "x", None, "", "y"],
+        "nul": pl.Series([None] * 8, dtype=pl.Null),
+        "stn": pl.Series(
+            [
+                {"x": 1, "y": "a"},
+                {"x": None, "y": None},
+                {"x": -1, "y": ""},
+                {"x": 1, "y": None},
+                {"x": None, "y": "a"},
+                {"x": 0, "y": "b"},
+                {"x": 1, "y": "a"},
+                {"x": -1, "y": "a string that is too long to inline"},
+            ],
+            dtype=pl.Struct({"x": pl.Int32, "y": pl.String}),
+        ),
+        "arrn": pl.Series(
+            [
+                [1, 2],
+                [None, 3],
+                [-1, None],
+                [0, 0],
+                [None, None],
+                [5, -5],
+                [1, 2],
+                [3, 4],
+            ],
+            dtype=pl.Array(pl.Int16, 2),
+        ),
+        "stfn": pl.Series(
+            [{"x": i % 3 - 1, "d": None if i % 4 == 0 else D(i)} for i in range(8)],
+            dtype=pl.Struct({"x": pl.Int64, "d": pl.Decimal(10, 2)}),
+        ),
+        "arrsn": pl.Series(
+            [
+                ["a"],
+                [None],
+                [""],
+                ["b"],
+                ["a"],
+                [None],
+                ["too long to inline here"],
+                [""],
+            ],
+            dtype=pl.Array(pl.String, 1),
+        ),
+    }
+)
+
+# The columns, which of them encode nulls and the expected output of
+# `output="optimal"`: a dtype, or "bytes" for rows in the byte format.
+OPTIMAL_CASES: list[tuple[list[str], list[bool] | None, Any]] = [
+    (["bn"], [False], pl.Boolean),
+    (["nul"], None, pl.Boolean),
+    (["b"], None, pl.UInt8),
+    (["u8n", "i8n"], [False, False], pl.UInt16),
+    (["u8n", "i8n"], None, pl.UInt32),
+    (["i32n"], [False], pl.UInt32),
+    (["i32", "b"], None, pl.UInt64),
+    (["i64n"], [False], pl.UInt64),
+    (["dec", "enum"], None, pl.UInt64),
+    (["i64", "i32"], None, pl.UInt128),
+    (["f32", "f64"], None, pl.UInt128),
+    (["i128n"], [False], pl.UInt128),
+    (["i128n"], None, "bytes"),
+    (["i64", "i64n"], None, "bytes"),
+    (["u128", "i64", "i32", "u8", "b", "nul"], None, "bytes"),
+    (["s", "i8"], None, "bytes"),
+    (["decn", "enumn"], [False, False], pl.UInt64),
+    (["decn", "enumn"], None, pl.UInt64),
+    (["i128n", "i64n", "decn"], None, "bytes"),
+    (["stn"], None, "bytes"),
+]
+
+# The columns and which of them encode nulls, for the byte format.
+BYTE_FORMAT_ENCODE_NULLS_CASES: list[tuple[list[str], list[bool]]] = [
+    (["i128n", "i64n", "decn"], [False, False, False]),
+    (["stn"], [False]),
+    (["arrn", "i32n"], [False, False]),
+    (["stfn", "arrsn"], [False, False]),
+    (["arrsn", "stfn"], [False, True]),
+    (["stn", "arrn", "u8n", "i64n", "bn", "enumn"], [False] * 4 + [True, False]),
+    (["stn", "b", "arrn", "bn", "s"], [False, True, False, False, True]),
+]
+
+ORDER_COMBS: list[Any] = [*FIELD_COMBS, "alternating"]
+
+
+def order_args(order: Any, num_cols: int) -> dict[str, Any]:
+    if order == "alternating":
+        return {
+            "descending": [i % 2 == 0 for i in range(num_cols)],
+            "nulls_last": [i % 3 == 0 for i in range(num_cols)],
+        }
+    descending, nulls_last, unordered = order
+    if unordered:
+        return {"unordered": True}
+    return {
+        "descending": [descending] * num_cols,
+        "nulls_last": [nulls_last] * num_cols,
+    }
+
+
+def check_round_trip_and_order(
+    df: pl.DataFrame,
+    output: Any,
+    encode_nulls: list[bool] | None,
+    args: dict[str, Any],
+) -> pl.Expr:
+    """Check that the rows decode to `df` and, if ordered, sort like `df`."""
+    encoded = pl.functions._row_encode(
+        df.columns, output=output, encode_nulls=encode_nulls, **args
+    )
+    decoded = df.select(
+        encoded._row_decode(
+            df.columns, df.dtypes, output=output, encode_nulls=encode_nulls, **args
+        ).struct.unnest()
+    )
+    assert_frame_equal(decoded, df)
+
+    if not args.get("unordered"):
+        indexed = df.with_row_index()
+        assert_frame_equal(
+            indexed.sort(encoded, maintain_order=True),
+            indexed.sort(df.columns, **args, maintain_order=True),
+        )
+    return encoded
+
+
+@pytest.mark.parametrize(("cols", "encode_nulls", "expected"), OPTIMAL_CASES)
+@pytest.mark.parametrize("order", ORDER_COMBS)
+def test_row_encode_optimal(
+    cols: list[str], encode_nulls: list[bool] | None, expected: Any, order: Any
+) -> None:
+    df = OUTPUT_DF.select(cols)
+    args = order_args(order, len(cols))
+    encoded = check_round_trip_and_order(df, "optimal", encode_nulls, args)
+
+    if expected == "bytes":
+        assert df.select(encoded).to_series().to_arrow().type == pa.large_binary()
+        byte_format = pl.functions._row_encode(cols, **args)
+        out = df.select(
+            optimal=encoded.cast(pl.Binary), byte_format=byte_format.cast(pl.Binary)
+        )
+        assert_series_equal(out["optimal"], out["byte_format"], check_names=False)
+    else:
+        assert df.select(encoded).to_series().dtype == expected
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", ["x", "", None, "a string that is too long to inline", None]),
+        pl.Series("a", [b"x", None, b"", b"\x00\xff", b"a binary that is too long"]),
+    ],
+)
+@pytest.mark.parametrize("order", ORDER_COMBS)
+def test_row_encode_optimal_single_binary(s: pl.Series, order: Any) -> None:
+    df = s.to_frame()
+    args = order_args(order, 1)
+    encoded = check_round_trip_and_order(df, "optimal", None, args)
+    rows = df.select(encoded).to_series()
+
+    ascending_nulls_first = args.get("unordered") or not (
+        args["descending"][0] or args["nulls_last"][0]
+    )
+    if ascending_nulls_first:
+        assert_series_equal(rows, s.cast(pl.Binary), check_names=False)
+    else:
+        assert rows.to_arrow().type == pa.large_binary()
+        assert rows.null_count() == 0
+
+
+@pytest.mark.parametrize("unordered", [False, True])
+def test_row_encode_optimal_single_binary_offset(unordered: bool) -> None:
+    df = pl.DataFrame({"a": [1, None, 3], "b": ["x", "y", None]})
+    inner = pl.functions._row_encode(["a", "b"])
+    outer = pl.functions._row_encode([inner], output="optimal", unordered=unordered)
+    out = df.select(inner=inner, outer=outer)
+    assert out["outer"].to_arrow().type == pa.large_binary()
+    assert_series_equal(
+        out["outer"].cast(pl.Binary), out["inner"].cast(pl.Binary), check_names=False
+    )
+
+
+@pytest.mark.parametrize("output", ["binary_offset", "binary"])
+@pytest.mark.parametrize("order", ORDER_COMBS)
+def test_row_encode_byte_format(output: Any, order: Any) -> None:
+    args = order_args(order, OUTPUT_DF.width)
+    encoded = check_round_trip_and_order(OUTPUT_DF, output, None, args)
+    if output == "binary":
+        assert OUTPUT_DF.select(encoded).to_series().dtype == pl.Binary
+
+
+@pytest.mark.parametrize(("cols", "encode_nulls"), BYTE_FORMAT_ENCODE_NULLS_CASES)
+@pytest.mark.parametrize("output", ["binary_offset", "binary"])
+@pytest.mark.parametrize("order", ORDER_COMBS)
+def test_row_encode_byte_format_nulls_not_encoded(
+    cols: list[str], encode_nulls: list[bool], output: Any, order: Any
+) -> None:
+    df = OUTPUT_DF.select(cols)
+    args = order_args(order, len(cols))
+    encoded = check_round_trip_and_order(df, output, encode_nulls, args)
+    all_nulls = pl.functions._row_encode(cols, output=output, **args)
+    out = df.select(
+        encoded=encoded.cast(pl.Binary), all_nulls=all_nulls.cast(pl.Binary)
+    )
+
+    # Each column without nulls encoded is one byte shorter, except booleans.
+    num_shorter = sum(
+        not e and df[c].dtype != pl.Boolean
+        for c, e in zip(cols, encode_nulls, strict=True)
+    )
+    size_diff = out["all_nulls"].bin.size() - out["encoded"].bin.size()
+    assert (size_diff == num_shorter).all()
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", [1, None]),
+        pl.Series("a", ["x", None]),
+        pl.Series("a", [{"x": 1}, None]),
+        pl.Series("a", [[1, 2], None], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series("a", [[1, 2], None, [3]]),
+    ],
+)
+@pytest.mark.parametrize("output", ["binary_offset", "binary", "optimal"])
+def test_row_encode_nulls_not_encoded(s: pl.Series, output: Any) -> None:
+    df = s.to_frame()
+    with pytest.raises(pl.exceptions.ComputeError, match="nulls are not encoded"):
+        df.select(pl.functions._row_encode(["a"], output=output, encode_nulls=[False]))
+
+
+@pytest.mark.parametrize("output", ["binary_offset", "binary", "optimal"])
+@pytest.mark.parametrize("encode_nulls", [None, [False, False]])
+@pytest.mark.parametrize("unordered", [False, True])
+def test_row_encode_propagate_nulls(
+    output: Any, encode_nulls: list[bool] | None, unordered: bool
+) -> None:
+    df = pl.DataFrame({"a": [1, None, 3, 4], "b": ["x", "y", None, "x"]})
+    rows = df.select(
+        pl.functions._row_encode(
+            ["a", "b"],
+            unordered=unordered,
+            output=output,
+            encode_nulls=encode_nulls,
+            propagate_nulls=True,
+        )
+    ).to_series()
+    assert rows.is_null().to_list() == [False, True, True, False]
+    assert rows[0] != rows[3]
+
+
+def test_row_decode_propagated_nulls_raises() -> None:
+    df = pl.DataFrame({"a": [1, None], "b": ["x", "y"]})
+    rows = df._row_encode(propagate_nulls=True)
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="null rows"):
+        rows._row_decode(["a", "b"], [pl.Int64, pl.String])

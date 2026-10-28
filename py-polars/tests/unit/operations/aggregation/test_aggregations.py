@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from polars._typing import (
         ApproxQuantileMethod,
         PolarsDataType,
+        QuantileMethod,
         TimeUnit,
     )
     from tests.conftest import PlMonkeyPatch
@@ -158,6 +159,16 @@ def test_quantile() -> None:
     assert_frame_equal(
         df.select(pl.col("a").quantile([0.5], interpolation="linear")), expected
     )
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("quantile", [5e-324, 0.24999999999999997, 0.9999999999999998])
+def test_quantile_ignores_nulls(method: QuantileMethod, quantile: float) -> None:
+    s = pl.Series([0.0, 1.0, 2.0])
+    with_nulls = pl.Series([None, 0.0, 1.0, None, 2.0, None])
+    assert with_nulls.quantile(quantile, method) == s.quantile(quantile, method)
 
 
 def test_quantile_error_checking() -> None:
@@ -391,6 +402,7 @@ APPROX_QUANTILE_METHODS: list[ApproxQuantileMethod] = [
         ([datetime(2020, 1, 1) + timedelta(hours=i) for i in range(20)], pl.Datetime),
         ([timedelta(seconds=i) for i in range(20)], pl.Duration),
         ([f"{i:04d}" for i in range(20)], pl.String),
+        ([f"{i:04d}".encode() for i in range(20)], pl.Binary),
         ([i % 3 == 0 for i in range(20)], pl.Boolean),
         (list(range(20)), pl.Decimal(10, 2)),
     ],
@@ -408,6 +420,37 @@ def test_approx_quantile_dtypes(values: list[Any], dtype: PolarsDataType) -> Non
     value = result.item()
     assert value is not None
     assert value in s.to_list()
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series(["b", "a", None, "c"], dtype=pl.Categorical),
+        pl.Series(["b", "a", None, "c"], dtype=pl.Enum(["c", "b", "a"])),
+        pl.Series([None, None], dtype=pl.Null),
+        pl.Series([[2], [1, 3], None, [], [None]], dtype=pl.List(pl.Int64)),
+        pl.Series([["b"], ["a"], None], dtype=pl.List(pl.Categorical)),
+        pl.Series([[2, 1], [1, 3], None, [1, None]], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series(
+            [{"x": 2, "y": "a"}, {"x": 1, "y": "b"}, None, {"x": None, "y": "z"}]
+        ),
+        pl.Series([{"x": 2}, {"a": 1}, None], dtype=pl.Map(pl.String, pl.Int64)),
+    ],
+)
+def test_approx_quantile_orders_like_sort(s: pl.Series) -> None:
+    df = pl.DataFrame({"a": s, "g": [i % 2 for i in range(len(s))]})
+    sorted_ = s.drop_nulls().sort().to_list()
+    expected = [sorted_[0], sorted_[-1]] if sorted_ else [None, None]
+
+    result = df.select(pl.col("a").approx_quantile([0.0, 1.0]))
+    assert result.schema["a"] == pl.List(s.dtype)
+    assert result.item().to_list() == expected
+
+    result = df.group_by("g").agg(pl.col("a").approx_quantile([0.0, 1.0])).sort("g")
+    for g, estimates in result.iter_rows():
+        sorted_ = s.filter(df["g"] == g).drop_nulls().sort().to_list()
+        expected = [sorted_[0], sorted_[-1]] if sorted_ else [None, None]
+        assert estimates == expected
 
 
 def test_approx_quantile_dyn_literal_input() -> None:
@@ -450,7 +493,7 @@ def test_approx_quantile_empty_group() -> None:
 
 
 def test_approx_quantile_unsupported_dtype() -> None:
-    s = pl.Series("a", [b"a", b"b", b"c"], dtype=pl.Binary)
+    s = pl.Series("a", [object(), object()], dtype=pl.Object)
     with pytest.raises(InvalidOperationError):
         s.to_frame().select(pl.col("a").approx_quantile(0.5))
 

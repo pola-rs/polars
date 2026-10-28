@@ -18,6 +18,7 @@ use crate::nodes::io_sinks::components::partitioner::Partitioner;
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks::pipeline_initialization::partition_by::start_partition_sink_pipeline;
 use crate::nodes::io_sinks::pipeline_initialization::single_file::start_single_file_sink_pipeline;
+use crate::nodes::io_sinks::writers::interface::{FinishSender, finish_signal};
 use crate::pipe::PortReceiver;
 pub mod components;
 pub mod config;
@@ -85,6 +86,7 @@ impl ComputeNode for IOSinkNode {
                 IOSinkNodeState::Initialized {
                     phase_channel_tx,
                     task_handle,
+                    finish_tx,
                 } => {
                     if self.verbose {
                         eprintln!(
@@ -92,6 +94,7 @@ impl ComputeNode for IOSinkNode {
                             self.name()
                         );
                     }
+                    finish_tx.send();
                     drop(phase_channel_tx);
                     ASYNC.block_in_place_on(task_handle)?;
                 },
@@ -155,6 +158,7 @@ impl ComputeNode for IOSinkNode {
                 let IOSinkNodeState::Initialized {
                     phase_channel_tx,
                     task_handle,
+                    finish_tx,
                 } = std::mem::replace(&mut self.state, IOSinkNodeState::Finished)
                 else {
                     unreachable!()
@@ -168,6 +172,8 @@ impl ComputeNode for IOSinkNode {
                 }
 
                 drop(phase_channel_tx);
+                // Before the join, or the writers waiting on it hang.
+                drop(finish_tx);
 
                 return Err(task_handle.await.unwrap_err());
             }
@@ -186,6 +192,8 @@ enum IOSinkNodeState {
         phase_channel_tx: connector::Sender<PortReceiver>,
         /// Join handle for all background tasks.
         task_handle: AbortOnDropHandle<PolarsResult<()>>,
+        /// Sent once the input ended cleanly; files are finished only then.
+        finish_tx: FinishSender,
     },
 
     Finished,
@@ -234,6 +242,8 @@ impl IOSinkNodeState {
             }
         });
 
+        let (finish_tx, finish_rx) = finish_signal();
+
         let task_handle = match &config.target {
             IOSinkTarget::File(_) => start_single_file_sink_pipeline(
                 node_name.clone(),
@@ -241,6 +251,7 @@ impl IOSinkNodeState {
                 *config,
                 execution_state,
                 io_metrics,
+                finish_rx,
             )?,
 
             IOSinkTarget::Partitioned { .. } => start_partition_sink_pipeline(
@@ -249,12 +260,14 @@ impl IOSinkNodeState {
                 *config,
                 execution_state,
                 io_metrics,
+                finish_rx,
             )?,
         };
 
         *self = Initialized {
             phase_channel_tx,
             task_handle,
+            finish_tx,
         };
 
         Ok(())

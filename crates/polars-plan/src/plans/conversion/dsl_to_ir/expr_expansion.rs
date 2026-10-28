@@ -92,7 +92,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
             | F::ReduceHorizontal { .. }
             | F::SumHorizontal { .. }
             | F::MeanHorizontal { .. }
-            | F::RowEncode(..)
+            | F::RowEncode { .. }
     );
     let mut allow_empty_inputs = matches!(
         function,
@@ -107,7 +107,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
         expand_into_inputs |= matches!(function, F::AsStruct);
         expand_into_inputs |= matches!(
             function,
-            F::CumReduceHorizontal { .. } | F::CumFoldHorizontal { .. }
+            F::CumReduceHorizontal { .. } | F::CumFoldHorizontal { .. } | F::CumSumHorizontal
         );
     }
     #[cfg(feature = "ffi_plugin")]

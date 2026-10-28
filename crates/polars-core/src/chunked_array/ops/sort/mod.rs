@@ -854,6 +854,8 @@ pub fn arg_sort(columns: &[Column], sort_options: SortMultipleOptions) -> Polars
         || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
     {
         argsort_multiple_row_fmt(columns, &sort_options)
+    } else if let Some(idx) = arg_sort_packed_rows(columns, &sort_options, None)? {
+        Ok(idx)
     } else {
         columns[0]
             .clone()

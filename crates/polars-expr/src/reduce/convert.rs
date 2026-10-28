@@ -171,12 +171,22 @@ pub fn into_reduction(
         #[cfg(feature = "approx_quantile")]
         AExpr::Function {
             input: inner_exprs,
-            function: IRFunctionExpr::ApproxQuantileSketch { method, error },
+            function:
+                IRFunctionExpr::ApproxQuantileSketch {
+                    method,
+                    error,
+                    failure_probability,
+                },
             options: _,
         } => {
             assert!(inner_exprs.len() == 1);
             let input = inner_exprs[0].node();
-            let out = new_approx_quantile_sketch_reduction(get_dt(input)?, method.clone(), *error)?;
+            let out = new_approx_quantile_sketch_reduction(
+                get_dt(input)?,
+                method.clone(),
+                *error,
+                *failure_probability,
+            )?;
             (out, input)
         },
 
@@ -237,8 +247,8 @@ pub fn into_reduction(
                     RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
-                        broadcast_nulls: None,
                     },
+                    false,
                     expr_arena,
                 )
                 .node();
@@ -270,8 +280,8 @@ pub fn into_reduction(
                     RowEncodingVariant::Ordered {
                         descending: None,
                         nulls_last: None,
-                        broadcast_nulls: None,
                     },
+                    false,
                     expr_arena,
                 )
                 .node();

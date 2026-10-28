@@ -14,7 +14,8 @@ use polars_plan::plans::python::pyarrow::predicate_to_pa;
 #[cfg(feature = "is_in")]
 use polars_plan::plans::{AExpr, ArenaExprIter, IRBooleanFunction, IRFunctionExpr};
 use polars_plan::plans::{
-    AExprSorted, ExprToIRContext, IR, RowEncodingVariant, node_to_expr, to_expr_ir,
+    AExprSorted, ExprToIRContext, IR, RowEncodingOutputType, RowEncodingVariant, node_to_expr,
+    to_expr_ir,
 };
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
@@ -1257,9 +1258,19 @@ impl PyExpr {
     }
 
     #[staticmethod]
-    fn row_encode_unordered(exprs: Vec<Self>) -> Self {
+    fn row_encode_unordered(
+        exprs: Vec<Self>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+        propagate_nulls: bool,
+    ) -> Self {
         Expr::n_ary(
-            FunctionExpr::RowEncode(RowEncodingVariant::Unordered),
+            FunctionExpr::RowEncode {
+                variant: RowEncodingVariant::Unordered,
+                output: output.0,
+                encode_nulls,
+                propagate_nulls,
+            },
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
         .into()
@@ -1270,19 +1281,32 @@ impl PyExpr {
         exprs: Vec<Self>,
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+        propagate_nulls: bool,
     ) -> Self {
         Expr::n_ary(
-            FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                descending,
-                nulls_last,
-                broadcast_nulls: None,
-            }),
+            FunctionExpr::RowEncode {
+                variant: RowEncodingVariant::Ordered {
+                    descending,
+                    nulls_last,
+                },
+                output: output.0,
+                encode_nulls,
+                propagate_nulls,
+            },
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
         .into()
     }
 
-    fn row_decode_unordered(&self, names: Vec<String>, datatypes: Vec<PyDataTypeExpr>) -> Self {
+    fn row_decode_unordered(
+        &self,
+        names: Vec<String>,
+        datatypes: Vec<PyDataTypeExpr>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
+    ) -> Self {
         let fields = names
             .into_iter()
             .zip(datatypes)
@@ -1290,10 +1314,12 @@ impl PyExpr {
             .collect();
         self.inner
             .clone()
-            .map_unary(FunctionExpr::RowDecode(
+            .map_unary(FunctionExpr::RowDecode {
                 fields,
-                RowEncodingVariant::Unordered,
-            ))
+                variant: RowEncodingVariant::Unordered,
+                output: output.0,
+                encode_nulls,
+            })
             .into()
     }
 
@@ -1303,6 +1329,8 @@ impl PyExpr {
         datatypes: Vec<PyDataTypeExpr>,
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        output: Wrap<RowEncodingOutputType>,
+        encode_nulls: Option<Vec<bool>>,
     ) -> Self {
         let fields = names
             .into_iter()
@@ -1311,14 +1339,15 @@ impl PyExpr {
             .collect::<Vec<_>>();
         self.inner
             .clone()
-            .map_unary(FunctionExpr::RowDecode(
+            .map_unary(FunctionExpr::RowDecode {
                 fields,
-                RowEncodingVariant::Ordered {
+                variant: RowEncodingVariant::Ordered {
                     descending,
                     nulls_last,
-                    broadcast_nulls: None,
                 },
-            ))
+                output: output.0,
+                encode_nulls,
+            })
             .into()
     }
 
