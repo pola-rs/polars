@@ -785,9 +785,21 @@ impl SQLExprVisitor<'_> {
                 PlSmallStr::from_str(lv.extract_str().unwrap())
             },
             pattern => {
-                let rx =
-                    like_pattern_regex(pattern.cast(DataType::String), case_insensitive, false);
-                let matches = self.visit_expr(expr)?.str().contains(rx, true);
+                let expr = self.visit_expr(expr)?;
+                let pattern = pattern.cast(DataType::String);
+                let matches = if case_insensitive {
+                    expr.str()
+                        .contains(like_pattern_regex(pattern, true, false), true)
+                } else {
+                    // Only values holding a wildcard need a regex.
+                    let has_wildcard = pattern.clone().str().contains(lit("[%_]"), true);
+                    let rx = when(has_wildcard.clone())
+                        .then(like_pattern_regex(pattern.clone(), false, false))
+                        .otherwise(lit(NULL));
+                    when(has_wildcard)
+                        .then(expr.clone().str().contains(rx, true))
+                        .otherwise(expr.eq(pattern))
+                };
                 return Ok(if negated { matches.not() } else { matches });
             },
         };
@@ -846,6 +858,9 @@ impl SQLExprVisitor<'_> {
             SQLExpr::Function(function)
                 if function.over.is_none()
                     && function.filter.is_none()
+                    && function.null_treatment.is_none()
+                    && function.within_group.is_empty()
+                    && matches!(function.parameters, FunctionArguments::None)
                     && matches!(
                         PolarsSQLFunctions::try_from_sql(function, self.ctx),
                         Ok(PolarsSQLFunctions::Concat)

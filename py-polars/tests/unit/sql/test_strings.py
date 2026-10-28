@@ -398,6 +398,15 @@ def test_string_like_column_pattern(
     assert res.to_list() == expected
 
 
+@pytest.mark.parametrize(
+    "modifier", ["WITHIN GROUP (ORDER BY txt)", "IGNORE NULLS", "RESPECT NULLS"]
+)
+def test_string_like_concat_pattern_modifier_unsupported(modifier: str) -> None:
+    df = pl.DataFrame({"txt": ["abc"], "pat": ["b"]})
+    with pytest.raises(SQLInterfaceError, match="is not currently supported"):
+        df.sql(f"SELECT txt LIKE CONCAT('%', pat, '%') {modifier} FROM self")
+
+
 def test_string_like_constant_concat_pattern() -> None:
     df = pl.DataFrame({"txt": ["Brand#12", "brand#1", "Other"]})
     res = df.sql("SELECT txt FROM self WHERE txt LIKE CONCAT('Brand%', '%')")
