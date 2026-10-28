@@ -30,6 +30,8 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+#[cfg(feature = "range")]
+pub use scalar::int_range_over_length_ae;
 pub use scalar::{
     is_known_length_ae, is_length_preserving_ae, is_order_insensitive_ae, is_scalar_ae,
     is_single_literal_ae,
