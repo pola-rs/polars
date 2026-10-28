@@ -243,11 +243,9 @@ impl SQLContext {
         let Some(select) = eligible_subquery_select(subquery) else {
             return Ok(None);
         };
-        let Some(selection) = &select.selection else {
+        if select.selection.is_none() {
             return Ok(None);
-        };
-        // Both rewrites below split this into conjuncts.
-        let selection = factored_selection(selection);
+        }
         // Resolve and parse the inner relation in an isolated context so its
         // table/alias registrations don't leak into the outer query's scope.
         let mut ctx = self.isolated();
@@ -258,6 +256,22 @@ impl SQLContext {
         if exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema) != Some(false) {
             return Ok(None);
         }
+        let Some(InnerWhere {
+            inner_lf,
+            selection: Some(selection),
+            ..
+        }) = ctx.filter_inner_subquery_conjuncts(
+            subquery,
+            inner_lf,
+            select.selection.as_ref(),
+            &inner_names,
+            &inner_schema,
+        )?
+        else {
+            return Ok(None);
+        };
+        // Both rewrites below split this into conjuncts.
+        let selection = factored_selection(&selection);
         if let Some(conjuncts) = ctx.split_subquery_conjuncts(
             &selection,
             &inner_names,
@@ -420,12 +434,26 @@ impl SQLContext {
             return Ok(None);
         };
         let right_key = right_key.meta().undo_aliases();
+        let Some(InnerWhere {
+            inner_lf,
+            selection,
+            ..
+        }) = ctx.filter_inner_subquery_conjuncts(
+            subquery,
+            inner_lf,
+            select.selection.as_ref(),
+            &inner_names,
+            &inner_schema,
+        )?
+        else {
+            return Ok(None);
+        };
 
         let SubqueryConjuncts {
             mut left_on,
             mut right_on,
             local_filters,
-        } = match &select.selection {
+        } = match &selection {
             Some(selection) => {
                 let Some(split) = ctx.split_subquery_conjuncts(
                     selection,
@@ -763,6 +791,77 @@ impl SQLContext {
             return Ok(None);
         }
         Ok(Some(parse_sql_expr(sql_expr, self, Some(inner_schema))?))
+    }
+
+    // Apply the conjuncts of a correlated subquery's WHERE that hold a subquery but read
+    // only the inner relations to `inner_lf`, after its plain inner-only conjuncts. They
+    // are planned in this inner context with strict relations, where no reference to the
+    // outer query resolves. `None` if that planning fails.
+    fn filter_inner_subquery_conjuncts(
+        &mut self,
+        subquery: &Query,
+        inner_lf: LazyFrame,
+        selection: Option<&SQLExpr>,
+        inner_names: &[RelationName],
+        inner_schema: &SchemaRef,
+    ) -> PolarsResult<Option<InnerWhere>> {
+        let unchanged = |inner_lf| InnerWhere {
+            inner_lf,
+            selection: selection.cloned(),
+            filtered: false,
+        };
+        let Some(selection) = selection else {
+            return Ok(Some(unchanged(inner_lf)));
+        };
+        if !is_correlated_subquery(subquery, self.catalog_spellings()) {
+            return Ok(Some(unchanged(inner_lf)));
+        }
+        let factored = factored_selection(selection);
+        let mut plain = Vec::new();
+        let mut with_subquery = Vec::new();
+        let mut rest = Vec::new();
+        for conj in MintermIter::new(&factored) {
+            if !expr_contains_subquery(conj) {
+                if binds_to_inner_relation(conj, inner_names, inner_schema) {
+                    plain.push(conj.clone());
+                } else {
+                    rest.push(conj.clone());
+                }
+            } else if binds_to_inner_outside_subqueries(conj, inner_names, inner_schema) {
+                with_subquery.push(conj.clone());
+            } else {
+                rest.push(conj.clone());
+            }
+        }
+        if with_subquery.is_empty() {
+            return Ok(Some(unchanged(inner_lf)));
+        }
+
+        let strict_relations = std::mem::replace(&mut self.strict_relations, true);
+        let filtered = (|| {
+            let mut lf = inner_lf;
+            for conj in &plain {
+                lf = lf.filter(parse_sql_expr(conj, self, Some(inner_schema))?);
+            }
+            let combined = combine_conditions(with_subquery, SQLBinaryOperator::And);
+            let mut lf = self.process_where(
+                lf,
+                combined.as_ref(),
+                FilterMode::KeepTrue,
+                Some(inner_schema.clone()),
+            )?;
+            self.get_frame_schema(&mut lf)?;
+            PolarsResult::Ok(lf)
+        })();
+        self.strict_relations = strict_relations;
+        let Ok(inner_lf) = filtered else {
+            return Ok(None);
+        };
+        Ok(Some(InnerWhere {
+            inner_lf,
+            selection: combine_conditions(rest, SQLBinaryOperator::And),
+            filtered: true,
+        }))
     }
 
     // `values` sorted by the `ORDER BY` of a `LIMIT 1` subquery, whose first value
@@ -1139,8 +1238,22 @@ impl SQLContext {
                 inner: value.meta().undo_aliases(),
             });
         }
+        let Some(InnerWhere {
+            inner_lf,
+            selection: Some(selection),
+            ..
+        }) = ctx.filter_inner_subquery_conjuncts(
+            subquery,
+            inner_lf,
+            Some(selection),
+            &inner_names,
+            &inner_schema,
+        )?
+        else {
+            return Ok(None);
+        };
         let mut local_filters = Vec::new();
-        let selection = factored_selection(selection);
+        let selection = factored_selection(&selection);
         for c in MintermIter::new(&selection) {
             if let Some(key) =
                 self.join_correlation_key(c, &ctx, &inner_schema, tbl_left, tbl_right)?
@@ -1333,9 +1446,9 @@ impl SQLContext {
         let Some(select) = eligible_subquery_body(subquery) else {
             return Ok(None);
         };
-        let Some(selection) = &select.selection else {
+        if select.selection.is_none() {
             return Ok(None);
-        };
+        }
         let [SelectItem::UnnamedExpr(proj) | SelectItem::ExprWithAlias { expr: proj, .. }] =
             select.projection.as_slice()
         else {
@@ -1346,6 +1459,21 @@ impl SQLContext {
         let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
             return Ok(None);
         };
+        let Some(InnerWhere {
+            inner_lf,
+            selection: Some(selection),
+            filtered,
+        }) = ctx.filter_inner_subquery_conjuncts(
+            subquery,
+            inner_lf,
+            select.selection.as_ref(),
+            &inner_names,
+            &inner_schema,
+        )?
+        else {
+            return Ok(None);
+        };
+        let selection = &selection;
 
         // A window gives one value per inner row, not one per group.
         if expr_has_window_functions(proj) {
@@ -1434,7 +1562,9 @@ impl SQLContext {
         // holds each outer row's subquery rows, each one repeated once per match
         // of the row's other relations on the keys. An aggregate that ignores such
         // repeats is then read from the outer frame, grouped by the outer keys.
+        // The outer frame doesn't hold the filter applied to `inner_lf`.
         if equality_only
+            && !filtered
             && ignores_uniform_repeats(&agg_expr)
             && let Some(tree) = join_tree
             && tree.covers(&select.from, &factored_selection(selection), &inner_schema)
@@ -1568,9 +1698,9 @@ impl SQLContext {
         else {
             return Ok(None);
         };
-        let Some(selection) = &select.selection else {
+        if select.selection.is_none() {
             return Ok(None);
-        };
+        }
 
         let Some(needle) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
             return Ok(None);
@@ -1578,6 +1708,20 @@ impl SQLContext {
 
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) = ctx.resolve_subquery_from(select)? else {
+            return Ok(None);
+        };
+        let Some(InnerWhere {
+            inner_lf,
+            selection: Some(selection),
+            ..
+        }) = ctx.filter_inner_subquery_conjuncts(
+            subquery,
+            inner_lf,
+            select.selection.as_ref(),
+            &inner_names,
+            &inner_schema,
+        )?
+        else {
             return Ok(None);
         };
         let Some(value) = ctx.marking_aggregates(|ctx| {
@@ -1594,7 +1738,7 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let Some((corr_preds, general, local_filters)) = ctx.split_correlation_conjuncts(
-            selection,
+            &selection,
             &inner_names,
             &inner_schema,
             outer_schema,
@@ -1733,8 +1877,23 @@ impl SQLContext {
             return Ok(None);
         };
 
+        let Some(InnerWhere {
+            inner_lf,
+            selection,
+            ..
+        }) = ctx.filter_inner_subquery_conjuncts(
+            subquery,
+            inner_lf,
+            select.selection.as_ref(),
+            &inner_names,
+            &inner_schema,
+        )?
+        else {
+            return Ok(None);
+        };
+
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
-        let (corr_preds, general, local_filters) = match &select.selection {
+        let (corr_preds, general, local_filters) = match &selection {
             Some(selection) => {
                 let Some(split) = ctx.split_correlation_conjuncts(
                     selection,
@@ -2236,6 +2395,14 @@ enum CorrelationSide {
     Outer,
 }
 
+// A subquery's inner frame and WHERE after `filter_inner_subquery_conjuncts`.
+struct InnerWhere {
+    inner_lf: LazyFrame,
+    selection: Option<SQLExpr>,
+    /// Whether conjuncts moved from `selection` into `inner_lf`.
+    filtered: bool,
+}
+
 // A subquery WHERE split into equi-correlation join keys (outer side in
 // `left_on`, inner side in `right_on`) and filters over inner columns only.
 #[cfg(feature = "semi_anti_join")]
@@ -2294,21 +2461,75 @@ fn binds_to_inner_relation(
     inner_schema: &Schema,
 ) -> bool {
     visit_expressions(expr, |e| {
-        let resolves = match e {
-            // A nested subquery is its own scope, which this cannot resolve against.
-            _ if is_subquery_expr(e) => false,
-            SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),
-            SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, inner_names.iter())
-                .is_some_and(|(_, len)| inner_schema.contains(&parts[len].value)),
-            _ => true,
-        };
-        if resolves {
+        // A nested subquery is its own scope, which this cannot resolve against.
+        if !is_subquery_expr(e) && binds_to_inner_column(e, inner_names, inner_schema) {
             ControlFlow::Continue(())
         } else {
             ControlFlow::Break(())
         }
     })
     .is_continue()
+}
+
+// `binds_to_inner_relation` for the columns read outside of the nested subqueries.
+fn binds_to_inner_outside_subqueries(
+    expr: &SQLExpr,
+    inner_names: &[RelationName],
+    inner_schema: &Schema,
+) -> bool {
+    struct Columns<'a> {
+        inner_names: &'a [RelationName],
+        inner_schema: &'a Schema,
+        query_depth: usize,
+    }
+
+    impl Visitor for Columns<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if self.query_depth > 0
+                || binds_to_inner_column(expr, self.inner_names, self.inner_schema)
+            {
+                ControlFlow::Continue(())
+            } else {
+                ControlFlow::Break(())
+            }
+        }
+    }
+
+    dyn_visit::visit(
+        expr,
+        &mut Columns {
+            inner_names,
+            inner_schema,
+            query_depth: 0,
+        },
+    )
+    .is_continue()
+}
+
+// Whether `expr`, if it is a column, resolves to the inner relation.
+fn binds_to_inner_column(
+    expr: &SQLExpr,
+    inner_names: &[RelationName],
+    inner_schema: &Schema,
+) -> bool {
+    match expr {
+        SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),
+        SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, inner_names.iter())
+            .is_some_and(|(_, len)| inner_schema.contains(&parts[len].value)),
+        _ => true,
+    }
 }
 
 // Classify a correlation operand as an inner- or outer-query column and return
