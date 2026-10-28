@@ -2497,7 +2497,7 @@ pub(crate) fn sql_binary(lhs: Expr, op: SqlBinaryOp, rhs: Expr) -> Expr {
 
 /// Whether `expr` only takes literal values, at least one a decimal: a decimal literal,
 /// or a `CASE` of literals.
-fn is_decimal_literal_valued(expr: &Expr) -> bool {
+pub(crate) fn is_decimal_literal_valued(expr: &Expr) -> bool {
     match expr {
         Expr::Ternary { truthy, falsy, .. } => {
             let literal_valued =

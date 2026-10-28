@@ -45,6 +45,7 @@ use crate::grouping_sets::{
     GroupingCall, GroupingSets, bind_stored_keys, canonicalize_keys, contains_grouping_placeholder,
     expand_grouping_sets, new_placeholder,
 };
+use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
@@ -3488,17 +3489,38 @@ impl SQLContext {
             left_on.push(lit(true));
             right_on.push(lit(true));
         }
+        let (mut left_frame, mut right_frame) = (tbl_left.frame.clone(), tbl_right.frame.clone());
+        if predicates.is_empty() {
+            let natural = matches!(constraint, Some(JoinConstraint::Natural));
+            for (l, r) in left_on.iter_mut().zip(right_on.iter_mut()) {
+                let (Ok(l_field), Ok(r_field)) =
+                    (l.to_field(&tbl_left.schema), r.to_field(&tbl_right.schema))
+                else {
+                    continue;
+                };
+                let Some((l_cast, r_cast)) =
+                    sql_join_key_pair(l.clone(), l_field.dtype(), r.clone(), r_field.dtype(), true)
+                else {
+                    continue;
+                };
+                // A coalesced key column takes the common type.
+                if natural && let (Expr::Column(l_name), Expr::Column(r_name)) = (&*l, &*r) {
+                    left_frame = left_frame.with_column(l_cast.alias(l_name.clone()));
+                    right_frame = right_frame.with_column(r_cast.alias(r_name.clone()));
+                } else {
+                    (*l, *r) = (l_cast, r_cast);
+                }
+            }
+        }
         if keep_right {
             polars_ensure!(
                 predicates.is_empty(),
                 InvalidOperation: "'{}' join is not supported with non-equi join conditions",
                 join_type
             );
-            return tbl_right
-                .frame
-                .clone()
+            return right_frame
                 .join_builder()
-                .with(tbl_left.frame.clone())
+                .with(left_frame)
                 .left_on(right_on)
                 .right_on(left_on)
                 .how(join_type)
@@ -3513,11 +3535,9 @@ impl SQLContext {
 
         let joined = if predicates.is_empty() {
             // Equi-join: standard left_on/right_on path
-            tbl_left
-                .frame
-                .clone()
+            left_frame
                 .join_builder()
-                .with(tbl_right.frame.clone())
+                .with(right_frame)
                 .left_on(left_on)
                 .right_on(right_on)
                 .how(join_type)
@@ -3533,13 +3553,30 @@ impl SQLContext {
                 let r_suffixed = suffix_conflicting_columns(r, tbl_left, tbl_right, &suffix);
                 all_predicates.push(l.eq(r_suffixed));
             }
-            let all_predicates: Vec<Expr> =
-                all_predicates.into_iter().map(strip_join_aliases).collect();
-            tbl_left
-                .frame
-                .clone()
+            // `join_where` resolves the right columns that the left input also has under
+            // their suffixed names.
+            let mut joined_schema = (*tbl_left.schema).clone();
+            for (name, dtype) in tbl_right.schema.iter() {
+                let name = if tbl_left.schema.contains(name) {
+                    format_pl_smallstr!("{name}{suffix}")
+                } else {
+                    name.clone()
+                };
+                joined_schema.insert(name, dtype.clone());
+            }
+            let all_predicates: Vec<Expr> = all_predicates
+                .into_iter()
+                .map(|p| {
+                    sql_join_where_predicate(
+                        strip_join_aliases(p),
+                        &tbl_left.schema,
+                        &joined_schema,
+                    )
+                })
+                .collect();
+            left_frame
                 .join_builder()
-                .with(tbl_right.frame.clone())
+                .with(right_frame)
                 .how(join_type)
                 .suffix(suffix)
                 .coalesce(coalesce_type)
