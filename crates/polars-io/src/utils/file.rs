@@ -21,6 +21,149 @@ pub trait WritableTrait: std::io::Write {
     fn sync_data(&self) -> std::io::Result<()>;
 }
 
+/// Holds a local file with transactional staging and cleanup on drop.
+pub struct LocalFileWriter {
+    file: Option<std::fs::File>,
+    staging: Option<FileStaging>,
+}
+
+struct FileStaging {
+    target_path: std::path::PathBuf,
+    temp_path: std::path::PathBuf,
+    completed: bool,
+}
+
+impl LocalFileWriter {
+    pub fn from_file(file: std::fs::File) -> Self {
+        Self {
+            file: Some(file),
+            staging: None,
+        }
+    }
+
+    pub fn new_staged(path: &std::path::Path) -> PolarsResult<Self> {
+        let target_path = path.to_path_buf();
+
+        // Check if destination is a special device (e.g. /dev/null, /dev/stdout, etc.)
+        let is_special = {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::FileTypeExt;
+                if target_path == std::path::Path::new("/dev/null")
+                    || target_path == std::path::Path::new("/dev/stdout")
+                    || target_path == std::path::Path::new("/dev/stderr")
+                {
+                    true
+                } else if let Ok(meta) = std::fs::metadata(&target_path) {
+                    let ft = meta.file_type();
+                    ft.is_char_device() || ft.is_fifo() || ft.is_socket() || ft.is_block_device()
+                } else {
+                    false
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                false
+            }
+        };
+
+        if is_special {
+            create_file(&target_path)?;
+            let file = polars_utils::io::open_file_write(&target_path)?;
+            return Ok(Self::from_file(file));
+        }
+
+        let dir = target_path.parent().unwrap_or(std::path::Path::new("."));
+        let filename = target_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("polars_sink");
+
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let temp_path = dir.join(format!(
+            ".{filename}.tmp_{}_{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+
+        create_file(&temp_path)?;
+        let file = polars_utils::io::open_file_write(&temp_path)?;
+
+        Ok(Self {
+            file: Some(file),
+            staging: Some(FileStaging {
+                target_path,
+                temp_path,
+                completed: false,
+            }),
+        })
+    }
+
+    pub fn sync_all(&self) -> io::Result<()> {
+        if let Some(file) = &self.file {
+            file.sync_all()
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn sync_data(&self) -> io::Result<()> {
+        if let Some(file) = &self.file {
+            file.sync_data()
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn close(mut self) -> io::Result<()> {
+        if let Some(file) = self.file.take() {
+            close_file(file)?;
+        }
+        if let Some(ref mut staging) = self.staging {
+            std::fs::rename(&staging.temp_path, &staging.target_path)?;
+            staging.completed = true;
+        }
+        Ok(())
+    }
+}
+
+impl io::Write for LocalFileWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.file.as_mut().unwrap().write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.as_mut().unwrap().flush()
+    }
+}
+
+impl Deref for LocalFileWriter {
+    type Target = std::fs::File;
+
+    fn deref(&self) -> &Self::Target {
+        self.file.as_ref().unwrap()
+    }
+}
+
+impl DerefMut for LocalFileWriter {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.file.as_mut().unwrap()
+    }
+}
+
+impl Drop for LocalFileWriter {
+    fn drop(&mut self) {
+        if let Some(ref mut staging) = self.staging {
+            if !staging.completed {
+                if let Some(file) = self.file.take() {
+                    let _ = close_file(file);
+                }
+                let _ = std::fs::remove_file(&staging.temp_path);
+            }
+        }
+    }
+}
+
 /// Holds a non-async writable file, abstracted over local files or cloud files.
 ///
 /// This implements `DerefMut` to a trait object implementing [`std::io::Write`].
@@ -32,12 +175,16 @@ pub enum Writable {
     ///
     /// This is used to implement writing to in-memory and arbitrary file descriptors.
     Dyn(Box<dyn WritableTrait + Send>),
-    Local(std::fs::File),
+    Local(LocalFileWriter),
     #[cfg(feature = "cloud")]
     Cloud(crate::cloud::cloud_writer::CloudWriterIoTraitWrap),
 }
 
 impl Writable {
+    pub fn local_from_file(file: std::fs::File) -> Self {
+        Self::Local(LocalFileWriter::from_file(file))
+    }
+
     pub fn try_new(
         path: PlRefPath,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_options: Option<&CloudOptions>,
@@ -90,9 +237,7 @@ impl Writable {
             })
         } else {
             let path = resolve_homedir(path.as_std_path());
-            create_file(&path)?;
-
-            Self::Local(polars_utils::io::open_file_write(&path)?)
+            Self::Local(LocalFileWriter::new_staged(&path)?)
         })
     }
 
@@ -149,7 +294,7 @@ impl Writable {
 
         match self {
             Self::Dyn(mut v) => v.close(),
-            Self::Local(v) => close_file(v),
+            Self::Local(v) => v.close(),
             #[cfg(feature = "cloud")]
             Self::Cloud(mut v) => v.close(),
         }
@@ -247,4 +392,84 @@ async fn new_cloud_writer(
         cloud_upload_concurrency,
         io_metrics,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use super::*;
+
+    #[test]
+    fn test_local_file_writer_staging_success() {
+        let temp_dir = std::env::temp_dir().join(format!("polars_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let target_path = temp_dir.join("test_success.txt");
+        let _ = std::fs::remove_file(&target_path);
+
+        let mut writer = LocalFileWriter::new_staged(&target_path).unwrap();
+        assert!(!target_path.exists());
+
+        let temp_path = writer.staging.as_ref().unwrap().temp_path.clone();
+        assert!(temp_path.exists());
+
+        writer.write_all(b"hello world").unwrap();
+        writer.close().unwrap();
+
+        assert!(target_path.exists());
+        assert!(!temp_path.exists());
+        assert_eq!(std::fs::read(&target_path).unwrap(), b"hello world");
+
+        let _ = std::fs::remove_file(&target_path);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_local_file_writer_drop_cleanup() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("polars_test_drop_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let target_path = temp_dir.join("test_drop.txt");
+        let _ = std::fs::remove_file(&target_path);
+
+        let temp_path = {
+            let mut writer = LocalFileWriter::new_staged(&target_path).unwrap();
+            let tp = writer.staging.as_ref().unwrap().temp_path.clone();
+            assert!(tp.exists());
+            writer.write_all(b"corrupted partial data").unwrap();
+            // Drop writer without calling close()
+            tp
+        };
+
+        // File must not exist at target, and temp file must have been deleted
+        assert!(!target_path.exists());
+        assert!(!temp_path.exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_local_file_writer_preserve_existing_on_failure() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("polars_test_preserve_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let target_path = temp_dir.join("test_preserve.txt");
+        std::fs::write(&target_path, b"original content").unwrap();
+
+        let temp_path = {
+            let mut writer = LocalFileWriter::new_staged(&target_path).unwrap();
+            let tp = writer.staging.as_ref().unwrap().temp_path.clone();
+            assert!(tp.exists());
+            writer.write_all(b"partial failure").unwrap();
+            tp
+        };
+
+        // Target path should still have the original content untouched
+        assert!(target_path.exists());
+        assert_eq!(std::fs::read(&target_path).unwrap(), b"original content");
+        assert!(!temp_path.exists());
+
+        let _ = std::fs::remove_file(&target_path);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

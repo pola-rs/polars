@@ -305,7 +305,7 @@ impl EitherRustPythonFile {
     pub(crate) fn into_writable(self) -> Writable {
         match self {
             Self::Py(f) => Writable::Dyn(Box::new(f)),
-            Self::Rust(f) => Writable::Local(f),
+            Self::Rust(f) => Writable::local_from_file(f),
         }
     }
 }

@@ -998,4 +998,102 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_row_slice_ranges_skewed() {
+        use polars_arrow::array::BinaryArray;
+        use polars_arrow::offset::OffsetsBuffer;
+        use polars_buffer::Buffer;
+
+        // 100,000 small values (1 byte each) + 3 large values (each 700 MB)
+        let mut offsets: Vec<i64> = (0..=100_000).collect();
+        offsets.push(100_000 + 700 * 1024 * 1024);
+        offsets.push(100_000 + 1400 * 1024 * 1024);
+        offsets.push(100_000 + 2100 * 1024 * 1024);
+
+        let array = unsafe {
+            BinaryArray::<i64>::new_unchecked(
+                ArrowDataType::LargeBinary,
+                OffsetsBuffer::new_unchecked(Buffer::from_vec(offsets)),
+                Buffer::from_vec(vec![]),
+                None,
+            )
+        };
+        let options = WriteOptions {
+            statistics: StatisticsOptions::empty(),
+            version: Version::V1,
+            compression: CompressionOptions::Uncompressed,
+            data_page_size: None,
+        };
+        let slices = super::super::row_slice_ranges(&array, &[], options);
+        // Ensure each of the 3 large values is placed in its own page
+        // (so that no two 700MB values are bundled together, which would exceed 2GB)
+        let large_row_indices = [100_000, 100_001, 100_002];
+        for large_idx in large_row_indices {
+            let containing_slices: Vec<_> = slices
+                .iter()
+                .filter(|(offset, len)| *offset <= large_idx && large_idx < *offset + *len)
+                .collect();
+            assert_eq!(containing_slices.len(), 1);
+            let (offset, len) = *containing_slices[0];
+            assert_eq!(
+                len, 1,
+                "Large row at index {large_idx} must be in a 1-row page"
+            );
+            assert_eq!(offset, large_idx);
+        }
+    }
+
+    #[test]
+    fn test_row_slice_ranges_binview() {
+        use polars_arrow::array::{BinaryViewArray, View};
+        use polars_buffer::Buffer;
+
+        let mut views = Vec::new();
+        // 10,000 small inline values (1 byte each)
+        for _ in 0..10_000 {
+            views.push(View::new_inline(b"x"));
+        }
+        // 3 large values (50 KB each, referencing a 50KB buffer)
+        let buf = vec![b'a'; 50_000];
+        for _ in 0..3 {
+            views.push(View {
+                length: 50_000,
+                prefix: u32::from_le_bytes([b'a'; 4]),
+                buffer_idx: 0,
+                offset: 0,
+            });
+        }
+        let array = unsafe {
+            BinaryViewArray::new_unchecked(
+                ArrowDataType::BinaryView,
+                Buffer::from_vec(views),
+                Buffer::from_vec(vec![Buffer::from_vec(buf)]),
+                None,
+                Some(10_000 + 3 * 50_000),
+                50_000,
+            )
+        };
+        let options = WriteOptions {
+            statistics: StatisticsOptions::empty(),
+            version: Version::V1,
+            compression: CompressionOptions::Uncompressed,
+            data_page_size: Some(10_000), // 10 KB pages
+        };
+        let slices = super::super::row_slice_ranges(&array, &[], options);
+        let large_row_indices = [10_000, 10_001, 10_002];
+        for large_idx in large_row_indices {
+            let containing_slices: Vec<_> = slices
+                .iter()
+                .filter(|(offset, len)| *offset <= large_idx && large_idx < *offset + *len)
+                .collect();
+            assert_eq!(containing_slices.len(), 1);
+            let (offset, len) = *containing_slices[0];
+            assert_eq!(
+                len, 1,
+                "Large row at index {large_idx} must be in a 1-row page"
+            );
+            assert_eq!(offset, large_idx);
+        }
+    }
 }

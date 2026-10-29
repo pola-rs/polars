@@ -4,7 +4,6 @@ use polars_io::ExternalCompression;
 use polars_io::utils::compression::CompressedWriter;
 use polars_io::utils::file::Writable as WriteTargetVariant;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
-use polars_utils::file::close_file;
 
 use crate::nodes::io_sinks::components::sinked_path_info_list::SinkedPathInfoEntry;
 
@@ -100,7 +99,7 @@ impl WriteTarget {
                 x.flush()?;
                 x.close()?;
             },
-            WriteTargetVariant::Local(x) => close_file(x)?,
+            WriteTargetVariant::Local(x) => x.close()?,
         }
 
         if let Some(path_info) = self.inner.path_info {

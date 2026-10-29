@@ -30,7 +30,7 @@ pub use pages::{to_leaves, to_nested, to_parquet_leaves};
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::datatypes::*;
-use polars_arrow::types::{NativeType, days_ms, i256};
+use polars_arrow::types::{Index, NativeType, PrimitiveType as ArrowPrimitiveType, days_ms, i256};
 use polars_config::config;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -174,31 +174,199 @@ impl EncodeNullability {
     }
 }
 
+fn primitive_element_size(p: ArrowPrimitiveType) -> usize {
+    use ArrowPrimitiveType::*;
+    match p {
+        Int8 | UInt8 => 1,
+        Int16 | UInt16 | Float16 => 2,
+        Int32 | UInt32 | Float32 => 4,
+        Int64 | UInt64 | Float64 | DaysMs => 8,
+        Int128 | UInt128 | MonthDayMillis | MonthDayNano => 16,
+        Int256 => 32,
+    }
+}
+
+fn estimate_primitive_range_bytes(array: &dyn Array, prim_offset: usize, prim_len: usize) -> usize {
+    if prim_len == 0 {
+        return 0;
+    }
+    use polars_arrow::datatypes::PhysicalType::*;
+    match array.dtype().to_physical_type() {
+        BinaryView => {
+            let arr = array
+                .as_any()
+                .downcast_ref::<BinaryViewArrayGeneric<[u8]>>()
+                .unwrap();
+            let views = &arr.views()[prim_offset..prim_offset + prim_len];
+            let mut sum = 0usize;
+            for v in views {
+                sum = sum.saturating_add(v.length as usize + 4);
+            }
+            sum
+        },
+        Utf8View => {
+            let arr = array
+                .as_any()
+                .downcast_ref::<BinaryViewArrayGeneric<str>>()
+                .unwrap();
+            let views = &arr.views()[prim_offset..prim_offset + prim_len];
+            let mut sum = 0usize;
+            for v in views {
+                sum = sum.saturating_add(v.length as usize + 4);
+            }
+            sum
+        },
+        Binary => {
+            let arr = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
+            let offsets = arr.offsets().buffer();
+            let bytes = (offsets[prim_offset + prim_len] - offsets[prim_offset]) as usize;
+            bytes.saturating_add(prim_len * 4)
+        },
+        LargeBinary => {
+            let arr = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+            let offsets = arr.offsets().buffer();
+            let bytes = (offsets[prim_offset + prim_len] - offsets[prim_offset]) as usize;
+            bytes.saturating_add(prim_len * 4)
+        },
+        Utf8 => {
+            let arr = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+            let offsets = arr.offsets().buffer();
+            let bytes = (offsets[prim_offset + prim_len] - offsets[prim_offset]) as usize;
+            bytes.saturating_add(prim_len * 4)
+        },
+        LargeUtf8 => {
+            let arr = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+            let offsets = arr.offsets().buffer();
+            let bytes = (offsets[prim_offset + prim_len] - offsets[prim_offset]) as usize;
+            bytes.saturating_add(prim_len * 4)
+        },
+        Primitive(primitive) => prim_len * primitive_element_size(primitive),
+        Boolean => (prim_len + 7) / 8,
+        FixedSizeBinary => {
+            let arr = array
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .unwrap();
+            prim_len * arr.size()
+        },
+        Null => 0,
+        _ => {
+            let byte_size = estimated_bytes_size(array);
+            let len = array.len().max(1);
+            prim_len * (byte_size / len + 1)
+        },
+    }
+}
+
+fn top_level_row_to_primitive_range(row: usize, nested: &[Nested]) -> (usize, usize) {
+    let mut current_offset = row;
+    let mut current_length = 1;
+    for n in nested.iter() {
+        match n {
+            Nested::LargeList(l) => {
+                let first = l.offsets.as_slice()[current_offset].to_usize();
+                let last = l.offsets.as_slice()[current_offset + current_length].to_usize();
+                current_offset = first;
+                current_length = last - first;
+            },
+            Nested::List(l) => {
+                let first = l.offsets.as_slice()[current_offset].to_usize();
+                let last = l.offsets.as_slice()[current_offset + current_length].to_usize();
+                current_offset = first;
+                current_length = last - first;
+            },
+            Nested::FixedSizeList(f) => {
+                current_offset *= f.width;
+                current_length *= f.width;
+            },
+            Nested::Struct(_) => {},
+            Nested::Primitive(_) => {},
+        }
+    }
+    (current_offset, current_length)
+}
+
 /// `data_page_size`: Set a target threshold for the approximate encoded size of data
 /// pages within a column chunk (in bytes). If None, use the default data page size of 1MByte.
 /// See: https://arrow.apache.org/docs/python/generated/pyarrow.parquet.write_table.html
 pub(crate) fn row_slice_ranges(
-    number_of_rows: usize,
-    byte_size: usize,
+    primitive_array: &dyn Array,
+    nested: &[Nested],
     options: WriteOptions,
-) -> impl Iterator<Item = (usize, usize)> {
+) -> Vec<(usize, usize)> {
     const DEFAULT_PAGE_SIZE: usize = 1024 * 1024; // 1 MB
     let max_page_size = options.data_page_size.unwrap_or(DEFAULT_PAGE_SIZE);
     let max_page_size = max_page_size.min(2usize.pow(31) - 2usize.pow(25)); // allowed maximum page size
 
-    let bytes_per_row = if number_of_rows == 0 {
-        0
-    } else {
-        ((byte_size as f64) / (number_of_rows as f64)) as usize
-    };
-    let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
+    let number_of_rows = nested
+        .first()
+        .map(|n| n.len())
+        .unwrap_or_else(|| primitive_array.len());
 
-    (0..number_of_rows)
-        .step_by(rows_per_page)
-        .map(move |offset| {
-            let length = (offset + rows_per_page).min(number_of_rows) - offset;
-            (offset, length)
-        })
+    if number_of_rows == 0 {
+        return vec![];
+    }
+
+    let has_list_nesting = nested
+        .iter()
+        .any(|n| matches!(n, Nested::List(_) | Nested::LargeList(_)));
+
+    use polars_arrow::datatypes::PhysicalType;
+    let is_fixed_primitive = !has_list_nesting
+        && matches!(
+            primitive_array.dtype().to_physical_type(),
+            PhysicalType::Primitive(_)
+                | PhysicalType::Boolean
+                | PhysicalType::FixedSizeBinary
+                | PhysicalType::Null
+        );
+
+    if is_fixed_primitive {
+        let byte_size = estimated_bytes_size(primitive_array);
+        let bytes_per_row = (byte_size as f64 / number_of_rows as f64) as usize;
+        let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
+
+        return (0..number_of_rows)
+            .step_by(rows_per_page)
+            .map(move |offset| {
+                let length = (offset + rows_per_page).min(number_of_rows) - offset;
+                (offset, length)
+            })
+            .collect();
+    }
+
+    let is_flat = nested.len() <= 1 && matches!(nested.first(), None | Some(Nested::Primitive(_)));
+
+    let mut slices = Vec::new();
+    let mut current_page_start = 0;
+    let mut current_page_bytes = 0usize;
+    let mut current_page_rows = 0usize;
+
+    for r in 0..number_of_rows {
+        let (prim_offset, prim_len) = if is_flat {
+            (r, 1)
+        } else {
+            top_level_row_to_primitive_range(r, nested)
+        };
+        let row_bytes = estimate_primitive_range_bytes(primitive_array, prim_offset, prim_len)
+            .saturating_add(1);
+
+        if current_page_rows > 0 && current_page_bytes.saturating_add(row_bytes) > max_page_size {
+            slices.push((current_page_start, current_page_rows));
+            current_page_start = r;
+            current_page_rows = 1;
+            current_page_bytes = row_bytes;
+        } else {
+            current_page_rows += 1;
+            current_page_bytes = current_page_bytes.saturating_add(row_bytes);
+        }
+    }
+
+    if current_page_rows > 0 {
+        slices.push((current_page_start, current_page_rows));
+    }
+
+    slices
 }
 
 fn decimal_length_from_precision(precision: usize) -> usize {
@@ -321,27 +489,23 @@ pub fn array_to_pages(
         encoding = Encoding::Plain;
     }
 
+    let row_ranges = row_slice_ranges(primitive_array, &nested, options);
     let nested = nested.to_vec();
-    let number_of_rows = nested[0].len();
-    // note: this is not correct if the array is sliced - the estimation should happen on the
-    // primitive after sliced for parquet
-    let byte_size = estimated_bytes_size(primitive_array);
     let primitive_array = primitive_array.to_boxed();
 
-    let pages =
-        row_slice_ranges(number_of_rows, byte_size, options).map(move |(offset, length)| {
-            let mut right_array = primitive_array.clone();
-            let mut right_nested = nested.clone();
-            slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
+    let pages = row_ranges.into_iter().map(move |(offset, length)| {
+        let mut right_array = primitive_array.clone();
+        let mut right_nested = nested.clone();
+        slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
 
-            array_to_page(
-                right_array.as_ref(),
-                type_.clone(),
-                &right_nested,
-                options,
-                encoding,
-            )
-        });
+        array_to_page(
+            right_array.as_ref(),
+            type_.clone(),
+            &right_nested,
+            options,
+            encoding,
+        )
+    });
     Ok(DynIter::new(pages))
 }
 
