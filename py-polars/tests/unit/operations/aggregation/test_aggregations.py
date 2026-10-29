@@ -2124,14 +2124,14 @@ def test_min_max_by_row_encoded_value(
     q = lf.group_by("g", maintain_order=True).agg(
         agg(pl.col("x")._row_encode(), pl.col("by")).cast(pl.Binary)
     )
-
-    def encode(v: int | None) -> bytes | None:
-        if v is None:
-            return None
-        return pl.select(pl.lit(v, pl.Int64)._row_encode().cast(pl.Binary)).item()
-
+    expected_x = [
+        None
+        if v is None
+        else pl.select(pl.lit(v, pl.Int64)._row_encode().cast(pl.Binary)).item()
+        for v in expected
+    ]
     expected_df = pl.DataFrame(
-        {"g": [1, 2, 3], "x": pl.Series([encode(v) for v in expected], dtype=pl.Binary)}
+        {"g": [1, 2, 3], "x": pl.Series(expected_x, dtype=pl.Binary)}
     )
     assert_frame_equal(q.collect(), expected_df)
 
