@@ -163,7 +163,11 @@ impl Buffer<'_> {
                 builder.append_null();
                 Ok(())
             },
-            _ => panic!("unexpected dtype when deserializing ndjson"),
+            #[allow(unreachable_patterns)]
+            _ => polars_bail!(
+                ComputeError: "unsupported dtype for column '{}' when reading NDJSON",
+                self.name
+            ),
         }
     }
 
