@@ -31,8 +31,8 @@ use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
     CatalogDdl, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName,
-    create_table_columns, create_table_options, display_name, name_parts, name_position,
-    rewrite_catalog_names,
+    create_table_columns, create_table_options, create_table_partitioning, display_name,
+    name_parts, name_position, rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -496,6 +496,8 @@ impl SQLContext {
             like,
             table_options,
             hive_formats,
+            partition_by,
+            hive_distribution,
             ..
         } = create_table;
         polars_ensure!(like.is_none(), SQLInterface: "`CREATE TABLE ... LIKE` is not supported for catalog tables");
@@ -505,6 +507,7 @@ impl SQLContext {
         let query = query.as_ref().map(|q| q.to_string());
         let location = hive_formats.as_ref().and_then(|f| f.location.as_deref());
         let (location, properties) = create_table_options(table_options, location)?;
+        let partition_by = create_table_partitioning(partition_by.as_deref(), hive_distribution)?;
 
         // A registered table of the written or the full name would hide the new table from reads.
         let tbl_name = object_name_to_string(name);
@@ -537,6 +540,7 @@ impl SQLContext {
             required,
             location,
             properties,
+            partition_by,
         }))
     }
 
@@ -2408,15 +2412,14 @@ impl SQLContext {
         polars_ensure!(initialize.is_none(), SQLInterface: "`INITIALIZE` is not supported");
         polars_ensure!(location.is_none(), SQLInterface: "table `LOCATION` clauses are not supported");
         let partitioned = matches!(hive_distribution, HiveDistributionStyle::PARTITIONED { .. });
-        polars_ensure!(!partitioned || !for_catalog, SQLInterface: "`PARTITIONED BY` is not yet supported for catalog tables; create the table unpartitioned, then add a partition spec with PyIceberg's update_spec");
-        polars_ensure!(matches!(hive_distribution, HiveDistributionStyle::NONE), SQLInterface: "Hive table distribution clauses are not supported");
+        polars_ensure!(matches!(hive_distribution, HiveDistributionStyle::NONE) || partitioned, SQLInterface: "Hive table distribution clauses are not supported");
+        polars_ensure!(!partitioned || for_catalog, SQLInterface: "`PARTITIONED BY` is supported only for catalog tables");
         polars_ensure!(for_catalog || matches!(table_options, CreateTableOptions::None), SQLInterface: "table `WITH`/`OPTIONS` clauses are not supported");
         polars_ensure!(max_data_extension_time_in_days.is_none(), SQLInterface: "`MAX_DATA_EXTENSION_TIME_IN_DAYS` is not supported");
         polars_ensure!(on_cluster.is_none(), SQLInterface: "`ON CLUSTER` clauses are not supported");
         polars_ensure!(on_commit.is_none(), SQLInterface: "`ON COMMIT` clauses are not supported");
         polars_ensure!(order_by.is_none(), SQLInterface: "table `ORDER BY` clauses are not supported");
-        polars_ensure!(partition_by.is_none() || !for_catalog, SQLInterface: "`PARTITION BY` is not yet supported for catalog tables; create the table unpartitioned, then add a partition spec with PyIceberg's update_spec");
-        polars_ensure!(partition_by.is_none(), SQLInterface: "table `PARTITION BY` clauses are not supported");
+        polars_ensure!(partition_by.is_none() || for_catalog, SQLInterface: "`PARTITION BY` is supported only for catalog tables");
         polars_ensure!(partition_of.is_none(), SQLInterface: "`PARTITION OF` clauses are not supported");
         polars_ensure!(primary_key.is_none(), SQLInterface: "inline `PRIMARY KEY` clauses are not supported");
         polars_ensure!(refresh_mode.is_none(), SQLInterface: "`REFRESH_MODE` is not supported");

@@ -5,9 +5,10 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    ColumnDef, ColumnOption, CreateTableOptions, Expr, Ident, ObjectName, ObjectNamePart, Query,
-    SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value, ValueWithSpan, Visitor,
-    VisitorMut, With,
+    ColumnDef, ColumnOption, CreateTableOptions, DataType as SQLDataType, Expr, Function,
+    FunctionArg, FunctionArgExpr, FunctionArguments, HiveDistributionStyle, Ident, ObjectName,
+    ObjectNamePart, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value,
+    ValueWithSpan, Visitor, VisitorMut, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -58,7 +59,19 @@ pub enum CatalogDdl {
         location: Option<String>,
         /// The other `WITH` options, as table properties.
         properties: Vec<(String, String)>,
+        /// The partition fields, in the order written; empty for an unpartitioned table.
+        partition_by: Vec<CatalogPartitionField>,
     },
+}
+
+/// A partition field of a catalog table: an Iceberg transform of a top-level column.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogPartitionField {
+    /// The source column, as written.
+    pub column: String,
+    /// The transform in Iceberg's notation: `identity`, `year`, `month`, `day`, `hour`,
+    /// `bucket[N]` or `truncate[W]`.
+    pub transform: String,
 }
 
 impl CatalogTable {
@@ -591,6 +604,162 @@ pub(crate) fn create_table_options(
         );
     }
     Ok((location, properties))
+}
+
+/// The partition fields of a catalog table, from `PARTITION BY (...)` or `PARTITIONED BY (...)`.
+pub(crate) fn create_table_partitioning(
+    partition_by: Option<&Expr>,
+    hive_distribution: &HiveDistributionStyle,
+) -> PolarsResult<Vec<CatalogPartitionField>> {
+    // Each field with its SQL, for messages.
+    let fields: Vec<(CatalogPartitionField, String)> = match (partition_by, hive_distribution) {
+        (Some(_), HiveDistributionStyle::PARTITIONED { .. }) => {
+            polars_bail!(SQLInterface: "`PARTITION BY` and `PARTITIONED BY` cannot be combined")
+        },
+        (Some(expr), _) => {
+            let exprs = match unparenthesized(expr) {
+                Expr::Tuple(exprs) => exprs.as_slice(),
+                expr => std::slice::from_ref(expr),
+            };
+            exprs
+                .iter()
+                .map(|expr| Ok((partition_field(expr)?, expr.to_string())))
+                .collect::<PolarsResult<_>>()?
+        },
+        (None, HiveDistributionStyle::PARTITIONED { columns }) => columns
+            .iter()
+            .map(|col| {
+                // Hive's `PARTITIONED BY (p INT)` adds a column.
+                polars_ensure!(
+                    col.data_type == SQLDataType::Unspecified && col.options.is_empty(),
+                    SQLInterface: "`PARTITIONED BY` takes column names only; found `{}`; types and constraints belong in the column list",
+                    col
+                );
+                let field = CatalogPartitionField {
+                    column: col.name.value.clone(),
+                    transform: "identity".to_string(),
+                };
+                Ok((field, col.name.value.clone()))
+            })
+            .collect::<PolarsResult<_>>()?,
+        (None, _) => Vec::new(),
+    };
+    // Iceberg allows one time transform per column.
+    let is_time = |f: &CatalogPartitionField| {
+        matches!(f.transform.as_str(), "year" | "month" | "day" | "hour")
+    };
+    for (i, (field, sql)) in fields.iter().enumerate() {
+        for (earlier, earlier_sql) in &fields[..i] {
+            polars_ensure!(earlier != field, SQLInterface: "duplicate partition field `{}`", sql);
+            polars_ensure!(
+                earlier.column != field.column || !is_time(earlier) || !is_time(field),
+                SQLInterface: "partition fields `{}` and `{}` both partition column '{}' by time; use one of them",
+                earlier_sql, sql, field.column
+            );
+        }
+    }
+    Ok(fields.into_iter().map(|(field, _)| field).collect())
+}
+
+/// A partition field: a column, `year|month|day|hour(column)` (with Iceberg's aliases), or
+/// `bucket|truncate(N, column)`.
+fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
+    let unsupported = || {
+        polars_err!(
+            SQLInterface: "unsupported partition field `{}`; expected a column, or year, month, day, hour, bucket(N, column) or truncate(W, column) of a column",
+            expr
+        )
+    };
+    let column = |expr: &Expr| match unparenthesized(expr) {
+        Expr::Identifier(ident) => Some(ident.value.clone()),
+        _ => None,
+    };
+    // A qualified column or a struct field: without the schema, these look the same.
+    let is_compound = |expr: &Expr| matches!(unparenthesized(expr), Expr::CompoundIdentifier(_));
+    let compound = |expr: &Expr| {
+        polars_err!(
+            SQLInterface: "`PARTITION BY` takes unqualified column names; found `{}`; partitioning by a nested field is not yet supported",
+            unparenthesized(expr)
+        )
+    };
+    if let Some(column) = column(expr) {
+        return Ok(CatalogPartitionField {
+            column,
+            transform: "identity".to_string(),
+        });
+    }
+    if is_compound(expr) {
+        return Err(compound(expr));
+    }
+    let Expr::Function(Function {
+        name,
+        uses_odbc_syntax: false,
+        parameters: FunctionArguments::None,
+        args: FunctionArguments::List(list),
+        filter: None,
+        null_treatment: None,
+        over: None,
+        within_group,
+    }) = unparenthesized(expr)
+    else {
+        return Err(unsupported());
+    };
+    let fname = match name_parts(name).as_deref() {
+        Some([fname])
+            if within_group.is_empty()
+                && list.duplicate_treatment.is_none()
+                && list.clauses.is_empty() =>
+        {
+            fname.to_ascii_lowercase()
+        },
+        _ => return Err(unsupported()),
+    };
+    let args = list
+        .args
+        .iter()
+        .map(|arg| match arg {
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => Some(expr),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(unsupported)?;
+    let positive_int = |expr: &Expr| match unparenthesized(expr) {
+        Expr::Value(ValueWithSpan {
+            value: Value::Number(n, false),
+            ..
+        }) => n.parse::<i32>().ok().filter(|n| *n > 0),
+        _ => None,
+    };
+    let (transform, source) = match (fname.as_str(), args.as_slice()) {
+        ("year" | "years", [source]) => ("year".to_string(), source),
+        ("month" | "months", [source]) => ("month".to_string(), source),
+        ("day" | "days", [source]) => ("day".to_string(), source),
+        ("hour" | "hours", [source]) => ("hour".to_string(), source),
+        ("bucket" | "truncate", [n, source]) => {
+            let Some(n) = positive_int(n) else {
+                if (column(n).is_some() || is_compound(n)) && positive_int(source).is_some() {
+                    polars_bail!(SQLInterface: "`{}` takes the number first, as in `{}({}, {})`", expr, fname, source, n)
+                }
+                polars_bail!(SQLInterface: "the first argument of `{}` must be an integer from 1 to {}", expr, i32::MAX)
+            };
+            (format!("{fname}[{n}]"), source)
+        },
+        _ => return Err(unsupported()),
+    };
+    let column = match column(source) {
+        Some(column) => column,
+        None if is_compound(source) => return Err(compound(source)),
+        None => return Err(unsupported()),
+    };
+    Ok(CatalogPartitionField { column, transform })
+}
+
+/// `expr` without enclosing parentheses.
+fn unparenthesized(mut expr: &Expr) -> &Expr {
+    while let Expr::Nested(inner) = expr {
+        expr = inner;
+    }
+    expr
 }
 
 /// A table option value as a property string, if it is a string, number or boolean literal.

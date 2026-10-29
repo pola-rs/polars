@@ -143,6 +143,7 @@ impl PySQLContext {
                 required,
                 location,
                 properties,
+                partition_by,
             } => {
                 dict.set_item("kind", "create_table")?;
                 dict.set_item("name", name)?;
@@ -158,6 +159,11 @@ impl PySQLContext {
                     props.set_item(key, value)?;
                 }
                 dict.set_item("properties", props)?;
+                let partition_by: Vec<(String, String)> = partition_by
+                    .into_iter()
+                    .map(|field| (field.column, field.transform))
+                    .collect();
+                dict.set_item("partition_by", partition_by)?;
             },
         }
         Ok(Some(dict))
