@@ -39,7 +39,8 @@ use crate::sql_expr::{
     order_by_sort_options, parse_sql_expr, reduced_subquery, sql_in_membership, sql_is_in,
 };
 use crate::sql_visitors::{
-    expr_contains_subquery, expr_has_window_functions, has_column_selector, is_subquery_expr,
+    contains_random, expr_contains_subquery, expr_has_window_functions, has_column_selector,
+    is_subquery_expr,
 };
 use crate::subquery_pull_up::ScopeColumns;
 use crate::{SQLContext, col, unique_column_name};
@@ -2476,10 +2477,13 @@ fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
     if rest.is_empty() {
         return None;
     }
+    // Equal `RANDOM()` calls are separate draws, so they are not shared.
     let common: Vec<&SQLExpr> = first
         .iter()
         .copied()
-        .filter(|term| rest.iter().all(|branch| branch.contains(term)))
+        .filter(|term| {
+            !contains_random(*term, true) && rest.iter().all(|branch| branch.contains(term))
+        })
         .collect();
     let factored = combine_conditions(
         common.iter().copied().cloned().collect(),
@@ -3269,10 +3273,14 @@ impl CorrelatedLowering<'_> {
     /// Lower `subquery` (or reuse an earlier identical lowering), returning the
     /// materialised column name, or `None` if it can't be soundly lowered.
     fn lower(&mut self, subquery: &Query, kind: SubqueryKind) -> PolarsResult<Option<PlSmallStr>> {
-        if let Some((_, _, name)) = self
-            .bindings
-            .iter()
-            .find(|(q, bound, _)| *bound == kind && q == subquery)
+        // Equal `RANDOM()` calls are separate draws, so they are not shared.
+        let shareable = !contains_random(subquery, true)
+            && !matches!(&kind, SubqueryKind::In(lhs) if contains_random(lhs.as_ref(), true));
+        if shareable
+            && let Some((_, _, name)) = self
+                .bindings
+                .iter()
+                .find(|(q, bound, _)| *bound == kind && q == subquery)
         {
             return Ok(Some(name.clone()));
         }

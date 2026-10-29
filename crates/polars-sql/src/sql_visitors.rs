@@ -8,8 +8,8 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use sqlparser::ast::{
     Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
-    FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visitor as SQLVisitor, VisitorMut,
-    With,
+    FunctionArguments, ObjectName, Query, SetExpr, TableFactor, Visit, Visitor as SQLVisitor,
+    VisitorMut, With,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
@@ -616,6 +616,50 @@ pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
 /// a value), as opposed to a predicate subquery (`EXISTS`, `IN`).
 pub(crate) fn expr_contains_scalar_subquery(expr: &SQLExpr) -> bool {
     expr_contains(expr, |e| matches!(e, SQLExpr::Subquery(_)))
+}
+
+/// Finds a `RANDOM()` call, outside the subqueries unless `in_subqueries`.
+struct RandomFinder {
+    in_subqueries: bool,
+    query_depth: usize,
+}
+
+impl SQLVisitor for RandomFinder {
+    type Break = ();
+
+    fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        let is_random = matches!(expr, SQLExpr::Function(func) if func
+            .name
+            .0
+            .last()
+            .and_then(|p| p.as_ident())
+            .is_some_and(|i| i.value.eq_ignore_ascii_case("random")));
+        if (self.in_subqueries || self.query_depth == 0) && is_random {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+/// Check if `node` calls `RANDOM()`, which yields a new value on every call. Calls in the
+/// subqueries of `node` count only with `in_subqueries`.
+pub(crate) fn contains_random(node: &(impl Visit + ?Sized), in_subqueries: bool) -> bool {
+    let mut finder = RandomFinder {
+        in_subqueries,
+        query_depth: 0,
+    };
+    dyn_visit::visit(node, &mut finder).is_break()
 }
 
 fn expr_contains(expr: &SQLExpr, is_match: impl Fn(&SQLExpr) -> bool) -> bool {
