@@ -15,7 +15,7 @@ pub trait FixedLengthEncoding: Copy + Debug {
     // bit repr of encoding
     const ENCODED_LEN: usize = 1 + size_of::<Self::Encoded>();
 
-    type Encoded: Sized + Copy + AsRef<[u8]> + AsMut<[u8]>;
+    type Encoded: Sized + Copy + Default + AsRef<[u8]> + AsMut<[u8]>;
 
     fn encode(self) -> Self::Encoded;
 
@@ -195,13 +195,19 @@ impl FixedLengthEncoding for f64 {
     }
 }
 
+/// The number of bytes a value takes in the rows.
+#[inline(always)]
+pub(crate) fn encoded_len<T: FixedLengthEncoding>(opt: RowEncodingOptions) -> usize {
+    T::ENCODED_LEN - !opt.encode_nulls() as usize
+}
+
 pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     arr: &PrimitiveArray<T>,
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    if arr.null_count() == 0 {
+    if !opt.encode_nulls() || arr.null_count() == 0 {
         encode_slice(buffer, arr.values().as_slice(), opt, offsets)
     } else {
         encode_slice_with_validity(
@@ -250,6 +256,14 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
 ) {
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
     let out = buffer.as_mut_ptr();
+    if !opt.encode_nulls() {
+        for (offset, value) in row_starts.iter_mut().zip(input) {
+            let dst = out.add(*offset) as *mut T::Encoded;
+            std::ptr::write_unaligned(dst, encode_value(*value, descending));
+            *offset += size_of::<T::Encoded>();
+        }
+        return;
+    }
     for (offset, value) in row_starts.iter_mut().zip(input) {
         write_value::<T>(out.add(*offset), 1, encode_value(*value, descending));
         *offset += T::ENCODED_LEN;
@@ -332,6 +346,21 @@ pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     opt: RowEncodingOptions,
 ) -> PrimitiveArray<T> {
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    if !opt.encode_nulls() {
+        let values: Vec<T> = rows
+            .iter_mut()
+            .map(|row| {
+                let bytes = std::ptr::read_unaligned(row.as_ptr() as *const T::Encoded);
+                *row = row.get_unchecked(size_of::<T::Encoded>()..);
+                if descending {
+                    T::decode_reverse(bytes)
+                } else {
+                    T::decode(bytes)
+                }
+            })
+            .collect();
+        return PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), None);
+    }
     let null_sentinel = opt.null_sentinel();
     let num_rows = rows.len();
     let mut values = Vec::<T>::with_capacity(num_rows);

@@ -92,7 +92,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
             | F::ReduceHorizontal { .. }
             | F::SumHorizontal { .. }
             | F::MeanHorizontal { .. }
-            | F::RowEncode(..)
+            | F::RowEncode { .. }
     );
     let mut allow_empty_inputs = matches!(
         function,

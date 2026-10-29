@@ -8,6 +8,7 @@ pub mod function_registry;
 mod functions;
 mod group_context;
 mod grouping_sets;
+mod join_keys;
 pub mod keywords;
 mod literal_folding;
 mod resolver;

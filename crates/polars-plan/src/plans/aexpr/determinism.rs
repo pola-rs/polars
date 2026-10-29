@@ -240,9 +240,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "reinterpret")]
         F::Reinterpret(_) => false,
         F::ExtendConstant => false,
-        F::RowEncode(..) => false,
+        F::RowEncode { .. } => false,
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(..) => false,
+        F::RowDecode { .. } => false,
 
         #[cfg(feature = "random")]
         F::Random { .. } => true,

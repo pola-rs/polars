@@ -1381,8 +1381,13 @@ pub(super) fn convert_functions(
             I::ExtendConstant
         },
 
-        F::RowEncode(mut v) => {
-            let dts = e
+        F::RowEncode {
+            mut variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => {
+            let dtypes = e
                 .iter()
                 .map(|e| {
                     e.dtype(ctx.schema, ctx.arena)?
@@ -1394,7 +1399,7 @@ pub(super) fn convert_functions(
                 descending,
                 nulls_last,
                 ..
-            } = &mut v
+            } = &mut variant
             {
                 let options = SortMultipleOptions {
                     descending: descending.take().unwrap_or(vec![false]),
@@ -1405,15 +1410,29 @@ pub(super) fn convert_functions(
                 *descending = Some(options.descending);
                 *nulls_last = Some(options.nulls_last);
             }
-            I::RowEncode(dts, v)
+            I::RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls,
+            }
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, v) => I::RowDecode(
-            fs.into_iter()
+        F::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => I::RowDecode {
+            fields: fields
+                .into_iter()
                 .map(|(name, dt_expr)| Ok(Field::new(name, dt_expr.into_datatype(ctx.schema)?)))
                 .collect::<PolarsResult<Vec<_>>>()?,
-            v,
-        ),
+            variant,
+            output,
+            encode_nulls,
+        },
     };
 
     let mut options = ir_function.function_options();
