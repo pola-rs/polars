@@ -564,9 +564,7 @@ impl IRFunctionExpr {
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
-                if f.dtype == DataType::Boolean {
-                    f.dtype = IDX_DTYPE;
-                }
+                f.dtype = sum_output_dtype(&f.dtype);
                 f
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {

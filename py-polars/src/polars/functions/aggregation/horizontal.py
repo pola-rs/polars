@@ -192,6 +192,11 @@ def sum_horizontal(
         Ignore null values (default).
         If set to `False`, any null value in the input will lead to a null output.
 
+    Notes
+    -----
+    Dtypes in {Int8, UInt8, Int16, UInt16} are cast to
+    Int64 before summing to prevent overflow issues.
+
     Examples
     --------
     >>> df = pl.DataFrame(
