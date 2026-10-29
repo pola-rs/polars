@@ -905,19 +905,33 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
     purge = ddl["purge"]
     full_name = _display_name([ddl["catalog"], *identifier])
     response = f"DROP TABLE {full_name}" + (" PURGE" if purge else "")
+    missing = (
+        f"table '{ddl['name']}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be dropped"
+    )
+    # a catalog may refuse a purge before it looks for the table
+    if purge and not _table_exists(catalog, identifier):
+        if ddl["if_exists"]:
+            return response
+        msg = f"{missing}; catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg)
     try:
         if purge:
             catalog.purge_table(identifier)
         else:
             catalog.drop_table(identifier)
     except (NoSuchTableError, NoSuchNamespaceError) as error:
-        if not ddl["if_exists"]:
-            msg = (
-                f"table '{ddl['name']}' does not exist: catalog table "
-                f"'{_display_name(identifier)}' could not be dropped ({error}); "
-                "catalog identifiers are case-sensitive"
-            )
-            raise NoSuchTableError(msg) from error
+        if ddl["if_exists"]:
+            return response
+        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg) from error
+    except Exception as error:
+        # it may have dropped the table before failing (a purge deletes files last)
+        error.add_note(
+            f"dropping table '{ddl['name']}' failed: catalog table "
+            f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
+        )
+        raise
     return response
 
 
@@ -1154,6 +1168,16 @@ def _namespace_exists(
     """Whether the catalog has `namespace`; `True` if that can't be checked."""
     try:
         return bool(catalog.namespace_exists(tuple(namespace)))
+    except Exception:
+        return True
+
+
+def _table_exists(
+    catalog: pyiceberg.catalog.Catalog, identifier: Sequence[str]
+) -> bool:
+    """Whether the catalog has table `identifier`; `True` if that can't be checked."""
+    try:
+        return bool(catalog.table_exists(tuple(identifier)))
     except Exception:
         return True
 

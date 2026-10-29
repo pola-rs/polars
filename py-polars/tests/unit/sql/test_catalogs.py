@@ -1459,6 +1459,110 @@ def test_drop_catalog_table_purge(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+def test_drop_catalog_table_purge_refused(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    purges: list[Any] = []
+
+    def refuse(identifier: Any) -> None:
+        purges.append(identifier)
+        msg = "purge is not supported"
+        raise RuntimeError(msg)
+
+    # a catalog that refuses any purge, before it looks for the table
+    ctx = lake_ctx(lake)
+    monkeypatch.setattr(lake, "purge_table", refuse)
+    for if_exists in ["", "IF EXISTS "]:
+        with pytest.raises(RuntimeError, match="purge is not supported") as exc:
+            ctx.execute(f"DROP TABLE {if_exists}orders PURGE")
+        assert exc.value.__notes__ == [
+            "dropping table 'orders' failed: catalog table 'tpch.orders' of "
+            "catalog 'lake'"
+        ]
+    assert lake.table_exists(("tpch", "orders"))
+
+    purges.clear()
+    ctx.execute("DROP TABLE IF EXISTS nope PURGE")
+    with pytest.raises(NoSuchTableError, match="table 'nope' does not exist"):
+        ctx.execute("DROP TABLE nope PURGE")
+    assert purges == []
+
+    # a table whose existence can't be checked is not taken for a missing one
+    def unknown(identifier: Any) -> bool:
+        msg = "not allowed"
+        raise PermissionError(msg)
+
+    monkeypatch.setattr(lake, "table_exists", unknown)
+    with pytest.raises(RuntimeError, match="purge is not supported"):
+        ctx.execute("DROP TABLE IF EXISTS nope PURGE")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("if_exists", ["", "IF EXISTS "])
+def test_drop_catalog_table_purge_fails_after_drop(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, if_exists: str
+) -> None:
+    error = PermissionError("manifest list not readable")
+
+    def drop_then_fail(identifier: Any) -> None:
+        lake.drop_table(identifier)
+        raise error
+
+    # a purge that drops the table, then fails deleting its files, is reported
+    monkeypatch.setattr(lake, "purge_table", drop_then_fail)
+    with pytest.raises(PermissionError) as exc:
+        lake_ctx(lake).execute(f"DROP TABLE {if_exists}orders PURGE")
+    assert exc.value is error
+    assert exc.value.__notes__ == [
+        "dropping table 'orders' failed: catalog table 'tpch.orders' of catalog 'lake'"
+    ]
+    assert not lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_table_checks(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NoSuchTableError
+
+    checks: list[Any] = []
+
+    def unknown(identifier: Any) -> bool:
+        checks.append(identifier)
+        msg = "not allowed"
+        raise PermissionError(msg)
+
+    def deny(identifier: Any) -> None:
+        msg = "drop not allowed"
+        raise PermissionError(msg)
+
+    ctx = lake_ctx(lake)
+    monkeypatch.setattr(lake, "table_exists", unknown)
+    # an existence check that fails lets the purge run
+    ctx.execute("DROP TABLE orders PURGE")
+    assert checks == [("tpch", "orders")]
+    # a plain drop is not checked first, and its failure keeps its own error
+    monkeypatch.setattr(lake, "drop_table", deny)
+    with pytest.raises(PermissionError, match="drop not allowed") as exc:
+        ctx.execute("DROP TABLE IF EXISTS lineitem")
+    assert exc.value.__notes__ == [
+        "dropping table 'lineitem' failed: catalog table 'tpch.lineitem' of "
+        "catalog 'lake'"
+    ]
+    assert checks == [("tpch", "orders")]
+
+    # a table dropped by another writer after the check
+    def gone(identifier: Any) -> None:
+        raise NoSuchTableError(str(identifier))
+
+    monkeypatch.setattr(lake, "table_exists", lambda identifier: True)
+    monkeypatch.setattr(lake, "purge_table", gone)
+    ctx.execute("DROP TABLE IF EXISTS lineitem PURGE")
+    with pytest.raises(NoSuchTableError, match="table 'lineitem' does not exist"):
+        ctx.execute("DROP TABLE lineitem PURGE")
+
+
+@pytest.mark.write_disk
 def test_drop_catalog_table_from_catalog_config(lake: CountingCatalog) -> None:
     from polars.io.iceberg import IcebergCatalogConfig
 
