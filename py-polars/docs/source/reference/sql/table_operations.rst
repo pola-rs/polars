@@ -7,10 +7,14 @@ Table Operations
 
    * - Function
      - Description
+   * - :ref:`CREATE SCHEMA <create_schema>`
+     - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
      - Create a new table and its columns from a SQL query executed against an existing table.
    * - :ref:`DELETE FROM <delete_from_table>`
      - Remove specific rows of data from a table using an (optional) constraint.
+   * - :ref:`DROP SCHEMA <drop_schema>`
+     - Drop an empty namespace of an attached catalog.
    * - :ref:`DROP TABLES <drop_tables>`
      - Deletes the specified table, unregistering it.
    * - :ref:`EXPLAIN <explain>`
@@ -26,6 +30,24 @@ Table Operations
    * - :ref:`TRUNCATE <truncate>`
      - Remove all data from a table without actually deleting it.
 
+
+.. _create_schema:
+
+CREATE SCHEMA
+-------------
+Create a namespace in a catalog attached with :meth:`SQLContext.register_catalog`. A name
+that starts with an attached catalog is a namespace of that catalog; any other name is one
+of the default catalog, not under its ``default_namespace``. An existing namespace raises an
+error unless ``IF NOT EXISTS`` is given, which leaves it as it is. ``WITH (...)`` sets the
+namespace's properties, such as ``'location'``, where its tables go by default; the catalog
+decides which properties it keeps and uses.
+
+**Example:**
+
+.. code-block:: sql
+
+    CREATE SCHEMA lake.sales
+    CREATE SCHEMA IF NOT EXISTS lake.sales WITH ('location' = 's3://bucket/sales')
 
 .. _create_table:
 
@@ -104,6 +126,23 @@ Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 .. code-block:: sql
 
     DELETE FROM some_table WHERE value < 0
+
+.. _drop_schema:
+
+DROP SCHEMA
+-----------
+Drop a namespace of an attached catalog, with the name resolved as in
+:ref:`CREATE SCHEMA <create_schema>`. Only an empty namespace is dropped: the namespace is
+checked for tables and child namespaces before the drop, and raises an error if it has any
+(``CASCADE`` is not supported). Dropping a namespace
+that does not exist raises an error unless ``IF EXISTS`` is given.
+
+**Example:**
+
+.. code-block:: sql
+
+    DROP SCHEMA lake.sales_old
+    DROP SCHEMA IF EXISTS lake.scratch
 
 .. _drop_tables:
 

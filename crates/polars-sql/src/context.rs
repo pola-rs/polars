@@ -23,18 +23,19 @@ use sqlparser::ast::{
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
     GroupByExpr, HiveDistributionStyle, HiveFormat, Ident, JoinConstraint, JoinOperator,
     LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy,
-    OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
-    TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType, With,
+    OrderByKind, Query, RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
+    TableAlias, TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator,
+    Value as SQLValue, ValueWithSpan, Values, VisitorMut, WildcardAdditionalOptions, WindowSpec,
+    WindowType, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
-    CatalogDdl, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName,
-    create_table_columns, create_table_options, create_table_partitioning, display_name,
-    name_parts, name_position, rewrite_catalog_names,
+    CatalogDdl, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName,
+    create_schema_options, create_table_columns, create_table_options, create_table_partitioning,
+    display_name, name_parts, name_position, rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -448,6 +449,31 @@ impl SQLContext {
             } => {},
             Statement::CreateTable(create_table) if !create_table.temporary => {
                 return self.catalog_create_table(create_table);
+            },
+            Statement::CreateSchema { .. } => {
+                let (name, if_not_exists, options) = create_schema_parts(&stmt)?;
+                let Some((name, namespace)) = self.catalog_schema_target(name)? else {
+                    return Ok(None);
+                };
+                return Ok(Some(CatalogDdl::CreateSchema {
+                    name,
+                    namespace,
+                    if_not_exists,
+                    properties: create_schema_options(options)?,
+                }));
+            },
+            Statement::Drop {
+                object_type: ObjectType::Schema,
+                ..
+            } => {
+                let (name, if_exists) = drop_schema_parts(&stmt)?;
+                return Ok(self.catalog_schema_target(name)?.map(|(name, namespace)| {
+                    CatalogDdl::DropSchema {
+                        name,
+                        namespace,
+                        if_exists,
+                    }
+                }));
             },
             _ => return Ok(None),
         }
@@ -863,6 +889,17 @@ impl SQLContext {
                 object_type: ObjectType::Table,
                 ..
             } => self.execute_drop_table(stmt)?,
+            stmt @ Statement::CreateSchema { .. } => {
+                let (name, ..) = create_schema_parts(stmt)?;
+                self.execute_schema_ddl("CREATE SCHEMA", name)?
+            },
+            stmt @ Statement::Drop {
+                object_type: ObjectType::Schema,
+                ..
+            } => {
+                let (name, _) = drop_schema_parts(stmt)?;
+                self.execute_schema_ddl("DROP SCHEMA", name)?
+            },
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
@@ -1629,6 +1666,55 @@ impl SQLContext {
             SQLInterface: "`DROP ... PURGE` only applies to catalog tables"
         );
         Ok(target)
+    }
+
+    /// The catalog namespace a `CREATE SCHEMA` or `DROP SCHEMA` of `name` targets, with the name
+    /// as written; `None` if no catalog applies.
+    fn catalog_schema_target(
+        &self,
+        name: &ObjectName,
+    ) -> PolarsResult<Option<(String, CatalogNamespace)>> {
+        if self.catalogs.is_empty() {
+            return Ok(None);
+        }
+        let schema = object_name_to_string(name);
+        let Some(parts) = name_parts(name) else {
+            polars_bail!(SQLInterface: "invalid schema name '{}'", schema)
+        };
+        polars_ensure!(
+            parts.iter().all(|part| !part.is_empty()),
+            SQLInterface: "schema name '{}' has an empty part", schema
+        );
+        if let [one] = parts.as_slice()
+            && let Some(catalog) = self.catalogs.catalog_name(one)
+        {
+            polars_bail!(
+                SQLInterface: "'{}' is an attached catalog; write '{}.<schema>', or '<catalog>.{}' for a schema of that name",
+                one, catalog, one
+            );
+        }
+        Ok(self
+            .catalogs
+            .resolve_namespace(&parts)
+            .map(|namespace| (schema, namespace)))
+    }
+
+    // CREATE SCHEMA / DROP SCHEMA, which only a catalog has
+    fn execute_schema_ddl(&self, statement: &str, name: &ObjectName) -> PolarsResult<LazyFrame> {
+        if let Some((name, namespace)) = self.catalog_schema_target(name)? {
+            polars_bail!(
+                SQLInterface: "{} of catalog schema '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                statement, name, display_name(&namespace.full_name())
+            );
+        }
+        polars_ensure!(
+            !self.catalogs.is_empty(),
+            SQLInterface: "`{}` is supported only for attached catalogs", statement
+        );
+        polars_bail!(
+            SQLInterface: "schema '{}' has no catalog: no default catalog is set; write '<catalog>.{}'",
+            object_name_to_string(name), object_name_to_string(name)
+        )
     }
 
     // DELETE FROM <tbl> [WHERE ...]
@@ -7056,6 +7142,60 @@ fn drop_table_parts(stmt: &Statement) -> PolarsResult<(&[ObjectName], bool, bool
     polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
     polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
     Ok((names, *if_exists, *purge))
+}
+
+fn create_schema_parts(stmt: &Statement) -> PolarsResult<(&ObjectName, bool, &[SqlOption])> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Statement::CreateSchema {
+        schema_name,
+        if_not_exists,
+        with,
+
+        // Unsupported modifiers
+        or_replace,
+        options,
+        default_collate_spec,
+        clone,
+    } = stmt
+    else {
+        polars_bail!(SQLInterface: "unexpected statement type; expected CREATE SCHEMA")
+    };
+    let SchemaName::Simple(name) = schema_name else {
+        polars_bail!(SQLInterface: "`CREATE SCHEMA ... AUTHORIZATION` is not supported")
+    };
+    polars_ensure!(!or_replace, SQLInterface: "`CREATE OR REPLACE SCHEMA` is not supported");
+    polars_ensure!(options.is_none(), SQLInterface: "schema `OPTIONS` clauses are not supported; use `WITH (...)` instead");
+    polars_ensure!(default_collate_spec.is_none(), SQLInterface: "`DEFAULT COLLATE` is not supported");
+    polars_ensure!(clone.is_none(), SQLInterface: "`CREATE SCHEMA ... CLONE` is not supported");
+    Ok((name, *if_not_exists, with.as_deref().unwrap_or_default()))
+}
+
+fn drop_schema_parts(stmt: &Statement) -> PolarsResult<(&ObjectName, bool)> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Statement::Drop {
+        object_type: _,
+        names,
+        if_exists,
+        // The default: a schema must be empty.
+        restrict: _,
+
+        // Unsupported modifiers
+        cascade,
+        purge,
+        temporary,
+        table,
+    } = stmt
+    else {
+        polars_bail!(SQLInterface: "unexpected statement type; expected DROP")
+    };
+    polars_ensure!(!cascade, SQLInterface: "`DROP SCHEMA ... CASCADE` is not supported; drop its tables first");
+    polars_ensure!(!purge, SQLInterface: "`DROP SCHEMA ... PURGE` is not supported");
+    polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
+    polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
+    let [name] = names.as_slice() else {
+        polars_bail!(SQLInterface: "DROP SCHEMA takes one schema name")
+    };
+    Ok((name, *if_exists))
 }
 
 fn parse_single_statement(query: &str) -> PolarsResult<Statement> {

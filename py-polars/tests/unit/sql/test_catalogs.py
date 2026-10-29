@@ -1880,6 +1880,409 @@ def test_drop_missing_catalog_table(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("name", "namespace"),
+    [
+        ("lake.sales", ("sales",)),
+        ("LAKE.sales", ("sales",)),
+        # of the default catalog, and not under its default namespace `tpch`
+        ("sales", ("sales",)),
+        ('lake."Sales"', ("Sales",)),
+        ("lake.tpch.sales", ("tpch", "sales")),
+        ("prod.sales", ("prod", "sales")),
+    ],
+)
+def test_create_catalog_schema(
+    lake: CountingCatalog, name: str, namespace: tuple[str, ...]
+) -> None:
+    ctx = lake_ctx(lake)
+    res = ctx.execute(f"CREATE SCHEMA {name}", eager=True)
+    full_name = ".".join(("lake", *namespace))
+    assert res.item() == f"CREATE SCHEMA {full_name}"
+    assert lake.namespace_exists(namespace)
+    ctx.execute(f"CREATE TABLE {name}.t (x INT)")
+    assert lake.table_exists((*namespace, "t"))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_schema_properties(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    ctx = lake_ctx(lake)
+    location = f"file://{tmp_path}/sales_here"
+    ctx.execute(
+        f"CREATE SCHEMA sales WITH ('location' = '{location}', 'owner' = 'me', 'n' = 1)"
+    )
+    properties = lake.load_namespace_properties(("sales",))
+    assert {"location": location, "owner": "me", "n": "1"}.items() <= properties.items()
+    # tables of the namespace go under its location
+    ctx.execute("CREATE TABLE sales.t (x INT)")
+    assert lake.load_table(("sales", "t")).location().startswith(location)
+
+
+@pytest.mark.write_disk
+def test_create_existing_catalog_schema(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NamespaceAlreadyExistsError
+
+    ctx = lake_ctx(lake)
+    with pytest.raises(
+        NamespaceAlreadyExistsError,
+        match="schema 'tpch' already exists: namespace 'tpch' of catalog 'lake'",
+    ):
+        ctx.execute("CREATE SCHEMA tpch")
+    # an existing namespace is left as it is
+    res = ctx.execute("CREATE SCHEMA IF NOT EXISTS tpch WITH ('k' = 'v')", eager=True)
+    assert res.item() == "CREATE SCHEMA lake.tpch"
+    assert "k" not in lake.load_namespace_properties(("tpch",))
+    assert lake.table_exists(("tpch", "lineitem"))
+
+    # created meanwhile, by another writer
+    def created_meanwhile(*args: Any, **kwargs: Any) -> None:
+        msg = "created meanwhile"
+        raise NamespaceAlreadyExistsError(msg)
+
+    monkeypatch.setattr(lake, "namespace_exists", lambda namespace: False)
+    monkeypatch.setattr(lake, "create_namespace", created_meanwhile)
+    ctx.execute("CREATE SCHEMA IF NOT EXISTS tpch")
+    with pytest.raises(NamespaceAlreadyExistsError, match="already exists"):
+        ctx.execute("CREATE SCHEMA tpch")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("name", "namespace"),
+    [
+        ("lake.empty", ("empty",)),
+        ("empty", ("empty",)),
+        ("LAKE.empty", ("empty",)),
+        ("lake.prod.tpch.empty", ("prod", "tpch", "empty")),
+    ],
+)
+def test_drop_catalog_schema(
+    lake: CountingCatalog, name: str, namespace: tuple[str, ...]
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    lake.create_namespace(namespace)
+    ctx = lake_ctx(lake)
+    res = ctx.execute(f"DROP SCHEMA {name} RESTRICT", eager=True)
+    assert res.item() == f"DROP SCHEMA lake.{'.'.join(namespace)}"
+    assert not lake.namespace_exists(namespace)
+    assert lake.table_exists(("prod", "tpch", "lineitem"))
+
+    res = ctx.execute(f"DROP SCHEMA IF EXISTS {name}", eager=True)
+    assert res.item() == f"DROP SCHEMA lake.{'.'.join(namespace)}"
+    with pytest.raises(
+        NoSuchNamespaceError,
+        match=f"schema '{name}' does not exist: .* identifiers are case-sensitive",
+    ):
+        ctx.execute(f"DROP SCHEMA {name}")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("if_exists", ["", "IF EXISTS "])
+def test_drop_catalog_schema_not_empty(lake: CountingCatalog, if_exists: str) -> None:
+    from pyiceberg.exceptions import NamespaceNotEmptyError
+
+    ctx = lake_ctx(lake)
+    with pytest.raises(
+        NamespaceNotEmptyError,
+        match=r"schema 'tpch' is not empty: it has tables 'tpch\.lineitem', "
+        r"'tpch\.orders'; drop them first",
+    ):
+        ctx.execute(f"DROP SCHEMA {if_exists}tpch")
+    # a catalog may drop a namespace that has child namespaces, and change nothing
+    with pytest.raises(
+        NamespaceNotEmptyError,
+        match=r"schema 'prod' is not empty: it has child schemas 'prod\.tpch';",
+    ):
+        ctx.execute(f"DROP SCHEMA {if_exists}prod")
+    assert lake.table_exists(("tpch", "lineitem"))
+    assert lake.table_exists(("prod", "tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_tables_and_children(lake: CountingCatalog) -> None:
+    from pyiceberg.exceptions import NamespaceNotEmptyError
+
+    ctx = lake_ctx(lake)
+    for name in ["t1", "t2", "t3", "t4"]:
+        ctx.execute(f"CREATE TABLE prod.{name} (id BIGINT)")
+    with pytest.raises(
+        NamespaceNotEmptyError,
+        match=r"it has tables 'prod\.t1', 'prod\.t2', 'prod\.t3', \.\.\. and child "
+        r"schemas 'prod\.tpch';",
+    ):
+        ctx.execute("DROP SCHEMA prod")
+    assert lake.namespace_exists(("prod",))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_cascading_catalog(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NamespaceNotEmptyError
+
+    drops: list[Any] = []
+    # some catalogs drop a namespace together with its tables
+    monkeypatch.setattr(lake, "drop_namespace", drops.append)
+    with pytest.raises(NamespaceNotEmptyError, match="schema 'tpch' is not empty"):
+        lake_ctx(lake).execute("DROP SCHEMA tpch")
+    assert drops == []
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_filled_meanwhile(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NamespaceNotEmptyError
+
+    def refuse(namespace: Any) -> None:
+        msg = "namespace is not empty"
+        raise NamespaceNotEmptyError(msg)
+
+    # a catalog that refuses a table created between the listing and the drop
+    monkeypatch.setattr(lake, "list_tables", lambda namespace: [])
+    monkeypatch.setattr(lake, "drop_namespace", refuse)
+    with pytest.raises(
+        NamespaceNotEmptyError,
+        match="schema 'tpch' is not empty: drop its tables and child schemas first",
+    ):
+        lake_ctx(lake).execute("DROP SCHEMA tpch")
+    assert lake.table_exists(("tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_listing_fails(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "listing not allowed"
+        raise RuntimeError(msg)
+
+    # a failed listing of child namespaces is left to the drop
+    lake.create_namespace(("empty",))
+    monkeypatch.setattr(lake, "list_namespaces", fail)
+    ctx = lake_ctx(lake)
+    ctx.execute("DROP SCHEMA empty")
+    assert not lake.namespace_exists(("empty",))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("if_exists", ["", "IF EXISTS "])
+def test_drop_catalog_schema_table_listing_fails(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, if_exists: str
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "listing not allowed"
+        raise RuntimeError(msg)
+
+    def missing(*args: Any, **kwargs: Any) -> None:
+        msg = "no such namespace"
+        raise NoSuchNamespaceError(msg)
+
+    lake.create_namespace(("empty",))
+    ctx = lake_ctx(lake)
+    for listing, error in [(fail, RuntimeError), (missing, NoSuchNamespaceError)]:
+        monkeypatch.setattr(lake, "list_tables", listing)
+        with pytest.raises(error) as exc:
+            ctx.execute(f"DROP SCHEMA {if_exists}empty")
+        assert exc.value.__notes__ == [
+            "schema 'empty' was not dropped: its tables could not be listed"
+        ]
+        assert lake.namespace_exists(("empty",))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_listing_says_missing(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    def missing(*args: Any, **kwargs: Any) -> None:
+        msg = "Namespace with name 'x%20y' does not exist"
+        raise NoSuchNamespaceError(msg)
+
+    # PyIceberg's REST client lists children of `x y` as `x%20y`, which is missing
+    lake.create_namespace(("x y",))
+    monkeypatch.setattr(lake, "list_namespaces", missing)
+    ctx = lake_ctx(lake)
+    ctx.execute('DROP SCHEMA "x y"')
+    assert not lake.namespace_exists(("x y",))
+    with pytest.raises(NoSuchNamespaceError, match="schema 'x y' does not exist"):
+        ctx.execute('DROP SCHEMA "x y"')
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_beside_case_variant(lake: CountingCatalog) -> None:
+    # the SQL catalog's listing compares case (its existence check does not)
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE SCHEMA sales")
+    ctx.execute('CREATE SCHEMA "Sales".child')
+    ctx.execute("DROP SCHEMA sales")
+    assert lake.namespace_exists(("Sales", "child"))
+    assert ("sales",) not in lake.list_namespaces()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("quoted", ['"Sales"', '"Sales".sub'])
+def test_drop_catalog_schema_quoted(lake: CountingCatalog, quoted: str) -> None:
+    namespace = tuple(part.strip('"') for part in quoted.split("."))
+    lake.create_namespace(namespace)
+    lake_ctx(lake).execute(f"DROP SCHEMA lake.{quoted}")
+    assert not lake.namespace_exists(namespace)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_schema_without_parent(lake: CountingCatalog) -> None:
+    # passed to the catalog: the SQL catalog creates it, REST catalogs refuse
+    lake_ctx(lake).execute("CREATE SCHEMA lake.new.sub WITH ()")
+    assert lake.namespace_exists(("new", "sub"))
+    assert lake.namespace_exists(("new",))
+
+
+@pytest.mark.write_disk
+def test_catalog_schema_catalog_errors(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    ctx = lake_ctx(lake)
+    monkeypatch.setattr(lake, "create_namespace", fail)
+    with pytest.raises(RuntimeError, match="boom") as exc:
+        ctx.execute("CREATE SCHEMA sales")
+    assert exc.value.__notes__ == [
+        "schema 'sales' could not be created: namespace 'sales' of catalog 'lake'"
+    ]
+    monkeypatch.undo()
+
+    lake.create_namespace(("empty",))
+    monkeypatch.setattr(lake, "drop_namespace", fail)
+    with pytest.raises(RuntimeError, match="boom") as exc:
+        ctx.execute("DROP SCHEMA empty")
+    assert exc.value.__notes__ == [
+        "schema 'empty' could not be dropped: namespace 'empty' of catalog 'lake'"
+    ]
+    # a catalog that reports another error for a missing namespace
+    monkeypatch.setattr(lake, "list_tables", lambda namespace: [])
+    monkeypatch.setattr(lake, "list_namespaces", lambda namespace: [])
+    ctx.execute("DROP SCHEMA IF EXISTS missing")
+    with pytest.raises(NoSuchNamespaceError, match="schema 'missing' does not exist"):
+        ctx.execute("DROP SCHEMA missing")
+
+
+@pytest.mark.write_disk
+def test_create_catalog_schema_unknown_existence(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NamespaceAlreadyExistsError
+
+    def unsupported(*args: Any, **kwargs: Any) -> None:
+        raise NotImplementedError
+
+    # a catalog that can't check existence answers the create
+    ctx = lake_ctx(lake)
+    monkeypatch.setattr(lake, "namespace_exists", unsupported)
+    monkeypatch.setattr(
+        lake,
+        "create_namespace",
+        lambda namespace, properties: created.append(namespace),
+    )
+    created: list[Any] = []
+    ctx.execute("CREATE SCHEMA IF NOT EXISTS sales")
+    assert created == [("sales",)]
+
+    def exists(*args: Any, **kwargs: Any) -> None:
+        msg = "exists"
+        raise NamespaceAlreadyExistsError(msg)
+
+    monkeypatch.setattr(lake, "create_namespace", exists)
+    ctx.execute("CREATE SCHEMA IF NOT EXISTS sales")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("CREATE SCHEMA lake", "'lake' is an attached catalog; write 'lake.<schema>'"),
+        ("CREATE SCHEMA LAKE", "'LAKE' is an attached catalog; write 'lake.<schema>'"),
+        ("DROP SCHEMA lake", "'lake' is an attached catalog"),
+        ('CREATE SCHEMA lake.""', "has an empty part"),
+        (
+            "CREATE OR REPLACE SCHEMA lake.x",
+            "`CREATE OR REPLACE SCHEMA` is not supported",
+        ),
+        ("CREATE SCHEMA lake.x AUTHORIZATION bob", "AUTHORIZATION` is not supported"),
+        ("CREATE SCHEMA AUTHORIZATION bob", "AUTHORIZATION` is not supported"),
+        ("CREATE SCHEMA lake.x OPTIONS (k = 1)", r"use `WITH \(\.\.\.\)` instead"),
+        ("CREATE SCHEMA lake.x DEFAULT COLLATE 'und'", "`DEFAULT COLLATE`"),
+        ("CREATE SCHEMA lake.x CLONE lake.y", "CLONE` is not supported"),
+        (
+            "CREATE SCHEMA lake.x WITH ('Location' = '/x')",
+            "'Location' is not a schema option; did you mean 'location'",
+        ),
+        (
+            "CREATE SCHEMA lake.x WITH ('location' = 'x')",
+            "location must be an absolute path or a URI",
+        ),
+        ("CREATE SCHEMA lake.x WITH ('k' = 1, 'k' = 2)", "duplicate schema option 'k'"),
+        (
+            "CREATE SCHEMA lake.x WITH ('k' = 1 + 1)",
+            "schema option values must be string, number or boolean literals",
+        ),
+        (
+            "DROP SCHEMA tpch CASCADE",
+            "CASCADE` is not supported; drop its tables first",
+        ),
+        ("DROP SCHEMA tpch PURGE", "PURGE` is not supported"),
+        ("DROP SCHEMA tpch, prod", "DROP SCHEMA takes one schema name"),
+    ],
+)
+def test_catalog_schema_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    namespaces = lake.list_namespaces()
+    with pytest.raises(SQLInterfaceError, match=error):
+        lake_ctx(lake).execute(statement)
+    assert lake.list_namespaces() == namespaces
+    assert lake.table_exists(("tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+def test_catalog_schema_without_catalog(lake: CountingCatalog) -> None:
+    for statement in ("CREATE SCHEMA sales", "DROP SCHEMA sales"):
+        kind = statement.rsplit(" ", 1)[0]
+        with pytest.raises(
+            SQLInterfaceError, match=f"`{kind}` is supported only for attached catalogs"
+        ):
+            pl.SQLContext().execute(statement)
+        with pytest.raises(
+            SQLInterfaceError,
+            match=r"schema 'sales' has no catalog: no default catalog is set; "
+            r"write '<catalog>\.sales'",
+        ):
+            lake_ctx(lake, default=False).execute(statement)
+    assert not lake.namespace_exists(("sales",))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_schema_of_default_namespace(lake: CountingCatalog) -> None:
+    # the namespace of one-part table names can be created after registration
+    ctx = lake_ctx(lake, default_namespace="sales")
+    ctx.execute("CREATE SCHEMA sales")
+    ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
+    assert ctx.execute("SELECT * FROM lake.sales.t", eager=True).item() == 1
+
+
+@pytest.mark.write_disk
 def test_catalog_name_of_registered_table(lake: CountingCatalog) -> None:
     # `lineitem` refers to catalog table `lake.tpch.lineitem`, which a registered
     # table also names; reading either for the other would be silently wrong
