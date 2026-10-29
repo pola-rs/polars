@@ -10,8 +10,8 @@ description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
 polars-arrow = { workspace = true }
-polars-buffer = { workspace = true }
 polars-async = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true }
