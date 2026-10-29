@@ -811,3 +811,13 @@ def test_gather_array_null_rows_get_null_values(child: pa.Array) -> None:
     out = s.gather(pl.Series([1, 0, None], dtype=pl.get_index_type()))
     assert out.to_list() == [s.to_list()[1], None, None]
     assert out.to_arrow().values.is_null().to_pylist()[2:] == [True] * 4
+
+
+def test_gather_by_column_with_limit_30408() -> None:
+    n = 10_000
+    lf = pl.LazyFrame({"idx": range(n), "x": [float(i) for i in range(n)]})
+    q = lf.with_columns(pl.col("x").gather(pl.col("idx")).alias("y")).limit(1)
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"idx": [0], "x": [0.0], "y": [0.0]}),
+    )
