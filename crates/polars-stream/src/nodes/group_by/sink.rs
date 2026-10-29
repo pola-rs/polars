@@ -114,6 +114,7 @@ struct LocalSink {
     // See `InputStats`.
     pre_agg_work: u64,
     pre_agg_state_bytes: u64,
+    pre_agg_fixed_states: u64,
     growing_states_per_input: Vec<GrowingStates>,
 }
 
@@ -137,6 +138,7 @@ impl LocalSink {
             pre_aggs: Vec::new(),
             pre_agg_work: 0,
             pre_agg_state_bytes: 0,
+            pre_agg_fixed_states: 0,
             growing_states_per_input: params
                 .reductions_per_input
                 .iter()
@@ -193,15 +195,22 @@ impl LocalSink {
         });
         let mut num_values = 0;
         let mut bytes = 0;
-        for size in reductions.iter().filter_map(|r| r.state_size()) {
-            num_values += size.num_values as u64;
-            bytes += size.bytes as u64;
+        let mut num_fixed = 0;
+        for r in &reductions {
+            match r.state_size() {
+                Some(size) => {
+                    num_values += size.num_values as u64;
+                    bytes += size.bytes as u64;
+                },
+                None => num_fixed += 1,
+            }
         }
         let growing = &mut self.growing_states_per_input[input_idx];
         growing.pre_agg_values += num_values;
         growing.pre_agg_bytes += bytes;
         self.pre_agg_work += (keys.len() as u64).max(num_values);
         self.pre_agg_state_bytes += bytes;
+        self.pre_agg_fixed_states += keys.len() as u64 * num_fixed;
         self.pre_aggs.push(PreAgg {
             keys,
             reduction_idxs: UnitVec::from_slice(reduction_idxs),
@@ -718,6 +727,7 @@ impl GroupBySink {
             }
             stats.pre_agg_work += local.pre_agg_work;
             stats.pre_agg_state_bytes += local.pre_agg_state_bytes;
+            stats.pre_agg_fixed_states += local.pre_agg_fixed_states;
             frames.extend(local.cold_frames);
             pre_aggs.extend(local.pre_aggs);
         }
