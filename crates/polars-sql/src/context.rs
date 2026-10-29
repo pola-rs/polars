@@ -6,6 +6,7 @@ use chrono::{NaiveDateTime, SubsecRound};
 use polars_core::prelude::*;
 #[cfg(feature = "asof_join")]
 use polars_core::utils::try_get_supertype;
+use polars_defs::expr::RoundMode;
 #[cfg(feature = "asof_join")]
 use polars_defs::join::{AsOfOptions, AsofStrategy};
 use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
@@ -13,6 +14,7 @@ use polars_lazy::prelude::*;
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::prelude::*;
+use polars_plan::utils::expr_to_leaf_column_names_iter;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
@@ -36,6 +38,7 @@ use crate::catalog::{
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
+use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
     check_columns_in_aggregates, has_subquery_outside_aggregates, has_windows_over_aggregates,
@@ -5371,7 +5374,7 @@ impl SQLContext {
     }
 
     fn process_limit_offset(
-        &self,
+        &mut self,
         lf: LazyFrame,
         limit_clause: &Option<LimitClause>,
         fetch: &Option<Fetch>,
@@ -5394,9 +5397,11 @@ impl SQLContext {
             None => (None, None),
         };
 
-        // Handle FETCH clause (alternative to LIMIT, mutually exclusive)
+        // Handle FETCH clause (alternative to LIMIT, mutually exclusive); without a
+        // quantity it fetches one row.
+        let one_row = SQLExpr::value(SQLValue::Number("1".to_string(), false));
         let limit = match (fetch, limit) {
-            (Some(fetch), None) => fetch.quantity.as_ref(),
+            (Some(fetch), None) => Some(fetch.quantity.as_ref().unwrap_or(&one_row)),
             (Some(_), Some(_)) => {
                 polars_bail!(SQLSyntax: "cannot use both `LIMIT` and `FETCH` in the same query")
             },
@@ -5404,52 +5409,83 @@ impl SQLContext {
         };
 
         // Apply limit and/or offset
-        match (offset, limit) {
-            (
-                Some(SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Number(offset, _),
-                    ..
-                })),
-                Some(SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Number(limit, _),
-                    ..
-                })),
-            ) => Ok(lf.slice(
-                offset
-                    .parse()
-                    .map_err(|e| polars_err!(SQLInterface: "OFFSET conversion error: {}", e))?,
-                limit.parse().map_err(
-                    |e| polars_err!(SQLInterface: "LIMIT/FETCH conversion error: {}", e),
-                )?,
-            )),
-            (
-                Some(SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Number(offset, _),
-                    ..
-                })),
-                None,
-            ) => Ok(lf.slice(
-                offset
-                    .parse()
-                    .map_err(|e| polars_err!(SQLInterface: "OFFSET conversion error: {}", e))?,
-                IdxSize::MAX,
-            )),
-            (
-                None,
-                Some(SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Number(limit, _),
-                    ..
-                })),
-            ) => {
-                Ok(lf.limit(limit.parse().map_err(
-                    |e| polars_err!(SQLInterface: "LIMIT/FETCH conversion error: {}", e),
-                )?))
-            },
+        let number = |expr: &SQLExpr| match expr {
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::Number(n, _),
+                ..
+            }) => Some(n.clone()),
+            _ => None,
+        };
+        let offset_literal = offset.map(|e| number(e).and_then(|n| n.parse::<i64>().ok()));
+        let limit_literal = limit.map(|e| number(e).and_then(|n| n.parse::<IdxSize>().ok()));
+        match (offset_literal, limit_literal) {
+            (Some(Some(offset)), Some(Some(limit))) => Ok(lf.slice(offset, limit)),
+            (Some(Some(offset)), None) => Ok(lf.slice(offset, IdxSize::MAX)),
+            (None, Some(Some(limit))) => Ok(lf.limit(limit)),
             (None, None) => Ok(lf),
-            _ => polars_bail!(
-                SQLSyntax: "non-numeric arguments for LIMIT/OFFSET/FETCH are not supported",
-            ),
+            _ => self.slice_by_exprs(lf, offset, limit),
         }
+    }
+
+    /// Apply LIMIT/OFFSET values other than integer literals, such as scalar subqueries.
+    /// A value is a row count: a float rounds half to even and a decimal half away from
+    /// zero, a negative one raises, a NULL limit is no limit and a NULL offset is 0.
+    fn slice_by_exprs(
+        &mut self,
+        mut lf: LazyFrame,
+        offset: Option<&SQLExpr>,
+        limit: Option<&SQLExpr>,
+    ) -> PolarsResult<LazyFrame> {
+        let columns: Vec<Expr> = self
+            .get_frame_schema(&mut lf)?
+            .iter_names()
+            .cloned()
+            .map(Expr::Column)
+            .collect();
+        let mut parse = |expr: &SQLExpr| -> PolarsResult<Expr> {
+            check_query_independent_value(expr, self)?;
+            parse_sql_expr(expr, self, Some(&Schema::default()))
+        };
+        let mut offset = offset.map(&mut parse).transpose()?;
+        let mut limit = limit.map(&mut parse).transpose()?;
+        let (mut frame, placeholders) = self.process_subqueries(
+            lf,
+            offset.iter_mut().chain(limit.iter_mut()).collect(),
+            SubqueryShape::Scalar,
+        )?;
+        let schema = self.get_frame_schema(&mut frame)?;
+        let row_count = |value: Expr| -> PolarsResult<Expr> {
+            polars_ensure!(
+                expr_to_leaf_column_names_iter(&value).all(|name| placeholders.contains(&name)),
+                SQLSyntax: "LIMIT/OFFSET/FETCH cannot reference columns"
+            );
+            let value = match value.to_field(&schema)?.dtype {
+                dtype if dtype.is_integer() || dtype.is_null() => value,
+                DataType::Float32 | DataType::Float64 => value.round(0, RoundMode::HalfToEven),
+                DataType::Decimal(_, _) => value.round(0, RoundMode::HalfAwayFromZero),
+                DataType::String => value.strict_cast(DataType::Int64),
+                dtype => polars_bail!(
+                    SQLSyntax: "LIMIT/OFFSET/FETCH must be a number, found {}", dtype
+                ),
+            };
+            Ok(value
+                .strict_cast(DataType::UInt64)
+                .strict_cast(DataType::Int64))
+        };
+        let offset = match offset {
+            Some(offset) => row_count(offset)?.fill_null(lit(0i64)),
+            None => lit(0i64),
+        };
+        let length = match limit {
+            Some(limit) => row_count(limit)?,
+            None => lit(NULL).cast(DataType::Int64),
+        };
+        Ok(frame.select(
+            columns
+                .into_iter()
+                .map(|column| column.slice(offset.clone(), length.clone()))
+                .collect::<Vec<_>>(),
+        ))
     }
 
     fn process_qualified_wildcard(
@@ -5955,6 +5991,67 @@ fn is_simple_col_ref(expr: &Expr, col_name: &PlSmallStr) -> bool {
         Expr::Alias(inner, _) => matches!(inner.as_ref(), Expr::Column(n) if n == col_name),
         _ => false,
     }
+}
+
+/// Check that a LIMIT/OFFSET/FETCH value is one value for the whole query: outside its
+/// subqueries it reads no column and has no aggregate, window, user-defined or `UNNEST` call.
+fn check_query_independent_value(expr: &SQLExpr, ctx: &SQLContext) -> PolarsResult<()> {
+    struct Check<'a> {
+        ctx: &'a SQLContext,
+        subquery_depth: usize,
+    }
+
+    impl sqlparser::ast::Visitor for Check<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if self.subquery_depth > 0 {
+                return ControlFlow::Continue(());
+            }
+            let is_valid = match expr {
+                SQLExpr::Identifier(_)
+                | SQLExpr::CompoundIdentifier(_)
+                | SQLExpr::Wildcard(_)
+                | SQLExpr::QualifiedWildcard(..) => false,
+                SQLExpr::Function(function) => {
+                    function.over.is_none()
+                        && !PolarsSQLFunctions::try_from_sql(function, self.ctx).is_ok_and(|f| {
+                            f.is_builtin_aggregate()
+                                || matches!(
+                                    f,
+                                    PolarsSQLFunctions::Udf(_) | PolarsSQLFunctions::Explode
+                                )
+                        })
+                },
+                _ => true,
+            };
+            if is_valid {
+                ControlFlow::Continue(())
+            } else {
+                ControlFlow::Break(())
+            }
+        }
+    }
+
+    let mut check = Check {
+        ctx,
+        subquery_depth: 0,
+    };
+    polars_ensure!(
+        dyn_visit::visit(expr, &mut check).is_continue(),
+        SQLSyntax: "LIMIT/OFFSET/FETCH must be one value for the query, found {}", expr
+    );
+    Ok(())
 }
 
 /// Reject a parsed expression that still carries an unresolved subquery, so that a
