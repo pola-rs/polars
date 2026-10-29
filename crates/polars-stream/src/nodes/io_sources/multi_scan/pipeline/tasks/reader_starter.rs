@@ -134,18 +134,11 @@ impl ReaderStarter {
             // Note: We `.await` here for the row deletions to be fully loaded.
             //       For this reason it's important that we already spawn background tasks to fully
             //       load them at the reader pre-initialization stage.
-            let mut external_filter_mask = if let Some(row_deletions) = row_deletions {
+            let external_filter_mask = if let Some(row_deletions) = row_deletions {
                 Some(row_deletions.into_external_filter_mask().await?)
             } else {
                 None
             };
-
-            if let Some(n_rows_in_file) = n_rows_in_file.as_ref()
-                && let Some(external_filter_mask) = external_filter_mask.as_mut()
-            {
-                external_filter_mask
-                    .truncate_to_num_physical_rows(n_rows_in_file.num_physical_rows());
-            }
 
             // * This translates the `pre_slice` to physical offsets (i.e. apply before deleting rows).
             //   The slice remains the same if there are no row deletions.
@@ -222,7 +215,10 @@ impl ReaderStarter {
             if let Some(n_rows_in_file) = n_rows_in_file.as_mut() {
                 if let Some(external_filter_mask) = external_filter_mask.as_ref() {
                     unsafe {
-                        n_rows_in_file.set_deleted_rows(external_filter_mask.num_deleted_rows())
+                        n_rows_in_file.set_deleted_rows(
+                            external_filter_mask
+                                .num_deleted_rows(n_rows_in_file.num_physical_rows()),
+                        )
                     }
                 }
 
@@ -279,11 +275,7 @@ impl ReaderStarter {
                             reader.row_position_after_slice(pre_slice_this_file).await?;
 
                         let num_deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
-                            mask.slice(
-                                0,
-                                mask.len().min(usize::try_from(num_physical_rows).unwrap()),
-                            )
-                            .num_deleted_rows()
+                            mask.num_deleted_rows(usize::try_from(num_physical_rows).unwrap())
                         });
 
                         let file_row_count = RowCounter::new(num_physical_rows, num_deleted_rows);
@@ -425,8 +417,7 @@ impl ReaderStarter {
 
                     let num_deleted_rows = external_filter_mask.map_or(0, |external_filter_mask| {
                         external_filter_mask
-                            .slice(0, usize::try_from(num_physical_rows).unwrap())
-                            .num_deleted_rows()
+                            .num_deleted_rows(usize::try_from(num_physical_rows).unwrap())
                     });
 
                     row_position_this_file = RowCounter::new(num_physical_rows, num_deleted_rows);
