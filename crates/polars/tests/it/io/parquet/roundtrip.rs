@@ -2,7 +2,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use polars_arrow::array::{
-    Array, ArrayRef, Int32Array, ListArray, MutableBinaryViewArray, MutableListArray, TryExtend,
+    ArrayRef, Int32Array, ListArray, MutableBinaryViewArray, MutableListArray, TryExtend,
     Utf8Array, Utf8ViewArray,
 };
 use polars_arrow::datatypes::{ArrowSchema, Field};
