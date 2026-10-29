@@ -1042,3 +1042,17 @@ def test_ndjson_large_u64_infer_25894() -> None:
         df,
         pl.DataFrame({"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}),
     )
+
+
+def test_read_ndjson_small_integers_16167() -> None:
+    data = b'{"a": 1, "b": 300, "c": -1, "d": -300}\n{"a": 255, "b": 65535, "c": 127, "d": null}\n'
+    schema = {"a": pl.UInt8, "b": pl.UInt16, "c": pl.Int8, "d": pl.Int16}
+    df = pl.read_ndjson(io.BytesIO(data), schema=schema)
+    expected = pl.DataFrame(
+        {"a": [1, 255], "b": [300, 65535], "c": [-1, 127], "d": [-300, None]},
+        schema=schema,
+    )
+    assert_frame_equal(df, expected)
+
+    with pytest.raises(ComputeError, match="cannot parse"):
+        pl.read_ndjson(io.BytesIO(b'{"a": 256}\n'), schema={"a": pl.UInt8})
