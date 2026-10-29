@@ -508,6 +508,10 @@ class SQLContext(Generic[FrameType]):
                 lambda query: wrap_ldf(self._execute_with_catalogs(query)),
                 storage_options,
             )
+        elif ddl["kind"] == "create_schema":
+            response = _create_catalog_namespace(catalog, ddl)
+        elif ddl["kind"] == "drop_schema":
+            response = _drop_catalog_namespace(catalog, ddl)
         else:
             msg = f"unsupported catalog statement {ddl['kind']!r}"
             raise NotImplementedError(msg)
@@ -586,6 +590,11 @@ class SQLContext(Generic[FrameType]):
         * `DROP TABLE [IF EXISTS] <name> [PURGE]` drops a registered table of that
           name, else the catalog table, permanently. `PURGE` also deletes the
           table's data files.
+        * `CREATE SCHEMA [IF NOT EXISTS] <name> [WITH (...)]` creates a namespace,
+          and `DROP SCHEMA [IF EXISTS] <name>` drops an empty one. A name starting
+          with an attached catalog is a namespace of it, any other name one of the
+          default catalog, not under `default_namespace`. See
+          :ref:`CREATE SCHEMA <create_schema>`.
         * `TRUNCATE` and `DELETE` are not supported on catalog tables.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
@@ -923,6 +932,109 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
     return response
 
 
+def _create_catalog_namespace(
+    catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]
+) -> str:
+    """Create the catalog namespace of a `CREATE SCHEMA`, returning the response."""
+    from pyiceberg.exceptions import NamespaceAlreadyExistsError
+
+    namespace: tuple[str, ...] = tuple(ddl["namespace"])
+    name, namespace_name = ddl["name"], _display_name(namespace)
+    response = f"CREATE SCHEMA {_display_name([ddl['catalog'], *namespace])}"
+    try:
+        # checked first, as some catalogs may report other errors for an existing one;
+        # a catalog that can't tell answers the create instead
+        exists = ddl["if_not_exists"] and catalog.namespace_exists(namespace)
+    except Exception:
+        exists = False
+    if exists:
+        return response
+    try:
+        catalog.create_namespace(namespace, ddl["properties"])
+    except NamespaceAlreadyExistsError as error:
+        if ddl["if_not_exists"]:
+            return response
+        msg = (
+            f"schema '{name}' already exists: namespace '{namespace_name}' of "
+            f"catalog '{ddl['catalog']}' could not be created"
+        )
+        raise NamespaceAlreadyExistsError(msg) from error
+    except Exception as error:
+        error.add_note(
+            f"schema '{name}' could not be created: namespace '{namespace_name}' of "
+            f"catalog '{ddl['catalog']}'"
+        )
+        raise
+    return response
+
+
+def _drop_catalog_namespace(
+    catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]
+) -> str:
+    """Drop the catalog namespace of a `DROP SCHEMA`, returning the response."""
+    from pyiceberg.exceptions import NamespaceNotEmptyError, NoSuchNamespaceError
+
+    namespace: tuple[str, ...] = tuple(ddl["namespace"])
+    name, namespace_name = ddl["name"], _display_name(namespace)
+    response = f"DROP SCHEMA {_display_name([ddl['catalog'], *namespace])}"
+    missing = (
+        f"schema '{name}' does not exist: namespace '{namespace_name}' of catalog "
+        f"'{ddl['catalog']}' could not be dropped"
+    )
+    # some catalogs drop a namespace together with its tables, so it is never dropped
+    # without listing them
+    try:
+        tables = catalog.list_tables(namespace)
+    except Exception as error:
+        if not _namespace_exists(catalog, namespace):
+            if ddl["if_exists"]:
+                return response
+            msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+            raise NoSuchNamespaceError(msg) from error
+        error.add_note(
+            f"schema '{name}' was not dropped: its tables could not be listed"
+        )
+        raise
+    # some catalogs drop nothing for a namespace with child namespaces; a listing that
+    # fails (PyIceberg's REST client encodes some names twice) is left to the drop
+    try:
+        children = catalog.list_namespaces(namespace)
+    except Exception:
+        children = []
+    contents = [f"tables {_listed(tables)}"] if tables else []
+    if children:
+        contents.append(f"child schemas {_listed(children)}")
+    if contents:
+        msg = (
+            f"schema '{name}' is not empty: it has {' and '.join(contents)}; drop them "
+            "first (`CASCADE` is not supported)"
+        )
+        raise NamespaceNotEmptyError(msg)
+    try:
+        catalog.drop_namespace(namespace)
+    except NamespaceNotEmptyError as error:
+        msg = (
+            f"schema '{name}' is not empty: drop its tables and child schemas first "
+            f"(`CASCADE` is not supported) ({error})"
+        )
+        raise NamespaceNotEmptyError(msg) from error
+    except Exception as error:
+        # not every catalog raises NoSuchNamespaceError for a missing namespace
+        if isinstance(error, NoSuchNamespaceError) or not _namespace_exists(
+            catalog, namespace
+        ):
+            if ddl["if_exists"]:
+                return response
+            msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+            raise NoSuchNamespaceError(msg) from error
+        error.add_note(
+            f"schema '{name}' could not be dropped: namespace '{namespace_name}' of "
+            f"catalog '{ddl['catalog']}'"
+        )
+        raise
+    return response
+
+
 def _create_catalog_table(
     catalog: pyiceberg.catalog.Catalog,
     ddl: dict[str, Any],
@@ -1241,6 +1353,12 @@ def _namespace_exists(
 def _display_name(parts: Sequence[str]) -> str:
     """A table name for messages, with parts containing dots quoted."""
     return ".".join(f'"{part}"' if "." in part else part for part in parts)
+
+
+def _listed(identifiers: Sequence[tuple[str, ...]], limit: int = 3) -> str:
+    """The first `limit` identifiers (sorted) for messages, quoted."""
+    names = [repr(_display_name(name)) for name in sorted(identifiers)[:limit]]
+    return ", ".join(names) + (", ..." if len(identifiers) > limit else "")
 
 
 def _namespace_parts(namespace: str | Sequence[str] | None) -> list[str] | None:

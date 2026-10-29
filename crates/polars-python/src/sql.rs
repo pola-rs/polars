@@ -165,6 +165,34 @@ impl PySQLContext {
                     .collect();
                 dict.set_item("partition_by", partition_by)?;
             },
+            CatalogDdl::CreateSchema {
+                name,
+                namespace,
+                if_not_exists,
+                properties,
+            } => {
+                dict.set_item("kind", "create_schema")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", namespace.catalog)?;
+                dict.set_item("namespace", namespace.namespace)?;
+                dict.set_item("if_not_exists", if_not_exists)?;
+                let props = PyDict::new(py);
+                for (key, value) in properties {
+                    props.set_item(key, value)?;
+                }
+                dict.set_item("properties", props)?;
+            },
+            CatalogDdl::DropSchema {
+                name,
+                namespace,
+                if_exists,
+            } => {
+                dict.set_item("kind", "drop_schema")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", namespace.catalog)?;
+                dict.set_item("namespace", namespace.namespace)?;
+                dict.set_item("if_exists", if_exists)?;
+            },
         }
         Ok(Some(dict))
     }
