@@ -1054,5 +1054,9 @@ def test_read_ndjson_small_integers_16167() -> None:
     )
     assert_frame_equal(df, expected)
 
-    with pytest.raises(ComputeError, match="cannot parse"):
-        pl.read_ndjson(io.BytesIO(b'{"a": 256}\n'), schema={"a": pl.UInt8})
+    for dtype in schema.values():
+        with pytest.raises(ComputeError, match="cannot parse '100000'"):
+            pl.read_ndjson(io.BytesIO(b'{"a": 100000}\n'), schema={"a": dtype})
+
+    with pytest.raises(ComputeError, match="cannot parse '-1'"):
+        pl.read_ndjson(io.BytesIO(b'{"a": -1}\n'), schema={"a": pl.UInt8})
