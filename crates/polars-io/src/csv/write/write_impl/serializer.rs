@@ -35,7 +35,7 @@ use std::io::Write;
 
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-use memchr::{memchr, memchr_iter, memchr3, memmem};
+use memchr::{memchr, memchr_iter, memchr2, memchr3};
 use num_traits::NumCast;
 use polars_arrow::array::{
     Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray,
@@ -493,6 +493,52 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
         }
     }
 
+    /// Whether the line terminator character `c` is not the separator, `\n` or `\r`.
+    fn is_extra_terminator_char(c: char, separator: u8) -> bool {
+        !(c.is_ascii() && [separator, LF, CR].contains(&(c as u8)))
+    }
+
+    /// A set of bytes, as a list and as a 256-entry lookup table.
+    struct Specials<const N: usize> {
+        needles: [u8; N],
+        table: [bool; 256],
+    }
+
+    impl<const N: usize> Specials<N> {
+        fn new(needles: [u8; N]) -> Self {
+            let mut table = [false; 256];
+            for n in needles {
+                table[n as usize] = true;
+            }
+            Self { needles, table }
+        }
+
+        /// Whether `s` contains any of the bytes. Short fields use the table, longer ones SIMD
+        /// blocks. Compat builds use memchr for long fields because it detects AVX2 at runtime.
+        #[inline(always)]
+        fn any_in(&self, s: &[u8]) -> bool {
+            if s.len() < 32 {
+                return s.iter().any(|&b| self.table[b as usize]);
+            }
+            if !cfg!(target_feature = "avx2") && s.len() >= 128 {
+                return self.needles.chunks(3).any(|c| match *c {
+                    [a, b, c] => memchr3(a, b, c, s).is_some(),
+                    [a, b] => memchr2(a, b, s).is_some(),
+                    [a] => memchr(a, s).is_some(),
+                    _ => unreachable!(),
+                });
+            }
+            let in_block = |block: &[u8; 32]| {
+                (block.iter()).fold(false, |acc, &b| {
+                    acc | self.needles.iter().fold(false, |acc, &n| acc | (b == n))
+                })
+            };
+            let (blocks, rest) = s.as_chunks::<32>();
+            blocks.iter().any(in_block)
+                || (!rest.is_empty() && in_block(s.last_chunk::<32>().unwrap()))
+        }
+    }
+
     let iter = update(array);
     match options.quote_style {
         QuoteStyle::Always => {
@@ -524,30 +570,40 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                 };
             Box::new(StringSerializer { serialize, iter })
         },
+        QuoteStyle::Necessary
+            if !(options.line_terminator.chars())
+                .any(|c| is_extra_terminator_char(c, options.separator)) =>
+        {
+            // TODO: Use `Specials` here too, so fields without special bytes are scanned once, not twice.
+            let serialize =
+                move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
+                    let Some(s) = f(iter) else {
+                        buf.extend_from_slice(options.null.as_bytes());
+                        return;
+                    };
+                    let quote_char = options.quote_char;
+                    // An empty string conflicts with null, so it is necessary to quote.
+                    if s.is_empty() {
+                        buf.extend_from_slice(&[quote_char, quote_char]);
+                        return;
+                    }
+                    let needs_quote = memchr3(options.separator, LF, CR, s.as_bytes()).is_some();
+                    if needs_quote {
+                        buf.push(quote_char);
+                    }
+                    serialize_str_escaped(buf, s.as_bytes(), quote_char, needs_quote);
+                    if needs_quote {
+                        buf.push(quote_char);
+                    }
+                };
+            Box::new(StringSerializer { serialize, iter })
+        },
         QuoteStyle::Necessary => {
-            // Like Python's `csv`, quote a field that contains any character of the line
-            // terminator. `\n` and `\r` are always checked, so the default terminators add
-            // nothing here.
-            let mut extra_bytes: Vec<u8> = Vec::new();
-            let mut extra_finders: Vec<memmem::Finder<'static>> = Vec::new();
-            for c in options.line_terminator.chars() {
-                if c.is_ascii() {
-                    let b = c as u8;
-                    if ![options.separator, LF, CR].contains(&b) && !extra_bytes.contains(&b) {
-                        extra_bytes.push(b);
-                    }
-                } else {
-                    let mut bytes = [0; 4];
-                    let bytes = c.encode_utf8(&mut bytes).as_bytes();
-                    if !extra_finders.iter().any(|finder| finder.needle() == bytes) {
-                        extra_finders.push(memmem::Finder::new(bytes).into_owned());
-                    }
-                }
-            }
-
+            /// Writes each field as is, or quoted and escaped if `needs_quote` is true for it.
+            /// `needs_quote` must be true for fields that contain the quote char.
             fn serialize_necessary<Iter>(
                 mut f: impl FnMut(&mut Iter) -> Option<&str>,
-                has_extra: impl Fn(&[u8]) -> bool,
+                needs_quote: impl Fn(&str, &SerializeOptions) -> bool,
             ) -> impl FnMut(&mut Iter, &mut Vec<u8>, &SerializeOptions) {
                 move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
                     let Some(s) = f(iter) else {
@@ -560,34 +616,35 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                         buf.extend_from_slice(&[quote_char, quote_char]);
                         return;
                     }
-                    let needs_quote = memchr3(options.separator, LF, CR, s.as_bytes()).is_some()
-                        || has_extra(s.as_bytes());
-                    if needs_quote {
+                    if needs_quote(s, options) {
                         buf.push(quote_char);
-                    }
-                    serialize_str_escaped(buf, s.as_bytes(), quote_char, needs_quote);
-                    if needs_quote {
+                        serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                         buf.push(quote_char);
+                    } else {
+                        buf.extend_from_slice(s.as_bytes());
                     }
                 }
             }
 
-            match (extra_bytes.as_slice(), extra_finders.is_empty()) {
-                ([], true) => {
-                    let serialize = serialize_necessary(f, |_| false);
-                    Box::new(StringSerializer { serialize, iter })
-                },
-                (&[b], true) => {
-                    let serialize = serialize_necessary(f, move |s| memchr(b, s).is_some());
-                    Box::new(StringSerializer { serialize, iter })
-                },
-                _ => {
-                    let serialize = serialize_necessary(f, move |s| {
-                        extra_bytes.iter().any(|&b| memchr(b, s).is_some())
-                            || extra_finders.iter().any(|finder| finder.find(s).is_some())
-                    });
-                    Box::new(StringSerializer { serialize, iter })
-                },
+            let separator = options.separator;
+            let quote_char = options.quote_char;
+            let mut extra = (options.line_terminator.chars())
+                .filter(|&c| is_extra_terminator_char(c, separator));
+            let first = extra.next();
+            if let Some(first) = first.filter(|&c| c.is_ascii() && extra.all(|d| d == c)) {
+                // One extra byte, e.g. `;`: a single scan decides.
+                let specials = Specials::new([separator, LF, CR, quote_char, first as u8]);
+                let serialize = serialize_necessary(f, move |s, _| specials.any_in(s.as_bytes()));
+                Box::new(StringSerializer { serialize, iter })
+            } else {
+                // Rare terminators with several or non-ASCII extra characters.
+                let specials = Specials::new([separator, LF, CR, quote_char]);
+                let serialize = serialize_necessary(f, move |s, options| {
+                    specials.any_in(s.as_bytes())
+                        || (options.line_terminator.chars())
+                            .any(|c| is_extra_terminator_char(c, separator) && s.contains(c))
+                });
+                Box::new(StringSerializer { serialize, iter })
             }
         },
         QuoteStyle::Never => {
@@ -1028,6 +1085,65 @@ mod test {
         check_string_serialization(&necessary_quote_crlf, Some("a"), "a");
         check_string_serialization(&necessary_quote_crlf, Some("a;b"), "a;b");
         check_string_serialization(&necessary_quote_crlf, Some("a\rb"), "\"a\rb\"");
+
+        let necessary_quote_double = SerializeOptions {
+            line_terminator: ";;".into(),
+            ..necessary_quote.clone()
+        };
+        check_string_serialization(&necessary_quote_double, Some("a;b"), r#""a;b""#);
+        check_string_serialization(&necessary_quote_double, Some("a\"b"), r#""a""b""#);
+        check_string_serialization(&necessary_quote_double, Some("a|b"), "a|b");
+
+        let necessary_quote_two = SerializeOptions {
+            line_terminator: "\t|".into(),
+            ..necessary_quote.clone()
+        };
+        check_string_serialization(&necessary_quote_two, Some("a|b"), r#""a|b""#);
+        check_string_serialization(&necessary_quote_two, Some("a\tb"), "\"a\tb\"");
+        check_string_serialization(&necessary_quote_two, Some("a;b"), "a;b");
+
+        // Nulls, empty strings and non-ASCII text in both custom-terminator paths.
+        for options in [&necessary_quote_semicolon, &necessary_quote_two] {
+            check_string_serialization(options, None, "");
+            check_string_serialization(options, Some(""), r#""""#);
+            check_string_serialization(options, Some("é€😀"), "é€😀");
+        }
+
+        // Terminators that are empty, the separator, the quote char, NUL, or with a custom
+        // separator and quote char.
+        let with = |line_terminator: &str, separator: u8, quote_char: u8| SerializeOptions {
+            line_terminator: line_terminator.into(),
+            separator,
+            quote_char,
+            ..necessary_quote.clone()
+        };
+        check_string_serialization(&with("", b',', b'"'), Some("a;b"), "a;b");
+        check_string_serialization(&with(",", b',', b'"'), Some("a,b"), r#""a,b""#);
+        check_string_serialization(&with("\"", b',', b'"'), Some("a\"b"), r#""a""b""#);
+        check_string_serialization(&with("\0", b',', b'"'), Some("a\0b"), "\"a\0b\"");
+        check_string_serialization(&with(";", b'\t', b'\''), Some("a\tb"), "'a\tb'");
+        check_string_serialization(&with(";", b'\t', b'\''), Some("a;'b"), "'a;''b'");
+        check_string_serialization(&with(";", b'\t', b'\''), Some("a,\"b"), "a,\"b");
+
+        // Every block size of the scans, with each special byte at each position.
+        for (options, specials) in [
+            (&necessary_quote_semicolon, [";", ",", "\n", "\r"]),
+            (&necessary_quote_two, ["|", "\t", ",", "\n"]),
+        ] {
+            for len in (1..=80).chain([127, 128, 129, 255, 256, 257, 1000]) {
+                let plain = "x".repeat(len);
+                check_string_serialization(options, Some(&plain), &plain);
+                for pos in 0..len {
+                    for special in specials {
+                        let s = format!("{}{special}{}", &plain[..pos], &plain[pos + 1..]);
+                        check_string_serialization(options, Some(&s), &format!("\"{s}\""));
+                    }
+                    let s = format!("{}\"{}", &plain[..pos], &plain[pos + 1..]);
+                    let expected = format!("\"{}\"\"{}\"", &plain[..pos], &plain[pos + 1..]);
+                    check_string_serialization(options, Some(&s), &expected);
+                }
+            }
+        }
 
         let never_quote = SerializeOptions {
             quote_style: QuoteStyle::Never,
