@@ -2112,6 +2112,31 @@ def test_min_max_by_nested_by_group_by(
 
 
 @pytest.mark.parametrize(
+    ("agg", "expected"),
+    [(pl.Expr.min_by, [1, 5, None]), (pl.Expr.max_by, [3, 5, None])],
+)
+def test_min_max_by_row_encoded_value(
+    agg: Callable[..., pl.Expr], expected: list[int | None]
+) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2, 3], "x": [3, 1, None, 5, 7], "by": [2, 1, None, 4, None]}
+    )
+    q = lf.group_by("g", maintain_order=True).agg(
+        agg(pl.col("x")._row_encode(), pl.col("by")).cast(pl.Binary)
+    )
+
+    def encode(v: int | None) -> bytes | None:
+        if v is None:
+            return None
+        return pl.select(pl.lit(v, pl.Int64)._row_encode().cast(pl.Binary)).item()
+
+    expected_df = pl.DataFrame(
+        {"g": [1, 2, 3], "x": pl.Series([encode(v) for v in expected], dtype=pl.Binary)}
+    )
+    assert_frame_equal(q.collect(), expected_df)
+
+
+@pytest.mark.parametrize(
     ("dtype", "input", "expect"),
     [
         (pl.Int32, [1, 2, 2], [[1, 2], [2]]),
