@@ -2676,7 +2676,8 @@ impl SQLContext {
             ..Default::default()
         };
         let outer_scope = std::mem::replace(&mut self.group_scope, scope);
-        let result = self.execute_select_block(select_stmt, query);
+        let hoisted = self.hoist_outer_select_items(select_stmt);
+        let result = self.execute_select_block(hoisted.as_ref().unwrap_or(select_stmt), query);
         self.group_scope = outer_scope;
         result
     }
