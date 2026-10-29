@@ -24,9 +24,9 @@ pub const DEFAULT_FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
 
 /// Looseness of the formal KLL error bound (estimated by measuring).
-const KLL_BOUND_LOOSENESS: f64 = 3.8;
+const KLL_BOUND_LOOSENESS: f64 = 3.1;
 /// Looseness of the formal REQ error bound (estimated by measuring).
-const REQ_BOUND_LOOSENESS: f64 = 37.0;
+const REQ_BOUND_LOOSENESS: f64 = 34.0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -343,10 +343,6 @@ pub mod kll {
     struct Level {
         offset: usize,
         size: usize,
-        /// Set while the next compaction must take the opposite `coin`.
-        mid_pair: bool,
-        /// Parity promoted by the previous compaction, see `compact_level`.
-        coin: bool,
     }
 
     /// Stand-in for the run of [`SAMPLER_CUTOFF`]-sized compactors at the bottom
@@ -667,15 +663,7 @@ pub mod kll {
             let mut compact_level = self.levels[level];
             let rand: u8 = self.rng.random();
             let coin1 = rand & 0x1 != 0;
-
-            // Only draw a fresh promotion parity every other compaction, and take
-            // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
-            compact_level.coin = match compact_level.mid_pair {
-                true => !compact_level.coin,
-                false => rand & 0x2 != 0,
-            };
-            compact_level.mid_pair = !compact_level.mid_pair;
-            let coin2 = compact_level.coin;
+            let coin2 = rand & 0x2 != 0;
 
             let mut next_level = self.levels[level + 1];
             let mut compact_start = compact_level.offset;
@@ -781,8 +769,6 @@ pub mod kll {
                 self.levels[level] = Level {
                     offset: next_offset,
                     size: l1.size + l2.size,
-                    mid_pair: l1.mid_pair | l2.mid_pair,
-                    coin: merge_coin(l1.mid_pair, l1.coin, l2.mid_pair, l2.coin, &mut self.rng),
                 };
                 next_offset += l1.size + l2.size;
             }
@@ -1051,8 +1037,6 @@ pub mod req {
         offset: usize,
         size: usize,
         compaction_schedule: u64,
-        /// Parity promoted by the previous compaction, see `compact_level_once`.
-        coin: bool,
     }
 
     #[derive(Debug)]
@@ -1254,19 +1238,10 @@ pub mod req {
                     }
                 }
 
-                let mid_pair = |l: &Level| !l.compaction_schedule.is_multiple_of(2);
-
                 self.levels[level] = Level {
                     offset: next_offset,
                     size: l1.size + l2.size,
                     compaction_schedule: l1.compaction_schedule | l2.compaction_schedule,
-                    coin: merge_coin(
-                        mid_pair(&l1),
-                        l1.coin,
-                        mid_pair(&l2),
-                        l2.coin,
-                        &mut self.rng,
-                    ),
                 };
                 next_offset += l1.size + l2.size;
             }
@@ -1329,13 +1304,7 @@ pub mod req {
             debug_assert!(l_c.is_multiple_of(2));
             debug_assert!(promote_count >= l_c);
 
-            // Only draw a fresh promotion parity every other compaction, and take
-            // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
-            let coin = match !self.levels[level].compaction_schedule.is_multiple_of(2) {
-                true => !self.levels[level].coin,
-                false => self.rng.random(),
-            };
-            self.levels[level].coin = coin;
+            let coin: bool = self.rng.random();
 
             // Level 0 is not sorted yet.
             let compactor = &mut self.items[compactor_start..compactor_end];
@@ -1470,14 +1439,6 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     debug_assert_eq!(out.len(), num_items);
     debug_assert_eq!(cum_weights.len(), num_items);
     cum_weights
-}
-
-fn merge_coin(mid1: bool, coin1: bool, mid2: bool, coin2: bool, rng: &mut SmallRng) -> bool {
-    match (mid1, mid2) {
-        (true, true) if coin1 != coin2 => rng.random(),
-        (false, true) => coin2,
-        _ => coin1,
-    }
 }
 
 /// Append the merge of two runs, both sorted by `compare`, to `vec`.
