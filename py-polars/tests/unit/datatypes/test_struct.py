@@ -2719,3 +2719,23 @@ def test_struct_when_then_after_parquet_roundtrip_29815() -> None:
         .otherwise(pl.lit("not shipped"))
     )
     assert out.to_series().to_list() == ["TRK123", "not shipped"]
+
+
+def test_struct_constructor_keys_missing_in_first_value_21314() -> None:
+    s = pl.Series([{"a": 1}, None, {"b": 2, "c": {"x": 3}}, {"c": {"y": "z"}}])
+    expected = pl.Series(
+        [
+            {"a": 1, "b": None, "c": None},
+            None,
+            {"a": None, "b": 2, "c": {"x": 3, "y": None}},
+            {"a": None, "b": None, "c": {"x": None, "y": "z"}},
+        ],
+        dtype=pl.Struct(
+            {
+                "a": pl.Int64,
+                "b": pl.Int64,
+                "c": pl.Struct({"x": pl.Int64, "y": pl.String}),
+            }
+        ),
+    )
+    assert_series_equal(s, expected)
