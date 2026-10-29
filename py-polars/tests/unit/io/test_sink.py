@@ -1045,5 +1045,5 @@ def test_failed_sink_does_not_corrupt_retry(tmp_path: Path, sink: Any) -> None:
         with pytest.raises(InvalidOperationError):
             sink(failing, path, compression="gzip")
         sink(rows, path, compression="gzip")
-        with open(path, "rb") as f:
+        with Path(path).open("rb") as f:
             gzip.decompress(f.read())
