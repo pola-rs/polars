@@ -81,7 +81,8 @@ A table name is resolved in this order:
 
 Catalog tables are scanned lazily, like `scan_iceberg`: a table loads when the query's schema is
 first needed. The name after the catalog is passed to the catalog as written, so catalog identifiers
-are case-sensitive. A column can be qualified by any trailing part of the table's full name:
+are case-sensitive, and a quoted part such as `"a.b"` is one part (catalogs differ in whether they
+accept a dot in it). A column can be qualified by any trailing part of the table's full name:
 `lineitem.k`, `tpch.lineitem.k` or `lake.tpch.lineitem.k`.
 
 With a default catalog, any name that is neither a CTE nor a registered table is looked up in the
@@ -92,7 +93,7 @@ catalog explicit.
 Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
 registered there.
 
-#### Create and drop catalog tables
+#### Create and drop catalog tables and schemas
 
 `CREATE TABLE` and `DROP TABLE` resolve the table name as a query does, and act on the catalog:
 
@@ -114,6 +115,15 @@ ctx.execute("DROP TABLE big_orders")  # dropped from the catalog
 - `DROP TABLE` drops a registered table of that name first, else the catalog table, permanently.
   `DROP TABLE ... PURGE` also deletes the table's data files.
 - `TRUNCATE` and `DELETE` are not supported on catalog tables.
+
+`CREATE SCHEMA` and `DROP SCHEMA` create and drop a namespace. A name that starts with an attached
+catalog is a namespace of it, any other name one of the default catalog (not under
+`default_namespace`):
+
+```python
+ctx.execute("CREATE SCHEMA IF NOT EXISTS lake.sales WITH ('location' = 's3://bucket/sales')")
+ctx.execute("DROP SCHEMA lake.sales")  # only an empty namespace: no tables or child namespaces
+```
 
 See `SQLContext.register_catalog` for the details.
 

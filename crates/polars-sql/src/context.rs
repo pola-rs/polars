@@ -6,6 +6,7 @@ use chrono::{NaiveDateTime, SubsecRound};
 use polars_core::prelude::*;
 #[cfg(feature = "asof_join")]
 use polars_core::utils::try_get_supertype;
+use polars_defs::expr::RoundMode;
 #[cfg(feature = "asof_join")]
 use polars_defs::join::{AsOfOptions, AsofStrategy};
 use polars_defs::join::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
@@ -13,6 +14,7 @@ use polars_lazy::prelude::*;
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::prelude::*;
+use polars_plan::utils::expr_to_leaf_column_names_iter;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
@@ -21,18 +23,19 @@ use sqlparser::ast::{
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
     GroupByExpr, HiveDistributionStyle, HiveFormat, Ident, JoinConstraint, JoinOperator,
     LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy,
-    OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
-    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
-    TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType, With,
+    OrderByKind, Query, RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
+    TableAlias, TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator,
+    Value as SQLValue, ValueWithSpan, Values, VisitorMut, WildcardAdditionalOptions, WindowSpec,
+    WindowType, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
-    CatalogDdl, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName,
-    create_table_columns, create_table_options, create_table_partitioning, display_name,
-    name_parts, name_position, rewrite_catalog_names,
+    CatalogDdl, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName,
+    create_schema_options, create_table_columns, create_table_options, create_table_partitioning,
+    display_name, name_parts, name_position, rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -446,6 +449,31 @@ impl SQLContext {
             } => {},
             Statement::CreateTable(create_table) if !create_table.temporary => {
                 return self.catalog_create_table(create_table);
+            },
+            Statement::CreateSchema { .. } => {
+                let (name, if_not_exists, options) = create_schema_parts(&stmt)?;
+                let Some((name, namespace)) = self.catalog_schema_target(name)? else {
+                    return Ok(None);
+                };
+                return Ok(Some(CatalogDdl::CreateSchema {
+                    name,
+                    namespace,
+                    if_not_exists,
+                    properties: create_schema_options(options)?,
+                }));
+            },
+            Statement::Drop {
+                object_type: ObjectType::Schema,
+                ..
+            } => {
+                let (name, if_exists) = drop_schema_parts(&stmt)?;
+                return Ok(self.catalog_schema_target(name)?.map(|(name, namespace)| {
+                    CatalogDdl::DropSchema {
+                        name,
+                        namespace,
+                        if_exists,
+                    }
+                }));
             },
             _ => return Ok(None),
         }
@@ -861,6 +889,17 @@ impl SQLContext {
                 object_type: ObjectType::Table,
                 ..
             } => self.execute_drop_table(stmt)?,
+            stmt @ Statement::CreateSchema { .. } => {
+                let (name, ..) = create_schema_parts(stmt)?;
+                self.execute_schema_ddl("CREATE SCHEMA", name)?
+            },
+            stmt @ Statement::Drop {
+                object_type: ObjectType::Schema,
+                ..
+            } => {
+                let (name, _) = drop_schema_parts(stmt)?;
+                self.execute_schema_ddl("DROP SCHEMA", name)?
+            },
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
@@ -1627,6 +1666,55 @@ impl SQLContext {
             SQLInterface: "`DROP ... PURGE` only applies to catalog tables"
         );
         Ok(target)
+    }
+
+    /// The catalog namespace a `CREATE SCHEMA` or `DROP SCHEMA` of `name` targets, with the name
+    /// as written; `None` if no catalog applies.
+    fn catalog_schema_target(
+        &self,
+        name: &ObjectName,
+    ) -> PolarsResult<Option<(String, CatalogNamespace)>> {
+        if self.catalogs.is_empty() {
+            return Ok(None);
+        }
+        let schema = object_name_to_string(name);
+        let Some(parts) = name_parts(name) else {
+            polars_bail!(SQLInterface: "invalid schema name '{}'", schema)
+        };
+        polars_ensure!(
+            parts.iter().all(|part| !part.is_empty()),
+            SQLInterface: "schema name '{}' has an empty part", schema
+        );
+        if let [one] = parts.as_slice()
+            && let Some(catalog) = self.catalogs.catalog_name(one)
+        {
+            polars_bail!(
+                SQLInterface: "'{}' is an attached catalog; write '{}.<schema>', or '<catalog>.{}' for a schema of that name",
+                one, catalog, one
+            );
+        }
+        Ok(self
+            .catalogs
+            .resolve_namespace(&parts)
+            .map(|namespace| (schema, namespace)))
+    }
+
+    // CREATE SCHEMA / DROP SCHEMA, which only a catalog has
+    fn execute_schema_ddl(&self, statement: &str, name: &ObjectName) -> PolarsResult<LazyFrame> {
+        if let Some((name, namespace)) = self.catalog_schema_target(name)? {
+            polars_bail!(
+                SQLInterface: "{} of catalog schema '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                statement, name, display_name(&namespace.full_name())
+            );
+        }
+        polars_ensure!(
+            !self.catalogs.is_empty(),
+            SQLInterface: "`{}` is supported only for attached catalogs", statement
+        );
+        polars_bail!(
+            SQLInterface: "schema '{}' has no catalog: no default catalog is set; write '<catalog>.{}'",
+            object_name_to_string(name), object_name_to_string(name)
+        )
     }
 
     // DELETE FROM <tbl> [WHERE ...]
@@ -5590,7 +5678,7 @@ impl SQLContext {
     }
 
     fn process_limit_offset(
-        &self,
+        &mut self,
         lf: LazyFrame,
         limit_clause: &Option<LimitClause>,
         fetch: &Option<Fetch>,
@@ -5613,9 +5701,11 @@ impl SQLContext {
             None => (None, None),
         };
 
-        // Handle FETCH clause (alternative to LIMIT, mutually exclusive)
+        // Handle FETCH clause (alternative to LIMIT, mutually exclusive); without a
+        // quantity it fetches one row.
+        let one_row = SQLExpr::value(SQLValue::Number("1".to_string(), false));
         let limit = match (fetch, limit) {
-            (Some(fetch), None) => fetch.quantity.as_ref(),
+            (Some(fetch), None) => Some(fetch.quantity.as_ref().unwrap_or(&one_row)),
             (Some(_), Some(_)) => {
                 polars_bail!(SQLSyntax: "cannot use both `LIMIT` and `FETCH` in the same query")
             },
@@ -5623,52 +5713,83 @@ impl SQLContext {
         };
 
         // Apply limit and/or offset
-        match (offset, limit) {
-            (
-                Some(SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Number(offset, _),
-                    ..
-                })),
-                Some(SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Number(limit, _),
-                    ..
-                })),
-            ) => Ok(lf.slice(
-                offset
-                    .parse()
-                    .map_err(|e| polars_err!(SQLInterface: "OFFSET conversion error: {}", e))?,
-                limit.parse().map_err(
-                    |e| polars_err!(SQLInterface: "LIMIT/FETCH conversion error: {}", e),
-                )?,
-            )),
-            (
-                Some(SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Number(offset, _),
-                    ..
-                })),
-                None,
-            ) => Ok(lf.slice(
-                offset
-                    .parse()
-                    .map_err(|e| polars_err!(SQLInterface: "OFFSET conversion error: {}", e))?,
-                IdxSize::MAX,
-            )),
-            (
-                None,
-                Some(SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Number(limit, _),
-                    ..
-                })),
-            ) => {
-                Ok(lf.limit(limit.parse().map_err(
-                    |e| polars_err!(SQLInterface: "LIMIT/FETCH conversion error: {}", e),
-                )?))
-            },
+        let number = |expr: &SQLExpr| match expr {
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::Number(n, _),
+                ..
+            }) => Some(n.clone()),
+            _ => None,
+        };
+        let offset_literal = offset.map(|e| number(e).and_then(|n| n.parse::<i64>().ok()));
+        let limit_literal = limit.map(|e| number(e).and_then(|n| n.parse::<IdxSize>().ok()));
+        match (offset_literal, limit_literal) {
+            (Some(Some(offset)), Some(Some(limit))) => Ok(lf.slice(offset, limit)),
+            (Some(Some(offset)), None) => Ok(lf.slice(offset, IdxSize::MAX)),
+            (None, Some(Some(limit))) => Ok(lf.limit(limit)),
             (None, None) => Ok(lf),
-            _ => polars_bail!(
-                SQLSyntax: "non-numeric arguments for LIMIT/OFFSET/FETCH are not supported",
-            ),
+            _ => self.slice_by_exprs(lf, offset, limit),
         }
+    }
+
+    /// Apply LIMIT/OFFSET values other than integer literals, such as scalar subqueries.
+    /// A value is a row count: a float rounds half to even and a decimal half away from
+    /// zero, a negative one raises, a NULL limit is no limit and a NULL offset is 0.
+    fn slice_by_exprs(
+        &mut self,
+        mut lf: LazyFrame,
+        offset: Option<&SQLExpr>,
+        limit: Option<&SQLExpr>,
+    ) -> PolarsResult<LazyFrame> {
+        let columns: Vec<Expr> = self
+            .get_frame_schema(&mut lf)?
+            .iter_names()
+            .cloned()
+            .map(Expr::Column)
+            .collect();
+        let mut parse = |expr: &SQLExpr| -> PolarsResult<Expr> {
+            check_query_independent_value(expr, self)?;
+            parse_sql_expr(expr, self, Some(&Schema::default()))
+        };
+        let mut offset = offset.map(&mut parse).transpose()?;
+        let mut limit = limit.map(&mut parse).transpose()?;
+        let (mut frame, placeholders) = self.process_subqueries(
+            lf,
+            offset.iter_mut().chain(limit.iter_mut()).collect(),
+            SubqueryShape::Scalar,
+        )?;
+        let schema = self.get_frame_schema(&mut frame)?;
+        let row_count = |value: Expr| -> PolarsResult<Expr> {
+            polars_ensure!(
+                expr_to_leaf_column_names_iter(&value).all(|name| placeholders.contains(&name)),
+                SQLSyntax: "LIMIT/OFFSET/FETCH cannot reference columns"
+            );
+            let value = match value.to_field(&schema)?.dtype {
+                dtype if dtype.is_integer() || dtype.is_null() => value,
+                DataType::Float32 | DataType::Float64 => value.round(0, RoundMode::HalfToEven),
+                DataType::Decimal(_, _) => value.round(0, RoundMode::HalfAwayFromZero),
+                DataType::String => value.strict_cast(DataType::Int64),
+                dtype => polars_bail!(
+                    SQLSyntax: "LIMIT/OFFSET/FETCH must be a number, found {}", dtype
+                ),
+            };
+            Ok(value
+                .strict_cast(DataType::UInt64)
+                .strict_cast(DataType::Int64))
+        };
+        let offset = match offset {
+            Some(offset) => row_count(offset)?.fill_null(lit(0i64)),
+            None => lit(0i64),
+        };
+        let length = match limit {
+            Some(limit) => row_count(limit)?,
+            None => lit(NULL).cast(DataType::Int64),
+        };
+        Ok(frame.select(
+            columns
+                .into_iter()
+                .map(|column| column.slice(offset.clone(), length.clone()))
+                .collect::<Vec<_>>(),
+        ))
     }
 
     fn process_qualified_wildcard(
@@ -6174,6 +6295,67 @@ fn is_simple_col_ref(expr: &Expr, col_name: &PlSmallStr) -> bool {
         Expr::Alias(inner, _) => matches!(inner.as_ref(), Expr::Column(n) if n == col_name),
         _ => false,
     }
+}
+
+/// Check that a LIMIT/OFFSET/FETCH value is one value for the whole query: outside its
+/// subqueries it reads no column and has no aggregate, window, user-defined or `UNNEST` call.
+fn check_query_independent_value(expr: &SQLExpr, ctx: &SQLContext) -> PolarsResult<()> {
+    struct Check<'a> {
+        ctx: &'a SQLContext,
+        subquery_depth: usize,
+    }
+
+    impl sqlparser::ast::Visitor for Check<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if self.subquery_depth > 0 {
+                return ControlFlow::Continue(());
+            }
+            let is_valid = match expr {
+                SQLExpr::Identifier(_)
+                | SQLExpr::CompoundIdentifier(_)
+                | SQLExpr::Wildcard(_)
+                | SQLExpr::QualifiedWildcard(..) => false,
+                SQLExpr::Function(function) => {
+                    function.over.is_none()
+                        && !PolarsSQLFunctions::try_from_sql(function, self.ctx).is_ok_and(|f| {
+                            f.is_builtin_aggregate()
+                                || matches!(
+                                    f,
+                                    PolarsSQLFunctions::Udf(_) | PolarsSQLFunctions::Explode
+                                )
+                        })
+                },
+                _ => true,
+            };
+            if is_valid {
+                ControlFlow::Continue(())
+            } else {
+                ControlFlow::Break(())
+            }
+        }
+    }
+
+    let mut check = Check {
+        ctx,
+        subquery_depth: 0,
+    };
+    polars_ensure!(
+        dyn_visit::visit(expr, &mut check).is_continue(),
+        SQLSyntax: "LIMIT/OFFSET/FETCH must be one value for the query, found {}", expr
+    );
+    Ok(())
 }
 
 /// Reject a parsed expression that still carries an unresolved subquery, so that a
@@ -6960,6 +7142,60 @@ fn drop_table_parts(stmt: &Statement) -> PolarsResult<(&[ObjectName], bool, bool
     polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
     polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
     Ok((names, *if_exists, *purge))
+}
+
+fn create_schema_parts(stmt: &Statement) -> PolarsResult<(&ObjectName, bool, &[SqlOption])> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Statement::CreateSchema {
+        schema_name,
+        if_not_exists,
+        with,
+
+        // Unsupported modifiers
+        or_replace,
+        options,
+        default_collate_spec,
+        clone,
+    } = stmt
+    else {
+        polars_bail!(SQLInterface: "unexpected statement type; expected CREATE SCHEMA")
+    };
+    let SchemaName::Simple(name) = schema_name else {
+        polars_bail!(SQLInterface: "`CREATE SCHEMA ... AUTHORIZATION` is not supported")
+    };
+    polars_ensure!(!or_replace, SQLInterface: "`CREATE OR REPLACE SCHEMA` is not supported");
+    polars_ensure!(options.is_none(), SQLInterface: "schema `OPTIONS` clauses are not supported; use `WITH (...)` instead");
+    polars_ensure!(default_collate_spec.is_none(), SQLInterface: "`DEFAULT COLLATE` is not supported");
+    polars_ensure!(clone.is_none(), SQLInterface: "`CREATE SCHEMA ... CLONE` is not supported");
+    Ok((name, *if_not_exists, with.as_deref().unwrap_or_default()))
+}
+
+fn drop_schema_parts(stmt: &Statement) -> PolarsResult<(&ObjectName, bool)> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Statement::Drop {
+        object_type: _,
+        names,
+        if_exists,
+        // The default: a schema must be empty.
+        restrict: _,
+
+        // Unsupported modifiers
+        cascade,
+        purge,
+        temporary,
+        table,
+    } = stmt
+    else {
+        polars_bail!(SQLInterface: "unexpected statement type; expected DROP")
+    };
+    polars_ensure!(!cascade, SQLInterface: "`DROP SCHEMA ... CASCADE` is not supported; drop its tables first");
+    polars_ensure!(!purge, SQLInterface: "`DROP SCHEMA ... PURGE` is not supported");
+    polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
+    polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
+    let [name] = names.as_slice() else {
+        polars_bail!(SQLInterface: "DROP SCHEMA takes one schema name")
+    };
+    Ok((name, *if_exists))
 }
 
 fn parse_single_statement(query: &str) -> PolarsResult<Statement> {

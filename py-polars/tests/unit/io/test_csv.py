@@ -3214,6 +3214,14 @@ def test_read_csv_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
     )
 
 
+def test_read_csv_use_pyarrow_newlines_in_values_29717() -> None:
+    value = "x" * 600 + "\n" + "y" * 600
+    # Larger than pyarrow's 1 MiB block size.
+    data = ("v\n" + f'"{value}"\n' * 1000).encode()
+    df = pl.read_csv(io.BytesIO(data), use_pyarrow=True)
+    assert_frame_equal(df, pl.DataFrame({"v": [value] * 1000}))
+
+
 def test_read_csv_i64_overflow_infers_i128_27654(chunk_override: None) -> None:
     # Values exceeding i64::MAX should be inferred as i128, not i64.
     csv_data = b"value,name\n12345678901234567890,abc\n99999999999999999999,abc"

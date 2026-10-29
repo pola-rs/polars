@@ -26,6 +26,15 @@ pub struct CatalogTable {
     pub identifier: Vec<String>,
 }
 
+/// A namespace of an attached catalog.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CatalogNamespace {
+    /// The name the catalog was attached under.
+    pub catalog: String,
+    /// The namespace parts.
+    pub namespace: Vec<String>,
+}
+
 /// A statement changing a catalog table, for the caller to perform (see
 /// [`SQLContext::catalog_ddl`](crate::SQLContext::catalog_ddl)).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,6 +71,26 @@ pub enum CatalogDdl {
         /// The partition fields, in the order written; empty for an unpartitioned table.
         partition_by: Vec<CatalogPartitionField>,
     },
+    /// `CREATE SCHEMA [IF NOT EXISTS] <name> [WITH (...)]`.
+    CreateSchema {
+        /// The schema name as the statement wrote it.
+        name: String,
+        /// The catalog namespace to create.
+        namespace: CatalogNamespace,
+        /// `IF NOT EXISTS`.
+        if_not_exists: bool,
+        /// The `WITH` options, as namespace properties.
+        properties: Vec<(String, String)>,
+    },
+    /// `DROP SCHEMA [IF EXISTS] <name> [RESTRICT]`.
+    DropSchema {
+        /// The schema name as the statement wrote it.
+        name: String,
+        /// The catalog namespace to drop.
+        namespace: CatalogNamespace,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
 }
 
 /// A partition field of a catalog table: an Iceberg transform of a top-level column.
@@ -79,6 +108,15 @@ impl CatalogTable {
     pub fn full_name(&self) -> Vec<String> {
         std::iter::once(self.catalog.clone())
             .chain(self.identifier.iter().cloned())
+            .collect()
+    }
+}
+
+impl CatalogNamespace {
+    /// The catalog name followed by the namespace parts.
+    pub fn full_name(&self) -> Vec<String> {
+        std::iter::once(self.catalog.clone())
+            .chain(self.namespace.iter().cloned())
             .collect()
     }
 }
@@ -191,15 +229,7 @@ impl CatalogRegistry {
     /// selects it, else the default catalog; a name without namespace parts gets the catalog's
     /// default namespace. `None` if no catalog applies.
     pub(crate) fn resolve(&self, parts: &[String]) -> Option<CatalogTable> {
-        let named = match parts {
-            [first, rest @ ..] if !rest.is_empty() => self.position(first).map(|idx| (idx, rest)),
-            _ => None,
-        };
-        let (idx, rest) = match named {
-            Some(named) => named,
-            None => (self.position(self.default.as_deref()?)?, parts),
-        };
-        let catalog = &self.catalogs[idx];
+        let (catalog, rest) = self.select(parts)?;
         let identifier = match rest {
             [table] => {
                 let mut identifier = catalog.default_namespace.clone()?;
@@ -212,6 +242,30 @@ impl CatalogRegistry {
             catalog: catalog.name.clone(),
             identifier,
         })
+    }
+
+    /// The catalog namespace a schema name refers to: a leading part naming an attached catalog
+    /// selects it, else the default catalog; the other parts are the namespace (never relative
+    /// to a default namespace). `None` if no catalog applies.
+    pub(crate) fn resolve_namespace(&self, parts: &[String]) -> Option<CatalogNamespace> {
+        let (catalog, rest) = self.select(parts)?;
+        Some(CatalogNamespace {
+            catalog: catalog.name.clone(),
+            namespace: rest.to_vec(),
+        })
+    }
+
+    /// The catalog a name selects, and the name's other parts.
+    fn select<'a>(&self, parts: &'a [String]) -> Option<(&AttachedCatalog, &'a [String])> {
+        let named = match parts {
+            [first, rest @ ..] if !rest.is_empty() => self.position(first).map(|idx| (idx, rest)),
+            _ => None,
+        };
+        let (idx, rest) = match named {
+            Some(named) => named,
+            None => (self.position(self.default.as_deref()?)?, parts),
+        };
+        Some((&self.catalogs[idx], rest))
     }
 
     /// Why a table name that nothing resolved is not a catalog table, if a catalog could have
@@ -561,27 +615,11 @@ pub(crate) fn create_table_options(
     let mut location = location_clause.map(str::to_string);
     let mut properties = TableProperties::new();
     for option in options {
-        let SqlOption::KeyValue { key, value } = option else {
-            polars_bail!(SQLInterface: "table options must be `'key' = value` pairs; found `{}`", option)
-        };
-        let key = key.value.as_str();
-        polars_ensure!(!key.is_empty(), SQLInterface: "table option names must not be empty");
-        for known in ["location", "format-version"] {
-            polars_ensure!(
-                key == known || !key.eq_ignore_ascii_case(known),
-                SQLInterface: "'{}' is not a table option; did you mean '{}'?", key, known
-            );
-        }
+        let (key, value) = option_key_value(option, "table", &["location", "format-version"])?;
         polars_ensure!(
             !RESERVED_TABLE_PROPERTIES.contains(&key),
             SQLInterface: "table option '{}' is reserved by Iceberg", key
         );
-        let Some(value) = option_value(value) else {
-            polars_bail!(
-                SQLInterface: "table option values must be string, number or boolean literals; found `{}` for '{}'",
-                value, key
-            )
-        };
         if key == "location" {
             polars_ensure!(
                 location_clause.is_none(),
@@ -760,6 +798,51 @@ fn unparenthesized(mut expr: &Expr) -> &Expr {
         expr = inner;
     }
     expr
+}
+
+/// The properties of a catalog namespace, from `WITH (...)`.
+pub(crate) fn create_schema_options(options: &[SqlOption]) -> PolarsResult<Vec<(String, String)>> {
+    let mut properties: Vec<(String, String)> = Vec::new();
+    for option in options {
+        let (key, value) = option_key_value(option, "schema", &["location"])?;
+        polars_ensure!(
+            key != "location" || is_absolute_location(&value),
+            SQLInterface: "location must be an absolute path or a URI; found '{}'", value
+        );
+        polars_ensure!(
+            properties.iter().all(|(k, _)| k != key),
+            SQLInterface: "duplicate schema option '{}'", key
+        );
+        properties.push((key.to_string(), value));
+    }
+    Ok(properties)
+}
+
+/// The key and value of a `'key' = value` option of a `kind` ("table", "schema"), with keys that
+/// differ from a `known` one only in case rejected.
+fn option_key_value<'a>(
+    option: &'a SqlOption,
+    kind: &str,
+    known: &[&str],
+) -> PolarsResult<(&'a str, String)> {
+    let SqlOption::KeyValue { key, value } = option else {
+        polars_bail!(SQLInterface: "{} options must be `'key' = value` pairs; found `{}`", kind, option)
+    };
+    let key = key.value.as_str();
+    polars_ensure!(!key.is_empty(), SQLInterface: "{} option names must not be empty", kind);
+    for known in known {
+        polars_ensure!(
+            key == *known || !key.eq_ignore_ascii_case(known),
+            SQLInterface: "'{}' is not a {} option; did you mean '{}'?", key, kind, known
+        );
+    }
+    let Some(value) = option_value(value) else {
+        polars_bail!(
+            SQLInterface: "{} option values must be string, number or boolean literals; found `{}` for '{}'",
+            kind, value, key
+        )
+    };
+    Ok((key, value))
 }
 
 /// A table option value as a property string, if it is a string, number or boolean literal.
