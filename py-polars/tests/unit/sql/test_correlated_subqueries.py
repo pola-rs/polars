@@ -1263,6 +1263,12 @@ def test_correlated_subquery_in_join_on(query: str) -> None:
         "SELECT a.id, d.y FROM a LEFT JOIN d ON EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id = d.x)",
         # The subquery reads a relation of the left input that is not its first.
         "SELECT a.id, b.w, d.y FROM a JOIN b ON a.id = b.id LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        # The rows of the subquery can't join onto an input that the join keeps.
+        "SELECT a.id, d.x FROM a FULL JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x NOT IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id > a.id)",
+        # A window over the subquery's rows depends on the outer row.
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x IN (SELECT ROW_NUMBER() OVER (ORDER BY c.id) FROM c WHERE c.b_id = a.id)",
     ],
 )
 def test_correlated_membership_in_join_on(query: str) -> None:
@@ -1320,6 +1326,155 @@ def test_correlated_one_input_condition_in_join_on_many_rows(condition: str) -> 
         pl.exceptions.ComputeError, match="expected no or a single value"
     ):
         ctx.execute(f"SELECT a.id FROM a JOIN b ON {condition}").collect()
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # The subquery reads both inputs.
+        "a.id = b.id AND b.id = (SELECT MIN(c.b_id) FROM c WHERE c.b_id = a.id AND c.name > b.w)",
+        "b.id = (SELECT MAX(c.b_id) FROM c WHERE c.b_id <= a.id AND c.name > b.w)",
+        "a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        "a.id = b.id AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        # An unqualified column of the right input.
+        "b.id = (SELECT MIN(c.b_id) FROM c WHERE c.b_id >= a.id AND c.name > w)",
+        # The subquery reads the input that the condition's own columns don't read.
+        "b.id IN (SELECT c.b_id FROM c WHERE c.b_id < a.id + 1)",
+        # The condition's own columns read both inputs.
+        "a.id = b.id AND (a.v > 25 OR b.id = (SELECT MIN(c.b_id) FROM c WHERE c.id > a.id))",
+        # Next to a condition that reads one input.
+        "a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id) AND b.id IN (SELECT c.b_id FROM c WHERE c.id > a.id)",
+        "a.id = b.id AND a.v IN (SELECT c.id * 10 FROM c) AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        "a.id = b.id AND b.w IN (SELECT c.name FROM c) AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+    ],
+)
+@pytest.mark.parametrize("left", ["a", "a JOIN d ON a.id = d.x"])
+def test_correlated_condition_reading_both_inputs_in_join_on(
+    join_type: str, condition: str, left: str
+) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=f"SELECT a.id, a.v, b.id AS bid, b.w FROM {left} {join_type} b ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.k = b.k AND x IN (SELECT c.y FROM c WHERE c.k = a.k AND c.y > b.x)",
+        "a.k = b.k AND EXISTS (SELECT 1 FROM c WHERE c.k = a.k AND c.y > b.x AND c.y > x)",
+    ],
+)
+def test_correlated_condition_reading_both_inputs_in_join_on_ambiguous(
+    join_type: str, condition: str
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": [10, 20]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [10, 21]}),
+        "c": pl.DataFrame({"k": [1, 2], "y": [15, 25]}),
+    }
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError, match='ambiguous reference to column "x"'
+    ):
+        pl.SQLContext(frames).execute(
+            f"SELECT a.k FROM a {join_type} b ON {condition}"
+        ).collect()
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "id IN (SELECT c.b_id FROM c WHERE c.cid <= a.v + d.x)",
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = id AND c.cid <= d.x + a.v)",
+    ],
+)
+def test_correlated_condition_reading_both_inputs_in_join_on_after_using(
+    join_type: str, condition: str
+) -> None:
+    # `id` is the merged key of the USING join, not ambiguous.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2, 3], "v": [1, 5, 9]}),
+            "b": pl.DataFrame({"id": [1, 2, 3], "w": [1, 2, 3]}),
+            "c": pl.DataFrame({"cid": [1, 5, 6, 7], "b_id": [1, 2, 2, 3]}),
+            "d": pl.DataFrame({"x": [1, 5, 9]}),
+        },
+        query=f"SELECT a.id, d.x FROM a JOIN b USING (id) {join_type} d ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT a.id FROM c",
+        "WITH z AS (SELECT * FROM c) SELECT a.id FROM z",
+        "SELECT a.id FROM c UNION ALL SELECT a.id FROM c",
+        "SELECT x FROM (SELECT a.id AS x FROM c) AS t",
+    ],
+)
+def test_join_on_subquery_struct_named_like_input_keeps_plan(subquery: str) -> None:
+    # `a.id` is a field of the struct column `a` of `c`, not a column of the joined `a`.
+    ctx = pl.SQLContext(
+        frames={
+            "a": pl.DataFrame({"k": [1, 2]}),
+            "b": pl.DataFrame({"k": [1, 2], "x": [10, 20]}),
+            "c": pl.DataFrame({"a": [{"id": 10}]}),
+        }
+    )
+    plans = [
+        re.sub(
+            r"_POLARS_TMP_SQL_\d+|[0-9a-f]{8}-[0-9a-f-]{27}",
+            "",
+            ctx.execute(
+                f"SELECT {alias}.k, b.x FROM a AS {alias} LEFT JOIN b "
+                f"ON {alias}.k = b.k AND b.x IN ({subquery})"
+            ).explain(),
+        )
+        for alias in ["a", "outer_a"]
+    ]
+    assert plans[0] == plans[1]
+
+
+def test_join_on_subquery_alias_of_input_name_keeps_plan() -> None:
+    # The `b` of the subquery is its own relation, not the joined `b`.
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    plans = [
+        re.sub(
+            r"_POLARS_TMP_SQL_\d+|[0-9a-f]{8}-[0-9a-f-]{27}",
+            "",
+            ctx.execute(
+                f"SELECT a.id FROM a LEFT JOIN b ON a.id = b.id AND a.v IN "
+                f"(SELECT {alias}.id FROM c AS {alias} "
+                f"WHERE EXISTS (SELECT 1 FROM d WHERE d.x = {alias}.id))"
+            ).explain(),
+        )
+        for alias in ["b", "local_b"]
+    ]
+    assert plans[0] == plans[1]
+
+
+def test_correlated_condition_reading_both_inputs_in_join_on_names() -> None:
+    res = pl.SQLContext(frames=_join_on_frames()).execute(
+        "SELECT * FROM a LEFT JOIN b ON a.id = b.id "
+        "AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id >= b.id) ORDER BY a.v",
+        eager=True,
+    )
+    assert res.columns == ["id", "v", "id:b", "w"]
+    assert res.rows() == [
+        (1, 10, 1, "x"),
+        (2, 20, 2, "y"),
+        (3, 30, None, None),
+        (None, 40, None, None),
+    ]
 
 
 def _first_row_frames() -> dict[str, pl.DataFrame]:
@@ -1434,17 +1589,15 @@ def test_correlated_subquery_reading_query_further_out(query: str) -> None:
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id = (SELECT COUNT(*) FROM c WHERE c.b_id = a.id))",
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.b_id > a.id))",
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id < (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
-        # The rows of the subquery can't join onto an input that the join keeps.
-        "SELECT a.id FROM a FULL JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
-        "SELECT a.id FROM a LEFT JOIN d ON d.x NOT IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
-        "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id > a.id)",
-        # A window over the subquery's rows depends on the outer row.
-        "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT ROW_NUMBER() OVER (ORDER BY c.id) FROM c WHERE c.b_id = a.id)",
         # `a.b.id` is a struct field of `a`, not a column of the joined `b`.
         "SELECT a.id FROM a JOIN b ON a.id < (SELECT c.id FROM c WHERE c.b_id = a.b.id)",
         # The relations inside an aliased nested join are not resolved by name.
         "SELECT a.id FROM a JOIN (b JOIN d ON b.id = d.x) AS r ON a.id = (SELECT c.id FROM c WHERE c.b_id = b.id)",
         "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT MIN(c.id) FROM c WHERE c.b_id = b.id AND c.id <= r.id + d.x)",
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON b.id = (SELECT MIN(c.b_id) FROM c WHERE c.id <= r.id + d.x)",
+        # A `b` declared deeper does not make the `b` of the subquery around it visible.
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT MIN(c.id) FROM c WHERE c.b_id = b.id AND c.id <= r.id + d.x AND EXISTS (SELECT 1 FROM c AS b WHERE b.id > 0))",
         # Only `LIMIT 1` is supported, with an order read from the inner row.
         "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 2) FROM a",
         "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 1 OFFSET 1) FROM a",

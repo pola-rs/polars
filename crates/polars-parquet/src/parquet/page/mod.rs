@@ -28,6 +28,11 @@ pub struct CompressedDataPage {
     pub(crate) descriptor: Descriptor,
     pub num_rows: Option<usize>,
     pub num_nulls: Option<usize>,
+    /// Combined length in bytes of all byte array values in the page, used for the
+    /// column chunk's [`SizeStatistics`](polars_parquet_format::SizeStatistics).
+    /// Every occurrence counts, but nulls and length prefixes don't. Only set on
+    /// byte array pages that are being written.
+    pub unencoded_byte_array_data_bytes: Option<i64>,
 }
 
 impl CompressedDataPage {
@@ -49,6 +54,7 @@ impl CompressedDataPage {
             descriptor,
             num_rows: Some(num_rows),
             num_nulls: Some(num_nulls),
+            unencoded_byte_array_data_bytes: None,
         }
     }
 
@@ -69,6 +75,7 @@ impl CompressedDataPage {
             descriptor,
             num_rows: None,
             num_nulls: None,
+            unencoded_byte_array_data_bytes: None,
         }
     }
 
@@ -176,6 +183,11 @@ pub struct DataPage {
     pub descriptor: Descriptor,
     pub num_rows: Option<usize>,
     pub num_nulls: Option<usize>,
+    /// Combined length in bytes of all byte array values in the page, used for the
+    /// column chunk's [`SizeStatistics`](polars_parquet_format::SizeStatistics).
+    /// Every occurrence counts, but nulls and length prefixes don't. Only set on
+    /// byte array pages that are being written.
+    pub unencoded_byte_array_data_bytes: Option<i64>,
     /// The allocation size of `buffer`, if it is owned by this page alone, so decoders may keep it
     /// alive.
     pub(super) shared_capacity: Option<usize>,
@@ -205,6 +217,7 @@ impl DataPage {
             descriptor,
             num_rows: Some(num_rows),
             num_nulls: Some(num_nulls),
+            unencoded_byte_array_data_bytes: None,
             shared_capacity: None,
         }
     }
@@ -221,6 +234,7 @@ impl DataPage {
             descriptor,
             num_rows: None,
             num_nulls: None,
+            unencoded_byte_array_data_bytes: None,
             shared_capacity: None,
         }
     }
@@ -382,6 +396,13 @@ impl CompressedPage {
         match self {
             CompressedPage::Data(page) => page.num_nulls(),
             CompressedPage::Dict(_) => Some(0),
+        }
+    }
+
+    pub(crate) fn unencoded_byte_array_data_bytes(&self) -> Option<i64> {
+        match self {
+            CompressedPage::Data(page) => page.unencoded_byte_array_data_bytes,
+            CompressedPage::Dict(_) => None,
         }
     }
 }
