@@ -57,7 +57,9 @@ use crate::sql_visitors::{
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema,
 };
-use crate::subquery::{LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries};
+use crate::subquery::{
+    LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries, row_indexed_once,
+};
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
@@ -245,6 +247,9 @@ pub struct SQLContext {
     /// The current statement's FROM items that are not tables, read only by qualified columns.
     from_item_frames: PlHashMap<String, LazyFrame>,
     join_base: Option<JoinBase>,
+    /// The (joined table, column) pairs of the USING clauses of the joins processed so far in
+    /// the current join chain.
+    join_using_cols: Vec<(String, String)>,
     /// The values of uncorrelated `EXISTS` subqueries that were planned while lowering,
     /// taken when the `EXISTS` expression is parsed.
     pub(crate) exists_values: Vec<(Query, Expr)>,
@@ -320,6 +325,7 @@ impl Default for SQLContext {
             joined_aliases: Default::default(),
             from_item_frames: Default::default(),
             join_base: None,
+            join_using_cols: Default::default(),
             exists_values: Default::default(),
             named_windows: Default::default(),
             group_scope: Default::default(),
@@ -2011,8 +2017,10 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         // Joins narrow the scope for their conditions; the caller's scope is restored after.
         let scope = self.active_relations.clone();
+        let using_cols = std::mem::take(&mut self.join_using_cols);
         let lf = self.execute_joins(tbl_expr);
         self.active_relations = scope;
+        self.join_using_cols = using_cols;
         lf
     }
 
@@ -2174,6 +2182,10 @@ impl SQLContext {
                     &right_schema,
                     &joined_schema,
                 )?;
+                if let Some(cols) = get_using_cols(&join.join_operator) {
+                    self.join_using_cols
+                        .extend(cols.map(|c| (r_name.clone(), c)));
+                }
             }
         };
         Ok(lf)
@@ -2620,59 +2632,12 @@ impl SQLContext {
         // Shared by every pass over this frame: WHERE, the projection list and HAVING.
         let mut bindings = SubqueryBindings::new();
 
-        // A correlated scalar subquery is lowered against the frame as it stands, so
-        // the conjuncts that don't need it are applied first: the lowering can then
-        // restrict its aggregate to the rows that survive them.
-        let mut join_tree = None;
-        let where_expr: Option<Cow<'_, SQLExpr>> = match where_expr {
-            Some(where_expr) if expr_contains_scalar_subquery(where_expr) => {
-                let n_grouping_calls = self.group_scope.grouping_calls.len();
-                let residual;
-                (lf, residual) = self.rewrite_subquery_conjuncts(
-                    lf,
-                    where_expr,
-                    FilterMode::KeepTrue,
-                    &schema,
-                    RewriteStage::BeforeScalarLowering,
-                )?;
-                self.reject_grouping_in_where(n_grouping_calls)?;
-                join_tree = self.outer_join_tree(select_stmt, where_expr, &residual)?;
-                schema = self.get_frame_schema(&mut lf)?;
-                combine_conditions(
-                    residual.into_iter().cloned().collect(),
-                    SQLBinaryOperator::And,
-                )
-                .map(Cow::Owned)
-            },
-            other => other.map(Cow::Borrowed),
-        };
-
-        // Lower correlated scalar subqueries in the WHERE clause before the filter is
-        // parsed, leaving `[NOT] EXISTS` to `process_where`.
-        let effective_where = match where_expr.as_deref() {
-            Some(where_expr) => {
-                let lowered;
-                (lf, lowered) = self.lower_correlated_subqueries(
-                    lf,
-                    &schema,
-                    where_expr,
-                    LowerScope::ScalarOnly,
-                    &mut bindings,
-                    join_tree.as_ref(),
-                )?;
-                if matches!(lowered, Cow::Owned(_)) {
-                    schema = self.get_frame_schema(&mut lf)?;
-                }
-                Some(lowered)
-            },
-            None => None,
-        };
-
-        lf = self.process_where(
+        lf = self.filter_on_where(
             lf,
-            effective_where.as_deref(),
-            FilterMode::KeepTrue,
-            Some(schema.clone()),
+            &mut schema,
+            where_expr,
+            &mut bindings,
+            Some(select_stmt),
         )?;
 
         // HAVING is parsed further below but lowered here, against the pre-aggregation
@@ -3269,6 +3234,75 @@ impl SQLContext {
             .collect())
     }
 
+    /// Filter `lf`, whose schema is `schema`, on the WHERE condition `where_expr`, lowering
+    /// its correlated subqueries. The columns of the lowered subqueries stay in the result,
+    /// and `schema` becomes its schema. `select_stmt` is the block the condition belongs to.
+    fn filter_on_where(
+        &mut self,
+        mut lf: LazyFrame,
+        schema: &mut SchemaRef,
+        where_expr: Option<&SQLExpr>,
+        bindings: &mut SubqueryBindings,
+        select_stmt: Option<&Select>,
+    ) -> PolarsResult<LazyFrame> {
+        // A correlated scalar subquery is lowered against the frame as it stands, so
+        // the conjuncts that don't need it are applied first: the lowering can then
+        // restrict its aggregate to the rows that survive them.
+        let mut join_tree = None;
+        let where_expr: Option<Cow<'_, SQLExpr>> = match where_expr {
+            Some(where_expr) if expr_contains_scalar_subquery(where_expr) => {
+                let n_grouping_calls = self.group_scope.grouping_calls.len();
+                let residual;
+                (lf, residual) = self.rewrite_subquery_conjuncts(
+                    lf,
+                    where_expr,
+                    FilterMode::KeepTrue,
+                    schema,
+                    RewriteStage::BeforeScalarLowering,
+                )?;
+                self.reject_grouping_in_where(n_grouping_calls)?;
+                if let Some(select_stmt) = select_stmt {
+                    join_tree = self.outer_join_tree(select_stmt, where_expr, &residual)?;
+                }
+                *schema = self.get_frame_schema(&mut lf)?;
+                combine_conditions(
+                    residual.into_iter().cloned().collect(),
+                    SQLBinaryOperator::And,
+                )
+                .map(Cow::Owned)
+            },
+            other => other.map(Cow::Borrowed),
+        };
+
+        // Lower correlated scalar subqueries in the WHERE clause before the filter is
+        // parsed, leaving `[NOT] EXISTS` to `process_where`.
+        let effective_where = match where_expr.as_deref() {
+            Some(where_expr) => {
+                let lowered;
+                (lf, lowered) = self.lower_correlated_subqueries(
+                    lf,
+                    schema,
+                    where_expr,
+                    LowerScope::ScalarOnly,
+                    bindings,
+                    join_tree.as_ref(),
+                )?;
+                if matches!(lowered, Cow::Owned(_)) {
+                    *schema = self.get_frame_schema(&mut lf)?;
+                }
+                Some(lowered)
+            },
+            None => None,
+        };
+
+        self.process_where(
+            lf,
+            effective_where.as_deref(),
+            FilterMode::KeepTrue,
+            Some(schema.clone()),
+        )
+    }
+
     pub(crate) fn process_where(
         &mut self,
         mut lf: LazyFrame,
@@ -3658,9 +3692,10 @@ impl SQLContext {
 
     /// Join on an `ON` condition that holds subqueries. A conjunct whose own columns read
     /// one input is applied to that input first: as a filter if the join drops the rows it
-    /// rejects, else as a flag column joined against `TRUE`. Its subqueries must not read
-    /// the joined inputs. Any other conjunct stays in the condition, which rejects
-    /// subqueries.
+    /// rejects, else as a flag column joined against `TRUE`. A conjunct whose subqueries
+    /// read the other input, or read an input while its own columns read both, filters an
+    /// inner join of the inputs instead (see `join_then_filter`); semi and anti joins
+    /// reject it.
     fn process_join_on_subqueries(
         &mut self,
         tbl_left: &TableInfo,
@@ -3687,20 +3722,44 @@ impl SQLContext {
         let (mut left_on, mut right_on) = (vec![], vec![]);
         let mut flags = vec![];
         let mut residual = vec![];
+        let can_defer = !keep_right
+            && matches!(
+                join_type,
+                JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full
+            );
+        let mut deferred = vec![];
         for conjunct in flatten_and_conditions(expr) {
             if !expr_contains_subquery(conjunct) {
                 residual.push(conjunct.clone());
                 continue;
             }
+            let (subqueries_read_left, subqueries_read_right) = if can_defer {
+                self.subqueries_join_inputs(conjunct, tbl_left, tbl_right)
+                    .unwrap_or_default()
+            } else {
+                (false, false)
+            };
             let is_left = match self.conjunct_join_inputs(conjunct, tbl_left, tbl_right) {
                 JoinInputs::Left => true,
                 JoinInputs::Right => false,
                 JoinInputs::Neither => !filter_right && filter_left,
                 JoinInputs::Both | JoinInputs::Unknown => {
-                    residual.push(conjunct.clone());
+                    if subqueries_read_left || subqueries_read_right {
+                        deferred.push(conjunct.clone());
+                    } else {
+                        residual.push(conjunct.clone());
+                    }
                     continue;
                 },
             };
+            if if is_left {
+                subqueries_read_right
+            } else {
+                subqueries_read_left
+            } {
+                deferred.push(conjunct.clone());
+                continue;
+            }
             let (tbl, filter) = if is_left {
                 (&mut left, filter_left)
             } else {
@@ -3737,14 +3796,24 @@ impl SQLContext {
             flags.push(name);
         }
         let residual = combine_conditions(residual, SQLBinaryOperator::And).map(JoinConstraint::On);
-        let joined = self.join_inputs(
-            &left,
-            &right,
-            residual.as_ref(),
-            (left_on, right_on),
-            join_type,
-            keep_right,
-        )?;
+        let joined = match combine_conditions(deferred, SQLBinaryOperator::And) {
+            Some(deferred) => self.join_then_filter(
+                &left,
+                &right,
+                residual.as_ref(),
+                (left_on, right_on),
+                &deferred,
+                join_type,
+            )?,
+            None => self.join_inputs(
+                &left,
+                &right,
+                residual.as_ref(),
+                (left_on, right_on),
+                join_type,
+                keep_right,
+            )?,
+        };
         Ok(if flags.is_empty() {
             joined
         } else {
@@ -3753,6 +3822,119 @@ impl SQLContext {
                 strict: false,
             })
         })
+    }
+
+    /// Join `left` with `right` on `constraint` and `keys`, keeping only the pairs of rows
+    /// that satisfy `condition`, whose subqueries may read both inputs. The condition
+    /// filters an inner join of the inputs like a WHERE clause. An outer join then joins
+    /// the pairs that pass back to its inputs by row index.
+    fn join_then_filter(
+        &mut self,
+        left: &TableInfo,
+        right: &TableInfo,
+        constraint: Option<&JoinConstraint>,
+        keys: (Vec<Expr>, Vec<Expr>),
+        condition: &SQLExpr,
+        join_type: JoinType,
+    ) -> PolarsResult<LazyFrame> {
+        if join_type == JoinType::Inner {
+            return self.filtered_inner_join(left, right, constraint, keys, condition);
+        }
+        // Not a `_POLARS_TMP` name, which a join with a literal key drops.
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        let left_index = format_pl_smallstr!("{prefix}left");
+        let right_index = format_pl_smallstr!("{prefix}right");
+        let pair_index = format_pl_smallstr!("{prefix}pair");
+        let mut row_indexed = |tbl: &TableInfo, name: &PlSmallStr| -> PolarsResult<TableInfo> {
+            let mut frame = row_indexed_once(tbl.frame.clone(), name.clone());
+            let schema = self.get_frame_schema(&mut frame)?;
+            Ok(TableInfo {
+                frame,
+                schema,
+                ..tbl.clone()
+            })
+        };
+        let left = row_indexed(left, &left_index)?;
+        let right = row_indexed(right, &right_index)?;
+        let pairs = self
+            .filtered_inner_join(&left, &right, constraint, keys, condition)?
+            .select([
+                col(left_index.clone()),
+                col(right_index.clone()).alias(pair_index.clone()),
+            ]);
+        // Each left row with the right rows it pairs with: only the paired left rows for a
+        // right join, else every left row, with a null pair index if it has no pair.
+        let mut paired = left
+            .frame
+            .clone()
+            .join_builder()
+            .with(pairs)
+            .on([col(left_index.clone())])
+            .how(if join_type == JoinType::Right {
+                JoinType::Inner
+            } else {
+                JoinType::Left
+            })
+            .coalesce(JoinCoalesce::CoalesceColumns)
+            .finish()?;
+        let paired = TableInfo {
+            schema: self.get_frame_schema(&mut paired)?,
+            frame: paired,
+            ..left
+        };
+        let joined = self.join_inputs(
+            &paired,
+            &right,
+            None,
+            (
+                vec![col(pair_index.clone())],
+                vec![col(right_index.clone())],
+            ),
+            join_type,
+            false,
+        )?;
+        Ok(joined.drop(Selector::ByName {
+            names: [left_index, pair_index, right_index].into(),
+            strict: true,
+        }))
+    }
+
+    /// Inner join `left` with `right` on `constraint` and `keys`, then filter on
+    /// `condition` like a WHERE clause over the joined relations.
+    fn filtered_inner_join(
+        &mut self,
+        left: &TableInfo,
+        right: &TableInfo,
+        constraint: Option<&JoinConstraint>,
+        keys: (Vec<Expr>, Vec<Expr>),
+        condition: &SQLExpr,
+    ) -> PolarsResult<LazyFrame> {
+        let mut joined = self.join_inputs(left, right, constraint, keys, JoinType::Inner, false)?;
+        let mut schema = self.get_frame_schema(&mut joined)?;
+        // Resolves the right columns that the join renamed.
+        self.record_joined_aliases(&right.name, &[], &left.schema, &right.schema, &schema)?;
+        // An unqualified column of both inputs is ambiguous, also in the subqueries.
+        check_for_ambiguous_column_refs(
+            condition,
+            &self.joined_aliases,
+            &left.name,
+            &self.join_using_cols,
+            &self.active_relations,
+        )?;
+        let join_base = self.join_base.replace(JoinBase {
+            table_name: left.name.to_string(),
+            using_cols: self.join_using_cols.clone(),
+        });
+        let columns: Vec<Expr> = schema.iter_names().cloned().map(col).collect();
+        let filtered = self.filter_on_where(
+            joined,
+            &mut schema,
+            Some(condition),
+            &mut SubqueryBindings::new(),
+            None,
+        );
+        self.join_base = join_base;
+        Ok(filtered?.select(columns))
     }
 
     /// Which inputs of a join the conjunct `expr` reads, leaving out the inside of its
