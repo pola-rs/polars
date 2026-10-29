@@ -13,10 +13,10 @@ use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
-    coalesce, col, cols, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
+    by_name, coalesce, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
     max_horizontal, min_horizontal, when,
 };
-use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
+use polars_plan::dsl::{FunctionExpr, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
     DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant, typed_lit,
 };
@@ -31,7 +31,6 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
-use crate::SQLContext;
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
@@ -40,6 +39,7 @@ use crate::sql_expr::{
 };
 use crate::sql_visitors::grouping_call_args;
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
+use crate::{SQLContext, col};
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -1999,10 +1999,10 @@ impl SQLFunctionVisitor<'_> {
                             Ok(if col_names.len() == 1 {
                                 col(col_names.into_iter().next().unwrap())
                             } else {
-                                cols(col_names).as_expr()
+                                by_name(col_names, true, false).as_expr()
                             })
                         } else {
-                            Ok(col(pat.as_str()))
+                            Ok(Expr::Selector(Selector::Matches(pat.into())))
                         }
                     },
                     Expr::Selector(s) => Ok(s.as_expr()),
