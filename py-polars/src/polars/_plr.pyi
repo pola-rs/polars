@@ -2182,6 +2182,10 @@ class PySelector:
     def hash(self) -> int: ...
 
 class PyFileDecryptionProperties:
+    @staticmethod
+    def from_iceberg_keys(
+        files: Sequence[tuple[str, bytes, bytes | None]],
+    ) -> PyFileDecryptionProperties: ...
     def __init__(
         self,
         footer_key: bytes,
@@ -2623,6 +2627,14 @@ class PyArrowCStreamReader:
     @property
     def schema(self) -> dict[str, Any]: ...
     def next_batch(self, with_columns: pylist[str] | None) -> PyDataFrame | None: ...
+
+class PyIcebergKmsClient:
+    def __init__(self, properties: dict[str, str]) -> None: ...
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes: ...
+
+def _iceberg_decrypt(
+    ciphertext: bytes, key: bytes, aad: bytes, stream: bool
+) -> bytes: ...
 
 # catalog
 class PyCatalogClient:

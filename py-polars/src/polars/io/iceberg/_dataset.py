@@ -38,6 +38,7 @@ from polars.io.iceberg._utils import (
     name_mapping_by_field_id,
     try_convert_pyarrow_predicate,
 )
+from polars.io.parquet.decryption import ParquetDecryptionProperties
 from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
@@ -514,7 +515,21 @@ class IcebergScanResolver:
             )
             raise ValueError(msg)
 
-        if reader_override != "pyiceberg" and use_plugin_planner():
+        from polars.io.iceberg._encryption import _load_kms_config
+
+        kms_config = _load_kms_config(tbl, self.table.iceberg_storage_properties)
+        if kms_config is not None and reader_override == "pyiceberg":
+            msg = "encrypted Iceberg scans require the native Parquet reader"
+            raise NotImplementedError(msg)
+        if kms_config is not None and plugin_planner_required():
+            msg = "encrypted Iceberg scans require the PyIceberg planner"
+            raise NotImplementedError(msg)
+
+        if (
+            kms_config is None
+            and reader_override != "pyiceberg"
+            and use_plugin_planner()
+        ):
             if verbose:
                 eprint(
                     "IcebergScanResolver: to_dataset_scan(): "
@@ -604,6 +619,19 @@ class IcebergScanResolver:
             is not None
         }
 
+        decryption_keys: dict[str, tuple[bytes, bytes | None]] = {}
+
+        def register_key(data_file: Any) -> None:
+            if data_file.key_metadata:
+                from polars.io.iceberg._encryption import decode_key_metadata
+
+                key, aad, _ = decode_key_metadata(data_file.key_metadata)
+                path = _normalize_windows_iceberg_file_uri(data_file.file_path)
+                if path in decryption_keys and decryption_keys[path] != (key, aad):
+                    msg = "Conflicting Iceberg encryption keys for the same file"
+                    raise ComputeError(msg)
+                decryption_keys[path] = (key, aad)
+
         sources = []
         source_sizes = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
@@ -653,6 +681,19 @@ class IcebergScanResolver:
                 selected_fields=selected_fields,
             )
 
+            if kms_config is not None:
+                from polars.io.iceberg._encryption import EncryptedFileIO
+
+                kms_client = kms_config.client
+                if kms_client is None:
+                    from polars._plr import PyIcebergKmsClient
+
+                    kms_client = PyIcebergKmsClient(kms_config.properties)
+                scan.io = EncryptedFileIO(tbl, scan.io, kms_client)
+                if not is_incremental:
+                    # REST scan tasks do not carry the file encryption keys.
+                    scan.catalog = None
+
             if iceberg_table_filter is not None:
                 try:
                     file_infos = list(
@@ -676,6 +717,7 @@ class IcebergScanResolver:
                 file_infos = list(scan.plan_files())
 
             for i, file_info in enumerate(file_infos):
+                register_key(file_info.file)
                 if file_info.file.file_format != FileFormat.PARQUET:
                     fallback_reason = (
                         f"non-parquet format: {file_info.file.file_format}"
@@ -688,6 +730,7 @@ class IcebergScanResolver:
                     deletion_vector_num_rows = 0
 
                     for deletion_file in file_info.delete_files:
+                        register_key(deletion_file)
                         if deletion_file.content != DataFileContent.POSITION_DELETES:
                             fallback_reason = (
                                 "unsupported deletion file type: "
@@ -743,6 +786,7 @@ class IcebergScanResolver:
                                             tbl.io,
                                             deletion_file.file_path,
                                             deletion_file.file_size_in_bytes,
+                                            deletion_file.key_metadata,
                                         )
                                     )
 
@@ -860,16 +904,44 @@ class IcebergScanResolver:
                 else None
             )
 
+            iceberg_storage_properties = self.table.iceberg_storage_properties
             storage_options = (
                 _convert_iceberg_to_object_store_storage_options(
-                    self.table.iceberg_storage_properties
+                    iceberg_storage_properties
                 )
-                if self.table.iceberg_storage_properties is not None
+                if iceberg_storage_properties is not None
                 else None
             )
+            if kms_config is not None:
+                resolved_storage_options = {}
+                for properties in (
+                    getattr(tbl, "config", {}),
+                    getattr(tbl.io, "properties", {}),
+                ):
+                    resolved_storage_options.update(
+                        _convert_iceberg_to_object_store_storage_options(
+                            {
+                                key: value
+                                for key, value in properties.items()
+                                if key in ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP
+                                or key.startswith(("aws_", "azure_", "google_"))
+                            }
+                        )
+                    )
+                storage_options = {
+                    **resolved_storage_options,
+                    **(storage_options or {}),
+                }
+                for key in ("py-kms-impl", "profile_name", "region_name"):
+                    storage_options.pop(key, None)
 
             return _NativeIcebergScanData(
                 sources=sources,
+                decryption=ParquetDecryptionProperties._from_iceberg_keys(
+                    decryption_keys
+                )
+                if decryption_keys
+                else None,
                 source_sizes=source_sizes,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
@@ -905,7 +977,7 @@ class IcebergScanResolver:
                 snapshot_id_key=snapshot_id_key,
             )
 
-        elif reader_override == "native":
+        elif reader_override == "native" or kms_config is not None:
             msg = f"iceberg reader_override='native' failed: {fallback_reason}"
             raise ComputeError(msg)
 
@@ -956,6 +1028,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for a native Iceberg scan."""
 
     sources: list[str]
+    decryption: ParquetDecryptionProperties | None = None
     source_sizes: list[int]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
@@ -983,6 +1056,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
 
         return scan_parquet(
             self.sources,
+            decryption=self.decryption,
             glob=False,
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
@@ -1041,17 +1115,26 @@ def _metadata_file_exists(tbl: pyiceberg.table.Table) -> bool:
 
 
 def _read_puffin_deletion_vector_counts(
-    io: Any, path: str, file_size: int
+    io: Any, path: str, file_size: int, key_metadata: bytes | None = None
 ) -> dict[str, int] | None:
     """
     Deleted row counts of the deletion vectors of a Puffin file, by data file.
 
-    Only the footer is read. Returns `None` if the footer is not supported.
+    Only the footer is read for plaintext files.
+    Returns `None` if the footer is not supported.
     """
     import json
 
+    input_file = io.new_input(path)
+    if key_metadata:
+        from polars.io.iceberg._encryption import _EncryptedInputFile
+
+        input_file = _EncryptedInputFile(input_file, key_metadata)
+
     # Footer: magic (4), payload, payload size (4, LE), flags (4), magic (4).
-    with io.new_input(path).open() as f:
+    with input_file.open() as f:
+        if key_metadata:
+            file_size = f.seek(0, 2)
         f.seek(file_size - 12)
         tail = f.read(12)
         payload_size = int.from_bytes(tail[:4], "little", signed=True)
@@ -1137,7 +1220,8 @@ def _convert_iceberg_to_object_store_storage_options(
             # keys. We identify Iceberg keys by checking for a dot - from
             # observation nearly all Iceberg config keys contain dots, whereas
             # native config keys do not contain them.
-            storage_options[k] = v
+            # Iceberg aliases take precedence, matching PyIceberg FileIO.
+            storage_options.setdefault(k, v)
 
         # Otherwise, unknown keys are ignored / not passed. This is to avoid
         # interfering with credential provider auto-init, which bails on

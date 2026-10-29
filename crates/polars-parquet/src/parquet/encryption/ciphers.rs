@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use aws_lc_rs::aead::{
-    AES_128_GCM, AES_256_GCM, Aad, Algorithm, LessSafeKey, NonceSequence, UnboundKey,
+    AES_128_GCM, AES_192_GCM, AES_256_GCM, Aad, Algorithm, LessSafeKey, NonceSequence, UnboundKey,
 };
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 
@@ -41,20 +41,44 @@ pub(crate) trait BlockDecryptor: Debug + Send + Sync {
 }
 
 #[derive(Debug)]
-pub(crate) struct AesGcmBlockDecryptor {
+pub struct AesGcmBlockDecryptor {
     key: LessSafeKey,
 }
 
 impl AesGcmBlockDecryptor {
     /// Create a new `AesGcmBlockDecryptor` with a given key.
-    pub(crate) fn new(key_bytes: &[u8]) -> ParquetResult<Self> {
-        let algorithm = aes_gcm_algorithm(key_bytes, "decryption key")?;
+    pub fn new(key_bytes: &[u8]) -> ParquetResult<Self> {
+        let algorithm = if key_bytes.len() == AES_128_GCM.key_len() {
+            &AES_128_GCM
+        } else if key_bytes.len() == AES_192_GCM.key_len() {
+            &AES_192_GCM
+        } else if key_bytes.len() == AES_256_GCM.key_len() {
+            &AES_256_GCM
+        } else {
+            return Err(encryption_err!(
+                "Error creating AesGcmBlockDecryptor with unsupported key length: {}",
+                key_bytes.len()
+            ));
+        };
         let key = UnboundKey::new(algorithm, key_bytes)
             .map_err(|_| encryption_err!("Failed to create {:?} key", algorithm))?;
 
         Ok(Self {
             key: LessSafeKey::new(key),
         })
+    }
+
+    /// Decrypt nonce-prefixed AES-GCM ciphertext, including its authentication tag.
+    pub fn decrypt_bytes(&self, ciphertext: &[u8], aad: &[u8]) -> ParquetResult<Vec<u8>> {
+        if ciphertext.len() < NONCE_LEN + TAG_LEN {
+            return Err(encryption_err!("Encrypted buffer is too short"));
+        }
+        let nonce = aws_lc_rs::aead::Nonce::try_assume_unique_for_key(&ciphertext[..NONCE_LEN])?;
+        let mut result = ciphertext[NONCE_LEN..].to_vec();
+        self.key.open_in_place(nonce, Aad::from(aad), &mut result)?;
+        // Truncate result to remove the tag
+        result.truncate(result.len() - TAG_LEN);
+        Ok(result)
     }
 }
 
@@ -66,18 +90,7 @@ impl BlockDecryptor for AesGcmBlockDecryptor {
                 length_and_ciphertext.len()
             ));
         }
-        let mut result = Vec::with_capacity(length_and_ciphertext.len() - SIZE_LEN - NONCE_LEN);
-        result.extend_from_slice(&length_and_ciphertext[SIZE_LEN + NONCE_LEN..]);
-
-        let nonce = aws_lc_rs::aead::Nonce::try_assume_unique_for_key(
-            &length_and_ciphertext[SIZE_LEN..SIZE_LEN + NONCE_LEN],
-        )?;
-
-        self.key.open_in_place(nonce, Aad::from(aad), &mut result)?;
-
-        // Truncate result to remove the tag
-        result.resize(result.len() - TAG_LEN, 0u8);
-        Ok(result)
+        self.decrypt_bytes(&length_and_ciphertext[SIZE_LEN..], aad)
     }
 
     fn compute_plaintext_tag(&self, aad: &[u8], plaintext: &[u8]) -> ParquetResult<Vec<u8>> {

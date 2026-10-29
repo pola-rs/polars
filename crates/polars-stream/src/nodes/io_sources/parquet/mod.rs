@@ -177,7 +177,10 @@ impl FileReader for ParquetFileReader {
 
             Arc::new(polars_parquet::parquet::read::deserialize_metadata(
                 metadata_bytes,
-                self.config.decryption_properties.as_ref().map(|p| &p.0),
+                self.config
+                    .decryption_properties
+                    .as_ref()
+                    .and_then(|p| p.for_path(self.scan_source.as_scan_source_ref().as_path())),
             )?)
         };
 

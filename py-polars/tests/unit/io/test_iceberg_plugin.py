@@ -38,7 +38,7 @@ import polars_iceberg
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.types import LongType, NestedField, StringType
 
-from tests.unit.io.test_iceberg import (
+from tests.unit.io.iceberg_utils import (
     new_iceberg_table,
     sqlcatalog_uses_null_pool_connections,  # noqa: F401
 )

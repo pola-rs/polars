@@ -1,20 +1,44 @@
 use std::sync::Arc;
 
 use polars::prelude::PolarsError;
+use polars_io::parquet::read::ParquetDecryptionKeys;
 use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
+use polars_utils::pl_path::PlRefPath;
 use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
+use crate::prelude::Wrap;
 
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyFileDecryptionProperties {
-    pub inner: Arc<FileDecryptionProperties>,
+    pub inner: Arc<ParquetDecryptionKeys>,
 }
 
 #[pymethods]
 impl PyFileDecryptionProperties {
+    #[staticmethod]
+    #[expect(clippy::type_complexity)]
+    fn from_iceberg_keys(
+        files: Vec<(Wrap<PlRefPath>, Vec<u8>, Option<Vec<u8>>)>,
+    ) -> PyResult<Self> {
+        let files = files
+            .into_iter()
+            .map(|(path, key, aad)| {
+                let mut builder = FileDecryptionProperties::builder(key);
+                if let Some(aad) = aad {
+                    builder = builder.with_aad_prefix(aad);
+                }
+                builder.build().map(|properties| (path.0, properties))
+            })
+            .collect::<Result<_, _>>()
+            .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
+        Ok(Self {
+            inner: Arc::new(ParquetDecryptionKeys::PerFile(files)),
+        })
+    }
+
     #[new]
     #[pyo3(signature = (footer_key, column_keys, aad_prefix, verify_footer_signature))]
     fn new(
@@ -36,7 +60,9 @@ impl PyFileDecryptionProperties {
         let inner = builder
             .build()
             .map_err(|e| PyPolarsErr::from(PolarsError::from(e)))?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(ParquetDecryptionKeys::Uniform(inner)),
+        })
     }
 }
 
