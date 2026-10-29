@@ -147,7 +147,8 @@ async fn resolve_negative_slice(
         let n_rows = file_reader.n_rows_in_file().await?;
 
         let n_rows_deleted = if let Some(row_deletions) = row_deletions {
-            let mask = row_deletions.into_external_filter_mask().await?;
+            let mut mask = row_deletions.into_external_filter_mask().await?;
+            mask.truncate_to_num_physical_rows(usize::try_from(n_rows).unwrap());
             let n_rows_deleted = mask.num_deleted_rows();
 
             file_row_deletions.insert(scan_source_idx, mask.clone());
@@ -230,7 +231,10 @@ async fn resolve_negative_slice(
                 None
             };
 
-            let n_rows_deleted = row_deletions.map_or(0, |x| x.num_deleted_rows());
+            let n_rows_deleted = row_deletions.map_or(0, |mut x| {
+                x.truncate_to_num_physical_rows(usize::try_from(n_rows).unwrap());
+                x.num_deleted_rows()
+            });
 
             n_rows_skipped_from_start =
                 n_rows_skipped_from_start.add(RowCounter::new(n_rows, n_rows_deleted));

@@ -11,7 +11,7 @@ use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::PolarsResult;
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
@@ -134,11 +134,18 @@ impl ReaderStarter {
             // Note: We `.await` here for the row deletions to be fully loaded.
             //       For this reason it's important that we already spawn background tasks to fully
             //       load them at the reader pre-initialization stage.
-            let external_filter_mask = if let Some(row_deletions) = row_deletions {
+            let mut external_filter_mask = if let Some(row_deletions) = row_deletions {
                 Some(row_deletions.into_external_filter_mask().await?)
             } else {
                 None
             };
+
+            if let Some(n_rows_in_file) = n_rows_in_file.as_ref()
+                && let Some(external_filter_mask) = external_filter_mask.as_mut()
+            {
+                external_filter_mask
+                    .truncate_to_num_physical_rows(n_rows_in_file.num_physical_rows());
+            }
 
             // * This translates the `pre_slice` to physical offsets (i.e. apply before deleting rows).
             //   The slice remains the same if there are no row deletions.
@@ -207,17 +214,6 @@ impl ReaderStarter {
             if skip_read_reason.is_some() {
                 // If this is not the case then the reader does not need to be sent here.
                 debug_assert!(extra_ops.has_row_index_or_slice())
-            }
-
-            if cfg!(debug_assertions)
-                && let Some(n_rows_in_file) = n_rows_in_file
-                && let Some(mask_len) = external_filter_mask.as_ref().map(|fm| fm.len())
-            {
-                // @NOTE: the deletion files / vectors may be truncated
-                polars_ensure!(mask_len <= n_rows_in_file.num_physical_rows(),
-                    ComputeError: "deletion row count: {}, exceeds number of physical rows: {}",
-                    mask_len, n_rows_in_file.num_physical_rows()
-                )
             }
 
             // `fast_n_rows_in_file()` or negative slice, we know the exact row count here already.

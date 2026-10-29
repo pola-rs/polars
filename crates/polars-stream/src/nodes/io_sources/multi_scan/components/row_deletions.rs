@@ -571,6 +571,14 @@ impl ExternalFilterMask {
         }
     }
 
+    /// Truncates the mask to `num_physical_rows`. Iceberg position deletes can reference positions
+    /// past the end of the data file, these must not be counted as deleted rows.
+    pub fn truncate_to_num_physical_rows(&mut self, num_physical_rows: usize) {
+        if self.len() > num_physical_rows {
+            *self = self.slice(0, num_physical_rows);
+        }
+    }
+
     pub fn num_deleted_rows(&self) -> usize {
         match self {
             Self::Iceberg { mask } => mask
