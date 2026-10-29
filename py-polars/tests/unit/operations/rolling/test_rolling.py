@@ -2929,3 +2929,55 @@ def test_rolling_offset_not_negated_period_29199(
         index_column="t", period=period, offset=offset, closed=closed
     )
     assert q.agg(pl.len()).collect(engine=engine)["len"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("v", "descending"),
+    [
+        ([1, 2, 3, 4, 5], False),
+        ([None, 1, 2, 3, 4], False),
+        ([1, 2, 3, 4, None], False),
+        ([5, 4, 3, 2, 1], True),
+        ([None, 4, 3, 2, 1], True),
+        ([4, 3, 2, 1, None], True),
+    ],
+)
+@pytest.mark.parametrize(
+    "agg",
+    [
+        lambda e: e.first(),
+        lambda e: e.first(ignore_nulls=True),
+        lambda e: e.last(ignore_nulls=True),
+        lambda e: e.min(),
+        lambda e: e.max(),
+    ],
+)
+@pytest.mark.parametrize("how", ["rolling", "group_by_slice"])
+def test_empty_groups_drop_sorted_flag_30426(
+    v: list[int | None], descending: bool, agg: Any, how: str
+) -> None:
+    def run(df: pl.DataFrame) -> pl.Series:
+        if how == "rolling":
+            # The windows (t, t+1] at t=2 and t=5 are empty.
+            q = df.rolling("t", period="1i", offset="0i").agg(agg(pl.col("v")))
+        else:
+            # The group k=1 has one row, so `slice(1, 1)` leaves it empty.
+            q = df.group_by("k", maintain_order=True).agg(agg(pl.col("v").slice(1, 1)))
+        return q["v"]
+
+    df = pl.DataFrame({"t": [0, 1, 2, 4, 5], "k": [0, 0, 1, 2, 2], "v": v})
+    flagged = df.set_sorted("k").with_columns(
+        pl.col("v").set_sorted(descending=descending)
+    )
+    out, expected = run(flagged), run(df)
+
+    assert_series_equal(out, expected)
+    assert out.max() == expected.max()
+    assert out.n_unique() == expected.n_unique()
+
+
+def test_rolling_trailing_empty_window_keeps_sorted_flag_30426() -> None:
+    df = pl.DataFrame({"t": [0, 1, 2, 3], "v": [1, 2, 3, 4]}).sort("v")
+    out = df.rolling("t", period="1i", offset="0i").agg(pl.col("v").first())["v"]
+    assert out.to_list() == [2, 3, 4, None]
+    assert out.flags["SORTED_ASC"]
