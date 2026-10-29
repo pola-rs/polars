@@ -964,6 +964,24 @@ pub mod kll {
             feed(&mut a, 0..10_000);
             a.finalize();
         }
+
+        #[test]
+        fn late_clone_is_raised_and_merged() {
+            let template = KLLSketch::<u64>::new(ERROR, DEFAULT_FAILURE_PROBABILITY)
+                .with_shared_count(Arc::default());
+            let k = template.0.k;
+            let mut early = template.clone();
+            let mut late = template;
+            feed(&mut early, 0..100_000);
+            feed(&mut late, 100_000..110_000);
+            assert!(height(&late) > height_for_count(k, 10_000));
+
+            early.merge(&late);
+            let finalized = early.finalize();
+            assert_eq!(finalized.num_items(), 110_000);
+            let median = *finalized.estimate_quantile(0.5).unwrap().unwrap();
+            assert!(median.abs_diff(55_000) as f64 <= ERROR * 110_000.0);
+        }
     }
 }
 
