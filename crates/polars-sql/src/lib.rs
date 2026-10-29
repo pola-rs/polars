@@ -27,7 +27,9 @@ mod table_functions;
 mod types;
 mod window_frames;
 
-pub use catalog::{CatalogDdl, CatalogNamespace, CatalogPartitionField, CatalogTable};
+pub use catalog::{
+    CatalogAlter, CatalogDdl, CatalogNamespace, CatalogPartitionField, CatalogTable,
+};
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;

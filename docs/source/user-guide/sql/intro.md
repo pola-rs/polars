@@ -93,7 +93,7 @@ catalog explicit.
 Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
 registered there.
 
-#### Create and drop catalog tables and schemas
+#### Create, alter and drop catalog tables and schemas
 
 `CREATE TABLE` and `DROP TABLE` resolve the table name as a query does, and act on the catalog:
 
@@ -123,6 +123,13 @@ catalog is a namespace of it, any other name one of the default catalog (not und
 ```python
 ctx.execute("CREATE SCHEMA IF NOT EXISTS lake.sales WITH ('location' = 's3://bucket/sales')")
 ctx.execute("DROP SCHEMA lake.sales")  # only an empty namespace: no tables or child namespaces
+```
+
+`ALTER TABLE` changes a catalog table's columns or properties, one change per statement:
+
+```python
+ctx.execute("ALTER TABLE lake.sales.orders ADD COLUMN discount DOUBLE")
+ctx.execute("ALTER TABLE lake.sales.orders RENAME COLUMN qty TO quantity")
 ```
 
 See `SQLContext.register_catalog` for the details.

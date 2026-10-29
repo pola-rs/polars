@@ -7,6 +7,8 @@ Table Operations
 
    * - Function
      - Description
+   * - :ref:`ALTER TABLE <alter_table>`
+     - Change the columns or properties of a table in an attached catalog.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -30,6 +32,34 @@ Table Operations
    * - :ref:`TRUNCATE <truncate>`
      - Remove all data from a table without actually deleting it.
 
+
+.. _alter_table:
+
+ALTER TABLE
+-----------
+Change a table of a catalog attached with :meth:`SQLContext.register_catalog`, with the
+name resolved as in a query. Each statement makes one change, in one commit:
+
+* ``ADD [COLUMN] [IF NOT EXISTS] <name> <type>`` adds a nullable column (``NOT NULL`` is not
+  supported, as the existing rows have no value for it);
+* ``DROP [COLUMN] [IF EXISTS] <name>`` drops a column;
+* ``RENAME COLUMN <name> TO <new_name>`` renames a column, keeping its data;
+* ``ALTER COLUMN <name> [SET DATA] TYPE <type>`` changes a column's type, as the catalog
+  allows (such as ``INT`` to ``BIGINT``, ``FLOAT`` to ``DOUBLE``, or a wider ``DECIMAL``);
+* ``ALTER COLUMN <name> DROP NOT NULL`` makes a column nullable;
+* ``SET TBLPROPERTIES ('key' = value, ...)`` sets table properties.
+
+Column names are case-sensitive and name top-level columns. ``ALTER TABLE IF EXISTS`` does
+nothing if the table does not exist.
+
+**Example:**
+
+.. code-block:: sql
+
+    ALTER TABLE lake.sales.orders ADD COLUMN discount DOUBLE
+    ALTER TABLE lake.sales.orders RENAME COLUMN qty TO quantity
+    ALTER TABLE lake.sales.orders ALTER COLUMN quantity SET DATA TYPE BIGINT
+    ALTER TABLE lake.sales.orders SET TBLPROPERTIES ('owner' = 'finance')
 
 .. _create_schema:
 

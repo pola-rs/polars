@@ -512,6 +512,8 @@ class SQLContext(Generic[FrameType]):
             response = _create_catalog_namespace(catalog, ddl)
         elif ddl["kind"] == "drop_schema":
             response = _drop_catalog_namespace(catalog, ddl)
+        elif ddl["kind"] == "alter_table":
+            response = _alter_catalog_table(catalog, ddl)
         else:
             msg = f"unsupported catalog statement {ddl['kind']!r}"
             raise NotImplementedError(msg)
@@ -595,6 +597,12 @@ class SQLContext(Generic[FrameType]):
           with an attached catalog is a namespace of it, any other name one of the
           default catalog, not under `default_namespace`. See
           :ref:`CREATE SCHEMA <create_schema>`.
+        * `ALTER TABLE [IF EXISTS] <name> <operation>` changes a catalog table's
+          top-level columns or properties, one operation per statement: `ADD
+          COLUMN`, `DROP COLUMN`, `RENAME COLUMN`, `ALTER COLUMN ... SET DATA TYPE`
+          (as the catalog allows: int to long, float to double, a wider decimal),
+          `ALTER COLUMN ... DROP NOT NULL` and `SET TBLPROPERTIES`. Column names
+          are case-sensitive. See :ref:`ALTER TABLE <alter_table>`.
         * `TRUNCATE` and `DELETE` are not supported on catalog tables.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
@@ -1049,6 +1057,125 @@ def _drop_catalog_namespace(
     return response
 
 
+def _alter_catalog_table(
+    catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]
+) -> str:
+    """Change the catalog table of an `ALTER TABLE`, returning the response."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    from polars.exceptions import (
+        ColumnNotFoundError,
+        DuplicateError,
+        InvalidOperationError,
+    )
+    from polars.io.iceberg._sink import _create_table_schema
+    from polars.schema import Schema
+
+    identifier: tuple[str, ...] = tuple(ddl["identifier"])
+    name, op = ddl["name"], ddl["operation"]
+    response = f"ALTER TABLE {_display_name([ddl['catalog'], *identifier])}"
+    missing = (
+        f"table '{name}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be altered"
+    )
+    # checked first, as not every catalog reports a missing table as one on load
+    if not _table_exists(catalog, identifier):
+        if ddl["if_exists"]:
+            return response
+        msg = f"{missing}; catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg)
+    try:
+        table = catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError) as error:
+        if ddl["if_exists"]:
+            return response
+        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg) from error
+
+    kind, column = op["op"], op.get("column")
+    # top-level columns only: PyIceberg takes a dotted name for a nested field
+    columns = {field.name: field for field in table.schema().fields}
+    # the names older data files are read by, which a new name must not take over
+    aliases = {
+        alias: field.field_id
+        for field in table.name_mapping() or []
+        for alias in field.names
+    }
+
+    def check_free(new: str, field_id: int | None = None) -> None:
+        if new in columns:
+            msg = f"column '{new}' already exists in table '{name}'"
+            raise DuplicateError(msg)
+        # free if unmapped, or a name of the renamed field itself
+        if new in aliases and (field_id is None or aliases[new] != field_id):
+            msg = (
+                f"column name '{new}' is in use by table '{name}': its name mapping "
+                "reads older data files with it"
+            )
+            raise DuplicateError(msg)
+
+    if kind == "add_column":
+        if column in columns and op["if_not_exists"]:
+            return response
+        check_free(column)
+    elif kind != "set_properties" and column not in columns:
+        if kind == "drop_column" and op["if_exists"]:
+            return response
+        msg = f"column '{column}' not found in table '{name}'; column names are case-sensitive"
+        raise ColumnNotFoundError(msg)
+    if kind == "rename_column":
+        check_free(op["new_name"], columns[column].field_id)
+    if kind == "drop_column" and len(columns) == 1:
+        msg = f"column '{column}' is the only column of table '{name}'"
+        raise InvalidOperationError(msg)
+    if kind == "drop_not_null" and column in table.schema().identifier_field_names():
+        msg = f"column '{column}' of table '{name}' is an identifier field, which stays NOT NULL"
+        raise InvalidOperationError(msg)
+    field_type: Any = None
+    if "dtype" in op:
+        schema, _ = _create_table_schema(
+            Schema({column: op["dtype"]}), context="ALTER TABLE"
+        )
+        field_type = schema.fields[0].field_type
+    if kind == "set_data_type":
+        current = columns[column].field_type
+        if _same_iceberg_type(current, field_type):
+            return response
+        # PyIceberg 0.12 also takes changes Iceberg doesn't allow, such as a new scale
+        if not _iceberg_promotes(current, field_type):
+            msg = (
+                f"column '{column}' of table '{name}' cannot change from {current} to "
+                f"{field_type}: Iceberg only widens int to long, float to double and "
+                "a decimal's precision"
+            )
+            raise InvalidOperationError(msg)
+
+    try:
+        if kind == "set_properties":
+            table.transaction().set_properties(op["properties"]).commit_transaction()
+        else:
+            update = table.update_schema()
+            path = (column,)
+            if kind == "add_column":
+                update.add_column(path, field_type)
+            elif kind == "drop_column":
+                update.delete_column(path)
+            elif kind == "rename_column":
+                update.rename_column(path, op["new_name"])
+            elif kind == "set_data_type":
+                update.update_column(path, field_type=field_type)
+            else:
+                update.update_column(path, required=False)
+            update.commit()
+    except Exception as error:
+        error.add_note(
+            f"table '{name}' could not be altered: catalog table "
+            f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
+        )
+        raise
+    return response
+
+
 def _create_catalog_table(
     catalog: pyiceberg.catalog.Catalog,
     ddl: dict[str, Any],
@@ -1372,6 +1499,46 @@ def _table_exists(
         return bool(catalog.table_exists(tuple(identifier)))
     except Exception:
         return True
+
+
+def _same_iceberg_type(a: Any, b: Any) -> bool:
+    """Whether two Iceberg types are equal, ignoring field ids and nullability."""
+    from pyiceberg.types import ListType, MapType, StructType
+
+    if isinstance(a, StructType) and isinstance(b, StructType):
+        return len(a.fields) == len(b.fields) and all(
+            fa.name == fb.name and _same_iceberg_type(fa.field_type, fb.field_type)
+            for fa, fb in zip(a.fields, b.fields, strict=True)
+        )
+    if isinstance(a, ListType) and isinstance(b, ListType):
+        return _same_iceberg_type(a.element_type, b.element_type)
+    if isinstance(a, MapType) and isinstance(b, MapType):
+        return _same_iceberg_type(a.key_type, b.key_type) and _same_iceberg_type(
+            a.value_type, b.value_type
+        )
+    return bool(a == b)
+
+
+def _iceberg_promotes(current: Any, target: Any) -> bool:
+    """Whether Iceberg's schema evolution changes type `current` to `target`."""
+    from pyiceberg.types import (
+        DecimalType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        LongType,
+    )
+
+    if isinstance(current, IntegerType):
+        return isinstance(target, LongType)
+    if isinstance(current, FloatType):
+        return isinstance(target, DoubleType)
+    return (
+        isinstance(current, DecimalType)
+        and isinstance(target, DecimalType)
+        and target.scale == current.scale
+        and target.precision > current.precision
+    )
 
 
 def _display_name(parts: Sequence[str]) -> str:
