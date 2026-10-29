@@ -1561,7 +1561,6 @@ def test_join_on_subquery_reading_struct_field() -> None:
         # an unqualified column of the joined tables
         ("b.v IN (SELECT x FROM c WHERE x = id)", 'unable to find column "id"'),
         # reads both tables
-        ("a.v + b.v > (SELECT MAX(x) FROM c)", "not currently supported in the JOIN"),
         ("v IN (SELECT x FROM c)", "not currently supported in the JOIN"),
         # more than one row
         ("a.v = (SELECT x FROM c)", "expected no or a single value"),
@@ -1574,6 +1573,169 @@ def test_join_on_subquery_unsupported(
         pl.SQLContext(join_subquery_frames).execute(
             f"SELECT * FROM a LEFT JOIN b ON a.id = b.id AND {condition}", eager=True
         )
+
+
+@pytest.fixture
+def both_input_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"k": [1, 2, 3, 4, None, 2], "v": [10, 20, 30, 40, 50, 20]}),
+        "b": pl.DataFrame({"k": [1, 2, 3, 5], "s": [2, 3, None, 1]}),
+        "c": pl.DataFrame({"x": [1, 2, 3]}),
+        "e": pl.DataFrame({"k": [], "v": []}, schema={"k": pl.Int64, "v": pl.Int64}),
+    }
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT", "RIGHT", "FULL"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # an operand reads both inputs
+        "a.k % b.s = 0",
+        "(a.k + b.s) = b.k",
+        "a.v = b.s * a.k",
+        "b.s = COALESCE(a.k, b.s)",
+        "v % s = 0",
+        "a.k = b.k AND a.v % b.s = 0",
+        # an uncorrelated subquery in a condition that reads both inputs
+        "a.k % (SELECT COUNT(*) FROM c) = b.k",
+        "b.k = a.k % (SELECT COUNT(*) FROM c)",
+        "b.s % (SELECT COUNT(*) FROM c) = a.k",
+        "a.k + (SELECT MIN(x) FROM c) = b.k + (SELECT MAX(x) FROM c) - 1",
+        "a.v + b.k > (SELECT MAX(x) FROM c) * 10",
+        "a.k = b.k AND a.v + b.s > (SELECT MIN(x) FROM c) * 25",
+        "a.k % b.s = (SELECT MIN(x) FROM c) - 1",
+        "b.s = a.k % (SELECT COUNT(b.x) FROM c AS b)",
+        "a.k + b.s = (SELECT x FROM c WHERE x < 0)",
+        "a.k + b.s IS NOT DISTINCT FROM (SELECT MAX(x) FROM c WHERE x < 0)",
+    ],
+)
+def test_join_on_condition_reading_both_inputs(
+    join_type: str, condition: str, both_input_frames: dict[str, pl.DataFrame]
+) -> None:
+    assert_sql_matches(
+        frames=both_input_frames,
+        query=(
+            f"SELECT a.k, a.v, b.k AS bk, b.s FROM a {join_type} JOIN b ON {condition}"
+        ),
+        compare_with="duckdb",
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT", "RIGHT", "FULL"])
+def test_join_on_subquery_key_with_empty_input(
+    join_type: str, both_input_frames: dict[str, pl.DataFrame]
+) -> None:
+    assert_sql_matches(
+        frames=both_input_frames,
+        query=(
+            f"SELECT e.k, b.k AS bk FROM e {join_type} JOIN b "
+            "ON e.k % (SELECT COUNT(*) FROM c) = b.k"
+        ),
+        compare_with="duckdb",
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("join", "expected"),
+    [
+        ("SEMI JOIN b ON a.k % (SELECT COUNT(*) FROM c) = b.k", [1, 2, 2, 4]),
+        ("ANTI JOIN b ON a.k % (SELECT COUNT(*) FROM c) = b.k", [3, None]),
+        ("RIGHT SEMI JOIN b ON a.k % (SELECT COUNT(*) FROM c) = b.k", [1, 2]),
+        ("RIGHT ANTI JOIN b ON a.k % (SELECT COUNT(*) FROM c) = b.k", [3, 5]),
+        ("SEMI JOIN b ON a.k + (SELECT 1) = b.k + (SELECT 1)", [1, 2, 2, 3]),
+        ("ANTI JOIN b ON a.k + (SELECT 1) = b.k + (SELECT 1)", [4, None]),
+        ("RIGHT SEMI JOIN b ON a.k + (SELECT 1) = b.k + (SELECT 1)", [1, 2, 3]),
+        ("RIGHT ANTI JOIN b ON a.k + (SELECT 1) = b.k + (SELECT 1)", [5]),
+    ],
+)
+def test_join_on_subquery_key_semi_anti(
+    join: str, expected: list[int | None], both_input_frames: dict[str, pl.DataFrame]
+) -> None:
+    res = pl.SQLContext(both_input_frames).execute(
+        f"SELECT * FROM a {join}", eager=True
+    )
+    assert sorted(res["k"].to_list(), key=lambda k: (k is None, k)) == expected
+    assert res.columns == (["k", "s"] if join.startswith("RIGHT") else ["k", "v"])
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT", "RIGHT", "FULL"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.k + (SELECT 1) = b.k + (SELECT 1)",
+        "b.s % (SELECT COUNT(*) FROM c) = a.k",
+    ],
+)
+def test_join_on_subquery_key_keeps_equi_join(
+    join_type: str, condition: str, both_input_frames: dict[str, pl.DataFrame]
+) -> None:
+    plan = (
+        pl.SQLContext(both_input_frames)
+        .execute(f"SELECT a.k FROM a {join_type} JOIN b ON {condition}")
+        .explain()
+    )
+    assert "LEFT PLAN ON" in plan
+    assert "NESTED LOOP" not in plan
+
+
+@pytest.mark.parametrize(
+    ("query", "err"),
+    [
+        (
+            "SELECT a.k FROM a JOIN b ON a.v = b.s JOIN c ON a.v + c.x + k = 14",
+            'ambiguous reference to column "k"',
+        ),
+        (
+            "SELECT a.k FROM a JOIN b ON a.v = b.s JOIN c "
+            "ON a.v + c.x + k = (SELECT 14)",
+            'ambiguous reference to column "k"',
+        ),
+        ("SELECT * FROM a JOIN b ON SUM(a.k + b.s) = 12", "references both"),
+        (
+            "SELECT * FROM a JOIN b ON ROW_NUMBER() OVER (ORDER BY a.k + b.s) = 1",
+            "references both",
+        ),
+        (
+            "SELECT c.x FROM (a JOIN b ON a.k = b.k) AS r JOIN c ON b.s + c.x = 2",
+            "references both",
+        ),
+        ("SELECT * FROM a JOIN b ON a.k % (SELECT x FROM c) = b.k", "single value"),
+        (
+            "SELECT * FROM a JOIN b ON a.k % (SELECT x, x + 1 FROM c) = b.k",
+            "more than one column",
+        ),
+        (
+            "SELECT * FROM a JOIN b ON a.k + b.s = ANY (SELECT x FROM c)",
+            "not currently supported in the JOIN",
+        ),
+        ("SELECT * FROM a SEMI JOIN b ON a.k % b.s = 0", "non-equi"),
+    ],
+)
+def test_join_on_condition_reading_both_inputs_unsupported(
+    query: str, err: str, both_input_frames: dict[str, pl.DataFrame]
+) -> None:
+    with pytest.raises(Exception, match=err):
+        pl.SQLContext(both_input_frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    "join",
+    [
+        "JOIN b ON a.v = b.s * 10 JOIN c ON a.v + c.x + a.k = 14",
+        "JOIN b USING (k) JOIN c ON a.v + c.x + k = 14",
+    ],
+)
+def test_join_on_condition_reading_chained_inputs(
+    join: str, both_input_frames: dict[str, pl.DataFrame]
+) -> None:
+    assert_sql_matches(
+        frames=both_input_frames,
+        query=f"SELECT a.k, c.x FROM a {join}",
+        compare_with="duckdb",
+        check_row_order=False,
+    )
 
 
 @pytest.mark.parametrize(
@@ -1913,28 +2075,6 @@ def test_multiway_join_chain_with_aliased_cols() -> None:
         assert res.height == 1
         assert res.columns == expected_cols
         assert res.row(0) == expected_row
-
-
-@pytest.mark.parametrize(
-    ("join_condition", "expected_error"),
-    [
-        (
-            "(df1.id + df2.val) = df2.id",
-            r"unsupported join condition: left side references both 'df1' and 'df2'",
-        ),
-        (
-            "df1.id = (df2.id + df1.val)",
-            r"unsupported join condition: right side references both 'df1' and 'df2'",
-        ),
-    ],
-)
-def test_unsupported_join_conditions(join_condition: str, expected_error: str) -> None:
-    # note: this is technically valid (if unusual) SQL, but we don't support it
-    df1 = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
-    df2 = pl.DataFrame({"id": [2, 3, 4], "val": [20, 30, 40]})
-
-    with pytest.raises(SQLInterfaceError, match=expected_error):
-        pl.sql(f"SELECT * FROM df1 INNER JOIN df2 ON {join_condition}").collect()
 
 
 def test_ambiguous_column_detection_in_joins() -> None:

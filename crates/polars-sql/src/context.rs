@@ -24,7 +24,7 @@ use sqlparser::ast::{
     OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, WildcardAdditionalOptions, WindowSpec, WindowType, With,
+    ValueWithSpan, Values, VisitorMut, WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -36,6 +36,7 @@ use crate::catalog::{
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
+use crate::functions::PolarsSQLFunctions;
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
     check_columns_in_aggregates, has_subquery_outside_aggregates, has_windows_over_aggregates,
@@ -58,7 +59,8 @@ use crate::sql_visitors::{
     expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema,
 };
 use crate::subquery::{
-    LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries, row_indexed_once,
+    LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
+    is_correlated_subquery, row_indexed_once,
 };
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
@@ -3743,12 +3745,22 @@ impl SQLContext {
                 JoinInputs::Left => true,
                 JoinInputs::Right => false,
                 JoinInputs::Neither => !filter_right && filter_left,
-                JoinInputs::Both | JoinInputs::Unknown => {
+                inputs @ (JoinInputs::Both | JoinInputs::Unknown) => {
                     if subqueries_read_left || subqueries_read_right {
                         deferred.push(conjunct.clone());
-                    } else {
-                        residual.push(conjunct.clone());
+                        continue;
                     }
+                    // Its uncorrelated subqueries become columns of an input.
+                    let lifted = if matches!(inputs, JoinInputs::Both)
+                        && self.is_joined_rows_condition(conjunct, &left, &right)?
+                    {
+                        self.lift_uncorrelated_subqueries(
+                            conjunct, &mut left, &mut right, &mut flags,
+                        )?
+                    } else {
+                        None
+                    };
+                    residual.push(lifted.unwrap_or_else(|| conjunct.clone()));
                     continue;
                 },
             };
@@ -4023,6 +4035,210 @@ impl SQLContext {
             (false, false, true) => JoinInputs::Right,
             (false, false, false) => JoinInputs::Neither,
         }
+    }
+
+    /// Whether the condition `expr`, which reads both inputs of a join, can be planned on
+    /// their joined rows: each qualifier names a visible relation, and it has no aggregate or
+    /// window call outside its subqueries. Raises on an ambiguous column.
+    fn is_joined_rows_condition(
+        &self,
+        expr: &SQLExpr,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> PolarsResult<bool> {
+        struct Check<'a> {
+            ctx: &'a SQLContext,
+            subquery_depth: usize,
+        }
+
+        impl sqlparser::ast::Visitor for Check<'_> {
+            type Break = ();
+
+            fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+                self.subquery_depth += 1;
+                ControlFlow::Continue(())
+            }
+
+            fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+                self.subquery_depth -= 1;
+                ControlFlow::Continue(())
+            }
+
+            fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+                if self.subquery_depth > 0 {
+                    return ControlFlow::Continue(());
+                }
+                let is_valid = match expr {
+                    // Not a struct field, such as `s.f` for a struct column `s`.
+                    SQLExpr::CompoundIdentifier(idents) => {
+                        matches!(self.ctx.resolve_qualifier(idents), Ok(Some(_)))
+                    },
+                    // A user-defined function may be an aggregate.
+                    SQLExpr::Function(function) => {
+                        function.over.is_none()
+                            && !PolarsSQLFunctions::try_from_sql(function, self.ctx).is_ok_and(
+                                |f| {
+                                    f.is_builtin_aggregate()
+                                        || matches!(f, PolarsSQLFunctions::Udf(_))
+                                },
+                            )
+                    },
+                    _ => true,
+                };
+                if is_valid {
+                    ControlFlow::Continue(())
+                } else {
+                    ControlFlow::Break(())
+                }
+            }
+        }
+
+        let mut check = Check {
+            ctx: self,
+            subquery_depth: 0,
+        };
+        if self
+            .subqueries_join_inputs(expr, tbl_left, tbl_right)
+            .is_none()
+            || dyn_visit::visit(expr, &mut check).is_break()
+        {
+            return Ok(false);
+        }
+        check_for_ambiguous_column_refs(
+            expr,
+            &self.joined_aliases,
+            &tbl_left.name,
+            &self.join_using_cols,
+            &self.active_relations,
+        )?;
+        Ok(true)
+    }
+
+    /// Plan the scalar subqueries of `conjunct`, a condition that reads both inputs of a
+    /// join, as columns of the input that the comparison operand holding them reads (else
+    /// the left input), and return the condition reading those columns, whose names are
+    /// added to `columns`. `None` if it has a correlated or another kind of subquery.
+    fn lift_uncorrelated_subqueries(
+        &mut self,
+        conjunct: &SQLExpr,
+        left: &mut TableInfo,
+        right: &mut TableInfo,
+        columns: &mut Vec<PlSmallStr>,
+    ) -> PolarsResult<Option<SQLExpr>> {
+        struct Lift {
+            subquery_depth: usize,
+            subqueries: Vec<(PlSmallStr, Box<Query>)>,
+        }
+
+        impl VisitorMut for Lift {
+            type Break = ();
+
+            fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+                self.subquery_depth += 1;
+                ControlFlow::Continue(())
+            }
+
+            fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<()> {
+                self.subquery_depth -= 1;
+                ControlFlow::Continue(())
+            }
+
+            fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+                // A subquery operand of ANY/ALL is a set, not a value.
+                if self.subquery_depth == 0
+                    && matches!(expr, SQLExpr::AnyOp { .. } | SQLExpr::AllOp { .. })
+                {
+                    return ControlFlow::Break(());
+                }
+                ControlFlow::Continue(())
+            }
+
+            fn post_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+                if self.subquery_depth == 0
+                    && let SQLExpr::Subquery(query) = expr
+                {
+                    let name =
+                        format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}", unique_column_name());
+                    self.subqueries.push((name.clone(), query.clone()));
+                    *expr = SQLExpr::Identifier(Ident::with_quote('"', name.as_str()));
+                }
+                ControlFlow::Continue(())
+            }
+        }
+
+        let mut lifted = conjunct.clone();
+        // The subqueries of each operand of a comparison go to the input it reads.
+        let operands = match &mut lifted {
+            SQLExpr::BinaryOp {
+                left: lhs,
+                right: rhs,
+                ..
+            } => vec![&mut **lhs, &mut **rhs],
+            expr => vec![expr],
+        };
+        let (mut left_subqueries, mut right_subqueries) = (vec![], vec![]);
+        for operand in operands {
+            let on_right = matches!(
+                self.conjunct_join_inputs(operand, left, right),
+                JoinInputs::Right
+            );
+            let mut lift = Lift {
+                subquery_depth: 0,
+                subqueries: vec![],
+            };
+            if dyn_visit::visit_mut(operand, &mut lift).is_break() {
+                return Ok(None);
+            }
+            if on_right {
+                right_subqueries.extend(lift.subqueries);
+            } else {
+                left_subqueries.extend(lift.subqueries);
+            }
+        }
+        if expr_contains_subquery(&lifted)
+            || left_subqueries
+                .iter()
+                .chain(&right_subqueries)
+                .any(|(_, query)| is_correlated_subquery(query, self.catalog_spellings()))
+        {
+            return Ok(None);
+        }
+        self.add_subquery_columns(left, left_subqueries, columns)?;
+        self.add_subquery_columns(right, right_subqueries, columns)?;
+        Ok(Some(lifted))
+    }
+
+    /// Add the values of the uncorrelated scalar `subqueries` to `tbl` as the columns they
+    /// name, and those names to `columns`.
+    fn add_subquery_columns(
+        &mut self,
+        tbl: &mut TableInfo,
+        subqueries: Vec<(PlSmallStr, Box<Query>)>,
+        columns: &mut Vec<PlSmallStr>,
+    ) -> PolarsResult<()> {
+        if subqueries.is_empty() {
+            return Ok(());
+        }
+        let mut values = subqueries
+            .iter()
+            .map(|(_, query)| {
+                parse_sql_expr(&SQLExpr::Subquery(query.clone()), self, Some(&tbl.schema))
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let (frame, placeholders) = self.process_subqueries(
+            tbl.frame.clone(),
+            values.iter_mut().collect(),
+            SubqueryShape::Broadcast,
+        )?;
+        let values: Vec<Expr> = values
+            .into_iter()
+            .zip(&subqueries)
+            .map(|(value, (name, _))| value.alias(name.clone()))
+            .collect();
+        tbl.frame = drop_subquery_placeholders(frame.with_columns(values), placeholders);
+        tbl.schema = self.get_frame_schema(&mut tbl.frame)?;
+        columns.extend(subqueries.into_iter().map(|(name, _)| name));
+        Ok(())
     }
 
     /// Which input an `ASOF JOIN` match operand reads: `Some(true)` for the left input,
@@ -6281,6 +6497,16 @@ fn process_join_on(
                 let left_input = join_operand_input(ctx, left, tbl_left, tbl_right);
                 if left_input.is_some()
                     && left_input == join_operand_input(ctx, right, tbl_left, tbl_right)
+                {
+                    return process_join_predicate(ctx, sql_expr, tbl_left, tbl_right);
+                }
+                // An operand that reads both inputs is no key, but a condition on the
+                // joined rows.
+                let inputs =
+                    [left, right].map(|e| ctx.conjunct_join_inputs(e, tbl_left, tbl_right));
+                if inputs.iter().any(|i| matches!(i, JoinInputs::Both))
+                    && !inputs.iter().any(|i| matches!(i, JoinInputs::Unknown))
+                    && ctx.is_joined_rows_condition(sql_expr, tbl_left, tbl_right)?
                 {
                     return process_join_predicate(ctx, sql_expr, tbl_left, tbl_right);
                 }
