@@ -23,7 +23,7 @@ pub const DEFAULT_FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 /// Smallest error a sketch can be parameterised for.
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
 
-/// Looseness of the formal KLL error bound (estimated by measuring).
+/// Looseness of the formal KLL error bound (estimated by measuring, with a shared count).
 const KLL_BOUND_LOOSENESS: f64 = 3.8;
 /// Looseness of the formal REQ error bound (estimated by measuring).
 const REQ_BOUND_LOOSENESS: f64 = 37.0;
@@ -314,7 +314,8 @@ pub mod kll {
         //       n * 2^(H-2) / (k * c) * (1 + 1/(2c) + 1/(2c)^2 + ...)
         //    == n * 2^(H-1) / k * (1/(2c) + 1/(2c)^2 + 1/(2c)^3 + ...)
         //  * Level H-1 was either created by compacting k items of weight 2^(H-2), or added by
-        //    `raise_to_count(G)` with `k * 2^(H-2) ≤ G ≤ n`. Either way, `k * 2^(H-2) ≤ n`.
+        //    `raise_height_for_num_items(G)` with `k * 2^(H-2) ≤ G`, where `finalize` asserts
+        //    `G ≤ n`. Either way, `k * 2^(H-2) ≤ n`.
         //    Rewrite ⇒ n/k ≥ 2^(H-2) ⇒ 2^(H-1) ≤ 2*(n/k).
         //  * Finish: Total variance (in terms of (n/k)²) is at most 2 * (1/(2c) + 1/(2c)^2 + ...).
         let compactor_var = 2.0 * geometric_tail(1.0 / (2.0 * CAPACITY_DECAY));
@@ -530,8 +531,8 @@ pub mod kll {
         ///
         /// # Panics
         ///
-        /// Panics if the sketches sharing its count consumed more items than were merged into
-        /// this one.
+        /// Panics if the sketches sharing its count synced more items to it than were merged
+        /// into this one.
         pub fn finalize(self) -> FinalizedSketch<T> {
             self.0.finalize()
         }
@@ -790,7 +791,8 @@ pub mod kll {
 
             self.consumed_items += other.consumed_items;
             if let Some(shared_count) = &mut self.shared_count {
-                // `other` syncs its own items, if it shares this count at all.
+                // Leave out `other`'s items: it may have synced them already, and an undercount
+                // is safe.
                 shared_count.synced_items += other.consumed_items;
             }
             // Absorb the low-weight compactors into our sampler.
@@ -831,8 +833,8 @@ pub mod kll {
                 let count = shared_count.count.load(Ordering::Relaxed);
                 assert!(
                     count <= consumed_items,
-                    "sketches sharing a count consumed {count} items, but only {consumed_items} \
-                     were merged into this one"
+                    "sketches sharing a count synced {count} items to it, but only \
+                     {consumed_items} were merged into this one"
                 );
             }
             let height = base_height + levels.len();
@@ -1519,9 +1521,9 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
     }
 
     /// See [`KLLSketch::with_shared_count`]. A no-op for the other methods.
-    pub fn with_shared_counter(self, counter: Arc<AtomicU64>) -> Self {
+    pub fn with_shared_count(self, count: Arc<AtomicU64>) -> Self {
         match self {
-            Sketch::Kll(s) => Sketch::Kll(s.with_shared_count(counter)),
+            Sketch::Kll(s) => Sketch::Kll(s.with_shared_count(count)),
             s @ (Sketch::Req(_) | Sketch::DoubleReq(_)) => s,
         }
     }

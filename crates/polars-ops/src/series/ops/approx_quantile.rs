@@ -39,7 +39,7 @@ where
     let shared_count = Arc::default();
     let build = |items: &[T]| {
         let mut sketch = Sketch::new(method, error, failure_probability)
-            .with_shared_counter(Arc::clone(&shared_count));
+            .with_shared_count(Arc::clone(&shared_count));
         for item in items {
             sketch.update(item);
         }

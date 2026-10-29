@@ -51,8 +51,13 @@ macro_rules! with_match_sketch_item {
     }};
 }
 
-/// Set `is_single_group` if the reduction only ever has one group, and every reduction derived
-/// from it through `new_empty` is combined into it before it is finalized.
+/// Set `is_single_group` only if the reduction has a single group and is finalized once, after
+/// every reduction derived from it through `new_empty` was combined into it.
+///
+/// # Panics
+///
+/// With `is_single_group` set incorrectly, `finalize` panics at best, and at worst the estimates
+/// exceed the requested error.
 pub fn new_approx_quantile_sketch_reduction(
     dtype: DataType,
     method: ApproxQuantileMethod,
@@ -135,7 +140,7 @@ where
     ) -> Self {
         let mut template = Sketch::new(&method, error, failure_probability);
         if is_single_group {
-            template = template.with_shared_counter(Arc::default());
+            template = template.with_shared_count(Arc::default());
         }
         Self {
             template,
