@@ -513,29 +513,42 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
             Self { needles, table }
         }
 
+        /// Whether `block` contains any of the bytes, without early exit so that it vectorizes.
+        #[inline(always)]
+        fn in_block<const W: usize>(&self, block: &[u8; W]) -> bool {
+            (block.iter()).fold(false, |acc, &b| {
+                acc | self.needles.iter().fold(false, |acc, &n| acc | (b == n))
+            })
+        }
+
         /// Whether `s` contains any of the bytes. Short fields use the table, longer ones SIMD
         /// blocks. Compat builds use memchr for long fields because it detects AVX2 at runtime.
         #[inline(always)]
         fn any_in(&self, s: &[u8]) -> bool {
-            if s.len() < 32 {
-                return s.iter().any(|&b| self.table[b as usize]);
+            match s.len() {
+                0..16 => s.iter().any(|&b| self.table[b as usize]),
+                16..32 => {
+                    // The first and last 16 bytes in one block. 16-byte blocks do not vectorize
+                    // well for every number of needles.
+                    let mut both = [0; 32];
+                    both[..16].copy_from_slice(s.first_chunk::<16>().unwrap());
+                    both[16..].copy_from_slice(s.last_chunk::<16>().unwrap());
+                    self.in_block(&both)
+                },
+                128.. if !cfg!(target_feature = "avx2") => {
+                    self.needles.chunks(3).any(|c| match *c {
+                        [a, b, c] => memchr3(a, b, c, s).is_some(),
+                        [a, b] => memchr2(a, b, s).is_some(),
+                        [a] => memchr(a, s).is_some(),
+                        _ => unreachable!(),
+                    })
+                },
+                _ => {
+                    let (blocks, rest) = s.as_chunks::<32>();
+                    blocks.iter().any(|block| self.in_block(block))
+                        || (!rest.is_empty() && self.in_block(s.last_chunk::<32>().unwrap()))
+                },
             }
-            if !cfg!(target_feature = "avx2") && s.len() >= 128 {
-                return self.needles.chunks(3).any(|c| match *c {
-                    [a, b, c] => memchr3(a, b, c, s).is_some(),
-                    [a, b] => memchr2(a, b, s).is_some(),
-                    [a] => memchr(a, s).is_some(),
-                    _ => unreachable!(),
-                });
-            }
-            let in_block = |block: &[u8; 32]| {
-                (block.iter()).fold(false, |acc, &b| {
-                    acc | self.needles.iter().fold(false, |acc, &n| acc | (b == n))
-                })
-            };
-            let (blocks, rest) = s.as_chunks::<32>();
-            blocks.iter().any(in_block)
-                || (!rest.is_empty() && in_block(s.last_chunk::<32>().unwrap()))
         }
     }
 
@@ -567,34 +580,6 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     buf.push(quote_char);
                     serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                     buf.push(quote_char);
-                };
-            Box::new(StringSerializer { serialize, iter })
-        },
-        QuoteStyle::Necessary
-            if !(options.line_terminator.chars())
-                .any(|c| is_extra_terminator_char(c, options.separator)) =>
-        {
-            // TODO: Use `Specials` here too, so fields without special bytes are scanned once, not twice.
-            let serialize =
-                move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
-                    let Some(s) = f(iter) else {
-                        buf.extend_from_slice(options.null.as_bytes());
-                        return;
-                    };
-                    let quote_char = options.quote_char;
-                    // An empty string conflicts with null, so it is necessary to quote.
-                    if s.is_empty() {
-                        buf.extend_from_slice(&[quote_char, quote_char]);
-                        return;
-                    }
-                    let needs_quote = memchr3(options.separator, LF, CR, s.as_bytes()).is_some();
-                    if needs_quote {
-                        buf.push(quote_char);
-                    }
-                    serialize_str_escaped(buf, s.as_bytes(), quote_char, needs_quote);
-                    if needs_quote {
-                        buf.push(quote_char);
-                    }
                 };
             Box::new(StringSerializer { serialize, iter })
         },
@@ -631,7 +616,12 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
             let mut extra = (options.line_terminator.chars())
                 .filter(|&c| is_extra_terminator_char(c, separator));
             let first = extra.next();
-            if let Some(first) = first.filter(|&c| c.is_ascii() && extra.all(|d| d == c)) {
+            if first.is_none() {
+                // The default terminators, e.g. `\n` or `\r\n`.
+                let specials = Specials::new([separator, LF, CR, quote_char]);
+                let serialize = serialize_necessary(f, move |s, _| specials.any_in(s.as_bytes()));
+                Box::new(StringSerializer { serialize, iter })
+            } else if let Some(first) = first.filter(|&c| c.is_ascii() && extra.all(|d| d == c)) {
                 // One extra byte, e.g. `;`: a single scan decides.
                 let specials = Specials::new([separator, LF, CR, quote_char, first as u8]);
                 let serialize = serialize_necessary(f, move |s, _| specials.any_in(s.as_bytes()));
@@ -1126,10 +1116,12 @@ mod test {
         check_string_serialization(&with(";", b'\t', b'\''), Some("a,\"b"), "a,\"b");
 
         // Every block size of the scans, with each special byte at each position.
-        for (options, specials) in [
-            (&necessary_quote_semicolon, [";", ",", "\n", "\r"]),
-            (&necessary_quote_two, ["|", "\t", ",", "\n"]),
-        ] {
+        let sweeps: [(&SerializeOptions, &[&str]); 3] = [
+            (&necessary_quote, &[",", "\n", "\r"]),
+            (&necessary_quote_semicolon, &[";", ",", "\n", "\r"]),
+            (&necessary_quote_two, &["|", "\t", ",", "\n"]),
+        ];
+        for (options, specials) in sweeps {
             for len in (1..=80).chain([127, 128, 129, 255, 256, 257, 1000]) {
                 let plain = "x".repeat(len);
                 check_string_serialization(options, Some(&plain), &plain);
