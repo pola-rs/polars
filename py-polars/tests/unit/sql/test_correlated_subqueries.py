@@ -2357,3 +2357,170 @@ def test_correlated_subquery_group_by_errors(query: str) -> None:
     }
     with pytest.raises(pl.exceptions.PolarsError):
         pl.SQLContext(frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The first values per outer row in the subquery's order.
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.x DESC LIMIT 1
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k NOT IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.x LIMIT 2 OFFSET 1
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.j IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k
+            ORDER BY c.x DESC NULLS LAST FETCH FIRST 2 ROWS ONLY
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck AS v FROM c WHERE c.nk = n.k ORDER BY v DESC, 1 LIMIT 1
+        )
+        """,
+        "SELECT n.k FROM n WHERE n.k NOT IN (SELECT c.ck FROM c WHERE c.nk = n.k LIMIT 0)",
+        # Values and sort keys are only computed for the matching inner rows.
+        """
+        SELECT n.k FROM n WHERE 3 IN (
+            SELECT CAST(c.s AS INT) FROM c WHERE c.nk < n.k LIMIT 20
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk < n.k ORDER BY CAST(c.s AS INT) DESC LIMIT 1
+        )
+        """,
+        # No more rows than the limit.
+        "SELECT n.k FROM n WHERE n.k IN (SELECT c.ck FROM c WHERE c.nk = n.k LIMIT 5)",
+        # Correlation other than equalities.
+        """
+        SELECT n.k FROM n WHERE n.j IN (
+            SELECT c.ck FROM c WHERE c.nk < n.k ORDER BY c.x DESC, c.ck LIMIT 1
+        )
+        """,
+        # An ORDER BY key of the outer query is the same for all rows of an outer row.
+        """
+        SELECT n.k, (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY n.j, c.x DESC LIMIT 1
+        ) AS top FROM n
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY j DESC LIMIT 5
+        )
+        """,
+    ],
+)
+def test_correlated_subquery_limit(query: str) -> None:
+    frames = {
+        "n": pl.DataFrame({"k": [1, 2, 3, None], "j": [1, 3, 2, 1]}),
+        "c": pl.DataFrame(
+            {
+                "nk": [1, 1, 1, 2, 2, 2, 3, None],
+                "ck": [1, 3, 2, 3, 2, 4, 2, 1],
+                "x": [1, 2, 9, 5, None, 4, None, 7],
+                "s": ["1", "3", "2", "3", "2", "4", "2", "bad"],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # A limit of the distinct values.
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT DISTINCT c.ck FROM c WHERE c.nk = n.k ORDER BY c.ck LIMIT 1
+        )
+        """,
+        # An ORDER BY key reading both the subquery and the outer query.
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY c.x + n.k LIMIT 1
+        )
+        """,
+        # A limit that isn't a literal count, or is too large.
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k LIMIT (SELECT 1)
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k LIMIT 9223372036854775808
+        )
+        """,
+        # A window over the inner rows.
+        """
+        SELECT n.k FROM n WHERE 2 IN (
+            SELECT ROW_NUMBER() OVER (ORDER BY c.x) FROM c WHERE c.nk = n.k
+            ORDER BY c.x LIMIT 2
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE 2 IN (
+            SELECT ROW_NUMBER() FROM c WHERE c.nk = n.k ORDER BY c.x LIMIT 20
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE 3 IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k ORDER BY ROW_NUMBER() % 2, c.x LIMIT 1
+        )
+        """,
+        # A constant, which is not one value per inner row.
+        """
+        SELECT n.k FROM n WHERE 1 IN (
+            SELECT 1 FROM c WHERE c.nk = n.k LIMIT 1 OFFSET 1
+        )
+        """,
+        "SELECT n.k FROM n WHERE 1 IN (SELECT NULL FROM c WHERE c.nk < n.k LIMIT 1)",
+        # ORDER BY keys that read the output, or aren't a column of the outer query.
+        """
+        SELECT n.k, (
+            SELECT c.x FROM c WHERE c.nk = n.k ORDER BY CAST(n.j AS INT), c.x LIMIT 1
+        ) FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT c.x AS j FROM c WHERE c.nk = n.k ORDER BY j + 1 DESC LIMIT 1
+        ) FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT c.x FROM c WHERE c.nk = n.k ORDER BY RANDOM() + n.k LIMIT 1
+        ) FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT c.x FROM c WHERE c.nk = n.k ORDER BY SUM(n.k) LIMIT 1
+        ) FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT c.x FROM c WHERE c.nk = n.k ORDER BY COLUMNS('^ck$') + n.k LIMIT 1
+        ) FROM n
+        """,
+    ],
+)
+def test_correlated_subquery_limit_errors(query: str) -> None:
+    frames = {
+        "n": pl.DataFrame({"k": [1, 2], "j": [100, 100]}),
+        "c": pl.DataFrame({"nk": [1, 1, 2], "ck": [1, 2, 3], "x": [1, 2, 3]}),
+    }
+    with pytest.raises(pl.exceptions.PolarsError):
+        pl.SQLContext(frames).execute(query, eager=True)
