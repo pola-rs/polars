@@ -42,7 +42,7 @@ use crate::sql_visitors::{
     expr_contains_subquery, expr_has_window_functions, has_column_selector, is_subquery_expr,
 };
 use crate::subquery_pull_up::ScopeColumns;
-use crate::{SQLContext, unique_column_name};
+use crate::{SQLContext, col, unique_column_name};
 
 impl SQLContext {
     // Entry point: offer each WHERE conjunct to the rewrites, returning the

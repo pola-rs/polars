@@ -51,7 +51,7 @@ use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
     strip_utc_offset,
 };
-use crate::{SQLContext, unique_column_name};
+use crate::{SQLContext, col, struct_field, unique_column_name};
 
 #[inline]
 #[cold]
@@ -955,10 +955,10 @@ impl SQLExprVisitor<'_> {
             expr = if infer_index {
                 match p.parse::<i64>() {
                     Ok(idx) => expr.list().get(lit(idx), true),
-                    Err(_) => expr.struct_().field_by_name(p),
+                    Err(_) => struct_field(expr, p),
                 }
             } else {
-                expr.struct_().field_by_name(p)
+                struct_field(expr, p)
             }
         }
         Ok(expr)
@@ -2393,10 +2393,10 @@ pub(crate) fn resolve_compound_identifier(
         for ident in remaining_idents {
             let name = ident.value.as_str();
             match dtype {
-                Some(DataType::Struct(fields)) if name == "*" => {
+                Some(DataType::Struct(fields)) if is_wildcard(ident) => {
                     return Ok(fields
                         .iter()
-                        .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                        .map(|fld| struct_field(column.clone(), fld.name.clone()))
                         .collect());
                 },
                 Some(DataType::Struct(fields)) => {
@@ -2405,20 +2405,21 @@ pub(crate) fn resolve_compound_identifier(
                         .find(|fld| fld.name == name)
                         .map(|fld| &fld.dtype);
                 },
-                Some(dtype) if name == "*" => {
+                Some(dtype) if is_wildcard(ident) => {
                     polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
                 },
                 _ => dtype = None,
             }
-            column = column.struct_().field_by_name(name);
+            column = struct_field(column, name);
         }
         return Ok(vec![column]);
     }
 
-    let name = &remaining_idents.next().unwrap().value;
+    let name_ident = remaining_idents.next().unwrap();
+    let name = &name_ident.value;
 
     // handle "table.*" wildcard expansion
-    if lf.is_some() && name == "*" {
+    if lf.is_some() && is_wildcard(name_ident) {
         return schema
             .iter_names_and_dtypes()
             .map(|(name, dtype)| {
@@ -2465,10 +2466,10 @@ pub(crate) fn resolve_compound_identifier(
     for ident in remaining_idents {
         let name = ident.value.as_str();
         match dtype {
-            Some(DataType::Struct(fields)) if name == "*" => {
+            Some(DataType::Struct(fields)) if is_wildcard(ident) => {
                 return Ok(fields
                     .iter()
-                    .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                    .map(|fld| struct_field(column.clone(), fld.name.clone()))
                     .collect());
             },
             Some(DataType::Struct(fields)) => {
@@ -2477,16 +2478,21 @@ pub(crate) fn resolve_compound_identifier(
                     .find(|fld| fld.name == name)
                     .map(|fld| &fld.dtype);
             },
-            Some(dtype) if name == "*" => {
+            Some(dtype) if is_wildcard(ident) => {
                 polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
             },
             _ => {
                 dtype = None;
             },
         }
-        column = column.struct_().field_by_name(name);
+        column = struct_field(column, name);
     }
     Ok(vec![column])
+}
+
+/// Whether `ident` is a `*` wildcard; a quoted `"*"` names a column or field.
+fn is_wildcard(ident: &Ident) -> bool {
+    ident.quote_style.is_none() && ident.value == "*"
 }
 
 /// `lhs <op> rhs` with SQL semantics, resolved once the operand dtypes are known

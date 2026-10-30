@@ -70,7 +70,7 @@ use crate::subquery::{
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
-use crate::unique_column_name;
+use crate::{col, unique_column_name};
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -3145,9 +3145,11 @@ impl SQLContext {
                 final_names.push(col(name));
             }
 
+            // Without FROM the frame has one row, or none when WHERE removes it.
+            let reads_frame = !select_stmt.from.is_empty() || select_stmt.selection.is_some();
             // Establish the final projection
             if have_order_by {
-                if select_stmt.from.is_empty() {
+                if !reads_frame {
                     lf = lf.select(projections);
                 } else if projection_heights
                     .contains(ExprSqlProjectionHeightBehavior::MaintainsColumn)
@@ -3198,7 +3200,7 @@ impl SQLContext {
             // Note: If `have_order_by`, with_columns is already done above.
             if projection_heights == ExprSqlProjectionHeightBehavior::InheritsContext
                 && !have_order_by
-                && !select_stmt.from.is_empty()
+                && reads_frame
                 && !final_cols.is_empty()
             {
                 // All projections need to be broadcasted to table height, so evaluate in `with_columns()`
@@ -5993,14 +5995,6 @@ impl SQLContext {
 
 fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
     match expr {
-        Expr::Column(nm) if is_regex_colname(nm.as_str()) => {
-            let re = polars_utils::regex_cache::compile_regex(&nm).unwrap();
-            schema
-                .iter_names()
-                .filter(|name| re.is_match(name))
-                .map(|name| col(name.clone()))
-                .collect::<Vec<_>>()
-        },
         Expr::Selector(s) => s
             .into_columns(schema, &Default::default())
             .unwrap()
@@ -6009,10 +6003,6 @@ fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
             .collect::<Vec<_>>(),
         _ => vec![expr],
     }
-}
-
-fn is_regex_colname(nm: &str) -> bool {
-    nm.starts_with('^') && nm.ends_with('$')
 }
 
 /// Render an `ObjectName` (dot-separated identifier parts) back to a string.
