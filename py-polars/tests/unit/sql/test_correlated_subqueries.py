@@ -1585,7 +1585,7 @@ def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
         "SELECT a.id, (SELECT b.w FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.id < a.v / 5) ORDER BY b.w DESC LIMIT 1) AS w FROM a",
         # A subquery in the condition of an inner join.
         "SELECT a.id, (SELECT MAX(d.y) FROM d JOIN b ON b.id = (SELECT MIN(c.b_id) FROM c WHERE c.id = a.id) WHERE d.x <= b.id * 4) AS m FROM a",
-        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b JOIN c ON c.b_id = b.id AND c.id = (SELECT d.x FROM d WHERE d.y = a.v * 10))",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b JOIN c ON c.b_id = b.id AND c.id = (SELECT d.x FROM d WHERE d.x = a.id))",
     ],
 )
 def test_correlated_subquery_reading_query_further_out(query: str) -> None:
@@ -1698,6 +1698,13 @@ def test_correlated_subquery_reading_query_further_out_scopes(query: str) -> Non
         "SELECT a.id, (SELECT COUNT(*) FROM d WHERE EXISTS (SELECT 1 FROM c WHERE c.k = d.k AND c.v > a.id)) AS n FROM a",
         # The condition of an outer join keeps its subquery.
         "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b LEFT JOIN d ON d.k = (SELECT c.k FROM c WHERE c.v = a.id * 10))",
+        # In WHERE, `a.id` would read the `a` joined after the condition.
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b JOIN d ON d.k = (SELECT c.k FROM c WHERE c.v = a.id) JOIN d AS a ON a.k = d.k)",
+        # A row number, or a scalar subquery with several rows, sees the repeated rows.
+        "SELECT a.id, 3 IN (SELECT ROW_NUMBER() OVER () FROM d WHERE EXISTS (SELECT 1 FROM c WHERE c.v < a.id * 10)) AS z FROM a",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM d WHERE d.k = (SELECT c.k FROM c WHERE c.v < a.id * 10))",
+        # The dropped ORDER BY of a subquery without FROM must still be checked.
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM d WHERE d.k = (SELECT a.id ORDER BY CAST('bad' AS INT)))",
     ],
 )
 def test_correlated_subquery_reading_query_further_out_unsupported(query: str) -> None:

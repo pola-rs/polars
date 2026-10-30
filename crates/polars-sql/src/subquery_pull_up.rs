@@ -313,39 +313,42 @@ fn prepare(scopes: &[Scope<'_>], x: &Query, read_as: ReadAs) -> PolarsResult<Opt
     };
     x_ctx.strict_relations = true;
 
-    let repeats_harmless = repeats_harmless(scopes.last().unwrap().ctx, x, select, read_as);
+    let repeats_harmless = repeats_harmless(x, select, read_as);
     let mut kept = Vec::new();
     let mut moved = Vec::new();
     let conjuncts = conjuncts
         .into_iter()
-        .map(|conj| (conj, None))
-        .chain(on_conjuncts.iter().map(|(join, conj)| (conj, Some(*join))));
-    for (conj, join) in conjuncts {
+        .map(|conj| (conj, false))
+        .chain(on_conjuncts.iter().map(|conj| (conj, true)));
+    for (conj, in_join) in conjuncts {
         let Some((compare, y)) = candidate(conj) else {
             kept.push(conj.clone());
             continue;
         };
         let x_frame = x_frame.as_ref().map(|(lf, schema)| (lf, schema.as_ref()));
+        let y_read_as = match strip_nested(conj) {
+            SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. } => ReadAs::Set,
+            _ => ReadAs::Value,
+        };
         let prepared_y = {
             let mut inner = scopes.to_vec();
             inner.push(Scope {
                 ctx: &x_ctx,
                 columns: frame_columns(x_frame),
             });
-            let y_read_as = match strip_nested(conj) {
-                SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. } => ReadAs::Set,
-                _ => ReadAs::Value,
-            };
             prepare(&inner, y, y_read_as).unwrap_or(None)
         };
         let y = prepared_y.as_ref().unwrap_or(y);
-        match try_move(scopes, &mut x_ctx, x_frame, compare, y, repeats_harmless).unwrap_or(None) {
+        // A filter can match a row of `x` with several values of a scalar `y`, which must
+        // instead raise.
+        let filters_allowed = repeats_harmless && matches!(y_read_as, ReadAs::Set);
+        match try_move(scopes, &mut x_ctx, x_frame, compare, y, filters_allowed).unwrap_or(None) {
             Some(m) => {
                 kept.extend(m.replaced);
                 moved.push((m.table, m.columns));
             },
-            None => match (join, &mut split_from) {
-                (Some(join), Some(from)) => restore_join_conjunct(from, join, conj.clone()),
+            None => match (in_join, &mut split_from) {
+                (true, Some(from)) => restore_join_conjunct(from, conj.clone()),
                 _ => kept.push(conj.clone()),
             },
         }
@@ -503,63 +506,48 @@ fn derived_table(query: Query, name: &str) -> TableWithJoins {
     }
 }
 
-/// `from` without the conjuncts of its inner join conditions that hold a subquery, and
-/// those conjuncts with the FROM item and join they come from, or `None` if there are
-/// none. Only a FROM item whose joins are all inner gives them up, so that they filter
-/// the rows as WHERE does.
+/// `from` without the conjuncts of the condition of its last join that hold a subquery,
+/// and those conjuncts, or `None` if there are none. Only a single FROM item whose joins
+/// are all inner gives them up: they then filter the rows as WHERE does, and read the
+/// same relations.
 #[allow(clippy::type_complexity)]
-fn split_join_candidates(
-    from: &[TableWithJoins],
-) -> Option<(Vec<TableWithJoins>, Vec<((usize, usize), SQLExpr)>)> {
-    let has_candidate = from.iter().flat_map(|item| &item.joins).any(|join| {
+fn split_join_candidates(from: &[TableWithJoins]) -> Option<(Vec<TableWithJoins>, Vec<SQLExpr>)> {
+    let [item] = from else {
+        return None;
+    };
+    let all_inner = item.joins.iter().all(|join| {
         matches!(
-            &join.join_operator,
-            JoinOperator::Join(JoinConstraint::On(on)) | JoinOperator::Inner(JoinConstraint::On(on))
-                if flatten_and_conditions(on).iter().any(|conj| candidate(conj).is_some())
+            join.join_operator,
+            JoinOperator::Join(_) | JoinOperator::Inner(_) | JoinOperator::CrossJoin(_)
         )
     });
-    if !has_candidate {
+    let (JoinOperator::Join(JoinConstraint::On(on)) | JoinOperator::Inner(JoinConstraint::On(on))) =
+        &item.joins.last()?.join_operator
+    else {
+        return None;
+    };
+    if !all_inner {
         return None;
     }
-    let mut from = from.to_vec();
-    let mut taken = Vec::new();
-    for (i, item) in from.iter_mut().enumerate() {
-        let all_inner = item.joins.iter().all(|join| {
-            matches!(
-                join.join_operator,
-                JoinOperator::Join(_) | JoinOperator::Inner(_) | JoinOperator::CrossJoin(_)
-            )
-        });
-        if !all_inner {
-            continue;
-        }
-        for (j, join) in item.joins.iter_mut().enumerate() {
-            let (JoinOperator::Join(JoinConstraint::On(on))
-            | JoinOperator::Inner(JoinConstraint::On(on))) = &join.join_operator
-            else {
-                continue;
-            };
-            let (moving, rest): (Vec<&SQLExpr>, Vec<&SQLExpr>) = flatten_and_conditions(on)
-                .into_iter()
-                .partition(|conj| candidate(conj).is_some());
-            if moving.is_empty() {
-                continue;
-            }
-            taken.extend(moving.into_iter().map(|conj| ((i, j), conj.clone())));
-            let rest =
-                combine_conditions(rest.into_iter().cloned().collect(), SQLBinaryOperator::And);
-            join.join_operator = match rest {
-                Some(on) => JoinOperator::Inner(JoinConstraint::On(on)),
-                None => JoinOperator::CrossJoin(JoinConstraint::None),
-            };
-        }
+    let (moving, rest): (Vec<&SQLExpr>, Vec<&SQLExpr>) = flatten_and_conditions(on)
+        .into_iter()
+        .partition(|conj| candidate(conj).is_some());
+    if moving.is_empty() {
+        return None;
     }
-    (!taken.is_empty()).then_some((from, taken))
+    let moving = moving.into_iter().cloned().collect();
+    let rest = combine_conditions(rest.into_iter().cloned().collect(), SQLBinaryOperator::And);
+    let mut from = from.to_vec();
+    from[0].joins.last_mut().unwrap().join_operator = match rest {
+        Some(on) => JoinOperator::Inner(JoinConstraint::On(on)),
+        None => JoinOperator::CrossJoin(JoinConstraint::None),
+    };
+    Some((from, moving))
 }
 
-/// Add `conj` back to the condition of join `j` of FROM item `i`.
-fn restore_join_conjunct(from: &mut [TableWithJoins], (i, j): (usize, usize), conj: SQLExpr) {
-    let join = &mut from[i].joins[j];
+/// Add `conj` back to the condition of the last join of `from`.
+fn restore_join_conjunct(from: &mut [TableWithJoins], conj: SQLExpr) {
+    let join = from[0].joins.last_mut().unwrap();
     let on = match std::mem::replace(
         &mut join.join_operator,
         JoinOperator::CrossJoin(JoinConstraint::None),
@@ -590,7 +578,16 @@ fn inline_from_less(selection: &SQLExpr) -> Option<SQLExpr> {
     fn value(subquery: &Query) -> Option<&SQLExpr> {
         let select = eligible_query_block(subquery)?;
         first_row_limit(subquery)?;
-        if !select.from.is_empty() || select.selection.is_some() || !select.named_window.is_empty()
+        // A clause that is dropped must not be left unchecked.
+        if !select.from.is_empty()
+            || select.selection.is_some()
+            || subquery.order_by.is_some()
+            || matches!(select.distinct, Some(Distinct::On(_)))
+            || select.exclude.is_some()
+            || !select.named_window.is_empty()
+            || !select.cluster_by.is_empty()
+            || !select.distribute_by.is_empty()
+            || !select.sort_by.is_empty()
         {
             return None;
         }
@@ -691,15 +688,15 @@ fn candidate(conj: &SQLExpr) -> Option<(Option<Compare<'_>>, &Query)> {
 
 /// Move `y`, compared by `compare` (or under EXISTS), into the FROM of `x`, whose context
 /// is `x_ctx` and whose frame is `x_frame` (`None` without FROM). `scopes` are the queries
-/// around `x`. `repeats_harmless` is whether a row of `x` may be repeated. `None` if `y`
-/// reads none of `scopes`, or isn't a shape that moves.
+/// around `x`. `filters_allowed` is whether a row of `x` may match several rows of `y`.
+/// `None` if `y` reads none of `scopes`, or isn't a shape that moves.
 fn try_move(
     scopes: &[Scope<'_>],
     x_ctx: &mut SQLContext,
     x_frame: Option<(&LazyFrame, &Schema)>,
     compare: Option<Compare<'_>>,
     y: &Query,
-    repeats_harmless: bool,
+    filters_allowed: bool,
 ) -> PolarsResult<Option<Moved>> {
     use SQLBinaryOperator::*;
     let Some(first_row) = first_row_limit(y) else {
@@ -850,7 +847,7 @@ fn try_move(
     }
     // A limit or an aggregate per key must see the rows that the filters drop.
     let distinct = !aggregates && !first_row;
-    if !filters.is_empty() && (!repeats_harmless || !distinct) {
+    if !filters.is_empty() && (!filters_allowed || !distinct) {
         return Ok(None);
     }
 
@@ -1183,13 +1180,15 @@ fn correlation_key(
 }
 
 /// The columns of the subquery that `conj` reads, and the depth in `chain` of the
-/// furthest query around it that it reads. `None` if it aggregates, calls a window
-/// function, or reads a column that its relation doesn't have.
+/// furthest query around it that it reads. `None` if it calls a function, or reads a
+/// column that its relation doesn't have.
 fn foreign_filter(
     chain: &[Scope<'_>],
     conj: &SQLExpr,
 ) -> PolarsResult<Option<(Vec<SQLExpr>, usize)>> {
-    if has_aggregate(chain[0].ctx, conj) || expr_has_window_functions(conj) {
+    // A function may read other rows or draw a random value, which differs once the
+    // filter runs per pair of rows.
+    if calls_function(conj) {
         return Ok(None);
     }
     let mut locals = Vec::new();
@@ -1214,9 +1213,9 @@ fn foreign_filter(
 }
 
 /// Whether repeating a row of `x` (whose body is `select`) keeps what the query around it
-/// reads: `x` is read as a set or for its first row, and doesn't aggregate or number its
-/// rows.
-fn repeats_harmless(ctx: &SQLContext, x: &Query, select: &Select, read_as: ReadAs) -> bool {
+/// reads: `x` is read as a set or for its first row, and calls no function outside of its
+/// subqueries. A function may aggregate, number the rows or draw a random value.
+fn repeats_harmless(x: &Query, select: &Select, read_as: ReadAs) -> bool {
     let read_once = match (read_as, first_row_limit(x)) {
         (ReadAs::Groups, _) => false,
         (_, Some(true)) => true,
@@ -1232,11 +1231,52 @@ fn repeats_harmless(ctx: &SQLContext, x: &Query, select: &Select, read_as: ReadA
         SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
         _ => None,
     });
+    let join_conditions = select
+        .from
+        .iter()
+        .flat_map(|item| &item.joins)
+        .filter_map(|join| match &join.join_operator {
+            JoinOperator::Join(JoinConstraint::On(on))
+            | JoinOperator::Inner(JoinConstraint::On(on)) => Some(on),
+            _ => None,
+        });
     read_once
         && !matches!(select.distinct, Some(Distinct::On(_)))
         && !projection
             .chain(order_by.iter().map(|ob| &ob.expr))
-            .any(|e| has_aggregate(ctx, e) || expr_has_window_functions(e))
+            .chain(&select.selection)
+            .chain(join_conditions)
+            .any(calls_function)
+}
+
+/// Whether `expr` calls a function outside of its subqueries.
+fn calls_function(expr: &SQLExpr) -> bool {
+    struct Functions {
+        query_depth: usize,
+    }
+
+    impl Visitor for Functions {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match expr {
+                SQLExpr::Function(_) if self.query_depth == 0 => ControlFlow::Break(()),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    dyn_visit::visit(expr, &mut Functions { query_depth: 0 }).is_break()
 }
 
 /// The dtype of `expr` over the frame of `x`, or `None` if it reads anything else.
