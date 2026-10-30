@@ -248,7 +248,7 @@ fn when_then(condition: SQLExpr, result: SQLExpr, else_result: Option<SQLExpr>) 
 /// Whether `expr` calls a function whose value depends on the query it is in: `UNNEST`,
 /// which can return several rows for one, `GROUPING` / `GROUPING_ID`, or a ranking or
 /// offset function, which may be called without OVER.
-fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
+pub(crate) fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
     visit_expressions(expr, |e| match e {
         SQLExpr::Function(function)
             if matches!(
@@ -277,7 +277,11 @@ fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
 /// `inner_schema`. An unqualified name binds to them when they have it; a qualified one
 /// when its qualifier names one of them or its first part is one of their (struct)
 /// columns.
-fn reads_inner_column(expr: &SQLExpr, inner_names: &[RelationName], inner_schema: &Schema) -> bool {
+pub(crate) fn reads_inner_column(
+    expr: &SQLExpr,
+    inner_names: &[RelationName],
+    inner_schema: &Schema,
+) -> bool {
     visit_expressions(expr, |e| {
         let inner = match e {
             SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),
