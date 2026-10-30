@@ -1297,7 +1297,7 @@ pub async fn csv_file_info(
 
                 let enough_rows = if let Some(options) = &header_only_options {
                     // The header is incomplete if none is found.
-                    let (header_schema, _) = read_until_start_and_infer_schema(
+                    let (header_schema, ..) = read_until_start_and_infer_schema(
                         options,
                         None,
                         extra_columns_policy == ExtraColumnsPolicy::Ignore,
@@ -1365,7 +1365,7 @@ pub async fn csv_file_info(
         };
 
         let mut first_row_len = 0;
-        let (schema, _) = read_until_start_and_infer_schema(
+        let (schema, ..) = read_until_start_and_infer_schema(
             csv_options,
             None,
             extra_columns_policy == ExtraColumnsPolicy::Ignore,
