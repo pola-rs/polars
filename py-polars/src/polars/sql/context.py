@@ -474,8 +474,8 @@ class SQLContext(Generic[FrameType]):
     def _execute_with_catalogs(self, query: str) -> PyLazyFrame:
         from polars.io.iceberg.functions import _scan_catalog_table
 
-        if (ddl := self._ctxt.catalog_ddl(query)) is not None:
-            return self._execute_catalog_ddl(ddl)._ldf
+        if (stmt := self._ctxt.catalog_statement(query)) is not None:
+            return self._execute_catalog_statement(stmt)._ldf
 
         tables = []
         identifier: list[str]
@@ -492,38 +492,38 @@ class SQLContext(Generic[FrameType]):
             tables.append((full_name, lf._ldf))
         return self._ctxt.execute_with_catalog_tables(query, tables)
 
-    def _execute_catalog_ddl(self, ddl: dict[str, Any]) -> LazyFrame:
-        """Perform the catalog DDL that `catalog_ddl` returned."""
-        config, instance, storage_options = self._catalogs[ddl["catalog"]]
+    def _execute_catalog_statement(self, stmt: dict[str, Any]) -> LazyFrame:
+        """Perform the catalog statement that `catalog_statement` returned."""
+        config, instance, storage_options = self._catalogs[stmt["catalog"]]
         catalog = (
             instance
             if instance is not None
             else config.class_(config.name, **config.properties)
         )
-        if ddl["kind"] == "drop_table":
-            response = _drop_catalog_table(catalog, ddl)
-        elif ddl["kind"] == "create_table":
+        if stmt["kind"] == "drop_table":
+            response = _drop_catalog_table(catalog, stmt)
+        elif stmt["kind"] == "create_table":
             response = _create_catalog_table(
                 catalog,
-                ddl,
+                stmt,
                 lambda query: wrap_ldf(self._execute_with_catalogs(query)),
                 storage_options,
             )
-        elif ddl["kind"] == "create_schema":
-            response = _create_catalog_namespace(catalog, ddl)
-        elif ddl["kind"] == "drop_schema":
-            response = _drop_catalog_namespace(catalog, ddl)
-        elif ddl["kind"] == "alter_table":
-            response = _alter_catalog_table(catalog, ddl)
-        elif ddl["kind"] == "insert":
+        elif stmt["kind"] == "create_schema":
+            response = _create_catalog_namespace(catalog, stmt)
+        elif stmt["kind"] == "drop_schema":
+            response = _drop_catalog_namespace(catalog, stmt)
+        elif stmt["kind"] == "alter_table":
+            response = _alter_catalog_table(catalog, stmt)
+        elif stmt["kind"] == "insert":
             response = _insert_catalog_table(
                 catalog,
-                ddl,
+                stmt,
                 lambda query: wrap_ldf(self._execute_with_catalogs(query)),
                 storage_options,
             )
         else:
-            msg = f"unsupported catalog statement {ddl['kind']!r}"
+            msg = f"unsupported catalog statement {stmt['kind']!r}"
             raise NotImplementedError(msg)
         return DataFrame({"Response": [response]}).lazy()
 
@@ -1470,7 +1470,7 @@ def _write_rows(
 
 def _insert_catalog_table(
     catalog: pyiceberg.catalog.Catalog,
-    ddl: dict[str, Any],
+    stmt: dict[str, Any],
     query_frame: Callable[[str], LazyFrame],
     storage_options: StorageOptionsDict | None,
 ) -> str:
@@ -1487,10 +1487,10 @@ def _insert_catalog_table(
     from polars.functions import lit, nth
     from polars.io.iceberg.functions import scan_iceberg
 
-    identifier: tuple[str, ...] = tuple(ddl["identifier"])
-    name, table_name = ddl["name"], _display_name(identifier)
-    statement = "INSERT OVERWRITE" if ddl["overwrite"] else "INSERT INTO"
-    response = f"{statement} {_display_name([ddl['catalog'], *identifier])}"
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    name, table_name = stmt["name"], _display_name(identifier)
+    statement = "INSERT OVERWRITE" if stmt["overwrite"] else "INSERT INTO"
+    response = f"{statement} {_display_name([stmt['catalog'], *identifier])}"
     missing = (
         f"table '{name}' does not exist: catalog table '{table_name}' could not be "
         "written"
@@ -1505,11 +1505,11 @@ def _insert_catalog_table(
         msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
         raise NoSuchTableError(msg) from error
 
-    lf = query_frame(ddl["query"])
+    lf = query_frame(stmt["query"])
     source = lf.collect_schema()
     target = scan_iceberg(table).collect_schema()
     required = {f.name for f in table.schema().fields if f.required}
-    columns = ddl["columns"] or list(target)
+    columns = stmt["columns"] or list(target)
     for i, column in enumerate(columns):
         if column not in target:
             msg = f"column '{column}' not found in table '{name}'; column names are case-sensitive"
@@ -1554,13 +1554,13 @@ def _insert_catalog_table(
         _write_rows(
             table,
             rows.select(exprs),
-            "overwrite" if ddl["overwrite"] else "append",
+            "overwrite" if stmt["overwrite"] else "append",
             storage_options,
         )
     except Exception as error:
         error.add_note(
             f"table '{name}' could not be written by {statement}: catalog table "
-            f"'{table_name}' of catalog '{ddl['catalog']}'"
+            f"'{table_name}' of catalog '{stmt['catalog']}'"
         )
         raise
     return response

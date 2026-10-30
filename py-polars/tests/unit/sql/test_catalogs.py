@@ -300,7 +300,9 @@ def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
         "DELETE FROM lake.tpch.lineitem",
     ],
 )
-def test_catalog_ddl_is_not_supported(lake: CountingCatalog, statement: str) -> None:
+def test_catalog_statement_is_not_supported(
+    lake: CountingCatalog, statement: str
+) -> None:
     with pytest.raises(
         SQLInterfaceError, match="attached catalog 'lake' is not supported"
     ):
