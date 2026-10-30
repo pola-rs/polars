@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use polars_utils::IdxSize;
+
 /// Below this many rows of work per partition, fewer partitions than pipelines are used.
 const DEFAULT_MIN_ROWS_PER_PARTITION: u64 = 4096;
 /// The smallest frame worth storing for one partition from one batch, in bytes.
@@ -9,6 +11,9 @@ const MAX_PARTITIONS: u64 = 1024;
 /// The estimated state of one group in one reduction, in bytes, used when there are no cold
 /// rows to estimate the size of a group from.
 const REDUCTION_STATE_BYTES: u64 = 16;
+/// The memory for the partitions being built and sent is at least the memory budget divided by
+/// this.
+const MIN_PARTITION_MEMORY_DIVISOR: u64 = 16;
 
 pub fn budget() -> u64 {
     polars_config::config().ooc_memory_budget_bytes()
@@ -33,6 +38,8 @@ pub struct InputStats {
     pub pre_agg_key_bytes: u64,
     /// The size of the states of reductions that grow with the values of a group.
     pub pre_agg_state_bytes: u64,
+    /// The number of states of the other reductions, summed over the pre-aggregate groups.
+    pub pre_agg_fixed_states: u64,
     pub num_reductions: u64,
     /// Whether a reduction has states that grow with the values of a group.
     pub has_growing_states: bool,
@@ -56,6 +63,15 @@ impl InputStats {
         } else {
             result_bytes
         }
+    }
+
+    /// The estimated memory of the pre-aggregates and their split into partitions, which is kept
+    /// until all partitions are built.
+    fn pre_agg_bytes(&self) -> u64 {
+        let state_bytes =
+            self.pre_agg_state_bytes + self.pre_agg_fixed_states * REDUCTION_STATE_BYTES;
+        let split_bytes = self.pre_agg_groups * size_of::<IdxSize>() as u64;
+        self.pre_agg_key_bytes + state_bytes + split_bytes
     }
 
     /// The estimated memory of one group of the result, in bytes.
@@ -97,8 +113,9 @@ impl GroupByTuning {
     }
 
     /// The number of partitions: enough for every pipeline to have work, and enough that the
-    /// results of any `num_pipelines` partitions fit in memory. Above `num_pipelines` it is a
-    /// multiple of `num_pipelines`.
+    /// results of any `2 * num_pipelines` partitions fit in half the memory budget, or in what
+    /// the pre-aggregates leave of it if that is less. Above `num_pipelines` it is a multiple of
+    /// `num_pipelines`.
     pub fn num_partitions(&self, stats: &InputStats, num_pipelines: usize) -> usize {
         let work = stats.work();
         if work == 0 {
@@ -111,7 +128,10 @@ impl GroupByTuning {
         let t = num_pipelines.max(1) as u64;
         let n_rows = (work / self.min_rows_per_partition).clamp(1, t);
         let result_bytes = (2 * t).saturating_mul(stats.result_bytes());
-        let n_memory = result_bytes.div_ceil((budget() / 2).max(1));
+        let partition_memory = (budget() / 2)
+            .min(budget().saturating_sub(stats.pre_agg_bytes()))
+            .max(budget() / MIN_PARTITION_MEMORY_DIVISOR);
+        let n_memory = result_bytes.div_ceil(partition_memory.max(1));
         if n_memory <= t {
             return n_rows.max(n_memory) as usize;
         }

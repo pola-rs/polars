@@ -52,6 +52,9 @@ pub struct PageWriteSpec {
     pub bytes_written: u64,
     pub compression: Compression,
     pub statistics: Option<Statistics>,
+    /// Combined length in bytes of all byte array values in a data page, see
+    /// [`DataPage::unencoded_byte_array_data_bytes`](crate::parquet::page::DataPage::unencoded_byte_array_data_bytes).
+    pub unencoded_byte_array_data_bytes: Option<i64>,
 }
 
 pub(crate) fn write_page<W: Write>(
@@ -116,6 +119,7 @@ pub(crate) fn write_page<W: Write>(
         num_values,
         num_rows,
         num_nulls,
+        unencoded_byte_array_data_bytes: compressed_page.unencoded_byte_array_data_bytes(),
     })
 }
 
@@ -168,6 +172,7 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
         num_rows,
         num_values,
         num_nulls,
+        unencoded_byte_array_data_bytes: compressed_page.unencoded_byte_array_data_bytes(),
     })
 }
 

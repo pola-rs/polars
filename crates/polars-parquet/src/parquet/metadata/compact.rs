@@ -6,8 +6,9 @@
 //! Two wins over the format-crate types:
 //!
 //! 1. **Smaller resident footprint.** Fields with no in-tree consumer
-//!    (`encodings`, `path_in_schema`, `key_value_metadata`,
-//!    `encoding_stats`, `size_statistics`, `type_`) are omitted entirely.
+//!    (`encodings`, `path_in_schema`, `key_value_metadata`, `type_`) are
+//!    omitted entirely, `encoding_stats` is reduced to one flag, and
+//!    `size_statistics` to one size.
 //!    Saves ~110 bytes per `ColumnChunk` × 200k chunks on a wide file.
 //!
 //! 2. **Shared-buffer statistics.** `min_value` / `max_value` are stored as
@@ -70,7 +71,9 @@ pub(crate) struct CompactStatistics {
 /// - `encodings`: no in-workspace caller
 /// - `path_in_schema`: `ColumnDescriptor::path_in_schema` covers it
 /// - `key_value_metadata`: only file-level KV is exposed
-/// - `encoding_stats`, `size_statistics`: no public accessors
+///
+/// `encoding_stats` is reduced to `dictionary_fallback`, and `size_statistics`
+/// to `unencoded_byte_array_data_bytes`.
 #[derive(Debug, Clone)]
 pub(crate) struct CompactColumnMetaData {
     pub codec: Compression,
@@ -83,6 +86,14 @@ pub(crate) struct CompactColumnMetaData {
     pub statistics: Option<CompactStatistics>,
     pub bloom_filter_offset: Option<i64>,
     pub bloom_filter_length: Option<i32>,
+    /// Whether some data pages are not dictionary-encoded, from the page
+    /// encoding stats. `None` when the writer doesn't record them.
+    pub dictionary_fallback: Option<bool>,
+    /// Combined length in bytes of all byte array values in the chunk, from the
+    /// size statistics. Every occurrence counts, so a value repeated ten times
+    /// counts ten times. Nulls and the 4-byte length prefixes don't count.
+    /// `None` if the file doesn't have it.
+    pub unencoded_byte_array_data_bytes: Option<i64>,
 }
 
 /// Compact replacement for `polars_parquet_format::ColumnChunk`.

@@ -946,6 +946,73 @@ def test_rolling_cov_corr_nulls() -> None:
     assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
 
+_I = np.arange(400)
+
+
+@pytest.mark.parametrize(
+    ("x", "y"),
+    [
+        # Far from zero.
+        (1e8 + 1e-3 * np.sin(_I), 5e7 - 3e-3 * np.cos(_I)),
+        # The level jumps from 1 to 1e7 in steps, with small variation within a step.
+        (
+            10.0 ** (_I // 50) + 1e-3 * np.sin(_I),
+            10.0 ** (_I // 50) - 2e-3 * np.cos(_I),
+        ),
+    ],
+)
+def test_rolling_cov_corr_precision_29922(
+    x: np.ndarray[Any, Any], y: np.ndarray[Any, Any]
+) -> None:
+    w = 20
+    res = pl.DataFrame({"x": x, "y": y}).select(
+        cov_xx=pl.rolling_cov("x", "x", window_size=w),
+        corr_xx=pl.rolling_corr("x", "x", window_size=w),
+        cov_xy=pl.rolling_cov("x", "y", window_size=w),
+        corr_xy=pl.rolling_corr("x", "y", window_size=w),
+    )[w - 1 :]
+
+    # Subtracting a value of the window avoids cancellation in the reference.
+    c = np.array(
+        [
+            np.cov(x[k - w + 1 : k + 1] - x[k], y[k - w + 1 : k + 1] - y[k])
+            for k in range(w - 1, len(x))
+        ]
+    )
+    var_x, var_y, cov_xy = c[:, 0, 0], c[:, 1, 1], c[:, 0, 1]
+    scale = np.sqrt(var_x * var_y)
+
+    assert res["cov_xx"].to_list() == pytest.approx(var_x, rel=1e-4)
+    assert res["corr_xx"].to_list() == pytest.approx(np.ones(len(c)), abs=1e-6)
+    assert np.all(np.abs(res["cov_xy"].to_numpy() - cov_xy) <= 1e-4 * scale)
+    assert res["corr_xy"].to_list() == pytest.approx(cov_xy / scale, abs=1e-4)
+
+
+def test_rolling_cov_corr_edge_cases_29922() -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "y": [1.0, 3.0, 2.0, 5.0]})
+
+    out = df.select(
+        cov_lit=pl.rolling_cov("x", pl.lit(2.0), window_size=3),
+        corr_lit=pl.rolling_corr("x", pl.lit(2.0), window_size=3),
+        cov_ddof2=pl.rolling_cov("x", "y", window_size=3, min_samples=1, ddof=2),
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "cov_lit": [None, None, 0.0, 0.0],
+                "corr_lit": [None, None, float("nan"), float("nan")],
+                "cov_ddof2": [float("nan"), float("nan"), 1.0, 2.0],
+            }
+        ),
+    )
+
+    out = df.cast(pl.Float16).select(cov=pl.rolling_cov("x", "y", window_size=2))
+    assert_frame_equal(
+        out, pl.DataFrame({"cov": [None, 1.0, -0.5, 1.5]}, schema={"cov": pl.Float16})
+    )
+
+
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
     datecol = pl.Series(
@@ -2862,3 +2929,103 @@ def test_rolling_offset_not_negated_period_29199(
         index_column="t", period=period, offset=offset, closed=closed
     )
     assert q.agg(pl.len()).collect(engine=engine)["len"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("v", "descending"),
+    [
+        ([1, 2, 3, 4, 5], False),
+        ([None, 1, 2, 3, 4], False),
+        ([1, 2, 3, 4, None], False),
+        ([5, 4, 3, 2, 1], True),
+        ([None, 4, 3, 2, 1], True),
+        ([4, 3, 2, 1, None], True),
+    ],
+)
+@pytest.mark.parametrize(
+    "agg",
+    [
+        lambda e: e.first(),
+        lambda e: e.first(ignore_nulls=True),
+        lambda e: e.last(ignore_nulls=True),
+        lambda e: e.min(),
+        lambda e: e.max(),
+    ],
+)
+@pytest.mark.parametrize("how", ["rolling", "group_by_slice"])
+def test_empty_groups_drop_sorted_flag_30426(
+    v: list[int | None], descending: bool, agg: Any, how: str
+) -> None:
+    def run(df: pl.DataFrame) -> pl.Series:
+        if how == "rolling":
+            # The windows (t, t+1] at t=2 and t=5 are empty.
+            q = df.rolling("t", period="1i", offset="0i").agg(agg(pl.col("v")))
+        else:
+            # The group k=1 has one row, so `slice(1, 1)` leaves it empty.
+            q = df.group_by("k", maintain_order=True).agg(agg(pl.col("v").slice(1, 1)))
+        return q["v"]
+
+    df = pl.DataFrame({"t": [0, 1, 2, 4, 5], "k": [0, 0, 1, 2, 2], "v": v})
+    flagged = df.set_sorted("k").with_columns(
+        pl.col("v").set_sorted(descending=descending)
+    )
+    out, expected = run(flagged), run(df)
+
+    assert_series_equal(out, expected)
+    assert out.max() == expected.max()
+    assert out.n_unique() == expected.n_unique()
+
+
+def test_rolling_trailing_empty_window_keeps_sorted_flag_30426() -> None:
+    df = pl.DataFrame({"t": [0, 1, 2, 3], "v": [1, 2, 3, 4]}).sort("v")
+    out = df.rolling("t", period="1i", offset="0i").agg(pl.col("v").first())["v"]
+    assert out.to_list() == [2, 3, 4, None]
+    assert out.flags["SORTED_ASC"]
+
+
+@pytest.mark.parametrize(
+    ("sliced", "period"),
+    [
+        # A per-window offset.
+        (lambda e: e.slice(pl.col("t").last() % 2, 1), "3i"),
+        # A per-window offset and length.
+        (lambda e: e.slice(pl.col("t").last() % 2, pl.col("t").last() % 3 + 1), "3i"),
+        # A constant negative offset on slices whose ends go down.
+        (
+            lambda e: e.slice(
+                0, pl.when(pl.col("t").last() < 5).then(10).otherwise(2)
+            ).slice(-1, 1),
+            "5i",
+        ),
+        # A nested `rolling`, whose windows step back inside overlapping outer windows.
+        (
+            lambda e: (
+                e.first().rolling("t", period="1i").slice(pl.col("t").last() % 2, 1)
+            ),
+            "3i",
+        ),
+    ],
+)
+@pytest.mark.parametrize("agg", [lambda e: e.first(), lambda e: e.min()])
+def test_rolling_slice_unordered_groups_30432(
+    sliced: Any, period: str, agg: Any
+) -> None:
+    df = pl.DataFrame({"t": range(6), "v": range(1, 7)}).sort("v")
+    out = df.rolling("t", period=period).agg(agg(sliced(pl.col("v"))))["v"]
+
+    values = out.to_list()
+    non_null = [x for x in values if x is not None]
+    nulls = [None] * (len(values) - len(non_null))
+    assert out.sort(nulls_last=True).to_list() == sorted(non_null) + nulls
+    assert out.n_unique() == len(set(values))
+
+
+def test_rolling_slice_per_window_offset_values_30432() -> None:
+    df = pl.DataFrame({"t": range(5), "v": range(1, 6)}).sort("v")
+    out = df.rolling("t", period="3i").agg(
+        first=pl.col("v").slice(pl.col("t").last() % 2, 1).first(),
+        window=pl.col("v").slice(pl.col("t").last() % 2, 2),
+    )
+    assert out["first"].to_list() == [1, 2, 1, 3, 3]
+    assert out["window"].to_list() == [[1], [2], [1, 2], [3, 4], [3, 4]]
+    assert not out["first"].flags["SORTED_ASC"]

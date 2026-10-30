@@ -2191,6 +2191,17 @@ def test_read_filelike_object_12404(chunk_override: None) -> None:
     assert_frame_equal(df, expected)
 
 
+def test_write_csv_quote_line_terminator_30181(chunk_override: None) -> None:
+    df = pl.DataFrame({"s": ["x", "a;b", "y"], "a;b": ["p", "q", "r"]})
+    expected = 's,"a;b";x,p;"a;b",q;y,r;'
+
+    assert df.write_csv(line_terminator=";") == expected
+    f = io.BytesIO()
+    df.lazy().sink_csv(f, line_terminator=";")
+    assert f.getvalue().decode() == expected
+    assert_frame_equal(pl.read_csv(expected.encode(), eol_char=";"), df)
+
+
 def test_write_csv_bom(chunk_override: None) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()
@@ -3276,6 +3287,14 @@ def test_read_csv_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
         pl.read_csv(path, columns=[0], use_pyarrow=True),
         expected,
     )
+
+
+def test_read_csv_use_pyarrow_newlines_in_values_29717() -> None:
+    value = "x" * 600 + "\n" + "y" * 600
+    # Larger than pyarrow's 1 MiB block size.
+    data = ("v\n" + f'"{value}"\n' * 1000).encode()
+    df = pl.read_csv(io.BytesIO(data), use_pyarrow=True)
+    assert_frame_equal(df, pl.DataFrame({"v": [value] * 1000}))
 
 
 def test_read_csv_i64_overflow_infers_i128_27654(chunk_override: None) -> None:

@@ -19,6 +19,7 @@ from polars._utils.various import _get_stack_locals, qualified_type_name
 from polars._utils.wrap import wrap_ldf
 from polars.convert import from_pandas
 from polars.dataframe import DataFrame
+from polars.exceptions import SQLInterfaceError
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     from typing import Any, Final, Literal, Self, TypeAlias
 
     import pyiceberg.catalog
+    import pyiceberg.partitioning
     import pyiceberg.schema
     import pyiceberg.table
 
@@ -506,6 +508,12 @@ class SQLContext(Generic[FrameType]):
                 lambda query: wrap_ldf(self._execute_with_catalogs(query)),
                 storage_options,
             )
+        elif ddl["kind"] == "create_schema":
+            response = _create_catalog_namespace(catalog, ddl)
+        elif ddl["kind"] == "drop_schema":
+            response = _drop_catalog_namespace(catalog, ddl)
+        elif ddl["kind"] == "alter_table":
+            response = _alter_catalog_table(catalog, ddl)
         else:
             msg = f"unsupported catalog statement {ddl['kind']!r}"
             raise NotImplementedError(msg)
@@ -584,6 +592,17 @@ class SQLContext(Generic[FrameType]):
         * `DROP TABLE [IF EXISTS] <name> [PURGE]` drops a registered table of that
           name, else the catalog table, permanently. `PURGE` also deletes the
           table's data files.
+        * `CREATE SCHEMA [IF NOT EXISTS] <name> [WITH (...)]` creates a namespace,
+          and `DROP SCHEMA [IF EXISTS] <name>` drops an empty one. A name starting
+          with an attached catalog is a namespace of it, any other name one of the
+          default catalog, not under `default_namespace`. See
+          :ref:`CREATE SCHEMA <create_schema>`.
+        * `ALTER TABLE [IF EXISTS] <name> <operation>` changes a catalog table's
+          top-level columns or properties, one operation per statement: `ADD
+          COLUMN`, `DROP COLUMN`, `RENAME COLUMN`, `ALTER COLUMN ... SET DATA TYPE`
+          (as the catalog allows: int to long, float to double, a wider decimal),
+          `ALTER COLUMN ... DROP NOT NULL` and `SET TBLPROPERTIES`. Column names
+          are case-sensitive. See :ref:`ALTER TABLE <alter_table>`.
         * `TRUNCATE` and `DELETE` are not supported on catalog tables.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
@@ -905,19 +924,255 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
     purge = ddl["purge"]
     full_name = _display_name([ddl["catalog"], *identifier])
     response = f"DROP TABLE {full_name}" + (" PURGE" if purge else "")
+    missing = (
+        f"table '{ddl['name']}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be dropped"
+    )
+    # a catalog may refuse a purge before it looks for the table
+    if purge and not _table_exists(catalog, identifier):
+        if ddl["if_exists"]:
+            return response
+        msg = f"{missing}; catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg)
     try:
         if purge:
             catalog.purge_table(identifier)
         else:
             catalog.drop_table(identifier)
     except (NoSuchTableError, NoSuchNamespaceError) as error:
-        if not ddl["if_exists"]:
+        if ddl["if_exists"]:
+            return response
+        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg) from error
+    except Exception as error:
+        # it may have dropped the table before failing (a purge deletes files last)
+        error.add_note(
+            f"dropping table '{ddl['name']}' failed: catalog table "
+            f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
+        )
+        raise
+    return response
+
+
+def _create_catalog_namespace(
+    catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]
+) -> str:
+    """Create the catalog namespace of a `CREATE SCHEMA`, returning the response."""
+    from pyiceberg.exceptions import NamespaceAlreadyExistsError
+
+    namespace: tuple[str, ...] = tuple(ddl["namespace"])
+    name, namespace_name = ddl["name"], _display_name(namespace)
+    response = f"CREATE SCHEMA {_display_name([ddl['catalog'], *namespace])}"
+    try:
+        # checked first, as some catalogs may report other errors for an existing one;
+        # a catalog that can't tell answers the create instead
+        exists = ddl["if_not_exists"] and catalog.namespace_exists(namespace)
+    except Exception:
+        exists = False
+    if exists:
+        return response
+    try:
+        catalog.create_namespace(namespace, ddl["properties"])
+    except NamespaceAlreadyExistsError as error:
+        if ddl["if_not_exists"]:
+            return response
+        msg = (
+            f"schema '{name}' already exists: namespace '{namespace_name}' of "
+            f"catalog '{ddl['catalog']}' could not be created"
+        )
+        raise NamespaceAlreadyExistsError(msg) from error
+    except Exception as error:
+        error.add_note(
+            f"schema '{name}' could not be created: namespace '{namespace_name}' of "
+            f"catalog '{ddl['catalog']}'"
+        )
+        raise
+    return response
+
+
+def _drop_catalog_namespace(
+    catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]
+) -> str:
+    """Drop the catalog namespace of a `DROP SCHEMA`, returning the response."""
+    from pyiceberg.exceptions import NamespaceNotEmptyError, NoSuchNamespaceError
+
+    namespace: tuple[str, ...] = tuple(ddl["namespace"])
+    name, namespace_name = ddl["name"], _display_name(namespace)
+    response = f"DROP SCHEMA {_display_name([ddl['catalog'], *namespace])}"
+    missing = (
+        f"schema '{name}' does not exist: namespace '{namespace_name}' of catalog "
+        f"'{ddl['catalog']}' could not be dropped"
+    )
+    # some catalogs drop a namespace together with its tables, so it is never dropped
+    # without listing them
+    try:
+        tables = catalog.list_tables(namespace)
+    except Exception as error:
+        if not _namespace_exists(catalog, namespace):
+            if ddl["if_exists"]:
+                return response
+            msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+            raise NoSuchNamespaceError(msg) from error
+        error.add_note(
+            f"schema '{name}' was not dropped: its tables could not be listed"
+        )
+        raise
+    # some catalogs drop nothing for a namespace with child namespaces; a listing that
+    # fails (PyIceberg's REST client encodes some names twice) is left to the drop
+    try:
+        children = catalog.list_namespaces(namespace)
+    except Exception:
+        children = []
+    contents = [f"tables {_listed(tables)}"] if tables else []
+    if children:
+        contents.append(f"child schemas {_listed(children)}")
+    if contents:
+        msg = (
+            f"schema '{name}' is not empty: it has {' and '.join(contents)}; drop them "
+            "first (`CASCADE` is not supported)"
+        )
+        raise NamespaceNotEmptyError(msg)
+    try:
+        catalog.drop_namespace(namespace)
+    except NamespaceNotEmptyError as error:
+        msg = (
+            f"schema '{name}' is not empty: drop its tables and child schemas first "
+            f"(`CASCADE` is not supported) ({error})"
+        )
+        raise NamespaceNotEmptyError(msg) from error
+    except Exception as error:
+        # not every catalog raises NoSuchNamespaceError for a missing namespace
+        if isinstance(error, NoSuchNamespaceError) or not _namespace_exists(
+            catalog, namespace
+        ):
+            if ddl["if_exists"]:
+                return response
+            msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+            raise NoSuchNamespaceError(msg) from error
+        error.add_note(
+            f"schema '{name}' could not be dropped: namespace '{namespace_name}' of "
+            f"catalog '{ddl['catalog']}'"
+        )
+        raise
+    return response
+
+
+def _alter_catalog_table(
+    catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any]
+) -> str:
+    """Change the catalog table of an `ALTER TABLE`, returning the response."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    from polars.exceptions import (
+        ColumnNotFoundError,
+        DuplicateError,
+        InvalidOperationError,
+    )
+    from polars.io.iceberg._sink import _create_table_schema
+    from polars.schema import Schema
+
+    identifier: tuple[str, ...] = tuple(ddl["identifier"])
+    name, op = ddl["name"], ddl["operation"]
+    response = f"ALTER TABLE {_display_name([ddl['catalog'], *identifier])}"
+    missing = (
+        f"table '{name}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be altered"
+    )
+    # checked first, as not every catalog reports a missing table as one on load
+    if not _table_exists(catalog, identifier):
+        if ddl["if_exists"]:
+            return response
+        msg = f"{missing}; catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg)
+    try:
+        table = catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError) as error:
+        if ddl["if_exists"]:
+            return response
+        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg) from error
+
+    kind, column = op["op"], op.get("column")
+    # top-level columns only: PyIceberg takes a dotted name for a nested field
+    columns = {field.name: field for field in table.schema().fields}
+    # the names older data files are read by, which a new name must not take over
+    aliases = {
+        alias: field.field_id
+        for field in table.name_mapping() or []
+        for alias in field.names
+    }
+
+    def check_free(new: str, field_id: int | None = None) -> None:
+        if new in columns:
+            msg = f"column '{new}' already exists in table '{name}'"
+            raise DuplicateError(msg)
+        # free if unmapped, or a name of the renamed field itself
+        if new in aliases and (field_id is None or aliases[new] != field_id):
             msg = (
-                f"table '{ddl['name']}' does not exist: catalog table "
-                f"'{_display_name(identifier)}' could not be dropped ({error}); "
-                "catalog identifiers are case-sensitive"
+                f"column name '{new}' is in use by table '{name}': its name mapping "
+                "reads older data files with it"
             )
-            raise NoSuchTableError(msg) from error
+            raise DuplicateError(msg)
+
+    if kind == "add_column":
+        if column in columns and op["if_not_exists"]:
+            return response
+        check_free(column)
+    elif kind != "set_properties" and column not in columns:
+        if kind == "drop_column" and op["if_exists"]:
+            return response
+        msg = f"column '{column}' not found in table '{name}'; column names are case-sensitive"
+        raise ColumnNotFoundError(msg)
+    if kind == "rename_column":
+        check_free(op["new_name"], columns[column].field_id)
+    if kind == "drop_column" and len(columns) == 1:
+        msg = f"column '{column}' is the only column of table '{name}'"
+        raise InvalidOperationError(msg)
+    if kind == "drop_not_null" and column in table.schema().identifier_field_names():
+        msg = f"column '{column}' of table '{name}' is an identifier field, which stays NOT NULL"
+        raise InvalidOperationError(msg)
+    field_type: Any = None
+    if "dtype" in op:
+        schema, _ = _create_table_schema(
+            Schema({column: op["dtype"]}), context="ALTER TABLE"
+        )
+        field_type = schema.fields[0].field_type
+    if kind == "set_data_type":
+        current = columns[column].field_type
+        if _same_iceberg_type(current, field_type):
+            return response
+        # PyIceberg 0.12 also takes changes Iceberg doesn't allow, such as a new scale
+        if not _iceberg_promotes(current, field_type):
+            msg = (
+                f"column '{column}' of table '{name}' cannot change from {current} to "
+                f"{field_type}: Iceberg only widens int to long, float to double and "
+                "a decimal's precision"
+            )
+            raise InvalidOperationError(msg)
+
+    try:
+        if kind == "set_properties":
+            table.transaction().set_properties(op["properties"]).commit_transaction()
+        else:
+            update = table.update_schema()
+            path = (column,)
+            if kind == "add_column":
+                update.add_column(path, field_type)
+            elif kind == "drop_column":
+                update.delete_column(path)
+            elif kind == "rename_column":
+                update.rename_column(path, op["new_name"])
+            elif kind == "set_data_type":
+                update.update_column(path, field_type=field_type)
+            else:
+                update.update_column(path, required=False)
+            update.commit()
+    except Exception as error:
+        error.add_note(
+            f"table '{name}' could not be altered: catalog table "
+            f"'{_display_name(identifier)}' of catalog '{ddl['catalog']}'"
+        )
+        raise
     return response
 
 
@@ -947,6 +1202,7 @@ def _create_catalog_table(
         required=ddl["required"],
         context="CREATE TABLE",
     )
+    spec = _create_partition_spec(schema, ddl["partition_by"], name)
     # checked first, as some catalogs report other errors before an existing table
     if catalog.table_exists(identifier):
         if ddl["if_not_exists"]:
@@ -966,11 +1222,12 @@ def _create_catalog_table(
                 identifier,
                 schema=schema,
                 location=ddl["location"],
+                partition_spec=spec,
                 properties=ddl["properties"],
             )
         else:
             created = _create_filled_table(
-                catalog, identifier, schema, lf, ddl, storage_options
+                catalog, identifier, schema, spec, lf, ddl, storage_options
             )
     except Exception as error:
         if _created_meanwhile(catalog, identifier, error):
@@ -1006,10 +1263,84 @@ def _create_catalog_table(
     return response
 
 
+def _create_partition_spec(
+    schema: pyiceberg.schema.Schema, partition_by: list[tuple[str, str]], name: str
+) -> pyiceberg.partitioning.PartitionSpec:
+    """The partition spec of the new table `name`, checked against its `schema`."""
+    from pyiceberg.partitioning import (
+        PARTITION_FIELD_ID_START,
+        PartitionField,
+        PartitionSpec,
+    )
+    from pyiceberg.schema import index_by_name
+    from pyiceberg.transforms import (
+        BucketTransform,
+        IdentityTransform,
+        TruncateTransform,
+        parse_transform,
+    )
+    from pyiceberg.types import DecimalType
+
+    # top-level columns only: `find_field` resolves dotted names into structs
+    columns = {field.name: field for field in schema.fields}
+    names = index_by_name(schema)
+    fields: list[PartitionField] = []
+    for column, transform_name in partition_by:
+        transform = parse_transform(transform_name)
+        if (source := columns.get(column)) is None:
+            msg = (
+                f"partition column '{column}' is not a column of table '{name}'; "
+                f"valid columns: {list(columns)}"
+            )
+            raise SQLInterfaceError(msg)
+        source_type = source.field_type
+        if not source_type.is_primitive or not transform.can_transform(source_type):
+            msg = (
+                f"cannot partition table '{name}' by {transform} of column "
+                f"'{column}' with type {source_type}"
+            )
+            raise SQLInterfaceError(msg)
+        if isinstance(transform, TruncateTransform) and isinstance(
+            source_type, DecimalType
+        ):
+            msg = f"partitioning by {transform} of a decimal column ('{column}')"
+            raise NotImplementedError(msg)
+        # the names of PyIceberg's `update_spec`
+        if isinstance(transform, IdentityTransform):
+            field_name = column
+        elif isinstance(transform, BucketTransform):
+            field_name = f"{column}_bucket_{transform.num_buckets}"
+        elif isinstance(transform, TruncateTransform):
+            field_name = f"{column}_trunc_{transform.width}"
+        else:
+            field_name = f"{column}_{transform}"
+        # PyIceberg checks the name against nested fields too (`s.f_day`)
+        if names.get(field_name, source.field_id) != source.field_id:
+            msg = (
+                f"partition field '{field_name}' of table '{name}' would have the "
+                "name of a column"
+            )
+            raise SQLInterfaceError(msg)
+        # PyIceberg's create does not check partition names for duplicates
+        if any(field.name == field_name for field in fields):
+            msg = f"duplicate partition field name '{field_name}' in table '{name}'"
+            raise SQLInterfaceError(msg)
+        fields.append(
+            PartitionField(
+                source_id=source.field_id,
+                field_id=PARTITION_FIELD_ID_START + len(fields),
+                transform=transform,
+                name=field_name,
+            )
+        )
+    return PartitionSpec(*fields)
+
+
 def _create_filled_table(
     catalog: pyiceberg.catalog.Catalog,
     identifier: tuple[str, ...],
     schema: pyiceberg.schema.Schema,
+    spec: pyiceberg.partitioning.PartitionSpec,
     lf: LazyFrame,
     ddl: dict[str, Any],
     storage_options: StorageOptionsDict | None,
@@ -1037,6 +1368,7 @@ def _create_filled_table(
             identifier,
             schema=schema,
             location=ddl["location"],
+            partition_spec=spec,
             properties=ddl["properties"],
         )
     # some REST catalogs reject staged creates (400, or 501 per the spec)
@@ -1045,6 +1377,7 @@ def _create_filled_table(
             identifier,
             schema=schema,
             location=ddl["location"],
+            partition_spec=spec,
             properties=ddl["properties"],
         )
     state = IcebergSinkState.new_create(transaction, storage_options=storage_options)
@@ -1158,9 +1491,65 @@ def _namespace_exists(
         return True
 
 
+def _table_exists(
+    catalog: pyiceberg.catalog.Catalog, identifier: Sequence[str]
+) -> bool:
+    """Whether the catalog has table `identifier`; `True` if that can't be checked."""
+    try:
+        return bool(catalog.table_exists(tuple(identifier)))
+    except Exception:
+        return True
+
+
+def _same_iceberg_type(a: Any, b: Any) -> bool:
+    """Whether two Iceberg types are equal, ignoring field ids and nullability."""
+    from pyiceberg.types import ListType, MapType, StructType
+
+    if isinstance(a, StructType) and isinstance(b, StructType):
+        return len(a.fields) == len(b.fields) and all(
+            fa.name == fb.name and _same_iceberg_type(fa.field_type, fb.field_type)
+            for fa, fb in zip(a.fields, b.fields, strict=True)
+        )
+    if isinstance(a, ListType) and isinstance(b, ListType):
+        return _same_iceberg_type(a.element_type, b.element_type)
+    if isinstance(a, MapType) and isinstance(b, MapType):
+        return _same_iceberg_type(a.key_type, b.key_type) and _same_iceberg_type(
+            a.value_type, b.value_type
+        )
+    return bool(a == b)
+
+
+def _iceberg_promotes(current: Any, target: Any) -> bool:
+    """Whether Iceberg's schema evolution changes type `current` to `target`."""
+    from pyiceberg.types import (
+        DecimalType,
+        DoubleType,
+        FloatType,
+        IntegerType,
+        LongType,
+    )
+
+    if isinstance(current, IntegerType):
+        return isinstance(target, LongType)
+    if isinstance(current, FloatType):
+        return isinstance(target, DoubleType)
+    return (
+        isinstance(current, DecimalType)
+        and isinstance(target, DecimalType)
+        and target.scale == current.scale
+        and target.precision > current.precision
+    )
+
+
 def _display_name(parts: Sequence[str]) -> str:
     """A table name for messages, with parts containing dots quoted."""
     return ".".join(f'"{part}"' if "." in part else part for part in parts)
+
+
+def _listed(identifiers: Sequence[tuple[str, ...]], limit: int = 3) -> str:
+    """The first `limit` identifiers (sorted) for messages, quoted."""
+    names = [repr(_display_name(name)) for name in sorted(identifiers)[:limit]]
+    return ", ".join(names) + (", ..." if len(identifiers) > limit else "")
 
 
 def _namespace_parts(namespace: str | Sequence[str] | None) -> list[str] | None:

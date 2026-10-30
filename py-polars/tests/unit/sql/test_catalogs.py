@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import pickle
+import re
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -416,10 +418,6 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
             r"`CREATE TABLE \.\.\. AS SELECT` does not take column definitions",
         ),
         (
-            "CREATE TABLE t PARTITION BY (x) AS SELECT 1 AS x",
-            "`PARTITION BY` is not yet supported for catalog tables",
-        ),
-        (
             "CREATE TABLE t LIKE lineitem",
             r"`CREATE TABLE \.\.\. LIKE` is not supported for catalog tables",
         ),
@@ -441,13 +439,116 @@ def test_create_catalog_table_options(lake: CountingCatalog, tmp_path: Path) -> 
         ),
         ("CREATE TABLE t (x INT NULL NOT NULL)", "conflicting NULL/NOT NULL"),
         (
-            "CREATE TABLE t (x INT) PARTITION BY (x)",
-            "`PARTITION BY` is not yet supported for catalog tables; create the "
-            "table unpartitioned",
+            "CREATE TABLE t (x INT) PARTITION BY RANGE (x)",
+            r"unsupported partition field `RANGE\(x\)`; expected a column, or year",
+        ),
+        ("CREATE TABLE t (x INT) PARTITION BY (x + 1)", "unsupported partition field"),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (bucket(4))",
+            "unsupported partition field",
         ),
         (
-            "CREATE TABLE t (x INT) PARTITIONED BY (x)",
-            "`PARTITIONED BY` is not yet supported for catalog tables",
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (s.a)",
+            r"`PARTITION BY` takes unqualified column names; found `s\.a`; "
+            "partitioning by a nested field is not yet supported",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (bucket(4, s.a))",
+            r"`PARTITION BY` takes unqualified column names; found `s\.a`",
+        ),
+        (
+            "CREATE TABLE t (f INT) PARTITION BY (t.f)",
+            r"`PARTITION BY` takes unqualified column names; found `t\.f`",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (bucket(s.a, 4))",
+            r"`bucket\(s\.a, 4\)` takes the number first, as in `bucket\(4, s\.a\)`",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY ((s).a)",
+            r"unsupported partition field `\(s\)\.a`",
+        ),
+        (
+            "CREATE TABLE t (d DATE) PARTITION BY (date(d))",
+            r"unsupported partition field `date\(d\)`",
+        ),
+        (
+            "CREATE TABLE t (ts TIMESTAMP) PARTITION BY (date_hour(ts))",
+            r"unsupported partition field `date_hour\(ts\)`",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (bucket(x, 4))",
+            r"`bucket\(x, 4\)` takes the number first, as in `bucket\(4, x\)`",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (bucket(0, x))",
+            r"the first argument of `bucket\(0, x\)` must be an integer from 1 to "
+            "2147483647",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (truncate(-2, x))",
+            "must be an integer from 1 to 2147483647",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (bucket(2147483648, x))",
+            "must be an integer from 1 to 2147483647",
+        ),
+        ("CREATE TABLE t (x INT) PARTITION BY (x, x)", "duplicate partition field `x`"),
+        (
+            "CREATE TABLE t (d DATE) PARTITION BY (year(d), days(d))",
+            r"partition fields `year\(d\)` and `days\(d\)` both partition column 'd' "
+            "by time",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITIONED BY (x INT)",
+            "`PARTITIONED BY` takes column names only; found `x INT`; types and "
+            "constraints belong in the column list",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITIONED BY (x) PARTITION BY (x)",
+            "`PARTITION BY` and `PARTITIONED BY` cannot be combined",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (y)",
+            "partition column 'y' is not a column of table 't'",
+        ),
+        (
+            'CREATE TABLE t (x INT) PARTITION BY ("X")',
+            r"partition column 'X' is not a column of table 't'; "
+            r"valid columns: \['x'\]",
+        ),
+        (
+            "CREATE TABLE t PARTITION BY (y) AS SELECT 1 AS x, 2 AS z",
+            r"partition column 'y' is not a column of table 't'; "
+            r"valid columns: \['x', 'z'\]",
+        ),
+        (
+            "CREATE TABLE t (x INT) PARTITION BY (day(x))",
+            "cannot partition table 't' by day of column 'x' with type int",
+        ),
+        (
+            "CREATE TABLE t (b BOOLEAN) PARTITION BY (bucket(4, b))",
+            r"by bucket\[4\] of column 'b' with type boolean",
+        ),
+        (
+            "CREATE TABLE t (s STRUCT<a INT>) PARTITION BY (s)",
+            "by identity of column 's' with type struct",
+        ),
+        (
+            "CREATE TABLE t (d DATE, d_day INT) PARTITION BY (day(d))",
+            "partition field 'd_day' of table 't' would have the name of a column",
+        ),
+        (
+            'CREATE TABLE t ("s.f" DATE, s STRUCT<f_day INT>) PARTITION BY (day("s.f"))',
+            r"partition field 's\.f_day' of table 't' would have the name of a column",
+        ),
+        (
+            "CREATE TEMP TABLE t (x INT) PARTITION BY (x)",
+            "`PARTITION BY` is supported only for catalog tables",
+        ),
+        (
+            "CREATE TEMP TABLE t (x INT) PARTITIONED BY (x)",
+            "`PARTITIONED BY` is supported only for catalog tables",
         ),
         (
             "CREATE TABLE t (x INT) TBLPROPERTIES ('k' = 'v')",
@@ -548,6 +649,161 @@ def test_create_catalog_table_missing_namespace(
     assert exc.value.__notes__ == [
         "table 't' could not be created: catalog table 'tpch.t'"
     ]
+
+
+def partition_fields(catalog: CountingCatalog, *identifier: str) -> list[Any]:
+    table = catalog.load_table(identifier)
+    schema = table.schema()
+    return [
+        (f.name, str(f.transform), schema.find_column_name(f.source_id))
+        for f in table.spec().fields
+    ]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("clause", "expected"),
+    [
+        (
+            "PARTITION BY (p, bucket(4, id), truncate(2, x), day(ts))",
+            [
+                ("p", "identity", "p"),
+                ("id_bucket_4", "bucket[4]", "id"),
+                ("x_trunc_2", "truncate[2]", "x"),
+                ("ts_day", "day", "ts"),
+            ],
+        ),
+        ("PARTITION BY p", [("p", "identity", "p")]),
+        ("PARTITIONED BY (p, x)", [("p", "identity", "p"), ("x", "identity", "x")]),
+        (
+            "PARTITION BY (YEARS(d), Bucket(8, id), bucket(4, id), hours(ts))",
+            [
+                ("d_year", "year", "d"),
+                ("id_bucket_8", "bucket[8]", "id"),
+                ("id_bucket_4", "bucket[4]", "id"),
+                ("ts_hour", "hour", "ts"),
+            ],
+        ),
+        (
+            "PARTITION BY (month(d), hour(ts))",
+            [("d_month", "month", "d"), ("ts_hour", "hour", "ts")],
+        ),
+        ("PARTITION BY (days(d))", [("d_day", "day", "d")]),
+        (
+            "WITH ('format-version' = 1) PARTITION BY (bucket(4, id), day(ts))",
+            [("id_bucket_4", "bucket[4]", "id"), ("ts_day", "day", "ts")],
+        ),
+        (
+            "PARTITION BY ((p), day((ts)), bucket(4, (id)))",
+            [
+                ("p", "identity", "p"),
+                ("ts_day", "day", "ts"),
+                ("id_bucket_4", "bucket[4]", "id"),
+            ],
+        ),
+        # a quoted name with a dot is a top-level column
+        ('PARTITION BY ("s.f")', [("s.f", "identity", "s.f")]),
+        ('PARTITION BY (bucket(4, "s.f"))', [("s.f_bucket_4", "bucket[4]", "s.f")]),
+    ],
+)
+def test_create_partitioned_catalog_table(
+    lake: CountingCatalog, clause: str, expected: list[Any]
+) -> None:
+    ctx = lake_ctx(lake)
+    # a struct first: the create renumbers field ids
+    ctx.execute(
+        "CREATE TABLE t (s STRUCT<a INT, b INT>, id BIGINT, p VARCHAR, x VARCHAR, "
+        'd DATE, ts TIMESTAMP, "s.f" INT) ' + clause
+    )
+    assert partition_fields(lake, "tpch", "t") == expected
+    spec = lake.load_table(("tpch", "t")).spec()
+    assert [f.field_id for f in spec.fields] == list(range(1000, 1000 + len(expected)))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("staged", [True, False])
+def test_create_partitioned_catalog_table_as_select(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, staged: bool
+) -> None:
+    if not staged:
+        monkeypatch.setattr(lake, "create_table_transaction", no_staged_create)
+    ctx = lake_ctx(lake)
+    src = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "p": ["a", "b", "a", None],
+            "d": [date(2024, 1, 1), date(2024, 1, 2), date(2024, 2, 1), None],
+        }
+    )
+    ctx.register("src", src)
+    ctx.execute("CREATE TABLE t PARTITION BY (p, month(d)) AS SELECT * FROM src")
+    assert partition_fields(lake, "tpch", "t") == [
+        ("p", "identity", "p"),
+        ("d_month", "month", "d"),
+    ]
+    table = lake.load_table(("tpch", "t"))
+    assert len(table.metadata.snapshots) == 1
+    # months since 1970
+    partitions = table.inspect.files().column("partition").to_pylist()
+    assert sorted(partitions, key=str) == sorted(
+        [
+            {"p": "a", "d_month": 648},
+            {"p": "b", "d_month": 648},
+            {"p": "a", "d_month": 649},
+            {"p": None, "d_month": None},
+        ],
+        key=str,
+    )
+    res = ctx.execute("SELECT * FROM t", eager=True)
+    assert_frame_equal(res, src, check_row_order=False)
+
+
+@pytest.mark.write_disk
+def test_create_partitioned_catalog_table_checks(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    with pytest.raises(
+        NotImplementedError,
+        match=r"partitioning by truncate\[2\] of a decimal column \('x'\)",
+    ):
+        ctx.execute("CREATE TABLE t (x DECIMAL(10, 2)) PARTITION BY (truncate(2, x))")
+    assert not lake.table_exists(("tpch", "t"))
+
+    # checked also when the table exists, and before the query runs: the cast fails
+    error = "partition column 'x' is not a column of table 'lineitem'"
+    with pytest.raises(SQLInterfaceError, match=error):
+        ctx.execute("CREATE TABLE IF NOT EXISTS lineitem (k INT) PARTITION BY (x)")
+    with pytest.raises(SQLInterfaceError, match="by day of column 'k' with type int"):
+        ctx.execute(
+            "CREATE TABLE t PARTITION BY (day(k)) AS "
+            "SELECT CAST(v AS INT) AS k FROM lineitem"
+        )
+    assert not lake.table_exists(("tpch", "t"))
+
+    # a partition name that is a nested field's
+    ctx.register("src", pl.DataFrame({"s.f": [date(2024, 1, 1)], "s": [{"f_day": 1}]}))
+    error = r"partition field 's\.f_day' of table '(t|lineitem)' would have the name"
+    with pytest.raises(SQLInterfaceError, match=error):
+        ctx.execute('CREATE TABLE t PARTITION BY (day("s.f")) AS SELECT * FROM src')
+    with pytest.raises(SQLInterfaceError, match=error):
+        ctx.execute(
+            'CREATE TABLE IF NOT EXISTS lineitem PARTITION BY (day("s.f")) '
+            "AS SELECT * FROM src"
+        )
+    assert not lake.table_exists(("tpch", "t"))
+
+
+def test_create_partition_spec_duplicate_name() -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField
+
+    from polars.sql.context import _create_partition_spec
+
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    with pytest.raises(
+        SQLInterfaceError,
+        match="duplicate partition field name 'id_bucket_4' in table 't'",
+    ):
+        _create_partition_spec(schema, [("id", "bucket[4]"), ("id", "bucket[4]")], "t")
 
 
 def table_files(tmp_path: Path, *identifier: str) -> set[Path]:
@@ -1459,6 +1715,110 @@ def test_drop_catalog_table_purge(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
+def test_drop_catalog_table_purge_refused(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    purges: list[Any] = []
+
+    def refuse(identifier: Any) -> None:
+        purges.append(identifier)
+        msg = "purge is not supported"
+        raise RuntimeError(msg)
+
+    # a catalog that refuses any purge, before it looks for the table
+    ctx = lake_ctx(lake)
+    monkeypatch.setattr(lake, "purge_table", refuse)
+    for if_exists in ["", "IF EXISTS "]:
+        with pytest.raises(RuntimeError, match="purge is not supported") as exc:
+            ctx.execute(f"DROP TABLE {if_exists}orders PURGE")
+        assert exc.value.__notes__ == [
+            "dropping table 'orders' failed: catalog table 'tpch.orders' of "
+            "catalog 'lake'"
+        ]
+    assert lake.table_exists(("tpch", "orders"))
+
+    purges.clear()
+    ctx.execute("DROP TABLE IF EXISTS nope PURGE")
+    with pytest.raises(NoSuchTableError, match="table 'nope' does not exist"):
+        ctx.execute("DROP TABLE nope PURGE")
+    assert purges == []
+
+    # a table whose existence can't be checked is not taken for a missing one
+    def unknown(identifier: Any) -> bool:
+        msg = "not allowed"
+        raise PermissionError(msg)
+
+    monkeypatch.setattr(lake, "table_exists", unknown)
+    with pytest.raises(RuntimeError, match="purge is not supported"):
+        ctx.execute("DROP TABLE IF EXISTS nope PURGE")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("if_exists", ["", "IF EXISTS "])
+def test_drop_catalog_table_purge_fails_after_drop(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, if_exists: str
+) -> None:
+    error = PermissionError("manifest list not readable")
+
+    def drop_then_fail(identifier: Any) -> None:
+        lake.drop_table(identifier)
+        raise error
+
+    # a purge that drops the table, then fails deleting its files, is reported
+    monkeypatch.setattr(lake, "purge_table", drop_then_fail)
+    with pytest.raises(PermissionError) as exc:
+        lake_ctx(lake).execute(f"DROP TABLE {if_exists}orders PURGE")
+    assert exc.value is error
+    assert exc.value.__notes__ == [
+        "dropping table 'orders' failed: catalog table 'tpch.orders' of catalog 'lake'"
+    ]
+    assert not lake.table_exists(("tpch", "orders"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_table_checks(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NoSuchTableError
+
+    checks: list[Any] = []
+
+    def unknown(identifier: Any) -> bool:
+        checks.append(identifier)
+        msg = "not allowed"
+        raise PermissionError(msg)
+
+    def deny(identifier: Any) -> None:
+        msg = "drop not allowed"
+        raise PermissionError(msg)
+
+    ctx = lake_ctx(lake)
+    monkeypatch.setattr(lake, "table_exists", unknown)
+    # an existence check that fails lets the purge run
+    ctx.execute("DROP TABLE orders PURGE")
+    assert checks == [("tpch", "orders")]
+    # a plain drop is not checked first, and its failure keeps its own error
+    monkeypatch.setattr(lake, "drop_table", deny)
+    with pytest.raises(PermissionError, match="drop not allowed") as exc:
+        ctx.execute("DROP TABLE IF EXISTS lineitem")
+    assert exc.value.__notes__ == [
+        "dropping table 'lineitem' failed: catalog table 'tpch.lineitem' of "
+        "catalog 'lake'"
+    ]
+    assert checks == [("tpch", "orders")]
+
+    # a table dropped by another writer after the check
+    def gone(identifier: Any) -> None:
+        raise NoSuchTableError(str(identifier))
+
+    monkeypatch.setattr(lake, "table_exists", lambda identifier: True)
+    monkeypatch.setattr(lake, "purge_table", gone)
+    ctx.execute("DROP TABLE IF EXISTS lineitem PURGE")
+    with pytest.raises(NoSuchTableError, match="table 'lineitem' does not exist"):
+        ctx.execute("DROP TABLE lineitem PURGE")
+
+
+@pytest.mark.write_disk
 def test_drop_catalog_table_from_catalog_config(lake: CountingCatalog) -> None:
     from polars.io.iceberg import IcebergCatalogConfig
 
@@ -1518,6 +1878,778 @@ def test_drop_missing_catalog_table(lake: CountingCatalog) -> None:
     with pytest.raises(NoSuchTableError, match="identifiers are case-sensitive"):
         ctx.execute("DROP TABLE LINEITEM")
     assert lake.table_exists(("tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("name", "namespace"),
+    [
+        ("lake.sales", ("sales",)),
+        ("LAKE.sales", ("sales",)),
+        # of the default catalog, and not under its default namespace `tpch`
+        ("sales", ("sales",)),
+        ('lake."Sales"', ("Sales",)),
+        ("lake.tpch.sales", ("tpch", "sales")),
+        ("prod.sales", ("prod", "sales")),
+    ],
+)
+def test_create_catalog_schema(
+    lake: CountingCatalog, name: str, namespace: tuple[str, ...]
+) -> None:
+    ctx = lake_ctx(lake)
+    res = ctx.execute(f"CREATE SCHEMA {name}", eager=True)
+    full_name = ".".join(("lake", *namespace))
+    assert res.item() == f"CREATE SCHEMA {full_name}"
+    assert lake.namespace_exists(namespace)
+    ctx.execute(f"CREATE TABLE {name}.t (x INT)")
+    assert lake.table_exists((*namespace, "t"))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_schema_properties(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    ctx = lake_ctx(lake)
+    location = f"file://{tmp_path}/sales_here"
+    ctx.execute(
+        f"CREATE SCHEMA sales WITH ('location' = '{location}', 'owner' = 'me', 'n' = 1)"
+    )
+    properties = lake.load_namespace_properties(("sales",))
+    assert {"location": location, "owner": "me", "n": "1"}.items() <= properties.items()
+    # tables of the namespace go under its location
+    ctx.execute("CREATE TABLE sales.t (x INT)")
+    assert lake.load_table(("sales", "t")).location().startswith(location)
+
+
+@pytest.mark.write_disk
+def test_create_existing_catalog_schema(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NamespaceAlreadyExistsError
+
+    ctx = lake_ctx(lake)
+    with pytest.raises(
+        NamespaceAlreadyExistsError,
+        match="schema 'tpch' already exists: namespace 'tpch' of catalog 'lake'",
+    ):
+        ctx.execute("CREATE SCHEMA tpch")
+    # an existing namespace is left as it is
+    res = ctx.execute("CREATE SCHEMA IF NOT EXISTS tpch WITH ('k' = 'v')", eager=True)
+    assert res.item() == "CREATE SCHEMA lake.tpch"
+    assert "k" not in lake.load_namespace_properties(("tpch",))
+    assert lake.table_exists(("tpch", "lineitem"))
+
+    # created meanwhile, by another writer
+    def created_meanwhile(*args: Any, **kwargs: Any) -> None:
+        msg = "created meanwhile"
+        raise NamespaceAlreadyExistsError(msg)
+
+    monkeypatch.setattr(lake, "namespace_exists", lambda namespace: False)
+    monkeypatch.setattr(lake, "create_namespace", created_meanwhile)
+    ctx.execute("CREATE SCHEMA IF NOT EXISTS tpch")
+    with pytest.raises(NamespaceAlreadyExistsError, match="already exists"):
+        ctx.execute("CREATE SCHEMA tpch")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("name", "namespace"),
+    [
+        ("lake.empty", ("empty",)),
+        ("empty", ("empty",)),
+        ("LAKE.empty", ("empty",)),
+        ("lake.prod.tpch.empty", ("prod", "tpch", "empty")),
+    ],
+)
+def test_drop_catalog_schema(
+    lake: CountingCatalog, name: str, namespace: tuple[str, ...]
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    lake.create_namespace(namespace)
+    ctx = lake_ctx(lake)
+    res = ctx.execute(f"DROP SCHEMA {name} RESTRICT", eager=True)
+    assert res.item() == f"DROP SCHEMA lake.{'.'.join(namespace)}"
+    assert not lake.namespace_exists(namespace)
+    assert lake.table_exists(("prod", "tpch", "lineitem"))
+
+    res = ctx.execute(f"DROP SCHEMA IF EXISTS {name}", eager=True)
+    assert res.item() == f"DROP SCHEMA lake.{'.'.join(namespace)}"
+    with pytest.raises(
+        NoSuchNamespaceError,
+        match=f"schema '{name}' does not exist: .* identifiers are case-sensitive",
+    ):
+        ctx.execute(f"DROP SCHEMA {name}")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("if_exists", ["", "IF EXISTS "])
+def test_drop_catalog_schema_not_empty(lake: CountingCatalog, if_exists: str) -> None:
+    from pyiceberg.exceptions import NamespaceNotEmptyError
+
+    ctx = lake_ctx(lake)
+    with pytest.raises(
+        NamespaceNotEmptyError,
+        match=r"schema 'tpch' is not empty: it has tables 'tpch\.lineitem', "
+        r"'tpch\.orders'; drop them first",
+    ):
+        ctx.execute(f"DROP SCHEMA {if_exists}tpch")
+    # a catalog may drop a namespace that has child namespaces, and change nothing
+    with pytest.raises(
+        NamespaceNotEmptyError,
+        match=r"schema 'prod' is not empty: it has child schemas 'prod\.tpch';",
+    ):
+        ctx.execute(f"DROP SCHEMA {if_exists}prod")
+    assert lake.table_exists(("tpch", "lineitem"))
+    assert lake.table_exists(("prod", "tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_tables_and_children(lake: CountingCatalog) -> None:
+    from pyiceberg.exceptions import NamespaceNotEmptyError
+
+    ctx = lake_ctx(lake)
+    for name in ["t1", "t2", "t3", "t4"]:
+        ctx.execute(f"CREATE TABLE prod.{name} (id BIGINT)")
+    with pytest.raises(
+        NamespaceNotEmptyError,
+        match=r"it has tables 'prod\.t1', 'prod\.t2', 'prod\.t3', \.\.\. and child "
+        r"schemas 'prod\.tpch';",
+    ):
+        ctx.execute("DROP SCHEMA prod")
+    assert lake.namespace_exists(("prod",))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_cascading_catalog(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NamespaceNotEmptyError
+
+    drops: list[Any] = []
+    # some catalogs drop a namespace together with its tables
+    monkeypatch.setattr(lake, "drop_namespace", drops.append)
+    with pytest.raises(NamespaceNotEmptyError, match="schema 'tpch' is not empty"):
+        lake_ctx(lake).execute("DROP SCHEMA tpch")
+    assert drops == []
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_filled_meanwhile(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NamespaceNotEmptyError
+
+    def refuse(namespace: Any) -> None:
+        msg = "namespace is not empty"
+        raise NamespaceNotEmptyError(msg)
+
+    # a catalog that refuses a table created between the listing and the drop
+    monkeypatch.setattr(lake, "list_tables", lambda namespace: [])
+    monkeypatch.setattr(lake, "drop_namespace", refuse)
+    with pytest.raises(
+        NamespaceNotEmptyError,
+        match="schema 'tpch' is not empty: drop its tables and child schemas first",
+    ):
+        lake_ctx(lake).execute("DROP SCHEMA tpch")
+    assert lake.table_exists(("tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_listing_fails(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "listing not allowed"
+        raise RuntimeError(msg)
+
+    # a failed listing of child namespaces is left to the drop
+    lake.create_namespace(("empty",))
+    monkeypatch.setattr(lake, "list_namespaces", fail)
+    ctx = lake_ctx(lake)
+    ctx.execute("DROP SCHEMA empty")
+    assert not lake.namespace_exists(("empty",))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("if_exists", ["", "IF EXISTS "])
+def test_drop_catalog_schema_table_listing_fails(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch, if_exists: str
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "listing not allowed"
+        raise RuntimeError(msg)
+
+    def missing(*args: Any, **kwargs: Any) -> None:
+        msg = "no such namespace"
+        raise NoSuchNamespaceError(msg)
+
+    lake.create_namespace(("empty",))
+    ctx = lake_ctx(lake)
+    for listing, error in [(fail, RuntimeError), (missing, NoSuchNamespaceError)]:
+        monkeypatch.setattr(lake, "list_tables", listing)
+        with pytest.raises(error) as exc:
+            ctx.execute(f"DROP SCHEMA {if_exists}empty")
+        assert exc.value.__notes__ == [
+            "schema 'empty' was not dropped: its tables could not be listed"
+        ]
+        assert lake.namespace_exists(("empty",))
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_listing_says_missing(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    def missing(*args: Any, **kwargs: Any) -> None:
+        msg = "Namespace with name 'x%20y' does not exist"
+        raise NoSuchNamespaceError(msg)
+
+    # PyIceberg's REST client lists children of `x y` as `x%20y`, which is missing
+    lake.create_namespace(("x y",))
+    monkeypatch.setattr(lake, "list_namespaces", missing)
+    ctx = lake_ctx(lake)
+    ctx.execute('DROP SCHEMA "x y"')
+    assert not lake.namespace_exists(("x y",))
+    with pytest.raises(NoSuchNamespaceError, match="schema 'x y' does not exist"):
+        ctx.execute('DROP SCHEMA "x y"')
+
+
+@pytest.mark.write_disk
+def test_drop_catalog_schema_beside_case_variant(lake: CountingCatalog) -> None:
+    # the SQL catalog's listing compares case (its existence check does not)
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE SCHEMA sales")
+    ctx.execute('CREATE SCHEMA "Sales".child')
+    ctx.execute("DROP SCHEMA sales")
+    assert lake.namespace_exists(("Sales", "child"))
+    assert ("sales",) not in lake.list_namespaces()
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("quoted", ['"Sales"', '"Sales".sub'])
+def test_drop_catalog_schema_quoted(lake: CountingCatalog, quoted: str) -> None:
+    namespace = tuple(part.strip('"') for part in quoted.split("."))
+    lake.create_namespace(namespace)
+    lake_ctx(lake).execute(f"DROP SCHEMA lake.{quoted}")
+    assert not lake.namespace_exists(namespace)
+
+
+@pytest.mark.write_disk
+def test_create_catalog_schema_without_parent(lake: CountingCatalog) -> None:
+    # passed to the catalog: the SQL catalog creates it, REST catalogs refuse
+    lake_ctx(lake).execute("CREATE SCHEMA lake.new.sub WITH ()")
+    assert lake.namespace_exists(("new", "sub"))
+    assert lake.namespace_exists(("new",))
+
+
+@pytest.mark.write_disk
+def test_catalog_schema_catalog_errors(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NoSuchNamespaceError
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    ctx = lake_ctx(lake)
+    monkeypatch.setattr(lake, "create_namespace", fail)
+    with pytest.raises(RuntimeError, match="boom") as exc:
+        ctx.execute("CREATE SCHEMA sales")
+    assert exc.value.__notes__ == [
+        "schema 'sales' could not be created: namespace 'sales' of catalog 'lake'"
+    ]
+    monkeypatch.undo()
+
+    lake.create_namespace(("empty",))
+    monkeypatch.setattr(lake, "drop_namespace", fail)
+    with pytest.raises(RuntimeError, match="boom") as exc:
+        ctx.execute("DROP SCHEMA empty")
+    assert exc.value.__notes__ == [
+        "schema 'empty' could not be dropped: namespace 'empty' of catalog 'lake'"
+    ]
+    # a catalog that reports another error for a missing namespace
+    monkeypatch.setattr(lake, "list_tables", lambda namespace: [])
+    monkeypatch.setattr(lake, "list_namespaces", lambda namespace: [])
+    ctx.execute("DROP SCHEMA IF EXISTS missing")
+    with pytest.raises(NoSuchNamespaceError, match="schema 'missing' does not exist"):
+        ctx.execute("DROP SCHEMA missing")
+
+
+@pytest.mark.write_disk
+def test_create_catalog_schema_unknown_existence(
+    lake: CountingCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pyiceberg.exceptions import NamespaceAlreadyExistsError
+
+    def unsupported(*args: Any, **kwargs: Any) -> None:
+        raise NotImplementedError
+
+    # a catalog that can't check existence answers the create
+    ctx = lake_ctx(lake)
+    monkeypatch.setattr(lake, "namespace_exists", unsupported)
+    monkeypatch.setattr(
+        lake,
+        "create_namespace",
+        lambda namespace, properties: created.append(namespace),
+    )
+    created: list[Any] = []
+    ctx.execute("CREATE SCHEMA IF NOT EXISTS sales")
+    assert created == [("sales",)]
+
+    def exists(*args: Any, **kwargs: Any) -> None:
+        msg = "exists"
+        raise NamespaceAlreadyExistsError(msg)
+
+    monkeypatch.setattr(lake, "create_namespace", exists)
+    ctx.execute("CREATE SCHEMA IF NOT EXISTS sales")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("CREATE SCHEMA lake", "'lake' is an attached catalog; write 'lake.<schema>'"),
+        ("CREATE SCHEMA LAKE", "'LAKE' is an attached catalog; write 'lake.<schema>'"),
+        ("DROP SCHEMA lake", "'lake' is an attached catalog"),
+        ('CREATE SCHEMA lake.""', "has an empty part"),
+        (
+            "CREATE OR REPLACE SCHEMA lake.x",
+            "`CREATE OR REPLACE SCHEMA` is not supported",
+        ),
+        ("CREATE SCHEMA lake.x AUTHORIZATION bob", "AUTHORIZATION` is not supported"),
+        ("CREATE SCHEMA AUTHORIZATION bob", "AUTHORIZATION` is not supported"),
+        ("CREATE SCHEMA lake.x OPTIONS (k = 1)", r"use `WITH \(\.\.\.\)` instead"),
+        ("CREATE SCHEMA lake.x DEFAULT COLLATE 'und'", "`DEFAULT COLLATE`"),
+        ("CREATE SCHEMA lake.x CLONE lake.y", "CLONE` is not supported"),
+        (
+            "CREATE SCHEMA lake.x WITH ('Location' = '/x')",
+            "'Location' is not a schema option; did you mean 'location'",
+        ),
+        (
+            "CREATE SCHEMA lake.x WITH ('location' = 'x')",
+            "location must be an absolute path or a URI",
+        ),
+        ("CREATE SCHEMA lake.x WITH ('k' = 1, 'k' = 2)", "duplicate schema option 'k'"),
+        (
+            "CREATE SCHEMA lake.x WITH ('k' = 1 + 1)",
+            "schema option values must be string, number or boolean literals",
+        ),
+        (
+            "DROP SCHEMA tpch CASCADE",
+            "CASCADE` is not supported; drop its tables first",
+        ),
+        ("DROP SCHEMA tpch PURGE", "PURGE` is not supported"),
+        ("DROP SCHEMA tpch, prod", "DROP SCHEMA takes one schema name"),
+    ],
+)
+def test_catalog_schema_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    namespaces = lake.list_namespaces()
+    with pytest.raises(SQLInterfaceError, match=error):
+        lake_ctx(lake).execute(statement)
+    assert lake.list_namespaces() == namespaces
+    assert lake.table_exists(("tpch", "lineitem"))
+
+
+@pytest.mark.write_disk
+def test_catalog_schema_without_catalog(lake: CountingCatalog) -> None:
+    for statement in ("CREATE SCHEMA sales", "DROP SCHEMA sales"):
+        kind = statement.rsplit(" ", 1)[0]
+        with pytest.raises(
+            SQLInterfaceError, match=f"`{kind}` is supported only for attached catalogs"
+        ):
+            pl.SQLContext().execute(statement)
+        with pytest.raises(
+            SQLInterfaceError,
+            match=r"schema 'sales' has no catalog: no default catalog is set; "
+            r"write '<catalog>\.sales'",
+        ):
+            lake_ctx(lake, default=False).execute(statement)
+    assert not lake.namespace_exists(("sales",))
+
+
+@pytest.mark.write_disk
+def test_create_catalog_schema_of_default_namespace(lake: CountingCatalog) -> None:
+    # the namespace of one-part table names can be created after registration
+    ctx = lake_ctx(lake, default_namespace="sales")
+    ctx.execute("CREATE SCHEMA sales")
+    ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
+    assert ctx.execute("SELECT * FROM lake.sales.t", eager=True).item() == 1
+
+
+def iceberg_columns(
+    catalog: CountingCatalog, *identifier: str
+) -> list[tuple[str, str]]:
+    # nested field ids depend on the order of assignment
+    schema = catalog.load_table(identifier).schema()
+    return [(f.name, re.sub(r"\d+: ", "", str(f.field_type))) for f in schema.fields]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("name", ["lake.tpch.lineitem", "tpch.lineitem", "lineitem"])
+def test_alter_catalog_table_columns(lake: CountingCatalog, name: str) -> None:
+    ctx = lake_ctx(lake)
+    res = ctx.execute(f"ALTER TABLE {name} ADD COLUMN w BIGINT", eager=True)
+    assert res.item() == "ALTER TABLE lake.tpch.lineitem"
+    assert iceberg_columns(lake, "tpch", "lineitem") == [
+        ("k", "long"),
+        ("v", "string"),
+        ("w", "long"),
+    ]
+    # a later statement reads the new schema
+    expected = LINEITEM.with_columns(w=pl.lit(None, pl.Int64))
+    assert_frame_equal(
+        ctx.execute(f"SELECT * FROM {name}", eager=True),
+        expected,
+        check_row_order=False,
+    )
+
+    ctx.execute(f"ALTER TABLE {name} RENAME COLUMN v TO v2")
+    ctx.execute(f"ALTER TABLE {name} DROP COLUMN w")
+    assert_frame_equal(
+        ctx.execute(f"SELECT * FROM {name}", eager=True),
+        LINEITEM.rename({"v": "v2"}),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_column_type(lake: CountingCatalog) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import FloatType, IntegerType, NestedField
+
+    schema = Schema(
+        NestedField(1, "c", IntegerType()), NestedField(2, "f", FloatType())
+    )
+    table = lake.create_table(("tpch", "promote"), schema=schema)
+    pl.DataFrame(
+        {"c": [7], "f": [1.5]}, schema={"c": pl.Int32, "f": pl.Float32}
+    ).write_iceberg(table, mode="append")
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE promote ALTER COLUMN c SET DATA TYPE BIGINT")
+    ctx.execute("ALTER TABLE promote ALTER COLUMN f TYPE DOUBLE")
+    # the type it has already: nothing to change
+    ctx.execute("ALTER TABLE promote ALTER COLUMN c SET DATA TYPE BIGINT")
+    assert iceberg_columns(lake, "tpch", "promote") == [("c", "long"), ("f", "double")]
+    assert ctx.execute("SELECT * FROM promote", eager=True).rows() == [(7, 1.5)]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_decimal_type(lake: CountingCatalog) -> None:
+    from decimal import Decimal
+
+    from polars.exceptions import InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE dec AS SELECT CAST(1.25 AS DECIMAL(10, 2)) AS d")
+    ctx.execute("ALTER TABLE dec ALTER COLUMN d SET DATA TYPE DECIMAL(12, 2)")
+    # only the precision widens: the stored values have the old scale
+    for target in ["DECIMAL(12, 3)", "DECIMAL(12, 1)"]:
+        with pytest.raises(InvalidOperationError, match="Iceberg only widens"):
+            ctx.execute(f"ALTER TABLE dec ALTER COLUMN d SET DATA TYPE {target}")
+    assert iceberg_columns(lake, "tpch", "dec") == [("d", "decimal(12, 2)")]
+    assert ctx.execute("SELECT d FROM dec", eager=True).item() == Decimal("1.25")
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_properties(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "ALTER TABLE lineitem SET TBLPROPERTIES ('probed-at' = 'x', 'n' = 1, 'b' = true)"
+    )
+    properties = lake.load_table(("tpch", "lineitem")).properties
+    assert {"probed-at": "x", "n": "1", "b": "true"}.items() <= properties.items()
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_if_exists(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE lineitem ADD COLUMN IF NOT EXISTS v BIGINT")
+    ctx.execute("ALTER TABLE lineitem DROP COLUMN IF EXISTS nope")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
+    res = ctx.execute("ALTER TABLE IF EXISTS nope ADD COLUMN w BIGINT", eager=True)
+    assert res.item() == "ALTER TABLE lake.tpch.nope"
+    with pytest.raises(NoSuchTableError, match="table 'nope' does not exist"):
+        ctx.execute("ALTER TABLE nope ADD COLUMN w BIGINT")
+    with pytest.raises(NoSuchTableError, match="identifiers are case-sensitive"):
+        ctx.execute("ALTER TABLE LINEITEM ADD COLUMN w BIGINT")
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_column_errors(lake: CountingCatalog) -> None:
+    from polars.exceptions import ColumnNotFoundError, DuplicateError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE nested (s STRUCT<x INT>)")
+    for statement, error, match in [
+        ("lineitem ADD COLUMN v BIGINT", DuplicateError, "column 'v' already exists"),
+        ("lineitem RENAME COLUMN v TO k", DuplicateError, "column 'k' already exists"),
+        ("lineitem RENAME COLUMN v TO v", DuplicateError, "column 'v' already exists"),
+        (
+            "lineitem DROP COLUMN V",
+            ColumnNotFoundError,
+            "column names are case-sensitive",
+        ),
+        ("lineitem RENAME COLUMN nope TO x", ColumnNotFoundError, "column 'nope'"),
+        ("lineitem ALTER COLUMN nope TYPE BIGINT", ColumnNotFoundError, "'nope'"),
+        ("lineitem ALTER COLUMN nope DROP NOT NULL", ColumnNotFoundError, "'nope'"),
+        # a dotted name is a top-level column, not the nested field `s.x`
+        ('nested DROP COLUMN "s.x"', ColumnNotFoundError, "column 's.x' not found"),
+    ]:
+        with pytest.raises(error, match=match):
+            ctx.execute(f"ALTER TABLE {statement}")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
+    assert iceberg_columns(lake, "tpch", "nested") == [("s", "struct<x: optional int>")]
+    ctx.execute('ALTER TABLE nested ADD COLUMN "s.z" BIGINT')
+    assert iceberg_columns(lake, "tpch", "nested") == [
+        ("s", "struct<x: optional int>"),
+        ("s.z", "long"),
+    ]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_catalog_errors(lake: CountingCatalog) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField
+
+    from polars.exceptions import InvalidOperationError
+
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "w", LongType()),
+        identifier_field_ids=[1],
+    )
+    lake.create_table(("tpch", "keyed"), schema=schema)
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE parted (id BIGINT, p VARCHAR) PARTITION BY (p)")
+    with pytest.raises(
+        InvalidOperationError, match="'id' of table 'keyed' is an identifier"
+    ):
+        ctx.execute("ALTER TABLE keyed ALTER COLUMN id DROP NOT NULL")
+    # what the catalog refuses passes through, with a note naming the statement
+    for statement in ["parted DROP COLUMN p", "keyed DROP COLUMN id"]:
+        table = statement.split()[0]
+        with pytest.raises(Exception) as exc:
+            ctx.execute(f"ALTER TABLE {statement}")
+        assert exc.value.__notes__ == [
+            f"table '{table}' could not be altered: catalog table 'tpch.{table}' of "
+            "catalog 'lake'"
+        ]
+    assert iceberg_columns(lake, "tpch", "parted") == [("id", "long"), ("p", "string")]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_type_changes(lake: CountingCatalog) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE typed (s STRUCT<x INT>, l INT[], b VARBINARY, t VARCHAR)")
+    # the type a column has already, nested ones included: nothing to change
+    ctx.execute("ALTER TABLE typed ALTER COLUMN s TYPE STRUCT<x INT>")
+    ctx.execute("ALTER TABLE typed ALTER COLUMN l TYPE INT[]")
+    # what Iceberg doesn't allow, although PyIceberg takes some of it
+    for column, target in [
+        ("t", "VARBINARY"),
+        ("b", "VARCHAR"),
+        ("t", "BIGINT"),
+        ("s", "STRUCT<x BIGINT>"),
+        ("l", "BIGINT"),
+    ]:
+        with pytest.raises(InvalidOperationError, match="Iceberg only widens"):
+            ctx.execute(f"ALTER TABLE typed ALTER COLUMN {column} TYPE {target}")
+    with pytest.raises(InvalidOperationError, match="Iceberg only widens"):
+        ctx.execute("ALTER TABLE lineitem ALTER COLUMN k SET DATA TYPE INT")
+    assert iceberg_columns(lake, "tpch", "typed") == [
+        ("s", "struct<x: optional int>"),
+        ("l", "list<int>"),
+        ("b", "binary"),
+        ("t", "string"),
+    ]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_invalid_decimal(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    for decimal in [
+        "DECIMAL(2, 3)",
+        "DECIMAL(10, 2147483648)",
+        "STRUCT<x DECIMAL(2, 3)>",
+    ]:
+        with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+            ctx.execute(f"ALTER TABLE lineitem ADD COLUMN d {decimal}")
+        with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+            ctx.execute(f"CREATE TABLE bad (d {decimal})")
+    ctx.execute("CREATE TABLE dec (d DECIMAL(10, 2))")
+    with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+        ctx.execute("ALTER TABLE dec ALTER COLUMN d SET DATA TYPE DECIMAL(12, 13)")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
+    assert iceberg_columns(lake, "tpch", "dec") == [("d", "decimal(10, 2)")]
+    assert not lake.table_exists(("tpch", "bad"))
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_name_mapping(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from polars.exceptions import DuplicateError
+
+    # a data file without field ids, read by name through the table's name mapping
+    table = lake.create_table(
+        ("tpch", "imported"),
+        schema=pa.schema([("k", pa.int64()), ("cat", pa.string())]),
+    )
+    path = tmp_path / "imported.parquet"
+    pq.write_table(pa.table({"k": [1], "cat": ["veg"]}), path)
+    table.add_files([f"file://{path}"])
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE imported RENAME COLUMN cat TO label")
+    # the old name still reads the file's column, so a new column must not take it
+    with pytest.raises(DuplicateError, match="its name mapping reads older data"):
+        ctx.execute("ALTER TABLE imported ADD COLUMN cat VARCHAR")
+    with pytest.raises(DuplicateError, match="its name mapping reads older data"):
+        ctx.execute("ALTER TABLE imported RENAME COLUMN k TO cat")
+    # back to a name of the same field
+    ctx.execute("ALTER TABLE imported RENAME COLUMN label TO cat")
+    ctx.execute("ALTER TABLE imported RENAME COLUMN cat TO label")
+    assert ctx.execute("SELECT * FROM imported", eager=True).rows() == [(1, "veg")]
+
+    # a mapped name without a field id is in use too
+    mapping = '[{"field-id": 1, "names": ["k"]}, {"names": ["ignored"]}]'
+    lake.load_table(("tpch", "lineitem")).transaction().set_properties(
+        {"schema.name-mapping.default": mapping}
+    ).commit_transaction()
+    with pytest.raises(DuplicateError, match="its name mapping reads older data"):
+        ctx.execute("ALTER TABLE lineitem ADD COLUMN ignored BIGINT")
+    with pytest.raises(DuplicateError, match="its name mapping reads older data"):
+        ctx.execute("ALTER TABLE lineitem RENAME COLUMN v TO ignored")
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_drop_only_column(lake: CountingCatalog) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE lineitem DROP COLUMN v")
+    with pytest.raises(InvalidOperationError, match="'k' is the only column"):
+        ctx.execute("ALTER TABLE lineitem DROP COLUMN k")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long")]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_drop_not_null(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE req (a BIGINT NOT NULL, b BIGINT DEFAULT NULL)")
+    ctx.execute("ALTER TABLE req ALTER COLUMN a DROP NOT NULL")
+    ctx.execute("ALTER TABLE req ADD COLUMN c BIGINT NULL")
+    ctx.execute("ALTER TABLE req ADD COLUMN d VARCHAR DEFAULT NULL")
+    fields = lake.load_table(("tpch", "req")).schema().fields
+    assert [(field.name, field.required) for field in fields] == [
+        ("a", False),
+        ("b", False),
+        ("c", False),
+        ("d", False),
+    ]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_added_types(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    for column in [
+        "a SMALLINT",
+        "b REAL",
+        "c DECIMAL(10, 2)",
+        "d TIMESTAMPTZ",
+        "e STRUCT<x BIGINT, y VARCHAR>",
+        "f BIGINT[]",
+    ]:
+        ctx.execute(f"ALTER TABLE lineitem ADD COLUMN {column}")
+    assert iceberg_columns(lake, "tpch", "lineitem")[2:] == [
+        ("a", "int"),
+        ("b", "float"),
+        ("c", "decimal(10, 2)"),
+        ("d", "timestamptz"),
+        ("e", "struct<x: optional long, y: optional string>"),
+        ("f", "list<long>"),
+    ]
+    with pytest.raises(TypeError, match="ALTER TABLE"):
+        ctx.execute("ALTER TABLE lineitem ADD COLUMN g UBIGINT")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("ADD COLUMN w BIGINT NOT NULL", "`ADD COLUMN ... NOT NULL` is not supported"),
+        (
+            "ADD COLUMN w BIGINT DEFAULT 5",
+            "takes only NULL or DEFAULT NULL; found `DEFAULT 5`",
+        ),
+        ("ADD COLUMN w BIGINT COMMENT 'x'", "found `COMMENT 'x'`"),
+        (
+            "ADD COLUMN w BIGINT FIRST",
+            "`ADD COLUMN ... FIRST | AFTER` is not supported",
+        ),
+        (
+            "ADD COLUMN w BIGINT AFTER k",
+            "`ADD COLUMN ... FIRST | AFTER` is not supported",
+        ),
+        ("DROP COLUMN v CASCADE", "`DROP COLUMN ... CASCADE` is not supported"),
+        ("ALTER COLUMN v SET NOT NULL", "`SET NOT NULL` is not supported"),
+        (
+            "ALTER COLUMN k SET DEFAULT 1",
+            "`ALTER COLUMN k SET DEFAULT 1` is not supported",
+        ),
+        (
+            "ADD COLUMN a BIGINT, ADD COLUMN b BIGINT",
+            "takes one operation per statement",
+        ),
+        ("ADD COLUMN a BIGINT, DROP COLUMN v", "takes one operation per statement"),
+        ("SET TBLPROPERTIES ('format-version' = '2')", "'format-version' is reserved"),
+        ("SET TBLPROPERTIES ('uuid' = 'x')", "'uuid' is reserved"),
+        ("SET TBLPROPERTIES ('location' = '/x')", "location is not a property"),
+        ("SET TBLPROPERTIES ('Location' = '/x')", "did you mean 'location'"),
+        ("SET TBLPROPERTIES ('a' = 1, 'a' = 2)", "duplicate table property 'a'"),
+        ("RENAME TO t2", "`ALTER TABLE ... RENAME TO t2` is not supported"),
+        ("ADD CONSTRAINT c PRIMARY KEY (k)", "is not supported for catalog tables"),
+    ],
+)
+def test_alter_catalog_table_sql_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    with pytest.raises(SQLInterfaceError, match=error):
+        lake_ctx(lake).execute(f"ALTER TABLE lineitem {statement}")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
+
+
+def test_alter_table_without_catalog(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.register("frame", pl.LazyFrame({"a": [1]}))
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        ctx.execute("ALTER TABLE frame ADD COLUMN b BIGINT")
+    # a registered table hides the catalog table of that name
+    ctx.register("lineitem", pl.LazyFrame({"a": [1]}))
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r"'lineitem' is a registered table, write 'lake\.tpch\.lineitem'",
+    ):
+        ctx.execute("ALTER TABLE lineitem ADD COLUMN b BIGINT")
+    with pytest.raises(SQLInterfaceError, match="no default catalog is set"):
+        lake_ctx(lake, default=False).execute(
+            "ALTER TABLE lineitem ADD COLUMN b BIGINT"
+        )
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        pl.SQLContext().execute("ALTER TABLE t ADD COLUMN b BIGINT")
+    with pytest.raises(SQLInterfaceError, match="`ALTER TABLE ONLY` is not supported"):
+        lake_ctx(lake).execute("ALTER TABLE ONLY lineitem ADD COLUMN b BIGINT")
 
 
 @pytest.mark.write_disk
