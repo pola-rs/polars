@@ -1360,6 +1360,127 @@ impl SQLContext {
         Ok(combine_conditions(equalities, SQLBinaryOperator::And))
     }
 
+    // Which inputs of a join the subqueries in `expr` name relations of, as
+    // `(reads_left, reads_right)`. `None` if `expr` names a relation of an input that the
+    // alias of a nested join hides. A qualified column of a subquery binds to the
+    // innermost query that declares its relation or has a struct column of its name; one
+    // that a query between may bind is not counted.
+    pub(crate) fn subqueries_join_inputs(
+        &self,
+        expr: &SQLExpr,
+        tbl_left: &TableInfo,
+        tbl_right: &TableInfo,
+    ) -> Option<(bool, bool)> {
+        // The relations a query declares and the schema of its FROM, if it is resolved.
+        struct Scope {
+            declared: Vec<RelationName>,
+            schema: Option<SchemaRef>,
+        }
+
+        enum Binds {
+            Local,
+            Unknown,
+            Outer,
+        }
+
+        struct Reads<'a> {
+            ctx: &'a SQLContext,
+            left: &'a TableInfo,
+            right: &'a TableInfo,
+            scopes: Vec<Scope>,
+            reads_left: bool,
+            reads_right: bool,
+            hidden: bool,
+        }
+
+        impl Reads<'_> {
+            fn binds(&self, parts: &[Ident]) -> Binds {
+                for scope in self.scopes.iter().rev() {
+                    if match_qualifier(parts, scope.declared.iter()).is_some() {
+                        return Binds::Local;
+                    }
+                    match &scope.schema {
+                        Some(schema) => {
+                            if matches!(schema.get(&parts[0].value), Some(DataType::Struct(_))) {
+                                return Binds::Local;
+                            }
+                        },
+                        None => return Binds::Unknown,
+                    }
+                }
+                Binds::Outer
+            }
+        }
+
+        impl Visitor for Reads<'_> {
+            type Break = ();
+
+            fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<()> {
+                let spellings = self.ctx.catalog_spellings();
+                let scope = match query.body.as_ref() {
+                    SetExpr::Select(select) if query.with.is_none() => Scope {
+                        declared: declared_relations(&select.from, spellings),
+                        schema: match select.from.is_empty() {
+                            true => Some(Default::default()),
+                            false => self
+                                .ctx
+                                .isolated()
+                                .resolve_subquery_from(select)
+                                .ok()
+                                .flatten()
+                                .map(|(_, _, schema)| schema),
+                        },
+                    },
+                    _ => Scope {
+                        declared: declared_anywhere(query, spellings),
+                        schema: None,
+                    },
+                };
+                self.scopes.push(scope);
+                ControlFlow::Continue(())
+            }
+
+            fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+                self.scopes.pop();
+                ControlFlow::Continue(())
+            }
+
+            fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+                let SQLExpr::CompoundIdentifier(parts) = expr else {
+                    return ControlFlow::Continue(());
+                };
+                let in_subquery = !self.scopes.is_empty();
+                if in_subquery && !matches!(self.binds(parts), Binds::Outer) {
+                    return ControlFlow::Continue(());
+                }
+                let Ok(Some((name, _))) = self.ctx.resolve_qualifier(parts) else {
+                    return ControlFlow::Continue(());
+                };
+                if self.ctx.is_right_relation(&name, self.right) {
+                    self.reads_right |= in_subquery;
+                } else if self.ctx.is_joined_relation(&name, self.left) {
+                    self.reads_left |= in_subquery;
+                } else {
+                    self.hidden |=
+                        self.left.relations.contains(&name) || self.right.relations.contains(&name);
+                }
+                ControlFlow::Continue(())
+            }
+        }
+
+        let mut reads = Reads {
+            ctx: self,
+            left: tbl_left,
+            right: tbl_right,
+            scopes: Vec::new(),
+            reads_left: false,
+            reads_right: false,
+            hidden: false,
+        };
+        let _ = dyn_visit::visit(expr, &mut reads);
+        (!reads.hidden).then_some((reads.reads_left, reads.reads_right))
+    }
+
     // Which inputs of a join the qualifiers that `subquery` doesn't declare name, as
     // `(reads_left, reads_right)`.
     fn foreign_join_inputs(
@@ -2712,7 +2833,7 @@ pub(crate) fn exists_aggregates(
                 Ok(PolarsSQLFunctions::Explode) => self.unsupported = true,
                 Ok(f) if f.is_builtin_aggregate() && function.over.is_none() => {
                     // An aggregate belongs to the outer query if it reads only outer columns,
-                    // in its arguments or its FILTER clause.
+                    // in its arguments, its WITHIN GROUP order or its FILTER clause.
                     let mut columns = Columns {
                         inner_names: self.inner_names,
                         inner_schema: self.inner_schema,
@@ -2721,6 +2842,7 @@ pub(crate) fn exists_aggregates(
                         outer: false,
                     };
                     let _ = dyn_visit::visit(&function.args, &mut columns);
+                    let _ = dyn_visit::visit(&function.within_group, &mut columns);
                     let _ = dyn_visit::visit(&function.filter, &mut columns);
                     if columns.inner || !columns.outer {
                         self.local = true;
@@ -3291,7 +3413,7 @@ fn is_elementwise(expr: &Expr) -> bool {
 // Row-index a frame so the index can serve as a row identity key. The result is
 // cached: the index identifies the same row only if every consumer reads one
 // materialisation.
-fn row_indexed_once(lf: LazyFrame, name: PlSmallStr) -> LazyFrame {
+pub(crate) fn row_indexed_once(lf: LazyFrame, name: PlSmallStr) -> LazyFrame {
     lf.with_row_index(name, None).cache()
 }
 

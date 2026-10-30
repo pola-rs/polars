@@ -109,7 +109,10 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr, arena: &Arena<AExpr>) -
                     !is_single_literal_ae(input[1].node(), arena)
                 },
                 #[cfg(feature = "replace")]
-                F::Replace | F::ReplaceStrict { .. } => true,
+                F::Replace | F::ReplaceStrict { .. } => {
+                    !(is_single_literal_ae(input[1].node(), arena)
+                        && is_single_literal_ae(input[2].node(), arena))
+                },
                 _ => false,
             }
         },

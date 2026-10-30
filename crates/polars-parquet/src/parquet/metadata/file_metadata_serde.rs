@@ -314,6 +314,7 @@ fn chunk_from_wire(c: ChunkWire, footer: &mut Vec<u8>) -> CompactColumnChunk {
         bloom_filter_offset: None,
         bloom_filter_length: None,
         dictionary_fallback: None,
+        unencoded_byte_array_data_bytes: None,
     };
 
     CompactColumnChunk {
@@ -367,6 +368,7 @@ mod tests {
                 bloom_filter_offset: None,
                 bloom_filter_length: None,
                 dictionary_fallback: None,
+                unencoded_byte_array_data_bytes: None,
             }),
             offset_index_offset: None,
             offset_index_length: None,

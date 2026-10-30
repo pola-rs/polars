@@ -380,7 +380,7 @@ impl DeletionFilesProvider {
                         let mask = deletion_files_init_fut.await?;
 
                         if verbose {
-                            let num_deleted_rows = mask.num_deleted_rows();
+                            let num_deleted_rows = mask.num_deleted_rows(mask.len());
                             let max_index = mask.len().checked_sub(1);
 
                             eprintln!(
@@ -508,7 +508,7 @@ impl ExternalFilterMask {
             None => PlSmallStr::from_static("None"),
             Some(mask) => {
                 let mask_variant = mask.variant_name();
-                let n = mask.num_deleted_rows();
+                let n = mask.num_deleted_rows(mask.len());
                 let s = if n == 1 { "" } else { "s" };
                 format_pl_smallstr!("{mask_variant}(<{n} deletion{s}>)")
             },
@@ -571,20 +571,17 @@ impl ExternalFilterMask {
         }
     }
 
-    pub fn num_deleted_rows(&self) -> usize {
-        match self {
-            Self::Iceberg { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .unset_bits(),
-            Self::DeltaDeletionVector { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .unset_bits(),
+    /// Number of deleted rows within the first `num_physical_rows` rows.
+    ///
+    /// Iceberg position deletes can reference positions past the end of the data file, these must
+    /// not be counted as deleted rows.
+    pub fn num_deleted_rows(&self, num_physical_rows: usize) -> usize {
+        let mask = self.get_mask();
+
+        if num_physical_rows >= mask.len() {
+            mask.unset_bits()
+        } else {
+            mask.sliced(0, num_physical_rows).unset_bits()
         }
     }
 

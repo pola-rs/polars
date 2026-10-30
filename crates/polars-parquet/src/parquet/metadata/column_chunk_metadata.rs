@@ -192,6 +192,14 @@ impl ColumnChunkMetadata {
         Ok(self.compact_metadata()?.dictionary_fallback)
     }
 
+    /// Combined length in bytes of all byte array values (strings, binary) in this
+    /// chunk, before encoding. Every occurrence counts, but nulls and the 4-byte
+    /// length prefixes don't. Returns `None` for columns that aren't byte arrays,
+    /// or when the writer didn't write size statistics.
+    pub fn unencoded_byte_array_data_bytes(&self) -> ParquetResult<Option<i64>> {
+        Ok(self.compact_metadata()?.unencoded_byte_array_data_bytes)
+    }
+
     /// Bloom filter byte offset, if present.
     pub fn bloom_filter_offset(&self) -> ParquetResult<Option<i64>> {
         Ok(self.compact_metadata()?.bloom_filter_offset)

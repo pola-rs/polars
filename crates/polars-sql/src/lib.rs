@@ -15,6 +15,7 @@ mod resolver;
 mod sql_expr;
 mod sql_visitors;
 mod subquery;
+mod subquery_outer_select;
 mod subquery_pull_up;
 #[cfg(any(
     feature = "csv",
@@ -27,7 +28,9 @@ mod table_functions;
 mod types;
 mod window_frames;
 
-pub use catalog::{CatalogDdl, CatalogTable};
+pub use catalog::{
+    CatalogAlter, CatalogDdl, CatalogNamespace, CatalogPartitionField, CatalogTable,
+};
 pub use context::{SQLContext, extract_table_identifiers};
 pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;

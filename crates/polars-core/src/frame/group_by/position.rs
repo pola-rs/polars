@@ -422,7 +422,7 @@ impl GroupsType {
                 }
             },
             GroupsType::Slice { .. } => {
-                // invariant of the type
+                // Only reached for non-overlapping slices, which are ordered by start.
             },
         }
     }
@@ -430,7 +430,12 @@ impl GroupsType {
     pub(crate) fn is_sorted_by_first_idx(&self) -> bool {
         match self {
             GroupsType::Idx(groups) => groups.is_sorted_by_first_idx(),
-            GroupsType::Slice { .. } => true,
+            // Overlapping slices can step back, e.g. after a per-window `slice` offset.
+            GroupsType::Slice {
+                overlapping,
+                monotonic,
+                ..
+            } => !*overlapping || *monotonic,
         }
     }
 

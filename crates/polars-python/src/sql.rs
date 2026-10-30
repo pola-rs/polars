@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use polars::sql::{CatalogDdl, SQLContext, extract_table_identifiers};
+use polars::sql::{CatalogAlter, CatalogDdl, SQLContext, extract_table_identifiers};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -143,6 +143,7 @@ impl PySQLContext {
                 required,
                 location,
                 properties,
+                partition_by,
             } => {
                 dict.set_item("kind", "create_table")?;
                 dict.set_item("name", name)?;
@@ -158,6 +159,92 @@ impl PySQLContext {
                     props.set_item(key, value)?;
                 }
                 dict.set_item("properties", props)?;
+                let partition_by: Vec<(String, String)> = partition_by
+                    .into_iter()
+                    .map(|field| (field.column, field.transform))
+                    .collect();
+                dict.set_item("partition_by", partition_by)?;
+            },
+            CatalogDdl::CreateSchema {
+                name,
+                namespace,
+                if_not_exists,
+                properties,
+            } => {
+                dict.set_item("kind", "create_schema")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", namespace.catalog)?;
+                dict.set_item("namespace", namespace.namespace)?;
+                dict.set_item("if_not_exists", if_not_exists)?;
+                let props = PyDict::new(py);
+                for (key, value) in properties {
+                    props.set_item(key, value)?;
+                }
+                dict.set_item("properties", props)?;
+            },
+            CatalogDdl::DropSchema {
+                name,
+                namespace,
+                if_exists,
+            } => {
+                dict.set_item("kind", "drop_schema")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", namespace.catalog)?;
+                dict.set_item("namespace", namespace.namespace)?;
+                dict.set_item("if_exists", if_exists)?;
+            },
+            CatalogDdl::AlterTable {
+                name,
+                table,
+                if_exists,
+                operation,
+            } => {
+                dict.set_item("kind", "alter_table")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_exists", if_exists)?;
+                let op = PyDict::new(py);
+                match operation {
+                    CatalogAlter::AddColumn {
+                        name,
+                        dtype,
+                        if_not_exists,
+                    } => {
+                        op.set_item("op", "add_column")?;
+                        op.set_item("column", name)?;
+                        op.set_item("dtype", &Wrap(dtype))?;
+                        op.set_item("if_not_exists", if_not_exists)?;
+                    },
+                    CatalogAlter::DropColumn { name, if_exists } => {
+                        op.set_item("op", "drop_column")?;
+                        op.set_item("column", name)?;
+                        op.set_item("if_exists", if_exists)?;
+                    },
+                    CatalogAlter::RenameColumn { old, new } => {
+                        op.set_item("op", "rename_column")?;
+                        op.set_item("column", old)?;
+                        op.set_item("new_name", new)?;
+                    },
+                    CatalogAlter::SetDataType { name, dtype } => {
+                        op.set_item("op", "set_data_type")?;
+                        op.set_item("column", name)?;
+                        op.set_item("dtype", &Wrap(dtype))?;
+                    },
+                    CatalogAlter::DropNotNull { name } => {
+                        op.set_item("op", "drop_not_null")?;
+                        op.set_item("column", name)?;
+                    },
+                    CatalogAlter::SetProperties { properties } => {
+                        op.set_item("op", "set_properties")?;
+                        let props = PyDict::new(py);
+                        for (key, value) in properties {
+                            props.set_item(key, value)?;
+                        }
+                        op.set_item("properties", props)?;
+                    },
+                }
+                dict.set_item("operation", op)?;
             },
         }
         Ok(Some(dict))

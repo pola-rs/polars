@@ -841,7 +841,10 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Time64(_)
         | ArrowDataType::Timestamp(_, _)
         | ArrowDataType::Date32
+        | ArrowDataType::Decimal32(_, _)
+        | ArrowDataType::Decimal64(_, _)
         | ArrowDataType::Decimal(_, _)
+        | ArrowDataType::Decimal256(_, _)
         | ArrowDataType::Date64
         | ArrowDataType::Map(_, _)) => {
             let dt = dt.clone();
