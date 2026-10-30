@@ -37,7 +37,8 @@ if TYPE_CHECKING:
     import pyiceberg.table
 
     from polars._plr import PyLazyFrame
-    from polars._typing import StorageOptionsDict
+    from polars._typing import PolarsDataType, StorageOptionsDict
+    from polars.expr import Expr
     from polars.io.iceberg import IcebergCatalogConfig
 
     CompatibleFrameType: TypeAlias = (
@@ -514,6 +515,13 @@ class SQLContext(Generic[FrameType]):
             response = _drop_catalog_namespace(catalog, ddl)
         elif ddl["kind"] == "alter_table":
             response = _alter_catalog_table(catalog, ddl)
+        elif ddl["kind"] == "insert":
+            response = _insert_catalog_table(
+                catalog,
+                ddl,
+                lambda query: wrap_ldf(self._execute_with_catalogs(query)),
+                storage_options,
+            )
         else:
             msg = f"unsupported catalog statement {ddl['kind']!r}"
             raise NotImplementedError(msg)
@@ -603,6 +611,10 @@ class SQLContext(Generic[FrameType]):
           (as the catalog allows: int to long, float to double, a wider decimal),
           `ALTER COLUMN ... DROP NOT NULL` and `SET TBLPROPERTIES`. Column names
           are case-sensitive. See :ref:`ALTER TABLE <alter_table>`.
+        * `INSERT INTO <name> [(<column>, ...)] <query>` appends the rows of a
+          `VALUES` list or a query in one commit, and `INSERT OVERWRITE` replaces
+          all of the table's rows. Values convert to the column types as described
+          in :ref:`INSERT <insert>`.
         * `TRUNCATE` and `DELETE` are not supported on catalog tables.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
@@ -1407,28 +1419,17 @@ def _fill_created_table(
     """Append the rows of `lf` to the new, empty `table`, dropping it on failure."""
     from pyiceberg.exceptions import CommitStateUnknownException
 
-    from polars.io.iceberg._sink import IcebergSinkState
-
     table_name = _display_name(identifier)
     created_location = table.metadata_location
-    state = None
     try:
-        state = IcebergSinkState.new(
-            table, mode="append", storage_options=storage_options
-        )
-        state.attach_sink(lf).collect()
+        _write_rows(table, lf, "append", storage_options)
     except CommitStateUnknownException as error:
-        assert state is not None
-        location, _ = state.written_files_dir()
-        error.add_note(f"the rows may have landed; data files kept under '{location}'")
         error.add_note(
             f"table '{name}' was created, its rows may be missing: catalog table "
             f"'{table_name}'"
         )
         raise
     except Exception as error:
-        if state is not None and (remaining := state.remove_written_files()):
-            error.add_note(f"data files may remain under '{remaining}'")
         if _drop_if_unchanged(catalog, identifier, created_location):
             error.add_note(
                 f"table '{name}' could not be created: catalog table '{table_name}'"
@@ -1439,6 +1440,204 @@ def _fill_created_table(
                 "was left in the catalog"
             )
         raise
+
+
+def _write_rows(
+    table: pyiceberg.table.Table,
+    lf: LazyFrame,
+    mode: Literal["append", "overwrite"],
+    storage_options: StorageOptionsDict | None,
+) -> None:
+    """Write the rows of `lf` to `table` in one commit, leaving no files on failure."""
+    from pyiceberg.exceptions import CommitStateUnknownException
+
+    from polars.io.iceberg._sink import IcebergSinkState
+
+    state = None
+    try:
+        state = IcebergSinkState.new(table, mode=mode, storage_options=storage_options)
+        state.attach_sink(lf).collect()
+    except CommitStateUnknownException as error:
+        assert state is not None
+        location, _ = state.written_files_dir()
+        error.add_note(f"the rows may have landed; data files kept under '{location}'")
+        raise
+    except Exception as error:
+        if state is not None and (remaining := state.remove_written_files()):
+            error.add_note(f"data files may remain under '{remaining}'")
+        raise
+
+
+def _insert_catalog_table(
+    catalog: pyiceberg.catalog.Catalog,
+    ddl: dict[str, Any],
+    query_frame: Callable[[str], LazyFrame],
+    storage_options: StorageOptionsDict | None,
+) -> str:
+    """Write the rows of an `INSERT` to its catalog table, returning the response."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    from polars.datatypes import Null
+    from polars.exceptions import (
+        ColumnNotFoundError,
+        DuplicateError,
+        InvalidOperationError,
+        SchemaError,
+    )
+    from polars.functions import lit, nth
+    from polars.io.iceberg.functions import scan_iceberg
+
+    identifier: tuple[str, ...] = tuple(ddl["identifier"])
+    name, table_name = ddl["name"], _display_name(identifier)
+    statement = "INSERT OVERWRITE" if ddl["overwrite"] else "INSERT INTO"
+    response = f"{statement} {_display_name([ddl['catalog'], *identifier])}"
+    missing = (
+        f"table '{name}' does not exist: catalog table '{table_name}' could not be "
+        "written"
+    )
+    # checked first, as not every catalog reports a missing table as one on load
+    if not _table_exists(catalog, identifier):
+        msg = f"{missing}; catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg)
+    try:
+        table = catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError) as error:
+        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg) from error
+
+    lf = query_frame(ddl["query"])
+    source = lf.collect_schema()
+    target = scan_iceberg(table).collect_schema()
+    required = {f.name for f in table.schema().fields if f.required}
+    columns = ddl["columns"] or list(target)
+    for i, column in enumerate(columns):
+        if column not in target:
+            msg = f"column '{column}' not found in table '{name}'; column names are case-sensitive"
+            raise ColumnNotFoundError(msg)
+        if column in columns[:i]:
+            msg = f"column '{column}' is listed more than once in {statement}"
+            raise DuplicateError(msg)
+    if len(source) != len(columns):
+        msg = (
+            f"{statement} writes {len(columns)} columns of table '{name}', but the "
+            f"query gives {len(source)}"
+        )
+        raise SQLInterfaceError(msg)
+    if omitted := [c for c in target if c in required and c not in columns]:
+        msg = f"column '{omitted[0]}' of table '{name}' is NOT NULL and has no value"
+        raise InvalidOperationError(msg)
+    # by position: a column name such as "*" is a pattern to `col`
+    values = {
+        c: (i, dtype)
+        for i, (c, dtype) in enumerate(zip(columns, source.values(), strict=True))
+    }
+    rounded, exprs = [], []
+    for column, dtype in target.items():
+        if column not in values:
+            exprs.append(lit(None, dtype=dtype).alias(column))
+            continue
+        position, source_dtype = values[column]
+        if column in required and source_dtype == Null:
+            msg = f"column '{column}' of table '{name}' is NOT NULL"
+            raise InvalidOperationError(msg)
+        if (expr := _rounded(nth(position), source_dtype, dtype)) is None:
+            msg = (
+                f"column '{column}' of table '{name}' has type {dtype}, but the query "
+                f"gives {source_dtype}; convert it with CAST"
+            )
+            raise SchemaError(msg)
+        rounded.append(expr.alias(column))
+        exprs.append(nth(len(rounded) - 1).cast(dtype, strict=True))
+    # cast in a step of its own, so that a value that does not fit is reported by column
+    rows = lf.select(rounded)
+    try:
+        _write_rows(
+            table,
+            rows.select(exprs),
+            "overwrite" if ddl["overwrite"] else "append",
+            storage_options,
+        )
+    except Exception as error:
+        error.add_note(
+            f"table '{name}' could not be written by {statement}: catalog table "
+            f"'{table_name}' of catalog '{ddl['catalog']}'"
+        )
+        raise
+    return response
+
+
+def _rounded(expr: Expr, source: PolarsDataType, target: PolarsDataType) -> Expr | None:
+    """`expr`, ready to be cast from `source` to the column type `target`, if of a kind.
+
+    Numbers convert among themselves, with a fractional value rounded into an integer
+    (half away from zero for decimals, half to even for floats); dates and timestamps
+    among themselves; nested types element-wise. A value that does not fit is an error.
+    """
+    from decimal import Decimal as PyDecimal
+
+    from polars.datatypes import Decimal, Int128
+    from polars.functions import lit, when
+
+    if not _assignable(source, target, top=True):
+        return None
+    if target.is_integer() and isinstance(source, Decimal):
+        # half away from zero, by the fraction: `round` keeps the scale, which may leave
+        # no room for the integer
+        whole = expr.cast(Int128, strict=True)
+        fraction = expr - whole
+        half = lit(PyDecimal("0.5"))
+        adjust = when(fraction >= half).then(1).when(fraction <= -half).then(-1)
+        return whole + adjust.otherwise(0)
+    if target.is_integer() and source.is_float():
+        return expr.round(0)
+    return expr
+
+
+def _assignable(
+    source: PolarsDataType, target: PolarsDataType, *, top: bool = False
+) -> bool:
+    """Whether INSERT converts values of type `source` into a `target` column."""
+    from polars.datatypes import (
+        Array,
+        Categorical,
+        Date,
+        Datetime,
+        Enum,
+        Float32,
+        Float64,
+        List,
+        Map,
+        Null,
+        String,
+        Struct,
+        UInt128,
+    )
+
+    if source in (target, Null):
+        return True
+    # a value too large for a float would become infinite, unchecked
+    if target == Float32 and source in (Float64, UInt128):
+        return False
+    if source.is_numeric() and target.is_numeric():
+        # rounded only at the top level: nested fractions need an explicit CAST
+        return top or not (target.is_integer() and not source.is_integer())
+    if isinstance(source, (Categorical, Enum)):
+        return target == String
+    if isinstance(source, (Date, Datetime)) and isinstance(target, (Date, Datetime)):
+        return True
+    if isinstance(source, (List, Array)) and isinstance(target, List):
+        return _assignable(source.inner, target.inner)
+    # a map's keys keep their type: only its values widen
+    if isinstance(source, Map) and isinstance(target, Map):
+        return source.key == target.key and _assignable(source.value, target.value)
+    if isinstance(source, Struct) and isinstance(target, Struct):
+        return [f.name for f in source.fields] == [
+            f.name for f in target.fields
+        ] and all(
+            _assignable(a.dtype, b.dtype)
+            for a, b in zip(source.fields, target.fields, strict=True)
+        )
+    return False
 
 
 def _drop_if_unchanged(
