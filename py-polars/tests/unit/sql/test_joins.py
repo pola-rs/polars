@@ -3466,7 +3466,56 @@ def test_lateral_derived_table_column_names() -> None:
     a = pl.DataFrame({"k": [1], "x": [10]})
     b = pl.DataFrame({"k": [1], "v": [100]})
     result = pl.SQLContext(a=a, b=b).execute(
-        "SELECT * FROM a JOIN (SELECT a.x, 1 + a.x, b.v FROM b) d ON d.v > 0",
+        "SELECT * FROM a JOIN (SELECT a.x, 1 + a.x, "
+        "CASE WHEN a.x > 0 THEN b.v END FROM b) d ON d.v > 0",
         eager=True,
     )
     assert result.columns == ["k", "x", "x:d", "literal", "v"]
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lateral_derived_table_reads_left_input_once(
+    engine: Literal["in-memory", "streaming"],
+) -> None:
+    big = pl.DataFrame({"k": range(2000)})
+    result = (
+        pl.SQLContext(big=big)
+        .execute(
+            "SELECT l.k, d.k2 FROM (SELECT k FROM big GROUP BY k LIMIT 10) l "
+            "CROSS JOIN (SELECT l.k AS k2) d"
+        )
+        .collect(engine=engine)
+    )
+    assert result.height == 10
+    assert (result["k"] == result["k2"]).all()
+
+
+@pytest.mark.parametrize(
+    "derived",
+    [
+        "SELECT a.x, c.v FROM b RIGHT JOIN c ON b.v = c.v",
+        "SELECT COUNT(*) AS n FROM b WHERE b.v = a.k GROUP BY ()",
+        "SELECT a.k AS z FROM b ORDER BY SUM(b.v)",
+        "SELECT SUM(a.x) AS s FROM b GROUP BY b.v",
+        "SELECT a.k FROM b GROUP BY 2",
+    ],
+)
+def test_lateral_derived_table_unsupported(derived: str) -> None:
+    a = pl.DataFrame({"k": [1, 2], "x": [10, 20]})
+    b = pl.DataFrame({"v": [3, 4]})
+    c = pl.DataFrame({"k": [9], "v": [30]})
+    with pytest.raises(SQLInterfaceError, match="no table or struct column named 'a'"):
+        pl.SQLContext(a=a, b=b, c=c).execute(
+            f"SELECT a.k FROM a CROSS JOIN ({derived}) d", eager=True
+        )
+
+
+def test_lateral_derived_table_ambiguous_outer_column() -> None:
+    a = pl.DataFrame({"k": [1]})
+    b = pl.DataFrame({"v": [3]})
+    c = pl.DataFrame({"k": [9]})
+    with pytest.raises(ColumnNotFoundError):
+        pl.SQLContext(a=a, b=b, c=c).execute(
+            "SELECT a.k FROM a CROSS JOIN c CROSS JOIN (SELECT k + b.v AS z FROM b) d",
+            eager=True,
+        )

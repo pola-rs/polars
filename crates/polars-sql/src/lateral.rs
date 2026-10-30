@@ -17,14 +17,15 @@ use polars_lazy::prelude::*;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Join,
-    JoinConstraint, JoinOperator, ObjectName, Query, SelectItem, SelectItemQualifiedWildcardKind,
-    SetExpr, TableFactor, TableWithJoins, Value as SQLValue, ValueWithSpan, Visitor, VisitorMut,
+    JoinConstraint, JoinOperator, ObjectName, OrderBy, OrderByKind, Query, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, TableFactor, TableWithJoins, Value as SQLValue,
+    ValueWithSpan, Visitor, VisitorMut,
 };
 
 use crate::context::{RelationName, match_qualifier, relation_name};
 use crate::sql_visitors::is_column_selector;
-use crate::subquery::row_indexed_once;
-use crate::subquery_group_by::is_count_star;
+use crate::subquery::{row_indexed_once, strip_nested};
+use crate::subquery_group_by::{is_aggregate_call, is_count_star};
 use crate::subquery_outer_select::calls_query_function;
 use crate::subquery_pull_up::has_aggregate;
 use crate::{SQLContext, col, dyn_visit, unique_column_name};
@@ -63,7 +64,8 @@ impl Inner<'_> {
 }
 
 /// The columns the derived table reads outside its own relations, or `Break` if it reads the
-/// query in a way the rewrite can't keep: a window or ranking function, or a column selector.
+/// query in a way the rewrite can't keep: a window or ranking function, a column selector, or
+/// an aggregate of outer columns only, which aggregates the outer query.
 struct OuterColumns<'a, 'b> {
     ctx: &'a SQLContext,
     inner: &'a Inner<'b>,
@@ -93,6 +95,22 @@ impl Visitor for OuterColumns<'_, '_> {
                 if function.over.is_some() || calls_query_function(self.ctx, expr) =>
             {
                 return ControlFlow::Break(());
+            },
+            _ if is_aggregate_call(self.ctx, expr) => {
+                let (mut reads_inner, mut reads_outer) = (false, false);
+                let _ = dyn_visit::visit_expressions(expr, |e| {
+                    if matches!(e, SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)) {
+                        if self.inner.binds(e) {
+                            reads_inner = true;
+                        } else {
+                            reads_outer = true;
+                        }
+                    }
+                    ControlFlow::<()>::Continue(())
+                });
+                if reads_outer && !reads_inner {
+                    return ControlFlow::Break(());
+                }
             },
             SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)
                 if !self.inner.binds(expr) && !self.found.contains(expr) =>
@@ -211,10 +229,19 @@ impl SQLContext {
         let GroupByExpr::Expressions(group_by, modifiers) = &select.group_by else {
             return None;
         };
-        // Without GROUP BY, an aggregate yields a row for an outer row without inner rows.
-        if !modifiers.is_empty()
-            || (group_by.is_empty()
-                && (select.having.is_some() || has_aggregate(self, &select.projection)))
+        // An empty group yields a row for an outer row without inner rows.
+        let empty_group = group_by.is_empty()
+            && (select.having.is_some()
+                || has_aggregate(self, &select.projection)
+                || has_aggregate(self, &subquery.order_by));
+        if empty_group
+            || !modifiers.is_empty()
+            || group_by.iter().any(|key| {
+                matches!(
+                    strip_nested(key),
+                    SQLExpr::Rollup(_) | SQLExpr::Cube(_) | SQLExpr::GroupingSets(_)
+                ) || matches!(key, SQLExpr::Tuple(keys) if keys.is_empty())
+            })
             || matches!(select.distinct, Some(Distinct::On(_)))
             || select.top.is_some()
             || select.qualify.is_some()
@@ -223,6 +250,49 @@ impl SQLContext {
             || select.value_table_mode.is_some()
             || select.select_modifiers.is_some()
         {
+            return None;
+        }
+        // The domain table joins before the first FROM item, so a RIGHT or FULL join would
+        // add rows without an outer value.
+        if select.from.first().is_some_and(|tbl| {
+            tbl.joins.iter().any(|join| {
+                matches!(
+                    join.join_operator,
+                    JoinOperator::Right(_)
+                        | JoinOperator::RightOuter(_)
+                        | JoinOperator::FullOuter(_)
+                        | JoinOperator::RightSemi(_)
+                        | JoinOperator::RightAnti(_)
+                )
+            })
+        }) {
+            return None;
+        }
+        // An ordinal past the SELECT items would read the added id column.
+        let order_by_items = match &subquery.order_by {
+            Some(OrderBy {
+                kind: OrderByKind::Expressions(items),
+                ..
+            }) => items.iter().map(|item| &item.expr).collect(),
+            Some(_) => return None,
+            None => vec![],
+        };
+        let has_qualified_wildcard = select
+            .projection
+            .iter()
+            .any(|item| matches!(item, SelectItem::QualifiedWildcard(..)));
+        let invalid_ordinal = |e: &SQLExpr| match e {
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::Number(n, _),
+                ..
+            }) => {
+                has_qualified_wildcard
+                    || n.parse::<usize>()
+                        .map_or(true, |n| n > select.projection.len())
+            },
+            _ => false,
+        };
+        if group_by.iter().chain(order_by_items).any(invalid_ordinal) {
             return None;
         }
 
@@ -292,12 +362,34 @@ impl SQLContext {
         }
         let found = outer.found;
 
-        let mut left = lf.clone();
-        let left_schema = self.get_frame_schema(&mut left).ok()?;
+        // The domain and the left input must see the same rows.
+        let mut lf = lf.clone().cache();
+        let left_schema = self.get_frame_schema(&mut lf).ok()?;
+        let prefix = format!("__POLARS_LATERAL_{}", unique_column_name());
+        let domain_name = Ident::new(&prefix);
+        let id = format_pl_smallstr!("{prefix}_ID");
+        let left_key = format_pl_smallstr!("{prefix}_L");
+        let right_key = format_pl_smallstr!("{prefix}_R");
         let mut outer_exprs: Vec<Expr> = Vec::new();
+        // The name of each outer value, as the derived table would name a column of it.
+        let mut value_names: Vec<PlSmallStr> = Vec::new();
         let mut columns: Vec<(SQLExpr, SQLExpr)> = Vec::new();
-        let domain_name = Ident::new(format!("__POLARS_LATERAL_{}", unique_column_name()));
         for sql_expr in found {
+            let name = match &sql_expr {
+                SQLExpr::Identifier(ident) => {
+                    // A name of several relations joined before is ambiguous.
+                    let joined_name = format!("{}:", ident.value);
+                    if left_schema
+                        .iter_names()
+                        .any(|name| name.starts_with(&joined_name))
+                    {
+                        return None;
+                    }
+                    &ident.value
+                },
+                SQLExpr::CompoundIdentifier(parts) => &parts.last()?.value,
+                _ => unreachable!(),
+            };
             let Ok(Some(expr)) = self.try_parse_outer_only_expr(&sql_expr, &left_schema) else {
                 continue;
             };
@@ -305,12 +397,13 @@ impl SQLContext {
                 Some(index) => index,
                 None => {
                     outer_exprs.push(expr);
+                    value_names.push(name.into());
                     outer_exprs.len() - 1
                 },
             };
             let column = SQLExpr::CompoundIdentifier(vec![
                 domain_name.clone(),
-                Ident::new(format!("__POLARS_LATERAL_V{index}")),
+                Ident::new(format!("{prefix}_V{index}")),
             ]);
             columns.push((sql_expr, column));
         }
@@ -318,9 +411,8 @@ impl SQLContext {
             return None;
         }
 
-        let id = format_pl_smallstr!("__POLARS_LATERAL_ID_{}", unique_column_name());
         let values: Vec<PlSmallStr> = (0..outer_exprs.len())
-            .map(|i| format_pl_smallstr!("__POLARS_LATERAL_V{i}"))
+            .map(|i| format_pl_smallstr!("{prefix}_V{i}"))
             .collect();
         let domain = row_indexed_once(
             lf.clone()
@@ -334,10 +426,7 @@ impl SQLContext {
                 .unique(None, UniqueKeepStrategy::Any),
             id.clone(),
         );
-        let left_key = format_pl_smallstr!("__POLARS_LATERAL_L_{}", unique_column_name());
-        let right_key = format_pl_smallstr!("__POLARS_LATERAL_R_{}", unique_column_name());
         let left = lf
-            .clone()
             .join_builder()
             .with(
                 domain.clone().select(
@@ -363,40 +452,11 @@ impl SQLContext {
             .ok()?
             .drop(Selector::ByName {
                 names: values.iter().cloned().collect(),
-                strict: false,
+                strict: true,
             });
 
         // The derived table reads the domain table, and keeps the id of the outer values.
         let mut query = subquery.as_ref().clone();
-        // An unnamed SELECT item is named after its first column or literal, so one that
-        // starts with an outer column keeps that column's name.
-        if let SetExpr::Select(select) = query.body.as_mut() {
-            for item in &mut select.projection {
-                let SelectItem::UnnamedExpr(expr) = item else {
-                    continue;
-                };
-                let first = dyn_visit::visit_expressions(&*expr, |e| match e {
-                    SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) | SQLExpr::Value(_) => {
-                        ControlFlow::Break(e.clone())
-                    },
-                    _ => ControlFlow::Continue(()),
-                });
-                let ControlFlow::Break(first) = first else {
-                    continue;
-                };
-                let name = match &first {
-                    SQLExpr::Identifier(ident) => ident,
-                    SQLExpr::CompoundIdentifier(parts) => parts.last().unwrap(),
-                    _ => continue,
-                };
-                if columns.iter().any(|(outer, _)| *outer == first) {
-                    *item = SelectItem::ExprWithAlias {
-                        expr: expr.clone(),
-                        alias: name.clone(),
-                    };
-                }
-            }
-        }
         let _ = dyn_visit::visit_mut(
             &mut query,
             &mut ReadDomain {
@@ -439,7 +499,7 @@ impl SQLContext {
                     .map(domain_column),
             );
         }
-        let right = self
+        let mut right = self
             .execute_isolated(|ctx| {
                 ctx.table_map
                     .write()
@@ -448,6 +508,15 @@ impl SQLContext {
                 ctx.execute_query(&query)
             })
             .ok()?;
+        // An unnamed SELECT item named after an outer column takes that column's name.
+        let right_schema = self.get_frame_schema(&mut right).ok()?;
+        let (renamed, names): (Vec<_>, Vec<_>) = values
+            .iter()
+            .zip(&value_names)
+            .filter(|(value, _)| right_schema.contains(value))
+            .map(|(value, name)| (value.clone(), name.clone()))
+            .unzip();
+        let right = right.rename(renamed, names, true);
 
         let key_condition = SQLExpr::BinaryOp {
             left: Box::new(SQLExpr::Identifier(Ident::new(left_key.as_str()))),
