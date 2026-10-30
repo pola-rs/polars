@@ -3477,7 +3477,7 @@ def test_lateral_derived_table_column_names() -> None:
 def test_lateral_derived_table_reads_left_input_once(
     engine: Literal["in-memory", "streaming"],
 ) -> None:
-    big = pl.DataFrame({"k": range(2000)})
+    big = pl.DataFrame({"k": list(range(2000))})
     result = (
         pl.SQLContext(big=big)
         .execute(
@@ -3498,6 +3498,9 @@ def test_lateral_derived_table_reads_left_input_once(
         "SELECT a.k AS z FROM b ORDER BY SUM(b.v)",
         "SELECT SUM(a.x) AS s FROM b GROUP BY b.v",
         "SELECT a.k FROM b GROUP BY 2",
+        "WITH b AS (SELECT 100 AS x) SELECT a.k AS ak, x AS z FROM b",
+        "SELECT a.k AS ak, b.* RENAME (v AS x) FROM b WHERE x > 5",
+        "SELECT SUM(a.x + (SELECT MAX(b.v) FROM b)) AS s FROM b GROUP BY b.v",
     ],
 )
 def test_lateral_derived_table_unsupported(derived: str) -> None:

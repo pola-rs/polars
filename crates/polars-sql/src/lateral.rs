@@ -23,7 +23,7 @@ use sqlparser::ast::{
 };
 
 use crate::context::{RelationName, match_qualifier, relation_name};
-use crate::sql_visitors::is_column_selector;
+use crate::sql_visitors::{expr_contains_subquery, is_column_selector};
 use crate::subquery::{row_indexed_once, strip_nested};
 use crate::subquery_group_by::{is_aggregate_call, is_count_star};
 use crate::subquery_outer_select::calls_query_function;
@@ -94,6 +94,10 @@ impl Visitor for OuterColumns<'_, '_> {
             SQLExpr::Function(function)
                 if function.over.is_some() || calls_query_function(self.ctx, expr) =>
             {
+                return ControlFlow::Break(());
+            },
+            // The columns a nested query reads may be its own.
+            _ if is_aggregate_call(self.ctx, expr) && expr_contains_subquery(expr) => {
                 return ControlFlow::Break(());
             },
             _ if is_aggregate_call(self.ctx, expr) => {
@@ -212,7 +216,9 @@ impl SQLContext {
             },
             _ => return None,
         };
+        // A CTE of the derived table may hide a relation whose columns would be read instead.
         if !alias.columns.is_empty()
+            || subquery.with.is_some()
             || subquery.limit_clause.is_some()
             || subquery.fetch.is_some()
             || !subquery.locks.is_empty()
@@ -329,10 +335,16 @@ impl SQLContext {
             schema: &schema,
             aliases: &aliases,
         };
-        // A wildcard would also select the columns of the domain table.
+        // A wildcard would also select the columns of the domain table, and one that renames
+        // or replaces columns names columns that are not inner.
         for item in &select.projection {
             match item {
                 SelectItem::Wildcard(_) => return None,
+                SelectItem::QualifiedWildcard(_, options)
+                    if options.opt_rename.is_some() || options.opt_replace.is_some() =>
+                {
+                    return None;
+                },
                 SelectItem::QualifiedWildcard(
                     SelectItemQualifiedWildcardKind::ObjectName(name),
                     _,
