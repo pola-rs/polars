@@ -1,5 +1,7 @@
 use std::ops::RangeInclusive;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fmt, mem, slice};
 
 pub use kll::KLLSketch;
@@ -22,9 +24,9 @@ pub const DEFAULT_FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
 
 /// Looseness of the formal KLL error bound (estimated by measuring).
-const KLL_BOUND_LOOSENESS: f64 = 5.9;
+const KLL_BOUND_LOOSENESS: f64 = 3.1;
 /// Looseness of the formal REQ error bound (estimated by measuring).
-const REQ_BOUND_LOOSENESS: f64 = 37.0;
+const REQ_BOUND_LOOSENESS: f64 = 34.0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -267,6 +269,11 @@ pub mod kll {
     /// Compactors at or below this capacity are replaced by [`Sampler`].
     const SAMPLER_CUTOFF: usize = 8;
 
+    /// Sync with the shared count every `max(k, consumed_items / SYNC_DIVISOR)` items. That
+    /// bounds the syncs of a sketch to `O(log n)`, while the shared count lags by at most about
+    /// `1 / SYNC_DIVISOR`.
+    const SYNC_DIVISOR: u64 = 8;
+
     /// Some small `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta`
     /// for a *single* query value, with `delta` = `failure_probability`.
     #[inline(never)]
@@ -306,9 +313,9 @@ pub mod kll {
         //    at most:
         //       n * 2^(H-2) / (k * c) * (1 + 1/(2c) + 1/(2c)^2 + ...)
         //    == n * 2^(H-1) / k * (1/(2c) + 1/(2c)^2 + 1/(2c)^3 + ...)
-        //  * We know that the creation of level H-1 consumed k items of weight 2^(H-2).
-        //    The sum of the weights of those items denote that at least that many
-        //    items were ingested in total, i.e., `k * 2^(H-2) ≤ n.`
+        //  * Level H-1 was either created by compacting k items of weight 2^(H-2), or added by
+        //    `raise_height_for_num_items(G)` with `k * 2^(H-2) ≤ G`, where `finalize` asserts
+        //    `G ≤ n`. Either way, `k * 2^(H-2) ≤ n`.
         //    Rewrite ⇒ n/k ≥ 2^(H-2) ⇒ 2^(H-1) ≤ 2*(n/k).
         //  * Finish: Total variance (in terms of (n/k)²) is at most 2 * (1/(2c) + 1/(2c)^2 + ...).
         let compactor_var = 2.0 * geometric_tail(1.0 / (2.0 * CAPACITY_DECAY));
@@ -336,10 +343,6 @@ pub mod kll {
     struct Level {
         offset: usize,
         size: usize,
-        /// Set while the next compaction must take the opposite `coin`.
-        mid_pair: bool,
-        /// Parity promoted by the previous compaction, see `compact_level`.
-        coin: bool,
     }
 
     /// Stand-in for the run of [`SAMPLER_CUTOFF`]-sized compactors at the bottom
@@ -406,6 +409,37 @@ pub mod kll {
         }
     }
 
+    /// A count of the items consumed by several sketches, and the share of one sketch in it.
+    #[derive(Debug, Clone)]
+    struct SharedCount {
+        /// Number of items consumed by all sketches sharing this count, as far as each has
+        /// synced.
+        count: Arc<AtomicU64>,
+        /// Number of items this sketch already added to `count`.
+        synced_items: u64,
+        /// Number of consumed items at which this sketch syncs next.
+        next_sync_at: u64,
+    }
+
+    impl SharedCount {
+        fn new(count: Arc<AtomicU64>, k: usize) -> Self {
+            Self {
+                count,
+                synced_items: 0,
+                next_sync_at: k as u64,
+            }
+        }
+
+        /// Add the unsynced part of `consumed_items` to the count, and return the new count.
+        #[cold]
+        fn sync(&mut self, consumed_items: u64, k: usize) -> u64 {
+            let delta = consumed_items - self.synced_items;
+            self.synced_items = consumed_items;
+            self.next_sync_at = consumed_items + u64::max(k as u64, consumed_items / SYNC_DIVISOR);
+            self.count.fetch_add(delta, Ordering::Relaxed) + delta
+        }
+    }
+
     #[derive(Debug)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
@@ -417,6 +451,8 @@ pub mod kll {
         k: usize,
         /// Total number of items that were consumed by this sketch.
         consumed_items: u64,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        shared_count: Option<SharedCount>,
         /// Maximum number of items before we compact.
         total_capacity: usize,
         /// Height of the base compactor at `levels[0]`.
@@ -436,6 +472,7 @@ pub mod kll {
                 levels: self.levels.clone(),
                 k: self.k,
                 consumed_items: self.consumed_items,
+                shared_count: self.shared_count.clone(),
                 total_capacity: self.total_capacity,
                 sampler: self.sampler.clone(),
                 base_compactor_height: self.base_compactor_height,
@@ -458,6 +495,7 @@ pub mod kll {
                 levels: vec![Level::default()],
                 k,
                 consumed_items: 0,
+                shared_count: None,
                 total_capacity: k,
                 rng: rand::make_rng(),
                 scratch: Vec::default(),
@@ -476,7 +514,21 @@ pub mod kll {
             self.0.merge(&other.0);
         }
 
+        /// Count the items of every sketch given this `count`, and of their clones, in `count`,
+        /// and grow each to the tallest height the error bound allows for it.
+        ///
+        /// Only use this if all those sketches are merged into one before it is finalized.
+        pub fn with_shared_count(mut self, count: Arc<AtomicU64>) -> Self {
+            self.0.shared_count = Some(SharedCount::new(count, self.0.k));
+            self
+        }
+
         /// Stop ingesting, keeping only what this sketch retained.
+        ///
+        /// # Panics
+        ///
+        /// Panics if the sketches sharing its count synced more items to it than were merged
+        /// into this one.
         pub fn finalize(self) -> FinalizedSketch<T> {
             self.0.finalize()
         }
@@ -486,6 +538,12 @@ pub mod kll {
         #[inline]
         pub fn update<Q: ToOwned<Owned = T> + ?Sized>(&mut self, item: &Q) {
             self.consumed_items += 1;
+            if let Some(shared_count) = &mut self.shared_count
+                && self.consumed_items >= shared_count.next_sync_at
+            {
+                let count = shared_count.sync(self.consumed_items, self.k);
+                self.raise_height_for_num_items(count);
+            }
             if self.items.len() >= self.total_capacity {
                 self.compact(true);
             }
@@ -493,6 +551,14 @@ pub mod kll {
                 self.feed_sampler(1, item);
             } else {
                 self.update_compactors(item.to_owned());
+            }
+        }
+
+        #[cold]
+        fn raise_height_for_num_items(&mut self, count: u64) {
+            let height = height_for_count(self.k, count);
+            while self.base_compactor_height + self.levels.len() < height {
+                self.add_new_compactor();
             }
         }
 
@@ -597,15 +663,7 @@ pub mod kll {
             let mut compact_level = self.levels[level];
             let rand: u8 = self.rng.random();
             let coin1 = rand & 0x1 != 0;
-
-            // Only draw a fresh promotion parity every other compaction, and take
-            // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
-            compact_level.coin = match compact_level.mid_pair {
-                true => !compact_level.coin,
-                false => rand & 0x2 != 0,
-            };
-            compact_level.mid_pair = !compact_level.mid_pair;
-            let coin2 = compact_level.coin;
+            let coin2 = rand & 0x2 != 0;
 
             let mut next_level = self.levels[level + 1];
             let mut compact_start = compact_level.offset;
@@ -711,8 +769,6 @@ pub mod kll {
                 self.levels[level] = Level {
                     offset: next_offset,
                     size: l1.size + l2.size,
-                    mid_pair: l1.mid_pair | l2.mid_pair,
-                    coin: merge_coin(l1.mid_pair, l1.coin, l2.mid_pair, l2.coin, &mut self.rng),
                 };
                 next_offset += l1.size + l2.size;
             }
@@ -720,6 +776,11 @@ pub mod kll {
             self.items = items;
 
             self.consumed_items += other.consumed_items;
+            if let Some(shared_count) = &mut self.shared_count {
+                // Leave out `other`'s items: it may have synced them already, and an undercount
+                // is safe.
+                shared_count.synced_items += other.consumed_items;
+            }
             // Absorb the low-weight compactors into our sampler.
             for height in other.base_compactor_height..self.base_compactor_height {
                 let Some(l2) = other.try_level_at(height) else {
@@ -745,12 +806,25 @@ pub mod kll {
             let IngestingState {
                 mut items,
                 levels,
+                k,
                 consumed_items,
+                shared_count,
                 mut scratch,
                 base_compactor_height: base_height,
                 sampler,
                 ..
             } = self;
+
+            if let Some(shared_count) = shared_count {
+                let count = shared_count.count.load(Ordering::Relaxed);
+                assert!(
+                    count <= consumed_items,
+                    "sketches sharing a count synced {count} items to it, but only \
+                     {consumed_items} were merged into this one"
+                );
+            }
+            let height = base_height + levels.len();
+            debug_assert!(height < 2 || (k as u128) << (height - 2) <= consumed_items as u128);
 
             // Base level is not yet sorted
             let base = levels[0];
@@ -793,6 +867,14 @@ pub mod kll {
         }
     }
 
+    /// The tallest height `H` with `k * 2^(H-2) ≤ count`, or 1 if `count < k`.
+    fn height_for_count(k: usize, count: u64) -> usize {
+        match count / k as u64 {
+            0 => 1,
+            ratio => ratio.ilog2() as usize + 2,
+        }
+    }
+
     /// Capacity of the compactor `depth` levels below the top: `ceil(k (2/3)^depth)`
     /// rounded up to an even number, and never below `MIN_COMPACTOR_SIZE`.
     fn compactor_threshold(k: usize, depth: usize) -> usize {
@@ -800,6 +882,92 @@ pub mod kll {
             ((k as u128) * 2u128.pow(depth as u32)).div_ceil(3u128.pow(depth as u32));
         let nominal_size = usize::try_from(nominal_size).expect("overflow");
         usize::max(nominal_size.next_multiple_of(2), MIN_COMPACTOR_SIZE)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        const ERROR: f64 = 0.1;
+
+        fn height<T: fmt::Debug + Clone + TotalOrd>(sketch: &KLLSketch<T>) -> usize {
+            sketch.0.base_compactor_height + sketch.0.levels.len()
+        }
+
+        fn feed(sketch: &mut KLLSketch<u64>, items: std::ops::Range<u64>) {
+            for item in items {
+                sketch.update(&item);
+            }
+        }
+
+        #[test]
+        fn height_for_count_is_tallest_within_bound() {
+            for k in [2, 36, 1605] {
+                for count in (0..100_000).chain([u64::MAX / 2, u64::MAX]) {
+                    let h = height_for_count(k, count);
+                    let k = k as u128;
+                    assert!(h == 1 || k << (h - 2) <= count as u128);
+                    assert!(k << (h - 1) > count as u128);
+                }
+            }
+        }
+
+        #[test]
+        fn shared_count_raises_clones() {
+            const N: u64 = 1_000_000;
+            const CLONES: u64 = 4;
+            const CHUNK: u64 = 1_000;
+            let template = KLLSketch::<u64>::new(ERROR, DEFAULT_FAILURE_PROBABILITY)
+                .with_shared_count(Arc::default());
+            let k = template.0.k;
+            let mut clones: Vec<_> = (0..CLONES).map(|_| template.clone()).collect();
+            for (i, start) in (0..N).step_by(CHUNK as usize).enumerate() {
+                feed(&mut clones[i % CLONES as usize], start..start + CHUNK);
+            }
+            for clone in &clones {
+                assert!(height(clone) >= height_for_count(k, N / 2));
+            }
+
+            let mut merged = template;
+            for clone in &clones {
+                merged.merge(clone);
+            }
+            assert!(height(&merged) >= height_for_count(k, N / 2));
+            let finalized = merged.finalize();
+            assert_eq!(finalized.num_items(), N);
+            let median = *finalized.estimate_quantile(0.5).unwrap().unwrap();
+            assert!(median.abs_diff(N / 2) as f64 <= ERROR * N as f64);
+        }
+
+        #[test]
+        #[should_panic(expected = "were merged into this one")]
+        fn finalize_panics_on_unmerged_clone() {
+            let template = KLLSketch::<u64>::new(ERROR, DEFAULT_FAILURE_PROBABILITY)
+                .with_shared_count(Arc::default());
+            let mut a = template.clone();
+            let mut b = template;
+            feed(&mut b, 0..100_000);
+            feed(&mut a, 0..10_000);
+            a.finalize();
+        }
+
+        #[test]
+        fn late_clone_is_raised_and_merged() {
+            let template = KLLSketch::<u64>::new(ERROR, DEFAULT_FAILURE_PROBABILITY)
+                .with_shared_count(Arc::default());
+            let k = template.0.k;
+            let mut early = template.clone();
+            let mut late = template;
+            feed(&mut early, 0..100_000);
+            feed(&mut late, 100_000..110_000);
+            assert!(height(&late) > height_for_count(k, 10_000));
+
+            early.merge(&late);
+            let finalized = early.finalize();
+            assert_eq!(finalized.num_items(), 110_000);
+            let median = *finalized.estimate_quantile(0.5).unwrap().unwrap();
+            assert!(median.abs_diff(55_000) as f64 <= ERROR * 110_000.0);
+        }
     }
 }
 
@@ -869,8 +1037,6 @@ pub mod req {
         offset: usize,
         size: usize,
         compaction_schedule: u64,
-        /// Parity promoted by the previous compaction, see `compact_level_once`.
-        coin: bool,
     }
 
     #[derive(Debug)]
@@ -1072,19 +1238,10 @@ pub mod req {
                     }
                 }
 
-                let mid_pair = |l: &Level| !l.compaction_schedule.is_multiple_of(2);
-
                 self.levels[level] = Level {
                     offset: next_offset,
                     size: l1.size + l2.size,
                     compaction_schedule: l1.compaction_schedule | l2.compaction_schedule,
-                    coin: merge_coin(
-                        mid_pair(&l1),
-                        l1.coin,
-                        mid_pair(&l2),
-                        l2.coin,
-                        &mut self.rng,
-                    ),
                 };
                 next_offset += l1.size + l2.size;
             }
@@ -1147,13 +1304,7 @@ pub mod req {
             debug_assert!(l_c.is_multiple_of(2));
             debug_assert!(promote_count >= l_c);
 
-            // Only draw a fresh promotion parity every other compaction, and take
-            // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
-            let coin = match !self.levels[level].compaction_schedule.is_multiple_of(2) {
-                true => !self.levels[level].coin,
-                false => self.rng.random(),
-            };
-            self.levels[level].coin = coin;
+            let coin: bool = self.rng.random();
 
             // Level 0 is not sorted yet.
             let compactor = &mut self.items[compactor_start..compactor_end];
@@ -1290,14 +1441,6 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     cum_weights
 }
 
-fn merge_coin(mid1: bool, coin1: bool, mid2: bool, coin2: bool, rng: &mut SmallRng) -> bool {
-    match (mid1, mid2) {
-        (true, true) if coin1 != coin2 => rng.random(),
-        (false, true) => coin2,
-        _ => coin1,
-    }
-}
-
 /// Append the merge of two runs, both sorted by `compare`, to `vec`.
 fn merge_sorted<T>(
     vec: &mut Vec<T>,
@@ -1353,6 +1496,14 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
             Sketch::Kll(s) => s.update(item),
             Sketch::Req(s) => s.update(item),
             Sketch::DoubleReq(s) => s.update(item),
+        }
+    }
+
+    /// See [`KLLSketch::with_shared_count`]. A no-op for the other methods.
+    pub fn with_shared_count(self, count: Arc<AtomicU64>) -> Self {
+        match self {
+            Sketch::Kll(s) => Sketch::Kll(s.with_shared_count(count)),
+            s @ (Sketch::Req(_) | Sketch::DoubleReq(_)) => s,
         }
     }
 
