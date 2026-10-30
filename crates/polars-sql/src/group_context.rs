@@ -11,7 +11,7 @@ use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 
 use crate::context::is_correlated_result_col;
-use crate::unique_column_name;
+use crate::{col, unique_column_name};
 
 /// The expressions computed in the group context, without aggregate marks.
 pub(crate) struct AggregateOutputs {

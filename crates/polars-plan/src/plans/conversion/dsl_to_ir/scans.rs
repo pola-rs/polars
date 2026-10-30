@@ -876,6 +876,11 @@ fn row_group_stats(
         value_width,
         uncompressed_size: non_negative(chunk.uncompressed_size().ok()?).unwrap_or(0),
         dictionary_page_size,
+        dictionary_fallback: chunk.dictionary_fallback().ok()?,
+        unencoded_byte_array_size: chunk
+            .unencoded_byte_array_data_bytes()
+            .ok()?
+            .and_then(non_negative),
         bounds,
     })
 }

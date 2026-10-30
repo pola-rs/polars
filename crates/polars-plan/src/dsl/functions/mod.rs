@@ -32,7 +32,7 @@ pub use horizontal::{
     min_horizontal, reduce_exprs, sum_horizontal,
 };
 #[cfg(feature = "dtype-struct")]
-pub use horizontal::{cum_fold_exprs, cum_reduce_exprs};
+pub use horizontal::{cum_fold_exprs, cum_reduce_exprs, cum_sum_horizontal};
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
 #[cfg(all(

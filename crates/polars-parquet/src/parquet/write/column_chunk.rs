@@ -5,7 +5,7 @@ use futures::AsyncWrite;
 use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
 use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
-use polars_parquet_format::{ColumnChunk, ColumnMetaData, Type};
+use polars_parquet_format::{ColumnChunk, ColumnMetaData, SizeStatistics, Type};
 use polars_utils::aliases::PlHashSet;
 
 use super::DynStreamingIterator;
@@ -20,6 +20,7 @@ use crate::parquet::encryption::encrypt::{FileEncryptor, get_column_crypto_metad
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
+use crate::parquet::schema::types::PhysicalType;
 
 /// The context needed to encrypt a column chunk.
 pub(crate) struct ColumnChunkEncryption<'a> {
@@ -212,7 +213,25 @@ fn build_column_chunk(
     let statistics = reduce(&statistics)?;
     let statistics = statistics.map(|x| x.serialize());
 
-    let (type_, _): (Type, Option<i32>) = descriptor.descriptor.primitive_type.physical_type.into();
+    let physical_type = descriptor.descriptor.primitive_type.physical_type;
+    // Only written when every data page knows the size of its values. The type check keeps a
+    // chunk without data pages from getting a size of 0 when it isn't a byte array.
+    let size_statistics = if physical_type == PhysicalType::ByteArray {
+        specs
+            .iter()
+            .filter(|spec| !is_dict_page(spec))
+            .map(|spec| spec.unencoded_byte_array_data_bytes)
+            .sum::<Option<i64>>()
+            .map(|bytes| SizeStatistics {
+                unencoded_byte_array_data_bytes: Some(bytes),
+                repetition_level_histogram: None,
+                definition_level_histogram: None,
+            })
+    } else {
+        None
+    };
+
+    let (type_, _): (Type, Option<i32>) = physical_type.into();
 
     let metadata = ColumnMetaData {
         type_,
@@ -234,7 +253,7 @@ fn build_column_chunk(
         encoding_stats: None,
         bloom_filter_offset: None,
         bloom_filter_length: None,
-        size_statistics: None,
+        size_statistics,
     };
 
     Ok(ColumnChunk {

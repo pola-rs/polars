@@ -30,7 +30,7 @@ pub fn array_to_page(
     } else {
         None
     };
-    utils::build_plain_page(
+    let mut page = utils::build_plain_page(
         buffer,
         num_values,
         nested[0].len(),
@@ -41,5 +41,7 @@ pub fn array_to_page(
         type_,
         options,
         Encoding::Plain,
-    )
+    )?;
+    page.unencoded_byte_array_data_bytes = Some(array.total_bytes_len() as i64);
+    Ok(page)
 }

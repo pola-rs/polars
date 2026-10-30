@@ -126,12 +126,12 @@
 //!
 //! ## Dictionary Encoding
 //!
-//! [`RowsEncoded`] needs to support converting dictionary encoded arrays with unsorted, and
+//! The row encoding needs to support converting dictionary encoded arrays with unsorted, and
 //! potentially distinct dictionaries. One simple mechanism to avoid this would be to reverse
 //! the dictionary encoding, and encode the array values directly, however, this would lose
 //! the benefits of dictionary encoding to reduce memory and CPU consumption.
 //!
-//! As such the [`RowsEncoded`] creates an order-preserving mapping
+//! As such the row encoding creates an order-preserving mapping
 //! for each dictionary encoded column, which allows new dictionary
 //! values to be added whilst preserving the sort order.
 //!
@@ -264,6 +264,40 @@
 //!
 //! The order of a given column can be reversed by negating the encoded bytes of non-null values
 //!
+//! # Columns Without Nulls
+//!
+//! A column that does not encode nulls, see [`RowEncodingOptions::SKIP_NULL_ENCODING`], leaves
+//! out the null sentinel byte of fixed-width values, structs and fixed-size lists, and the
+//! validity bit of decimals. Nested values, booleans, variable length bytes and lists are encoded
+//! as usual.
+//!
+//! With `propagate_nulls` in [`convert_columns`] a row is null if any of its values is null.
+//!
+//! # Output Types
+//!
+//! [`RowEncodingLayout`] describes how columns are encoded and is needed to decode them again.
+//! [`RowEncodingOutput`] picks the type of the rows, given by [`RowEncodingLayout::dtype`]:
+//! `AlwaysBinaryOffset` and `AlwaysBinary` return the format above as `LargeBinary` or
+//! `BinaryView`. `Optimal` returns bit-packed rows when every column is a null, boolean, integer,
+//! float, decimal, enum or unordered categorical column and the packed rows fit in 128 bits. A
+//! single binary or string column that is unordered or ascending with nulls first is returned
+//! unchanged, nulls included, with strings as `BinaryView`. Otherwise it returns the format above
+//! as `LargeBinary`. The choice only depends on the layout, never on the data.
+//!
+//! ## Bit-Packed Rows
+//!
+//! Each column takes a null bit, if it encodes nulls, followed by its value bits: 0 for
+//! nulls, 1 for booleans, the bit width for integers and floats, and `ceil(p * log2(10)) + 1`
+//! for decimals of precision `p` (at most 128). The columns are placed in order from the most
+//! significant bit down to bit 0 of one number of `B <= 128` bits. For `B <= 1` the rows are
+//! booleans, otherwise the smallest unsigned integer that fits. Unused high bits are zero.
+//!
+//! The null bit is 1 for valid values and 0 for nulls, or the other way around with nulls
+//! last. The value bits of a null are zero. The value bits of a valid value are the same
+//! bits as the big-endian value bytes in the format above, inverted when descending. So
+//! packed rows compare like the format above. Unordered columns are packed like ascending
+//! columns with nulls first.
+//!
 //! [COBS]: https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing
 //! [byte stuffing]: https://en.wikipedia.org/wiki/High-Level_Data_Link_Control#Asynchronous_framing
 
@@ -272,6 +306,7 @@ extern crate core;
 pub mod decode;
 pub mod encode;
 pub(crate) mod fixed;
+mod layout;
 mod row;
 mod utils;
 pub(crate) mod variable;
@@ -280,8 +315,6 @@ mod widths;
 use polars_arrow::array::*;
 pub type ArrayRef = Box<dyn Array>;
 
-pub use encode::{
-    convert_columns, convert_columns_amortized, convert_columns_amortized_no_order,
-    convert_columns_no_order,
-};
-pub use row::{RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions, RowsEncoded};
+pub use encode::convert_columns;
+pub use layout::{RowEncodingField, RowEncodingLayout, RowEncodingOutput};
+pub use row::{RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions};

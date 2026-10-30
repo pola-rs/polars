@@ -1571,3 +1571,97 @@ def test_having_alias_types_in_comparisons() -> None:
         "SELECT g, MIN(s) AS m FROM t GROUP BY g HAVING m = 1", eager=True
     )
     assert out.rows() == [(1, "1")]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT g, PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY x) AS p FROM t GROUP BY g",
+        "SELECT g, PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) AS p FROM t GROUP BY g",
+        "SELECT g, PERCENTILE_CONT(0) WITHIN GROUP (ORDER BY x ASC) AS p FROM t GROUP BY g",
+        "SELECT PERCENTILE_CONT(1) WITHIN GROUP (ORDER BY x NULLS FIRST) AS p FROM t",
+        "SELECT PERCENTILE_DISC(1) WITHIN GROUP (ORDER BY x) AS p FROM t",
+        "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x * 2 + 1) AS p FROM t",
+        "SELECT g, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY 7) AS p FROM t GROUP BY g",
+        "SELECT g, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY n) AS p FROM t GROUP BY g",
+        (
+            "SELECT g, PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY x) "
+            "FILTER (WHERE x > 1) AS p FROM t GROUP BY g"
+        ),
+        "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) AS p FROM t WHERE FALSE",
+        (
+            "SELECT g, PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) AS p "
+            "FROM t WHERE FALSE GROUP BY g"
+        ),
+        (
+            "SELECT EXISTS (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY u.x) "
+            "FROM t AS u WHERE FALSE) AS e FROM t"
+        ),
+    ],
+)
+def test_percentile_within_group(query: str) -> None:
+    t = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1, 2, 2, 2, 3],
+            "x": [1, 2, 3, 4, 5, None, 1, None],
+            "n": [None, None, None, None, None, None, None, None],
+        },
+        schema_overrides={"n": pl.Int64},
+    )
+    assert_sql_matches(
+        frames={"t": t},
+        query=query,
+        compare_with="duckdb",
+        check_dtypes=False,
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_percentile_within_group_over(engine: EngineType) -> None:
+    t = pl.DataFrame({"g": [1, 1, 1, 2, 2], "x": [3, 1, 2, 5, None]})
+    ctx = pl.SQLContext(t=t)
+    res = ctx.execute(
+        "SELECT g, x, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) "
+        "OVER (PARTITION BY g) AS p, PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x) "
+        "OVER (PARTITION BY g) AS d FROM t"
+    ).collect(engine=engine)
+    expected = ctx.execute(
+        "SELECT g, x, QUANTILE_CONT(x, 0.5) OVER (PARTITION BY g) AS p, "
+        "QUANTILE_DISC(x, 0.5) OVER (PARTITION BY g) AS d FROM t"
+    ).collect(engine=engine)
+    assert_frame_equal(res, expected)
+
+
+@pytest.mark.parametrize(
+    ("clause", "err"),
+    [
+        ("PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x DESC)", "ascending"),
+        ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x DESC)", "ascending"),
+        ("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x, g)", "expects one argument"),
+        ("PERCENTILE_CONT(0.5)", "expects one argument"),
+        ("PERCENTILE_CONT(x, 0.5)", "expects one argument"),
+        ("PERCENTILE_CONT(1.5) WITHIN GROUP (ORDER BY x)", "between 0 and 1"),
+        ("QUANTILE_CONT(x, 0.5) WITHIN GROUP (ORDER BY x)", "WITHIN GROUP"),
+        (
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) FILTER (WHERE x > 1) "
+            "OVER (PARTITION BY g)",
+            "FILTER",
+        ),
+        (
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) OVER (ORDER BY g)",
+            "ORDER BY in OVER",
+        ),
+        # The aggregate reads only the outer query.
+        (
+            "EXISTS (SELECT PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY t.x) "
+            "FROM t AS u WHERE FALSE)",
+            "EXISTS",
+        ),
+    ],
+)
+def test_percentile_within_group_errors(clause: str, err: str) -> None:
+    t = pl.DataFrame({"g": [1, 2], "x": [1, 2]})
+    with pytest.raises(Exception, match=err):
+        pl.SQLContext(t=t).execute(f"SELECT {clause} AS p FROM t", eager=True)

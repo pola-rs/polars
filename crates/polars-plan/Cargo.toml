@@ -25,6 +25,7 @@ polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy", "csv", "async"] }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
+polars-row = { workspace = true }
 polars-utils = { workspace = true }
 
 bitflags = { workspace = true }

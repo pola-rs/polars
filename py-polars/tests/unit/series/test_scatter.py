@@ -1,13 +1,13 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars._typing import PolarsDataType
+from polars._typing import PolarsDataType, TimeUnit
 from polars.exceptions import ComputeError, InvalidOperationError, OutOfBoundsError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.mark.parametrize(
@@ -88,6 +88,43 @@ def test_scatter_datetime() -> None:
     result = s.scatter(0, datetime(2022, 2, 2))
     expected = pl.Series("dt", [datetime(2022, 2, 2), datetime(2024, 1, 31)])
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_scatter_datetime_time_unit_21474(time_unit: TimeUnit) -> None:
+    dtype = pl.Datetime(time_unit)
+    s = pl.Series("dt", [datetime(2024, 5, 26, 19), datetime(2024, 5, 27, 19)], dtype)
+    result = s.scatter(1, datetime(2024, 5, 27, 19, 15))
+    expected = pl.Series(
+        "dt", [datetime(2024, 5, 26, 19), datetime(2024, 5, 27, 19, 15)], dtype
+    )
+    assert_series_equal(result, expected)
+
+    df = pl.DataFrame({"dt": [datetime(2024, 5, 26, 19)]}, schema={"dt": dtype})
+    df[0, "dt"] = datetime(2024, 5, 27, 19, 15)
+    expected_df = pl.DataFrame(
+        {"dt": [datetime(2024, 5, 27, 19, 15)]}, schema={"dt": dtype}
+    )
+    assert_frame_equal(df, expected_df)
+
+
+def test_scatter_temporal_cast_21474() -> None:
+    s = pl.Series([timedelta(1)], dtype=pl.Duration("ms"))
+    expected = pl.Series([timedelta(seconds=1)], dtype=pl.Duration("ms"))
+    assert_series_equal(s.scatter(0, timedelta(seconds=1)), expected)
+
+    s = pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("ms"))
+    expected = pl.Series([datetime(2024, 5, 1)], dtype=pl.Datetime("ms"))
+    assert_series_equal(s.scatter(0, date(2024, 5, 1)), expected)
+
+    s = pl.Series([datetime(2024, 1, 1)], dtype=pl.Datetime("us"))
+    expected = pl.Series([datetime(2024, 5, 1, 12)], dtype=pl.Datetime("us"))
+    values = np.array(["2024-05-01T12:00"], dtype="datetime64[ms]")
+    assert_series_equal(s.scatter(0, values), expected)
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(0, time(12))
+    assert_series_equal(s, expected)
 
 
 def test_scatter_logical_all_null() -> None:
