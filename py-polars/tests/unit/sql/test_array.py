@@ -422,6 +422,16 @@ def test_array_length_and_cardinality() -> None:
         "SELECT CARDINALITY(NULL) AS a, ARRAY_LENGTH(NULL, 1) AS b", eager=True
     )
     assert res.to_dict(as_series=False) == {"a": [None], "b": [None]}
+    nulls = pl.DataFrame({"z": [None, None]})
+    res = nulls.sql(
+        "SELECT CARDINALITY(z) AS a, ARRAY_LENGTH(z, 1) AS b, "
+        "CARDINALITY(COALESCE(NULL, NULL)) AS c FROM self"
+    )
+    assert res.to_dict(as_series=False) == {
+        "a": [None, None],
+        "b": [None, None],
+        "c": [None, None],
+    }
 
     with pytest.raises(SQLInterfaceError, match="only supports dimension 1"):
         df.sql("SELECT ARRAY_LENGTH(STRING_TO_ARRAY(s, ' '), 2) FROM self")

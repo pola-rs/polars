@@ -36,7 +36,7 @@ use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
     interval_to_duration, order_by_sort_options, parse_extract_date_part, parse_sql_array,
-    parse_sql_expr, sql_binary, temporal_string_as,
+    parse_sql_expr, resolve_expr_dtype, sql_binary, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
@@ -2013,18 +2013,22 @@ impl SQLFunctionVisitor<'_> {
             },
             ArrayLength => {
                 let args = extract_args(function)?;
+                let schema = self.active_schema;
                 match args.len() {
-                    1 => self.visit_unary(list_len),
+                    1 => self.visit_unary(|e| list_len(e, schema)),
                     2 => self.try_visit_binary(|e, dimension| match dimension {
                         Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(1))) => {
-                            Ok(list_len(e))
+                            Ok(list_len(e, schema))
                         },
                         _ => polars_bail!(SQLInterface: "ARRAY_LENGTH only supports dimension 1 (found {})", args[1]),
                     }),
                     _ => polars_bail!(SQLSyntax: "ARRAY_LENGTH expects 1-2 arguments (found {})", args.len()),
                 }
             },
-            Cardinality => self.visit_unary(list_len),
+            Cardinality => {
+                let schema = self.active_schema;
+                self.visit_unary(|e| list_len(e, schema))
+            },
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),
             ArrayMin => self.visit_unary(|e| e.list().min()),
@@ -3507,13 +3511,11 @@ pub(crate) fn series_expr(
     }
 }
 
-/// The number of elements of the list `e`; a NULL literal has no type to read it as a list.
-fn list_len(e: Expr) -> Expr {
-    match e {
-        Expr::Literal(lv) if lv.is_null() => {
-            Expr::Literal(LiteralValue::untyped_null()).cast(polars_core::prelude::IDX_DTYPE)
-        },
-        e => e.list().len(),
+/// The number of elements of the list `e`; a NULL value has no list type to read.
+fn list_len(e: Expr, schema: Option<&Schema>) -> Expr {
+    match resolve_expr_dtype(&e, schema) {
+        Some(DataType::Null) => e.cast(polars_core::prelude::IDX_DTYPE),
+        _ => e.list().len(),
     }
 }
 
