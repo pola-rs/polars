@@ -601,16 +601,17 @@ def test_column_rename_and_schema_overrides() -> None:
     assert df.dtypes == [pl.String, pl.Int64, pl.Float32]
 
     f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        new_columns=["A", "C"],
+        schema_overrides={"A": pl.String, "C": pl.Float32},
+    )
+    assert df.columns == ["A", "C", "c"]
+    assert df.dtypes == [pl.String, pl.Float32, pl.Int64]
 
-    with pytest.raises(
-        SchemaError, match=r"new_columns.*does not match number of columns in file"
-    ):
-        pl.read_csv(
-            f,
-            columns=["a", "c"],
-            new_columns=["A", "C"],
-            schema_overrides={"A": pl.String, "C": pl.Float32},
-        )
+    df = pl.read_csv(io.StringIO("age,name\n1,alice\n"), new_columns=["years"])
+    assert df.columns == ["years", "name"]
+    assert df.rows() == [(1, "alice")]
 
     csv = textwrap.dedent(
         """\
@@ -1798,11 +1799,12 @@ def test_csv_scan_new_columns_missing(chunk_override: None, tmp_path: Path) -> N
     file_path = tmp_path / "test_csv_scan_new_columns.csv"
     df.write_csv(file_path)
 
-    with pytest.raises(SchemaError):
-        pl.scan_csv(
-            file_path,
-            new_columns=["x_new", "y_new"],
-        ).collect()
+    result = pl.scan_csv(
+        file_path,
+        new_columns=["x_new", "y_new"],
+    ).collect()
+    assert result.columns == ["x_new", "y_new", "z"]
+    assert result.rows() == [("A", "A", "A")]
 
     result = pl.scan_csv(
         file_path,
