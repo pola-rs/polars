@@ -1797,11 +1797,13 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             Repeat => self.visit_binary(|e: Expr, n: Expr| {
-                let repeated = e
-                    .clone()
-                    .repeat_by(n.cast(DataType::Int64).clip_min(lit(0)))
-                    .list()
-                    .join(lit(""), false);
+                let e = e.cast(DataType::String);
+                let n = n.strict_cast(DataType::Int64).clip_min(lit(0));
+                // An empty or null string repeats to itself, so it needs no repetitions.
+                let n = when(e.clone().str().len_bytes().gt(lit(0)))
+                    .then(n.clone())
+                    .otherwise(n.clip_max(lit(0)));
+                let repeated = e.clone().repeat_by(n).list().join(lit(""), false);
                 when(e.is_null())
                     .then(Expr::Literal(LiteralValue::untyped_null()))
                     .otherwise(repeated)
@@ -2012,17 +2014,17 @@ impl SQLFunctionVisitor<'_> {
             ArrayLength => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| e.list().len()),
+                    1 => self.visit_unary(list_len),
                     2 => self.try_visit_binary(|e, dimension| match dimension {
                         Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(1))) => {
-                            Ok(e.list().len())
+                            Ok(list_len(e))
                         },
                         _ => polars_bail!(SQLInterface: "ARRAY_LENGTH only supports dimension 1 (found {})", args[1]),
                     }),
                     _ => polars_bail!(SQLSyntax: "ARRAY_LENGTH expects 1-2 arguments (found {})", args.len()),
                 }
             },
-            Cardinality => self.visit_unary(|e| e.list().len()),
+            Cardinality => self.visit_unary(list_len),
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),
             ArrayMin => self.visit_unary(|e| e.list().min()),
@@ -3502,6 +3504,16 @@ pub(crate) fn series_expr(
         [start, stop] => Ok(int_series(parse(start)?, parse(stop)?, lit(1i64))),
         [start, stop, step] => Ok(int_series(parse(start)?, parse(stop)?, parse(step)?)),
         _ => polars_bail!(SQLSyntax: "{} expects 1 to 3 arguments; found {}", fname, args.len()),
+    }
+}
+
+/// The number of elements of the list `e`; a NULL literal has no type to read it as a list.
+fn list_len(e: Expr) -> Expr {
+    match e {
+        Expr::Literal(lv) if lv.is_null() => {
+            Expr::Literal(LiteralValue::untyped_null()).cast(polars_core::prelude::IDX_DTYPE)
+        },
+        e => e.list().len(),
     }
 }
 

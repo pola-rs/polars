@@ -418,6 +418,11 @@ def test_array_length_and_cardinality() -> None:
         "n3": expected,
     }
 
+    res = pl.sql(
+        "SELECT CARDINALITY(NULL) AS a, ARRAY_LENGTH(NULL, 1) AS b", eager=True
+    )
+    assert res.to_dict(as_series=False) == {"a": [None], "b": [None]}
+
     with pytest.raises(SQLInterfaceError, match="only supports dimension 1"):
         df.sql("SELECT ARRAY_LENGTH(STRING_TO_ARRAY(s, ' '), 2) FROM self")
     with pytest.raises(SQLSyntaxError, match="expects 1-2 arguments"):
