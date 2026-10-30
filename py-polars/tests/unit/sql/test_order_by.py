@@ -437,3 +437,16 @@ def test_order_by_aggregate_expression() -> None:
         compare_with="duckdb",
         expected={"g": ["b", "c", "a"], "mx": [9, 5, 2]},
     )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("VALUES (3, 'c'), (1, 'a'), (2, 'b') ORDER BY 1", [1, 2, 3]),
+        ("VALUES (3, 'c'), (1, 'a'), (2, 'b') ORDER BY column_1 DESC", [3, 2, 1]),
+        ("VALUES (3, 'c'), (1, 'a'), (2, 'b') ORDER BY 1 LIMIT 2 OFFSET 1", [2, 3]),
+    ],
+)
+def test_order_by_values(query: str, expected: list[int]) -> None:
+    res = pl.SQLContext().execute(query, eager=True)
+    assert res["column_0"].to_list() == expected

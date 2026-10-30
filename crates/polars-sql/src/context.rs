@@ -1327,7 +1327,10 @@ impl SQLContext {
                 explicit_row: _,
                 rows,
                 value_keyword: _,
-            }) => self.process_values(rows.iter().map(|p| &p.content)),
+            }) => {
+                let lf = self.process_values(rows.iter().map(|p| &p.content))?;
+                self.process_order_by(lf, &query.order_by, None)
+            },
 
             SetExpr::Table(tbl) => {
                 if let Some(table_name) = tbl.table_name.as_ref() {
