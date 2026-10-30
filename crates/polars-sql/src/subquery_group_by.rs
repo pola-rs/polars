@@ -27,7 +27,7 @@ use crate::sql_expr::parse_sql_expr;
 use crate::sql_visitors::{expr_contains_subquery, expr_has_window_functions, is_column_selector};
 use crate::subquery::{strip_nested, visit_foreign_qualifiers};
 use crate::subquery_outer_select::calls_query_function;
-use crate::subquery_pull_up::{ScopeColumns, compares_exactly};
+use crate::subquery_pull_up::{ReadAs, ScopeColumns, compares_exactly};
 use crate::{SQLContext, dyn_visit, unique_column_name};
 
 /// The relations of the subquery, whose columns are inner.
@@ -354,7 +354,11 @@ impl SQLContext {
         // A nested subquery reading the outer query moves into the FROM as it does without
         // GROUP BY. Each row matches at most one row of the moved table, so the groups stay.
         let ungrouped = without_grouping(subquery, select);
-        let pulled_up = self.pull_up_nested(ScopeColumns::Frame(outer_schema), &ungrouped);
+        let pulled_up = self.pull_up_nested(
+            ScopeColumns::Frame(outer_schema),
+            &ungrouped,
+            ReadAs::Groups,
+        );
         let mut base = select.as_ref().clone();
         if let Some(Query { body, .. }) = &pulled_up
             && let SetExpr::Select(pulled) = body.as_ref()
