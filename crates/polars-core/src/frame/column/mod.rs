@@ -18,6 +18,8 @@ use self::series::SeriesColumn;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
+#[cfg(feature = "algorithm_group_by")]
+use crate::frame::group_by::aggregations::nulls_at_one_end;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted};
 use crate::utils::Container;
@@ -790,7 +792,12 @@ impl Column {
 
                 // Use dtype-aware validity updates so Struct fields see the nulls.
                 let s = scalar_col.take_materialized_series().rechunk();
-                s.with_validity(validity.into_opt_validity()).into_column()
+                let mut out = s.with_validity(validity.into_opt_validity());
+                // The values are equal, so the result is sorted only if its nulls are at one end.
+                if !nulls_at_one_end(&out) {
+                    out.set_sorted_flag(IsSorted::Not);
+                }
+                out.into_column()
             },
         }
     }
