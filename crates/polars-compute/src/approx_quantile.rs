@@ -133,18 +133,25 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
             ComputeError: "`quantile` should be between 0.0 and 1.0, got {}", quantile,
         );
         // We round with ties toward ∞ for consistency with the regular quantile.
+        let rank = (quantile * self.num_items().saturating_sub(1) as f64).round();
+        Ok(self.estimate_at_rank(rank as u64))
+    }
+
+    /// Estimates the item at 0-based `rank` among the ingested items, `None` if out of range.
+    pub fn estimate_at_rank(&self, rank: u64) -> Option<&T> {
         let num_items = self.num_items();
-        let item_rank = (quantile * num_items.saturating_sub(1) as f64).round();
+        if rank >= num_items {
+            return None;
+        }
         let weighted_rank = match num_items {
-            0 => return Ok(None),
             1 => 1,
             _ => {
-                1 + (item_rank * (self.total_weight() - 1) as f64 / (num_items - 1) as f64).round()
-                    as u64
+                1 + (rank as f64 * (self.total_weight() - 1) as f64 / (num_items - 1) as f64)
+                    .round() as u64
             },
         };
         let idx = estimate_quantile_index(self.cum_weight.as_deref(), weighted_rank);
-        Ok(Some(&self.items[idx]))
+        Some(&self.items[idx])
     }
 
     /// Split into the retained items and each item's individual weight.
