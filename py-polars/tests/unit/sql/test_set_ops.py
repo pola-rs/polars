@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -618,3 +619,13 @@ def test_except_intersect_struct_cast_overflow_raises(op: str) -> None:
     )
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.sql(f"SELECT l AS s FROM self {op} SELECT r AS s FROM self")
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT"])
+def test_except_intersect_temporal_cast_overflow_raises(op: str) -> None:
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"s": [date(2500, 1, 1)]}),
+        b=pl.DataFrame({"s": pl.Series([None], dtype=pl.Datetime("ns"))}),
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        ctx.execute(f"SELECT s FROM a {op} SELECT s FROM b", eager=True)

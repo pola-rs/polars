@@ -2833,3 +2833,18 @@ def test_struct_supertype_cast_overflow_raises_30471() -> None:
     )
     with pytest.raises(InvalidOperationError):
         df.select(pl.when("c").then("l").otherwise("r"))
+
+
+@pytest.mark.parametrize("literal_first", [True, False])
+def test_struct_supertype_cast_keeps_literal_fields_30471(literal_first: bool) -> None:
+    # The list literal is cast to the column's dtype, which lacks `b`.
+    df = pl.DataFrame({"c": [True], "s": [[{"a": 3}]]})
+    literal = pl.lit([{"b": 2}])
+    when = pl.when("c")
+    expr = (
+        when.then(literal).otherwise("s")
+        if literal_first
+        else when.then("s").otherwise(literal)
+    )
+    with pytest.raises(InvalidOperationError):
+        df.select(expr)
