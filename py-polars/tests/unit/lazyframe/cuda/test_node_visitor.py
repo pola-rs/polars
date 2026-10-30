@@ -385,6 +385,55 @@ def test_rolling_expr_visitor_rank() -> None:
     assert fn_params == ("dense", 42)
 
 
+def _collect_window_order_by(query: pl.LazyFrame) -> list[tuple[Any, ...]]:
+    """Return the order_by of each Window expression with a view of its inputs."""
+    results: list[tuple[Any, ...]] = []
+
+    def callback(node_traverser: Any) -> None:
+        for expr_ir in node_traverser.get_exprs():
+            window = node_traverser.view_expression(expr_ir.node)
+            if isinstance(window, _expr_nodes.Window) and window.order_by is not None:
+                order_by = node_traverser.view_expression(window.order_by)
+                assert isinstance(order_by, _expr_nodes.Function)
+                inputs = [
+                    node_traverser.view_expression(node).name for node in order_by.input
+                ]
+                results.append((order_by.function_data, inputs))
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+def test_window_order_by_row_encode_visitor() -> None:
+    """Test that multi-column over(order_by=...) exposes its row_encode inputs."""
+    q = pl.LazyFrame({"a": [1, 1, 2], "c": [3, 1, 2], "d": [1, 2, 3]}).select(
+        pl.col("c").rank(method="ordinal").over("a", order_by=["c", "d"])
+    )
+    [(function_data, inputs)] = _collect_window_order_by(q)
+    assert function_data == (
+        "row_encode_ordered",
+        [False, False],
+        [False, False],
+        "always_binary_offset",
+        None,
+        False,
+    )
+    assert inputs == ["c", "d"]
+
+
+def test_window_order_by_row_encode_visitor_options() -> None:
+    q = pl.LazyFrame({"a": [1, 1, 2], "c": [3, 1, 2], "d": [1, 2, 3]}).select(
+        pl.col("c")
+        .rank(method="ordinal")
+        .over("a", order_by=["c", "d"], descending=True, nulls_last=True)
+    )
+    [(function_data, inputs)] = _collect_window_order_by(q)
+    assert function_data[:3] == ("row_encode_ordered", [True, True], [True, True])
+    assert inputs == ["c", "d"]
+
+
 def _collect_ewm_function_data(
     query: pl.LazyFrame,
 ) -> list[tuple[Any, ...]]:

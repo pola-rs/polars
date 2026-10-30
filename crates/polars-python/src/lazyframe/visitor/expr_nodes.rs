@@ -15,7 +15,7 @@ use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
     IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
-    IRStructFunction, IRTemporalFunction, MinMaxByOrder,
+    IRStructFunction, IRTemporalFunction, MinMaxByOrder, RowEncodingOutputType, RowEncodingVariant,
 };
 #[cfg(feature = "cutqcut")]
 use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
@@ -2213,8 +2213,39 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::EwmSumBy { half_life } => {
                     (PyEwmFunction::SumBy, Wrap(*half_life)).into_py_any(py)
                 },
-                IRFunctionExpr::RowEncode { .. } => {
-                    return Err(PyNotImplementedError::new_err("row_encode"));
+                IRFunctionExpr::RowEncode {
+                    variant,
+                    output,
+                    encode_nulls,
+                    propagate_nulls,
+                    ..
+                } => {
+                    let output = match output {
+                        RowEncodingOutputType::AlwaysBinaryOffset => "always_binary_offset",
+                        RowEncodingOutputType::AlwaysBinary => "always_binary",
+                        RowEncodingOutputType::Optimal => "optimal",
+                    };
+                    match variant {
+                        RowEncodingVariant::Unordered => (
+                            "row_encode_unordered",
+                            output,
+                            encode_nulls,
+                            propagate_nulls,
+                        )
+                            .into_py_any(py),
+                        RowEncodingVariant::Ordered {
+                            descending,
+                            nulls_last,
+                        } => (
+                            "row_encode_ordered",
+                            descending,
+                            nulls_last,
+                            output,
+                            encode_nulls,
+                            propagate_nulls,
+                        )
+                            .into_py_any(py),
+                    }
                 },
                 IRFunctionExpr::RowDecode { .. } => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
