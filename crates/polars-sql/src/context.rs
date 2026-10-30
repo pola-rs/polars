@@ -4304,6 +4304,7 @@ impl SQLContext {
             &left.name,
             &self.join_using_cols,
             &self.active_relations,
+            &schema,
         )?;
         let join_base = self.join_base.replace(JoinBase {
             table_name: left.name.to_string(),
@@ -4476,12 +4477,14 @@ impl SQLContext {
         {
             return Ok(false);
         }
+        // `check` passed qualified columns only, so no struct path needs the joined schema.
         check_for_ambiguous_column_refs(
             expr,
             &self.joined_aliases,
             &tbl_left.name,
             &self.join_using_cols,
             &self.active_relations,
+            &tbl_left.schema,
         )?;
         Ok(true)
     }
