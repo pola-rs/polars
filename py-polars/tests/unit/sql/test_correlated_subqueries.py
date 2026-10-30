@@ -1814,6 +1814,135 @@ def test_subquery_struct_field_is_not_correlated(projection: str, field: str) ->
 
 
 @pytest.mark.parametrize(
+    ("exists", "expected"), [("EXISTS", [1, 2]), ("NOT EXISTS", [])]
+)
+@pytest.mark.parametrize("field", ["s.id", "c.s.id", "a.id", "c.a.id"])
+def test_exists_subquery_struct_field_is_not_correlated(
+    exists: str, expected: list[int], field: str
+) -> None:
+    # `s` and `a` are struct columns of `c`; `a` is also the outer relation.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2]}),
+            "c": pl.DataFrame(
+                {
+                    "id": [1, 3],
+                    "s": [{"id": 1}, {"id": 2}],
+                    "a": [{"id": 1}, {"id": 2}],
+                }
+            ),
+        },
+        query=f"SELECT a.id FROM a WHERE {exists} (SELECT 1 FROM c WHERE {field} = c.id)",
+        compare_with="duckdb",
+        check_row_order=False,
+        expected={"id": expected},
+        engines=ENGINES,
+    )
+
+
+def _struct_scope_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "o": pl.DataFrame({"id": [1, 2], "f": [10, 2]}),
+        "o2": pl.DataFrame({"id": [1, 2], "s": [{"f": 10}, {"f": 2}]}),
+        "i": pl.DataFrame({"k": [1, 2], "s": [{"f": 1}, {"f": 5}]}),
+        "i_plain": pl.DataFrame({"k": [1, 2], "s": [1, 5]}),
+        "tf": pl.DataFrame({"f": [2]}),
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        # a plain column `s` is no struct path, so `s.f` reads the outer relation
+        (
+            "SELECT id FROM o AS s WHERE EXISTS (SELECT 1 FROM i_plain WHERE s.f = i_plain.k)",
+            {"id": [2]},
+        ),
+        # the inner struct column hides the outer one
+        (
+            "SELECT id FROM o2 WHERE EXISTS (SELECT 1 FROM i WHERE s.f = i.k)",
+            {"id": [1, 2]},
+        ),
+        # in one scope, the relation `s` wins over the struct column `s`
+        (
+            "SELECT id, (SELECT MAX(s.f) FROM i JOIN tf AS s ON TRUE) AS m FROM o",
+            {"id": [1, 2], "m": [2, 2]},
+        ),
+    ],
+)
+def test_subquery_struct_path_scope(query: str, expected: dict[str, Any]) -> None:
+    assert_sql_matches(
+        frames=_struct_scope_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        expected=expected,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id FROM o AS s WHERE EXISTS (SELECT 1 FROM i WHERE s.g = i.k)",
+        # an aggregate returns one row whatever WHERE keeps, but WHERE is still checked
+        "SELECT id FROM o WHERE EXISTS (SELECT COUNT(*) FROM i WHERE s.g = 1)",
+        "SELECT id FROM o WHERE EXISTS (SELECT COUNT(*) FROM i WHERE i.s.g = 1)",
+        "SELECT id FROM o WHERE NOT EXISTS "
+        "(SELECT COUNT(*) FROM i WHERE i.k = o.id AND s.g = 1)",
+    ],
+)
+def test_subquery_missing_struct_field_is_an_error(query: str) -> None:
+    with pytest.raises(pl.exceptions.StructFieldNotFoundError):
+        pl.SQLContext(_struct_scope_frames()).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT id FROM a AS k WHERE EXISTS "
+            "(SELECT 1 FROM c JOIN d ON c.k = d.k WHERE k.id = c.id)",
+            [(1,)],
+        ),
+        (
+            "SELECT id, (SELECT MAX(c.id) FROM c JOIN d ON c.k = d.k WHERE k.id = c.id) "
+            "AS m FROM a AS k ORDER BY id",
+            [(1, 1), (2, None)],
+        ),
+    ],
+)
+def test_subquery_dotted_name_over_joined_plain_columns(
+    query: str, expected: list[tuple[Any, ...]]
+) -> None:
+    # `k` is a plain column of both joined relations, so `k.id` reads the outer `k`
+    ctx = pl.SQLContext(
+        a=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3], "k": [7, 8]}),
+        d=pl.DataFrame({"id": [1, 3], "k": [7, 9]}),
+    )
+    assert ctx.execute(query, eager=True).rows() == expected
+
+
+@pytest.mark.parametrize("join", ["d JOIN cs", "cs JOIN d"])
+def test_subquery_dotted_name_over_joined_struct_and_plain_column(join: str) -> None:
+    # `k.f` can read the struct `cs.k` or the outer `k`
+    ctx = pl.SQLContext(
+        o=pl.DataFrame({"id": [1, 2], "f": [10, 2]}),
+        cs=pl.DataFrame({"id": [1, 3], "k": [{"f": 1}, {"f": 3}]}),
+        d=pl.DataFrame({"id": [1, 3], "k": [2, 9]}),
+    )
+    query = f"""
+        SELECT id FROM o AS k
+        WHERE EXISTS (SELECT 1 FROM {join} ON cs.id = d.id WHERE k.f = d.k)
+    """
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError, match=r'ambiguous reference to column "k"'
+    ):
+        ctx.execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
     ("query", "expected"),
     [
         (
@@ -2130,6 +2259,34 @@ def test_correlated_subquery_inner_subquery_filter_join_tree() -> None:
         expected={"x": [100], "v": [5]},
         engines=ENGINES,
     )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "EXISTS (SELECT 1 FROM c WHERE c.id = {name}.id)",
+        "NOT EXISTS (SELECT 1 FROM c WHERE c.id = {name}.id)",
+        "a.id IN (SELECT c.id FROM c WHERE c.id = {name}.id)",
+        "a.id = (SELECT MAX(c.id) FROM c WHERE c.id = {name}.id)",
+    ],
+)
+@pytest.mark.parametrize(
+    ("name", "error"),
+    [
+        ("nope", r"^no table or struct column named 'nope' found(\n|$)"),
+        ("t", r"""named 't' found; table "t" is hidden by alias "a"(\n|$)"""),
+    ],
+)
+def test_subquery_unknown_qualifier(condition: str, name: str, error: str) -> None:
+    # A qualifier that names no relation or struct column of either query is an
+    # error, as in the outer query; the alias `a` hides the table `t`.
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    query = f"SELECT a.id FROM t AS a WHERE {condition.format(name=name)}"
+    with pytest.raises(pl.exceptions.SQLInterfaceError, match=error):
+        ctx.execute(query, eager=True)
 
 
 @pytest.mark.parametrize(
@@ -2567,3 +2724,58 @@ def test_correlated_decimal_float_keys(query: str) -> None:
         check_dtypes=False,
         engines=["in-memory", "streaming"],
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "WITH x AS (SELECT a.id FROM t AS a WHERE {cond}) SELECT * FROM x",
+        "SELECT * FROM (SELECT a.id FROM t AS a WHERE {cond}) AS y",
+        "SELECT a.id FROM t AS a WHERE {cond} UNION ALL SELECT 9",
+    ],
+)
+def test_subquery_unknown_qualifier_in_cte_derived_table_set_operand(
+    query: str,
+) -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    cond = "EXISTS (SELECT 1 FROM c WHERE c.id = nope.id)"
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError,
+        match=r"^no table or struct column named 'nope' found(\n|$)",
+    ):
+        ctx.execute(query.format(cond=cond), eager=True)
+
+
+def test_subquery_qualifier_hidden_by_inner_alias() -> None:
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+    )
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError,
+        match=r"""named 'c' found; table "c" is hidden by alias "x"(\n|$)""",
+    ):
+        ctx.execute(
+            "SELECT a.id FROM t AS a WHERE EXISTS (SELECT 1 FROM c AS x WHERE c.id = a.id)",
+            eager=True,
+        )
+
+
+def test_nested_subquery_reading_outermost_query() -> None:
+    # Not supported yet: `a` is the outermost relation, which the error must not
+    # report as unknown.
+    ctx = pl.SQLContext(
+        t=pl.DataFrame({"id": [1, 2]}),
+        c=pl.DataFrame({"id": [1, 3]}),
+        d=pl.DataFrame({"id": [1, 2]}),
+    )
+    query = """
+        SELECT a.id FROM t AS a
+        WHERE EXISTS (SELECT 1 FROM c WHERE EXISTS (SELECT 1 FROM d WHERE d.id > a.id))
+    """
+    with pytest.raises(pl.exceptions.SQLInterfaceError) as exc:
+        ctx.execute(query, eager=True)
+    assert "named 'a'" not in str(exc.value)

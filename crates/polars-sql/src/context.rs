@@ -279,6 +279,9 @@ pub struct SQLContext {
     /// Whether a qualifier may only name a relation that a `FROM` declares, also before any
     /// `FROM` is processed. Kept by the contexts of subqueries.
     pub(crate) strict_relations: bool,
+    /// How many subqueries enclose this scope. CTEs, derived tables and set operands don't
+    /// count: they read no enclosing scope.
+    pub(crate) nesting: usize,
 }
 
 /// The first relation of the current `FROM` and the (joined table, column) pairs
@@ -345,6 +348,7 @@ impl Default for SQLContext {
             catalog_spellings: Default::default(),
             statement_time: Default::default(),
             strict_relations: false,
+            nesting: 0,
         }
     }
 }
@@ -885,6 +889,7 @@ impl SQLContext {
             catalog_spellings: self.catalog_spellings.clone(),
             statement_time: self.statement_time.clone(),
             strict_relations: self.strict_relations,
+            nesting: self.nesting + 1,
 
             ..Default::default()
         }
@@ -1077,6 +1082,8 @@ impl SQLContext {
         F: FnOnce(&mut Self) -> PolarsResult<LazyFrame>,
     {
         let mut ctx = self.isolated();
+        // Not a subquery scope; a subquery caller counts one itself.
+        ctx.nesting = self.nesting;
 
         // Execute query with clean state (eg: nested/subquery)
         let lf = query(&mut ctx)?;
@@ -1263,27 +1270,45 @@ impl SQLContext {
     }
 
     /// Check the SELECT and WHERE expressions of a block for ambiguous unqualified
-    /// columns (if there were joins).
-    pub(crate) fn check_select_column_refs(&self, select_stmt: &Select) -> PolarsResult<()> {
+    /// columns (if there were joins). `schema` is the schema of the joined frame.
+    pub(crate) fn check_select_column_refs(
+        &self,
+        select_stmt: &Select,
+        schema: &Schema,
+    ) -> PolarsResult<()> {
         let Some(base) = &self.join_base else {
             return Ok(());
         };
         if self.joined_aliases.is_empty() {
             return Ok(());
         }
-        let check_expr = |e| {
+        let check_expr = |e: &SQLExpr| {
             check_for_ambiguous_column_refs(
                 e,
                 &self.joined_aliases,
                 &base.table_name,
                 &base.using_cols,
                 &self.active_relations,
+                schema,
             )
         };
         for item in &select_stmt.projection {
             match item {
                 SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => {
                     check_expr(e)?
+                },
+                // `s.*` reads a struct column `s` when no relation is named `s`.
+                SelectItem::QualifiedWildcard(
+                    SelectItemQualifiedWildcardKind::ObjectName(name),
+                    _,
+                ) => {
+                    let parts = name
+                        .0
+                        .iter()
+                        .filter_map(|p| p.as_ident().cloned())
+                        .chain([Ident::new("*")])
+                        .collect();
+                    check_expr(&SQLExpr::CompoundIdentifier(parts))?
                 },
                 _ => {},
             }
@@ -2304,6 +2329,10 @@ impl SQLContext {
                 let (keep_left, keep_right) = join_keeps_inputs(&join.join_operator);
                 if !keep_left {
                     kept.clear();
+                    // The columns of the left relations are gone, so are their aliases.
+                    for relation in &left_relations {
+                        self.joined_aliases.remove(relation);
+                    }
                 }
                 if keep_right {
                     kept.push(&join.relation);
@@ -2896,7 +2925,8 @@ impl SQLContext {
         };
 
         self.set_join_base(&select_stmt.from);
-        self.check_select_column_refs(select_stmt)?;
+        let mut schema = self.get_frame_schema(&mut lf)?;
+        self.check_select_column_refs(select_stmt, &schema)?;
 
         // Apply `WHERE` constraint (using residual filter for implicit joins)
         let where_expr = if implicit_join_filter.is_some() {
@@ -2904,7 +2934,6 @@ impl SQLContext {
         } else {
             select_stmt.selection.as_ref()
         };
-        let mut schema = self.get_frame_schema(&mut lf)?;
 
         // Shared by every pass over this frame: WHERE, the projection list and HAVING.
         let mut bindings = SubqueryBindings::new();
@@ -4249,6 +4278,7 @@ impl SQLContext {
             &left.name,
             &self.join_using_cols,
             &self.active_relations,
+            &schema,
         )?;
         let join_base = self.join_base.replace(JoinBase {
             table_name: left.name.to_string(),
@@ -4421,12 +4451,14 @@ impl SQLContext {
         {
             return Ok(false);
         }
+        // `check` passed qualified columns only, so no struct path needs the joined schema.
         check_for_ambiguous_column_refs(
             expr,
             &self.joined_aliases,
             &tbl_left.name,
             &self.join_using_cols,
             &self.active_relations,
+            &tbl_left.schema,
         )?;
         Ok(true)
     }
