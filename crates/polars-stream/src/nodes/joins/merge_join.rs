@@ -912,6 +912,8 @@ mod tests {
 
     const MORSEL_SIZE: usize = 8;
 
+    type Keys = Vec<Option<i64>>;
+
     fn buffer(keys: &[Option<i64>]) -> SpillFrameSearchBuffer {
         let schema = Arc::new(Schema::from_iter([Field::new("k".into(), DataType::Int64)]));
         let mut buf = SpillFrameSearchBuffer::empty_with_schema(
@@ -944,7 +946,7 @@ mod tests {
         }
     }
 
-    fn keys(buf: &SpillFrameSearchBuffer) -> Vec<Option<i64>> {
+    fn keys(buf: &SpillFrameSearchBuffer) -> Keys {
         let df = ASYNC.block_on(buf.clone().into_df());
         df.column("k").unwrap().i64().unwrap().iter().collect()
     }
@@ -953,7 +955,7 @@ mod tests {
         build: &[Option<i64>],
         probe: &[Option<i64>],
         params: &MergeJoinParams,
-    ) -> Vec<(Vec<Option<i64>>, Vec<Option<i64>>)> {
+    ) -> Vec<(Keys, Keys)> {
         let partitions = ASYNC.block_on(find_mergeable_partition(
             &buffer(build),
             &buffer(probe),
