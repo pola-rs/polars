@@ -13,10 +13,10 @@ use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
-    coalesce, col, cols, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
+    by_name, coalesce, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
     max_horizontal, min_horizontal, when,
 };
-use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
+use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
     DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant, typed_lit,
 };
@@ -31,15 +31,15 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
-use crate::SQLContext;
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
     interval_to_duration, order_by_sort_options, parse_extract_date_part, parse_sql_array,
     parse_sql_expr, sql_binary,
 };
-use crate::sql_visitors::grouping_call_args;
+use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
+use crate::{SQLContext, col};
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -151,6 +151,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT PI() FROM df;
     /// ```
     Pi,
+    /// SQL 'random' function.
+    /// Returns a pseudo-random value in [0, 1) for each row.
+    /// ```sql
+    /// SELECT RANDOM() FROM df;
+    /// ```
+    Random,
     /// SQL 'ln' function.
     /// Computes the natural logarithm of the given value.
     /// ```sql
@@ -1068,6 +1074,7 @@ impl PolarsSQLFunctions {
             "quantile_disc",
             "quarter",
             "radians",
+            "random",
             "range",
             "rank",
             "regexp_like",
@@ -1143,6 +1150,7 @@ impl PolarsSQLFunctions {
             "log2" => Self::Log2,
             "mod" => Self::Mod,
             "pi" => Self::Pi,
+            "random" => Self::Random,
             "pow" | "power" => Self::Pow,
             "round" => Self::Round,
             "trunc" | "truncate" => Self::Truncate,
@@ -1428,6 +1436,7 @@ impl SQLFunctionVisitor<'_> {
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| log_with_base(e, 2.0)),
             Pi => self.visit_nullary(Expr::pi),
+            Random => self.visit_nullary(random),
             Mod => self.visit_binary(|e1, e2| sql_binary(e1, SqlBinaryOp::Rem, e2)),
             Pow => self.visit_binary(|e: Expr, p: Expr| sql_to_float(e).pow(sql_to_float(p))),
             Round => {
@@ -2018,10 +2027,10 @@ impl SQLFunctionVisitor<'_> {
                             Ok(if col_names.len() == 1 {
                                 col(col_names.into_iter().next().unwrap())
                             } else {
-                                cols(col_names).as_expr()
+                                by_name(col_names, true, false).as_expr()
                             })
                         } else {
-                            Ok(col(pat.as_str()))
+                            Ok(Expr::Selector(Selector::Matches(pat.into())))
                         }
                     },
                     Expr::Selector(s) => Ok(s.as_expr()),
@@ -2982,6 +2991,11 @@ impl SQLFunctionVisitor<'_> {
         order_by: &[OrderByExpr],
         base_sql_expr: &SQLExpr,
     ) -> PolarsResult<Expr> {
+        // The distinct values have no separate draw of `RANDOM()` to sort by.
+        polars_ensure!(
+            !order_by.iter().any(|ob| contains_random(&ob.expr, true)),
+            SQLInterface: "RANDOM() in the ORDER BY of a DISTINCT aggregate is not supported"
+        );
         // If ORDER BY references the base expression, use .sort() directly
         if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
             return Ok(expr.sort(order_by_sort_options(&order_by[0].options)));
@@ -3066,6 +3080,35 @@ impl SQLFunctionVisitor<'_> {
             "no function matches the given name and arguments: `{}`",
             self.func.to_string()
         );
+    }
+}
+
+/// A pseudo-random value in [0, 1) per row, from a hash of the row index with a new seed. The
+/// top 53 bits of the hash are exact in a `Float64`.
+fn random() -> Expr {
+    let seed = polars_core::random::get_global_random_u64();
+    int_range(lit(0), len(), 1, polars_core::datatypes::IDX_DTYPE)
+        .hash(seed)
+        .floor_div(lit(1u64 << 11))
+        .cast(DataType::Float64)
+        * lit(1.0 / (1u64 << 53) as f64)
+}
+
+/// Whether `expr` is the hash of the row index made by [`random`]. Its values depend on the
+/// rows it runs on, so it must run on the frame the SQL reads it from.
+pub(crate) fn is_random(expr: &Expr) -> bool {
+    match expr {
+        Expr::Function {
+            input,
+            function: FunctionExpr::Hash(_),
+        } => matches!(
+            input.as_slice(),
+            [Expr::Function {
+                input,
+                function: FunctionExpr::Range(RangeFunction::IntRange { .. }),
+            }] if matches!(input.as_slice(), [_, Expr::Len])
+        ),
+        _ => false,
     }
 }
 

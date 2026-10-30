@@ -10,7 +10,7 @@ use polars_utils::format_pl_smallstr;
 use sqlparser::ast::Expr as SQLExpr;
 
 use crate::context::strip_outer_alias;
-use crate::unique_column_name;
+use crate::{col, unique_column_name};
 
 /// Cap on the number of grouping sets a single `GROUP BY` may expand to.
 const MAX_GROUPING_SETS: usize = 4096;

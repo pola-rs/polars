@@ -41,11 +41,12 @@ use crate::catalog::{
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::functions::PolarsSQLFunctions;
+use crate::functions::{PolarsSQLFunctions, is_random};
 use crate::group_context::{
     AggregateOutputs, GroupContextSplitter, OutputNames, assume_groups_have_rows,
-    check_columns_in_aggregates, has_subquery_outside_aggregates, has_windows_over_aggregates,
-    is_marked_aggregate, strip_aggregate_marks,
+    check_columns_in_aggregates, has_marked_aggregate, has_random_outside_aggregates,
+    has_subquery_outside_aggregates, has_windows_over_aggregates, is_marked_aggregate,
+    strip_aggregate_marks,
 };
 use crate::grouping_sets::{
     GroupingCall, GroupingSets, bind_stored_keys, canonicalize_keys, contains_grouping_placeholder,
@@ -59,9 +60,9 @@ use crate::sql_expr::{
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
-    check_for_ambiguous_column_refs, collect_grouping_calls, expr_contains_scalar_subquery,
-    expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
-    expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema,
+    check_for_ambiguous_column_refs, collect_grouping_calls, contains_random,
+    expr_contains_scalar_subquery, expr_contains_subquery, expr_has_window_functions,
+    expr_references_any_column, expr_refers_to_table, referenced_ctes, sql_expr_cols_all_in_schema,
 };
 use crate::subquery::{
     LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
@@ -70,7 +71,7 @@ use crate::subquery::{
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
-use crate::unique_column_name;
+use crate::{col, unique_column_name};
 
 #[derive(Clone)]
 pub struct TableInfo {
@@ -2744,7 +2745,9 @@ impl SQLContext {
         };
         let outer_scope = std::mem::replace(&mut self.group_scope, scope);
         let hoisted = self.hoist_outer_select_items(select_stmt);
-        let result = self.execute_select_block(hoisted.as_ref().unwrap_or(select_stmt), query);
+        let select_stmt = hoisted.as_ref().unwrap_or(select_stmt);
+        let result = check_random_items(select_stmt, query)
+            .and_then(|_| self.execute_select_block(select_stmt, query));
         self.group_scope = outer_scope;
         result
     }
@@ -3088,8 +3091,8 @@ impl SQLContext {
                 SQLSyntax: "GROUPING() requires a GROUP BY clause"
             );
         }
-        // Without GROUP BY, a block with aggregates or HAVING is one group, and its windows
-        // and the subqueries outside its aggregates run on that one row.
+        // Without GROUP BY, a block with aggregates or HAVING is one group, and its windows,
+        // `RANDOM()` calls and subqueries outside its aggregates run on that one row.
         let all_projections = projections
             .iter()
             .chain(&qualify)
@@ -3099,6 +3102,8 @@ impl SQLContext {
             && lowered_having.is_none()
             && !has_windows_over_aggregates(&all_projections)
             && !has_subquery_outside_aggregates(&all_projections, &subquery_names)
+            && !(all_projections.iter().any(has_marked_aggregate)
+                && all_projections.iter().any(has_random_outside_aggregates))
         {
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
             self.group_scope.mark_whole_frame_windows = false;
@@ -3145,9 +3150,11 @@ impl SQLContext {
                 final_names.push(col(name));
             }
 
+            // Without FROM the frame has one row, or none when WHERE removes it.
+            let reads_frame = !select_stmt.from.is_empty() || select_stmt.selection.is_some();
             // Establish the final projection
             if have_order_by {
-                if select_stmt.from.is_empty() {
+                if !reads_frame {
                     lf = lf.select(projections);
                 } else if projection_heights
                     .contains(ExprSqlProjectionHeightBehavior::MaintainsColumn)
@@ -3198,7 +3205,7 @@ impl SQLContext {
             // Note: If `have_order_by`, with_columns is already done above.
             if projection_heights == ExprSqlProjectionHeightBehavior::InheritsContext
                 && !have_order_by
-                && !select_stmt.from.is_empty()
+                && reads_frame
                 && !final_cols.is_empty()
             {
                 // All projections need to be broadcasted to table height, so evaluate in `with_columns()`
@@ -3602,6 +3609,13 @@ impl SQLContext {
         join_type: JoinType,
         keep_right: bool,
     ) -> PolarsResult<LazyFrame> {
+        // Other joins evaluate the condition per part of the input.
+        if let JoinConstraint::On(expr) = constraint
+            && join_type != JoinType::Inner
+            && contains_random(expr, false)
+        {
+            polars_bail!(SQLInterface: "RANDOM() in a JOIN condition is only supported for INNER JOIN")
+        }
         if let JoinConstraint::On(expr) = constraint
             && expr_contains_subquery(expr)
         {
@@ -3680,6 +3694,31 @@ impl SQLContext {
         };
         left_on.extend(extra_keys.0);
         right_on.extend(extra_keys.1);
+        let suffix = format!(":{}", tbl_right.name);
+        // `RANDOM()` in an inner join condition draws a value per joined row, so it filters the
+        // joined rows, and the other conditions still pick how the join runs.
+        let (mut random_predicates, predicates): (Vec<Expr>, Vec<Expr>) = predicates
+            .into_iter()
+            .partition(|p| join_type == JoinType::Inner && has_expr(p, is_random));
+        if join_type == JoinType::Inner
+            && left_on
+                .iter()
+                .chain(&right_on)
+                .any(|k| has_expr(k, is_random))
+        {
+            let keys = std::mem::take(&mut left_on)
+                .into_iter()
+                .zip(std::mem::take(&mut right_on));
+            for (l, r) in keys {
+                if has_expr(&l, is_random) || has_expr(&r, is_random) {
+                    let r = suffix_conflicting_columns(r, tbl_left, tbl_right, &suffix);
+                    random_predicates.push(l.eq(r));
+                } else {
+                    left_on.push(l);
+                    right_on.push(r);
+                }
+            }
+        }
         if left_on.is_empty() && predicates.is_empty() {
             left_on.push(lit(true));
             right_on.push(lit(true));
@@ -3731,7 +3770,19 @@ impl SQLContext {
             Some(JoinConstraint::Natural) => JoinCoalesce::CoalesceColumns,
             _ => JoinCoalesce::KeepColumns,
         };
-        let suffix = format!(":{}", tbl_right.name);
+        // `join_where` and the filter on the joined rows resolve the right columns that the
+        // left input also has under their suffixed names.
+        let mut joined_schema = (*tbl_left.schema).clone();
+        if !predicates.is_empty() || !random_predicates.is_empty() {
+            for (name, dtype) in tbl_right.schema.iter() {
+                let name = if tbl_left.schema.contains(name) {
+                    format_pl_smallstr!("{name}{suffix}")
+                } else {
+                    name.clone()
+                };
+                joined_schema.insert(name, dtype.clone());
+            }
+        }
 
         let joined = if predicates.is_empty() {
             // Equi-join: standard left_on/right_on path
@@ -3753,17 +3804,6 @@ impl SQLContext {
                 let r_suffixed = suffix_conflicting_columns(r, tbl_left, tbl_right, &suffix);
                 all_predicates.push(l.eq(r_suffixed));
             }
-            // `join_where` resolves the right columns that the left input also has under
-            // their suffixed names.
-            let mut joined_schema = (*tbl_left.schema).clone();
-            for (name, dtype) in tbl_right.schema.iter() {
-                let name = if tbl_left.schema.contains(name) {
-                    format_pl_smallstr!("{name}{suffix}")
-                } else {
-                    name.clone()
-                };
-                joined_schema.insert(name, dtype.clone());
-            }
             let all_predicates: Vec<Expr> = all_predicates
                 .into_iter()
                 .map(|p| {
@@ -3782,8 +3822,13 @@ impl SQLContext {
                 .coalesce(coalesce_type)
                 .join_where(all_predicates)
         };
-
-        Ok(joined)
+        let random_predicates = random_predicates.into_iter().map(|p| {
+            sql_join_where_predicate(strip_join_aliases(p), &tbl_left.schema, &joined_schema)
+        });
+        Ok(match random_predicates.reduce(Expr::and) {
+            Some(predicate) => joined.filter(predicate),
+            None => joined,
+        })
     }
 
     /// Whether the relation `name` is the right input of a join; any other relation in
@@ -5567,6 +5612,13 @@ impl SQLContext {
             );
         }
 
+        // With GROUP BY, HAVING runs per group or before the projections, so a `RANDOM()`
+        // outside its aggregates would not be the value the SELECT list shows.
+        polars_ensure!(
+            (grouping.is_none() && group_by_keys.is_empty())
+                || !having.as_ref().is_some_and(has_random_outside_aggregates),
+            SQLInterface: "RANDOM() outside an aggregate in HAVING is not supported with GROUP BY"
+        );
         let aggregated = match grouping {
             None if group_by_keys.is_empty() => {
                 // Without GROUP BY there is one aggregated row, which HAVING filters.
@@ -5993,14 +6045,6 @@ impl SQLContext {
 
 fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
     match expr {
-        Expr::Column(nm) if is_regex_colname(nm.as_str()) => {
-            let re = polars_utils::regex_cache::compile_regex(&nm).unwrap();
-            schema
-                .iter_names()
-                .filter(|name| re.is_match(name))
-                .map(|name| col(name.clone()))
-                .collect::<Vec<_>>()
-        },
         Expr::Selector(s) => s
             .into_columns(schema, &Default::default())
             .unwrap()
@@ -6009,10 +6053,6 @@ fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
             .collect::<Vec<_>>(),
         _ => vec![expr],
     }
-}
-
-fn is_regex_colname(nm: &str) -> bool {
-    nm.starts_with('^') && nm.ends_with('$')
 }
 
 /// Render an `ObjectName` (dot-separated identifier parts) back to a string.
@@ -6859,6 +6899,43 @@ fn check_qualify(qualify: &SQLExpr, projection: &[SelectItem]) -> PolarsResult<(
         has_window_fns || references_window_alias,
         SQLSyntax: "QUALIFY clause must reference window functions either explicitly or via SELECT aliases"
     );
+    Ok(())
+}
+
+/// Every `RANDOM()` call is its own draw. A GROUP BY key or ORDER BY item that repeats a
+/// SELECT item could be read as that item, so these raise rather than draw again.
+fn check_random_items(select: &Select, query: &Query) -> PolarsResult<()> {
+    polars_ensure!(
+        !contains_random(&select.group_by, false),
+        SQLInterface: "RANDOM() in GROUP BY is not supported; group by a SELECT alias instead"
+    );
+    let Some(OrderBy {
+        kind: OrderByKind::Expressions(order_by),
+        ..
+    }) = &query.order_by
+    else {
+        return Ok(());
+    };
+    let key = |e: &SQLExpr| {
+        let mut e = e;
+        while let SQLExpr::Nested(inner) = e {
+            e = inner;
+        }
+        e.to_string().to_lowercase()
+    };
+    for item in order_by.iter().filter(|e| contains_random(&e.expr, false)) {
+        let item_key = key(&item.expr);
+        let repeats_select_item = select.projection.iter().any(|p| match p {
+            SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => {
+                key(e) == item_key
+            },
+            _ => false,
+        });
+        polars_ensure!(
+            !repeats_select_item,
+            SQLInterface: "RANDOM() in an ORDER BY item that repeats a SELECT item is not supported; order by its alias instead"
+        );
+    }
     Ok(())
 }
 
