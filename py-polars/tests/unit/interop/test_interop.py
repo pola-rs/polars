@@ -1103,6 +1103,59 @@ def test_compat_level(plmonkeypatch: PlMonkeyPatch) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "arrow_dtype",
+    [pa.decimal32(9, 7), pa.decimal64(18, 8), pa.decimal128(38, 8)],
+)
+def test_pycapsule_stream_decimal_29651(arrow_dtype: pa.DataType) -> None:
+    values = [Decimal("24.5790000"), Decimal("-1.2345678"), None]
+    table = pa.table({"x": pa.array(values, type=arrow_dtype)})
+    schema = {"x": pl.Decimal(arrow_dtype.precision, arrow_dtype.scale)}
+
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    df = pl.DataFrame(PyCapsuleStreamHolder(reader))
+    assert_frame_equal(df, pl.DataFrame({"x": values}, schema=schema))
+
+    reader = pa.RecordBatchReader.from_batches(
+        table.schema, table.slice(1).to_batches()
+    )
+    df = pl.DataFrame(PyCapsuleStreamHolder(reader))
+    expected = pl.DataFrame({"x": [Decimal("-1.2345678"), None]}, schema=schema)
+    assert_frame_equal(df, expected)
+
+
+def test_from_arrow_nested_decimal_29651() -> None:
+    table = pa.table(
+        {
+            "l": pa.array(
+                [[Decimal("1.5"), None], None, [Decimal("-2.25")], []],
+                pa.list_(pa.decimal64(10, 2)),
+            ),
+            "s": pa.array(
+                [{"d": Decimal("3.125")}, {"d": Decimal("-1.5")}, {"d": None}, None],
+                pa.struct([("d", pa.decimal32(5, 3))]),
+            ),
+        }
+    )
+    df = pl.DataFrame(table)
+    expected = pl.DataFrame(
+        {
+            "l": [[Decimal("1.50"), None], None, [Decimal("-2.25")], []],
+            "s": [
+                {"d": Decimal("3.125")},
+                {"d": Decimal("-1.500")},
+                {"d": None},
+                None,
+            ],
+        },
+        schema={
+            "l": pl.List(pl.Decimal(10, 2)),
+            "s": pl.Struct({"d": pl.Decimal(5, 3)}),
+        },
+    )
+    assert_frame_equal(df, expected)
+
+
 def test_df_pycapsule_interface() -> None:
     df = pl.DataFrame(
         {

@@ -17,15 +17,17 @@ use polars_plan::dsl::functions::{
     max_horizontal, min_horizontal, when,
 };
 use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
-use polars_plan::plans::{DynLiteralValue, LiteralValue, RowEncodingVariant, typed_lit};
+use polars_plan::plans::{
+    DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant, typed_lit,
+};
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
-    OrderByExpr, Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound, WindowFrameUnits,
-    WindowSpec,
+    OrderByExpr, OrderBySort, Value as SQLValue, ValueWithSpan, WindowFrame, WindowFrameBound,
+    WindowFrameUnits, WindowSpec,
 };
 use sqlparser::tokenizer::Span;
 
@@ -711,6 +713,19 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT QUANTILE_DISC(col1) FROM df;
     /// ```
     QuantileDisc,
+    /// SQL 'percentile_cont' function.
+    /// Returns the continuous percentile of the values in the WITHIN GROUP order
+    /// (interpolated value between two closest values).
+    /// ```sql
+    /// SELECT PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY col1) FROM df;
+    /// ```
+    PercentileCont,
+    /// SQL 'percentile_disc' function.
+    /// Returns the first value in the WITHIN GROUP order whose position reaches the percentile.
+    /// ```sql
+    /// SELECT PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY col1) FROM df;
+    /// ```
+    PercentileDisc,
     /// SQL 'min' function.
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
@@ -1044,6 +1059,8 @@ impl PolarsSQLFunctions {
             "nullif",
             "octet_length",
             "percent_rank",
+            "percentile_cont",
+            "percentile_disc",
             "pi",
             "pow",
             "power",
@@ -1237,6 +1254,8 @@ impl PolarsSQLFunctions {
             "min" => Self::Min,
             "quantile_cont" => Self::QuantileCont,
             "quantile_disc" => Self::QuantileDisc,
+            "percentile_cont" => Self::PercentileCont,
+            "percentile_disc" => Self::PercentileDisc,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "string_agg" | "listagg" | "group_concat" => Self::StringAgg,
             "sum" => Self::Sum,
@@ -1314,9 +1333,8 @@ impl PolarsSQLFunctions {
             #[cfg(feature = "approx_quantile")]
             ApproxQuantile => true,
             ArrayAgg | Avg | Corr | Count | CovarPop | CovarSamp | First | Last | Max | Median
-            | Min | QuantileCont | QuantileDisc | StdDev | StringAgg | Sum | Total | Variance => {
-                true
-            },
+            | Min | PercentileCont | PercentileDisc | QuantileCont | QuantileDisc | StdDev
+            | StringAgg | Sum | Total | Variance => true,
             // Without OVER, FIRST_VALUE is FIRST.
             FirstValue => true,
             _ => false,
@@ -1333,7 +1351,9 @@ impl SQLFunctionVisitor<'_> {
         let function = self.func;
 
         // TODO: implement the following modifiers where possible
-        if !function.within_group.is_empty() {
+        if !function.within_group.is_empty()
+            && !matches!(function_name, PercentileCont | PercentileDisc)
+        {
             polars_bail!(SQLInterface: "'WITHIN GROUP' is not currently supported")
         }
         if function.null_treatment.is_some() {
@@ -1930,6 +1950,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             Min => self.visit_min_max(Expr::min),
+            PercentileCont | PercentileDisc => self.visit_percentile(&function_name),
             StdDev => self.visit_spread_aggregate(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
             Sum => self.visit_sum(),
@@ -2238,8 +2259,8 @@ impl SQLFunctionVisitor<'_> {
         let whole_partition = match function {
             #[cfg(feature = "approx_quantile")]
             ApproxQuantile => true,
-            ArrayAgg | Corr | CovarPop | CovarSamp | Last | Median | QuantileCont
-            | QuantileDisc | StdDev | StringAgg | Variance => true,
+            ArrayAgg | Corr | CovarPop | CovarSamp | Last | Median | PercentileCont
+            | PercentileDisc | QuantileCont | QuantileDisc | StdDev | StringAgg | Variance => true,
             Count => is_distinct,
             _ => false,
         };
@@ -2388,6 +2409,32 @@ impl SQLFunctionVisitor<'_> {
             Some(pred) => pred.clone().sum(),
             None => len(),
         }
+    }
+
+    /// `PERCENTILE_CONT(p)` / `PERCENTILE_DISC(p)` `WITHIN GROUP (ORDER BY value)`, the
+    /// `QUANTILE_CONT` / `QUANTILE_DISC` of the values.
+    fn visit_percentile(&mut self, function_name: &PolarsSQLFunctions) -> PolarsResult<Expr> {
+        let (fname, method) = match function_name {
+            PolarsSQLFunctions::PercentileCont => ("PERCENTILE_CONT", QuantileMethod::Linear),
+            _ => ("PERCENTILE_DISC", QuantileMethod::Equiprobable),
+        };
+        let args = extract_args(self.func)?;
+        let ([FunctionArgExpr::Expr(quantile)], [order_by]) =
+            (args.as_slice(), self.func.within_group.as_slice())
+        else {
+            polars_bail!(
+                SQLSyntax: "{} expects one argument and WITHIN GROUP (ORDER BY <value>)", fname
+            )
+        };
+        polars_ensure!(
+            matches!(order_by.options.sort, None | Some(OrderBySort::Asc)),
+            SQLInterface: "{} only supports an ascending WITHIN GROUP order", fname
+        );
+        // Parameters are not subject to an active FILTER clause; only the values are.
+        let quantile = parse_sql_expr(quantile, self.ctx, self.active_schema)?;
+        let quantile = parse_quantile_literal(quantile, fname, args[0])?;
+        let e = self.aggregate_value(&order_by.expr, |e| e.quantile(quantile.clone(), method))?;
+        self.apply_window_spec(e)
     }
 
     /// An aggregate whose value over a constant is that constant, if any row is read, as MIN
@@ -3051,11 +3098,15 @@ fn window_sort_key(mut keys: Vec<(Expr, SortOptions)>) -> Option<(Expr, SortOpti
                 .map(|(_, options)| (options.descending, options.nulls_last))
                 .unzip();
             let key = Expr::n_ary(
-                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                    descending: Some(descending),
-                    nulls_last: Some(nulls_last),
-                    broadcast_nulls: None,
-                }),
+                FunctionExpr::RowEncode {
+                    variant: RowEncodingVariant::Ordered {
+                        descending: Some(descending),
+                        nulls_last: Some(nulls_last),
+                    },
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                    propagate_nulls: false,
+                },
                 keys.into_iter().map(|(key, _)| key).collect(),
             );
             Some((key, SortOptions::default().with_maintain_order(false)))

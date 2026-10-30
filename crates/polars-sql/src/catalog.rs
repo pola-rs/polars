@@ -5,9 +5,10 @@ use std::ops::ControlFlow;
 use polars_core::prelude::*;
 use polars_utils::aliases::PlHashMap;
 use sqlparser::ast::{
-    ColumnDef, ColumnOption, CreateTableOptions, Expr, Ident, ObjectName, ObjectNamePart, Query,
-    SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value, ValueWithSpan, Visitor,
-    VisitorMut, With,
+    ColumnDef, ColumnOption, CreateTableOptions, DataType as SQLDataType, Expr, Function,
+    FunctionArg, FunctionArgExpr, FunctionArguments, HiveDistributionStyle, Ident, ObjectName,
+    ObjectNamePart, Query, SetExpr, SqlOption, Statement, TableFactor, UnaryOperator, Value,
+    ValueWithSpan, Visitor, VisitorMut, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -23,6 +24,15 @@ pub struct CatalogTable {
     pub catalog: String,
     /// The table's identifier in the catalog: namespace parts, then the table name.
     pub identifier: Vec<String>,
+}
+
+/// A namespace of an attached catalog.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CatalogNamespace {
+    /// The name the catalog was attached under.
+    pub catalog: String,
+    /// The namespace parts.
+    pub namespace: Vec<String>,
 }
 
 /// A statement changing a catalog table, for the caller to perform (see
@@ -58,7 +68,95 @@ pub enum CatalogDdl {
         location: Option<String>,
         /// The other `WITH` options, as table properties.
         properties: Vec<(String, String)>,
+        /// The partition fields, in the order written; empty for an unpartitioned table.
+        partition_by: Vec<CatalogPartitionField>,
     },
+    /// `CREATE SCHEMA [IF NOT EXISTS] <name> [WITH (...)]`.
+    CreateSchema {
+        /// The schema name as the statement wrote it.
+        name: String,
+        /// The catalog namespace to create.
+        namespace: CatalogNamespace,
+        /// `IF NOT EXISTS`.
+        if_not_exists: bool,
+        /// The `WITH` options, as namespace properties.
+        properties: Vec<(String, String)>,
+    },
+    /// `DROP SCHEMA [IF EXISTS] <name> [RESTRICT]`.
+    DropSchema {
+        /// The schema name as the statement wrote it.
+        name: String,
+        /// The catalog namespace to drop.
+        namespace: CatalogNamespace,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
+    /// `ALTER TABLE [IF EXISTS] <name> <operation>`.
+    AlterTable {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to change.
+        table: CatalogTable,
+        /// `IF EXISTS`.
+        if_exists: bool,
+        /// The change, one per statement.
+        operation: CatalogAlter,
+    },
+}
+
+/// A change to a catalog table's top-level columns or properties, by an `ALTER TABLE`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CatalogAlter {
+    /// `ADD [COLUMN] [IF NOT EXISTS] <name> <type>`: a nullable column.
+    AddColumn {
+        /// The column name, as written.
+        name: String,
+        /// The column type.
+        dtype: DataType,
+        /// `IF NOT EXISTS`.
+        if_not_exists: bool,
+    },
+    /// `DROP [COLUMN] [IF EXISTS] <name>`.
+    DropColumn {
+        /// The column name, as written.
+        name: String,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
+    /// `RENAME COLUMN <old> TO <new>`.
+    RenameColumn {
+        /// The current column name.
+        old: String,
+        /// The new column name.
+        new: String,
+    },
+    /// `ALTER COLUMN <name> [SET DATA] TYPE <type>`.
+    SetDataType {
+        /// The column name, as written.
+        name: String,
+        /// The new column type.
+        dtype: DataType,
+    },
+    /// `ALTER COLUMN <name> DROP NOT NULL`.
+    DropNotNull {
+        /// The column name, as written.
+        name: String,
+    },
+    /// `SET TBLPROPERTIES ('key' = value, ...)`.
+    SetProperties {
+        /// The properties, in the order written.
+        properties: Vec<(String, String)>,
+    },
+}
+
+/// A partition field of a catalog table: an Iceberg transform of a top-level column.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogPartitionField {
+    /// The source column, as written.
+    pub column: String,
+    /// The transform in Iceberg's notation: `identity`, `year`, `month`, `day`, `hour`,
+    /// `bucket[N]` or `truncate[W]`.
+    pub transform: String,
 }
 
 impl CatalogTable {
@@ -66,6 +164,15 @@ impl CatalogTable {
     pub fn full_name(&self) -> Vec<String> {
         std::iter::once(self.catalog.clone())
             .chain(self.identifier.iter().cloned())
+            .collect()
+    }
+}
+
+impl CatalogNamespace {
+    /// The catalog name followed by the namespace parts.
+    pub fn full_name(&self) -> Vec<String> {
+        std::iter::once(self.catalog.clone())
+            .chain(self.namespace.iter().cloned())
             .collect()
     }
 }
@@ -178,15 +285,7 @@ impl CatalogRegistry {
     /// selects it, else the default catalog; a name without namespace parts gets the catalog's
     /// default namespace. `None` if no catalog applies.
     pub(crate) fn resolve(&self, parts: &[String]) -> Option<CatalogTable> {
-        let named = match parts {
-            [first, rest @ ..] if !rest.is_empty() => self.position(first).map(|idx| (idx, rest)),
-            _ => None,
-        };
-        let (idx, rest) = match named {
-            Some(named) => named,
-            None => (self.position(self.default.as_deref()?)?, parts),
-        };
-        let catalog = &self.catalogs[idx];
+        let (catalog, rest) = self.select(parts)?;
         let identifier = match rest {
             [table] => {
                 let mut identifier = catalog.default_namespace.clone()?;
@@ -199,6 +298,30 @@ impl CatalogRegistry {
             catalog: catalog.name.clone(),
             identifier,
         })
+    }
+
+    /// The catalog namespace a schema name refers to: a leading part naming an attached catalog
+    /// selects it, else the default catalog; the other parts are the namespace (never relative
+    /// to a default namespace). `None` if no catalog applies.
+    pub(crate) fn resolve_namespace(&self, parts: &[String]) -> Option<CatalogNamespace> {
+        let (catalog, rest) = self.select(parts)?;
+        Some(CatalogNamespace {
+            catalog: catalog.name.clone(),
+            namespace: rest.to_vec(),
+        })
+    }
+
+    /// The catalog a name selects, and the name's other parts.
+    fn select<'a>(&self, parts: &'a [String]) -> Option<(&AttachedCatalog, &'a [String])> {
+        let named = match parts {
+            [first, rest @ ..] if !rest.is_empty() => self.position(first).map(|idx| (idx, rest)),
+            _ => None,
+        };
+        let (idx, rest) = match named {
+            Some(named) => named,
+            None => (self.position(self.default.as_deref()?)?, parts),
+        };
+        Some((&self.catalogs[idx], rest))
     }
 
     /// Why a table name that nothing resolved is not a catalog table, if a catalog could have
@@ -489,9 +612,11 @@ pub(crate) fn create_table_columns(columns: &[ColumnDef]) -> PolarsResult<(Schem
         let name = col.name.value.as_str();
         let mut not_null = None;
         for option in &col.options {
-            let is_not_null = match option.option {
+            let is_not_null = match &option.option {
                 ColumnOption::NotNull => true,
                 ColumnOption::Null => false,
+                // the default of a nullable column anyway
+                ColumnOption::Default(expr) if is_null(expr) => continue,
                 _ => polars_bail!(
                     SQLInterface: "only NOT NULL constraints are supported for catalog tables; found `{}` on column '{}'",
                     option, name
@@ -513,6 +638,59 @@ pub(crate) fn create_table_columns(columns: &[ColumnDef]) -> PolarsResult<(Schem
         }
     }
     Ok((schema, required))
+}
+
+/// The name and type of a column added by `ALTER TABLE ... ADD COLUMN`, which is nullable.
+pub(crate) fn alter_table_column(col: &ColumnDef) -> PolarsResult<(String, DataType)> {
+    let name = col.name.value.as_str();
+    for option in &col.options {
+        match &option.option {
+            ColumnOption::Null => {},
+            ColumnOption::Default(expr) if is_null(expr) => {},
+            ColumnOption::NotNull => polars_bail!(
+                SQLInterface: "`ADD COLUMN ... NOT NULL` is not supported: the table's rows have no value for column '{}'",
+                name
+            ),
+            _ => polars_bail!(
+                SQLInterface: "`ADD COLUMN` takes only NULL or DEFAULT NULL; found `{}` on column '{}'",
+                option, name
+            ),
+        }
+    }
+    Ok((name.to_string(), map_sql_dtype_to_polars(&col.data_type)?))
+}
+
+/// Whether `expr` is the literal `NULL`.
+fn is_null(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Value(ValueWithSpan {
+            value: Value::Null,
+            ..
+        })
+    )
+}
+
+/// The properties of an `ALTER TABLE ... SET TBLPROPERTIES (...)`.
+pub(crate) fn alter_table_properties(options: &[SqlOption]) -> PolarsResult<Vec<(String, String)>> {
+    let mut properties: Vec<(String, String)> = Vec::new();
+    for option in options {
+        let (key, value) = option_key_value(option, "table", &["location", "format-version"])?;
+        polars_ensure!(
+            !RESERVED_TABLE_PROPERTIES.contains(&key) && key != "format-version",
+            SQLInterface: "table property '{}' is reserved by Iceberg", key
+        );
+        polars_ensure!(
+            key != "location",
+            SQLInterface: "a table's location is not a property and cannot be set"
+        );
+        polars_ensure!(
+            properties.iter().all(|(k, _)| k != key),
+            SQLInterface: "duplicate table property '{}'", key
+        );
+        properties.push((key.to_string(), value));
+    }
+    Ok(properties)
 }
 
 /// Iceberg's reserved table properties, other than `format-version`, which a create may set.
@@ -548,27 +726,11 @@ pub(crate) fn create_table_options(
     let mut location = location_clause.map(str::to_string);
     let mut properties = TableProperties::new();
     for option in options {
-        let SqlOption::KeyValue { key, value } = option else {
-            polars_bail!(SQLInterface: "table options must be `'key' = value` pairs; found `{}`", option)
-        };
-        let key = key.value.as_str();
-        polars_ensure!(!key.is_empty(), SQLInterface: "table option names must not be empty");
-        for known in ["location", "format-version"] {
-            polars_ensure!(
-                key == known || !key.eq_ignore_ascii_case(known),
-                SQLInterface: "'{}' is not a table option; did you mean '{}'?", key, known
-            );
-        }
+        let (key, value) = option_key_value(option, "table", &["location", "format-version"])?;
         polars_ensure!(
             !RESERVED_TABLE_PROPERTIES.contains(&key),
             SQLInterface: "table option '{}' is reserved by Iceberg", key
         );
-        let Some(value) = option_value(value) else {
-            polars_bail!(
-                SQLInterface: "table option values must be string, number or boolean literals; found `{}` for '{}'",
-                value, key
-            )
-        };
         if key == "location" {
             polars_ensure!(
                 location_clause.is_none(),
@@ -591,6 +753,207 @@ pub(crate) fn create_table_options(
         );
     }
     Ok((location, properties))
+}
+
+/// The partition fields of a catalog table, from `PARTITION BY (...)` or `PARTITIONED BY (...)`.
+pub(crate) fn create_table_partitioning(
+    partition_by: Option<&Expr>,
+    hive_distribution: &HiveDistributionStyle,
+) -> PolarsResult<Vec<CatalogPartitionField>> {
+    // Each field with its SQL, for messages.
+    let fields: Vec<(CatalogPartitionField, String)> = match (partition_by, hive_distribution) {
+        (Some(_), HiveDistributionStyle::PARTITIONED { .. }) => {
+            polars_bail!(SQLInterface: "`PARTITION BY` and `PARTITIONED BY` cannot be combined")
+        },
+        (Some(expr), _) => {
+            let exprs = match unparenthesized(expr) {
+                Expr::Tuple(exprs) => exprs.as_slice(),
+                expr => std::slice::from_ref(expr),
+            };
+            exprs
+                .iter()
+                .map(|expr| Ok((partition_field(expr)?, expr.to_string())))
+                .collect::<PolarsResult<_>>()?
+        },
+        (None, HiveDistributionStyle::PARTITIONED { columns }) => columns
+            .iter()
+            .map(|col| {
+                // Hive's `PARTITIONED BY (p INT)` adds a column.
+                polars_ensure!(
+                    col.data_type == SQLDataType::Unspecified && col.options.is_empty(),
+                    SQLInterface: "`PARTITIONED BY` takes column names only; found `{}`; types and constraints belong in the column list",
+                    col
+                );
+                let field = CatalogPartitionField {
+                    column: col.name.value.clone(),
+                    transform: "identity".to_string(),
+                };
+                Ok((field, col.name.value.clone()))
+            })
+            .collect::<PolarsResult<_>>()?,
+        (None, _) => Vec::new(),
+    };
+    // Iceberg allows one time transform per column.
+    let is_time = |f: &CatalogPartitionField| {
+        matches!(f.transform.as_str(), "year" | "month" | "day" | "hour")
+    };
+    for (i, (field, sql)) in fields.iter().enumerate() {
+        for (earlier, earlier_sql) in &fields[..i] {
+            polars_ensure!(earlier != field, SQLInterface: "duplicate partition field `{}`", sql);
+            polars_ensure!(
+                earlier.column != field.column || !is_time(earlier) || !is_time(field),
+                SQLInterface: "partition fields `{}` and `{}` both partition column '{}' by time; use one of them",
+                earlier_sql, sql, field.column
+            );
+        }
+    }
+    Ok(fields.into_iter().map(|(field, _)| field).collect())
+}
+
+/// A partition field: a column, `year|month|day|hour(column)` (with Iceberg's aliases), or
+/// `bucket|truncate(N, column)`.
+fn partition_field(expr: &Expr) -> PolarsResult<CatalogPartitionField> {
+    let unsupported = || {
+        polars_err!(
+            SQLInterface: "unsupported partition field `{}`; expected a column, or year, month, day, hour, bucket(N, column) or truncate(W, column) of a column",
+            expr
+        )
+    };
+    let column = |expr: &Expr| match unparenthesized(expr) {
+        Expr::Identifier(ident) => Some(ident.value.clone()),
+        _ => None,
+    };
+    // A qualified column or a struct field: without the schema, these look the same.
+    let is_compound = |expr: &Expr| matches!(unparenthesized(expr), Expr::CompoundIdentifier(_));
+    let compound = |expr: &Expr| {
+        polars_err!(
+            SQLInterface: "`PARTITION BY` takes unqualified column names; found `{}`; partitioning by a nested field is not yet supported",
+            unparenthesized(expr)
+        )
+    };
+    if let Some(column) = column(expr) {
+        return Ok(CatalogPartitionField {
+            column,
+            transform: "identity".to_string(),
+        });
+    }
+    if is_compound(expr) {
+        return Err(compound(expr));
+    }
+    let Expr::Function(Function {
+        name,
+        uses_odbc_syntax: false,
+        parameters: FunctionArguments::None,
+        args: FunctionArguments::List(list),
+        filter: None,
+        null_treatment: None,
+        over: None,
+        within_group,
+    }) = unparenthesized(expr)
+    else {
+        return Err(unsupported());
+    };
+    let fname = match name_parts(name).as_deref() {
+        Some([fname])
+            if within_group.is_empty()
+                && list.duplicate_treatment.is_none()
+                && list.clauses.is_empty() =>
+        {
+            fname.to_ascii_lowercase()
+        },
+        _ => return Err(unsupported()),
+    };
+    let args = list
+        .args
+        .iter()
+        .map(|arg| match arg {
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => Some(expr),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(unsupported)?;
+    let positive_int = |expr: &Expr| match unparenthesized(expr) {
+        Expr::Value(ValueWithSpan {
+            value: Value::Number(n, false),
+            ..
+        }) => n.parse::<i32>().ok().filter(|n| *n > 0),
+        _ => None,
+    };
+    let (transform, source) = match (fname.as_str(), args.as_slice()) {
+        ("year" | "years", [source]) => ("year".to_string(), source),
+        ("month" | "months", [source]) => ("month".to_string(), source),
+        ("day" | "days", [source]) => ("day".to_string(), source),
+        ("hour" | "hours", [source]) => ("hour".to_string(), source),
+        ("bucket" | "truncate", [n, source]) => {
+            let Some(n) = positive_int(n) else {
+                if (column(n).is_some() || is_compound(n)) && positive_int(source).is_some() {
+                    polars_bail!(SQLInterface: "`{}` takes the number first, as in `{}({}, {})`", expr, fname, source, n)
+                }
+                polars_bail!(SQLInterface: "the first argument of `{}` must be an integer from 1 to {}", expr, i32::MAX)
+            };
+            (format!("{fname}[{n}]"), source)
+        },
+        _ => return Err(unsupported()),
+    };
+    let column = match column(source) {
+        Some(column) => column,
+        None if is_compound(source) => return Err(compound(source)),
+        None => return Err(unsupported()),
+    };
+    Ok(CatalogPartitionField { column, transform })
+}
+
+/// `expr` without enclosing parentheses.
+fn unparenthesized(mut expr: &Expr) -> &Expr {
+    while let Expr::Nested(inner) = expr {
+        expr = inner;
+    }
+    expr
+}
+
+/// The properties of a catalog namespace, from `WITH (...)`.
+pub(crate) fn create_schema_options(options: &[SqlOption]) -> PolarsResult<Vec<(String, String)>> {
+    let mut properties: Vec<(String, String)> = Vec::new();
+    for option in options {
+        let (key, value) = option_key_value(option, "schema", &["location"])?;
+        polars_ensure!(
+            key != "location" || is_absolute_location(&value),
+            SQLInterface: "location must be an absolute path or a URI; found '{}'", value
+        );
+        polars_ensure!(
+            properties.iter().all(|(k, _)| k != key),
+            SQLInterface: "duplicate schema option '{}'", key
+        );
+        properties.push((key.to_string(), value));
+    }
+    Ok(properties)
+}
+
+/// The key and value of a `'key' = value` option of a `kind` ("table", "schema"), with keys that
+/// differ from a `known` one only in case rejected.
+fn option_key_value<'a>(
+    option: &'a SqlOption,
+    kind: &str,
+    known: &[&str],
+) -> PolarsResult<(&'a str, String)> {
+    let SqlOption::KeyValue { key, value } = option else {
+        polars_bail!(SQLInterface: "{} options must be `'key' = value` pairs; found `{}`", kind, option)
+    };
+    let key = key.value.as_str();
+    polars_ensure!(!key.is_empty(), SQLInterface: "{} option names must not be empty", kind);
+    for known in known {
+        polars_ensure!(
+            key == *known || !key.eq_ignore_ascii_case(known),
+            SQLInterface: "'{}' is not a {} option; did you mean '{}'?", key, kind, known
+        );
+    }
+    let Some(value) = option_value(value) else {
+        polars_bail!(
+            SQLInterface: "{} option values must be string, number or boolean literals; found `{}` for '{}'",
+            kind, value, key
+        )
+    };
+    Ok((key, value))
 }
 
 /// A table option value as a property string, if it is a string, number or boolean literal.

@@ -2248,6 +2248,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     return;
                 }
 
+                // Resolved plans preserve height with zero-width projections, so a count
+                // does not need to materialize a column before resolving the plan.
+                if out_edge.projection() == Projection::Len {
+                    *out_edge.projection_mut() = Projection::Names;
+                    out_edge.names_mut().clear();
+                }
+
                 let (projected_names, _) = projected_names_subset_or_return!();
 
                 let len_before_added_names = projected_names.len();

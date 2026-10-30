@@ -602,6 +602,36 @@ def test_streaming_group_by_hot_table_growth(
     assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
 
 
+def test_streaming_group_by_pre_aggs_over_budget(
+    plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1000")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_MAX_HOT_TABLE_SIZE", "4")
+    plmonkeypatch.setenv("POLARS_GROUP_BY_BATCH_BYTES", str(1 << 30))
+    plmonkeypatch.setenv("POLARS_OOC_MEMORY_BUDGET_MB", "1")
+    plmonkeypatch.setenv("POLARS_OOC_SPILL_MIN_BYTES", str(1 << 40))
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    # Each key occurs in one run, so (almost) all groups become pre-aggregates,
+    # which take more memory than the budget.
+    n = 200_000
+    q = (
+        pl.LazyFrame({"k": np.arange(n) // 2, "v": np.arange(n)})
+        .group_by("k")
+        .agg(pl.col("v").sum())
+    )
+
+    capfd.readouterr()
+    out = q.collect(engine="streaming")
+    err = capfd.readouterr().err
+    num_partitions = int(err.split("[group-by]: ")[1].split(" partitions")[0])
+    t = pl.thread_pool_size()
+    max_partitions = max(1024 // t * t, 2 * t)
+    assert num_partitions >= min(16 * t, max_partitions)
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+
+
 @pytest.mark.parametrize(
     "keys",
     [

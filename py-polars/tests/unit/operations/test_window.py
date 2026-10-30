@@ -1018,6 +1018,19 @@ def test_over_literal_or_scalar_24756(expr: pl.Expr, over: pl.Expr) -> None:
     assert out.shape == (3, 1)
 
 
+def test_over_multiple_keys_non_numeric_output() -> None:
+    df = pl.DataFrame(
+        {
+            "b": ["x", "y", "z", "w", "v", "u"],
+            "g": [10, 10, 20, 20, 30, 10],
+            "h": [1, 1, 2, 3, 4, 1],
+        }
+    )
+    out = df.select(pl.col.b.first().over(["g", "h"]))
+    expected = pl.DataFrame({"b": ["x", "x", "z", "w", "v", "x"]})
+    assert_frame_equal(out, expected)
+
+
 def test_shape_mismatch_group_by_slice() -> None:
     q = pl.LazyFrame(
         {

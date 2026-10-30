@@ -1263,6 +1263,12 @@ def test_correlated_subquery_in_join_on(query: str) -> None:
         "SELECT a.id, d.y FROM a LEFT JOIN d ON EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id = d.x)",
         # The subquery reads a relation of the left input that is not its first.
         "SELECT a.id, b.w, d.y FROM a JOIN b ON a.id = b.id LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        # The rows of the subquery can't join onto an input that the join keeps.
+        "SELECT a.id, d.x FROM a FULL JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x NOT IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id > a.id)",
+        # A window over the subquery's rows depends on the outer row.
+        "SELECT a.id, d.x FROM a LEFT JOIN d ON d.x IN (SELECT ROW_NUMBER() OVER (ORDER BY c.id) FROM c WHERE c.b_id = a.id)",
     ],
 )
 def test_correlated_membership_in_join_on(query: str) -> None:
@@ -1320,6 +1326,155 @@ def test_correlated_one_input_condition_in_join_on_many_rows(condition: str) -> 
         pl.exceptions.ComputeError, match="expected no or a single value"
     ):
         ctx.execute(f"SELECT a.id FROM a JOIN b ON {condition}").collect()
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # The subquery reads both inputs.
+        "a.id = b.id AND b.id = (SELECT MIN(c.b_id) FROM c WHERE c.b_id = a.id AND c.name > b.w)",
+        "b.id = (SELECT MAX(c.b_id) FROM c WHERE c.b_id <= a.id AND c.name > b.w)",
+        "a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        "a.id = b.id AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        # An unqualified column of the right input.
+        "b.id = (SELECT MIN(c.b_id) FROM c WHERE c.b_id >= a.id AND c.name > w)",
+        # The subquery reads the input that the condition's own columns don't read.
+        "b.id IN (SELECT c.b_id FROM c WHERE c.b_id < a.id + 1)",
+        # The condition's own columns read both inputs.
+        "a.id = b.id AND (a.v > 25 OR b.id = (SELECT MIN(c.b_id) FROM c WHERE c.id > a.id))",
+        # Next to a condition that reads one input.
+        "a.id = b.id AND EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id) AND b.id IN (SELECT c.b_id FROM c WHERE c.id > a.id)",
+        "a.id = b.id AND a.v IN (SELECT c.id * 10 FROM c) AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+        "a.id = b.id AND b.w IN (SELECT c.name FROM c) AND NOT EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id > b.id)",
+    ],
+)
+@pytest.mark.parametrize("left", ["a", "a JOIN d ON a.id = d.x"])
+def test_correlated_condition_reading_both_inputs_in_join_on(
+    join_type: str, condition: str, left: str
+) -> None:
+    assert_sql_matches(
+        frames=_join_on_frames(),
+        query=f"SELECT a.id, a.v, b.id AS bid, b.w FROM {left} {join_type} b ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "a.k = b.k AND x IN (SELECT c.y FROM c WHERE c.k = a.k AND c.y > b.x)",
+        "a.k = b.k AND EXISTS (SELECT 1 FROM c WHERE c.k = a.k AND c.y > b.x AND c.y > x)",
+    ],
+)
+def test_correlated_condition_reading_both_inputs_in_join_on_ambiguous(
+    join_type: str, condition: str
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": [10, 20]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [10, 21]}),
+        "c": pl.DataFrame({"k": [1, 2], "y": [15, 25]}),
+    }
+    with pytest.raises(
+        pl.exceptions.SQLInterfaceError, match='ambiguous reference to column "x"'
+    ):
+        pl.SQLContext(frames).execute(
+            f"SELECT a.k FROM a {join_type} b ON {condition}"
+        ).collect()
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN"])
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "id IN (SELECT c.b_id FROM c WHERE c.cid <= a.v + d.x)",
+        "EXISTS (SELECT 1 FROM c WHERE c.b_id = id AND c.cid <= d.x + a.v)",
+    ],
+)
+def test_correlated_condition_reading_both_inputs_in_join_on_after_using(
+    join_type: str, condition: str
+) -> None:
+    # `id` is the merged key of the USING join, not ambiguous.
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"id": [1, 2, 3], "v": [1, 5, 9]}),
+            "b": pl.DataFrame({"id": [1, 2, 3], "w": [1, 2, 3]}),
+            "c": pl.DataFrame({"cid": [1, 5, 6, 7], "b_id": [1, 2, 2, 3]}),
+            "d": pl.DataFrame({"x": [1, 5, 9]}),
+        },
+        query=f"SELECT a.id, d.x FROM a JOIN b USING (id) {join_type} d ON {condition}",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT a.id FROM c",
+        "WITH z AS (SELECT * FROM c) SELECT a.id FROM z",
+        "SELECT a.id FROM c UNION ALL SELECT a.id FROM c",
+        "SELECT x FROM (SELECT a.id AS x FROM c) AS t",
+    ],
+)
+def test_join_on_subquery_struct_named_like_input_keeps_plan(subquery: str) -> None:
+    # `a.id` is a field of the struct column `a` of `c`, not a column of the joined `a`.
+    ctx = pl.SQLContext(
+        frames={
+            "a": pl.DataFrame({"k": [1, 2]}),
+            "b": pl.DataFrame({"k": [1, 2], "x": [10, 20]}),
+            "c": pl.DataFrame({"a": [{"id": 10}]}),
+        }
+    )
+    plans = [
+        re.sub(
+            r"_POLARS_TMP_SQL_\d+|[0-9a-f]{8}-[0-9a-f-]{27}",
+            "",
+            ctx.execute(
+                f"SELECT {alias}.k, b.x FROM a AS {alias} LEFT JOIN b "
+                f"ON {alias}.k = b.k AND b.x IN ({subquery})"
+            ).explain(),
+        )
+        for alias in ["a", "outer_a"]
+    ]
+    assert plans[0] == plans[1]
+
+
+def test_join_on_subquery_alias_of_input_name_keeps_plan() -> None:
+    # The `b` of the subquery is its own relation, not the joined `b`.
+    ctx = pl.SQLContext(frames=_join_on_frames())
+    plans = [
+        re.sub(
+            r"_POLARS_TMP_SQL_\d+|[0-9a-f]{8}-[0-9a-f-]{27}",
+            "",
+            ctx.execute(
+                f"SELECT a.id FROM a LEFT JOIN b ON a.id = b.id AND a.v IN "
+                f"(SELECT {alias}.id FROM c AS {alias} "
+                f"WHERE EXISTS (SELECT 1 FROM d WHERE d.x = {alias}.id))"
+            ).explain(),
+        )
+        for alias in ["b", "local_b"]
+    ]
+    assert plans[0] == plans[1]
+
+
+def test_correlated_condition_reading_both_inputs_in_join_on_names() -> None:
+    res = pl.SQLContext(frames=_join_on_frames()).execute(
+        "SELECT * FROM a LEFT JOIN b ON a.id = b.id "
+        "AND EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id AND c.id >= b.id) ORDER BY a.v",
+        eager=True,
+    )
+    assert res.columns == ["id", "v", "id:b", "w"]
+    assert res.rows() == [
+        (1, 10, 1, "x"),
+        (2, 20, 2, "y"),
+        (3, 30, None, None),
+        (None, 40, None, None),
+    ]
 
 
 def _first_row_frames() -> dict[str, pl.DataFrame]:
@@ -1434,17 +1589,15 @@ def test_correlated_subquery_reading_query_further_out(query: str) -> None:
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id = (SELECT COUNT(*) FROM c WHERE c.b_id = a.id))",
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.b_id > a.id))",
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id < (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
-        # The rows of the subquery can't join onto an input that the join keeps.
-        "SELECT a.id FROM a FULL JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
-        "SELECT a.id FROM a LEFT JOIN d ON d.x NOT IN (SELECT c.id FROM c WHERE c.b_id = a.id)",
-        "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT c.id FROM c WHERE c.b_id > a.id)",
-        # A window over the subquery's rows depends on the outer row.
-        "SELECT a.id FROM a LEFT JOIN d ON d.x IN (SELECT ROW_NUMBER() OVER (ORDER BY c.id) FROM c WHERE c.b_id = a.id)",
         # `a.b.id` is a struct field of `a`, not a column of the joined `b`.
         "SELECT a.id FROM a JOIN b ON a.id < (SELECT c.id FROM c WHERE c.b_id = a.b.id)",
         # The relations inside an aliased nested join are not resolved by name.
         "SELECT a.id FROM a JOIN (b JOIN d ON b.id = d.x) AS r ON a.id = (SELECT c.id FROM c WHERE c.b_id = b.id)",
         "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT c.id FROM c WHERE c.b_id = b.id)",
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT MIN(c.id) FROM c WHERE c.b_id = b.id AND c.id <= r.id + d.x)",
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON b.id = (SELECT MIN(c.b_id) FROM c WHERE c.id <= r.id + d.x)",
+        # A `b` declared deeper does not make the `b` of the subquery around it visible.
+        "SELECT d.x FROM (a JOIN b ON a.id = b.id) AS r JOIN d ON d.x = (SELECT MIN(c.id) FROM c WHERE c.b_id = b.id AND c.id <= r.id + d.x AND EXISTS (SELECT 1 FROM c AS b WHERE b.id > 0))",
         # Only `LIMIT 1` is supported, with an order read from the inner row.
         "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 2) FROM a",
         "SELECT a.id, (SELECT c.id FROM c WHERE c.b_id = a.id ORDER BY c.id LIMIT 1 OFFSET 1) FROM a",
@@ -1721,3 +1874,297 @@ def test_subquery_nested_struct_field_is_not_correlated(projection: str) -> None
         expected={"id": [1, 2], "v": [1, 1]},
         engines=ENGINES,
     )
+
+
+def _general_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "o": pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4, 5],
+                "k": [1, 2, 3, 3, None],
+                "x": [10, 20, 30, 30, 40],
+                "s": ["ab", "cd", "zz", "zz", None],
+            }
+        ),
+        "i": pl.DataFrame(
+            {
+                "cid": [1, 2, 4, 2, None],
+                "cn": [100, 200, 300, 250, 150],
+                "cs": ["xaby", "cdq", "no", None, "zz"],
+            }
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "i.cid = o.k + 1",
+        "i.cid * 2 = o.k",
+        "i.cid < o.k - 1",
+        "i.cs LIKE '%' || o.s || '%'",
+        "i.cid IN (o.k, 4)",
+        "(i.cid = o.k OR i.cn > 250)",
+        "i.cid = 1 AND o.x > 15",
+        "i.cid = o.k AND o.x > 15",
+        "CASE WHEN o.k > 0 THEN NULL ELSE NULL END",
+    ],
+)
+@pytest.mark.parametrize(
+    ("subquery", "where"),
+    [
+        ("(SELECT MAX(cn) FROM i WHERE {})", "{} > 150"),
+        ("(SELECT COUNT(*) + 1 FROM i WHERE {})", "{} > 1"),
+        ("(SELECT cn FROM i WHERE {} ORDER BY cn DESC LIMIT 1)", "{} > 150"),
+        ("o.x * 10 IN (SELECT cn FROM i WHERE {})", "{}"),
+        ("o.x * 10 NOT IN (SELECT cn FROM i WHERE {})", "{}"),
+        ("EXISTS (SELECT 1 FROM i WHERE {})", "{}"),
+        ("NOT EXISTS (SELECT 1 FROM i WHERE {})", "{}"),
+    ],
+)
+def test_correlated_subquery_general_condition(
+    condition: str, subquery: str, where: str
+) -> None:
+    sub = subquery.format(condition)
+    for query in [
+        f"SELECT id, {sub} AS r FROM o ORDER BY id",
+        f"SELECT id FROM o WHERE {where.format(sub)} ORDER BY id",
+    ]:
+        assert_sql_matches(
+            frames=_general_frames(),
+            query=query,
+            compare_with="duckdb",
+            engines=ENGINES,
+        )
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+def test_correlated_subquery_general_condition_join_on(join_type: str) -> None:
+    frames = _general_frames()
+    frames["b"] = pl.DataFrame({"bid": [1, 2, 3], "bn": [100, 200, 300]})
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            f"SELECT o.id, b.bid FROM o {join_type} JOIN b ON b.bn = "
+            "(SELECT MAX(cn) FROM i WHERE i.cs LIKE '%' || o.s || '%') "
+            "ORDER BY o.id, b.bid"
+        ),
+        compare_with="duckdb",
+        expected={"id": [1, 2, 3, 4, 5], "bid": [1, 2, None, None, None]}
+        if join_type == "LEFT"
+        else {"id": [1, 2], "bid": [1, 2]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_subquery_general_condition_typing() -> None:
+    # The decimal literals take the type of the Float32 column they are compared with.
+    assert_sql_matches(
+        frames={
+            "o": pl.DataFrame({"k": [1, 2]}),
+            "i": pl.DataFrame({"f": [0.1, 0.2]}, schema={"f": pl.Float32}),
+        },
+        query=(
+            "SELECT k, (SELECT COUNT(*) FROM i "
+            "WHERE i.f > CASE WHEN o.k = 1 THEN 0.1 ELSE 0.2 END) AS n FROM o ORDER BY k"
+        ),
+        compare_with="duckdb",
+        expected={"k": [1, 2], "n": [1, 0]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_subquery_general_condition_joined_outer() -> None:
+    frames = {
+        "a": pl.DataFrame({"id": [1, 2], "k": [1, 2]}),
+        "b": pl.DataFrame({"id": [1, 2], "k": [5, 1]}),
+        "i": pl.DataFrame({"cid": [1, 2, 6], "cn": [10, 20, 30]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT a.id, (SELECT MAX(cn) FROM i WHERE i.cid = b.k + a.k) AS m "
+            "FROM a JOIN b ON a.id = b.id ORDER BY a.id"
+        ),
+        compare_with="duckdb",
+        expected={"id": [1, 2], "m": [30, None]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(("k", "expected"), [(0, 10), (1, None)])
+def test_correlated_subquery_general_condition_single_row(
+    k: int, expected: int | None
+) -> None:
+    # Only the inner rows an outer row matches must form a single row.
+    frames = {
+        "o": pl.DataFrame({"k": [k, k]}),
+        "i": pl.DataFrame({"cid": [1, 2, 2], "cn": [10, 20, 30]}),
+    }
+    query = "SELECT k, (SELECT cn FROM i WHERE i.cid = o.k + 1) AS n FROM o"
+    if expected is None:
+        with pytest.raises(pl.exceptions.ComputeError, match="single value"):
+            pl.SQLContext(frames).execute(query, eager=True)
+    else:
+        assert_sql_matches(
+            frames=frames,
+            query=query,
+            compare_with="duckdb",
+            expected={"k": [k, k], "n": [expected, expected]},
+            engines=ENGINES,
+        )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # A selector would pick its columns after the inner ones are renamed.
+        "COLUMNS('^k$') = o.k + 1",
+        # Not a boolean.
+        "o.k || 'x'",
+    ],
+)
+def test_correlated_subquery_general_condition_rejected(condition: str) -> None:
+    frames = {"o": pl.DataFrame({"k": [1, 2]}), "i": pl.DataFrame({"k": [2, 3]})}
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(frames).execute(
+            f"SELECT k, EXISTS (SELECT COUNT(*) FROM i WHERE {condition}) AS n FROM o",
+            eager=True,
+        )
+
+
+@pytest.mark.parametrize("condition", ["cid = o.k", "cid = o.k + 1"])
+def test_correlated_in_subquery_aggregate_rejected(condition: str) -> None:
+    frames = {
+        "o": pl.DataFrame({"k": [0, 1, 2], "xs": [[20, 30], [10], []]}),
+        "i": pl.DataFrame({"cid": [1, 2, 2], "v": [10, 20, 30]}),
+    }
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(frames).execute(
+            f"SELECT xs IN (SELECT ARRAY_AGG(v) FROM i WHERE {condition}) FROM o",
+            eager=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "nested",
+    [
+        "i.cn > (SELECT AVG(cn) FROM i)",
+        "i.cn IN (SELECT bn FROM b)",
+        "i.cn NOT IN (SELECT bn FROM b)",
+        "EXISTS (SELECT 1 FROM b WHERE b.bid = i.cid)",
+        "NOT EXISTS (SELECT 1 FROM b WHERE b.bn = i.cn)",
+        "i.cn > 100 AND i.cn IN (SELECT bn FROM b)",
+    ],
+)
+@pytest.mark.parametrize(
+    "condition", ["i.cid = o.k", "i.cid = o.k - 1", "i.cid <= o.k"]
+)
+@pytest.mark.parametrize(
+    ("subquery", "where"),
+    [
+        ("(SELECT MAX(cn) FROM i WHERE {})", "{} > 150"),
+        ("(SELECT COUNT(*) FROM i WHERE {})", "{} > 0"),
+        ("(SELECT cn FROM i WHERE {} ORDER BY cn DESC LIMIT 1)", "{} > 150"),
+        ("o.x * 10 IN (SELECT cn FROM i WHERE {})", "{}"),
+        ("o.x * 10 NOT IN (SELECT cn FROM i WHERE {})", "{}"),
+        ("EXISTS (SELECT 1 FROM i WHERE {})", "{}"),
+        ("NOT EXISTS (SELECT 1 FROM i WHERE {})", "{}"),
+        ("EXISTS (SELECT COUNT(*) FROM i WHERE {})", "{}"),
+    ],
+)
+def test_correlated_subquery_inner_subquery_filter(
+    nested: str, condition: str, subquery: str, where: str
+) -> None:
+    frames = _general_frames()
+    frames["b"] = pl.DataFrame({"bid": [1, 2, None], "bn": [100, 250, None]})
+    sub = subquery.format(f"{condition} AND {nested}")
+    for query in [
+        f"SELECT id, {sub} AS r FROM o ORDER BY id",
+        f"SELECT id FROM o WHERE {where.format(sub)} ORDER BY id",
+    ]:
+        assert_sql_matches(
+            frames=frames,
+            query=query,
+            compare_with="duckdb",
+            engines=ENGINES,
+        )
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+def test_correlated_subquery_inner_subquery_filter_join_on(join_type: str) -> None:
+    frames = _general_frames()
+    frames["b"] = pl.DataFrame({"bid": [1, 2, 3]})
+    frames["d"] = pl.DataFrame({"dn": [100, 200, 300]})
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            f"SELECT o.id, b.bid FROM o {join_type} JOIN b ON o.k = b.bid AND EXISTS "
+            "(SELECT 1 FROM i WHERE i.cid = b.bid AND i.cn IN (SELECT dn FROM d)) "
+            "ORDER BY o.id, b.bid"
+        ),
+        compare_with="duckdb",
+        expected={"id": [1, 2, 3, 4, 5], "bid": [1, 2, None, None, None]}
+        if join_type == "LEFT"
+        else {"id": [1, 2], "bid": [1, 2]},
+        engines=ENGINES,
+    )
+
+
+def test_correlated_subquery_inner_subquery_filter_join_tree() -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1]}),
+        "c": pl.DataFrame({"ck": [1, 1], "x": [1, 100], "v": [1000, 5]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT c.x, c.v FROM a, c
+            WHERE c.ck = a.k AND c.v = (
+                SELECT MAX(c.v) FROM c
+                WHERE c.ck = a.k AND c.x > (SELECT AVG(x) FROM c)
+            )
+        """,
+        compare_with="duckdb",
+        expected={"x": [100], "v": [5]},
+        engines=ENGINES,
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The nested subquery reads the outer `a` through a FROM that declares `a`.
+        """
+        SELECT a.k, (
+            SELECT COUNT(*) FROM c WHERE c.ck = e.ek AND c.x = (
+                SELECT a.k FROM (SELECT MIN(k) AS k FROM d)
+                WHERE EXISTS (SELECT 1 FROM a)
+            )
+        ) AS n
+        FROM a JOIN e ON a.k = e.ek
+        """,
+        """
+        SELECT a.k, (
+            SELECT COUNT(*) FROM c WHERE c.ck = e.ek AND c.x = (
+                SELECT a.k FROM (SELECT MIN(k) AS k FROM d) AS t
+            )
+        ) AS n
+        FROM a JOIN e ON a.k = e.ek
+        """,
+        """
+        SELECT a.k, e.ek FROM a JOIN e ON EXISTS (
+            SELECT 1 FROM c WHERE c.ck = a.k AND c.x > (SELECT AVG(k) FROM a)
+        )
+        """,
+    ],
+)
+def test_correlated_subquery_inner_subquery_filter_reads_outer(query: str) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2]}),
+        "c": pl.DataFrame({"ck": [1, 2], "x": [1, 2]}),
+        "d": pl.DataFrame({"k": [1]}),
+        "e": pl.DataFrame({"ek": [1, 2]}),
+    }
+    with pytest.raises(pl.exceptions.SQLInterfaceError):
+        pl.SQLContext(frames).execute(query, eager=True)
