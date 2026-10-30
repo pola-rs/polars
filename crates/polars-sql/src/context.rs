@@ -1372,13 +1372,13 @@ impl SQLContext {
         let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, &operand_query))?;
         let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, &operand_query))?;
         let lf_schema = self.get_frame_schema(&mut lf)?;
+        let rf_schema = self.get_frame_schema(&mut rf)?;
 
         let lf_cols: Vec<_> = lf_schema.iter_names_cloned().map(col).collect();
         let bag_semantics = matches!(quantifier, SetQuantifier::All);
         let rf_cols = match quantifier {
             SetQuantifier::ByName => None,
             SetQuantifier::Distinct | SetQuantifier::None | SetQuantifier::All => {
-                let rf_schema = self.get_frame_schema(&mut rf)?;
                 let rf_cols: Vec<_> = rf_schema.iter_names_cloned().map(col).collect();
                 if lf_cols.len() != rf_cols.len() {
                     polars_bail!(SQLInterface: "{} requires equal number of columns in each table (use '{} BY NAME' to combine mismatched tables)", op_name, op_name)
@@ -1389,6 +1389,31 @@ impl SQLContext {
                 polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
             },
         };
+
+        // The rows are compared as values of each column's common type, as UNION
+        // combines them.
+        let mut lf_casts = Vec::new();
+        let mut rf_casts = Vec::new();
+        for (i, (l_name, l_dtype)) in lf_schema.iter().enumerate() {
+            let right = match rf_cols {
+                Some(_) => rf_schema.get_at_index(i),
+                None => rf_schema
+                    .get_full(l_name)
+                    .map(|(_, name, dtype)| (name, dtype)),
+            };
+            let Some((r_name, r_dtype)) = right else {
+                continue;
+            };
+            if l_dtype != r_dtype {
+                let dtype = try_get_supertype(l_dtype, r_dtype)?;
+                lf_casts.push(col(l_name.clone()).strict_cast(dtype.clone()));
+                rf_casts.push(col(r_name.clone()).strict_cast(dtype));
+            }
+        }
+        if !lf_casts.is_empty() {
+            lf = lf.with_columns(lf_casts);
+            rf = rf.with_columns(rf_casts);
+        }
 
         let lf = if bag_semantics {
             let occurrence_col = unique_column_name();

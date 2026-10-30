@@ -4,6 +4,7 @@ use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
     datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
+use polars_core::utils::try_get_supertype;
 use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
@@ -35,7 +36,7 @@ use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
     interval_to_duration, order_by_sort_options, parse_extract_date_part, parse_sql_array,
-    parse_sql_expr, sql_binary,
+    parse_sql_expr, sql_binary, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
@@ -1503,8 +1504,10 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Conditional functions
             // ----
-            Coalesce => self.visit_variadic(coalesce),
-            Greatest => self.visit_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap()),
+            Coalesce => self.visit_temporal_variadic(coalesce),
+            Greatest => {
+                self.visit_temporal_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap())
+            },
             If => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1520,20 +1523,21 @@ impl SQLFunctionVisitor<'_> {
             IfNull => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_variadic(coalesce),
+                    2 => self.visit_temporal_variadic(coalesce),
                     _ => {
                         polars_bail!(SQLSyntax: "IFNULL expects 2 arguments (found {})", args.len())
                     },
                 }
             },
-            Least => self.visit_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
+            Least => self.visit_temporal_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
             NullIf => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_binary(|l: Expr, r: Expr| {
-                        when(l.clone().eq(r))
+                    2 => self.visit_temporal_variadic(|exprs: &[Expr]| {
+                        let [l, r] = exprs else { unreachable!() };
+                        when(l.clone().eq(r.clone()))
                             .then(lit(LiteralValue::untyped_null()))
-                            .otherwise(l)
+                            .otherwise(l.clone())
                     }),
                     _ => {
                         polars_bail!(SQLSyntax: "NULLIF expects 2 arguments (found {})", args.len())
@@ -2591,6 +2595,36 @@ impl SQLFunctionVisitor<'_> {
         &mut self,
         f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
+        let expr_args = self.parse_variadic_args()?;
+        f(&expr_args).and_then(|e| self.apply_window_spec(e))
+    }
+
+    /// [`Self::visit_variadic`] for a function whose arguments share one type: a string
+    /// literal is read as a value of the common temporal type of the other arguments, as
+    /// in `COALESCE(date_col, '2020-01-01')`.
+    fn visit_temporal_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
+        let mut expr_args = self.parse_variadic_args()?;
+        let is_string_literal =
+            |e: &Expr| matches!(e, Expr::Literal(lv) if lv.extract_str().is_some());
+        if expr_args.iter().any(is_string_literal) {
+            let mut dtypes = expr_args
+                .iter()
+                .filter(|e| !is_string_literal(e))
+                .filter_map(|e| self.ctx.expr_dtype(e, self.active_schema))
+                .filter(|dtype| dtype.is_temporal());
+            let dtype = dtypes.next().and_then(|first| {
+                dtypes.try_fold(first, |acc, dtype| try_get_supertype(&acc, &dtype).ok())
+            });
+            if let Some(dtype) = dtype {
+                for arg in &mut expr_args {
+                    *arg = temporal_string_as(arg, Some(&dtype));
+                }
+            }
+        }
+        self.apply_window_spec(f(&expr_args))
+    }
+
+    fn parse_variadic_args(&mut self) -> PolarsResult<Vec<Expr>> {
         let args = extract_args(self.func)?;
         let mut expr_args = vec![];
         for arg in args {
@@ -2600,7 +2634,7 @@ impl SQLFunctionVisitor<'_> {
                 return self.not_supported_error();
             };
         }
-        f(&expr_args).and_then(|e| self.apply_window_spec(e))
+        Ok(expr_args)
     }
 
     fn try_visit_ternary<Arg: FromSQLExpr>(

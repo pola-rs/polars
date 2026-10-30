@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -2359,6 +2360,20 @@ def test_correlated_subquery_group_by_errors(query: str) -> None:
         pl.SQLContext(frames).execute(query, eager=True)
 
 
+@pytest.mark.parametrize("op", ["IN", "NOT IN"])
+def test_correlated_in_subquery_on_its_correlation_key(op: str) -> None:
+    assert_sql_matches(
+        frames={
+            "o": pl.DataFrame({"k": [1, 2, 3, None]}),
+            "l": pl.DataFrame({"k": [1, 1, 3, None]}),
+        },
+        query=f"SELECT k FROM o WHERE k {op} (SELECT l.k FROM l WHERE l.k = o.k)",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
 @pytest.mark.parametrize(
     "query",
     [
@@ -2524,3 +2539,31 @@ def test_correlated_subquery_limit_errors(query: str) -> None:
     }
     with pytest.raises(pl.exceptions.PolarsError):
         pl.SQLContext(frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT b.k, (SELECT a.k FROM a WHERE a.v = b.f) AS x FROM b",
+        "SELECT b.k, (SELECT a.k FROM a WHERE a.v = b.f ORDER BY a.k LIMIT 1) AS x FROM b",
+        "SELECT b.k, (SELECT SUM(a.k) FROM a WHERE a.v = b.f) AS x FROM b",
+    ],
+)
+def test_correlated_decimal_float_keys(query: str) -> None:
+    frames = {
+        "a": pl.DataFrame(
+            {"k": [1, 2, 3], "v": [Decimal("1.50"), Decimal("0"), Decimal("1.5")]},
+            schema={"k": pl.Int32, "v": pl.Decimal(15, 2)},
+        ),
+        "b": pl.DataFrame({"k": [1, 2, 3], "f": [1.5, 3.0, 0.0]}),
+    }
+    if "LIMIT" not in query and "SUM" not in query:
+        frames["a"] = frames["a"].head(2)
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
