@@ -3408,3 +3408,31 @@ def test_join_where_number_with_string_raises(condition: str) -> None:
         pl.SQLContext(a=a, b=b).execute(
             f"SELECT a.k, b.s FROM a JOIN b ON {condition}", eager=True
         )
+
+
+@pytest.mark.parametrize(
+    "on",
+    [
+        "1 = CASE WHEN b.k IS NULL THEN 0 ELSE 1 END",
+        "CASE WHEN a.k > 1 THEN 1 ELSE 0 END = 1",
+        "a.k = 2",
+        "1.5 = b.k",
+        "CASE WHEN a.k = 1 THEN 16777217 ELSE 0 END = b.f",
+    ],
+)
+@pytest.mark.parametrize("how", ["INNER", "LEFT"])
+def test_join_untyped_literal_keys(on: str, how: str) -> None:
+    assert_sql_matches(
+        frames={
+            "a": pl.DataFrame({"k": [1, 2]}, schema={"k": pl.Int32}),
+            "b": pl.DataFrame(
+                {"k": [1, None], "f": [16777216.0, None]},
+                schema={"k": pl.Int16, "f": pl.Float32},
+            ),
+        },
+        query=f"SELECT a.k, b.k AS bk FROM a {how} JOIN b ON {on}",
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )

@@ -3571,8 +3571,8 @@ fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
 
 // The keys of an equality-correlated subquery that is grouped by its keys and joined
 // back: the outer and the prefixed inner column of each correlation. A pair the join
-// doesn't cast itself is cast exactly and added as new key columns, so grouping and the
-// join back read the same key. Returns the outer columns added, to drop after the join.
+// doesn't cast itself is cast as the comparison casts it and added as new key columns,
+// so grouping and the join back read the same key. Returns the outer columns added, to drop after the join.
 fn correlation_keys(
     corr_preds: &[CorrPredicate],
     outer: &mut LazyFrame,
@@ -3589,7 +3589,7 @@ fn correlation_keys(
         let inner_key = col(prefixed_inner(prefix, &p.inner));
         let cast = match (outer_schema.get(&p.outer), inner_schema.get(&p.inner)) {
             (Some(l), Some(r)) => {
-                sql_join_key_pair(outer_key.clone(), l, inner_key.clone(), r, false)
+                sql_join_key_pair(outer_key.clone(), l, inner_key.clone(), r, true)
             },
             _ => None,
         };
