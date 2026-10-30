@@ -594,7 +594,14 @@ impl<'a> AggregationContext<'a> {
     fn flat_naive_length(&self) -> usize {
         match &self.state {
             AggState::NotAggregated(c) => c.len(),
-            AggState::AggregatedList(c) => c.list().unwrap().inner_length(),
+            // A repeated list (a Series literal) is not materialized, which Object values cannot be.
+            AggState::AggregatedList(c) => {
+                match c.as_scalar_column().map(|sc| sc.scalar().value()) {
+                    Some(AnyValue::List(s)) => s.len() * c.len(),
+                    Some(AnyValue::Null) => 0,
+                    _ => c.list().unwrap().inner_length(),
+                }
+            },
             AggState::AggregatedScalar(c) => c.len(),
             AggState::LiteralScalar(_) => 1,
         }
