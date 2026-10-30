@@ -792,3 +792,35 @@ def test_sql_context_eager_execution_removed() -> None:
     msg = "It was renamed to 'eager'."
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.SQLContext(eager_execution=True)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT top FROM t ORDER BY top", [(1,), (2,), (3,)]),
+        ("SELECT top.x FROM t top ORDER BY 1", [(1,), (2,), (3,)]),
+        ("SELECT x, top FROM t AS top WHERE top.top > 1 ORDER BY x", [(1, 3), (3, 2)]),
+        (
+            "WITH top AS (SELECT * FROM t) "
+            "SELECT CONCAT_WS(',', top.x, TOP.top) AS s FROM top ORDER BY s",
+            [("1,3",), ("2,1",), ("3,2",)],
+        ),
+    ],
+)
+def test_top_as_identifier(query: str, expected: list[tuple[Any, ...]]) -> None:
+    t = pl.DataFrame({"top": [3, 1, 2], "x": [1, 2, 3]})
+    assert pl.SQLContext(t=t).execute(query, eager=True).rows() == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT TOP 2 x FROM t",
+        "SELECT TOP (1) x FROM t",
+        "SELECT DISTINCT TOP 1 x FROM t",
+    ],
+)
+def test_top_clause_unsupported(query: str) -> None:
+    t = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(SQLInterfaceError, match="`TOP` clause is not supported"):
+        pl.SQLContext(t=t).execute(query, eager=True)
