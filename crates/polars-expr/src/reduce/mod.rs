@@ -21,6 +21,7 @@ mod min_max_by;
 #[cfg(feature = "moment")]
 mod skew_kurtosis;
 mod sum;
+mod unique;
 mod var_std;
 
 use std::any::Any;
@@ -29,14 +30,16 @@ use std::marker::PhantomData;
 
 #[cfg(feature = "approx_quantile")]
 pub use approx_quantile::{
-    new_approx_quantile_merge_reduction, new_approx_quantile_state_reduction,
+    new_approx_quantile_sketch_reduction, new_approx_quantile_state_reduction,
+    new_approx_quantile_union_reduction,
 };
-pub use convert::into_reduction;
+pub use convert::{into_reduction, unordered_unique_input};
 pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_arrow::array::{Array, PrimitiveArray, StaticArray};
 use polars_arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
 use polars_arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use polars_core::prelude::*;
+pub use unique::supports_unique_reduction;
 
 use crate::EvictIdx;
 
@@ -223,8 +226,23 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// After this operation the number of groups is reset to 0.
     fn finalize(&mut self) -> PolarsResult<Series>;
 
+    /// The size of the states, evicted groups included. Reductions whose states grow with the
+    /// values of a group return `Some`, also when they have no groups. `None` means the size is
+    /// not tracked.
+    fn state_size(&self) -> Option<StateSize> {
+        None
+    }
+
     /// Returns this GroupedReduction as a dyn Any.
     fn as_any(&self) -> &dyn Any;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StateSize {
+    /// The number of values held over all groups.
+    pub num_values: usize,
+    /// The estimated heap size, in bytes.
+    pub bytes: usize,
 }
 
 // Helper traits used in the VecGroupedReduction and VecMaskGroupedReduction to
@@ -255,6 +273,9 @@ pub trait Reducer: Send + Sync + Clone + 'static {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series>;
+    fn state_size(&self, _v: &[Self::Value]) -> Option<StateSize> {
+        None
+    }
 }
 
 pub trait NumericReduction: Send + Sync + 'static {
@@ -522,6 +543,14 @@ where
         self.layout = LaneLayout::single(0);
         let v = core::mem::take(&mut self.values);
         self.reducer.finish(v, None, &self.in_dtype)
+    }
+
+    fn state_size(&self) -> Option<StateSize> {
+        let mut size = self.reducer.state_size(&self.values)?;
+        let evicted = self.reducer.state_size(&self.evicted_values)?;
+        size.num_values += evicted.num_values;
+        size.bytes += evicted.bytes;
+        Some(size)
     }
 
     fn as_any(&self) -> &dyn Any {

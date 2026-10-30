@@ -31,10 +31,12 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } | K::InMemoryJoin { .. } | K::ColumnarFunction { .. } => {
-                Self::InMemoryFallback
-            },
+            K::InMemoryMap { .. }
+            | K::InMemoryJoin { .. }
+            | K::ColumnarFunction { .. }
+            | K::Recursive { .. } => Self::InMemoryFallback,
             K::InMemorySource { .. }
+            | K::SpillFrameSource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
             | K::InMemorySink { .. }
@@ -191,6 +193,7 @@ fn visualize_plan_rec(
     let kind = &phys_sm[node_key].kind;
 
     use std::slice::from_ref;
+    let recursive_inputs: Vec<super::PhysStream>;
     let (label, inputs) = match kind {
         PhysNodeKind::InMemorySource {
             df,
@@ -237,6 +240,13 @@ fn visualize_plan_rec(
             format!("with-row-index\\nname: {name}\\noffset: {offset:?}"),
             from_ref(input),
         ),
+        PhysNodeKind::SpillFrameSource { schema, .. } => (
+            format!(
+                "spill-frame-source\\ncols: {}",
+                schema.iter_names().cloned().collect::<Vec<_>>().join(", ")
+            ),
+            &[][..],
+        ),
         PhysNodeKind::InputIndependentSelect { selectors } => (
             format!(
                 "input-independent-select\\n{}",
@@ -259,6 +269,7 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::Reverse { input } => ("reverse".to_owned(), from_ref(input)),
         PhysNodeKind::NegativeSlice {
             input,
             offset,
@@ -388,8 +399,14 @@ fn visualize_plan_rec(
                 }
                 label.push_str(&escape_graphviz(name));
             }
-            if let Some((name, _)) = order_by {
-                write!(&mut label, "\\norder by: {}", escape_graphviz(name)).unwrap();
+            if let Some((names, _)) = order_by {
+                label.push_str("\\norder by: ");
+                for (i, name) in names.iter().enumerate() {
+                    if i > 0 {
+                        label.push_str(", ");
+                    }
+                    label.push_str(&escape_graphviz(name));
+                }
             }
             write!(
                 &mut label,
@@ -557,6 +574,12 @@ fn visualize_plan_rec(
             &[*input][..],
         ),
         PhysNodeKind::IsSorted { input, .. } => ("is_sorted".to_owned(), &[*input][..]),
+        PhysNodeKind::Recursive {
+            anchor, externals, ..
+        } => {
+            recursive_inputs = std::iter::once(anchor).chain(externals).copied().collect();
+            ("recursive".to_string(), recursive_inputs.as_slice())
+        },
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::UnorderedUnion { inputs } => {
             ("unordered-union".to_string(), inputs.as_slice())
@@ -875,6 +898,7 @@ fn visualize_plan_rec(
             args,
             output_bool: _,
             runtime_filters: _,
+            estimated_rows: _,
         } => {
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",

@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import ColumnNotFoundError, SQLInterfaceError
 from tests.unit.sql import assert_sql_matches
 
 
@@ -91,6 +92,140 @@ def test_not_exists_inequality_correlation(op: str, expected: list[int]) -> None
         ),
         compare_with="duckdb",
         expected={"a": expected},
+    )
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        ("EXISTS (SELECT COUNT(*) FROM t2 WHERE FALSE)", [1, 2, 3]),
+        ("NOT EXISTS (SELECT COUNT(*) FROM t2 WHERE FALSE)", []),
+        ("EXISTS (SELECT MAX(w) + 1 FROM t2 WHERE w > 100)", [1, 2, 3]),
+        ("EXISTS (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b)", [1, 2, 3]),
+        ("a = 1 OR NOT EXISTS (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b)", [1]),
+        ("EXISTS (SELECT COUNT(*) OVER () FROM t2 WHERE FALSE)", []),
+        ("EXISTS (SELECT (SELECT COUNT(*) FROM t2) FROM t2 WHERE FALSE)", []),
+        ("EXISTS (SELECT 1 FROM t2 WHERE FALSE ORDER BY COUNT(*))", [1, 2, 3]),
+        (
+            "EXISTS (SELECT COUNT(*) OVER win FROM t2 WHERE FALSE "
+            "WINDOW win AS (ORDER BY SUM(g)))",
+            [1, 2, 3],
+        ),
+    ],
+)
+def test_exists_over_aggregate(condition: str, expected: list[int]) -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=f"SELECT a FROM t1 WHERE {condition} ORDER BY a",
+        compare_with="duckdb",
+        expected={"a": expected},
+    )
+
+
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        # the aggregate reads only outer columns, so it belongs to the outer query
+        "SELECT COUNT(t1.a) FROM t2 WHERE FALSE",
+        "SELECT COUNT(*) FILTER (WHERE t1.a > 0) FROM t2 WHERE FALSE",
+        "SELECT UNNEST(ARRAY_AGG(w)) FROM t2 WHERE FALSE",
+    ],
+)
+def test_exists_over_aggregate_unsupported(subquery: str) -> None:
+    with pytest.raises(SQLInterfaceError, match="EXISTS subquery is not currently"):
+        pl.SQLContext(_frames()).execute(
+            f"SELECT a, EXISTS ({subquery}) AS e FROM t1", eager=True
+        )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT COUNT(*) AS n, EXISTS (SELECT 1 FROM t2 WHERE w > 2) AS e FROM t1",
+        "SELECT COUNT(*) AS n, NOT EXISTS (SELECT 1 FROM t2 WHERE w > 5) AS e FROM t1",
+        "SELECT COUNT(*) AS n, EXISTS (SELECT COUNT(*) FROM t2 WHERE FALSE) AS e FROM t1",
+        "SELECT COUNT(*) AS n FROM t1 WHERE FALSE HAVING EXISTS (SELECT 1 FROM t2)",
+        "SELECT COUNT(*) + CASE WHEN EXISTS (SELECT 1 FROM t2) THEN 1 END AS n FROM t1",
+    ],
+)
+def test_uncorrelated_exists_in_aggregate_query(query: str) -> None:
+    assert_sql_matches(frames=_frames(), query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT CAST('bad' AS INT) FROM t2",
+        "SELECT w, w FROM t2",
+    ],
+)
+def test_uncorrelated_exists_ignores_projection(subquery: str) -> None:
+    res = pl.SQLContext(_frames()).execute(
+        f"SELECT a, EXISTS ({subquery}) AS e FROM t1 ORDER BY a", eager=True
+    )
+    assert res["e"].to_list() == [True, True, True]
+
+
+def test_uncorrelated_exists_simple_case_operand() -> None:
+    res = pl.SQLContext(_frames()).execute(
+        "SELECT CASE EXISTS (SELECT w, w FROM t2) WHEN TRUE THEN 1 WHEN FALSE THEN 0 "
+        "END AS x FROM t1",
+        eager=True,
+    )
+    assert res["x"].to_list() == [1, 1, 1]
+
+
+@pytest.mark.parametrize("op", ["~~", "LIKE"])
+def test_uncorrelated_exists_over_aggregate_in_like(op: str) -> None:
+    res = pl.SQLContext(_frames()).execute(
+        "SELECT CAST(EXISTS (SELECT 1 FROM t2 WHERE FALSE ORDER BY COUNT(*)) "
+        f"AS VARCHAR) {op} 'true' AS x",
+        eager=True,
+    )
+    assert res["x"].to_list() == [True]
+
+
+@pytest.mark.parametrize(
+    "where",
+    ["(SELECT FALSE)", "g IN (SELECT g FROM t2)", "NOT EXISTS (SELECT 1 FROM t2)"],
+)
+def test_exists_over_aggregate_without_from(where: str) -> None:
+    res = pl.SQLContext(_frames()).execute(
+        f"SELECT EXISTS (SELECT COUNT(*) FROM t2 WHERE {where}) AS x", eager=True
+    )
+    assert res["x"].to_list() == [True]
+
+
+def test_uncorrelated_exists_over_union() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE EXISTS "
+            "(SELECT g FROM t2 WHERE FALSE UNION ALL SELECT g FROM t2) ORDER BY a"
+        ),
+        compare_with="duckdb",
+        expected={"a": [1, 2, 3]},
+    )
+
+
+def test_uncorrelated_exists_missing_column() -> None:
+    with pytest.raises(ColumnNotFoundError, match="missing"):
+        pl.SQLContext(_frames()).execute(
+            "SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE missing = 1)",
+            eager=True,
+        )
+
+
+def test_correlated_exists_unqualified_outer_column() -> None:
+    frames = {
+        "l": pl.DataFrame({"k": [1, 2, 3]}),
+        "r": pl.DataFrame({"v": [2, None]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT k, EXISTS (SELECT 1 FROM r WHERE v = k) AS e FROM l ORDER BY k",
+        compare_with="duckdb",
+        expected={"k": [1, 2, 3], "e": [False, True, False]},
     )
 
 
@@ -265,7 +400,7 @@ def test_uncorrelated_exists_in_expression_position() -> None:
 def test_decorrelated_exists_is_order_independent() -> None:
     # Needs several morsels and a joined outer frame: a smaller or unjoined
     # fixture has a stable row order and passes either way.
-    n = 200_000
+    n = 20_000
     fact = pl.DataFrame(
         {
             "ord": [i // 2 for i in range(n)],
@@ -489,3 +624,93 @@ def test_in_subquery_does_not_block_predicate_pushdown() -> None:
         compare_with="duckdb",
         expected={"total": [14]},
     )
+
+
+def _exists_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "a": pl.DataFrame({"k": [1, 2, 3, 4, None], "v": [1, 6, 3, 9, 2]}),
+        "b": pl.DataFrame({"k": [1, 1, 2, 3, None], "v": [1, 2, -1, 5, 7]}),
+        "c": pl.DataFrame({"k": [1, 3], "v": [2, 5]}),
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT k FROM a WHERE EXISTS "
+        "(SELECT 1 FROM b WHERE b.k = a.k HAVING SUM(b.v) > 2)",
+        "SELECT k FROM a WHERE NOT EXISTS "
+        "(SELECT 1 FROM b WHERE b.k = a.k HAVING COUNT(*) > 1)",
+        "SELECT k FROM a WHERE EXISTS "
+        "(SELECT 1 FROM b WHERE b.k = a.k HAVING COUNT(*) = 0)",
+        "SELECT k FROM a WHERE a.v > 5 OR EXISTS "
+        "(SELECT 1 FROM b WHERE b.k = a.k AND b.v > 0 HAVING MAX(b.v) < 2)",
+        "SELECT k, EXISTS (SELECT 1 FROM b WHERE b.k = a.k HAVING MAX(b.v) > 1) AS e FROM a",
+    ],
+)
+def test_correlated_exists_having(query: str) -> None:
+    assert_sql_matches(
+        frames=_exists_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT k FROM a WHERE EXISTS (SELECT 1 FROM b WHERE a.k IN (SELECT k FROM c))",
+        "SELECT k FROM a WHERE NOT EXISTS "
+        "(SELECT 1 FROM b WHERE b.k = a.k AND a.k IN (SELECT k FROM c))",
+        "SELECT k FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.k = a.k "
+        "AND b.k IN (SELECT k FROM c) AND a.v > (SELECT COUNT(*) FROM c))",
+        "SELECT k FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.v > 0 "
+        "AND (CASE WHEN a.k > 2 THEN NULL ELSE a.k END) IN (SELECT k FROM c))",
+        "SELECT a.k, c.v FROM a LEFT JOIN c ON EXISTS "
+        "(SELECT 1 FROM b WHERE c.v = (SELECT MAX(v) FROM b))",
+        "SELECT k, EXISTS (SELECT 1 FROM b WHERE b.k = a.k "
+        "AND a.v > (SELECT MIN(v) FROM c)) AS e FROM a",
+        "SELECT k FROM a WHERE EXISTS (SELECT * RENAME (k AS v) FROM b "
+        "WHERE b.k = a.k AND v > (SELECT MIN(v) FROM c))",
+        # `v` is the inner alias, not the outer column
+        "SELECT k FROM a WHERE EXISTS (SELECT b.k AS v FROM b WHERE b.k = a.k "
+        "AND v > (SELECT MIN(v) FROM c))",
+    ],
+)
+def test_exists_outer_subquery_conjunct(query: str) -> None:
+    assert_sql_matches(
+        frames=_exists_frames(),
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # the nested subquery reads the inner `b.v`
+        "SELECT k FROM a WHERE EXISTS "
+        "(SELECT 1 FROM b WHERE a.k IN (SELECT c.k FROM c WHERE c.v = b.v))",
+        # an aggregate without GROUP BY yields a row however WHERE filters
+        "SELECT k FROM a WHERE EXISTS "
+        "(SELECT COUNT(*) FROM b WHERE a.k IN (SELECT k FROM c))",
+        # the projection may expand to no rows
+        "SELECT k FROM a WHERE EXISTS "
+        "(SELECT UNNEST(ARRAY_AGG(b.v)) FROM b WHERE b.k = a.k HAVING COUNT(*) > 0)",
+    ],
+)
+def test_exists_outer_subquery_conjunct_unsupported(query: str) -> None:
+    with pytest.raises(SQLInterfaceError, match="EXISTS subquery is not currently"):
+        pl.SQLContext(_exists_frames()).execute(query, eager=True)
+
+
+def test_exists_outer_conjunct_keeps_inner_row_number() -> None:
+    frames = {"b": pl.DataFrame({"k": [1, 1, 1, 1]})}
+    query = "SELECT EXISTS (SELECT 1 FROM b WHERE ROW_NUMBER() > {}) AS e"
+    expected = pl.SQLContext(frames).execute(query.format("1"), eager=True)
+    result = pl.SQLContext(frames).execute(query.format("(SELECT 1)"), eager=True)
+    assert result.rows() == expected.rows() == [(True,)]

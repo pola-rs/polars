@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 import os
 import re
@@ -15,7 +16,7 @@ import pyarrow.ipc
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import format_file_uri
 
@@ -188,6 +189,62 @@ def test_double_lazy_error(sink: Any) -> None:
         sink(sink(df.lazy(), "a", lazy=True), "b")
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lazy_sink_as_input_error_29910(engine: EngineType) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    sink = df.lazy().sink_parquet("a.parquet", lazy=True)
+
+    for q in [
+        sink.select(pl.len()),
+        sink.cache().select(pl.len()),
+        pl.concat([sink, sink]),
+        sink.join(df.lazy(), how="cross"),
+        sink.join(df.lazy(), left_on=pl.lit(1), right_on="a", how="left"),
+        sink.join_where(df.lazy(), pl.col("a") > 0),
+        sink.unique(subset=pl.lit(1)),
+    ]:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match="a sink cannot be used as the input of another operation",
+        ):
+            q.collect(engine=engine)
+
+    sink.collect_schema()
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        sink.select(pl.len()).collect(engine=engine)
+
+    for q in [
+        df.lazy()
+        .pipe_with_schema(lambda q, _: q.sink_parquet("a.parquet", lazy=True))
+        .select(pl.len()),
+        pl.collect_all(
+            [df.lazy().sink_parquet("a.parquet", lazy=True)], lazy=True
+        ).select(pl.len()),
+    ]:
+        with pytest.raises(pl.exceptions.InvalidOperationError):
+            q.collect(engine=engine)
+
+    group = pl.collect_all([df.lazy().sink_parquet("a.parquet", lazy=True)], lazy=True)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.collect_all([group], engine=engine)
+
+    out = (
+        pl.SQLContext(t=sink)
+        .execute("WITH t AS (SELECT 1 AS a) SELECT * FROM t")
+        .collect(engine=engine)
+    )
+    assert_frame_equal(out, pl.DataFrame({"a": [1]}), check_dtypes=False)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.write_disk
+def test_lazy_sink_pipe_with_schema_29910(tmp_path: Path, engine: EngineType) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    sink = df.lazy().sink_parquet(tmp_path / "a.parquet", lazy=True)
+    sink.pipe_with_schema(lambda q, _: q).collect(engine=engine)
+    assert_frame_equal(pl.read_parquet(tmp_path / "a.parquet"), df)
+
+
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
 def test_sink_to_memory(sink: Any, scan: Any) -> None:
     df = pl.DataFrame(
@@ -222,6 +279,32 @@ def test_sink_to_file(tmp_path: Path, sink: Any, scan: Any) -> None:
             scan(f).collect(),
             df,
         )
+
+
+@pytest.mark.parametrize(("scan", "sink"), SINKS)
+@pytest.mark.write_disk
+def test_sink_to_scanned_file_7841(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sink: Any, scan: Any
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    path = tmp_path / "f"
+    sink(df.lazy(), path)
+
+    for scan_path, sink_path in [
+        (path, path),
+        (tmp_path / "*", path),
+        ("f", path),
+        (format_file_uri(path), path),
+        (path, format_file_uri(path)),
+    ]:
+        with pytest.raises(InvalidOperationError, match="also reads from this file"):
+            sink(scan(scan_path), sink_path)
+
+    with pytest.raises(InvalidOperationError, match="also reads from this file"):
+        pl.collect_all([sink(df.lazy(), path, lazy=True), scan(path).select(pl.len())])
+
+    assert_frame_equal(scan(path).collect(), df)
 
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
@@ -766,7 +849,6 @@ print("OK", end="")
 
 
 @pytest.mark.write_disk
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_sink_upload_chunk_size_config(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
@@ -808,7 +890,6 @@ def test_sink_upload_chunk_size_config(
 
 
 @pytest.mark.write_disk
-@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_sink_upload_chunk_size_config_partitioned(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
@@ -893,3 +974,59 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+@pytest.mark.parametrize(
+    ("sink", "read"),
+    [
+        (pl.LazyFrame.sink_parquet, pl.read_parquet),
+        (pl.LazyFrame.sink_ipc, pl.read_ipc),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_failed_query_does_not_finish_file(
+    tmp_path: Path, sink: Any, read: Any
+) -> None:
+    path = tmp_path / "out"
+    lf = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.Int32))
+    with pytest.raises(InvalidOperationError):
+        sink(lf, path)
+    # An empty or missing file raises OSError.
+    with pytest.raises((ComputeError, OSError)):
+        read(path)
+
+
+@pytest.mark.write_disk
+def test_sink_partitioned_failed_query_does_not_finish_files(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # Small morsels, so that files are open when the query fails.
+    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "1000")
+    n = 200_000
+    rows = pl.LazyFrame({"k": pl.int_range(n, eager=True) % 2, "x": range(n)})
+    failing = pl.LazyFrame({"k": [1], "x": ["a"]}).select(
+        pl.col("k").cast(pl.Int64), pl.col("x").cast(pl.Int64)
+    )
+    with pytest.raises(InvalidOperationError):
+        pl.concat([rows, failing]).sink_parquet(
+            pl.PartitionBy(tmp_path, key="k"), mkdir=True
+        )
+    for path in tmp_path.rglob("*.parquet"):
+        with pytest.raises((ComputeError, OSError)):
+            pl.read_parquet(path)
+
+
+@pytest.mark.parametrize("sink", [pl.LazyFrame.sink_csv, pl.LazyFrame.sink_ndjson])
+@pytest.mark.write_disk
+def test_sink_failed_query_does_not_finish_gzip(tmp_path: Path, sink: Any) -> None:
+    path = tmp_path / "out.gz"
+    rows = pl.LazyFrame({"x": pl.int_range(1_000_000, eager=True)})
+    failing = pl.LazyFrame({"x": ["a"]}).select(pl.col("x").cast(pl.Int64))
+    with pytest.raises(InvalidOperationError):
+        sink(pl.concat([rows, failing], parallel=False), path, compression="gzip")
+    # What was written before the failure has no gzip trailer; the file may not exist.
+    data = path.read_bytes() if path.exists() else b""
+    if data:
+        # A file cut off inside the gzip magic raises BadGzipFile.
+        with pytest.raises((EOFError, gzip.BadGzipFile)):
+            gzip.decompress(data)

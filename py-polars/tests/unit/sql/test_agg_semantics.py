@@ -305,14 +305,14 @@ def test_aggregate_of_constant_not_read_per_row() -> None:
     ("group_by", "has_check"),
     [
         ("GROUP BY g", False),
-        ("GROUP BY g + 1", True),
+        ("GROUP BY g + 1", False),
         ("GROUP BY 1 + 1", True),
         ("", True),
     ],
 )
 def test_aggregate_of_constant_in_groups(group_by: str, has_check: bool) -> None:
-    # A group of a column key has a row, so the aggregate does not check that rows
-    # are read.
+    # A group of a column or computed key has a row, so the aggregate does not check
+    # that rows are read.
     query = f"SELECT MAX(1) AS m, COUNT(DISTINCT 1) AS d FROM self {group_by}"
     for n_rows in [0, 3]:
         lf = pl.LazyFrame({"g": [1, 2, 2][:n_rows]}, schema={"g": pl.Int64})

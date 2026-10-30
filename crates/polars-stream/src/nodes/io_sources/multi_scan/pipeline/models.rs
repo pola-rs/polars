@@ -85,7 +85,6 @@ pub(super) struct StartReaderArgsConstant {
     pub(super) missing_columns_policy: MissingColumnsPolicy,
     pub(super) forbid_extra_columns: Option<ForbidExtraColumns>,
     pub(super) num_pipelines: usize,
-    pub(super) max_concurrent_scans: usize,
     pub(super) disable_morsel_split: bool,
     pub(super) maintain_order: bool,
     /// Precomputed last-morsel split factor; see `BeginReadArgs::last_morsel_pipelines`.
@@ -102,6 +101,8 @@ pub(super) struct StartReaderArgsPerFile {
     pub(super) extra_ops_this_file: ExtraOperations,
     pub(super) callbacks: FileReaderCallbacks,
     pub(super) external_filter_mask: Option<ExternalFilterMask>,
+    /// Number of files that can be read at the same time as this file.
+    pub(super) max_concurrent_scans: usize,
 }
 
 /// Files are emitted in the order their morsels are ready: readers run concurrently, bounded by
@@ -112,6 +113,46 @@ pub(super) struct UnorderedFiles {
     pub(super) merge_capacity: usize,
 }
 
+/// Limits the bytes of local, uncompressed files that are read at the same time.
+#[derive(Clone)]
+pub(super) struct ReadBytesLimit {
+    /// One permit per KiB, as permits are counted in `u32`.
+    permits: Arc<Semaphore>,
+    max_permits: u32,
+}
+
+impl ReadBytesLimit {
+    pub(super) fn new(max_bytes: usize) -> Self {
+        let max_permits = u32::try_from(max_bytes.div_ceil(1024))
+            .unwrap_or(u32::MAX)
+            .max(1);
+        Self {
+            permits: Arc::new(Semaphore::new(max_permits as usize)),
+            max_permits,
+        }
+    }
+
+    fn permits_for(&self, bytes: usize) -> u32 {
+        u32::try_from(bytes.div_ceil(1024))
+            .unwrap_or(u32::MAX)
+            .clamp(1, self.max_permits)
+    }
+
+    /// Waits until `bytes` can be read. A file larger than the limit waits for the full limit.
+    pub(super) async fn acquire(&self, bytes: usize) -> OwnedSemaphorePermit {
+        self.permits
+            .clone()
+            .acquire_many_owned(self.permits_for(bytes))
+            .await
+            .unwrap()
+    }
+
+    /// Number of files of `bytes` that fit in the limit at the same time.
+    pub(super) fn max_files(&self, bytes: usize) -> usize {
+        (self.max_permits / self.permits_for(bytes)) as usize
+    }
+}
+
 /// A reader that has been started but not yet attached to the bridge.
 pub(super) struct StartedReader {
     pub(super) handle: AbortOnDropHandle<PolarsResult<StartedReaderState>>,
@@ -119,6 +160,8 @@ pub(super) struct StartedReader {
     pub(super) wait_token: WaitToken,
     /// Held until the reader is done when files are emitted unordered.
     pub(super) slot: Option<OwnedSemaphorePermit>,
+    /// Held until the reader is done, for readers with a `local_read_size`.
+    pub(super) read_bytes: Option<OwnedSemaphorePermit>,
 }
 
 /// State for a reader that has been started.

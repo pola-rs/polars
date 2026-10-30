@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, GroupPositions};
+use polars_core::prelude::{Column, ExplodeOptions, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::{AExpr, IRBooleanFunction, IRFunctionExpr, IRPowFunction};
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -194,6 +194,7 @@ pub fn function_expr_to_udf(
         F::Hash(seed) => {
             map!(misc::row_hash, seed)
         },
+        F::Mm3Hash => map!(misc::mm3_hash),
         #[cfg(feature = "arg_where")]
         F::ArgWhere => {
             wrap!(misc::arg_where)
@@ -310,8 +311,8 @@ pub fn function_expr_to_udf(
             descending,
             nulls_last,
         } => map!(misc::arg_sort, descending, nulls_last),
-        F::MinBy => map_as_slice!(misc::min_by),
-        F::MaxBy => map_as_slice!(misc::max_by),
+        F::MinBy { order } => map_as_slice!(misc::min_by, order),
+        F::MaxBy { order } => map_as_slice!(misc::max_by, order),
         F::Product => map!(misc::product),
         F::Repeat => map_as_slice!(misc::repeat),
         #[cfg(feature = "rank")]
@@ -353,8 +354,17 @@ pub fn function_expr_to_udf(
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => map!(misc::approx_n_unique),
         #[cfg(feature = "approx_quantile")]
-        F::ApproxQuantileSketch { method, error } => {
-            map!(misc::approx_quantile_sketch, &method, error)
+        F::ApproxQuantileSketch {
+            method,
+            error,
+            failure_probability,
+        } => {
+            map!(
+                misc::approx_quantile_sketch,
+                &method,
+                error,
+                failure_probability
+            )
         },
         #[cfg(feature = "approx_quantile")]
         F::ApproxQuantileEstimate { values_dtype } => {
@@ -559,12 +569,36 @@ pub fn function_expr_to_udf(
         F::Reinterpret(dtype) => map!(misc::reinterpret, &dtype),
         F::ExtendConstant => map_as_slice!(misc::extend_constant),
 
-        F::RowEncode(dts, variants) => {
-            map_as_slice!(misc::row_encode, dts.clone(), variants.clone())
+        F::RowEncode {
+            dtypes,
+            variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => {
+            map_as_slice!(
+                misc::row_encode,
+                dtypes.clone(),
+                variant.clone(),
+                output.clone(),
+                encode_nulls.clone(),
+                propagate_nulls
+            )
         },
         #[cfg(feature = "dtype-struct")]
-        F::RowDecode(fs, variants) => {
-            map_as_slice!(misc::row_decode, fs.clone(), variants.clone())
+        F::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => {
+            map_as_slice!(
+                misc::row_decode,
+                fields.clone(),
+                variant.clone(),
+                output.clone(),
+                encode_nulls.clone()
+            )
         },
         F::DynamicPred { pred, .. } => {
             map_as_slice!(misc::dynamic_pred, &pred)
@@ -583,6 +617,23 @@ pub trait GroupsUdf: Send + Sync + 'static {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>>;
+}
+
+pub fn explode_groups_udf(options: ExplodeOptions) -> SpecialEq<Arc<dyn GroupsUdf>> {
+    struct Explode(ExplodeOptions);
+    impl GroupsUdf for Explode {
+        fn evaluate_on_groups<'a>(
+            &self,
+            inputs: &[Arc<dyn PhysicalExpr>],
+            df: &DataFrame,
+            groups: &'a GroupPositions,
+            state: &ExecutionState,
+        ) -> PolarsResult<AggregationContext<'a>> {
+            groups_dispatch::explode(inputs, df, groups, state, self.0)
+        }
+    }
+
+    SpecialEq::new(Arc::new(Explode(options)) as Arc<dyn GroupsUdf>)
 }
 
 pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Arc<dyn GroupsUdf>>> {

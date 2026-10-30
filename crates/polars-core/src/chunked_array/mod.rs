@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use num_traits::Signed;
 use polars_arrow::array::*;
 use polars_arrow::bitmap::Bitmap;
 use polars_arrow::compute::concatenate::concatenate_unchecked;
@@ -683,7 +684,18 @@ where
     ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]>,
 {
     /// Deposit values into nulls with a certain validity mask.
+    ///
+    /// Panics for structs; use `Series::deposit` for those.
     pub fn deposit(&self, validity: &Bitmap) -> Self {
+        self.deposit_with(validity, Self::set_validity)
+    }
+
+    /// [`Self::deposit`] with a custom setter for the resulting validity.
+    pub(crate) fn deposit_with(
+        &self,
+        validity: &Bitmap,
+        set_validity: impl FnOnce(&mut Self, Option<Bitmap>),
+    ) -> Self {
         let set_bits = validity.set_bits();
 
         assert_eq!(self.len(), set_bits);
@@ -709,10 +721,8 @@ where
         }));
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
-        ca.set_validity(combine_validities_and(
-            Some(validity),
-            ca.rechunk_validity().as_ref(),
-        ));
+        let validity = combine_validities_and(Some(validity), ca.rechunk_validity().as_ref());
+        set_validity(&mut ca, validity);
         ca
     }
 }
@@ -1028,6 +1038,22 @@ where
                 .map(|v| *v)
                 .trust_my_length(self.len())
         }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Signed,
+{
+    /// Whether any value is negative. Masked out values are also checked.
+    pub fn has_negative(&self) -> bool {
+        // Check in blocks, so the inner loop can be vectorized and we can still stop early.
+        self.data_views().any(|values| {
+            values
+                .chunks(1024)
+                .any(|block| block.iter().fold(false, |acc, v| acc | v.is_negative()))
+        })
     }
 }
 

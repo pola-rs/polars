@@ -7,15 +7,17 @@ use std::sync::LazyLock;
 pub use skeleton::{run_query, visualize_physical_plan};
 
 mod execute;
+mod execution_order;
 pub use dispatch::build_streaming_query_executor;
 pub(crate) mod expression;
 mod graph;
 pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
+mod hash_shuffle;
 pub use skeleton::StreamingQuery;
 mod metrics;
 pub use metrics::{
     AggMode, CustomMetric, GraphMetrics, Metric, MetricKind, MetricReporter, NodeMetrics,
-    NodeMetricsRegistry, kind,
+    NodeMetricsRegistry, QueryMetrics, kind,
 };
 mod observer_metrics;
 pub use observer_metrics::StreamingQueryMetricsSnapshotter;

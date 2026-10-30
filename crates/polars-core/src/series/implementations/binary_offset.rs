@@ -19,6 +19,11 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
         self.0.set_flags(flags)
     }
 
+    #[cfg(feature = "zip_with")]
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
+        ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
+    }
+
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         (&self.0).into_total_ord_inner()
     }
@@ -139,6 +144,11 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
     fn n_unique(&self) -> PolarsResult<usize> {
         // Only used by multi-key join validation, doesn't have to be optimal
         self.group_tuples(true, false).map(|g| g.len())
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique(&self) -> PolarsResult<Series> {
+        ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "algorithm_group_by")]

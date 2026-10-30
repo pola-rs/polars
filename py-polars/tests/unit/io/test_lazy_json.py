@@ -389,3 +389,43 @@ def test_scan_ndjson_progressive_infer_schema_length(
     for infer_len in [1, 2, 100, n_rows - 1, n_rows, n_rows + 1, None]:
         out = pl.scan_ndjson(file_path, infer_schema_length=infer_len).collect()
         assert df.schema == out.schema
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["uncompressed", "zstd", "gzip"])
+def test_scan_ndjson_progressive_infer_schema_truncated_row_29950(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: NdjsonCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.ndjson"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # The first downloaded (and decompressed) prefix ends inside the second row, which
+    # must not be counted as one of the `infer_schema_length` rows.
+    df = pl.DataFrame({"a": [0, 1, 2], "b": ["x", "x" * 400_000, "x"]})
+    df.lazy().sink_ndjson(file_path, compression=compression, check_extension=False)
+
+    out = pl.scan_ndjson(file_path, infer_schema_length=2).collect()
+    assert_frame_equal(out, df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("compression", ["zstd", "gzip"])
+def test_scan_ndjson_progressive_infer_schema_cut_off_compressed_file(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path, compression: NdjsonCompression
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "tt.ndjson"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # Cut off halfway, the file decompresses to less than inference first asks for. It
+    # used to keep asking for more data forever.
+    df = pl.DataFrame({"a": [1] * 25_000})
+    df.lazy().sink_ndjson(file_path, compression=compression, check_extension=False)
+    data = file_path.read_bytes()
+    file_path.write_bytes(data[: len(data) // 2])
+
+    with pytest.raises(OSError):
+        pl.scan_ndjson(file_path).collect_schema()

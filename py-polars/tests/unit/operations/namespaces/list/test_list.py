@@ -607,6 +607,11 @@ def test_list_gather() -> None:
     ]
 
 
+def test_list_gather_column_name() -> None:
+    df = pl.DataFrame({"a": [[10, 20, 30]], "idx": [[0, 2]]})
+    assert df.select(pl.col("a").list.gather("idx")).item().to_list() == [10, 30]
+
+
 @pytest.mark.parametrize("maintain_order", [False, True])
 def test_list_function_group_awareness(maintain_order: bool) -> None:
     df = pl.DataFrame(
@@ -780,6 +785,33 @@ def test_list_gather_oob_10079() -> None:
     )
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
         df.select(pl.col("a").gather(999))
+
+
+@pytest.mark.parametrize(
+    "a",
+    [
+        pl.Series("a", [], pl.List(pl.Int64)),
+        pl.Series("a", [None, None], pl.List(pl.Int64)),
+    ],
+)
+def test_list_gather_keeps_dtype(a: pl.Series) -> None:
+    idx = pl.Series("i", [[0]] * len(a), pl.List(pl.UInt32))
+    out = pl.DataFrame([a, idx]).select(pl.col("a").list.gather(pl.col("i")))
+    assert_series_equal(
+        out.to_series(), pl.Series("a", [None] * len(a), pl.List(pl.Int64))
+    )
+
+
+def test_list_gather_after_eval() -> None:
+    lf = (
+        pl.LazyFrame({"d": [1, 1, 2], "t": [3, 1, 2]})
+        .group_by("d")
+        .agg(pl.col("t").implode(maintain_order=False))
+        .with_columns(i=pl.col("t").list.eval(pl.element().arg_sort()))
+        .select("d", pl.col("t").list.gather(pl.col("i")))
+    )
+    expected = pl.DataFrame({"d": [1, 2], "t": [[1, 3], [2]]})
+    assert_frame_equal(lf.collect(), expected, check_row_order=False)
 
 
 def test_utf8_empty_series_arg_min_max_10703() -> None:
@@ -1461,6 +1493,82 @@ def test_list_slice_broadcast_27480(offset: Any, length: Any) -> None:
         pl.repeat(pl.lit([0, 1, 2]), 3).list.slice(offset, length).alias("broadcast")
     )
 
+    assert_frame_equal(result, expected)
+
+
+def test_list_slice_null_scalar_offset_29925() -> None:
+    df = pl.DataFrame({"a": [[1, 2]], "b": [1]})
+
+    assert_frame_equal(
+        df.select(
+            pl.when(True).then(None).otherwise(pl.col("a").list.slice(pl.col("b"), 1))
+        ),
+        pl.DataFrame({"literal": [None]}, schema={"literal": pl.List(pl.Int64)}),
+    )
+
+    df = pl.DataFrame({"a": [[1, 2], [3]], "b": [1, 2]})
+    assert df.select(
+        slice=pl.col("a").list.slice(pl.lit(None, pl.Int64), 1),
+        slice_lengths=pl.col("a").list.slice(pl.lit(None, pl.Int64), pl.col("b")),
+    ).to_dict(as_series=False) == {
+        "slice": [None, None],
+        "slice_lengths": [None, None],
+    }
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (0, pl.col("n")),
+        (pl.col("n"), 1),
+        (pl.col("n"), pl.col("n")),
+    ],
+)
+def test_list_slice_all_null_dtype_29926(offset: Any, length: Any) -> None:
+    lf = pl.LazyFrame(
+        {"a": [None, None], "n": [0, 0]},
+        schema={"a": pl.List(pl.String), "n": pl.Int64},
+    ).select(pl.col("a").list.slice(offset, length))
+    expected = pl.DataFrame({"a": [None, None]}, schema={"a": pl.List(pl.String)})
+    assert lf.collect_schema() == expected.schema
+    assert_frame_equal(lf.collect(engine="in-memory"), expected)
+    assert_frame_equal(lf.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize(
+    ("offset", "length", "expected"),
+    [
+        (pl.lit(None), 1, [None, None, None]),
+        (pl.lit(None), pl.col("l"), [None, None, None]),
+        (pl.col("o"), 1, [None, None, [6]]),
+        (pl.col("o"), pl.lit(None), [None, None, [6]]),
+        (pl.col("o"), pl.col("l"), [None, None, [6]]),
+        (1, pl.lit(None), [None, [2, 3], [5, 6]]),
+        (1, pl.col("l"), [None, [2, 3], [5]]),
+        (pl.lit(1), pl.lit(None, pl.Int64), [None, [2, 3], [5, 6]]),
+    ],
+)
+def test_list_slice_nulls(offset: Any, length: Any, expected: list[Any]) -> None:
+    df = pl.DataFrame(
+        {"a": [None, [1, 2, 3], [4, 5, 6]], "o": [1, None, -1], "l": [1, None, 1]}
+    )
+    result = df.select(pl.col("a").list.slice(offset, length))
+    assert_series_equal(
+        result.to_series(), pl.Series("a", expected, dtype=pl.List(pl.Int64))
+    )
+
+
+def test_list_slice_broadcast_nulls() -> None:
+    df = pl.DataFrame({"o": [1, None, -1], "l": [1, None, 1]})
+    a = pl.lit(pl.Series([[1, 2, 3]]))
+    result = df.select(
+        o=a.list.slice(pl.col("o"), 1),
+        l=a.list.slice(1, pl.col("l")),
+        ol=a.list.slice(pl.col("o"), pl.col("l")),
+    )
+    expected = pl.DataFrame(
+        {"o": [[2], None, [3]], "l": [[2], [2, 3], [2]], "ol": [[2], None, [3]]}
+    )
     assert_frame_equal(result, expected)
 
 

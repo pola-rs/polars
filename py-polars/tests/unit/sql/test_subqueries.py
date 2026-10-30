@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -754,14 +760,8 @@ def test_subquery_unsupported_positions_report_sql_errors() -> None:
 
     with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
         pl.sql(
-            "SELECT * FROM df1 JOIN df2 ON df1.a = df2.b AND df1.a > (SELECT MAX(b) FROM df2)",
+            "SELECT * FROM df1 JOIN df2 ON df1.a + df2.b = ANY (SELECT b FROM df2)",
             eager=True,
-        )
-
-    # column-free ON with a subquery must not be mistaken for a constant predicate
-    with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
-        pl.sql(
-            "SELECT * FROM df1 JOIN df2 ON (SELECT COUNT(*) FROM df2) > 0", eager=True
         )
 
 
@@ -833,33 +833,350 @@ def test_quantified_subquery_matches_in(
     )
 
 
+@pytest.mark.parametrize("projection", ["x.b", "MAX(x.b)"])
 @pytest.mark.parametrize("op", [">", "<", ">=", "<="])
 @pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
 def test_quantified_subquery_correlated_ordering_rejected(
-    op: str, quantifier: str
+    projection: str, op: str, quantifier: str
 ) -> None:
     ctx = pl.SQLContext(t1=pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     with pytest.raises(SQLInterfaceError, match="correlated subquery"):
         ctx.execute(
             f"SELECT a FROM t1 WHERE b {op} {quantifier}"
-            f" (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)"
+            f" (SELECT {projection} FROM t1 AS x WHERE x.a < t1.a)"
         ).collect()
 
 
 @pytest.mark.parametrize("op", [">", "<", ">=", "<="])
 @pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
 def test_quantified_subquery_uncorrelated_ordering(op: str, quantifier: str) -> None:
-    # MAX keeps the subquery single-row; a multi-row one hits a separate limit.
     assert_sql_matches(
         frames={
             "t1": pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}),
             "t2": pl.DataFrame({"y": [5, 15, 25]}),
         },
-        query=(
-            f"SELECT a FROM t1 WHERE b {op} {quantifier}"
-            f" (SELECT MAX(y) FROM t2) ORDER BY a"
-        ),
+        query=f"SELECT a FROM t1 WHERE b {op} {quantifier} (SELECT y FROM t2) ORDER BY a",
         compare_with="duckdb",
+    )
+
+
+@pytest.mark.parametrize("op", [">", "<", ">=", "<=", "=", "<>"])
+@pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT y FROM t2",
+        "SELECT y FROM t2 WHERE y > 99",
+        "SELECT z FROM t3",
+        "SELECT z FROM t3 WHERE z IS NULL",
+        # NaN is equal to itself and larger than any other value.
+        "SELECT f FROM t4",
+        "SELECT f FROM t5",
+    ],
+)
+def test_quantified_subquery_uncorrelated(
+    op: str, quantifier: str, subquery: str
+) -> None:
+    nan = float("nan")
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {"a": [1, 2, 3, 4, 5, 6], "b": [1.0, 10.0, 15.0, 30.0, nan, None]}
+            ),
+            "t2": pl.DataFrame({"y": [5.0, 15.0, 25.0]}),
+            "t3": pl.DataFrame({"z": [5.0, None, 25.0]}),
+            "t4": pl.DataFrame({"f": [1.0, nan]}),
+            "t5": pl.DataFrame({"f": [nan, nan]}),
+        },
+        query=f"SELECT a, b {op} {quantifier} ({subquery}) AS r FROM t1 ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "b = ALL (SELECT k FROM t2)",
+        "b <> ANY (SELECT k FROM t2)",
+        "b <> ANY (SELECT d FROM t2)",
+        "b < ANY (SELECT k FROM t2)",
+        "b >= ALL (SELECT k FROM t2)",
+        "(SELECT b FROM t1 WHERE a = 1) = ALL (SELECT k FROM t2)",
+        "(SELECT b FROM t1 WHERE a = 1) <> ANY (SELECT k FROM t2)",
+    ],
+)
+def test_quantified_subquery_compared_after_cast(predicate: str) -> None:
+    # 2^53 and 2^53 + 1 are equal as Float64.
+    big = 2**53
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame({"a": [1, 2, 3], "b": [float(big), 1.5, None]}),
+            "t2": pl.DataFrame(
+                {
+                    "k": [big, big + 1],
+                    "d": pl.Series([big, big + 1], dtype=pl.Decimal(20, 0)),
+                }
+            ),
+        },
+        query=f"SELECT a, {predicate} AS r FROM t1 ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_scalar_subquery_on_multi_chunk_frame() -> None:
+    t1 = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    t1 = pl.concat([t1[:1], t1[1:]], rechunk=False)
+    t2 = pl.DataFrame({"k": [1, 1]})
+    out = pl.SQLContext(t1=t1, t2=t2).execute(
+        "SELECT a, (SELECT b FROM t1 WHERE a = 1) = ALL (SELECT k FROM t2) AS r "
+        "FROM t1 ORDER BY a",
+        eager=True,
+    )
+    assert out.to_dict(as_series=False) == {"a": [1, 2, 3], "r": [True, True, True]}
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "b IN (SELECT k FROM t2)",
+        "b NOT IN (SELECT d FROM t2)",
+        "b = ANY (SELECT d FROM t2)",
+        "b <> ALL (SELECT k FROM t2)",
+        "a IN (SELECT f FROM t2)",
+        "b IN (SELECT k FROM t2 WHERE t2.g = t1.g)",
+        "a NOT IN (SELECT f FROM t2 WHERE t2.g = t1.g)",
+        "0.1 IN (SELECT h FROM t2)",
+        "0.1 NOT IN (SELECT h FROM t2 WHERE t2.g = t1.g)",
+    ],
+)
+def test_in_subquery_float_with_integer_or_decimal(predicate: str) -> None:
+    # Compared as Float64, as with `=`, so 2^53 and 2^53 + 1 are equal. A decimal
+    # literal takes the type of the Float32 column `h`, so 0.1 is in it.
+    big = 2**53
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {"a": [1, 2, 3], "b": [float(big), 1.5, None], "g": [1, 1, 2]}
+            ),
+            "t2": pl.DataFrame(
+                {
+                    "k": [big + 1, 2, 3],
+                    "d": pl.Series([big + 1, 2, 3], dtype=pl.Decimal(20, 0)),
+                    "f": [2.0, 2.5, 3.0],
+                    "h": pl.Series([0.1, 0.5, 2.0], dtype=pl.Float32),
+                    "g": [1, 1, 2],
+                }
+            ),
+        },
+        query=f"SELECT a, {predicate} AS r FROM t1 ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "d IN (SELECT dt FROM t2)",
+        "dt NOT IN (SELECT d FROM t2)",
+        "d = ANY (SELECT dt FROM t2)",
+        "dt IN (SELECT d FROM t2 WHERE t2.g = t1.g)",
+        "d IN (TIMESTAMP '2000-01-01 00:00:00', TIMESTAMP '2000-01-02 05:00:00')",
+        "dt IN (DATE '2000-01-01', DATE '2000-01-02')",
+        "lf IN (SELECT li FROM t2)",
+        "li NOT IN (SELECT lf FROM t2)",
+        "ld IN (SELECT ldt FROM t2)",
+        "s IN (SELECT sf FROM t2)",
+        "ad IN (SELECT adt FROM t2)",
+    ],
+)
+def test_in_date_with_datetime_or_nested(predicate: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {
+                    "a": [1, 2, 3],
+                    "d": [date(2000, 1, 1), date(2000, 1, 2), None],
+                    "dt": [datetime(2000, 1, 1), datetime(2000, 1, 1, 12), None],
+                    "g": [1, 1, 2],
+                    "lf": [[1.0, 2.0], [3.0], None],
+                    "li": [[1, 2], [4], None],
+                    "ld": [[date(2000, 1, 1)], [date(2000, 1, 2)], None],
+                    "s": [{"x": 1}, {"x": 2}, None],
+                    "ad": pl.Series(
+                        [[date(2000, 1, 1)], [date(2000, 1, 2)], None],
+                        dtype=pl.Array(pl.Date, 1),
+                    ),
+                }
+            ),
+            "t2": pl.DataFrame(
+                {
+                    "d": [date(2000, 1, 1), None, date(2000, 1, 3)],
+                    "dt": [datetime(2000, 1, 1), datetime(2000, 1, 2, 5), None],
+                    "g": [1, 1, 2],
+                    "li": [[1, 2], [3], None],
+                    "lf": [[1.0, 2.0], [3.5], None],
+                    "ldt": [[datetime(2000, 1, 1)], [datetime(2000, 1, 2, 1)], []],
+                    "sf": [{"x": 1.0}, {"x": 2.5}, {"x": 3.0}],
+                    "adt": pl.Series(
+                        [[datetime(2000, 1, 1)], [datetime(2000, 1, 2, 1)], None],
+                        dtype=pl.Array(pl.Datetime("us"), 1),
+                    ),
+                }
+            ),
+        },
+        query=f"SELECT a, {predicate} AS r FROM t1 ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("needle", "values"),
+    [
+        (pl.Series([{"x": 1}]), pl.Series([{"y": 1.0}])),
+        (
+            pl.Series([[date(2000, 1, 1)]], dtype=pl.Array(pl.Date, 1)),
+            pl.Series([[datetime(2000, 1, 1)]]),
+        ),
+        (
+            pl.Series(
+                [{"k": {"x": None}}],
+                dtype=pl.Map(pl.String, pl.Struct({"x": pl.Int64})),
+            ),
+            pl.Series(
+                [{"k": {"y": None}}],
+                dtype=pl.Map(pl.String, pl.Struct({"y": pl.Float64})),
+            ),
+        ),
+    ],
+)
+def test_in_nested_shapes_differ(needle: pl.Series, values: pl.Series) -> None:
+    ctx = pl.SQLContext(
+        t1=pl.DataFrame({"a": needle}),
+        t2=pl.DataFrame({"b": values}),
+    )
+    with pytest.raises(InvalidOperationError, match="'is_in' cannot check"):
+        ctx.execute("SELECT a IN (SELECT b FROM t2) FROM t1").collect()
+
+
+def test_quantified_subquery_type_errors() -> None:
+    ctx = pl.SQLContext(
+        t1=pl.DataFrame({"s": ["10"], "l": [[1.0]]}),
+        t2=pl.DataFrame({"f": [10.0], "l": [[1]]}),
+    )
+    with pytest.raises(ComputeError, match="cannot compare string"):
+        ctx.execute("SELECT s <> ANY (SELECT f FROM t2) FROM t1").collect()
+    with pytest.raises(SQLInterfaceError, match="nested values of different types"):
+        ctx.execute("SELECT l <> ANY (SELECT l FROM t2) FROM t1").collect()
+
+
+def test_quantified_subquery_enum() -> None:
+    # Strings order with an Enum in the order of the Enum: "z" < "a" < "b". For
+    # equality, a string that is not in the Enum is just another value.
+    enum = pl.Enum(["z", "a", "b"])
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {
+                    "a": [1, 2, 3, 4],
+                    "x": pl.Series(["z", "a", "b", None], dtype=enum),
+                    "s": ["z", "a", "b", None],
+                }
+            ),
+            "t2": pl.DataFrame(
+                {
+                    "k": ["z", "a"],
+                    "ke": pl.Series(["z", "a"], dtype=enum),
+                    "q": ["z", "q"],
+                }
+            ),
+        },
+        query="""
+            SELECT
+              a,
+              x < ANY (SELECT k FROM t2) AS x_lt_any,
+              x >= ALL (SELECT k FROM t2) AS x_ge_all,
+              s < ANY (SELECT ke FROM t2) AS s_lt_any,
+              x <> ANY (SELECT q FROM t2) AS x_ne_any,
+              x = ALL (SELECT q FROM t2) AS x_eq_all
+            FROM t1 ORDER BY a
+        """,
+        compare_with=None,
+        expected={
+            "a": [1, 2, 3, 4],
+            "x_lt_any": [True, False, False, None],
+            "x_ge_all": [False, True, True, None],
+            "s_lt_any": [True, False, False, None],
+            "x_ne_any": [True, True, True, None],
+            "x_eq_all": [False, False, False, None],
+        },
+        engines=["in-memory", "streaming"],
+    )
+
+
+def test_quantified_subquery_cast_to_null() -> None:
+    # Values out of range of the type they are compared in compare as null, as
+    # UInt128 2^127 does as Int128, and the year 3000 as Datetime("ns").
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame(
+                {
+                    "a": [1, 2, 3],
+                    "x": [-1, 1, None],
+                    "d": pl.Series(
+                        [datetime(2000, 1, 1), datetime(2002, 1, 1), None],
+                        dtype=pl.Datetime("ns"),
+                    ),
+                }
+            ),
+            "t2": pl.DataFrame(
+                {
+                    "k": pl.Series([0, 2**127], dtype=pl.UInt128),
+                    "kd": [date(2001, 1, 1), date(3000, 1, 1)],
+                }
+            ),
+        },
+        query="""
+            SELECT
+              a,
+              x < ANY (SELECT k FROM t2) AS x_lt_any,
+              x >= ALL (SELECT k FROM t2) AS x_ge_all,
+              d < ANY (SELECT kd FROM t2) AS d_lt_any,
+              d >= ALL (SELECT kd FROM t2) AS d_ge_all
+            FROM t1 ORDER BY a
+        """,
+        compare_with=None,
+        expected={
+            "a": [1, 2, 3],
+            "x_lt_any": [True, None, None],
+            "x_ge_all": [False, None, None],
+            "d_lt_any": [True, None, None],
+            "d_ge_all": [False, None, None],
+        },
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize("op", ["=", "<>"])
+@pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
+@pytest.mark.parametrize("subquery", ["SELECT k FROM t2", "SELECT k FROM t3"])
+@pytest.mark.parametrize("values", [[[1], [2]], [{"a": 1}, {"a": 2}]])
+def test_quantified_subquery_nested_values(
+    op: str, quantifier: str, subquery: str, values: list[Any]
+) -> None:
+    v1, v2 = values
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame({"a": [1, 2, 3], "b": [v1, v2, None]}),
+            "t2": pl.DataFrame({"k": [v1, v1]}),
+            "t3": pl.DataFrame({"k": [v1, v2]}),
+        },
+        query=f"SELECT a, b {op} {quantifier} ({subquery}) AS r FROM t1 ORDER BY a",
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
     )
 
 
@@ -870,7 +1187,7 @@ def test_quantified_subquery_uncorrelated_ordering(op: str, quantifier: str) -> 
         "SELECT t1.a FROM t1 AS f",
         # Shapes no lowering claims, which reach qualifier resolution.
         "SELECT a FROM t1 WHERE b IN"
-        " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a LIMIT 5)",
+        " (SELECT DISTINCT x.b FROM t1 AS x WHERE x.a < t1.a LIMIT 5)",
         "SELECT a FROM t1 WHERE b IN"
         " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a GROUP BY x.b)",
     ],
@@ -1024,3 +1341,11 @@ def test_scalar_subquery_as_aggregate_parameter(
         expected=expected,
         engines=["in-memory", "streaming"],
     )
+
+
+def test_scalar_subquery_from_table_without_columns() -> None:
+    empty = pl.LazyFrame({"x": [1]}).filter(False).select([])
+    other = pl.LazyFrame({"y": [10, 20]})
+    with pl.SQLContext(t1=empty, t2=other) as ctx:
+        result = ctx.execute("SELECT (SELECT max(y) FROM t2) AS m FROM t1").collect()
+    assert_frame_equal(result, pl.DataFrame(schema={"m": pl.Int64}))

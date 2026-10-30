@@ -50,6 +50,7 @@ impl IR {
 
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Exprs::Empty,
+            Recursive { .. } | WorkingTableScan { .. } => Exprs::Empty,
 
             #[cfg(feature = "python")]
             PythonScan { options } => match &options.predicate {
@@ -111,6 +112,7 @@ impl IR {
             | Gather { .. } => ExprsMut::Empty,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => ExprsMut::Empty,
+            Recursive { .. } | WorkingTableScan { .. } => ExprsMut::Empty,
 
             #[cfg(feature = "python")]
             PythonScan { options } => match &mut options.predicate {
@@ -205,6 +207,8 @@ impl IR {
                 input_right,
                 ..
             } => Inputs::double(*input_left, *input_right),
+            Recursive { anchor, step, .. } => Inputs::double(*anchor, *step),
+            WorkingTableScan { .. } => Inputs::Empty,
             UnoptimizedDispatch { inputs, .. } => Inputs::slice(inputs),
             Resolver { resolved_ir, .. } => Inputs::Slice(resolved_ir.as_slice().iter().copied()),
             Invalid => unreachable!(),
@@ -245,6 +249,8 @@ impl IR {
                 input_right,
                 ..
             } => InputsMut::double(input_left, input_right),
+            Recursive { anchor, step, .. } => InputsMut::double(anchor, step),
+            WorkingTableScan { .. } => InputsMut::Empty,
             UnoptimizedDispatch { inputs, .. } => InputsMut::slice(inputs),
             Resolver { resolved_ir, .. } => InputsMut::slice(resolved_ir.as_mut_slice()),
             Invalid => unreachable!(),
@@ -268,6 +274,23 @@ impl IR {
     pub(crate) fn get_input(&self) -> Option<Node> {
         self.inputs().next()
     }
+
+    /// The schema that the `idx`-th expression of [`Self::exprs`] resolves against.
+    pub fn expr_schema(&self, idx: usize) -> ExprSchema {
+        match self {
+            IR::Join { options, .. } => options.options.expr_schema(idx),
+            _ => ExprSchema::Input(0),
+        }
+    }
+}
+
+/// The schema an expression of an [`IR`] node resolves against.
+pub enum ExprSchema {
+    /// The schema of the input at this position in [`IR::inputs`]. For a node without inputs,
+    /// such as a scan, `Input(0)` is the schema it reads from.
+    Input(usize),
+    /// The output schema of the node itself.
+    Output,
 }
 
 pub enum Inputs<'a> {

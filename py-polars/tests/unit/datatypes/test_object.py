@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import numpy as np
@@ -10,6 +12,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_series_init_instantiated_object() -> None:
@@ -309,3 +314,89 @@ def test_implode_object_raises() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
         df.select(pl.col("obj").implode())
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_object_groups_skipping_values(engine: EngineType) -> None:
+    # Groups that skip values gather only those, not as many as the column holds.
+    lf = pl.LazyFrame(
+        {
+            "g": [0, 1, 0, 1, 0, 1],
+            "x": [1, -2, 3, 4, -5, 6],
+            "v": pl.Series(["a", "b", None, "d", "e", None], dtype=pl.Object),
+        }
+    )
+    v, x = pl.col.v, pl.col.x
+    out = (
+        lf.group_by("g", maintain_order=True)
+        .agg(filter=v.filter(x > 0).shift(1).last(), head=v.head(2).shift(1).last())
+        .collect(engine=engine)
+    )
+    assert out["filter"].to_list() == ["a", "d"]
+    assert out["head"].to_list() == ["a", "b"]
+
+    out = lf.select(v.filter(x > 0).shift(1).len().over("g")).collect(engine=engine)
+    assert out["v"].to_list() == [2] * 6
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_object_group_slice_spanning_chunks(engine: EngineType) -> None:
+    a = pl.DataFrame(
+        {"g": [0, 0, 0], "v": pl.Series(["a", None, "c"], dtype=pl.Object)}
+    )
+    b = pl.DataFrame(
+        {"g": [0, 1, 1], "v": pl.Series(["d", "e", None], dtype=pl.Object)}
+    )
+    df = pl.concat([a, b], rechunk=False).with_columns(pl.col.g.set_sorted())
+    out = df.lazy().select(pl.col.v.shift(1).over("g")).collect(engine=engine)
+    assert out["v"].to_list() == [None, "a", None, "c", None, "e"]
+
+
+def test_object_overlapping_windows_references() -> None:
+    # Windows repeat values: every gathered value must be released again.
+    objs = [object() for _ in range(100)]
+    before = [sys.getrefcount(o) for o in objs]
+    df = pl.DataFrame({"t": range(100), "v": pl.Series(objs, dtype=pl.Object)})
+    out = df.rolling("t", period="10i").agg(pl.col.v.gather([0]).first())
+    assert out["v"].to_list() == [objs[max(0, i - 9)] for i in range(100)]
+    del out, df
+    after = [sys.getrefcount(o) for o in objs]
+    assert after == before
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("sorted_keys", [False, True])
+def test_object_gather_in_groups(engine: EngineType, sorted_keys: bool) -> None:
+    # Each group's values reach `gather` as an object series, also after the first.
+    g = [0, 0, 0, 1, 1, 1] if sorted_keys else [0, 1, 0, 1, 0, 1]
+    df = pl.DataFrame(
+        {"g": g, "v": pl.Series(["a", None, "c", "d", "e", "f"], dtype=pl.Object)}
+    )
+    if sorted_keys:
+        df = df.with_columns(pl.col.g.set_sorted())
+    v = pl.col.v.gather([1, 0])
+    out = (
+        df.lazy()
+        .group_by("g", maintain_order=True)
+        .agg(first=v.first(), last=v.last())
+        .collect(engine=engine)
+    )
+    if sorted_keys:
+        assert out["first"].to_list() == [None, "e"]
+        assert out["last"].to_list() == ["a", "d"]
+    else:
+        assert out["first"].to_list() == ["c", "d"]
+        assert out["last"].to_list() == ["a", None]
+
+
+def test_object_null_slots_release_none_once() -> None:
+    # Each null slot of an object list is released once; visible before Python 3.12,
+    # where `None` is not immortal and a double release takes references from it.
+    df = pl.DataFrame(
+        {"g": [0, 1] * 500, "v": pl.Series([None] * 1000, dtype=pl.Object)}
+    )
+    before = sys.getrefcount(None)
+    out = df.lazy().select(pl.col.v.shift(1).over("g")).collect()
+    del out
+    after = sys.getrefcount(None)
+    assert after - before > -100

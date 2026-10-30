@@ -85,8 +85,12 @@ impl ComputeNode for CrossJoinNode {
         "cross-join"
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        true
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            CrossJoinState::Build(_) => NodeMemoryUsage::Accumulating,
+            CrossJoinState::Probe(_) => NodeMemoryUsage::HoldingUntilDone,
+            CrossJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn update_state(

@@ -2,6 +2,7 @@
 use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;
 use polars_core::utils::{align_chunks_binary, try_get_supertype};
+use polars_utils::broadcast::broadcast_len;
 
 use super::*;
 
@@ -13,6 +14,15 @@ fn out_dtype(dtype_x: &DataType, dtype_y: &DataType) -> DataType {
         DataType::Float32 => DataType::Float32,
         _ => DataType::Float64,
     }
+}
+
+/// Both inputs as `Float64`, with a unit-length one (e.g. a literal) broadcast to the other.
+fn broadcast_f64(values: &[&Column]) -> PolarsResult<(Column, Column)> {
+    assert!(values.len() == 2);
+    let len = broadcast_len(values)?;
+    let x = values[0].broadcast_to(len)?.cast(&DataType::Float64)?;
+    let y = values[1].broadcast_to(len)?.cast(&DataType::Float64)?;
+    Ok((x, y))
 }
 
 pub fn new_cov_reduction(
@@ -68,9 +78,7 @@ impl GroupedReduction for CovGroupedReduction {
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        assert!(values.len() == 2);
-        let sx = values[0].cast(&DataType::Float64)?;
-        let sy = values[1].cast(&DataType::Float64)?;
+        let (sx, sy) = broadcast_f64(values)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
         let (cx, cy) = align_chunks_binary(cx, cy);
@@ -214,9 +222,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        assert!(values.len() == 2);
-        let sx = values[0].cast(&DataType::Float64)?;
-        let sy = values[1].cast(&DataType::Float64)?;
+        let (sx, sy) = broadcast_f64(values)?;
         let cx = sx.f64().unwrap();
         let cy = sy.f64().unwrap();
         let (cx, cy) = align_chunks_binary(cx, cy);

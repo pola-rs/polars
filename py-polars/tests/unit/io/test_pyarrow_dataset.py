@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -581,19 +581,19 @@ def test_scan_pyarrow_dataset_filter_with_timezone_26029() -> None:
     table = pa.table(
         {
             "valid_from": [
-                datetime(2025, 8, 26, 10, 0, 0, tzinfo=timezone.utc),
-                datetime(2025, 8, 26, 11, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 10, 0, 0, tzinfo=UTC),
+                datetime(2025, 8, 26, 11, 0, 0, tzinfo=UTC),
             ],
             "valid_to": [
-                datetime(2025, 8, 26, 12, 0, 0, tzinfo=timezone.utc),
-                datetime(2025, 8, 26, 13, 0, 0, tzinfo=timezone.utc),
+                datetime(2025, 8, 26, 12, 0, 0, tzinfo=UTC),
+                datetime(2025, 8, 26, 13, 0, 0, tzinfo=UTC),
             ],
             "value": [1, 2],
         }
     )
     dataset = ds.dataset(table)
 
-    lower_bound_time = datetime(2025, 8, 26, 11, 30, 0, tzinfo=timezone.utc)
+    lower_bound_time = datetime(2025, 8, 26, 11, 30, 0, tzinfo=UTC)
     lf = pl.scan_pyarrow_dataset(dataset).filter(
         (pl.col("valid_from") <= lower_bound_time)
         & (pl.col("valid_to") > lower_bound_time)
@@ -863,3 +863,17 @@ def test_pyarrow_dataset_is_in_other_time_zone(
     assert "value_set=timestamp[us, tz=UTC]" in capture
     assert "residual predicate: None" in capture
     assert_frame_equal(result, df)
+
+
+def test_pyarrow_dataset_categorical_literal() -> None:
+    df = pl.DataFrame({"s": ["a", "b"]})
+    dataset = pl.scan_pyarrow_dataset(
+        ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+    )
+
+    for dtype in [pl.Categorical(), pl.Enum(["a", "b"])]:
+        for predicate in [
+            pl.col("s") == pl.lit("a", dtype),
+            pl.col("s") < pl.lit("b", dtype),
+        ]:
+            assert_frame_equal(dataset.filter(predicate).collect(), df.head(1))

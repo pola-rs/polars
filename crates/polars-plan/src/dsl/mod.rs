@@ -83,7 +83,9 @@ use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
-pub use sql::{CachedSqlStatement, SqlResolver, get_sql_resolver, set_sql_resolver};
+pub use sql::{
+    CachedSqlStatement, SqlCatalogTable, SqlResolver, get_sql_resolver, set_sql_resolver,
+};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -861,11 +863,15 @@ impl Expr {
             // Row-encode the keys so the sort options apply to every key.
             let e = e.iter().map(|e| e.clone().into()).collect::<Vec<_>>();
             let encoded = Expr::n_ary(
-                FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
-                    descending: Some(vec![options.descending]),
-                    nulls_last: Some(vec![options.nulls_last]),
-                    broadcast_nulls: None,
-                }),
+                FunctionExpr::RowEncode {
+                    variant: RowEncodingVariant::Ordered {
+                        descending: Some(vec![options.descending]),
+                        nulls_last: Some(vec![options.nulls_last]),
+                    },
+                    output: RowEncodingOutputType::AlwaysBinaryOffset,
+                    encode_nulls: None,
+                    propagate_nulls: false,
+                },
                 e,
             );
             Some((
@@ -1675,6 +1681,11 @@ impl Expr {
     /// Compute the hash of every element.
     pub fn hash(self, seed: u64) -> Expr {
         self.map_unary(FunctionExpr::Hash(seed))
+    }
+
+    /// Compute the 32-bit MurmurHash3 of the values as defined by the Iceberg specification.
+    pub fn mm3_hash(self) -> Expr {
+        self.map_unary(FunctionExpr::Mm3Hash)
     }
 
     pub fn to_physical(self) -> Expr {

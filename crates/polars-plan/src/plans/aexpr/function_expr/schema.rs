@@ -1,6 +1,7 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
-use polars_core::utils::materialize_dyn_int;
+use polars_core::chunked_array::ops::row_encode::rows_dtype;
+use polars_core::utils::{get_supertype, materialize_dyn_int};
 
 use super::*;
 
@@ -45,6 +46,18 @@ impl IRFunctionExpr {
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
             Hash(..) => mapper.with_dtype(DataType::UInt64),
+            Mm3Hash => mapper
+                .ensure_satisfies(
+                    |_, dt| {
+                        dt.is_null()
+                            || dt.is_integer()
+                            || dt.is_decimal()
+                            || (dt.is_temporal() && !dt.is_duration())
+                            || matches!(dt, DataType::String | DataType::Binary)
+                    },
+                    "mm3_hash",
+                )?
+                .with_dtype(DataType::Int32),
             #[cfg(feature = "arg_where")]
             ArgWhere => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "index_of")]
@@ -133,7 +146,21 @@ impl IRFunctionExpr {
                     },
                 }
             },
-            ShiftAndFill => mapper.with_same_dtype(),
+            ShiftAndFill => {
+                // Mirror type coercion, which casts the input and fill value to their supertype.
+                // @3.0: Raise a type error instead of upcasting the input.
+                let dtype = mapper.args()[0].dtype();
+                let fill_dtype = mapper.args()[2].dtype();
+                let is_cat_with_str_fill = (dtype.is_categorical() || dtype.is_enum())
+                    && matches!(
+                        fill_dtype,
+                        DataType::String | DataType::Unknown(UnknownKind::Str)
+                    );
+                match get_supertype(dtype, fill_dtype) {
+                    Some(st) if !is_cat_with_str_fill => mapper.with_dtype(st),
+                    _ => mapper.with_same_dtype(),
+                }
+            },
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
@@ -149,7 +176,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
             ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
-            MinBy | MaxBy => mapper.with_same_dtype(),
+            MinBy { .. } | MaxBy { .. } => mapper.with_same_dtype(),
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
@@ -374,7 +401,12 @@ impl IRFunctionExpr {
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "cov")]
-            Correlation { .. } => mapper.map_to_float_dtype(),
+            Correlation { .. } => mapper.try_map_dtypes(|dtypes| {
+                Ok(match try_get_supertype(dtypes[0], dtypes[1])? {
+                    dt if dt.is_float() => dt,
+                    _ => DataType::Float64,
+                })
+            }),
             #[cfg(feature = "peaks")]
             PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]
@@ -533,9 +565,7 @@ impl IRFunctionExpr {
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
-                if f.dtype == DataType::Boolean {
-                    f.dtype = IDX_DTYPE;
-                }
+                f.dtype = sum_output_dtype(&f.dtype);
                 f
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
@@ -571,14 +601,18 @@ impl IRFunctionExpr {
             Reinterpret(dtype) => mapper.with_dtype(dtype.clone()),
             ExtendConstant => mapper.with_same_dtype(),
 
-            RowEncode(..) => mapper.try_map_field(|_| {
-                Ok(Field::new(
-                    PlSmallStr::from_static("row_encoded"),
-                    DataType::BinaryOffset,
-                ))
+            RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls: _,
+            } => mapper.try_map_field(|_| {
+                let dtype = rows_dtype(&output.layout(dtypes, variant, encode_nulls.as_deref())?);
+                Ok(Field::new(PlSmallStr::from_static("row_encoded"), dtype))
             }),
             #[cfg(feature = "dtype-struct")]
-            RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+            RowDecode { fields, .. } => mapper.with_dtype(DataType::Struct(fields.to_vec())),
             DynamicPred { .. } | DynamicSkipBatch { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }

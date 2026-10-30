@@ -518,6 +518,7 @@ pub fn get_supertype_with_options(
                     },
                     // Materialize float to float
                     UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
+                    UnknownKind::Float if dt.is_bool() => Some(Unknown(UnknownKind::Float)),
                     UnknownKind::Float if dt.is_integer() => {
                         if dt.is_known() {
                             Some(Float64)

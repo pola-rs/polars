@@ -14,8 +14,8 @@ pub use column_descriptor::{ColumnDescriptor, Descriptor};
 pub use column_order::ColumnOrder;
 pub(crate) use column_order::ColumnOrderTag;
 pub(crate) use compact::{
-    ByteRange, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData, CompactRowGroup,
-    CompactStatistics,
+    ByteRange, CompactColumnChunk, CompactColumnCrypto, CompactColumnMetaData, CompactFileMetaData,
+    CompactRowGroup, CompactStatistics,
 };
 pub use file_metadata::{FileMetadata, KeyValue};
 pub use row_metadata::RowGroupMetadata;

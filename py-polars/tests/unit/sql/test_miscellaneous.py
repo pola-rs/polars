@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
@@ -367,6 +367,87 @@ def test_nested_cte_column_aliasing() -> None:
     }
 
 
+def test_cte_in_derived_table_29877() -> None:
+    df = pl.DataFrame({"id": ["A", "B"]})
+    with pl.SQLContext(s=df, eager=True) as ctx:
+        for query in (
+            "SELECT * FROM (WITH x AS (SELECT id FROM s) SELECT * FROM x) AS t",
+            "SELECT * FROM (WITH x AS (SELECT id FROM s) SELECT * FROM x)",
+            "WITH t AS (WITH x AS (SELECT id FROM s) SELECT * FROM x) SELECT * FROM t",
+            "(WITH x AS (SELECT id FROM s) SELECT * FROM x) ORDER BY id",
+        ):
+            assert_frame_equal(ctx.execute(query), df)
+
+        # the inner CTE shadows the outer one only inside the derived table
+        res = ctx.execute(
+            """
+            WITH x AS (SELECT 'C' AS id)
+            SELECT t.id, x.id AS outer_id
+            FROM (WITH x AS (SELECT id FROM s) SELECT * FROM x) AS t, x
+            ORDER BY t.id
+            """
+        )
+        assert res.to_dict(as_series=False) == {
+            "id": ["A", "B"],
+            "outer_id": ["C", "C"],
+        }
+
+        res = ctx.execute(
+            """
+            WITH x AS (SELECT 'C' AS id)
+            SELECT * FROM (
+              (WITH x AS (SELECT id FROM s) SELECT * FROM x)
+              UNION ALL
+              SELECT * FROM x
+            ) AS t
+            ORDER BY id
+            """
+        )
+        assert res.to_series().to_list() == ["A", "B", "C"]
+
+        # the ORDER BY of a nested query can still see its relations
+        res = ctx.execute(
+            "(WITH x AS (SELECT id FROM s) SELECT * FROM x) ORDER BY x.id DESC"
+        )
+        assert res.to_series().to_list() == ["B", "A"]
+        res = ctx.execute(
+            """
+            WITH x AS (SELECT 'C' AS id)
+            SELECT * FROM (
+              ((WITH x AS (SELECT id FROM s) SELECT * FROM x))
+              ORDER BY id = (SELECT MAX(id) FROM x) DESC
+            ) AS t
+            """
+        )
+        assert res.to_series().to_list() == ["B", "A"]
+
+        # names are case-insensitive, so `X` shadows the outer `x`
+        res = ctx.execute(
+            """
+            WITH x AS (SELECT 'C' AS id)
+            SELECT * FROM (WITH X AS (SELECT id FROM s) SELECT * FROM x) AS t
+            """
+        )
+        assert_frame_equal(res, df)
+
+        # the inner CTE is not visible outside the derived table
+        with pytest.raises(SQLInterfaceError, match="relation 'x' was not found"):
+            ctx.execute(
+                "SELECT * FROM (WITH x AS (SELECT id FROM s) SELECT * FROM x) AS t, x"
+            )
+
+        # nor in the next statement, even if this one fails
+        with pytest.raises(SQLInterfaceError, match="no column named 'missing'"):
+            ctx.execute(
+                """
+                (WITH x AS (SELECT id FROM s) SELECT * FROM (SELECT * FROM x) t)
+                ORDER BY t.missing
+                """
+            )
+        with pytest.raises(SQLInterfaceError, match="relation 'x' was not found"):
+            ctx.execute("SELECT * FROM x")
+
+
 def test_invalid_derived_table_column_aliases() -> None:
     values_query = "SELECT * FROM (VALUES (1,2), (3,4))"
 
@@ -374,24 +455,19 @@ def test_invalid_derived_table_column_aliases() -> None:
         SQLSyntaxError,
         match=r"columns \(5\) in alias 'tbl' does not match .* the table/query \(2\)",
     ):
-        pl.sql(f"{values_query} AS tbl(a, b, c, d, e)")
+        pl.sql(f"{values_query} AS tbl(a, b, c, d, e)", eager=True)
 
     assert pl.sql(f"{values_query} tbl", eager=True).rows() == [(1, 2), (3, 4)]
 
 
-def test_values_clause_table_registration() -> None:
+def test_values_clause_derived_table() -> None:
     with pl.SQLContext(frames=None, eager=True) as ctx:
-        # initially no tables are registered
+        res = ctx.execute("SELECT * FROM (VALUES (-1,1)) AS tbl(x, y)")
+        assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}
+
         assert ctx.tables() == []
-
-        # confirm that VALUES clause derived table is registered, post-query
-        res1 = ctx.execute("SELECT * FROM (VALUES (-1,1)) AS tbl(x, y)")
-        assert ctx.tables() == ["tbl"]
-
-        # and confirm that we can select from it by the registered name
-        res2 = ctx.execute("SELECT x, y FROM tbl")
-        for res in (res1, res2):
-            assert res.to_dict(as_series=False) == {"x": [-1], "y": [1]}
+        with pytest.raises(SQLInterfaceError, match="relation 'tbl' was not found"):
+            ctx.execute("SELECT x, y FROM tbl")
 
 
 def test_read_csv(tmp_path: Path) -> None:
@@ -416,7 +492,7 @@ def test_read_csv(tmp_path: Path) -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match="`read_csv` expects a single file path; found 3 arguments",
+        match=r"`read_csv` options must be named with '=>' \(found: 'b'\)",
     ):
         pl.sql("SELECT * FROM read_csv('a','b','c')").collect()
 
@@ -526,6 +602,67 @@ def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) ->
         ).cast(pl.Int64),
         pl.DataFrame({"a": 2, "b": 1}),
     )
+
+
+@pytest.mark.parametrize(
+    ("where", "order_by", "n_rows"),
+    [
+        ("WHERE FALSE", "", 0),
+        ("WHERE NULL", "", 0),
+        ("WHERE 1 = 2", "ORDER BY a", 0),
+        ("WHERE TRUE", "", 1),
+        ("WHERE 1 = 1", "ORDER BY 1", 1),
+    ],
+)
+def test_select_without_from_where(where: str, order_by: str, n_rows: int) -> None:
+    res = pl.sql(f"SELECT 1 AS a, 'x' AS b {where} {order_by}", eager=True)
+    assert res.rows() == [(1, "x")] * n_rows
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        'SELECT x AS "^x$", x + 10 AS y FROM t ORDER BY x',
+        'SELECT x AS "*", x + 10 AS y FROM t ORDER BY "*"',
+        'SELECT g AS "^x$", COUNT(*) AS y FROM t GROUP BY g ORDER BY y',
+        'SELECT DISTINCT g AS "*", 1 AS y FROM t ORDER BY 1',
+        'SELECT * FROM (SELECT x AS "^x$", x + 10 AS y FROM t) AS s ORDER BY y',
+        'SELECT s."^x$", s.y FROM (SELECT x AS "^x$", x + 10 AS y FROM t) AS s',
+        'WITH c AS (SELECT x AS "*", x + 10 AS y FROM t) SELECT * FROM c ORDER BY y',
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_select_regex_like_column_names(
+    query: str, engine: Literal["in-memory", "streaming"]
+) -> None:
+    t = pl.DataFrame({"x": [2, 1, 3], "g": [1, 1, 2]})
+    res = pl.SQLContext(t=t).execute(query).collect(engine=engine)
+    assert len(res.columns) == 2
+    assert res.columns[1] == "y"
+    assert res.columns[0] in ("^x$", "*")
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT COLUMNS('x') FROM t", {"x": [7], "^x$": [8]}),
+        ("SELECT COLUMNS('[*^]') FROM t", {"*": [9], "^x$": [8]}),
+        ('SELECT t."*" AS v FROM t', {"v": [9]}),
+        ('SELECT t."^x$" AS v FROM t', {"v": [8]}),
+        ('SELECT st."^x$" AS v FROM s', {"v": [2]}),
+        ('SELECT s.st."*" AS v FROM s', {"v": [3]}),
+        ("SELECT st.* FROM s", {"a": [1], "^x$": [2], "*": [3]}),
+        ("SELECT st->'^x$' AS v FROM s", {"v": [2]}),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_regex_like_column_and_field_names(
+    query: str, expected: dict[str, Any], engine: Literal["in-memory", "streaming"]
+) -> None:
+    t = pl.DataFrame({"x": [7], "*": [9], "^x$": [8], "other": [1]})
+    s = pl.DataFrame({"st": [{"a": 1, "^x$": 2, "*": 3}]})
+    res = pl.SQLContext(t=t, s=s).execute(query).collect(engine=engine)
+    assert res.to_dict(as_series=False) == expected
 
 
 def test_select_explode_height_filter_order_by() -> None:

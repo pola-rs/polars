@@ -16,7 +16,7 @@ use crate::prelude::gather::check_bounds_ca;
 use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
-use crate::utils::{Container, NoNull, slice_offsets, try_get_supertype};
+use crate::utils::{Container, NoNull, try_get_supertype};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 #[cfg(feature = "dataframe_arithmetic")]
@@ -45,6 +45,7 @@ pub(crate) mod validation;
 
 use polars_arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice::slice_offsets;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -1429,7 +1430,7 @@ impl DataFrame {
         }
         let by_column = self.select_to_vec(by)?;
 
-        let mut out = self.sort_impl(by_column, sort_options, None)?;
+        let mut out = self.clone().sort_impl(by_column, sort_options, None)?;
         unsafe { out.set_schema_from(self) };
 
         *self = out;
@@ -1440,8 +1441,8 @@ impl DataFrame {
     #[doc(hidden)]
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
     pub fn sort_impl(
-        &self,
-        by_column: Vec<Column>,
+        self,
+        mut by_column: Vec<Column>,
         sort_options: SortMultipleOptions,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
@@ -1450,7 +1451,7 @@ impl DataFrame {
             return if let Some((offset, len)) = slice {
                 Ok(self.slice(offset, len))
             } else {
-                Ok(self.clone())
+                Ok(self)
             };
         }
 
@@ -1484,7 +1485,7 @@ impl DataFrame {
         };
 
         if self.shape_has_zero() {
-            let mut out = self.clone();
+            let mut out = self;
             set_sorted(&mut out);
             return Ok(out);
         }
@@ -1523,7 +1524,7 @@ impl DataFrame {
                 return if let Some((offset, len)) = slice {
                     Ok(self.slice(offset, len))
                 } else {
-                    Ok(self.clone())
+                    Ok(self)
                 };
             }
         }
@@ -1531,9 +1532,29 @@ impl DataFrame {
         let has_nested = by_column.iter().any(|s| s.dtype().is_nested());
         let allow_threads = sort_options.multithreaded;
 
-        // a lot of indirection in both sorting and take
-        let mut df = self.clone();
-        let df = df.rechunk_mut_par();
+        // a lot of indirection in both sorting and take; rechunking the owned
+        // frame frees the old chunks
+        let mut df = self;
+        if df.columns().iter().any(|c| c.n_chunks() > 1) {
+            // Keys that are columns of this frame take the rechunked columns,
+            // so that their old chunks are freed too.
+            let frame_key_idxs: Vec<Option<usize>> = by_column
+                .iter()
+                .map(|c| {
+                    let s = c.as_series()?;
+                    let idx = df.get_column_index(s.name())?;
+                    let ds = df.columns()[idx].as_series()?;
+                    Arc::ptr_eq(&ds.0, &s.0).then_some(idx)
+                })
+                .collect();
+            df.rechunk_mut_par();
+            for (c, idx) in by_column.iter_mut().zip(frame_key_idxs) {
+                if let Some(idx) = idx {
+                    *c = df.columns()[idx].clone();
+                }
+            }
+        }
+        let df = &df;
         let mut take = match (by_column.len(), has_nested) {
             (1, false) => {
                 let s = &by_column[0];

@@ -346,6 +346,21 @@ def test_join_on_cast() -> None:
     }
 
 
+def test_join_multiple_keys_right_chunks_differ_from_key() -> None:
+    n = pl.thread_pool_size()
+    parts = [pl.DataFrame({"g": [i], "h": [i], "v": [f"v{i}"]}) for i in range(n - 1)]
+    rest = range(n - 1, 2 * n)
+    parts.append(
+        pl.DataFrame({"g": list(rest), "h": list(rest), "v": [f"v{i}" for i in rest]})
+    )
+    right = pl.concat(parts, rechunk=False)
+    left = pl.DataFrame({"g": range(2 * n), "h": range(2 * n)})
+
+    out = left.join(right, on=["g", "h"], how="left")
+    expected = left.with_columns(v=pl.format("v{}", "g"))
+    assert_frame_equal(out, expected)
+
+
 def test_join_chunks_alignment_4720() -> None:
     # https://github.com/pola-rs/polars/issues/4720
 
@@ -672,6 +687,36 @@ def test_join_concat_projection_pd_case_7071() -> None:
 
     expected = pl.DataFrame({"id": [1, 1, 3]}).lazy()
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_join_sorted_fast_paths_nan_30076(dtype: PolarsDataType) -> None:
+    nan = float("nan")
+    schema = {"k": dtype}
+    left = pl.DataFrame(
+        {"k": [1.0, 2.0, nan], "id": [1, 2, 3]}, schema_overrides=schema
+    ).sort("k")
+    right = pl.DataFrame({"k": [nan, 2.0], "rid": [10, 11]}, schema_overrides=schema)
+    expected_inner = pl.DataFrame(
+        {"k": [2.0, nan], "id": [2, 3], "rid": [11, 10]}, schema_overrides=schema
+    )
+    expected_left = pl.DataFrame(
+        {"k": [1.0, 2.0, nan], "id": [1, 2, 3], "rid": [None, 11, 10]},
+        schema_overrides=schema,
+    )
+    for r in [right, right.sort("k")]:
+        assert_frame_equal(
+            left.join(r, on="k", how="inner"), expected_inner, check_row_order=False
+        )
+        assert_frame_equal(
+            left.join(r, on="k", how="left"), expected_left, check_row_order=False
+        )
+    # Only the larger right side is sorted, so the left side gets arg-sorted.
+    assert_frame_equal(
+        right.join(left, on="k", how="inner"),
+        expected_inner.select("k", "rid", "id"),
+        check_row_order=False,
+    )
 
 
 def test_join_sorted_fast_paths_null_8269() -> None:
@@ -1669,7 +1714,10 @@ def test_join_preserve_order_left() -> None:
     ]
 
     right_left = left.join(right, on="a", how="right", maintain_order="left").collect()
-    assert right_left.get_column("a").cast(pl.UInt32).to_list() == [2, 1, 1, None, 6]
+    right_left_a = right_left.get_column("a").cast(pl.UInt32).to_list()
+    assert right_left_a[:3] == [2, 1, 1]
+    # The unmatched right rows come last, in any order.
+    assert set(right_left_a[3:]) == {None, 6}
 
     right_right = left.join(
         right, on="a", how="right", maintain_order="right"
@@ -1791,7 +1839,6 @@ def test_join_preserve_order_full() -> None:
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
-@pytest.mark.may_fail_lazy_schema  # TODO: upcast
 def test_join_numeric_key_upcast_15338(
     dtypes: tuple[str, str, str], swap: bool
 ) -> None:
@@ -3835,9 +3882,10 @@ def test_join_filter_pushdown_asof_join() -> None:
     assert 'col("a") >= 2' in extract[2]
     assert 'col("b") >= 3' in extract[2]
 
+    # `a >= 2` on the left key also bounds the right key: `b >= 2 - 99`.
     assert extract[3:] == [
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER col("a") >= 3',
+        'FILTER (col("a") >= 3) & (col("b") >= -97)',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -4553,7 +4601,6 @@ def test_join_lazyframe_with_itself_after_sort_25395() -> None:
     assert_frame_equal(result, pl.DataFrame({"a": [1]}))
 
 
-@pytest.mark.may_fail_lazy_schema  # TODO: pushdown
 def test_join_right_with_cast_predicate_pushdown() -> None:
     lhs = pl.LazyFrame({"x": [0, 1], "z": [4, 5]})
     rhs = pl.LazyFrame({"y": [2, 3]}).cast(pl.Int32)
@@ -4569,7 +4616,7 @@ def test_join_right_with_cast_predicate_pushdown() -> None:
             "z": [],
             "y": [],
         },
-        schema={"z": pl.Int64, "y": pl.Int64},
+        schema={"z": pl.Int64, "y": pl.Int32},
     )
     assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
 
@@ -4964,3 +5011,74 @@ def test_join_key_keeps_outer_join_when_nulls_match() -> None:
     assert "LEFT JOIN:" in q.explain()
     expect = q.collect(optimizations=pl.QueryOptFlags.none())
     assert_frame_equal(q.collect(), expect, check_row_order=False)
+
+
+def test_coalesce_full_join_upcast_key_schema_29903() -> None:
+    left = pl.LazyFrame({"k": pl.Series([2, 1], dtype=pl.Int32), "s": ["a", "b"]})
+    right = pl.LazyFrame({"k": pl.Series([1], dtype=pl.Int64), "x": ["c"]})
+
+    q = left.join(right, on="k", how="full", coalesce=True)
+    assert q.collect_schema() == {"k": pl.Int64, "s": pl.String, "x": pl.String}
+
+    expected = pl.DataFrame(
+        {"k": [1, 2], "s": ["b", "a"], "x": ["c", None]},
+        schema={"k": pl.Int64, "s": pl.String, "x": pl.String},
+    )
+    assert_frame_equal(q.unique().collect(), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("swap", [False, True])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_right_join_to_inner_keeps_right_key_dtype(
+    swap: bool, engine: EngineType
+) -> None:
+    ltype, rtype = (pl.Int64, pl.Int32) if swap else (pl.Int32, pl.Int64)
+    left = pl.LazyFrame({"k": pl.Series([1, 2], dtype=ltype), "l": ["a", None]})
+    right = pl.LazyFrame({"k": pl.Series([1, 2, 3], dtype=rtype)})
+
+    q = left.join(right, on="k", how="right", coalesce=True).filter(
+        pl.col("l").is_not_null()
+    )
+
+    assert "INNER JOIN" in q.explain()
+    expected = pl.DataFrame({"l": ["a"], "k": pl.Series([1], dtype=rtype)})
+    assert_frame_equal(q.collect(engine=engine), expected)
+    assert_frame_equal(
+        q.collect(engine=engine, optimizations=pl.QueryOptFlags.none()), expected
+    )
+
+
+@pytest.mark.parametrize("how", ["inner", "right"])
+@pytest.mark.parametrize("swap", [False, True])
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_key_predicate_keeps_key_dtype(
+    how: JoinStrategy, swap: bool, engine: EngineType
+) -> None:
+    # `+ 1` wraps for Int8 but not for Int64.
+    ltype, rtype = (pl.Int64, pl.Int8) if swap else (pl.Int8, pl.Int64)
+    left = pl.LazyFrame(
+        {"x": pl.Series([127], dtype=ltype), "z": [1]},
+    )
+    right = pl.LazyFrame({"y": pl.Series([127], dtype=rtype), "w": [1]})
+
+    key = "x" if how == "inner" else "y"
+    q = left.join(right, left_on="x", right_on="y", how=how).filter(
+        pl.col("z").is_not_null(), pl.col("w").is_not_null(), (pl.col(key) + 1) < 0
+    )
+
+    expected = q.collect(engine=engine, optimizations=pl.QueryOptFlags.none())
+    assert_frame_equal(q.collect(engine=engine), expected)
+    assert expected.height == int(q.collect_schema()[key] == pl.Int8)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_asof_by_key_predicate_other_time_unit(engine: EngineType) -> None:
+    left = pl.LazyFrame({"t": [1], "x": pl.Series([1000], dtype=pl.Datetime("ms"))})
+    right = pl.LazyFrame(
+        {"t": [1], "y": pl.Series([1000], dtype=pl.Datetime("us")), "v": [42]}
+    )
+    q = left.join_asof(
+        right, on="t", by_left="x", by_right="y", check_sortedness=False
+    ).filter(pl.col("x").cast(pl.Int64) == 1000)
+
+    assert q.collect(engine=engine)["v"].to_list() == [42]

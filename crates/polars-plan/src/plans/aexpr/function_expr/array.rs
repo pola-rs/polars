@@ -1,6 +1,7 @@
 #[cfg(feature = "array_to_struct")]
 use polars_buffer::Buffer;
-use polars_core::utils::{slice_offsets, try_get_supertype};
+use polars_core::utils::try_get_supertype;
+use polars_utils::slice::slice_offsets;
 
 use super::*;
 
@@ -185,7 +186,7 @@ fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> 
     if let DataType::Array(inner, _) = datatype {
         Ok(DataType::List(inner.clone()))
     } else {
-        polars_bail!(ComputeError: "expected array dtype")
+        polars_bail!(ComputeError: "expected array dtype, got {}", datatype)
     }
 }
 

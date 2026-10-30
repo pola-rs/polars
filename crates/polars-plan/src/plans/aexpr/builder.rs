@@ -5,7 +5,10 @@ use polars_utils::IdxSize;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, RowEncodingVariant};
+use super::{
+    AExpr, IRAggExpr, IRBooleanFunction, IRFunctionExpr, MinMaxByOrder, RowEncodingOutputType,
+    RowEncodingVariant,
+};
 use crate::dsl::Operator;
 use crate::plans::{ExprIR, LiteralValue, OutputName};
 
@@ -71,9 +74,25 @@ impl AExprBuilder {
         exprs: Vec<ExprIR>,
         dtypes: Vec<DataType>,
         variant: RowEncodingVariant,
+        propagate_nulls: bool,
         arena: &mut Arena<AExpr>,
     ) -> Self {
-        Self::function(exprs, IRFunctionExpr::RowEncode(dtypes, variant), arena)
+        // The layout needs concrete types, such as for a key of untyped literals.
+        let dtypes = dtypes
+            .into_iter()
+            .map(|dtype| dtype.materialize_unknown(true).unwrap())
+            .collect();
+        Self::function(
+            exprs,
+            IRFunctionExpr::RowEncode {
+                dtypes,
+                variant,
+                output: RowEncodingOutputType::AlwaysBinaryOffset,
+                encode_nulls: None,
+                propagate_nulls,
+            },
+            arena,
+        )
     }
 
     pub fn cast(self, dtype: DataType, arena: &mut Arena<AExpr>) -> Self {
@@ -126,6 +145,7 @@ impl AExprBuilder {
             IRAggExpr::Min {
                 input: self.node(),
                 propagate_nans: false,
+                propagate_nulls: false,
             },
             arena,
         )
@@ -136,6 +156,7 @@ impl AExprBuilder {
             IRAggExpr::Max {
                 input: self.node(),
                 propagate_nans: false,
+                propagate_nulls: false,
             },
             arena,
         )
@@ -146,6 +167,7 @@ impl AExprBuilder {
             IRAggExpr::Min {
                 input: self.node(),
                 propagate_nans: true,
+                propagate_nulls: false,
             },
             arena,
         )
@@ -156,25 +178,36 @@ impl AExprBuilder {
             IRAggExpr::Max {
                 input: self.node(),
                 propagate_nans: true,
+                propagate_nulls: false,
             },
             arena,
         )
     }
 
-    pub fn min_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+    pub fn min_by(
+        self,
+        by: impl IntoAExprBuilder,
+        order: MinMaxByOrder,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
         let by = by.into_aexpr_builder().expr_ir_retain_name(arena);
         Self::function(
             vec![self.expr_ir_retain_name(arena), by],
-            IRFunctionExpr::MinBy,
+            IRFunctionExpr::MinBy { order },
             arena,
         )
     }
 
-    pub fn max_by(self, by: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+    pub fn max_by(
+        self,
+        by: impl IntoAExprBuilder,
+        order: MinMaxByOrder,
+        arena: &mut Arena<AExpr>,
+    ) -> Self {
         let by = by.into_aexpr_builder().expr_ir_retain_name(arena);
         Self::function(
             vec![self.expr_ir_retain_name(arena), by],
-            IRFunctionExpr::MaxBy,
+            IRFunctionExpr::MaxBy { order },
             arena,
         )
     }
@@ -526,6 +559,10 @@ impl AExprBuilder {
 
     pub fn floor_divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
         self.binary_op(other, Operator::FloorDivide, arena)
+    }
+
+    pub fn trunc_divide(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {
+        self.binary_op(other, Operator::TruncDivide, arena)
     }
 
     pub fn modulus(self, other: impl IntoAExprBuilder, arena: &mut Arena<AExpr>) -> Self {

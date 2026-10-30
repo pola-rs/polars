@@ -103,20 +103,8 @@ pub fn compress(
         #[cfg(feature = "zstd")]
         CompressionOptions::Zstd(level) => {
             let level = level.map(|v| v.compression_level()).unwrap_or_default();
-            // Make sure the buffer is large enough; the interface assumption is
-            // that decompressed data is appended to the output buffer.
-            let old_len = output_buf.len();
-            output_buf.resize(
-                old_len + zstd::zstd_safe::compress_bound(input_buf.len()),
-                0,
-            );
-            match zstd::bulk::compress_to_buffer(input_buf, &mut output_buf[old_len..], level) {
-                Ok(written_size) => {
-                    output_buf.truncate(old_len + written_size);
-                    Ok(())
-                },
-                Err(e) => Err(e.into()),
-            }
+            polars_utils::compression::zstd::compress(input_buf, output_buf, level)
+                .map_err(|e| ParquetError::InvalidParameter(e.to_string()))
         },
         #[cfg(not(feature = "zstd"))]
         CompressionOptions::Zstd(_) => Err(ParquetError::FeatureNotActive(
@@ -132,20 +120,73 @@ pub fn compress(
     }
 }
 
-pub enum DecompressionContext {
-    Unset,
-    #[cfg(feature = "zstd")]
-    Zstd(zstd::zstd_safe::DCtx<'static>),
-}
-
-/// Decompresses data stored in slice `input_buf` and writes output to `output_buf`.
-/// Returns the total number of bytes written.
+/// Decompresses `input_buf` into `output_buf[start..]`, which then holds the `output_len`
+/// decompressed bytes. The bytes before `start` are kept.
 #[allow(unused_variables)]
 pub fn decompress(
     compression: Compression,
     input_buf: &[u8],
+    output_buf: &mut Vec<u8>,
+    start: usize,
+    output_len: usize,
+) -> ParquetResult<()> {
+    assert!(start <= output_buf.len());
+    match compression {
+        #[cfg(feature = "snappy")]
+        Compression::Snappy => extend_uninit(output_buf, start, output_len, |output| {
+            super::snappy::decompress(input_buf, output)
+        }),
+        #[cfg(feature = "zstd")]
+        Compression::Zstd => {
+            output_buf.truncate(start);
+            output_buf.reserve(output_len);
+            let written = polars_utils::compression::zstd::decompress(input_buf, output_buf)
+                .map_err(|e| ParquetError::oos(e.to_string()))?;
+            if written != output_len {
+                return Err(ParquetError::oos(
+                    "zstd decompressed size does not match the page size",
+                ));
+            }
+            Ok(())
+        },
+        _ => {
+            // Bytes that are already initialized are reused, so only the bytes past the current
+            // length are zeroed.
+            if start + output_len > output_buf.capacity() {
+                // Truncate first, so that growing does not copy bytes that are overwritten.
+                output_buf.truncate(start);
+            }
+            output_buf.resize(start + output_len, 0);
+            decompress_initialized(compression, input_buf, &mut output_buf[start..])
+        },
+    }
+}
+
+/// Sets `output[start..]` to `len` bytes. `write` gets `len` uninitialized bytes and returns how
+/// many bytes at their start it initialized. The bytes after those are set to zero.
+#[cfg(feature = "snappy")]
+fn extend_uninit(
+    output: &mut Vec<u8>,
+    start: usize,
+    len: usize,
+    write: impl FnOnce(&mut [std::mem::MaybeUninit<u8>]) -> ParquetResult<usize>,
+) -> ParquetResult<()> {
+    output.truncate(start);
+    output.reserve(len);
+    let written = write(&mut output.spare_capacity_mut()[..len])?;
+    assert!(written <= len);
+    // SAFETY: `write` initialized `written` bytes after `start`.
+    unsafe { output.set_len(start + written) };
+    output.resize(start + len, 0);
+    Ok(())
+}
+
+/// Decompresses `input_buf` into `output_buf`, which must have the decompressed size.
+#[allow(unused_variables)]
+fn decompress_initialized(
+    compression: Compression,
+    input_buf: &[u8],
     output_buf: &mut [u8],
-    ctx: &mut DecompressionContext,
 ) -> ParquetResult<()> {
     match compression {
         #[cfg(feature = "brotli")]
@@ -172,19 +213,6 @@ pub fn decompress(
             crate::parquet::error::Feature::Gzip,
             "decompress with gzip".to_string(),
         )),
-        #[cfg(feature = "snappy")]
-        Compression::Snappy => {
-            use snap::raw::{Decoder, decompress_len};
-
-            let len = decompress_len(input_buf)?;
-            if len > output_buf.len() {
-                return Err(ParquetError::oos("snappy header out of spec"));
-            }
-            Decoder::new()
-                .decompress(input_buf, output_buf)
-                .map_err(|e| e.into())
-                .map(|_| ())
-        },
         #[cfg(not(feature = "snappy"))]
         Compression::Snappy => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Snappy,
@@ -218,18 +246,6 @@ pub fn decompress(
             "decompress with legacy lz4".to_string(),
         )),
 
-        #[cfg(feature = "zstd")]
-        Compression::Zstd => {
-            use std::io::Read;
-            if !matches!(ctx, DecompressionContext::Zstd(_)) {
-                *ctx = DecompressionContext::Zstd(zstd::zstd_safe::DCtx::create());
-            }
-            let DecompressionContext::Zstd(ctx) = ctx else {
-                unreachable!();
-            };
-            let mut decoder = zstd::Decoder::with_context(input_buf, ctx);
-            decoder.read_exact(output_buf).map_err(|e| e.into())
-        },
         #[cfg(not(feature = "zstd"))]
         Compression::Zstd => Err(ParquetError::FeatureNotActive(
             crate::parquet::error::Feature::Zstd,
@@ -333,16 +349,18 @@ mod tests {
         // data is compressed...
         assert!(compressed.len() - offset < data.len());
 
-        let mut decompressed = vec![0; data.len()];
-        let mut context = DecompressionContext::Unset;
+        // Decompressing keeps the bytes before `start`.
+        let mut decompressed = vec![3; offset];
         decompress(
             c.into(),
             &compressed[offset..],
             &mut decompressed,
-            &mut context,
+            offset,
+            data.len(),
         )
         .expect("Error when decompressing");
-        assert_eq!(data, decompressed.as_slice());
+        assert_eq!(data, &decompressed[offset..]);
+        assert!(decompressed[..offset].iter().all(|&b| b == 3));
     }
 
     fn test_codec(c: CompressionOptions) {

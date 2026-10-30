@@ -8,6 +8,7 @@ mod function_expr;
 mod hash;
 mod minterm_iter;
 pub(crate) mod or_factoring;
+mod order_keeping;
 pub mod predicates;
 mod scalar;
 mod schema;
@@ -22,11 +23,19 @@ pub use determinism::{
 };
 pub use function_expr::*;
 pub use minterm_iter::MintermIter;
+#[cfg(feature = "round_series")]
+pub(crate) use order_keeping::int_literal;
+pub use order_keeping::{OrderKeeping, order_keeping_column};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae, is_single_literal_ae};
+#[cfg(feature = "range")]
+pub use scalar::int_range_over_length_ae;
+pub use scalar::{
+    is_known_length_ae, is_length_preserving_ae, is_order_insensitive_ae, is_scalar_ae,
+    is_single_literal_ae,
+};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 pub mod projection_height;
@@ -48,10 +57,14 @@ pub enum IRAggExpr {
     Min {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Max {
         input: Node,
         propagate_nans: bool,
+        /// Return a missing value if there is a missing value.
+        propagate_nulls: bool,
     },
     Median(Node),
     NUnique(Node),
@@ -89,11 +102,13 @@ impl Hash for IRAggExpr {
             Self::Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls,
             }
             | Self::Max {
                 input: _,
                 propagate_nans,
-            } => propagate_nans.hash(state),
+                propagate_nulls,
+            } => (propagate_nans, propagate_nulls).hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             Self::Count {
                 input: _,
@@ -115,6 +130,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Min {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMin
@@ -125,6 +141,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Max {
                 input: _,
                 propagate_nans,
+                propagate_nulls: _,
             } => {
                 if propagate_nans {
                     GroupByMethod::NanMax

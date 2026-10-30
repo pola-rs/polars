@@ -209,8 +209,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
     start_offset: usize,
     upper_bound: Option<usize>,
 ) -> PolarsResult<impl TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + '_> {
-    debug_assert!(offset.duration_ns() == period.duration_ns());
-    debug_assert!(offset.negative);
+    debug_assert_eq!(offset, -period);
 
     let upper_bound = upper_bound.unwrap_or(time.len());
     // Use binary search to find the initial start as that is behind.
@@ -621,7 +620,7 @@ pub fn group_by_values(
     // we have a (partial) lookbehind window
     if offset.negative && !offset.is_zero() {
         // lookbehind
-        if offset.duration_ns() == period.duration_ns() {
+        if offset == -period {
             // t is right at the end of the window
             // ------t---
             // [------]
@@ -664,7 +663,9 @@ pub fn group_by_values(
             || ((offset.duration_ns() > period.duration_ns())
                 && matches!(closed_window, ClosedWindow::Right | ClosedWindow::Both))
         {
-            // window is completely behind t and t itself is not a member
+            // The window is likely completely behind t. `duration_ns` is only an estimate for
+            // calendar units, but both this and the partial lookbehind below are correct for any
+            // negative offset, so it only picks the faster one.
             // ---------------t---
             //  [---]
             let iter = group_by_values_iter_window_behind_t(

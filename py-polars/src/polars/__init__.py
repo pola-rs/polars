@@ -215,9 +215,12 @@ from polars.functions import (
 from polars.interchange import CompatLevel
 from polars.io import (
     FileProviderArgs,
+    ParquetDecryptionProperties,
+    ParquetEncryptionProperties,
     PartitionBy,
     ScanCastOptions,
     defer,
+    delete_iceberg,
     read_avro,
     read_clipboard,
     read_csv,
@@ -348,8 +351,11 @@ __all__ = [
     # polars.io
     "defer",
     "FileProviderArgs",
+    "ParquetDecryptionProperties",
+    "ParquetEncryptionProperties",
     "PartitionBy",
     "ScanCastOptions",
+    "delete_iceberg",
     "read_avro",
     "read_clipboard",
     "read_csv",

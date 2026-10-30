@@ -5,7 +5,6 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor;
-use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
@@ -15,13 +14,16 @@ use polars_parquet::read::PredicateFilter;
 use polars_utils::IdxSize;
 use tokio::sync::Semaphore;
 
-use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher};
+use super::row_group_data_fetch::{ReadStats, RowGroupDataFetcher, row_groups_to_read};
 use super::row_group_decode::{DynamicConjunct, PredicateColumn, RowGroupDecoder, Source};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
-use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_pushdown_skip_mask;
+use crate::nodes::io_sources::parquet::statistics::{
+    RuntimeRangeSkipper, calculate_row_group_pred_pushdown_skip_mask,
+};
+use crate::nodes::io_sources::shared::morsels::split_to_morsels;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 
@@ -32,8 +34,8 @@ fn filter_while_decoding(projection: &ArrowFieldProjection) -> bool {
         return false;
     };
     match arrow_field.dtype() {
-        A::Dictionary(..)
-        | A::Decimal(..)
+        A::Dictionary(..) => true,
+        A::Decimal(..)
         | A::Decimal32(..)
         | A::Decimal64(..)
         | A::Decimal256(..)
@@ -71,7 +73,20 @@ impl ParquetReadImpl {
         let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
 
-        let row_group_decoder = self.init_row_group_decoder();
+        let runtime_range_skipper = predicate
+            .as_ref()
+            .filter(|_| use_statistics)
+            .and_then(|p| {
+                RuntimeRangeSkipper::new(
+                    &p.runtime_ranges,
+                    &self.metadata,
+                    &projected_arrow_fields,
+                    verbose,
+                )
+            })
+            .map(Arc::new);
+
+        let row_group_decoder = self.init_row_group_decoder(runtime_range_skipper.clone());
         let row_group_decoder = Arc::new(row_group_decoder);
 
         let ideal_morsel_size = get_ideal_morsel_size();
@@ -178,6 +193,7 @@ impl ParquetReadImpl {
                 }
             }
 
+            let has_row_index = row_index.is_some();
             let row_group_mask = calculate_row_group_pred_pushdown_skip_mask(
                 row_group_slice.clone(),
                 use_statistics,
@@ -187,21 +203,37 @@ impl ParquetReadImpl {
                 row_index,
                 verbose,
                 task_metrics.as_deref(),
+                runtime_range_skipper.as_deref(),
             )
             .await?;
+
+            let mut row_groups = row_groups_to_read(
+                &metadata,
+                row_group_slice,
+                row_group_mask.as_ref(),
+                row_offset,
+                slice_range,
+            );
+            // Rows can come out in any order, so read first the row groups that tighten
+            // the runtime ranges the most.
+            if !maintain_order
+                && !has_row_index
+                && normalized_pre_slice.is_none()
+                && let Some(skipper) = &runtime_range_skipper
+            {
+                skipper.sort_by_read_order(row_groups.make_contiguous(), |rg| rg.idx);
+            }
 
             let defer_cached_reads = polars_config::config().file_defer_cached_reads();
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),
                 is_full_projection,
                 predicate,
-                slice_range,
                 memory_prefetch_func,
                 metadata,
                 byte_source,
-                row_group_slice,
-                row_group_mask,
-                row_offset,
+                row_groups,
+                runtime_range_skipper,
                 read_stats: Arc::new(ReadStats::new(verbose, defer_cached_reads)),
             };
 
@@ -216,11 +248,7 @@ impl ParquetReadImpl {
                 let permit = pipeline_budget.acquire(fetch_length).await;
 
                 // Budget reserved, spawn request
-                let Some(prefetch) = row_group_data_fetcher.next().await else {
-                    // Mask skipped all remaining row groups between peek and next — release permits
-                    drop(permit);
-                    break;
-                };
+                let prefetch = row_group_data_fetcher.next().await.unwrap();
 
                 if prefetch_send.send((prefetch?, permit)).await.is_err() {
                     break;
@@ -421,7 +449,10 @@ impl ParquetReadImpl {
     /// This must be called AFTER the following have been initialized:
     /// * `self.projected_arrow_fields`
     /// * `self.physical_predicate`
-    pub(super) fn init_row_group_decoder(&mut self) -> RowGroupDecoder {
+    pub(super) fn init_row_group_decoder(
+        &mut self,
+        runtime_range_skipper: Option<Arc<RuntimeRangeSkipper>>,
+    ) -> RowGroupDecoder {
         let projected_arrow_fields = self.projected_arrow_fields.clone();
         let row_index = self.row_index.clone();
         let target_values_per_thread = self.config.target_values_per_thread;
@@ -566,6 +597,7 @@ impl ParquetReadImpl {
             passes: Mutex::new(Arc::new(passes)),
             non_predicate_field_indices,
             target_values_per_thread,
+            runtime_range_skipper,
         }
     }
 }
@@ -589,31 +621,7 @@ fn filtered_range(exclude: &[usize], len: usize) -> impl Iterator<Item = usize> 
     })
 }
 
-pub(crate) fn split_to_morsels(
-    df: &DataFrame,
-    ideal_morsel_size: usize,
-    last_morsel: bool,
-    last_morsel_pipelines: usize,
-) -> impl Iterator<Item = DataFrame> + '_ {
-    let mut n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
-        // num_rows > (1.5 * ideal_morsel_size)
-        (df.height() / ideal_morsel_size).max(2)
-    } else {
-        1
-    };
-
-    if last_morsel {
-        n_morsels = n_morsels.max(last_morsel_pipelines);
-    }
-
-    let rows_per_morsel = df.height().div_ceil(n_morsels).max(1);
-
-    (0..i64::try_from(df.height()).unwrap())
-        .step_by(rows_per_morsel)
-        .map(move |offset| df.slice(offset, rows_per_morsel))
-        .filter(|df| df.height() > 0)
-}
-
+#[cfg(test)]
 mod tests {
 
     #[test]

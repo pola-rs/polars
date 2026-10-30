@@ -115,10 +115,9 @@ fn specialize(
             options: _,
         } if matches!(
             str_function,
-            crate::plans::IRStringFunction::Contains {
-                literal: _,
-                strict: true
-            } | crate::plans::IRStringFunction::EndsWith
+            crate::plans::IRStringFunction::Contains { literal: true, .. }
+                | crate::plans::IRStringFunction::Contains { strict: true, .. }
+                | crate::plans::IRStringFunction::EndsWith
                 | crate::plans::IRStringFunction::StartsWith
         ) =>
         {
@@ -138,8 +137,12 @@ fn specialize(
                     let pattern = if *literal {
                         regex::escape(lv)
                     } else {
-                        lv.to_string()
+                        polars_utils::regex_cache::is_match_pattern(lv)
+                            .unwrap_or_else(|| lv.to_string())
                     };
+                    // The column kernel raises or returns nulls if it cannot compile the
+                    // pattern, e.g. due to `POLARS_REGEX_SIZE_LIMIT`.
+                    polars_utils::regex_cache::compile_regex(&pattern).ok()?;
                     let pattern = regex::bytes::Regex::new(&pattern).ok()?;
                     Some(SpecializedColumnPredicate::RegexMatch(pattern.into()))
                 },
@@ -206,6 +209,20 @@ fn specialize(
             options: _,
         } => {
             into_column(input[0].node(), expr_arena)?;
+            if dtype.is_categorical() || dtype.is_enum() {
+                if let Some((values, _)) = super::try_extract_is_in_haystack(
+                    input[1].node(),
+                    expr_arena,
+                    schema,
+                    &DataType::String,
+                    usize::MAX,
+                ) {
+                    let values = values.str().ok()?;
+                    return Some(SpecializedColumnPredicate::CategoricalEqualOneOf(
+                        values.iter().flatten().map(PlSmallStr::from).collect(),
+                    ));
+                }
+            }
             if !function.membership_compares_in_needle_dtype(
                 &dtype,
                 input[1].dtype(schema, expr_arena).ok()?,
@@ -251,6 +268,14 @@ fn specialize(
             let ((_, _), (lv, lv_node)) =
                 get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
             let lv = lv?;
+            if (dtype.is_categorical() || dtype.is_enum())
+                && matches!(op, Operator::Eq | Operator::EqValidity)
+                && let Some(s) = lv.extract_str()
+            {
+                return Some(SpecializedColumnPredicate::CategoricalEqualOneOf(
+                    [PlSmallStr::from(s)].into(),
+                ));
+            }
             if lv.get_datatype() != dtype {
                 return None;
             }

@@ -88,24 +88,36 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             IRAggExpr::Min {
                 input,
                 propagate_nans,
+                propagate_nulls,
             } => {
                 let exp = node_to_expr(input, expr_arena);
-                AggExpr::Min {
-                    input: Arc::new(exp),
+                let agg = AggExpr::Min {
+                    input: Arc::new(exp.clone()),
                     propagate_nans,
                 }
-                .into()
+                .into();
+                if propagate_nulls {
+                    null_if_has_nulls(exp, agg)
+                } else {
+                    agg
+                }
             },
             IRAggExpr::Max {
                 input,
                 propagate_nans,
+                propagate_nulls,
             } => {
                 let exp = node_to_expr(input, expr_arena);
-                AggExpr::Max {
-                    input: Arc::new(exp),
+                let agg = AggExpr::Max {
+                    input: Arc::new(exp.clone()),
                     propagate_nans,
                 }
-                .into()
+                .into();
+                if propagate_nulls {
+                    null_if_has_nulls(exp, agg)
+                } else {
+                    agg
+                }
             },
 
             IRAggExpr::Mean(expr) => {
@@ -302,6 +314,25 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 
 fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
     nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()
+}
+
+fn null_if_has_nulls(input: Expr, agg: Expr) -> Expr {
+    when(input.has_nulls())
+        .then(lit(LiteralValue::untyped_null()))
+        .otherwise(agg)
+}
+
+fn total_min_max_by_to_dsl(input: Vec<Expr>, nulls_largest: bool, is_max: bool) -> Expr {
+    let [expr, by] = <[Expr; 2]>::try_from(input).unwrap();
+    let sorted = expr.sort_by(
+        [by],
+        SortMultipleOptions::default().with_nulls_last(nulls_largest),
+    );
+    if is_max {
+        sorted.last()
+    } else {
+        sorted.first()
+    }
 }
 
 pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
@@ -773,6 +804,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "row_hash")]
         IF::Hash(seed) => F::Hash(seed),
+        IF::Mm3Hash => F::Mm3Hash,
         #[cfg(feature = "arg_where")]
         IF::ArgWhere => F::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -958,8 +990,18 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             descending,
             nulls_last,
         },
-        IF::MinBy => F::MinBy,
-        IF::MaxBy => F::MaxBy,
+        IF::MinBy {
+            order: MinMaxByOrder::SkipNulls,
+        } => F::MinBy,
+        IF::MaxBy {
+            order: MinMaxByOrder::SkipNulls,
+        } => F::MaxBy,
+        IF::MinBy {
+            order: MinMaxByOrder::Total { nulls_largest },
+        } => return total_min_max_by_to_dsl(input, nulls_largest, false),
+        IF::MaxBy {
+            order: MinMaxByOrder::Total { nulls_largest },
+        } => return total_min_max_by_to_dsl(input, nulls_largest, true),
         IF::Product => F::Product,
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
@@ -1232,12 +1274,33 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Reinterpret(dtype) => F::Reinterpret(None, Some(dtype)),
         IF::ExtendConstant => F::ExtendConstant,
 
-        IF::RowEncode(_, v) => F::RowEncode(v),
+        IF::RowEncode {
+            dtypes: _,
+            variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        } => F::RowEncode {
+            variant,
+            output,
+            encode_nulls,
+            propagate_nulls,
+        },
         #[cfg(feature = "dtype-struct")]
-        IF::RowDecode(fs, v) => F::RowDecode(
-            fs.into_iter().map(|f| (f.name, f.dtype.into())).collect(),
-            v,
-        ),
+        IF::RowDecode {
+            fields,
+            variant,
+            output,
+            encode_nulls,
+        } => F::RowDecode {
+            fields: fields
+                .into_iter()
+                .map(|f| (f.name, f.dtype.into()))
+                .collect(),
+            variant,
+            output,
+            encode_nulls,
+        },
         IF::DynamicPred { pred, .. } | IF::DynamicSkipBatch { pred } => {
             return Expr::Display {
                 inputs: input,

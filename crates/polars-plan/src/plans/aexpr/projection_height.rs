@@ -122,6 +122,8 @@ impl Default for ExprHeightOptions {
 fn changes_height_structurally(aexpr: &AExpr) -> bool {
     match aexpr {
         AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => true,
+        AExpr::Sort { options, .. } => options.limit.is_some(),
+        AExpr::SortBy { sort_options, .. } => sort_options.limit.is_some(),
         AExpr::Over { mapping, .. } => matches!(mapping, WindowMapping::Explode),
         _ => false,
     }
@@ -257,6 +259,8 @@ pub fn aexpr_projection_height(
         StructEval { .. } => input_heights?[0],
 
         Filter { .. } | Slice { .. } | Explode { .. } => H::Unknown,
+        Sort { options, .. } if options.limit.is_some() => H::Unknown,
+        SortBy { sort_options, .. } if sort_options.limit.is_some() => H::Unknown,
 
         Agg(_) | AnonymousAgg { .. } => H::Scalar,
         Len => H::Scalar,

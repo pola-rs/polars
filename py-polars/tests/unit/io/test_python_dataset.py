@@ -236,8 +236,8 @@ def test_dataset_provider_predicate_eq_missing(df: pl.DataFrame) -> None:
 def test_dataset_provider_predicate_xor(df: pl.DataFrame) -> None:
     # PyArrow expressions have no `^` operator.
     assert lowered_predicate(df, (pl.col("id") > 3) ^ (pl.col("val") > 1.0)) == (
-        "(((pa.compute.field('id') > 3) | (pa.compute.field('val') > 1))"
-        " & ~((pa.compute.field('id') > 3) & (pa.compute.field('val') > 1)))"
+        "(((pa.compute.field('id') > 3) | (pa.compute.field('val') > 1.0))"
+        " & ~((pa.compute.field('id') > 3) & (pa.compute.field('val') > 1.0)))"
     )
     # `^` on integers is a bitwise operation, which the rewrite does not hold for.
     assert lowered_predicate(df, (pl.col("id") ^ 1) > 2) is None
@@ -268,17 +268,17 @@ def test_dataset_provider_predicate_arithmetic(df: pl.DataFrame) -> None:
     # integer overflow where Polars wraps.
     assert (
         lowered_predicate(df, pl.col("val") * 2 > 1.0)
-        == "((pa.compute.field('val') * 2) > 1)"
+        == "((pa.compute.field('val') * 2.0) > 1.0)"
     )
     assert (
         lowered_predicate(df, pl.col("val") + 1.0 <= 1.5)
-        == "((pa.compute.field('val') + 1) <= 1.5)"
+        == "((pa.compute.field('val') + 1.0) <= 1.5)"
     )
     # PyArrow expressions have no reflected arithmetic, so a literal on the left
     # has to become an expression of its own.
     assert (
         lowered_predicate(df, 2.0 - pl.col("val") > 1.0)
-        == "((pa.compute.scalar(2) - pa.compute.field('val')) > 1)"
+        == "((pa.compute.scalar(2.0) - pa.compute.field('val')) > 1.0)"
     )
 
 
@@ -463,3 +463,39 @@ def test_python_dataset_rejects_zero_heavy_sources() -> None:
         PyLazyFrame.new_from_dataset_object(
             ParquetDataset([], pl.Schema({"x": pl.Int64})), resolve_heavy_sources=0
         )
+
+
+class AllRowsDeletedDataset:
+    """Dataset provider over a file whose rows are all deleted."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.path = tmp_path / "data.parquet"
+        pl.DataFrame({"k": [1, 2]}).write_parquet(self.path)
+        self.deletes = tmp_path / "deletes.parquet"
+        pl.DataFrame({"file_path": ["", ""], "pos": [0, 1]}).write_parquet(self.deletes)
+
+    def schema(self) -> pa.Schema:
+        return pa.schema([("k", pa.int64())])
+
+    def to_dataset_scan(self, **_kwargs: Any) -> tuple[pl.LazyFrame, str]:
+        idx = pl.get_index_type()
+        statistics = pl.DataFrame(
+            {"len": [2], "k_nc": [0], "k_min": [1], "k_max": [2]},
+            schema={"len": idx, "k_nc": idx, "k_min": pl.Int64, "k_max": pl.Int64},
+        )
+        lf = pl.scan_parquet(
+            self.path,
+            _deletion_files=("iceberg", ({0: [str(self.deletes)]}, {})),
+            _row_count=(2, 2),
+            _table_statistics=statistics,
+        )
+        return lf, "v1"
+
+
+@pytest.mark.write_disk
+def test_python_dataset_join_with_every_row_deleted(tmp_path: Path) -> None:
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(AllRowsDeletedDataset(tmp_path)))
+    q = lf.join(pl.LazyFrame({"k": [1, 2, 3]}), on="k").join(
+        pl.LazyFrame({"k": [1, 2]}), on="k"
+    )
+    assert q.collect().height == 0

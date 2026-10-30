@@ -1,8 +1,10 @@
 use parking_lot::RwLock;
-use polars::sql::{SQLContext, extract_table_identifiers};
+use polars::sql::{CatalogAlter, CatalogDdl, SQLContext, extract_table_identifiers};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use crate::PyLazyFrame;
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 
@@ -54,6 +56,232 @@ impl PySQLContext {
     /// Unregister a table from the current SQLContext.
     pub fn unregister(&self, name: &str) {
         self.context.write().unregister(name)
+    }
+
+    /// Attach a catalog: table names resolve against it (see `SQLContext::register_catalog`).
+    #[pyo3(signature = (name, default_namespace, default))]
+    pub fn register_catalog(
+        &self,
+        name: &str,
+        default_namespace: Option<Vec<String>>,
+        default: bool,
+    ) -> PyResult<()> {
+        self.context
+            .write()
+            .register_catalog(name, default_namespace, default)
+            .map_err(PyPolarsErr::from)?;
+        Ok(())
+    }
+
+    /// The name of the default catalog, if one is set.
+    pub fn default_catalog(&self) -> Option<String> {
+        self.context.read().default_catalog().map(str::to_string)
+    }
+
+    /// Make an attached catalog the default.
+    pub fn set_default_catalog(&self, name: &str) -> PyResult<()> {
+        self.context
+            .write()
+            .set_default_catalog(name)
+            .map_err(PyPolarsErr::from)?;
+        Ok(())
+    }
+
+    /// Detach a catalog, returning the name it was attached under.
+    pub fn unregister_catalog(&self, name: &str) -> Option<String> {
+        self.context.write().unregister_catalog(name)
+    }
+
+    /// The catalog tables a query reads, as (catalog, identifier parts).
+    pub fn catalog_tables(&self, query: &str) -> PyResult<Vec<(String, Vec<String>)>> {
+        let tables = self
+            .context
+            .read()
+            .catalog_tables(query)
+            .map_err(PyPolarsErr::from)?;
+        Ok(tables
+            .into_iter()
+            .map(|t| (t.catalog, t.identifier))
+            .collect())
+    }
+
+    /// The catalog DDL of a query, as a dict keyed by `kind`, or None.
+    pub fn catalog_ddl<'py>(
+        &self,
+        py: Python<'py>,
+        query: &str,
+    ) -> PyResult<Option<Bound<'py, PyDict>>> {
+        let ddl = self
+            .context
+            .read()
+            .catalog_ddl(query)
+            .map_err(PyPolarsErr::from)?;
+        let Some(ddl) = ddl else {
+            return Ok(None);
+        };
+        let dict = PyDict::new(py);
+        match ddl {
+            CatalogDdl::DropTable {
+                name,
+                table,
+                if_exists,
+                purge,
+            } => {
+                dict.set_item("kind", "drop_table")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_exists", if_exists)?;
+                dict.set_item("purge", purge)?;
+            },
+            CatalogDdl::CreateTable {
+                name,
+                table,
+                if_not_exists,
+                schema,
+                query,
+                required,
+                location,
+                properties,
+                partition_by,
+            } => {
+                dict.set_item("kind", "create_table")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_not_exists", if_not_exists)?;
+                dict.set_item("schema", Wrap(schema))?;
+                dict.set_item("query", query)?;
+                dict.set_item("required", required)?;
+                dict.set_item("location", location)?;
+                let props = PyDict::new(py);
+                for (key, value) in properties {
+                    props.set_item(key, value)?;
+                }
+                dict.set_item("properties", props)?;
+                let partition_by: Vec<(String, String)> = partition_by
+                    .into_iter()
+                    .map(|field| (field.column, field.transform))
+                    .collect();
+                dict.set_item("partition_by", partition_by)?;
+            },
+            CatalogDdl::CreateSchema {
+                name,
+                namespace,
+                if_not_exists,
+                properties,
+            } => {
+                dict.set_item("kind", "create_schema")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", namespace.catalog)?;
+                dict.set_item("namespace", namespace.namespace)?;
+                dict.set_item("if_not_exists", if_not_exists)?;
+                let props = PyDict::new(py);
+                for (key, value) in properties {
+                    props.set_item(key, value)?;
+                }
+                dict.set_item("properties", props)?;
+            },
+            CatalogDdl::DropSchema {
+                name,
+                namespace,
+                if_exists,
+            } => {
+                dict.set_item("kind", "drop_schema")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", namespace.catalog)?;
+                dict.set_item("namespace", namespace.namespace)?;
+                dict.set_item("if_exists", if_exists)?;
+            },
+            CatalogDdl::Insert {
+                name,
+                table,
+                columns,
+                query,
+                overwrite,
+            } => {
+                dict.set_item("kind", "insert")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("columns", columns)?;
+                dict.set_item("query", query)?;
+                dict.set_item("overwrite", overwrite)?;
+            },
+            CatalogDdl::AlterTable {
+                name,
+                table,
+                if_exists,
+                operation,
+            } => {
+                dict.set_item("kind", "alter_table")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_exists", if_exists)?;
+                let op = PyDict::new(py);
+                match operation {
+                    CatalogAlter::AddColumn {
+                        name,
+                        dtype,
+                        if_not_exists,
+                    } => {
+                        op.set_item("op", "add_column")?;
+                        op.set_item("column", name)?;
+                        op.set_item("dtype", &Wrap(dtype))?;
+                        op.set_item("if_not_exists", if_not_exists)?;
+                    },
+                    CatalogAlter::DropColumn { name, if_exists } => {
+                        op.set_item("op", "drop_column")?;
+                        op.set_item("column", name)?;
+                        op.set_item("if_exists", if_exists)?;
+                    },
+                    CatalogAlter::RenameColumn { old, new } => {
+                        op.set_item("op", "rename_column")?;
+                        op.set_item("column", old)?;
+                        op.set_item("new_name", new)?;
+                    },
+                    CatalogAlter::SetDataType { name, dtype } => {
+                        op.set_item("op", "set_data_type")?;
+                        op.set_item("column", name)?;
+                        op.set_item("dtype", &Wrap(dtype))?;
+                    },
+                    CatalogAlter::DropNotNull { name } => {
+                        op.set_item("op", "drop_not_null")?;
+                        op.set_item("column", name)?;
+                    },
+                    CatalogAlter::SetProperties { properties } => {
+                        op.set_item("op", "set_properties")?;
+                        let props = PyDict::new(py);
+                        for (key, value) in properties {
+                            props.set_item(key, value)?;
+                        }
+                        op.set_item("properties", props)?;
+                    },
+                }
+                dict.set_item("operation", op)?;
+            },
+        }
+        Ok(Some(dict))
+    }
+
+    /// Execute a query with the scans of the catalog tables it reads, by full name.
+    pub fn execute_with_catalog_tables(
+        &self,
+        py: Python<'_>,
+        query: &str,
+        tables: Vec<(Vec<String>, PyLazyFrame)>,
+    ) -> PyResult<PyLazyFrame> {
+        let tables = tables
+            .into_iter()
+            .map(|(full_name, lf)| (full_name, lf.ldf.into_inner()))
+            .collect();
+        py.enter_polars(|| {
+            self.context
+                .write()
+                .execute_with_catalog_tables(query, tables)
+        })
+        .map(Into::into)
     }
 
     /// Extract table identifiers from a SQL query string.

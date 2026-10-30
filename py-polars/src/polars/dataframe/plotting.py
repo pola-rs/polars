@@ -6,9 +6,8 @@ from typing import TYPE_CHECKING
 from polars._dependencies import altair as alt
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable
-    from typing import TypeAlias
+    from typing import TypeAlias, Unpack
 
     from altair.typing import ChannelColor as Color
     from altair.typing import ChannelOrder as Order
@@ -19,11 +18,6 @@ if TYPE_CHECKING:
     from altair.typing import EncodeKwds
 
     from polars import DataFrame
-
-    if sys.version_info >= (3, 11):
-        from typing import Unpack
-    else:
-        from typing_extensions import Unpack
 
     Encoding: TypeAlias = X | Y | Color | Order | Size | Tooltip
     Encodings: TypeAlias = dict[str, Encoding]

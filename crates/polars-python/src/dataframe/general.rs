@@ -87,6 +87,14 @@ impl PyDataFrame {
         py.enter_polars_df(|| &*self.df.read() / &*s.df.read())
     }
 
+    pub fn floordiv_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
+        py.enter_polars_df(|| {
+            self.df
+                .read()
+                .binary_aligned(&s.df.read(), &polars_ops::prelude::floor_div_series)
+        })
+    }
+
     pub fn rem_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
         py.enter_polars_df(|| &*self.df.read() % &*s.df.read())
     }
@@ -574,7 +582,7 @@ impl PyDataFrame {
         invalid_indices: Vec<usize>,
     ) -> PyResult<PySeries> {
         py.enter_polars_series(|| {
-            let mut ca = self.df.read().clone().into_struct(name.into());
+            let ca = self.df.read().clone().into_struct(name.into());
 
             if !invalid_indices.is_empty() {
                 let mut validity = MutableBitmap::with_capacity(ca.len());
@@ -582,7 +590,6 @@ impl PyDataFrame {
                 for i in invalid_indices {
                     validity.set(i, false);
                 }
-                ca.rechunk_mut();
                 Ok(ca.with_outer_validity(Some(validity.freeze())))
             } else {
                 Ok(ca)

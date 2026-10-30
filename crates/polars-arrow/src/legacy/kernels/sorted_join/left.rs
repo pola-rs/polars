@@ -1,6 +1,6 @@
 use super::*;
 
-pub fn join<T: PartialOrd + Copy + Debug>(
+pub fn join<T: TotalOrd + Copy + Debug>(
     left: &[T],
     right: &[T],
     left_offset: IdxSize,
@@ -26,7 +26,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
     // first values should be None, until left has caught up
 
     let first_right = right[right_idx as usize];
-    let mut left_idx = left.partition_point(|v| v < &first_right) as IdxSize;
+    let mut left_idx = left.partition_point(|v| v.tot_lt(&first_right)) as IdxSize;
     out_rhs.extend(std::iter::repeat_n(
         NullableIdxSize::null(),
         left_idx as usize,
@@ -39,7 +39,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
             match right.get(right_idx as usize) {
                 Some(&val_r) => {
                     // matching join key
-                    if val_l == val_r {
+                    if val_l.tot_eq(&val_r) {
                         out_lhs.push(left_idx + left_offset);
                         out_rhs.push(right_idx.into());
                         let current_idx = right_idx;
@@ -53,7 +53,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                                     right_idx = current_idx;
                                     break;
                                 },
-                                Some(&val_r) if val_l == val_r => {
+                                Some(&val_r) if val_l.tot_eq(&val_r) => {
                                     out_lhs.push(left_idx + left_offset);
                                     out_rhs.push(right_idx.into());
                                 },
@@ -68,7 +68,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                     }
 
                     // right is larger than left.
-                    if val_r > val_l {
+                    if val_r.tot_gt(&val_l) {
                         out_lhs.push(left_idx + left_offset);
                         out_rhs.push(NullableIdxSize::null());
                         break;

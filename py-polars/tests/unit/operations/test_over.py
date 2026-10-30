@@ -296,3 +296,66 @@ def test_over_literal_dtype(
     assert_frame_equal(
         lf.select(a=expr).collect(engine=engine), expected.head(n_rows).to_frame()
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_over_per_row_with_per_group_scalar(engine: EngineType) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 2, 1, 2, 1], "o": [3, 1, 2, 2, 1], "x": [1.0, 4.0, 2.0, None, 6.0]}
+    )
+    x = pl.col.x
+    q = lf.select(
+        sub=(x - x.mean()).over("g"),
+        ordered=(x - x.first()).over("g", order_by="o"),
+        fill_null=x.fill_null(x.mean()).over("g"),
+        join=(x - x.mean()).over("g", mapping_strategy="join"),
+        fill_null_join=x.fill_null(x.mean()).over("g", mapping_strategy="join"),
+        when_join=pl.when(x > x.mean())
+        .then(x)
+        .otherwise(x.mean())
+        .over("g", mapping_strategy="join"),
+    )
+    expected = pl.DataFrame(
+        {
+            "sub": [-2.0, 0.0, -1.0, None, 3.0],
+            "ordered": [-5.0, 0.0, -4.0, None, 0.0],
+            "fill_null": [1.0, 4.0, 2.0, 4.0, 6.0],
+            "join": [[-2.0, -1.0, 3.0], [0.0, None]] * 2 + [[-2.0, -1.0, 3.0]],
+            "fill_null_join": [[1.0, 2.0, 6.0], [4.0, 4.0]] * 2 + [[1.0, 2.0, 6.0]],
+            "when_join": [[3.0, 3.0, 6.0], [4.0, 4.0]] * 2 + [[3.0, 3.0, 6.0]],
+        }
+    )
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+    q = lf.sort("g").select((x - x.mean()).over("g", mapping_strategy="explode"))
+    expected = pl.DataFrame({"x": [-2.0, -1.0, 3.0, 0.0, None]})
+    assert_frame_equal(q.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_over_object_with_per_group_scalar(engine: EngineType) -> None:
+    # Object values can be neither rechunked nor rebuilt into lists from their inner
+    # values, so they keep the per-group loop.
+    df = pl.DataFrame(
+        {
+            "g": [1, 2, 1, 2, 1, 2],
+            "v": pl.Series(["a", "b", None, "d", "e", None], dtype=pl.Object),
+        }
+    )
+    lf = pl.concat([df, df], rechunk=False).lazy()
+    v = pl.col.v
+    lit = pl.lit(pl.Series(["z"], dtype=pl.Object))
+    q = lf.select(
+        shift=v.shift(1).fill_null(v.first()).over("g"),
+        flat=v.fill_null(v.first()).over("g"),
+        lit=pl.coalesce(v, v.first(), lit).over("g"),
+    )
+    out = q.collect(engine=engine)
+    shift = ["a", "b", "a", "b", "a", "d", "e", "b", "a", "b", "a", "d"]
+    assert out["shift"].to_list() == shift
+    assert out["flat"].to_list() == ["a", "b", "a", "d", "e", "b"] * 2
+    assert out["lit"].to_list() == ["a", "b", "a", "d", "e", "b"] * 2
+
+    q = lf.select((lit == v.first()).over("g"))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="comparison"):
+        q.collect(engine=engine)

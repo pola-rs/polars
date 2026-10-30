@@ -14,6 +14,7 @@ import pytest
 
 import polars as pl
 import polars._plr as plr
+from polars._dependencies import polars_cloud
 from polars._utils.monitoring import (
     MONITORING_ENV_VAR,
     MONITORING_ORGANIZATION_ENV_VAR,
@@ -25,9 +26,14 @@ from tests.unit.conftest import mock_module_import
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from tests.conftest import PlMonkeyPatch
+
+
+CLOUD_MODULE = polars_cloud.__name__
+
 
 def fake_cloud_observer() -> tuple[ModuleType, MagicMock]:
-    module = ModuleType("polars_cloud")
+    module = ModuleType(CLOUD_MODULE)
     observer = MagicMock(name="QueryCloudObserver()")
     module.QueryCloudObserver = MagicMock(  # type: ignore[attr-defined]
         name="QueryCloudObserver", return_value=observer
@@ -53,7 +59,7 @@ def _sample_lf() -> pl.LazyFrame:
 
 def test_config_enable_monitoring() -> None:
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         assert "POLARS_ENGINE_AFFINITY" not in os.environ
 
         pl.Config.enable_monitoring()
@@ -77,7 +83,7 @@ def test_config_enable_monitoring() -> None:
 def test_config_enable_monitoring_workspace() -> None:
     """The configured workspace is handed to the observer on construction."""
     module, _ = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring(workspace="my-workspace")
         assert os.environ[MONITORING_WORKSPACE_ENV_VAR] == "my-workspace"
 
@@ -100,7 +106,7 @@ def test_config_enable_monitoring_workspace() -> None:
 def test_config_enable_monitoring_organization() -> None:
     """The configured organization is handed to the observer on construction."""
     module, _ = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring(organization="my-org")
         assert os.environ[MONITORING_ORGANIZATION_ENV_VAR] == "my-org"
         assert MONITORING_WORKSPACE_ENV_VAR not in os.environ
@@ -131,7 +137,7 @@ def test_config_enable_monitoring_organization() -> None:
 def test_config_scope_monitoring_organization() -> None:
     """The organization is restored together with the other Config options."""
     module, _ = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring(organization="outer-org")
 
         with pl.Config():
@@ -147,7 +153,7 @@ def test_config_scope_monitoring_organization() -> None:
 def test_config_scope_monitoring_workspace() -> None:
     """The workspace is restored together with the other Config options."""
     module, _ = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring(workspace="outer-workspace")
 
         with pl.Config():
@@ -163,7 +169,7 @@ def test_config_scope_monitoring_workspace() -> None:
 def test_engine_monitoring_uses_configured_workspace() -> None:
     """An engine-level override still reports to the configured workspace."""
     module, _ = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring(workspace="my-workspace")
         _sample_lf().collect(engine=StreamingEngine(monitoring=True))
 
@@ -173,7 +179,7 @@ def test_engine_monitoring_uses_configured_workspace() -> None:
 def test_collect_calls_observer() -> None:
     """Running a query with monitoring on invokes the observer callbacks."""
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         result = _sample_lf().collect(engine="streaming")
 
@@ -191,7 +197,7 @@ def test_collect_calls_observer() -> None:
 
 def test_config_scope_monitoring() -> None:
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         assert "POLARS_ENGINE_AFFINITY" not in os.environ
 
         with pl.Config(enable_monitoring=True):
@@ -211,7 +217,7 @@ def test_config_scope_monitoring() -> None:
 
 def test_engine_object_follows_config() -> None:
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         _sample_lf().collect(engine=StreamingEngine())
 
@@ -221,7 +227,7 @@ def test_engine_object_follows_config() -> None:
 def test_engine_object_without_config_is_not_monitored() -> None:
     """An engine with `monitoring=None` follows the Config; here it is off."""
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         _sample_lf().collect(engine=StreamingEngine())
 
     module.QueryCloudObserver.assert_not_called()
@@ -231,7 +237,7 @@ def test_engine_object_without_config_is_not_monitored() -> None:
 def test_engine_monitoring_overrides_config_off() -> None:
     """`monitoring=True` monitors the query without the Config being enabled."""
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         engine = StreamingEngine(monitoring=True)
         module.authenticate.assert_called_once()
 
@@ -245,7 +251,7 @@ def test_engine_monitoring_overrides_config_off() -> None:
 def test_engine_monitoring_overrides_config_on() -> None:
     """`monitoring=False` exempts the query while the Config is enabled."""
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         _sample_lf().collect(engine=StreamingEngine(monitoring=False))
 
@@ -256,14 +262,14 @@ def test_engine_monitoring_overrides_config_on() -> None:
 def test_engine_monitoring_requires_polars_cloud(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setitem(sys.modules, "polars_cloud", None)
-    with pytest.raises(ModuleNotFoundError, match="polars_cloud"):
+    monkeypatch.setitem(sys.modules, CLOUD_MODULE, None)
+    with pytest.raises(ModuleNotFoundError, match=CLOUD_MODULE):
         StreamingEngine(monitoring=True)
 
 
 def test_in_memory_engine_monitoring() -> None:
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         _sample_lf().collect(engine=pl.InMemoryEngine(monitoring=True))
 
     observer.on_query_started.assert_called_once()
@@ -273,7 +279,7 @@ def test_in_memory_engine_monitoring() -> None:
 def test_engine_affinity_object_carries_monitoring() -> None:
     """A configured engine object monitors every query in its scope."""
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         with pl.Config(engine_affinity=StreamingEngine(monitoring=True)):
             _sample_lf().collect()
         observer.on_query_started.assert_called_once()
@@ -332,7 +338,7 @@ def test_monitoring_covers_local_execution_paths(
 ) -> None:
     """The primary local collection and sink paths report to the observer."""
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         run(_sample_lf(), StreamingEngine(monitoring=True))
 
     observer.on_query_started.assert_called_once()
@@ -343,7 +349,7 @@ def test_planned_payload_decodes() -> None:
     """The IR and physical plan handed to the observer are valid msgpack."""
     msgpack = pytest.importorskip("msgpack")
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         _sample_lf().collect(engine="streaming")
 
@@ -359,17 +365,26 @@ def test_planned_payload_decodes() -> None:
 
 
 def test_metrics_handle_snapshot() -> None:
-    """The metrics handle snapshots to msgpack rows after the query runs."""
+    """The handle snapshots query and node metrics to msgpack after the query."""
     msgpack = pytest.importorskip("msgpack")
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         _sample_lf().collect(engine="streaming")
 
     # The handle stays valid after the query, so snapshot reflects real work.
     handle = observer.on_query_planned.call_args.args[1]
-    rows = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
 
+    # An in-memory source does no IO.
+    assert snap["query"] == {
+        "io_total_active_ns": 0,
+        "io_rx_active_ns": 0,
+        "io_tx_active_ns": 0,
+        "num_threads": pl.thread_pool_size(),
+    }
+
+    rows = snap["nodes"]
     assert isinstance(rows, list)
     assert len(rows) > 0
     expected_keys = {"phys_node_key", "rows_sent", "rows_received", "done"}
@@ -378,10 +393,67 @@ def test_metrics_handle_snapshot() -> None:
     assert sum(r["rows_sent"] for r in rows) > 0
 
 
+def test_metrics_handle_snapshot_in_memory_engine() -> None:
+    """The in-memory engine snapshots zeroed query metrics and no nodes."""
+    msgpack = pytest.importorskip("msgpack")
+    module, observer = fake_cloud_observer()
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
+        pl.Config.enable_monitoring()
+        _sample_lf().collect(engine="in-memory")
+
+    handle = observer.on_query_planned.call_args.args[1]
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
+
+    assert snap == {
+        "query": {
+            "io_total_active_ns": 0,
+            "io_rx_active_ns": 0,
+            "io_tx_active_ns": 0,
+            "num_threads": 0,
+        },
+        "nodes": [],
+    }
+
+
+@pytest.mark.write_disk
+def test_metrics_handle_snapshot_query_io(
+    plmonkeypatch: PlMonkeyPatch, tmp_path: Path
+) -> None:
+    """Query IO time is the time any node had IO in flight, split by direction."""
+    msgpack = pytest.importorskip("msgpack")
+    # Same reader setup as the scan metrics tests in tests/unit/io/test_scan.py.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    left = tmp_path / "left.parquet"
+    right = tmp_path / "right.parquet"
+    pl.DataFrame({"k": range(10_000), "a": range(10_000)}).write_parquet(left)
+    pl.DataFrame({"k": range(10_000), "b": range(10_000)}).write_parquet(right)
+
+    module, observer = fake_cloud_observer()
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
+        pl.Config.enable_monitoring()
+        pl.scan_parquet(left).join(pl.scan_parquet(right), on="k").collect(
+            engine="streaming"
+        )
+
+    handle = observer.on_query_planned.call_args.args[1]
+    snap = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
+    query = snap["query"]
+    node_io = [r["io_total_active_ns"] for r in snap["nodes"]]
+
+    # Both scans read, and nothing was sent. Comparisons between timers only hold up to
+    # jitter when reads start concurrently on different threads; exact containment is
+    # covered by the single-threaded tests in polars-stream's metrics.rs.
+    assert sum(1 for t in node_io if t > 0) == 2
+    assert query["io_rx_active_ns"] > 0
+    assert query["io_tx_active_ns"] == 0
+    assert query["io_total_active_ns"] > 0
+
+
 def _observe_streaming(run: Callable[[], object]) -> MagicMock:
     """Run `run` with the fake cloud observer installed and return the observer."""
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         run()
     return observer
@@ -591,7 +663,7 @@ def test_concatenated_inputs_attribute_to_their_own_scans() -> None:
 def test_on_query_failed_called() -> None:
     """A failing query reports `on_query_failed` with the error message."""
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         with pytest.raises(pl.exceptions.PolarsError):
             pl.LazyFrame({"a": [1, 2, 3]}).select(pl.col("does_not_exist")).collect(
@@ -609,7 +681,7 @@ def test_on_query_failed_called() -> None:
 def test_no_monitoring_no_observer() -> None:
     """With monitoring off the observer class is never constructed or called."""
     module, _ = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         _sample_lf().collect(engine="streaming")
 
     module.QueryCloudObserver.assert_not_called()
@@ -623,7 +695,7 @@ def test_in_memory_engine_planned_without_physical() -> None:
     """
     msgpack = pytest.importorskip("msgpack")
     module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+    with mock_module_import(CLOUD_MODULE, module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         _sample_lf().collect(engine="in-memory")
 

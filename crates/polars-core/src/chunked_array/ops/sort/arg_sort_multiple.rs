@@ -2,7 +2,10 @@ use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
-use crate::chunked_array::ops::row_encode::_get_rows_encoded;
+use crate::chunked_array::ops::row_encode::{
+    _get_rows_encoded, encode_rows_with_layout, encode_rows_with_layout_par,
+    get_optimal_row_encoding_layout, ordered_opts,
+};
 
 pub(crate) fn args_validate<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
@@ -81,17 +84,17 @@ pub(crate) fn arg_sort_multiple_impl<T: TotalOrd + IsNull + Send + Copy>(
 
 pub(crate) fn argsort_multiple_row_fmt(
     by: &[Column],
-    mut descending: Vec<bool>,
-    mut nulls_last: Vec<bool>,
-    parallel: bool,
+    options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
-    _broadcast_bools(by.len(), &mut descending);
-    _broadcast_bools(by.len(), &mut nulls_last);
+    let options = options.clone().expand_flags(by.len())?;
+    if let Some(idx) = arg_sort_packed_rows(by, &options, None)? {
+        return Ok(idx);
+    }
 
-    let rows_encoded = _get_rows_encoded(by, &descending, &nulls_last)?;
-    let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
+    let rows_encoded = _get_rows_encoded(by, &options.descending, &options.nulls_last)?;
+    let mut items: Vec<_> = rows_encoded.values_iter().enumerate_idx().collect();
 
-    if parallel {
+    if options.multithreaded {
         RAYON.install(|| items.par_sort_by_key(|i| i.1));
     } else {
         items.sort_by_key(|i| i.1);
@@ -99,4 +102,31 @@ pub(crate) fn argsort_multiple_row_fmt(
 
     let ca: NoNull<IdxCa> = items.into_iter().map(|tpl| tpl.0).collect();
     Ok(ca.into_inner())
+}
+
+/// Sorts by `Optimal` rows if they are bit-packed. The flags in `options` must be
+/// expanded to the number of columns.
+pub(crate) fn arg_sort_packed_rows(
+    by: &[Column],
+    options: &SortMultipleOptions,
+    limit: Option<IdxSize>,
+) -> PolarsResult<Option<IdxCa>> {
+    let opts = ordered_opts(&options.descending, &options.nulls_last);
+    let layout = get_optimal_row_encoding_layout(by, &[], &opts);
+    if !layout.is_packed() {
+        return Ok(None);
+    }
+
+    let rows = if options.multithreaded {
+        encode_rows_with_layout_par(by, &layout, false)?
+    } else {
+        encode_rows_with_layout(by, &layout, false)?
+    };
+    Ok(Some(rows.arg_sort(SortOptions {
+        descending: false,
+        nulls_last: false,
+        multithreaded: options.multithreaded,
+        maintain_order: options.maintain_order,
+        limit,
+    })))
 }

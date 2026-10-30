@@ -841,7 +841,10 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Time64(_)
         | ArrowDataType::Timestamp(_, _)
         | ArrowDataType::Date32
+        | ArrowDataType::Decimal32(_, _)
+        | ArrowDataType::Decimal64(_, _)
         | ArrowDataType::Decimal(_, _)
+        | ArrowDataType::Decimal256(_, _)
         | ArrowDataType::Date64
         | ArrowDataType::Map(_, _)) => {
             let dt = dt.clone();
@@ -872,18 +875,11 @@ unsafe fn import_arrow_dictionary_array(
         macro_rules! unpack_categorical_chunked {
             ($dt:ty) => {{
                 let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
-                let keys = arr.keys();
-                let values = arr.values();
-                let values = cast(&**values, &ArrowDataType::Utf8View)?;
-                let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
                 with_match_categorical_physical_type!(polars_dtype.cat_physical().unwrap(), |$C| {
-                    let ca = CategoricalChunked::<$C>::from_str_iter(
+                    let ca = CategoricalChunked::<$C>::from_str_dictionary(
                         name,
                         polars_dtype.clone(),
-                        keys.iter().map(|k| {
-                            let k: usize = (*k?).try_into().ok()?;
-                            values.get(k)
-                        }),
+                        arr,
                     )?;
                     Ok(ca.into_series())
                 })

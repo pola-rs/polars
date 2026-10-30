@@ -1,3 +1,4 @@
+use polars_compute::arithmetic::DivRounding;
 use polars_compute::decimal::{DEC128_MAX_PREC, dec128_fits};
 use polars_compute::rolling::QuantileMethod;
 
@@ -211,7 +212,9 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         let rhs = rhs.decimal()?;
-        self.0.rem_with(rhs, true).map(|ca| ca.into_series())
+        self.0
+            .rem_with(rhs, DivRounding::Floor)
+            .map(|ca| ca.into_series())
     }
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
@@ -547,7 +550,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
                 .collect::<Float64Chunked>()
                 .into_series();
             Ok(Scalar::new(
-                DataType::List(Box::new(self.dtype().clone())),
+                DataType::List(Box::new(DataType::Float64)),
                 AnyValue::List(scaled_s),
             ))
         } else {

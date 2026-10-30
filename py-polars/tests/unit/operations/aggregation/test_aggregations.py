@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from polars._typing import (
         ApproxQuantileMethod,
         PolarsDataType,
+        QuantileMethod,
         TimeUnit,
     )
     from tests.conftest import PlMonkeyPatch
@@ -158,6 +159,16 @@ def test_quantile() -> None:
     assert_frame_equal(
         df.select(pl.col("a").quantile([0.5], interpolation="linear")), expected
     )
+
+
+@pytest.mark.parametrize(
+    "method", ["nearest", "higher", "lower", "midpoint", "linear", "equiprobable"]
+)
+@pytest.mark.parametrize("quantile", [5e-324, 0.24999999999999997, 0.9999999999999998])
+def test_quantile_ignores_nulls(method: QuantileMethod, quantile: float) -> None:
+    s = pl.Series([0.0, 1.0, 2.0])
+    with_nulls = pl.Series([None, 0.0, 1.0, None, 2.0, None])
+    assert with_nulls.quantile(quantile, method) == s.quantile(quantile, method)
 
 
 def test_quantile_error_checking() -> None:
@@ -391,6 +402,7 @@ APPROX_QUANTILE_METHODS: list[ApproxQuantileMethod] = [
         ([datetime(2020, 1, 1) + timedelta(hours=i) for i in range(20)], pl.Datetime),
         ([timedelta(seconds=i) for i in range(20)], pl.Duration),
         ([f"{i:04d}" for i in range(20)], pl.String),
+        ([f"{i:04d}".encode() for i in range(20)], pl.Binary),
         ([i % 3 == 0 for i in range(20)], pl.Boolean),
         (list(range(20)), pl.Decimal(10, 2)),
     ],
@@ -408,6 +420,37 @@ def test_approx_quantile_dtypes(values: list[Any], dtype: PolarsDataType) -> Non
     value = result.item()
     assert value is not None
     assert value in s.to_list()
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series(["b", "a", None, "c"], dtype=pl.Categorical),
+        pl.Series(["b", "a", None, "c"], dtype=pl.Enum(["c", "b", "a"])),
+        pl.Series([None, None], dtype=pl.Null),
+        pl.Series([[2], [1, 3], None, [], [None]], dtype=pl.List(pl.Int64)),
+        pl.Series([["b"], ["a"], None], dtype=pl.List(pl.Categorical)),
+        pl.Series([[2, 1], [1, 3], None, [1, None]], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series(
+            [{"x": 2, "y": "a"}, {"x": 1, "y": "b"}, None, {"x": None, "y": "z"}]
+        ),
+        pl.Series([{"x": 2}, {"a": 1}, None], dtype=pl.Map(pl.String, pl.Int64)),
+    ],
+)
+def test_approx_quantile_orders_like_sort(s: pl.Series) -> None:
+    df = pl.DataFrame({"a": s, "g": [i % 2 for i in range(len(s))]})
+    sorted_ = s.drop_nulls().sort().to_list()
+    expected = [sorted_[0], sorted_[-1]] if sorted_ else [None, None]
+
+    result = df.select(pl.col("a").approx_quantile([0.0, 1.0]))
+    assert result.schema["a"] == pl.List(s.dtype)
+    assert result.item().to_list() == expected
+
+    result = df.group_by("g").agg(pl.col("a").approx_quantile([0.0, 1.0])).sort("g")
+    for g, estimates in result.iter_rows():
+        sorted_ = s.filter(df["g"] == g).drop_nulls().sort().to_list()
+        expected = [sorted_[0], sorted_[-1]] if sorted_ else [None, None]
+        assert estimates == expected
 
 
 def test_approx_quantile_dyn_literal_input() -> None:
@@ -450,7 +493,7 @@ def test_approx_quantile_empty_group() -> None:
 
 
 def test_approx_quantile_unsupported_dtype() -> None:
-    s = pl.Series("a", [b"a", b"b", b"c"], dtype=pl.Binary)
+    s = pl.Series("a", [object(), object()], dtype=pl.Object)
     with pytest.raises(InvalidOperationError):
         s.to_frame().select(pl.col("a").approx_quantile(0.5))
 
@@ -680,6 +723,22 @@ def test_approx_quantile_merged_rank_error(method: ApproxQuantileMethod) -> None
     # `values` is a permutation of `0..n`, so an item's rank is its own value.
     assert got in values
     assert abs(got - _rank(quantile, n)) / n <= error
+
+
+def test_approx_quantile_small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    n, error, quantile = 100_000, 0.01, 0.5
+    values = _shuffled(n)
+    got = (
+        pl.LazyFrame({"a": values})
+        .select(pl.col("a").approx_quantile(quantile, error=error, method="kll"))
+        .collect()
+        .item()
+    )
+
+    assert got in values
+    # `error` holds in 99.7% of runs; twice it keeps the test from flaking.
+    assert abs(got - _rank(quantile, n)) / n <= 2 * error
 
 
 @pytest.mark.slow
@@ -1042,13 +1101,13 @@ def test_agg_empty_sum_after_filter_14734() -> None:
         .collect
     )
 
-    last = f()
+    last = f(engine="in-memory")
 
-    # We need both possible output orders, which should happen within
-    # 1000 iterations (during testing it usually happens within 10).
+    # We need both possible output orders, which the in-memory engine gives
+    # within 1000 iterations (during testing it usually happens within 10).
     limit = 1000
     i = 0
-    while (curr := f()).equals(last):
+    while (curr := f(engine="in-memory")).equals(last):
         i += 1
         assert i != limit
 
@@ -1594,7 +1653,6 @@ def test_item_too_many(df: pl.DataFrame) -> None:
     df=dataframes(
         min_size=1,
         max_size=1,
-        allow_null=False,
         excluded_dtypes=[
             # TODO: polars/#24936
             pl.Struct,
@@ -1606,6 +1664,28 @@ def test_item_on_groups(df: pl.DataFrame) -> None:
     q = df.lazy().group_by("col0").agg(pl.all(ignore_nulls=False).item())
     assert_frame_equal(q.collect(), df)
     assert_frame_equal(q.collect(engine="streaming"), df)
+
+
+@pytest.mark.parametrize("value", [2.0, "x", True])
+def test_item_on_groups_null_29780(value: Any) -> None:
+    dtype = pl.Series([value]).dtype
+    df = pl.DataFrame({"g": [1, 2], "a": [None, value]})
+
+    q = df.lazy().group_by("g").agg(pl.col("a").item()).sort("g")
+    assert_frame_equal(q.collect(), df)
+
+    q = df.lazy().select(pl.col("a").item().over("g"))
+    assert_frame_equal(q.collect(), df.select("a"))
+
+    for values, allow_empty, expected in [
+        ([None, value], False, "a single value"),
+        ([None, None], True, "no or a single value"),
+    ]:
+        lf = pl.LazyFrame({"g": [1, 1], "a": values}, schema_overrides={"a": dtype})
+        q = lf.group_by("g").agg(pl.col("a").item(allow_empty=allow_empty))
+        match = f"aggregation 'item' expected {expected}, got 2 values"
+        with pytest.raises(ComputeError, match=match):
+            q.collect()
 
 
 def test_item_on_groups_empty() -> None:
@@ -1945,6 +2025,63 @@ def test_min_max_by_all_null_by_group(agg: Callable[..., pl.Expr]) -> None:
 
 
 @pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+@pytest.mark.parametrize(
+    "by",
+    [
+        pl.Series([float("nan")] * 2),
+        pl.Series([0] * 2, dtype=pl.UInt8),
+        pl.Series([-128] * 2, dtype=pl.Int8),
+        pl.Series([127] * 2, dtype=pl.Int8),
+        pl.Series([""] * 2),
+    ],
+)
+def test_min_max_by_extreme_keys_29760(
+    agg: Callable[..., pl.Expr], by: pl.Series
+) -> None:
+    lf = pl.LazyFrame({"v": [1, 1], "by": by})
+    out = lf.select(agg(pl.col("v"), pl.col("by"))).collect()
+    assert_frame_equal(out, pl.DataFrame({"v": [1]}))
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
+def test_min_max_by_scalar_inputs_29760(agg: Callable[..., pl.Expr]) -> None:
+    lf = pl.LazyFrame({"g": [1, 1, 1, 2, 2], "a": list(range(5))})
+    a = pl.col("a")
+
+    def select(e: pl.Expr, lf: pl.LazyFrame = lf) -> Any:
+        return lf.select(e).collect().item()
+
+    def agg_by_group(e: pl.Expr) -> list[Any]:
+        q = lf.group_by("g", maintain_order=True).agg(e)
+        return q.collect()["a"].to_list()
+
+    # A scalar `by` ties every row, so any row of the input may be returned.
+    assert select(agg(a, pl.lit(1))) in range(5)
+    assert select(agg(a, a.max())) in range(5)
+    assert select(agg(a, pl.lit(None, pl.Int64))) is None
+    first, second = agg_by_group(agg(a, a.max()))
+    assert first in range(3)
+    assert second in range(3, 5)
+    assert agg_by_group(agg(a, pl.lit(None, pl.Int64))) == [None, None]
+
+    # A scalar value is the result whenever `by` has a non-null key.
+    assert select(agg(pl.lit(7), a).alias("a")) == 7
+    assert select(agg(a.max(), a)) == 4
+    assert select(agg(pl.lit(7), a), lf.clear()) is None
+    assert agg_by_group(agg(pl.lit(7), a).alias("a")) == [7, 7]
+    assert agg_by_group(agg(a.max(), a)) == [2, 4]
+
+    # A unit-length group of a non-scalar expression is not broadcast.
+    for e in [agg(a, a.head(1)), agg(a.head(1), a)]:
+        with pytest.raises(pl.exceptions.ShapeError):
+            agg_by_group(e)
+
+    # The rolling kernel can't gather a scalar value with the key's positions.
+    q = lf.rolling("a", period="3i").agg(agg(pl.col("g").sum(), a).alias("s"))
+    assert q.collect()["s"].to_list() == [1, 2, 3, 4, 5]
+
+
+@pytest.mark.parametrize("agg", [pl.Expr.min_by, pl.Expr.max_by])
 def test_min_max_by_all_null_by_group_slice(agg: Callable[..., pl.Expr]) -> None:
     df = pl.DataFrame(
         {
@@ -1988,6 +2125,31 @@ def test_min_max_by_nested_by_group_by(
     lf = pl.LazyFrame({"g": [1, 1, 2, 2], "by": by, "v": ["a", "b", "c", "d"]})
     q = lf.group_by("g", maintain_order=True).agg(agg(pl.col("v"), pl.col("by")))
     assert_frame_equal(q.collect(), pl.DataFrame({"g": [1, 2], "v": expected}))
+
+
+@pytest.mark.parametrize(
+    ("agg", "expected"),
+    [(pl.Expr.min_by, [1, 5, None]), (pl.Expr.max_by, [3, 5, None])],
+)
+def test_min_max_by_row_encoded_value(
+    agg: Callable[..., pl.Expr], expected: list[int | None]
+) -> None:
+    lf = pl.LazyFrame(
+        {"g": [1, 1, 2, 2, 3], "x": [3, 1, None, 5, 7], "by": [2, 1, None, 4, None]}
+    )
+    q = lf.group_by("g", maintain_order=True).agg(
+        agg(pl.col("x")._row_encode(), pl.col("by")).cast(pl.Binary)
+    )
+    expected_x = [
+        None
+        if v is None
+        else pl.select(pl.lit(v, pl.Int64)._row_encode().cast(pl.Binary)).item()
+        for v in expected
+    ]
+    expected_df = pl.DataFrame(
+        {"g": [1, 2, 3], "x": pl.Series(expected_x, dtype=pl.Binary)}
+    )
+    assert_frame_equal(q.collect(), expected_df)
 
 
 @pytest.mark.parametrize(

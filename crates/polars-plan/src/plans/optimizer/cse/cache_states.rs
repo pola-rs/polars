@@ -13,8 +13,12 @@ use crate::plans::aexpr::ExprPushdownGroup;
 use crate::plans::aexpr::filter_constraint::widen_over_predicates;
 use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
+use crate::plans::optimizer::recursive_caches::caches_in_recursive_steps;
 use crate::plans::visitor::AexprNode;
-use crate::plans::{AExpr, ExecutionHooks, ExprIR, IR, PredicatePushDown, subplan_cost};
+use crate::plans::{
+    AExpr, ExecutionHooks, ExprIR, IR, PredicatePushDown, attach_dataset_scan_statistics,
+    subplan_cost,
+};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names_iter;
 
@@ -142,6 +146,7 @@ pub(crate) fn set_cache_states(
     streaming: bool,
     partition_hive: bool,
     row_estimate: bool,
+    has_recursive: bool,
     hooks: ExecutionHooks,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
@@ -311,6 +316,11 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
+        let caches_in_recursive_steps = if has_recursive {
+            caches_in_recursive_steps(root, lp_arena)
+        } else {
+            Default::default()
+        };
         let mut pred_pd =
             PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive, hooks);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
@@ -338,11 +348,18 @@ pub(crate) fn set_cache_states(
             // below it have their own predicates and get their own decision in a later iteration;
             // deleting them here would duplicate their subplan without any of them ever having
             // been evaluated.
-            if v.predicate_union.len() > 1 {
+            // A cache read in the step of a recursive query is kept, so all its readers in a
+            // round see the same values.
+            if v.predicate_union.len() > 1 && !caches_in_recursive_steps.contains(&cache_id) {
                 let mut replacements = Vec::with_capacity(v.cache_nodes.len());
                 let mut remove_caches = true;
                 // Summed over the copies; `None` once any of them is not modelled.
                 let mut removal_cost = row_estimate.then_some(0.0);
+                if row_estimate {
+                    for &child in &v.children {
+                        attach_dataset_scan_statistics(child, lp_arena, expr_arena);
+                    }
+                }
 
                 for (&cache, parents) in v.cache_nodes.iter().zip(v.parents.iter()) {
                     // Restart predicate and projection pushdown from most top parent.
@@ -595,11 +612,17 @@ fn get_filter_predicate(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<&Ex
     Some(predicate)
 }
 
+/// The filter directly above the cache, with only a `SimpleProjection` allowed in between. A
+/// filter above any other node may refer to columns that node computes or redefines.
 fn get_filter_node(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<Node> {
-    parents
-        .into_iter()
-        .flatten()
-        .find(|&parent| matches!(lp_arena.get(parent), IR::Filter { .. }))
+    for parent in parents.into_iter().flatten() {
+        match lp_arena.get(parent) {
+            IR::Filter { .. } => return Some(parent),
+            IR::SimpleProjection { .. } => {},
+            _ => return None,
+        }
+    }
+    None
 }
 
 /// Determine whether `predicate` was pushed down when running predicate pushdown on a cache-free

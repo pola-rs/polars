@@ -22,7 +22,7 @@ pub use into_groups::*;
 pub use position::*;
 
 use crate::chunked_array::ops::row_encode::{
-    encode_rows_unordered, encode_rows_vertical_par_unordered,
+    encode_rows_with_layout, encode_rows_with_layout_par, get_optimal_row_encoding_layout,
 };
 
 impl DataFrame {
@@ -85,12 +85,13 @@ impl DataFrame {
 
                 Ok(GroupsType::new_slice(groups, false, true))
             } else {
+                let opts = vec![RowEncodingOptions::new_unsorted(); by.len()];
+                let layout = get_optimal_row_encoding_layout(&by, &[], &opts);
                 let rows = if multithreaded {
-                    encode_rows_vertical_par_unordered(&by)
+                    encode_rows_with_layout_par(&by, &layout, false)?
                 } else {
-                    encode_rows_unordered(&by)
-                }?
-                .into_series();
+                    encode_rows_with_layout(&by, &layout, false)?
+                };
                 rows.group_tuples(multithreaded, sorted)
             }
         };

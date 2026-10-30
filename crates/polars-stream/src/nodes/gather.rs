@@ -70,15 +70,19 @@ impl ComputeNode for GatherNode {
                 recv[1..2].swap_with_slice(send);
             },
             GatherState::Done => {
-                recv[0] = PortState::Done;
+                recv.fill(PortState::Done);
                 send[0] = PortState::Done;
             },
         }
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self.state, GatherState::Sink(_))
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match self.state {
+            GatherState::Sink(_) => NodeMemoryUsage::Accumulating,
+            GatherState::Gather(_) => NodeMemoryUsage::HoldingUntilDone,
+            GatherState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

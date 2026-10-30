@@ -4,6 +4,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
+use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -11,12 +12,19 @@ use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "round_series")]
+use crate::dsl::Operator;
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::plans::IRStringFunction;
+#[cfg(feature = "round_series")]
+#[cfg(feature = "round_series")]
+use crate::plans::int_literal;
+use crate::plans::schema::join_right_output_names;
 use crate::plans::{
     AExpr, ExprIR, FunctionIR, HintIR, IR, IRFunctionExpr, Sorted, ToFieldContext,
     constant_evaluate, into_column,
 };
+use crate::prelude::{JoinType, MaintainOrderJoin};
 
 /// Container for sortedness state at each stage in an IR plan.
 #[derive(Debug)]
@@ -143,7 +151,8 @@ pub fn are_keys_sorted_any(
             expr_arena.get(key.node()),
             expr_arena,
             input_schema,
-            Some(&ir_sorted?.0[idx..]),
+            Some(ir_sorted?.0.get(idx..)?),
+            idx + 1 < keys.len(),
         )?;
         sortedness.push(s);
     }
@@ -164,6 +173,7 @@ pub fn expr_is_sorted(
         expr_arena,
         input_schema,
         ir_sorted.map(|s| s.0.as_ref()),
+        false,
     )
 }
 
@@ -389,30 +399,18 @@ fn is_sorted_rec(
             slice: _,
             sort_options,
         } => {
-            let mut s = by_column
+            let s = by_column
                 .iter()
-                .map_while(|e| {
+                .zip(&sort_options.descending)
+                .zip(&sort_options.nulls_last)
+                .map_while(|((e, &d), &nl)| {
                     into_column(e.node(), expr_arena).map(|c| Sorted {
                         column: c.clone(),
-                        descending: Some(false),
-                        nulls_last: Some(false),
+                        descending: Some(d),
+                        nulls_last: Some(nl),
                     })
                 })
                 .collect::<Vec<_>>();
-            if sort_options.descending.len() != 1 {
-                s.iter_mut()
-                    .zip(sort_options.descending.iter())
-                    .for_each(|(s, &d)| s.descending = Some(d));
-            } else if sort_options.descending[0] {
-                s.iter_mut().for_each(|s| s.descending = Some(true));
-            }
-            if sort_options.nulls_last.len() != 1 {
-                s.iter_mut()
-                    .zip(sort_options.nulls_last.iter())
-                    .for_each(|(s, &d)| s.nulls_last = Some(d));
-            } else if sort_options.nulls_last[0] {
-                s.iter_mut().for_each(|s| s.nulls_last = Some(true));
-            }
 
             Some(IRSorted(s.into()))
         },
@@ -490,7 +488,46 @@ fn is_sorted_rec(
         },
 
         IR::GroupBy { .. } => None,
-        IR::Join { .. } => None,
+        IR::Join {
+            input_left,
+            input_right,
+            schema: _,
+            options,
+        } => {
+            use MaintainOrderJoin as MO;
+            let args = &options.args;
+            let keeps_left_order = matches!(args.maintain_order, MO::Left | MO::LeftRight);
+            let keeps_right_order = matches!(args.maintain_order, MO::Right | MO::RightLeft);
+            // The output rows follow the rows of one side, each one kept zero or more times
+            // in a row, so the sorted columns of that side stay sorted.
+            match &args.how {
+                JoinType::Inner | JoinType::Left if keeps_left_order => rec!(*input_left),
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi | JoinType::Anti if keeps_left_order => rec!(*input_left),
+                JoinType::Inner | JoinType::Right if keeps_right_order => {
+                    let (input_left, input_right) = (*input_left, *input_right);
+                    let right_sorted = rec!(input_right)?;
+                    let left_schema = ir_arena.get(input_left).schema(ir_arena);
+                    let right_schema = ir_arena.get(input_right).schema(ir_arena);
+                    let output_names =
+                        join_right_output_names(&left_schema, &right_schema, options).ok()?;
+                    let sorted = right_sorted
+                        .0
+                        .iter()
+                        .map_while(|s| {
+                            let column = output_names[right_schema.index_of(&s.column)?].clone()?;
+                            Some(Sorted {
+                                column,
+                                descending: s.descending,
+                                nulls_last: s.nulls_last,
+                            })
+                        })
+                        .collect_vec();
+                    (!sorted.is_empty()).then(|| IRSorted(sorted.into()))
+                },
+                _ => None,
+            }
+        },
         IR::Gather {
             input,
             idxs,
@@ -610,6 +647,7 @@ fn is_sorted_rec(
             rec!(input)
         },
         IR::UnoptimizedDispatch { .. } => None,
+        IR::Recursive { .. } | IR::WorkingTableScan { .. } => None,
         IR::Resolver { resolved_ir, .. } => {
             if let Some(node) = *resolved_ir {
                 rec!(node)
@@ -633,7 +671,7 @@ fn first_expr_ir_sorted(
     input_sorted: Option<&[Sorted]>,
 ) -> Option<Sorted> {
     exprs.iter().find_map(|e| {
-        aexpr_sortedness(arena.get(e.node()), arena, schema, input_sorted).map(|s| Sorted {
+        aexpr_sortedness(arena.get(e.node()), arena, schema, input_sorted, false).map(|s| Sorted {
             column: e.output_name().clone(),
             descending: s.descending,
             nulls_last: s.nulls_last,
@@ -641,12 +679,17 @@ fn first_expr_ir_sorted(
     })
 }
 
+/// With `keep_distinct`, the expression must also keep different values different. This is needed
+/// for all but the last of several sort keys, as a key is only sorted among equal values of the
+/// keys before it. A value that does not come from the sorted column, such as a literal, does not
+/// keep them different.
 #[recursive::recursive]
 pub fn aexpr_sortedness(
     aexpr: &AExpr,
     arena: &Arena<AExpr>,
     schema: &Schema,
     input_sorted: Option<&[Sorted]>,
+    keep_distinct: bool,
 ) -> Option<AExprSorted> {
     match aexpr {
         AExpr::Element => None,
@@ -660,6 +703,7 @@ pub fn aexpr_sortedness(
         },
         #[cfg(feature = "dtype-struct")]
         AExpr::StructField(_) => None,
+        AExpr::Literal(_) | AExpr::Len | AExpr::Sort { .. } if keep_distinct => None,
         AExpr::Literal(lv) if lv.is_scalar() => Some(AExprSorted {
             descending: Some(false),
             nulls_last: Some(false),
@@ -673,15 +717,41 @@ pub fn aexpr_sortedness(
         AExpr::Cast {
             expr,
             dtype,
-            options: CastOptions::Strict,
-        } if dtype.is_integer() => {
+            options,
+        } if dtype.is_primitive_numeric() => {
             let expr = arena.get(*expr);
-            let expr_sortedness = aexpr_sortedness(expr, arena, schema, input_sorted)?;
+            let expr_sortedness =
+                aexpr_sortedness(expr, arena, schema, input_sorted, keep_distinct)?;
             let input_dtype = expr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?;
-            if !input_dtype.is_integer() {
+            // A strict integer cast raises instead of changing a value, and a widening cast keeps
+            // all values.
+            let keeps_values = match options {
+                CastOptions::Strict if dtype.is_integer() && input_dtype.is_integer() => true,
+                _ => {
+                    &input_dtype == dtype
+                        || get_numeric_upcast_supertype_lossless(&input_dtype, dtype).as_ref()
+                            == Some(dtype)
+                },
+            };
+            keeps_values.then_some(expr_sortedness)
+        },
+        // A cast to a wider Decimal keeps all values, so it can't fail or add nulls.
+        #[cfg(feature = "dtype-decimal")]
+        AExpr::Cast {
+            expr,
+            dtype: DataType::Decimal(prec, scale),
+            options: _,
+        } => {
+            let expr = arena.get(*expr);
+            let DataType::Decimal(input_prec, input_scale) =
+                expr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?
+            else {
+                return None;
+            };
+            if *scale < input_scale || prec - scale < input_prec - input_scale {
                 return None;
             }
-            Some(expr_sortedness)
+            aexpr_sortedness(expr, arena, schema, input_sorted, keep_distinct)
         },
         AExpr::Cast { .. } => None, // @TODO: More casts are allowed
         AExpr::Sort { expr: _, options } => Some(AExprSorted {
@@ -692,14 +762,57 @@ pub fn aexpr_sortedness(
             input,
             function,
             options: _,
-        } => function_expr_sortedness(function, input, arena, schema, input_sorted),
+        } => function_expr_sortedness(function, input, arena, schema, input_sorted, keep_distinct),
         AExpr::Filter { input, by: _ }
         | AExpr::Slice {
             input,
             offset: _,
             length: _,
-        } => aexpr_sortedness(arena.get(*input), arena, schema, input_sorted),
+        } => aexpr_sortedness(
+            arena.get(*input),
+            arena,
+            schema,
+            input_sorted,
+            keep_distinct,
+        ),
 
+        #[cfg(feature = "round_series")]
+        AExpr::BinaryExpr {
+            left,
+            op: Operator::Multiply,
+            right,
+        } => {
+            let (input, factor) = match (int_literal(*left, arena), int_literal(*right, arena)) {
+                (None, Some(factor)) => (*left, factor),
+                (Some(factor), None) => (*right, factor),
+                _ => return None,
+            };
+            // Integer multiplication wraps on overflow, so only allow it if the input has bounds
+            // that can't overflow.
+            let AExpr::Function {
+                input: clip_inputs,
+                function:
+                    IRFunctionExpr::Clip {
+                        has_min: true,
+                        has_max: true,
+                    },
+                ..
+            } = arena.get(input)
+            else {
+                return None;
+            };
+            let (min, max) = int_clip_bounds(clip_inputs, arena)?;
+            let dtype = aexpr.to_dtype(&ToFieldContext::new(arena, schema)).ok()?;
+            if factor <= 0 || !dtype.is_integer() {
+                return None;
+            }
+            let dtype_min = dtype.min().ok()?.value().extract::<i128>()?;
+            let dtype_max = dtype.max().ok()?.value().extract::<i128>()?;
+            if min.checked_mul(factor)? < dtype_min || max.checked_mul(factor)? > dtype_max {
+                return None;
+            }
+            aexpr_sortedness(arena.get(input), arena, schema, input_sorted, keep_distinct)
+        },
         AExpr::BinaryExpr { .. }
         | AExpr::Gather { .. }
         | AExpr::SortBy { .. }
@@ -724,12 +837,21 @@ pub fn function_expr_sortedness(
     arena: &Arena<AExpr>,
     schema: &Schema,
     input_sorted: Option<&[Sorted]>,
+    keep_distinct: bool,
 ) -> Option<AExprSorted> {
     macro_rules! rec_ae {
-        ($node:expr) => {{ aexpr_sortedness(arena.get($node), arena, schema, input_sorted) }};
+        ($node:expr) => {{ aexpr_sortedness(arena.get($node), arena, schema, input_sorted, keep_distinct) }};
     }
 
     match function {
+        // These can make different values equal or don't come from the sorted column.
+        #[cfg(feature = "rle")]
+        IRFunctionExpr::RLEID if keep_distinct => None,
+        IRFunctionExpr::SetSortedFlag(_)
+        | IRFunctionExpr::FillNullWithStrategy(
+            FillNullStrategy::Forward(None) | FillNullStrategy::Backward(None),
+        ) if keep_distinct => None,
+
         #[cfg(feature = "rle")]
         IRFunctionExpr::RLEID => Some(AExprSorted {
             descending: Some(false),
@@ -781,6 +903,42 @@ pub fn function_expr_sortedness(
             }
         },
 
+        IRFunctionExpr::ToPhysical => {
+            let [e] = inputs else {
+                return None;
+            };
+            // Categoricals don't sort by their physical value.
+            let dtype = arena
+                .get(e.node())
+                .to_dtype(&ToFieldContext::new(arena, schema))
+                .ok()?;
+            if !(dtype.is_primitive_numeric() || dtype.is_decimal() || dtype.is_temporal()) {
+                return None;
+            }
+            rec_ae!(e.node())
+        },
+
+        #[cfg(feature = "round_series")]
+        IRFunctionExpr::Clip {
+            has_min: true,
+            has_max: true,
+        } => {
+            // Clipping can make different values equal.
+            if keep_distinct {
+                return None;
+            }
+            int_clip_bounds(inputs, arena)?;
+            let e = inputs[0].node();
+            let dtype = arena
+                .get(e)
+                .to_dtype(&ToFieldContext::new(arena, schema))
+                .ok()?;
+            if !dtype.is_integer() {
+                return None;
+            }
+            rec_ae!(e)
+        },
+
         IRFunctionExpr::Reverse => {
             let [e] = inputs else {
                 return None;
@@ -804,4 +962,17 @@ pub fn function_expr_sortedness(
 
         _ => None,
     }
+}
+
+/// The bounds of `clip(x, min, max)` with integer literal bounds.
+#[cfg(feature = "round_series")]
+fn int_clip_bounds(inputs: &[ExprIR], arena: &Arena<AExpr>) -> Option<(i128, i128)> {
+    let [_, min, max] = inputs else {
+        return None;
+    };
+    let (min, max) = (
+        int_literal(min.node(), arena)?,
+        int_literal(max.node(), arena)?,
+    );
+    (min <= max).then_some((min, max))
 }

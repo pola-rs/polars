@@ -325,6 +325,17 @@ pub fn python_scan_predicate(
     Ok((predicate, predicate_serialized))
 }
 
+/// CSE adds its columns with a non-broadcasting `HStack`. If these columns can be
+/// shorter than the DataFrame, the DataFrame cannot be split by chunks.
+fn has_short_cse_input(input: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> bool {
+    match lp_arena.get(input) {
+        IR::HStack { exprs, options, .. } if !options.should_broadcast => {
+            !exprs.iter().all(|e| e.is_length_preserving(expr_arena))
+        },
+        _ => false,
+    }
+}
+
 #[recursive]
 fn create_physical_plan_impl(
     root: Node,
@@ -362,6 +373,7 @@ fn create_physical_plan_impl(
             IR::Scan { .. } // Needed for the streaming impl
                 | IR::Cache { .. } // Needed for plans branching from the same cache node
                 | IR::GroupBy { .. } // Needed for the streaming impl
+                | IR::Recursive { .. } // Needed for the streaming impl
                 | IR::Sink { // Needed for the streaming impl
                     payload:
                         SinkTypeIR::File(_) | SinkTypeIR::Partitioned { .. },
@@ -533,13 +545,16 @@ fn create_physical_plan_impl(
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            let short_cse_input = has_short_cse_input(input, lp_arena, expr_arena);
             let input = recurse!(input, state)?;
             let mut state =
                 ExpressionConversionState::new(RAYON.current_num_threads() > expr.len());
             let phys_expr =
                 create_physical_expressions_from_irs(&expr, expr_arena, &input_schema, &mut state)?;
 
-            let allow_vertical_parallelism = options.should_broadcast && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
+            let allow_vertical_parallelism = options.should_broadcast
+                && !short_cse_input
+                && expr.iter().all(|e| is_elementwise_rec(e.node(), expr_arena))
                 // If all columns are literal we would get a 1 row per thread.
                 && !phys_expr.iter().all(|p| {
                     p.is_literal()
@@ -797,9 +812,11 @@ fn create_physical_plan_impl(
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
+            let short_cse_input = has_short_cse_input(input, lp_arena, expr_arena);
             let input = recurse!(input, state)?;
 
             let allow_vertical_parallelism = options.should_broadcast
+                && !short_cse_input
                 && exprs
                     .iter()
                     .all(|e| is_elementwise_rec(e.node(), expr_arena));
@@ -885,6 +902,9 @@ fn create_physical_plan_impl(
             Ok(Box::new(exec))
         },
         UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
+        Recursive { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
+        // Only in the step of a `Recursive`, which runs on the streaming engine.
+        WorkingTableScan { .. } => unreachable!(),
         Resolver { resolved_ir, .. } => {
             let node = resolved_ir.expect("IR::Resolver not resolved at create_physical_plan_impl");
             recurse!(node, state)

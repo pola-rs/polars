@@ -1,0 +1,23 @@
+[package]
+name = "polars-io-ext-ffi"
+# Not versioned with the interfaces it defines: compatibility is decided by plugin IDs only.
+version = "0.1.0"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+publish = false
+repository = { workspace = true }
+description = "FFI contracts between Polars and its separately downloaded I/O plugins."
+
+[features]
+default = []
+# Contract `polars.io_plugin.iceberg.v1` (`iceberg_v1`). Features only control what is compiled;
+# they never change a plugin ID or layout.
+iceberg = []
+
+[dependencies]
+async-ffi = { workspace = true }
+
+[lints]
+workspace = true

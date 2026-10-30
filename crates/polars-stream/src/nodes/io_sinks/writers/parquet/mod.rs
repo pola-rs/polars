@@ -31,10 +31,48 @@ pub struct ParquetWriterStarter {
     pub row_group_size: Option<IdxSize>,
 }
 
+impl ParquetWriterStarter {
+    pub fn try_new(
+        options: Arc<ParquetWriteOptions>,
+        arrow_schema: ArrowSchemaRef,
+    ) -> PolarsResult<Self> {
+        let initialized_state = match &options.encryption_properties {
+            Some(encryption_properties) => {
+                // Check the encrypted columns exist before any file is opened, rather than
+                // when creating the writer for each file.
+                let state = InitializedState::new(&arrow_schema)?;
+                encryption_properties
+                    .0
+                    .validate_encrypted_column_names(&state.schema_descriptor)?;
+                Some(state)
+            },
+            None => None,
+        };
+
+        Ok(Self {
+            row_group_size: options
+                .row_group_size
+                .map(|x| IdxSize::try_from(x).unwrap()),
+            options,
+            arrow_schema,
+            initialized_state: std::sync::Mutex::new(initialized_state),
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct InitializedState {
     encodings: Buffer<Vec<Encoding>>,
     schema_descriptor: Arc<SchemaDescriptor>,
+}
+
+impl InitializedState {
+    fn new(arrow_schema: &ArrowSchemaRef) -> PolarsResult<Self> {
+        Ok(Self {
+            encodings: get_encodings(arrow_schema),
+            schema_descriptor: Arc::new(to_parquet_schema(arrow_schema)?),
+        })
+    }
 }
 
 struct EncodedRowGroup {
@@ -87,13 +125,7 @@ impl FileWriterStarter for ParquetWriterStarter {
             let mut initialized_state = self.initialized_state.lock().unwrap();
 
             if initialized_state.is_none() {
-                let schema_descriptor = Arc::new(to_parquet_schema(&self.arrow_schema)?);
-                let encodings = get_encodings(&self.arrow_schema);
-
-                *initialized_state = Some(InitializedState {
-                    encodings,
-                    schema_descriptor,
-                })
+                *initialized_state = Some(InitializedState::new(&self.arrow_schema)?)
             };
 
             initialized_state.clone().unwrap()
@@ -125,6 +157,11 @@ impl FileWriterStarter for ParquetWriterStarter {
                     encodings: Buffer::clone(&encodings),
                     key_value_metadata,
                     num_leaf_columns,
+                    encryption_properties: self
+                        .options
+                        .encryption_properties
+                        .as_ref()
+                        .map(|p| Arc::clone(&p.0)),
                 }
                 .run(),
             ),

@@ -36,7 +36,7 @@ from polars.exceptions import (
 )
 from polars.series.utils import _is_empty_method
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES, NUMERIC_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
@@ -1566,6 +1566,8 @@ def test_arg_sort() -> None:
         (pl.Series([None, 5, 1]), 2, 1),
         (pl.Series([float("nan"), 3.0, 5.0]), 1, 2),
         (pl.Series([None, float("nan"), 3.0, 5.0]), 2, 3),
+        (pl.Series([float("nan")] + [float("inf")] * 63), 1, 1),
+        (pl.Series([float("nan")] + [float("-inf")] * 63), 1, 1),
         # Boolean
         (pl.Series([True, False]), 1, 0),
         (pl.Series([True, True]), 0, 0),
@@ -1615,6 +1617,15 @@ def test_arg_min_arg_max(series: pl.Series, argmin: int, argmax: int) -> None:
 def test_arg_min_arg_max_all_nulls_or_empty(series: pl.Series) -> None:
     assert series.arg_min() is None
     assert series.arg_max() is None
+
+
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_arg_min_arg_max_nulls_chunked(dtype: pl.DataType) -> None:
+    values = [None if i % 7 == 0 else 10 + (i * 37) % 101 for i in range(300)]
+    s = pl.concat([pl.Series(values, dtype=dtype)] * 2, rechunk=False).slice(3, 500)
+    valid = [(v, i) for i, v in enumerate(s.to_list()) if v is not None]
+    assert s.arg_min() == min(valid)[1]
+    assert s.arg_max() == max(valid, key=lambda t: (t[0], -t[1]))[1]
 
 
 def test_arg_min_and_arg_max_sorted() -> None:
@@ -2355,6 +2366,22 @@ def test_comp_series_with_str_13123() -> None:
     assert_series_equal(s == "1", pl.Series([True, False, None]))
     assert_series_equal(s.eq_missing("1"), pl.Series([True, False, False]))
     assert_series_equal(s.ne_missing("1"), pl.Series([False, True, True]))
+
+
+def test_comp_series_with_ndarray_26164() -> None:
+    s = pl.Series(["a", "b"])
+    assert (s == np.array(["a", "c"])).to_list() == [True, False]
+
+    s = pl.Series([1, 2])
+    assert (s == np.array([1, 3])).to_list() == [True, False]
+    assert (s < np.array([2, 2])).to_list() == [True, False]
+
+    for dtype in [pl.List(pl.Int64), pl.Array(pl.Int64, 2)]:
+        s = pl.Series([[1, 2], [3, 4]], dtype=dtype)
+        with pytest.raises(TypeError, match="NumPy array"):
+            s == np.array([1, 2])  # noqa: B015
+        with pytest.raises(TypeError, match="NumPy array"):
+            s == np.array([[1, 2], [0, 4]])  # noqa: B015
 
 
 @pytest.mark.parametrize(

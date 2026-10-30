@@ -27,7 +27,9 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
 use super::runtime_filter::{KeyFilterBuilder, RuntimeFilters};
-use super::utils::JoinSampleStats;
+use super::utils::{
+    JoinSampleStats, LEFT_BUILD_MARGIN, REF_KEY_RATIO, UNIQUE_BUILD_MARGIN, UNIQUE_KEY_RATIO,
+};
 use super::{
     BufferedStream, LOPSIDED_SAMPLE_FACTOR, build_side_left, emit_morsel_size, sample_sink,
     select_key_columns, send_frames,
@@ -380,23 +382,6 @@ fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
 
     unsafe { DataFrame::new_unchecked(height, new_cols) }
 }
-
-/// A side with at least this key ratio is taken to have unique keys, allowing
-/// for some duplicates.
-const UNIQUE_KEY_RATIO: f64 = 0.9;
-
-/// A side with at most this key ratio is taken as referencing a side with
-/// unique keys.
-const REF_KEY_RATIO: f64 = 0.55;
-
-/// Extra weight against building a side referencing a side with unique keys.
-/// Referencing sides tend to keep growing and a prefix under-counts their
-/// repeats.
-const UNIQUE_BUILD_MARGIN: f64 = 8.0;
-
-/// How much smaller the left side's score must be for it to be built.
-/// This is used to make noisy near-50/50 decisions more stable.
-const LEFT_BUILD_MARGIN: f64 = 1.1;
 
 #[derive(Default)]
 struct SampleState {
@@ -1377,11 +1362,7 @@ impl EmitUnmatchedState {
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
-        let total_len: usize = self
-            .partitions
-            .iter()
-            .map(|p| p.hash_table.num_keys() as usize)
-            .sum();
+        let total_len: usize = self.partitions.iter().map(|p| p.payload.height()).sum();
         let morsel_size = emit_morsel_size(total_len, num_pipelines);
 
         let mut unmarked_idxs = Vec::new();
@@ -1743,11 +1724,16 @@ impl ComputeNode for EquiJoinNode {
         Ok(())
     }
 
-    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(
-            self.state,
-            EquiJoinState::Sample { .. } | EquiJoinState::Build { .. }
-        )
+    fn memory_usage(&self) -> NodeMemoryUsage {
+        match &self.state {
+            EquiJoinState::Sample(_) => NodeMemoryUsage::WillAccumulate,
+            EquiJoinState::Build(_) => NodeMemoryUsage::Accumulating,
+            EquiJoinState::Probe(_) | EquiJoinState::EmitUnmatchedBuild(_) => {
+                NodeMemoryUsage::HoldingUntilDone
+            },
+            EquiJoinState::EmitUnmatchedBuildInOrder(src) => src.memory_usage(),
+            EquiJoinState::Done => NodeMemoryUsage::Bounded,
+        }
     }
 
     fn spawn<'env, 's>(

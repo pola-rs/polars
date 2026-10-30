@@ -8,6 +8,12 @@ ignore = [
 
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
+
+  # crypto-bigint 0.5 comes via aws-sigv4 -> p256 -> elliptic-curve 0.13.
+  # Fix is only in 0.7.6 (semver-incompatible); nothing we depend on
+  # supports it yet. Only reached through polars-doc-examples.
+  # Remove once aws-sigv4 / p256 move to crypto-bigint >= 0.7.
+  "RUSTSEC-2026-0387",
 ]
 
 [licenses]

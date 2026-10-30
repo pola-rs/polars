@@ -10,6 +10,7 @@ use polars_io::cloud::concurrency_config::FetchConfig;
 #[cfg(feature = "csv")]
 use polars_io::metrics::IOMetrics;
 use polars_io::prelude::CsvReadOptions;
+use polars_io::utils::byte_source::FileReadContext;
 use polars_plan::dsl::ScanSource;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -18,12 +19,15 @@ use super::{CsvFileReader, DynByteSourceBuilder};
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
+use crate::nodes::io_sources::shared::file_init::CLOUD_PRE_INIT_LIMIT;
 
 pub struct CsvReaderBuilder {
     pub options: Arc<CsvReadOptions>,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    /// Shared with every file in the scan. Only relevant for `DynByteSourceBuilder::FilePread`.
+    pub file_read_context: std::sync::OnceLock<FileReadContext>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
     pub task_metrics: std::sync::OnceLock<Arc<TaskMetricAggregator>>,
 }
@@ -51,6 +55,10 @@ impl FileReaderBuilder for CsvReaderBuilder {
         } else {
             RC::PRE_SLICE
         })
+    }
+
+    fn preferred_remote_pre_init(&self) -> Option<usize> {
+        Some(CLOUD_PRE_INIT_LIMIT)
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
@@ -96,7 +104,7 @@ impl FileReaderBuilder for CsvReaderBuilder {
         _scan_source_idx: usize,
     ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
-        use crate::nodes::io_sources::csv::ChunkPrefetchSync;
+        use crate::nodes::io_sources::shared::file_init::ChunkPrefetchSync;
 
         let scan_source = source;
         let verbose = config::verbose();
@@ -105,8 +113,13 @@ impl FileReaderBuilder for CsvReaderBuilder {
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
                 DynByteSourceBuilder::ObjectStore(FetchConfig::streaming())
-            } else {
+            } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
+            } else {
+                let read_context = self
+                    .file_read_context
+                    .get_or_init(|| FileReadContext::from_config("CsvReaderBuilder"));
+                DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
         let reader = CsvFileReader {

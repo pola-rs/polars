@@ -21,10 +21,13 @@ from polars.testing.parametric.strategies.core import column, dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import AsofJoinStrategy, JoinStrategy, MaintainOrderJoin
+    from polars._typing import (
+        AsofJoinStrategy,
+        JoinBuildSide,
+        JoinStrategy,
+        MaintainOrderJoin,
+    )
     from tests.conftest import PlMonkeyPatch
-
-pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_full_outer_joins() -> None:
@@ -122,6 +125,20 @@ def test_streaming_cross_join_empty() -> None:
     out = df1.join(df2, how="cross").collect(engine="streaming")
     assert out.shape == (0, 2)
     assert out.columns == ["col1", "col1_right"]
+
+
+def test_streaming_cross_join_nullable_struct_probe() -> None:
+    # Each probe row is repeated once per build row, its validity included.
+    build = pl.LazyFrame({"a": [1, 2, 3]})
+    probe = pl.LazyFrame({"s": [{"x": 1}, None, {"x": 3}, None]})
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2, 3] * 4,
+            "s": [s for s in [{"x": 1}, None, {"x": 3}, None] for _ in range(3)],
+        }
+    )
+    out = build.join(probe, how="cross").collect(engine="streaming")
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 def test_streaming_join_rechunk_12498() -> None:
@@ -629,6 +646,93 @@ def test_merge_join_applicable(
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.parametrize(
+    ("how", "maintain_order", "coalesce"),
+    [
+        *(
+            (how, maintain_order, coalesce)
+            for how in ["inner", "left", "semi", "anti"]
+            for maintain_order in ["left", "left_right"]
+            for coalesce in [False, True]
+        ),
+        ("inner", "right", False),
+        ("inner", "right_left", False),
+        ("right", "right", False),
+        ("right", "right", True),
+        ("right", "right_left", True),
+    ],
+)
+def test_merge_join_after_order_maintaining_join(
+    how: JoinStrategy, maintain_order: MaintainOrderJoin, coalesce: bool
+) -> None:
+    # https://github.com/pola-rs/polars/issues/29841
+    sorted_lf = pl.LazyFrame({"a": [0, 1, 1, 3], "b": [1, 2, 3, 4]}).set_sorted("a")
+    other = pl.LazyFrame({"a": [1, 0, 2, 1], "c": [5, 6, 7, 8]})
+    if maintain_order.startswith("left"):
+        lf = sorted_lf.join(
+            other, on="a", how=how, maintain_order=maintain_order, coalesce=coalesce
+        )
+    else:
+        lf = other.join(
+            sorted_lf, on="a", how=how, maintain_order=maintain_order, coalesce=coalesce
+        )
+    key = "a_right" if not maintain_order.startswith("left") and not coalesce else "a"
+    lf = lf.select(pl.col(key).alias("key"), pl.exclude("a", "a_right"))
+
+    q = lf.join(
+        pl.LazyFrame({"key": [0, 1], "d": [9, 10]}).set_sorted("key"),
+        on="key",
+        how="left",
+        maintain_order="left",
+    )
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" in dot
+    out = q.collect(engine="streaming")
+    expected = q.collect(engine="in-memory")
+    # Several matches of one row may come in any order.
+    assert_series_equal(out["key"], expected["key"])
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
+_SORTED_LF = pl.LazyFrame({"a": [0, 1]}).set_sorted("a")
+_UNSORTED_LF = pl.LazyFrame({"a": [1, 0, 2]})
+
+
+@pytest.mark.parametrize(
+    ("lf", "maintain_order"),
+    [
+        pytest.param(
+            _SORTED_LF.join(_UNSORTED_LF, on="a", how="left"),
+            "left",
+            id="join-without-maintain-order",
+        ),
+        pytest.param(
+            _SORTED_LF.join(
+                _UNSORTED_LF, on="a", how="full", maintain_order="left", coalesce=True
+            ),
+            "left",
+            id="full-join-appends-unmatched-right-rows",
+        ),
+        pytest.param(
+            _UNSORTED_LF.join(_SORTED_LF, on="a", how="inner", maintain_order="left"),
+            "left",
+            id="join-keeps-order-of-unsorted-side",
+        ),
+        pytest.param(
+            _SORTED_LF.join(_UNSORTED_LF, on="a", how="left", maintain_order="left"),
+            "none",
+            id="order-not-observed",
+        ),
+    ],
+)
+def test_no_merge_join_after_join(
+    lf: pl.LazyFrame, maintain_order: MaintainOrderJoin
+) -> None:
+    q = lf.join(_SORTED_LF, on="a", how="left", maintain_order=maintain_order)
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "merge-join" not in dot
+
+
 @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize("coalesce", [False, True])
@@ -847,3 +951,138 @@ def test_streaming_join_unmatched_build_order_coalesce_29362(
     expected = q.collect(engine="in-memory")
     assert expected["row"].to_list() == list(range(9))
     assert_frame_equal(q.collect(engine="streaming"), expected)
+
+
+@pytest.mark.parametrize(
+    ("left_on", "merge_join"),
+    [
+        # Clipping can make different values equal, the next key is then not sorted.
+        ([pl.col("a").clip(0, 10), "b"], False),
+        ([pl.col("a").clip(0, 10) * 3, "b"], False),
+        (["a", pl.col("b").clip(0, 10)], True),
+    ],
+)
+def test_merge_join_clipped_key(left_on: list[pl.Expr | str], merge_join: bool) -> None:
+    left = pl.LazyFrame({"a": [-2, -1, 0, 0], "b": [2, 1, -2, -1]}).set_sorted("a", "b")
+    right = pl.LazyFrame({"a": [0, 0], "b": [0, 1]}).set_sorted("a", "b")
+    q = left.join(right, left_on=left_on, right_on=["a", "b"])
+
+    dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert ("merge-join" in str(dot)) == merge_join
+    expected = q.collect(engine="in-memory")
+    assert expected.height > 0
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("how", ["inner", "semi"])
+def test_streaming_join_empty_build_side_after_repeat(how: JoinStrategy) -> None:
+    # The join stops reading its probe side, which `repeat` must pass on.
+    lf = pl.LazyFrame({"a": [1, None, 3], "c": ["x", None, "y"]})
+    empty = pl.LazyFrame({"k": pl.Series([], dtype=pl.String)})
+    q = lf.filter(pl.repeat(True, pl.col("a").len())).join(
+        empty, left_on="c", right_on="k", how=how
+    )
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_merge_join_set_sorted_key() -> None:
+    # "c" does not come from the sorted column "a", so "b" is not sorted within it.
+    left = pl.LazyFrame(
+        {"a": [1, 1, 2, 2], "b": [1, 2, 1, 2], "c": [0, 0, 0, 0]}
+    ).set_sorted("a", "b")
+    right = pl.LazyFrame({"c": [0, 0], "b": [1, 2]}).set_sorted("c", "b")
+    q = left.join(right, left_on=[pl.col("c").set_sorted(), "b"], right_on=["c", "b"])
+    expected = q.collect(engine="in-memory")
+    assert expected.height == 4
+    assert_frame_equal(q.collect(engine="streaming"), expected, check_row_order=False)
+
+
+def _join_keys(k: pl.Expr, key_type: str) -> dict[str, pl.Expr]:
+    # Each key type uses a different kind of hash table.
+    if key_type == "int":
+        return {"k": k}
+    if key_type == "str":
+        return {"k": k.cast(pl.String)}
+    if key_type == "int, int":
+        return {"k": k, "k2": k % 3}
+    struct = pl.when(k.is_not_null()).then(pl.struct(a=k, b=k % 3))
+    if key_type == "struct":
+        return {"k": struct}
+    assert key_type == "struct, int"
+    return {"k": struct, "k2": k % 3}
+
+
+@pytest.mark.parametrize(
+    "key_type", ["int", "str", "int, int", "struct", "struct, int"]
+)
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+@pytest.mark.parametrize("build_side", ["force_left", "force_right"])
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize("maintain_order", ["none", "left_right", "right_left"])
+def test_streaming_join_unmatched_build_rows(
+    key_type: str,
+    how: JoinStrategy,
+    build_side: JoinBuildSide,
+    nulls_equal: bool,
+    maintain_order: MaintainOrderJoin,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Small morsels so the unmatched rows of a table are emitted in parts.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "7")
+    # Enough rows that a partition of the table spans several 64-row words.
+    i = pl.int_range(3000)
+    keys = _join_keys(pl.when(i % 7 != 0).then(i % 50), key_type)
+    left = pl.select([e.alias(n) for n, e in keys.items()], v=i).lazy()
+    i = pl.int_range(60)
+    # Both sides have keys without a match.
+    keys = _join_keys(pl.when(i % 5 != 0).then(i % 25 + 30), key_type)
+    right = pl.select([e.alias(n) for n, e in keys.items()], w=i).lazy()
+    q = left.join(
+        right,
+        on=list(keys),
+        how=how,
+        build_side=build_side,
+        nulls_equal=nulls_equal,
+        maintain_order=maintain_order,
+    )
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=maintain_order != "none",
+    )
+
+
+@pytest.mark.parametrize(
+    "key_type", ["int", "str", "int, int", "struct", "struct, int"]
+)
+def test_streaming_join_unmatched_repeated_key_morsels(
+    key_type: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # One key with many unmatched rows is not split into a morsel per row.
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100000")
+    keys = _join_keys(pl.lit(1, pl.Int64), key_type)
+    left = pl.select([e.alias(n) for n, e in keys.items()], v=pl.int_range(3000))
+    keys = _join_keys(pl.lit(2, pl.Int64), key_type)
+    right = pl.select([e.alias(n) for n, e in keys.items()], w=0)
+    q = left.lazy().join(
+        right.lazy(), on=list(keys), how="left", build_side="force_left"
+    )
+    out = q.collect(engine="streaming")
+    assert_frame_equal(out, q.collect(engine="in-memory"), check_row_order=False)
+    # At most a morsel per pipeline, there is one pipeline per thread.
+    assert out.n_chunks() <= pl.thread_pool_size()
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+def test_streaming_join_keeps_height_of_input_without_columns(
+    how: Literal["inner", "left", "right", "full"],
+) -> None:
+    # Only `id` is selected, so the left input keeps no columns.
+    left = pl.LazyFrame({"x": [10, 20, 30, 40]})
+    right = pl.LazyFrame({"id": [1, 2], "f": [True, False]})
+    q = left.join_where(right, pl.col("f"), how=how).select("id")
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )

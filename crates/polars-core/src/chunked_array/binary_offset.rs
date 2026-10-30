@@ -1,7 +1,7 @@
 use polars_error::PolarsResult;
-use polars_row::RowEncodingOptions;
+use polars_row::{RowEncodingOptions, RowEncodingOutput};
 
-use crate::prelude::{BinaryOffsetChunked, Field};
+use crate::prelude::{BinaryOffsetChunked, DataType, Field, IntoSeries};
 
 #[cfg(feature = "dtype-struct")]
 impl BinaryOffsetChunked {
@@ -14,14 +14,9 @@ impl BinaryOffsetChunked {
         assert_eq!(fields.len(), descending.len());
         assert_eq!(fields.len(), nulls_last.len());
 
-        let mut opts = Vec::with_capacity(fields.len());
-        opts.extend(
-            descending
-                .iter()
-                .zip(nulls_last)
-                .map(|(d, n)| RowEncodingOptions::new_sorted(*d, *n)),
-        );
-        crate::prelude::row_encode::row_encoding_decode(self, fields, &opts)
+        use super::ops::row_encode::ordered_opts;
+
+        self.row_decode(fields, &ordered_opts(descending, nulls_last))
     }
 
     pub fn row_decode_unordered(&self, fields: &[Field]) -> PolarsResult<super::StructChunked> {
@@ -30,6 +25,18 @@ impl BinaryOffsetChunked {
             RowEncodingOptions::new_unsorted(),
             fields.len(),
         ));
-        super::ops::row_encode::row_encoding_decode(self, fields, &opts)
+        self.row_decode(fields, &opts)
+    }
+
+    fn row_decode(
+        &self,
+        fields: &[Field],
+        opts: &[RowEncodingOptions],
+    ) -> PolarsResult<super::StructChunked> {
+        use super::ops::row_encode::{get_row_encoding_layout, row_encoding_decode};
+
+        let dtypes: Vec<DataType> = fields.iter().map(|f| f.dtype().clone()).collect();
+        let layout = get_row_encoding_layout(&dtypes, opts, RowEncodingOutput::AlwaysBinaryOffset);
+        row_encoding_decode(&self.clone().into_series(), fields, &layout)
     }
 }

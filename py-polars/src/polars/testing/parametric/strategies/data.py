@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import decimal
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal, cast
 from zoneinfo import ZoneInfo
 
@@ -196,7 +196,7 @@ def datetimes(
         max_value=max_value,
         timezones=st.just(time_zone_info),
         allow_imaginary=False,
-    ).map(lambda dt: dt.astimezone(timezone.utc).replace(tzinfo=None))
+    ).map(lambda dt: dt.astimezone(UTC).replace(tzinfo=None))
 
 
 def durations(time_unit: TimeUnit = "us") -> SearchStrategy[timedelta]:

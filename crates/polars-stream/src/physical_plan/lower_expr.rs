@@ -2,7 +2,6 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::datatypes::AnyValue;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
@@ -40,7 +39,8 @@ use crate::physical_plan::lower_group_by::{
     GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
 };
 use crate::physical_plan::lower_ir::{
-    build_filter_stream_with_ctx, build_row_idx_stream, build_slice_stream,
+    add_row_idx_sort_key, build_filter_stream_with_ctx, build_row_idx_stream, build_slice_stream,
+    build_top_k_stream,
 };
 use crate::unique_column_name;
 
@@ -77,6 +77,7 @@ impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
         Self {
             prepare_visualization: value.prepare_visualization,
             sortedness: value.sortedness,
+            recursive_inputs: None,
         }
     }
 }
@@ -85,6 +86,7 @@ impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
         Self {
             prepare_visualization: value.prepare_visualization,
             sortedness: value.sortedness,
+            recursive_inputs: None,
         }
     }
 }
@@ -107,7 +109,10 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr, arena: &Arena<AExpr>) -
                     !is_single_literal_ae(input[1].node(), arena)
                 },
                 #[cfg(feature = "replace")]
-                F::Replace | F::ReplaceStrict { .. } => true,
+                F::Replace | F::ReplaceStrict { .. } => {
+                    !(is_single_literal_ae(input[1].node(), arena)
+                        && is_single_literal_ae(input[2].node(), arena))
+                },
                 _ => false,
             }
         },
@@ -893,6 +898,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                         sortedness: ctx.sortedness,
+                        recursive_inputs: None,
                     },
                     false,
                 )?;
@@ -957,6 +963,7 @@ fn lower_exprs_with_ctx(
                     StreamingLowerIRContext {
                         prepare_visualization: ctx.prepare_visualization,
                         sortedness: ctx.sortedness,
+                        recursive_inputs: None,
                     },
                     false,
                 )?;
@@ -1049,6 +1056,33 @@ fn lower_exprs_with_ctx(
                 transformed_exprs
                     .push(AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena).node());
                 input_streams.insert(stream);
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Reverse,
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+                let input_schema = input.output_schema(ctx.phys_sm);
+                let value_key = unique_column_name();
+                let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
+
+                // Narrow the input stream to just the column we reverse.
+                let input_stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::Reverse {
+                    input: input_stream,
+                };
+                let output_schema = Schema::from_iter([(value_key.clone(), value_dtype.clone())]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
             AExpr::Function {
@@ -1177,6 +1211,7 @@ fn lower_exprs_with_ctx(
                     },
                     output_bool: true,
                     runtime_filters: Vec::new(),
+                    estimated_rows: None,
                 };
 
                 // SemiAntiJoin with output_bool returns a column with the same name as the first
@@ -1509,90 +1544,40 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
             },
 
-            // pl.row_index() maps to this.
+            // pl.row_index() and pl.int_range(0, pl.len()) map to this.
             #[cfg(feature = "range")]
-            AExpr::Function {
-                input: ref inner_exprs,
-                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
-                options: _,
-            } if {
-                let start_is_zero = match ctx.expr_arena.get(inner_exprs[0].node()) {
-                    AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
-                    _ => false,
-                };
-                let stop_is_len = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Len);
-
-                dtype == DataType::IDX_DTYPE && start_is_zero && stop_is_len
-            } =>
+            AExpr::Function { .. }
+                if let Some((length, dtype)) = int_range_over_length_ae(expr, ctx.expr_arena) =>
             {
-                let out_name = unique_column_name();
-                let row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
-                let row_idx_col_expr_ir =
-                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
-                let row_idx_stream = build_select_stream_with_ctx(
-                    build_row_idx_stream(input, out_name, None, ctx.phys_sm),
-                    &[row_idx_col_expr_ir],
-                    ctx,
-                )?;
-                input_streams.insert(row_idx_stream);
-                transformed_exprs.push(row_idx_col_aexpr);
-            },
-
-            #[cfg(feature = "range")]
-            AExpr::Function {
-                input: ref inner_exprs,
-                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
-                options: _,
-            } if {
-                let start_is_zero = match ctx.expr_arena.get(inner_exprs[0].node()) {
-                    AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
-                    _ => false,
+                // `count()` numbers the values of its input that it counts, not the rows.
+                let input = match ctx.expr_arena.get(length) {
+                    AExpr::Agg(IRAggExpr::Count {
+                        input: input_expr,
+                        include_nulls,
+                    }) => {
+                        let (input_expr, include_nulls) = (*input_expr, *include_nulls);
+                        let mut input_expr = AExprBuilder::new_from_node(input_expr);
+                        if !include_nulls {
+                            input_expr = input_expr.drop_nulls(ctx.expr_arena);
+                        }
+                        let input_expr = input_expr.expr_ir_retain_name(ctx.expr_arena);
+                        build_select_stream_with_ctx(input, &[input_expr], ctx)?
+                    },
+                    _ => input,
                 };
-                let stop_is_count = matches!(
-                    ctx.expr_arena.get(inner_exprs[1].node()),
-                    AExpr::Agg(IRAggExpr::Count { .. })
-                );
-
-                start_is_zero && stop_is_count
-            } =>
-            {
-                let AExpr::Agg(IRAggExpr::Count {
-                    input: input_expr,
-                    include_nulls,
-                }) = ctx.expr_arena.get(inner_exprs[1].node())
-                else {
-                    unreachable!();
-                };
-                let (input_expr, include_nulls) = (*input_expr, *include_nulls);
 
                 let out_name = unique_column_name();
-                let mut row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+                let mut row_idx = AExprBuilder::col(out_name.clone(), ctx.expr_arena);
                 if dtype != IDX_DTYPE {
-                    row_idx_col_aexpr = AExprBuilder::new_from_node(row_idx_col_aexpr)
-                        .cast(dtype, ctx.expr_arena)
-                        .node();
+                    row_idx = row_idx.cast(dtype, ctx.expr_arena);
                 }
-                let row_idx_col_expr_ir =
-                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
-
-                let mut input_expr = AExprBuilder::new_from_node(input_expr);
-                if !include_nulls {
-                    input_expr = input_expr.drop_nulls(ctx.expr_arena);
-                }
-                let input_expr = input_expr.expr_ir_retain_name(ctx.expr_arena);
-
                 let row_idx_stream = build_select_stream_with_ctx(
-                    build_row_idx_stream(
-                        build_select_stream_with_ctx(input, &[input_expr], ctx)?,
-                        out_name,
-                        None,
-                        ctx.phys_sm,
-                    ),
-                    &[row_idx_col_expr_ir],
+                    build_row_idx_stream(input, out_name.clone(), None, ctx.phys_sm),
+                    &[row_idx.expr_ir(out_name.clone())],
                     ctx,
                 )?;
                 input_streams.insert(row_idx_stream);
-                transformed_exprs.push(row_idx_col_aexpr);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
             #[cfg(all(feature = "strings", feature = "temporal"))]
@@ -1978,10 +1963,9 @@ fn lower_exprs_with_ctx(
                 let select_stream =
                     build_select_stream_with_ctx(input, std::slice::from_ref(&inner_expr_ir), ctx)?;
                 let col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
-                let sort_stream = build_sort_stream_with_ctx(
+                let sort_stream = build_limited_sort_stream_with_ctx(
                     select_stream,
                     vec![ExprIR::new(col_expr, OutputName::Alias(sorted_name))],
-                    None,
                     (&options).into(),
                     ctx,
                 )?;
@@ -2014,8 +1998,12 @@ fn lower_exprs_with_ctx(
                         )
                     })
                     .collect();
-                let sort_stream =
-                    build_sort_stream_with_ctx(select_stream, by_column, None, sort_options, ctx)?;
+                let sort_stream = build_limited_sort_stream_with_ctx(
+                    select_stream,
+                    by_column,
+                    sort_options,
+                    ctx,
+                )?;
 
                 let sorted_col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
                 input_streams.insert(sort_stream);
@@ -2287,8 +2275,8 @@ fn lower_exprs_with_ctx(
                         | IRBooleanFunction::IsEmpty { .. }
                         | IRBooleanFunction::HasNulls,
                     )
-                    | IRFunctionExpr::MinBy
-                    | IRFunctionExpr::MaxBy
+                    | IRFunctionExpr::MinBy { .. }
+                    | IRFunctionExpr::MaxBy { .. }
                     | IRFunctionExpr::NullCount,
                 ..
             } => {
@@ -2509,9 +2497,13 @@ fn lower_exprs_with_ctx(
                 let idx_builder = AExprBuilder::col(idx_name.clone(), ctx.expr_arena);
                 let col_builder = AExprBuilder::col(col_name.clone(), ctx.expr_arena);
                 let min_max_by_node = if func == IRFunctionExpr::ArgMin {
-                    idx_builder.min_by(col_builder, ctx.expr_arena).node()
+                    idx_builder
+                        .min_by(col_builder, MinMaxByOrder::SkipNulls, ctx.expr_arena)
+                        .node()
                 } else {
-                    idx_builder.max_by(col_builder, ctx.expr_arena).node()
+                    idx_builder
+                        .max_by(col_builder, MinMaxByOrder::SkipNulls, ctx.expr_arena)
+                        .node()
                 };
 
                 let (trans_stream, trans_node) =
@@ -3086,6 +3078,33 @@ pub(crate) fn build_hstack_stream_with_ctx(
     }
 }
 
+/// An expression with one row per row of an input with `input_schema`, which keeps the
+/// input from being replaced when the other expressions read none of its columns.
+pub(crate) fn input_height_expr(input_schema: &Schema, expr_arena: &mut Arena<AExpr>) -> Node {
+    let height_ae = if let Some(name) = input_schema.iter_names_cloned().next() {
+        AExpr::Column(name)
+    } else {
+        let function = IRFunctionExpr::Repeat;
+        let options = function.function_options();
+
+        // repeat(lit({}), len()), where len() counts all rows of the input.
+        let value = expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+            DataType::Struct(vec![]),
+            AnyValue::StructOwned(Box::new((vec![], vec![]))),
+        ))));
+        let n = expr_arena.add(AExpr::Len);
+        AExpr::Function {
+            input: vec![
+                ExprIR::from_node(value, expr_arena),
+                ExprIR::from_node(n, expr_arena),
+            ],
+            function,
+            options,
+        }
+    };
+    expr_arena.add(height_ae)
+}
+
 /// Builds a new selection node given an input stream and the expressions to
 /// select for, if needed. Preserves the length of the input, like in with_columns.
 fn build_length_preserving_select_stream_with_ctx(
@@ -3105,31 +3124,7 @@ fn build_length_preserving_select_stream_with_ctx(
     // remove it from the final selector. This should ensure scalars gets zipped
     // back to the input to broadcast them.
     let tmp_name = unique_column_name();
-    let height_ae = if let Some(name) = input_schema.iter_names_cloned().next() {
-        AExpr::Column(name)
-    } else {
-        let function = IRFunctionExpr::Repeat;
-        let options = function.function_options();
-
-        // repeat(lit({}), len()) within each morsel.
-        let value = ctx
-            .expr_arena
-            .add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
-                DataType::Struct(vec![]),
-                AnyValue::StructOwned(Box::new((vec![], vec![]))),
-            ))));
-        let n = ctx.expr_arena.add(AExpr::Len);
-        AExpr::Function {
-            input: vec![
-                ExprIR::from_node(value, ctx.expr_arena),
-                ExprIR::from_node(n, ctx.expr_arena),
-            ],
-            function,
-            options,
-        }
-    };
-
-    let height_col = ctx.expr_arena.add(height_ae);
+    let height_col = input_height_expr(input_schema, ctx.expr_arena);
     let mut tmp_exprs = Vec::with_capacity(exprs.len() + 1);
     tmp_exprs.extend(exprs.iter().cloned());
     tmp_exprs.push(ExprIR::new(height_col, OutputName::Alias(tmp_name.clone())));
@@ -3165,8 +3160,6 @@ pub(crate) fn build_sort_stream_with_ctx(
     }
     let input_schema = input.output_schema(ctx.phys_sm).clone();
 
-    _broadcast_bools(by_column.len(), &mut sort_options.descending);
-    _broadcast_bools(by_column.len(), &mut sort_options.nulls_last);
     assert_eq!(sort_options.descending.len(), by_column.len());
     assert_eq!(sort_options.nulls_last.len(), by_column.len());
 
@@ -3213,8 +3206,8 @@ pub(crate) fn build_sort_stream_with_ctx(
                 RowEncodingVariant::Ordered {
                     descending: Some(std::mem::take(&mut sort_options.descending)),
                     nulls_last: Some(std::mem::take(&mut sort_options.nulls_last)),
-                    broadcast_nulls: None,
                 },
+                false,
                 ctx.expr_arena,
             );
             // The order is folded into the encoding, which has no nulls.
@@ -3258,6 +3251,39 @@ pub(crate) fn build_sort_stream_with_ctx(
         stream = build_select_stream_with_ctx(stream, &output_exprs, ctx)?;
     }
     Ok(stream)
+}
+
+/// As [`build_sort_stream_with_ctx`], but if the sort has a limit, a top-k node first drops the
+/// rows after the limit.
+fn build_limited_sort_stream_with_ctx(
+    mut input: PhysStream,
+    mut by_column: Vec<ExprIR>,
+    mut sort_options: SortMultipleOptions,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<PhysStream> {
+    if let Some(limit) = sort_options.limit {
+        if sort_options.maintain_order {
+            input = add_row_idx_sort_key(
+                input,
+                &mut by_column,
+                &mut sort_options,
+                ctx.expr_arena,
+                ctx.phys_sm,
+            );
+        }
+        #[allow(clippy::unnecessary_cast)]
+        let k = limit as u64;
+        input = build_top_k_stream(
+            input,
+            by_column.clone(),
+            &sort_options,
+            k,
+            None,
+            ctx.expr_arena,
+            ctx.phys_sm,
+        );
+    }
+    build_sort_stream_with_ctx(input, by_column, None, sort_options, ctx)
 }
 
 /// Builds a sort node given an input stream and the columns to sort by.
