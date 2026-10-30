@@ -667,3 +667,23 @@ def test_string_trim(foods_ipc_path: Path) -> None:
         lf.sql(
             "SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self"
         ).collect()
+
+
+def test_string_repeat() -> None:
+    df = pl.DataFrame({"s": ["ab", "c", "d", None], "n": [2, 0, -1, 1]})
+    res = df.sql(
+        """
+        SELECT
+          REPEAT(s, n) AS r1,
+          REPEAT('*', n) AS r2,
+          REPEAT(s, 2) AS r3,
+          REPEAT(s, NULL) AS r4
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "r1": ["abab", "", "", None],
+        "r2": ["**", "", "", "*"],
+        "r3": ["abab", "cc", "dd", None],
+        "r4": [None, None, None, None],
+    }
