@@ -42,6 +42,7 @@ use crate::sql_visitors::{
     contains_random, expr_contains_subquery, expr_has_window_functions, has_column_selector,
     is_subquery_expr,
 };
+use crate::subquery_outer_select::reads_inner_column;
 use crate::subquery_pull_up::ScopeColumns;
 use crate::{SQLContext, col, unique_column_name};
 
@@ -873,10 +874,11 @@ impl SQLContext {
         }))
     }
 
-    // `values` sorted by the `ORDER BY` of a `LIMIT 1` subquery, whose first value
-    // is then its result. The sort keys are pushed onto `row_columns`, to be
-    // computed per inner row. `None` for an order that isn't read from the inner
-    // row alone.
+    // `values` sorted by the `ORDER BY` of a subquery with a limit, which then keeps
+    // its first values. The sort keys are pushed onto `row_columns`, to be computed
+    // per inner row. A key that is a column of the outer query (`outer_ctx` over
+    // `outer_schema`) is the same for all values of an outer row, and is skipped.
+    // `None` for any other order that isn't read from the inner row alone.
     #[allow(clippy::too_many_arguments)]
     fn try_first_row_order(
         &mut self,
@@ -886,6 +888,8 @@ impl SQLContext {
         prefix: &str,
         inner_names: &[RelationName],
         inner_schema: &Schema,
+        outer_ctx: &mut SQLContext,
+        outer_schema: &Schema,
         row_columns: &mut Vec<Expr>,
     ) -> PolarsResult<Option<Expr>> {
         let Some(order_by) = &subquery.order_by else {
@@ -929,10 +933,32 @@ impl SQLContext {
                     ctx.try_parse_inner_only_expr(&ob.expr, inner_names, inner_schema)
                 })?
                 else {
+                    // A name of the output may not be read as an outer column.
+                    let reads_alias = alias.is_some_and(|alias| {
+                        visit_expressions(&ob.expr, |e| match e {
+                            SQLExpr::Identifier(ident) if ident.value == alias.value => {
+                                ControlFlow::Break(())
+                            },
+                            _ => ControlFlow::Continue(()),
+                        })
+                        .is_break()
+                    });
+                    let reads_outer_only = !reads_alias
+                        && !reads_inner_column(&ob.expr, inner_names, inner_schema)
+                        && !expr_contains_subquery(&ob.expr)
+                        && matches!(
+                            outer_ctx.try_parse_outer_only_expr(&ob.expr, outer_schema),
+                            Ok(Some(Expr::Column(_)))
+                        );
+                    if reads_outer_only {
+                        continue;
+                    }
                     return Ok(None);
                 };
+                // The keys are computed before the inner rows are split per outer row.
                 if has_marked_aggregate(&key)
                     || has_expr(&key, |e| matches!(e, Expr::SubPlan(_, _)))
+                    || !is_elementwise_over(&key, inner_schema)
                 {
                     return Ok(None);
                 }
@@ -944,6 +970,9 @@ impl SQLContext {
             by.push(key);
             descending.push(options.descending);
             nulls_last.push(options.nulls_last);
+        }
+        if by.is_empty() {
+            return Ok(Some(values));
         }
         Ok(Some(
             values.sort_by(
@@ -1648,6 +1677,8 @@ impl SQLContext {
                         &prefix,
                         &inner_names,
                         &inner_schema,
+                        self,
+                        outer_schema,
                         &mut row_columns,
                     )?
                     else {
@@ -1821,10 +1852,16 @@ impl SQLContext {
         lhs: &SQLExpr,
         subquery: &Query,
     ) -> PolarsResult<Option<(LazyFrame, PlSmallStr)>> {
-        let Some(select) = eligible_subquery_select(subquery) else {
+        let Some(row_range) = literal_row_range(subquery) else {
             return Ok(None);
         };
-        if matches!(&select.distinct, Some(Distinct::On(_))) {
+        let Some(select) = eligible_subquery_body(subquery) else {
+            return Ok(None);
+        };
+        // A limit applies to the distinct values, which are not kept in order.
+        if matches!(&select.distinct, Some(Distinct::On(_)))
+            || (row_range.is_some() && select.distinct.is_some())
+        {
             return Ok(None);
         }
         let [SelectItem::UnnamedExpr(proj) | SelectItem::ExprWithAlias { expr: proj, .. }] =
@@ -1869,8 +1906,57 @@ impl SQLContext {
             return Ok(None);
         }
         let value = strip_aggregate_marks(value).meta().undo_aliases();
+        // With a limit, the values are sliced per outer row, so there must be one per
+        // inner row: read from its own row alone, and not a constant.
+        if row_range.is_some()
+            && (!is_elementwise_over(&value, &inner_schema)
+                || expr_to_leaf_column_names_iter(&value).next().is_none())
+        {
+            return Ok(None);
+        }
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        // With a limit, the candidates of an outer row are its first values in the
+        // subquery's order. The values and sort keys are computed per outer row, so
+        // only on its matching inner rows.
+        let value = match row_range {
+            None => value,
+            Some((offset, len)) => {
+                let alias = match &select.projection[0] {
+                    SelectItem::ExprWithAlias { alias, .. } => Some(alias),
+                    _ => None,
+                };
+                let mut keys: Vec<Expr> = Vec::new();
+                let Some(ordered) = ctx.try_first_row_order(
+                    subquery,
+                    alias,
+                    value,
+                    &prefix,
+                    &inner_names,
+                    &inner_schema,
+                    self,
+                    outer_schema,
+                    &mut keys,
+                )?
+                else {
+                    return Ok(None);
+                };
+                ordered
+                    .map_expr(|e| match e {
+                        Expr::Column(name) => keys
+                            .iter()
+                            .find_map(|key| match key {
+                                Expr::Alias(key, key_name) if *key_name == name => {
+                                    Some(key.as_ref().clone())
+                                },
+                                _ => None,
+                            })
+                            .unwrap_or(Expr::Column(name)),
+                        other => other,
+                    })
+                    .slice(lit(offset), lit(len))
+            },
+        };
         let Some((corr_preds, general, local_filters)) = ctx.split_correlation_conjuncts(
             &selection,
             &inner_names,
@@ -2931,6 +3017,56 @@ pub(crate) fn first_row_limit(subquery: &Query) -> Option<bool> {
         ) if quantity.as_ref().is_none_or(is_one) => Some(true),
         _ => None,
     }
+}
+
+// The rows the `LIMIT`/`OFFSET` or `FETCH FIRST` of `subquery` keeps, as an offset and a
+// count: `Some(None)` without a limit, `None` for one that isn't literal counts.
+fn literal_row_range(subquery: &Query) -> Option<Option<(u64, u64)>> {
+    let count = |e: &SQLExpr| match e {
+        SQLExpr::Value(ValueWithSpan {
+            value: SQLValue::Number(n, _),
+            ..
+        }) => n.parse::<i64>().ok().and_then(|n| u64::try_from(n).ok()),
+        _ => None,
+    };
+    let range = match (&subquery.limit_clause, &subquery.fetch) {
+        (None, None) => return Some(None),
+        (
+            Some(LimitClause::LimitOffset {
+                limit: Some(limit),
+                offset,
+                limit_by,
+            }),
+            None,
+        ) if limit_by.is_empty() => {
+            let offset = offset.as_ref().map_or(Some(0), |o| count(&o.value))?;
+            (offset, count(limit)?)
+        },
+        (Some(LimitClause::OffsetCommaLimit { offset, limit }), None) => {
+            (count(offset)?, count(limit)?)
+        },
+        (
+            limit_clause,
+            Some(Fetch {
+                with_ties: false,
+                percent: false,
+                quantity,
+            }),
+        ) => {
+            let offset = match limit_clause {
+                None => 0,
+                Some(LimitClause::LimitOffset {
+                    limit: None,
+                    offset: Some(offset),
+                    limit_by,
+                }) if limit_by.is_empty() => count(&offset.value)?,
+                _ => return None,
+            };
+            (offset, quantity.as_ref().map_or(Some(1), count)?)
+        },
+        _ => return None,
+    };
+    Some(Some(range))
 }
 
 // `eligible_subquery_select` without the limit check.
