@@ -593,3 +593,28 @@ def test_except_intersect_cast_overflow_raises(op: str) -> None:
     """
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.sql(query, eager=True)
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT"])
+def test_except_intersect_struct_fields_by_name(op: str) -> None:
+    # Struct fields are matched by name, as in UNION.
+    df = pl.DataFrame(
+        {"ab": [{"a": 1, "b": 2}], "ba": [{"b": 2, "a": 1}], "a": [{"a": 1}]}
+    )
+    res = df.sql(f"SELECT ab AS s FROM self {op} SELECT ba AS s FROM self")
+    assert res["s"].to_list() == ([] if op == "EXCEPT" else [{"a": 1, "b": 2}])
+    res = df.sql(f"SELECT a AS s FROM self {op} SELECT ab AS s FROM self")
+    assert res["s"].to_list() == ([{"a": 1, "b": None}] if op == "EXCEPT" else [])
+
+
+@pytest.mark.parametrize("op", ["EXCEPT", "INTERSECT"])
+def test_except_intersect_struct_cast_overflow_raises(op: str) -> None:
+    df = pl.DataFrame(
+        {"l": [{"a": Decimal(10**37)}], "r": [{"a": None, "b": 1}]},
+        schema={
+            "l": pl.Struct({"a": pl.Decimal(38, 0)}),
+            "r": pl.Struct({"a": pl.Decimal(38, 2), "b": pl.Int64}),
+        },
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.sql(f"SELECT l AS s FROM self {op} SELECT r AS s FROM self")

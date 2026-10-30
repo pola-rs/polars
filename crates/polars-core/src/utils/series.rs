@@ -64,6 +64,47 @@ pub fn check_is_valid_struct_cast(
     }
 }
 
+/// Return `input_dtype` with its struct fields reordered and completed as in `output_dtype`,
+/// matched by name.
+///
+/// Matched fields keep their `input_dtype` dtype and missing fields get their `output_dtype`
+/// dtype. A struct with fields that are not in `output_dtype` is left as is. A non-strict cast to
+/// the result, followed by a strict cast to `output_dtype`, aligns struct fields by name while
+/// value conversions stay strict.
+pub fn match_struct_fields(input_dtype: &DataType, output_dtype: &DataType) -> DataType {
+    use DataType as D;
+
+    match (input_dtype, output_dtype) {
+        #[cfg(feature = "dtype-struct")]
+        (D::Struct(l_fields), D::Struct(r_fields)) => {
+            if !l_fields
+                .iter()
+                .all(|l| r_fields.iter().any(|r| r.name() == l.name()))
+            {
+                return input_dtype.clone();
+            }
+            let fields =
+                r_fields
+                    .iter()
+                    .map(|r| match l_fields.iter().find(|l| l.name() == r.name()) {
+                        Some(l) => {
+                            Field::new(r.name().clone(), match_struct_fields(l.dtype(), r.dtype()))
+                        },
+                        None => r.clone(),
+                    });
+            D::Struct(fields.collect())
+        },
+        (D::List(l), D::List(r)) => D::List(Box::new(match_struct_fields(l, r))),
+        #[cfg(feature = "dtype-array")]
+        (D::Array(l, width), D::Array(r, _) | D::List(r)) => {
+            D::Array(Box::new(match_struct_fields(l, r)), *width)
+        },
+        #[cfg(feature = "dtype-array")]
+        (D::List(l), D::Array(r, _)) => D::List(Box::new(match_struct_fields(l, r))),
+        _ => input_dtype.clone(),
+    }
+}
+
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     check_is_valid_struct_cast(input.dtype(), output.dtype(), output.name())?;
 
