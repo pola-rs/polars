@@ -11,6 +11,7 @@ import pytest
 import polars as pl
 from polars._plr import _expr_nodes, _ir_nodes  # type: ignore[attr-defined]
 from polars._utils.wrap import wrap_df, wrap_expr
+from polars.functions.lazy import _row_encode
 from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
@@ -383,55 +384,6 @@ def test_rolling_expr_visitor_rank() -> None:
     name, _, _, _, _, fn_params = rolling_exprs[0]
     assert name == _expr_nodes.RollingFunction.Rank
     assert fn_params == ("dense", 42)
-
-
-def _collect_window_order_by(query: pl.LazyFrame) -> list[tuple[Any, ...]]:
-    """Return the order_by of each Window expression with a view of its inputs."""
-    results: list[tuple[Any, ...]] = []
-
-    def callback(node_traverser: Any) -> None:
-        for expr_ir in node_traverser.get_exprs():
-            window = node_traverser.view_expression(expr_ir.node)
-            if isinstance(window, _expr_nodes.Window) and window.order_by is not None:
-                order_by = node_traverser.view_expression(window.order_by)
-                assert isinstance(order_by, _expr_nodes.Function)
-                inputs = [
-                    node_traverser.view_expression(node).name for node in order_by.input
-                ]
-                results.append((order_by.function_data, inputs))
-
-    query.collect(  # pyrefly: ignore[no-matching-overload]
-        post_opt_callback=callback  # type: ignore[call-overload]
-    )
-    return results
-
-
-def test_window_order_by_row_encode_visitor() -> None:
-    """Test that multi-column over(order_by=...) exposes its row_encode inputs."""
-    q = pl.LazyFrame({"a": [1, 1, 2], "c": [3, 1, 2], "d": [1, 2, 3]}).select(
-        pl.col("c").rank(method="ordinal").over("a", order_by=["c", "d"])
-    )
-    [(function_data, inputs)] = _collect_window_order_by(q)
-    assert function_data == (
-        "row_encode_ordered",
-        [False, False],
-        [False, False],
-        "always_binary_offset",
-        None,
-        False,
-    )
-    assert inputs == ["c", "d"]
-
-
-def test_window_order_by_row_encode_visitor_options() -> None:
-    q = pl.LazyFrame({"a": [1, 1, 2], "c": [3, 1, 2], "d": [1, 2, 3]}).select(
-        pl.col("c")
-        .rank(method="ordinal")
-        .over("a", order_by=["c", "d"], descending=True, nulls_last=True)
-    )
-    [(function_data, inputs)] = _collect_window_order_by(q)
-    assert function_data[:3] == ("row_encode_ordered", [True, True], [True, True])
-    assert inputs == ["c", "d"]
 
 
 def _collect_ewm_function_data(
@@ -809,6 +761,94 @@ def test_array_to_struct_default_is_exposed() -> None:
     name, fields = data[0]
     assert name == _expr_nodes.ArrayFunction.ToStruct
     assert fields == [f"field_{i}" for i in range(3)]
+
+
+def _collect_row_encode(query: pl.LazyFrame) -> list[tuple[Any, list[str]]]:
+    """
+    Return function_data and input names of each row_encode.
+
+    This includes the row_encode that over(order_by=[...]) is lowered to.
+    """
+    results: list[tuple[Any, list[str]]] = []
+
+    def callback(node_traverser: Any) -> None:
+        for expr_ir in node_traverser.get_exprs():
+            node = node_traverser.view_expression(expr_ir.node)
+            if isinstance(node, _expr_nodes.Window) and node.order_by is not None:
+                node = node_traverser.view_expression(node.order_by)
+            if isinstance(node, _expr_nodes.Function):
+                name = node.function_data[0]
+                if isinstance(name, str) and name.startswith("row_encode"):
+                    inputs = [
+                        node_traverser.view_expression(i).name for i in node.input
+                    ]
+                    results.append((node.function_data, inputs))
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_window_order_by_row_encode_visitor(descending: bool, nulls_last: bool) -> None:
+    """over(order_by=[...]) exposes its row_encode inputs and sort options."""
+    q = pl.LazyFrame({"a": [1, 1, 2], "c": [3, 1, 2], "d": [1, 2, 3]}).select(
+        pl.col("c")
+        .rank(method="ordinal")
+        .over("a", order_by=["c", "d"], descending=descending, nulls_last=nulls_last)
+    )
+    assert _collect_row_encode(q) == [
+        (
+            (
+                "row_encode_ordered",
+                [descending, descending],
+                [nulls_last, nulls_last],
+                "always_binary_offset",
+                None,
+                False,
+            ),
+            ["c", "d"],
+        )
+    ]
+
+
+def test_row_encode_ordered_expr_visitor() -> None:
+    """An ordered row_encode exposes its per-column options and null handling."""
+    q = pl.LazyFrame({"c": [3, 1, 2], "d": [1, 2, 3]}).select(
+        _row_encode(
+            ["c", "d"],
+            descending=[True, False],
+            nulls_last=[False, True],
+            output="binary",
+            encode_nulls=[True, False],
+            propagate_nulls=True,
+        )
+    )
+    assert _collect_row_encode(q) == [
+        (
+            (
+                "row_encode_ordered",
+                [True, False],
+                [False, True],
+                "always_binary",
+                [True, False],
+                True,
+            ),
+            ["c", "d"],
+        )
+    ]
+
+
+def test_row_encode_unordered_expr_visitor() -> None:
+    """An unordered row_encode exposes its output type and null handling."""
+    q = pl.LazyFrame({"c": [3, 1, 2], "d": [1, 2, 3]}).select(
+        _row_encode(["c", "d"], unordered=True, output="binary")
+    )
+    assert _collect_row_encode(q) == [
+        (("row_encode_unordered", "always_binary", None, False), ["c", "d"])
+    ]
 
 
 @pytest.mark.parametrize(
