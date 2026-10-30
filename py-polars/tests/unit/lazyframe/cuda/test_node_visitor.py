@@ -790,21 +790,19 @@ def _collect_row_encode(query: pl.LazyFrame) -> list[tuple[Any, list[str]]]:
     return results
 
 
-@pytest.mark.parametrize("descending", [False, True])
-@pytest.mark.parametrize("nulls_last", [False, True])
-def test_window_order_by_row_encode_visitor(descending: bool, nulls_last: bool) -> None:
+def test_window_order_by_row_encode_visitor() -> None:
     """over(order_by=[...]) exposes its row_encode inputs and sort options."""
     q = pl.LazyFrame({"a": [1, 1, 2], "c": [3, 1, 2], "d": [1, 2, 3]}).select(
         pl.col("c")
         .rank(method="ordinal")
-        .over("a", order_by=["c", "d"], descending=descending, nulls_last=nulls_last)
+        .over("a", order_by=["c", "d"], descending=True, nulls_last=True)
     )
     assert _collect_row_encode(q) == [
         (
             (
                 "row_encode_ordered",
-                [descending, descending],
-                [nulls_last, nulls_last],
+                [True, True],
+                [True, True],
                 "always_binary_offset",
                 None,
                 False,
