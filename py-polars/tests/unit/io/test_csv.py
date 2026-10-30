@@ -1635,7 +1635,9 @@ def test_float_scientific(chunk_override: None) -> None:
     )
 
 
-def test_write_csv_float_scientific_decimal_comma_regression(chunk_override: None) -> None:
+def test_write_csv_float_scientific_decimal_comma_regression(
+    chunk_override: None,
+) -> None:
     # Regression test for #29641: with float_scientific + decimal_comma the
     # serializer's scratch buffer must be cleared for every item, otherwise each
     # value after the first is appended to the previous one, silently corrupting
