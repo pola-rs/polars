@@ -141,7 +141,7 @@ class DeltaDataset:
             )
 
         table = self.table()
-        version = self.version if self.version is not None else table.version()
+        version = table.version()
         version_key = str(version)
 
         if (
@@ -380,6 +380,8 @@ class DeltaDataset:
 
     def __getstate__(self) -> dict[str, Any]:
         self.table_uri()
+        if (table := self.table_.get()) is not None:
+            self.version = table.version()
         return self.__dict__
 
     def __setstate__(self, state: dict[str, Any]) -> None:
