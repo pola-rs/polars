@@ -6,8 +6,8 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.expired import RemovedParameter, removed_parameters
-from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_ldf
+from polars._warnings import find_stacklevel
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.delta._dataset import DeltaDataset
 
