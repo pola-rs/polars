@@ -1264,13 +1264,19 @@ class Series(metaclass=_Meta):
             other = float(other)
         if self.dtype != String:
             self = self.cast(Float64)
-        return self.__rfloordiv__(other)
+        return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        return self._arithmetic(other, "div", "div_<>_rhs")
+        if isinstance(other, Series):
+            return other // self
+        return (
+            self.to_frame()
+            .select_seq((F.lit(other) // F.col(self.name)).alias(self.name))
+            .to_series()
+        )
 
     def __rmul__(self, other: Any) -> Series:
         if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):

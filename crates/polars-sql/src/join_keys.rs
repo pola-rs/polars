@@ -21,6 +21,15 @@ pub(crate) fn sql_join_key_pair(
     merging: bool,
 ) -> Option<(Expr, Expr)> {
     use DataType::*;
+    // A key of untyped literals, such as `CASE .. THEN 0 ELSE 1 END`, is not typed for the
+    // join: both keys take the type a comparison of them resolves to.
+    if (matches!(l_dtype, Unknown(_)) || matches!(r_dtype, Unknown(_)))
+        && let Ok(dtype) = try_get_supertype(l_dtype, r_dtype)
+        && let Ok(dtype) = dtype.materialize_unknown(true)
+        && (dtype.is_primitive_numeric() || dtype.is_decimal())
+    {
+        return Some((l.cast(dtype.clone()), r.cast(dtype)));
+    }
     // The join computes a key that isn't a column, which gives an untyped literal its type.
     let l_dtype = &l_dtype.clone().materialize_unknown(true).ok()?;
     let r_dtype = &r_dtype.clone().materialize_unknown(true).ok()?;

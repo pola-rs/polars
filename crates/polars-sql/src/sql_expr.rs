@@ -51,7 +51,7 @@ use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
     strip_utc_offset,
 };
-use crate::{SQLContext, unique_column_name};
+use crate::{SQLContext, col, struct_field, unique_column_name};
 
 #[inline]
 #[cold]
@@ -310,6 +310,36 @@ fn string_to_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr
     parse_string_as_temporal(expr, dtype, strict)
 }
 
+/// `expr`, if it is an ISO string literal, as a value of the temporal `dtype` it is
+/// compared with or read as; else `expr` itself.
+pub(crate) fn temporal_string_as(expr: &Expr, dtype: Option<&DataType>) -> Expr {
+    let Some(s) = (match expr {
+        Expr::Literal(lv) => lv.extract_str(),
+        _ => None,
+    }) else {
+        return expr.clone();
+    };
+    let parsed = match dtype {
+        Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
+        Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
+        Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
+            let s = if s.len() == 10 {
+                // handle upcast from ISO date string (10 chars) to datetime
+                format!("{s}T00:00:00")
+            } else {
+                s.replacen(' ', "T", 1)
+            };
+            Some((s, dtype))
+        },
+        _ => None,
+    };
+    // A string that does not parse keeps its strict parse, which fails
+    // when the query runs.
+    parsed
+        .and_then(|(s, dtype)| string_to_temporal(lit(s), dtype, true))
+        .unwrap_or_else(|| expr.clone())
+}
+
 /// The operator of `b <op> a` given that of `a <op> b`.
 fn flip_comparison(op: &SQLBinaryOperator) -> Option<SQLBinaryOperator> {
     Some(match op {
@@ -528,15 +558,15 @@ impl SQLExprVisitor<'_> {
             SQLExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
-            SQLExpr::IsFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false))),
+            SQLExpr::IsFalse(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(false))),
             SQLExpr::IsNotDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
             },
-            SQLExpr::IsNotFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false)).not()),
+            SQLExpr::IsNotFalse(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(false))),
             SQLExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
-            SQLExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
+            SQLExpr::IsNotTrue(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(true))),
             SQLExpr::IsNull(expr) => Ok(self.visit_expr(expr)?.is_null()),
-            SQLExpr::IsTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true))),
+            SQLExpr::IsTrue(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(true))),
             SQLExpr::Like {
                 negated,
                 any,
@@ -909,31 +939,7 @@ impl SQLExprVisitor<'_> {
     ///   "dt = '2077-10-10'::date"
     ///   "dtm::date = '2077-10-10'
     fn convert_temporal_strings(&self, left: &Expr, right: &Expr) -> Expr {
-        let Some(s) = (match right {
-            Expr::Literal(lv) => lv.extract_str(),
-            _ => None,
-        }) else {
-            return right.clone();
-        };
-        let parsed = match self.cast_or_expr_dtype(left) {
-            Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
-            Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
-            Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
-                let s = if s.len() == 10 {
-                    // handle upcast from ISO date string (10 chars) to datetime
-                    format!("{s}T00:00:00")
-                } else {
-                    s.replacen(' ', "T", 1)
-                };
-                Some((s, dtype))
-            },
-            _ => None,
-        };
-        // A string that does not parse keeps its strict parse, which fails
-        // when the query runs.
-        parsed
-            .and_then(|(s, dtype)| string_to_temporal(lit(s), &dtype, true))
-            .unwrap_or_else(|| right.clone())
+        temporal_string_as(right, self.cast_or_expr_dtype(left).as_ref())
     }
 
     fn struct_field_access_expr(
@@ -955,16 +961,27 @@ impl SQLExprVisitor<'_> {
             expr = if infer_index {
                 match p.parse::<i64>() {
                     Ok(idx) => expr.list().get(lit(idx), true),
-                    Err(_) => expr.struct_().field_by_name(p),
+                    Err(_) => struct_field(expr, p),
                 }
             } else {
-                expr.struct_().field_by_name(p)
+                struct_field(expr, p)
             }
         }
         Ok(expr)
     }
 
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
+    /// `expr` as a truth value, where a number is true when it isn't zero.
+    fn visit_truth_value(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+        Ok(match self.expr_dtype(&expr) {
+            Some(dtype) if dtype.is_primitive_numeric() || dtype.is_decimal() => {
+                expr.cast(DataType::Boolean)
+            },
+            _ => expr,
+        })
+    }
+
     fn expr_dtype(&self, expr: &Expr) -> Option<DataType> {
         self.ctx.expr_dtype(expr, self.active_schema)
     }
@@ -2393,10 +2410,10 @@ pub(crate) fn resolve_compound_identifier(
         for ident in remaining_idents {
             let name = ident.value.as_str();
             match dtype {
-                Some(DataType::Struct(fields)) if name == "*" => {
+                Some(DataType::Struct(fields)) if is_wildcard(ident) => {
                     return Ok(fields
                         .iter()
-                        .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                        .map(|fld| struct_field(column.clone(), fld.name.clone()))
                         .collect());
                 },
                 Some(DataType::Struct(fields)) => {
@@ -2405,20 +2422,21 @@ pub(crate) fn resolve_compound_identifier(
                         .find(|fld| fld.name == name)
                         .map(|fld| &fld.dtype);
                 },
-                Some(dtype) if name == "*" => {
+                Some(dtype) if is_wildcard(ident) => {
                     polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
                 },
                 _ => dtype = None,
             }
-            column = column.struct_().field_by_name(name);
+            column = struct_field(column, name);
         }
         return Ok(vec![column]);
     }
 
-    let name = &remaining_idents.next().unwrap().value;
+    let name_ident = remaining_idents.next().unwrap();
+    let name = &name_ident.value;
 
     // handle "table.*" wildcard expansion
-    if lf.is_some() && name == "*" {
+    if lf.is_some() && is_wildcard(name_ident) {
         return schema
             .iter_names_and_dtypes()
             .map(|(name, dtype)| {
@@ -2465,10 +2483,10 @@ pub(crate) fn resolve_compound_identifier(
     for ident in remaining_idents {
         let name = ident.value.as_str();
         match dtype {
-            Some(DataType::Struct(fields)) if name == "*" => {
+            Some(DataType::Struct(fields)) if is_wildcard(ident) => {
                 return Ok(fields
                     .iter()
-                    .map(|fld| column.clone().struct_().field_by_name(&fld.name))
+                    .map(|fld| struct_field(column.clone(), fld.name.clone()))
                     .collect());
             },
             Some(DataType::Struct(fields)) => {
@@ -2477,16 +2495,21 @@ pub(crate) fn resolve_compound_identifier(
                     .find(|fld| fld.name == name)
                     .map(|fld| &fld.dtype);
             },
-            Some(dtype) if name == "*" => {
+            Some(dtype) if is_wildcard(ident) => {
                 polars_bail!(SQLSyntax: "cannot expand '*' on non-Struct dtype; found {:?}", dtype)
             },
             _ => {
                 dtype = None;
             },
         }
-        column = column.struct_().field_by_name(name);
+        column = struct_field(column, name);
     }
     Ok(vec![column])
+}
+
+/// Whether `ident` is a `*` wildcard; a quoted `"*"` names a column or field.
+fn is_wildcard(ident: &Ident) -> bool {
+    ident.quote_style.is_none() && ident.value == "*"
 }
 
 /// `lhs <op> rhs` with SQL semantics, resolved once the operand dtypes are known

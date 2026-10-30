@@ -11,7 +11,8 @@ use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 
 use crate::context::is_correlated_result_col;
-use crate::unique_column_name;
+use crate::functions::is_random;
+use crate::{col, unique_column_name};
 
 /// The expressions computed in the group context, without aggregate marks.
 pub(crate) struct AggregateOutputs {
@@ -119,8 +120,8 @@ impl GroupContextSplitter<'_> {
         })
     }
 
-    /// Whether `expr` must run after aggregation: it holds a window or a subquery read from
-    /// the aggregated rows, or combines an aggregate with a grouped key.
+    /// Whether `expr` must run after aggregation: it holds a window, `RANDOM()` or a subquery
+    /// read from the aggregated rows, or combines an aggregate with a grouped key.
     pub(crate) fn needs_post_aggregation(&self, expr: &Expr) -> bool {
         struct Finder<'a, 'b> {
             splitter: &'a GroupContextSplitter<'b>,
@@ -128,6 +129,7 @@ impl GroupContextSplitter<'_> {
             has_subquery_read_after: bool,
             has_group_key: bool,
             has_aggregate: bool,
+            has_random: bool,
         }
         impl Visitor for Finder<'_, '_> {
             type Node = Expr;
@@ -152,6 +154,10 @@ impl GroupContextSplitter<'_> {
                         self.has_aggregate = true;
                         VisitRecursion::Skip
                     },
+                    _ if is_random(node) => {
+                        self.has_random = true;
+                        VisitRecursion::Skip
+                    },
                     _ => VisitRecursion::Continue,
                 })
             }
@@ -162,9 +168,11 @@ impl GroupContextSplitter<'_> {
             has_subquery_read_after: false,
             has_group_key: false,
             has_aggregate: false,
+            has_random: false,
         };
         let _ = expr.visit(&mut finder, &());
         finder.has_window
+            || finder.has_random
             || finder.has_subquery_read_after
             || (finder.has_group_key && finder.has_aggregate)
     }
@@ -451,6 +459,29 @@ pub(crate) fn check_columns_in_aggregates(
 /// reach the plan.
 static AGGREGATE_MARK: LazyLock<PlanCallback<PlSmallStr, PlSmallStr>> =
     LazyLock::new(|| PlanCallback::new(Ok));
+
+/// Whether `expr` calls `RANDOM()` outside its aggregates.
+pub(crate) fn has_random_outside_aggregates(expr: &Expr) -> bool {
+    struct Finder(bool);
+    impl Visitor for Finder {
+        type Node = Expr;
+        type Arena = ();
+
+        fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
+            Ok(if is_marked_aggregate(node) {
+                VisitRecursion::Skip
+            } else if is_random(node) {
+                self.0 = true;
+                VisitRecursion::Stop
+            } else {
+                VisitRecursion::Continue
+            })
+        }
+    }
+    let mut finder = Finder(false);
+    let _ = expr.visit(&mut finder, &());
+    finder.0
+}
 
 pub(crate) fn mark_aggregate(expr: Expr) -> Expr {
     Expr::RenameAlias {

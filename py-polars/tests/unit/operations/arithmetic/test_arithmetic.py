@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
 import operator
 import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from decimal import Decimal as PyDecimal
+from fractions import Fraction
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -242,6 +244,30 @@ def test_floor_division_float_int_consistency() -> None:
     assert (pl.Series(a, dtype=pl.Int32) // 5).to_list() == list(
         (a.astype(int) // 5).astype(int)
     )
+
+
+@pytest.mark.parametrize(
+    ("lhs", "values", "dtype"),
+    [
+        (-7, [2, -2, 3, -3], pl.Int64),
+        (7, [2, -2, 3, -3], pl.Int8),
+        (-7, [2, -2, 3, -3], pl.Int128),
+        (-7, [2, 3], pl.UInt8),
+        (-7.5, [2.0, -2.0, 0.5, -4.0], pl.Float64),
+        (7, [2.0, -2.0], pl.Float32),
+        (PyDecimal("-7.25"), [PyDecimal("2"), PyDecimal("-0.5")], pl.Decimal(10, 2)),
+    ],
+)
+def test_series_rfloordiv(lhs: Any, values: list[Any], dtype: PolarsDataType) -> None:
+    s = pl.Series("s", values, dtype=dtype)
+    out = lhs // s
+    assert out.name == "s"
+    assert out.dtype == s.to_frame().select(lhs // pl.col("s")).to_series().dtype
+    expected = [math.floor(Fraction(lhs) / Fraction(v)) for v in values]
+    assert [Fraction(v) for v in out.to_list()] == expected
+
+    # true division is unaffected
+    assert (lhs / s).to_list() == pytest.approx([float(lhs) / float(v) for v in values])
 
 
 def test_truncdiv_int() -> None:
@@ -626,6 +652,32 @@ def test_df_series_division() -> None:
     }
 
 
+def test_df_floordiv() -> None:
+    big = 2**62 + 1
+    df = pl.DataFrame(
+        {
+            "i": [big, -big],
+            "i8": [7, -7],
+            "f": [7.5, -7.5],
+            "d": [PyDecimal("7.5"), PyDecimal("-7.5")],
+        },
+        schema={"i": pl.Int64, "i8": pl.Int8, "f": pl.Float32, "d": pl.Decimal(10, 2)},
+    )
+    expected = {
+        "i": [big // 3, -big // 3],
+        "i8": [2, -3],
+        "f": [2.0, -3.0],
+        "d": [PyDecimal("2"), PyDecimal("-3")],
+    }
+    by_scalar = df // 3
+    by_frame = df // pl.DataFrame({k: [3, 3] for k in "abcd"})
+    for out in (by_scalar, by_frame):
+        assert out.to_dict(as_series=False) == expected
+        assert out.schema["i"] == pl.Int64
+        assert out.schema["i8"] == pl.Int8
+        assert out.schema["d"].is_decimal()
+
+
 @pytest.mark.parametrize(
     "s", [pl.Series([1, 2], dtype=Int64), pl.Series([1, 2], dtype=Float64)]
 )
@@ -648,15 +700,19 @@ def test_arithmetic_series(s: pl.Series) -> None:
 
     # integer division
     assert_series_equal(1 / a, pl.Series([1.0, 0.5]))
-    expected = pl.Series([1, 0]) if s.dtype == Int64 else pl.Series([1.0, 0.5])
+    expected = pl.Series([1, 0]) if s.dtype == Int64 else pl.Series([1.0, 0.0])
     assert_series_equal(1 // a, expected)
+
     # modulo
     assert ((1 % a) == [0, 1]).sum() == 2
     assert ((a % 1) == [0, 0]).sum() == 2
+
     # negate
     assert (-a == [-1, -2]).sum() == 2
+
     # unary plus
     assert (+a == a).all()
+
     # wrong dtypes in rhs operands
     assert ((1.0 - a) == [0.0, -1.0]).sum() == 2
     assert ((1.0 / a) == [1.0, 0.5]).sum() == 2

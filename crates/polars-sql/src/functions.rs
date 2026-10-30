@@ -4,6 +4,7 @@ use polars_core::prelude::{
     AnyValue, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit,
     datetime_to_timestamp_us, polars_bail, polars_ensure, polars_err,
 };
+use polars_core::utils::try_get_supertype;
 use polars_defs::expr::UnicodeForm;
 #[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
@@ -13,10 +14,10 @@ use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::ApproxQuantileMethod;
 use polars_lazy::prelude::DataTypeExpr;
 use polars_plan::dsl::functions::{
-    coalesce, col, cols, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
+    by_name, coalesce, concat_str, datetime_ranges, element, int_range, int_ranges, len, lit,
     max_horizontal, min_horizontal, when,
 };
-use polars_plan::dsl::{FunctionExpr, SqlBinaryOp, SqlFunction};
+use polars_plan::dsl::{FunctionExpr, RangeFunction, Selector, SqlBinaryOp, SqlFunction};
 use polars_plan::plans::{
     DynLiteralValue, LiteralValue, RowEncodingOutputType, RowEncodingVariant, typed_lit,
 };
@@ -31,15 +32,15 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
-use crate::SQLContext;
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
     interval_to_duration, order_by_sort_options, parse_extract_date_part, parse_sql_array,
-    parse_sql_expr, sql_binary,
+    parse_sql_expr, sql_binary, temporal_string_as,
 };
-use crate::sql_visitors::grouping_call_args;
+use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
+use crate::{SQLContext, col};
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -151,6 +152,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT PI() FROM df;
     /// ```
     Pi,
+    /// SQL 'random' function.
+    /// Returns a pseudo-random value in [0, 1) for each row.
+    /// ```sql
+    /// SELECT RANDOM() FROM df;
+    /// ```
+    Random,
     /// SQL 'ln' function.
     /// Computes the natural logarithm of the given value.
     /// ```sql
@@ -1068,6 +1075,7 @@ impl PolarsSQLFunctions {
             "quantile_disc",
             "quarter",
             "radians",
+            "random",
             "range",
             "rank",
             "regexp_like",
@@ -1143,6 +1151,7 @@ impl PolarsSQLFunctions {
             "log2" => Self::Log2,
             "mod" => Self::Mod,
             "pi" => Self::Pi,
+            "random" => Self::Random,
             "pow" | "power" => Self::Pow,
             "round" => Self::Round,
             "trunc" | "truncate" => Self::Truncate,
@@ -1428,6 +1437,7 @@ impl SQLFunctionVisitor<'_> {
             Log1p => self.visit_unary(Expr::log1p),
             Log2 => self.visit_unary(|e| log_with_base(e, 2.0)),
             Pi => self.visit_nullary(Expr::pi),
+            Random => self.visit_nullary(random),
             Mod => self.visit_binary(|e1, e2| sql_binary(e1, SqlBinaryOp::Rem, e2)),
             Pow => self.visit_binary(|e: Expr, p: Expr| sql_to_float(e).pow(sql_to_float(p))),
             Round => {
@@ -1494,8 +1504,10 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Conditional functions
             // ----
-            Coalesce => self.visit_variadic(coalesce),
-            Greatest => self.visit_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap()),
+            Coalesce => self.visit_temporal_variadic(coalesce),
+            Greatest => {
+                self.visit_temporal_variadic(|exprs: &[Expr]| max_horizontal(exprs).unwrap())
+            },
             If => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1511,20 +1523,21 @@ impl SQLFunctionVisitor<'_> {
             IfNull => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_variadic(coalesce),
+                    2 => self.visit_temporal_variadic(coalesce),
                     _ => {
                         polars_bail!(SQLSyntax: "IFNULL expects 2 arguments (found {})", args.len())
                     },
                 }
             },
-            Least => self.visit_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
+            Least => self.visit_temporal_variadic(|exprs: &[Expr]| min_horizontal(exprs).unwrap()),
             NullIf => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    2 => self.visit_binary(|l: Expr, r: Expr| {
-                        when(l.clone().eq(r))
+                    2 => self.visit_temporal_variadic(|exprs: &[Expr]| {
+                        let [l, r] = exprs else { unreachable!() };
+                        when(l.clone().eq(r.clone()))
                             .then(lit(LiteralValue::untyped_null()))
-                            .otherwise(l)
+                            .otherwise(l.clone())
                     }),
                     _ => {
                         polars_bail!(SQLSyntax: "NULLIF expects 2 arguments (found {})", args.len())
@@ -2018,10 +2031,10 @@ impl SQLFunctionVisitor<'_> {
                             Ok(if col_names.len() == 1 {
                                 col(col_names.into_iter().next().unwrap())
                             } else {
-                                cols(col_names).as_expr()
+                                by_name(col_names, true, false).as_expr()
                             })
                         } else {
-                            Ok(col(pat.as_str()))
+                            Ok(Expr::Selector(Selector::Matches(pat.into())))
                         }
                     },
                     Expr::Selector(s) => Ok(s.as_expr()),
@@ -2582,6 +2595,36 @@ impl SQLFunctionVisitor<'_> {
         &mut self,
         f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
+        let expr_args = self.parse_variadic_args()?;
+        f(&expr_args).and_then(|e| self.apply_window_spec(e))
+    }
+
+    /// [`Self::visit_variadic`] for a function whose arguments share one type: a string
+    /// literal is read as a value of the common temporal type of the other arguments, as
+    /// in `COALESCE(date_col, '2020-01-01')`.
+    fn visit_temporal_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
+        let mut expr_args = self.parse_variadic_args()?;
+        let is_string_literal =
+            |e: &Expr| matches!(e, Expr::Literal(lv) if lv.extract_str().is_some());
+        if expr_args.iter().any(is_string_literal) {
+            let mut dtypes = expr_args
+                .iter()
+                .filter(|e| !is_string_literal(e))
+                .filter_map(|e| self.ctx.expr_dtype(e, self.active_schema))
+                .filter(|dtype| dtype.is_temporal());
+            let dtype = dtypes.next().and_then(|first| {
+                dtypes.try_fold(first, |acc, dtype| try_get_supertype(&acc, &dtype).ok())
+            });
+            if let Some(dtype) = dtype {
+                for arg in &mut expr_args {
+                    *arg = temporal_string_as(arg, Some(&dtype));
+                }
+            }
+        }
+        self.apply_window_spec(f(&expr_args))
+    }
+
+    fn parse_variadic_args(&mut self) -> PolarsResult<Vec<Expr>> {
         let args = extract_args(self.func)?;
         let mut expr_args = vec![];
         for arg in args {
@@ -2591,7 +2634,7 @@ impl SQLFunctionVisitor<'_> {
                 return self.not_supported_error();
             };
         }
-        f(&expr_args).and_then(|e| self.apply_window_spec(e))
+        Ok(expr_args)
     }
 
     fn try_visit_ternary<Arg: FromSQLExpr>(
@@ -2982,6 +3025,11 @@ impl SQLFunctionVisitor<'_> {
         order_by: &[OrderByExpr],
         base_sql_expr: &SQLExpr,
     ) -> PolarsResult<Expr> {
+        // The distinct values have no separate draw of `RANDOM()` to sort by.
+        polars_ensure!(
+            !order_by.iter().any(|ob| contains_random(&ob.expr, true)),
+            SQLInterface: "RANDOM() in the ORDER BY of a DISTINCT aggregate is not supported"
+        );
         // If ORDER BY references the base expression, use .sort() directly
         if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
             return Ok(expr.sort(order_by_sort_options(&order_by[0].options)));
@@ -3066,6 +3114,35 @@ impl SQLFunctionVisitor<'_> {
             "no function matches the given name and arguments: `{}`",
             self.func.to_string()
         );
+    }
+}
+
+/// A pseudo-random value in [0, 1) per row, from a hash of the row index with a new seed. The
+/// top 53 bits of the hash are exact in a `Float64`.
+fn random() -> Expr {
+    let seed = polars_core::random::get_global_random_u64();
+    int_range(lit(0), len(), 1, polars_core::datatypes::IDX_DTYPE)
+        .hash(seed)
+        .floor_div(lit(1u64 << 11))
+        .cast(DataType::Float64)
+        * lit(1.0 / (1u64 << 53) as f64)
+}
+
+/// Whether `expr` is the hash of the row index made by [`random`]. Its values depend on the
+/// rows it runs on, so it must run on the frame the SQL reads it from.
+pub(crate) fn is_random(expr: &Expr) -> bool {
+    match expr {
+        Expr::Function {
+            input,
+            function: FunctionExpr::Hash(_),
+        } => matches!(
+            input.as_slice(),
+            [Expr::Function {
+                input,
+                function: FunctionExpr::Range(RangeFunction::IntRange { .. }),
+            }] if matches!(input.as_slice(), [_, Expr::Len])
+        ),
+        _ => false,
     }
 }
 

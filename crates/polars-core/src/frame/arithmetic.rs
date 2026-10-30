@@ -107,7 +107,8 @@ impl Rem<&Series> for DataFrame {
 }
 
 impl DataFrame {
-    fn binary_aligned(
+    /// Applies `f` to positionally aligned column pairs, cast to their supertype.
+    pub fn binary_aligned(
         &self,
         other: &DataFrame,
         f: &(dyn Fn(&Series, &Series) -> PolarsResult<Series> + Sync + Send),
