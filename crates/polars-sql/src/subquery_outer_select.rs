@@ -235,7 +235,11 @@ impl SQLContext {
     }
 }
 
-fn when_then(condition: SQLExpr, result: SQLExpr, else_result: Option<SQLExpr>) -> SQLExpr {
+pub(crate) fn when_then(
+    condition: SQLExpr,
+    result: SQLExpr,
+    else_result: Option<SQLExpr>,
+) -> SQLExpr {
     SQLExpr::Case {
         case_token: AttachedToken::empty(),
         end_token: AttachedToken::empty(),

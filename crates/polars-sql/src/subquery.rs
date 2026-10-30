@@ -42,7 +42,7 @@ use crate::sql_visitors::{
     contains_random, expr_contains_subquery, expr_has_window_functions, has_column_selector,
     is_subquery_expr,
 };
-use crate::subquery_outer_select::reads_inner_column;
+use crate::subquery_outer_select::{reads_inner_column, when_then};
 use crate::subquery_pull_up::ScopeColumns;
 use crate::{SQLContext, col, unique_column_name};
 
@@ -2083,6 +2083,188 @@ impl SQLContext {
         }
     }
 
+    /// Whether `expr` reads no column of the inner relations `inner_names` and no alias of
+    /// `select`: none outside of its subqueries, which each plan on their own.
+    fn reads_no_inner_column(
+        &self,
+        expr: &SQLExpr,
+        select: &Select,
+        inner_names: &[RelationName],
+        inner_schema: &Schema,
+    ) -> bool {
+        struct Parts<'a> {
+            inner_names: &'a [RelationName],
+            inner_schema: &'a Schema,
+            aliases: Vec<&'a str>,
+            query_depth: usize,
+            subqueries: Vec<Query>,
+        }
+
+        impl Visitor for Parts<'_> {
+            type Break = ();
+
+            fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<()> {
+                if self.query_depth == 0 {
+                    self.subqueries.push(query.clone());
+                }
+                self.query_depth += 1;
+                ControlFlow::Continue(())
+            }
+
+            fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+                self.query_depth -= 1;
+                ControlFlow::Continue(())
+            }
+
+            fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+                let reads_inner = match expr {
+                    _ if self.query_depth > 0 => false,
+                    // A selector picks its columns from the schema it is parsed against, and
+                    // a function may read the inner rows as a whole, as `ROW_NUMBER()` does.
+                    SQLExpr::Function(_)
+                    | SQLExpr::Wildcard(_)
+                    | SQLExpr::QualifiedWildcard(..) => true,
+                    SQLExpr::Identifier(ident) => {
+                        self.aliases.contains(&ident.value.as_str())
+                            || reads_inner_column(expr, self.inner_names, self.inner_schema)
+                    },
+                    SQLExpr::CompoundIdentifier(_) => {
+                        reads_inner_column(expr, self.inner_names, self.inner_schema)
+                    },
+                    _ => false,
+                };
+                if reads_inner {
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            }
+        }
+
+        let aliases = select
+            .projection
+            .iter()
+            .filter_map(|item| match item {
+                SelectItem::ExprWithAlias { alias, .. } => Some(alias.value.as_str()),
+                _ => None,
+            })
+            .collect();
+        let mut parts = Parts {
+            inner_names,
+            inner_schema,
+            aliases,
+            query_depth: 0,
+            subqueries: Vec::new(),
+        };
+        if dyn_visit::visit(expr, &mut parts).is_break() {
+            return false;
+        }
+        parts.subqueries.iter().all(|query| {
+            let mut ctx = self.isolated();
+            ctx.strict_relations = true;
+            ctx.execute_query(query)
+                .and_then(|mut lf| ctx.get_frame_schema(&mut lf))
+                .is_ok()
+        })
+    }
+
+    /// `[NOT] EXISTS (subquery)` as an equal expression whose subqueries can be lowered,
+    /// or `None` to keep it:
+    /// - With `HAVING h` and no `GROUP BY`, the rows form one group, and the subquery
+    ///   yields a row when `h` holds over it: `(SELECT h ..)` is true.
+    /// - A WHERE conjunct holding a subquery but reading no inner column holds for every
+    ///   inner row or for none: `p` is true `AND EXISTS (subquery without p)`.
+    fn rewrite_exists(&self, subquery: &Query, negated: bool) -> PolarsResult<Option<SQLExpr>> {
+        let SetExpr::Select(select) = subquery.body.as_ref() else {
+            return Ok(None);
+        };
+        let rewritten = if let Some(having) = &select.having {
+            let mut value = subquery.clone();
+            value.order_by = None;
+            let SetExpr::Select(value_select) = value.body.as_mut() else {
+                unreachable!()
+            };
+            value_select.having = None;
+            value_select.projection = vec![SelectItem::UnnamedExpr(having.clone())];
+            let Some(value_select) = eligible_subquery_select(&value) else {
+                return Ok(None);
+            };
+            let mut ctx = self.isolated();
+            let Some((inner_names, _, inner_schema)) = ctx.resolve_subquery_from(value_select)?
+            else {
+                return Ok(None);
+            };
+            // The projection is replaced, so it must not change the number of rows.
+            if !binds_to_inner_relation(having, &inner_names, &inner_schema)
+                || exists_aggregates(&ctx, &value, value_select, &inner_names, &inner_schema)
+                    != Some(true)
+                || exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema).is_none()
+            {
+                return Ok(None);
+            }
+            is_true(SQLExpr::Subquery(Box::new(value)))
+        } else {
+            let Some(select) = eligible_subquery_select(subquery) else {
+                return Ok(None);
+            };
+            let Some(selection) = &select.selection else {
+                return Ok(None);
+            };
+            let selection = factored_selection(selection);
+            if !MintermIter::new(&selection).any(expr_contains_subquery) {
+                return Ok(None);
+            }
+            let mut ctx = self.isolated();
+            let Some((inner_names, _, inner_schema)) = ctx.resolve_subquery_from(select)? else {
+                return Ok(None);
+            };
+            // A renamed or replaced wildcard column is an alias that WHERE may read.
+            let renames = select.projection.iter().any(|item| {
+                matches!(item, SelectItem::Wildcard(options) | SelectItem::QualifiedWildcard(_, options)
+                    if options.opt_replace.is_some() || options.opt_rename.is_some())
+            });
+            if renames
+                || exists_aggregates(&ctx, subquery, select, &inner_names, &inner_schema)
+                    != Some(false)
+            {
+                return Ok(None);
+            }
+            let (outer, rest): (Vec<&SQLExpr>, Vec<&SQLExpr>) = MintermIter::new(&selection)
+                .partition(|conj| {
+                    expr_contains_subquery(conj)
+                        && !contains_random(*conj, true)
+                        && self.reads_no_inner_column(conj, select, &inner_names, &inner_schema)
+                });
+            let Some(outer) =
+                combine_conditions(outer.into_iter().cloned().collect(), SQLBinaryOperator::And)
+            else {
+                return Ok(None);
+            };
+            let mut rest_query = subquery.clone();
+            let SetExpr::Select(rest_select) = rest_query.body.as_mut() else {
+                unreachable!()
+            };
+            rest_select.selection =
+                combine_conditions(rest.into_iter().cloned().collect(), SQLBinaryOperator::And);
+            SQLExpr::BinaryOp {
+                left: Box::new(is_true(outer)),
+                op: SQLBinaryOperator::And,
+                right: Box::new(SQLExpr::Exists {
+                    subquery: Box::new(rest_query),
+                    negated: false,
+                }),
+            }
+        };
+        Ok(Some(if negated {
+            SQLExpr::UnaryOp {
+                op: SQLUnaryOperator::Not,
+                expr: Box::new(SQLExpr::Nested(Box::new(rewritten))),
+            }
+        } else {
+            rewritten
+        }))
+    }
+
     // Attempt the decorrelation of a single `EXISTS` subquery into a boolean flag
     // column holding `count(*) > 0` over the correlated match set. An uncorrelated
     // subquery is one value instead, kept in `exists_values` for `visit_exists`, and
@@ -2362,12 +2544,25 @@ fn build_semi_anti_join(
     else {
         return Ok(None);
     };
+    // A pair spelled twice, as in `x IN (SELECT y .. WHERE y = x)`, is one join key.
+    let mut join_left: Vec<Expr> = Vec::with_capacity(left_on.len());
+    let mut join_right: Vec<Expr> = Vec::with_capacity(right_on.len());
+    for (l, r) in left_on.iter().zip(&right_on) {
+        if !join_left
+            .iter()
+            .zip(&join_right)
+            .any(|(jl, jr)| jl == l && jr == r)
+        {
+            join_left.push(l.clone());
+            join_right.push(r.clone());
+        }
+    }
     let joined = lf
         .clone()
         .join_builder()
         .with(inner_lf.clone())
-        .left_on(left_on.clone())
-        .right_on(right_on.clone())
+        .left_on(join_left)
+        .right_on(join_right)
         .how(join_type)
         .finish()?;
     if !correct_not_in {
@@ -2983,6 +3178,15 @@ pub(crate) fn exists_aggregates(
     (!aggregates.unsupported && !aggregates.outer).then_some(aggregates.local)
 }
 
+/// Whether `condition` is true, never NULL, with the typing rules of a WHERE condition.
+fn is_true(condition: SQLExpr) -> SQLExpr {
+    when_then(
+        condition,
+        SQLExpr::value(SQLValue::Boolean(true)),
+        Some(SQLExpr::value(SQLValue::Boolean(false))),
+    )
+}
+
 // Shared eligibility gate for the rewrites: bail on any clause that changes
 // which rows the subquery yields.
 fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
@@ -3462,6 +3666,18 @@ impl CorrelatedLowering<'_> {
         // Inside a nested query: not ours to lower against the outer schema.
         if self.query_depth > 0 || !lowerable_kind(expr, self.scope) {
             return ControlFlow::Continue(());
+        }
+        // The parts of the rewritten expression are visited next.
+        if let SQLExpr::Exists { subquery, negated } = &*expr {
+            match self.ctx.rewrite_exists(subquery, *negated) {
+                Ok(Some(rewritten)) => {
+                    *expr = rewritten;
+                    self.changed = true;
+                    return ControlFlow::Continue(());
+                },
+                Ok(None) => {},
+                Err(e) => return ControlFlow::Break(e),
+            }
         }
         let (subquery, kind, negated) = match &*expr {
             SQLExpr::Subquery(subquery) => (subquery.as_ref(), SubqueryKind::Scalar, false),

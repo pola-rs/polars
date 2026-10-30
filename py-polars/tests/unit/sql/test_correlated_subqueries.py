@@ -2360,6 +2360,20 @@ def test_correlated_subquery_group_by_errors(query: str) -> None:
         pl.SQLContext(frames).execute(query, eager=True)
 
 
+@pytest.mark.parametrize("op", ["IN", "NOT IN"])
+def test_correlated_in_subquery_on_its_correlation_key(op: str) -> None:
+    assert_sql_matches(
+        frames={
+            "o": pl.DataFrame({"k": [1, 2, 3, None]}),
+            "l": pl.DataFrame({"k": [1, 1, 3, None]}),
+        },
+        query=f"SELECT k FROM o WHERE k {op} (SELECT l.k FROM l WHERE l.k = o.k)",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
 @pytest.mark.parametrize(
     "query",
     [
