@@ -14,7 +14,7 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
     iter: I,
-    // used only if feature="dtype-struct"
+    // used only if feature="dtype-struct" or feature="object"
     #[allow(dead_code)]
     inner_dtype: DataType,
 }
@@ -58,6 +58,25 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                         )
                         .from_physical_unchecked(&self.inner_dtype)
                         .unwrap();
+                        let inner = Rc::make_mut(&mut self.series_container);
+                        *inner = s;
+
+                        return AmortSeries::new(self.series_container.clone());
+                    }
+                }
+                #[cfg(feature = "object")]
+                // lists hold object values in an extension array, which only converts to the
+                // series' object array through `from_chunks_and_dtype_unchecked`; as for structs,
+                // `self.inner` is not used once the container is replaced
+                if matches!(self.inner_dtype, DataType::Object(_)) {
+                    // SAFETY:
+                    // dtype is known
+                    unsafe {
+                        let s = Series::from_chunks_and_dtype_unchecked(
+                            self.series_container.name().clone(),
+                            vec![array_ref],
+                            &self.inner_dtype,
+                        );
                         let inner = Rc::make_mut(&mut self.series_container);
                         *inner = s;
 
