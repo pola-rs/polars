@@ -21,6 +21,8 @@ Table Operations
      - Deletes the specified table, unregistering it.
    * - :ref:`EXPLAIN <explain>`
      - Returns the Polars execution plan for a given SQL query.
+   * - :ref:`INSERT <insert>`
+     - Append rows to a table in an attached catalog, or replace its rows.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables registered in the given context.
    * - :ref:`GENERATE_SERIES <generate_series_table_func>`
@@ -208,6 +210,34 @@ Returns the Polars execution plan for a given SQL query.
 .. code-block:: sql
 
     EXPLAIN SELECT * FROM some_table
+
+.. _insert:
+
+INSERT
+------
+Write rows to a table of a catalog attached with :meth:`SQLContext.register_catalog`, with
+the name resolved as in a query, in one commit. ``INSERT INTO`` appends the rows of a
+``VALUES`` list or a query; ``INSERT OVERWRITE`` replaces all of the table's rows, in every
+partition (a ``WHERE`` in the query selects the new rows, not the rows replaced, and a
+query without rows leaves the table empty).
+
+The values fill the table's columns in order, or the columns listed after the table name;
+the other columns get NULL, and a ``NOT NULL`` column must be given a value. Values are
+converted to the column types: numbers to any numeric type (a fractional value going into
+an integer column is rounded: a decimal half away from zero, a float half to even, while
+``CAST`` truncates; a decimal going to fewer decimal places rounds half to even), and dates
+and timestamps among themselves; a value that does not fit raises an error, and other
+conversions need an explicit ``CAST``. A commit that loses to
+another writer's commit is retried for ``INSERT INTO``; ``INSERT OVERWRITE`` raises an
+error and writes nothing.
+
+**Example:**
+
+.. code-block:: sql
+
+    INSERT INTO lake.sales.orders VALUES (1, 10), (2, 20)
+    INSERT INTO lake.sales.orders (quantity, id) SELECT qty, order_id FROM staged
+    INSERT OVERWRITE lake.sales.orders SELECT * FROM staged
 
 .. _show_tables:
 

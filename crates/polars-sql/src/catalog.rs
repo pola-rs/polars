@@ -91,6 +91,19 @@ pub enum CatalogDdl {
         /// `IF EXISTS`.
         if_exists: bool,
     },
+    /// `INSERT INTO <name> [(<column>, ...)] <query>`, or `INSERT OVERWRITE ...`.
+    Insert {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to write.
+        table: CatalogTable,
+        /// The columns written, as listed; empty for all, in the table's order.
+        columns: Vec<String>,
+        /// The query giving the rows, as SQL.
+        query: String,
+        /// `OVERWRITE`: replace the table's rows.
+        overwrite: bool,
+    },
     /// `ALTER TABLE [IF EXISTS] <name> <operation>`.
     AlterTable {
         /// The table name as the statement wrote it.

@@ -22,13 +22,13 @@ use sqlparser::ast::{
     AlterColumnOperation, AlterTable, AlterTableOperation, BinaryOperator as SQLBinaryOperator,
     CreateTable, CreateTableLikeKind, CreateTableOptions, Cte, Delete, Distinct, DropBehavior,
     ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr,
-    HiveDistributionStyle, HiveFormat, Ident, JoinConstraint, JoinOperator, LimitClause,
+    HiveDistributionStyle, HiveFormat, Ident, Insert, JoinConstraint, JoinOperator, LimitClause,
     NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy, OrderByKind, Query,
     RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
-    TableAlias, TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator,
-    Value as SQLValue, ValueWithSpan, Values, VisitorMut, WildcardAdditionalOptions, WindowSpec,
-    WindowType, With,
+    TableAlias, TableFactor, TableObject, TableWithJoins, Truncate,
+    UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan, Values, VisitorMut,
+    WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -454,6 +454,13 @@ impl SQLContext {
                 return self.catalog_create_table(create_table);
             },
             Statement::AlterTable(alter) => return self.catalog_alter_table(alter),
+            Statement::Insert(insert) => return self.catalog_insert(insert, None),
+            Statement::Query(query) => {
+                let SetExpr::Insert(Statement::Insert(insert)) = query.body.as_ref() else {
+                    return Ok(None);
+                };
+                return self.catalog_insert(insert, Some(query));
+            },
             Statement::CreateSchema { .. } => {
                 let (name, if_not_exists, options) = create_schema_parts(&stmt)?;
                 let Some((name, namespace)) = self.catalog_schema_target(name)? else {
@@ -886,7 +893,10 @@ impl SQLContext {
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         let ast = stmt;
         Ok(match ast {
-            Statement::Query(query) => self.execute_query(query)?,
+            Statement::Query(query) => match query.body.as_ref() {
+                SetExpr::Insert(Statement::Insert(insert)) => self.execute_insert(insert)?,
+                _ => self.execute_query(query)?,
+            },
             stmt @ Statement::ShowTables { .. } => self.execute_show_tables(stmt)?,
             stmt @ Statement::CreateTable { .. } => self.execute_create_table(stmt)?,
             stmt @ Statement::Drop {
@@ -905,6 +915,7 @@ impl SQLContext {
                 self.execute_schema_ddl("DROP SCHEMA", name)?
             },
             Statement::AlterTable(alter) => self.execute_alter_table(alter)?,
+            Statement::Insert(insert) => self.execute_insert(insert)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
@@ -1747,9 +1758,9 @@ impl SQLContext {
         )
     }
 
-    /// The catalog table an `ALTER TABLE` of `name` changes, with its name as written. A
-    /// registered table of that name comes first, as in a read, and has no `ALTER TABLE`.
-    fn catalog_alter_target(
+    /// The catalog table an `ALTER TABLE` or `INSERT` of `name` changes, with its name as written.
+    /// A registered table of that name comes first, as in a read, and has neither.
+    fn catalog_change_target(
         &self,
         name: &ObjectName,
     ) -> PolarsResult<Option<(String, CatalogTable)>> {
@@ -1764,7 +1775,7 @@ impl SQLContext {
 
     /// The catalog DDL of an `ALTER TABLE`, if its name resolves to a catalog table.
     fn catalog_alter_table(&self, alter: &AlterTable) -> PolarsResult<Option<CatalogDdl>> {
-        let Some((name, table)) = self.catalog_alter_target(&alter.name)? else {
+        let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
             return Ok(None);
         };
         polars_ensure!(!alter.only, SQLInterface: "`ALTER TABLE ONLY` is not supported");
@@ -1785,14 +1796,19 @@ impl SQLContext {
 
     // ALTER TABLE, which only a catalog table has
     fn execute_alter_table(&self, alter: &AlterTable) -> PolarsResult<LazyFrame> {
-        if let Some((name, table)) = self.catalog_alter_target(&alter.name)? {
+        if let Some((name, table)) = self.catalog_change_target(&alter.name)? {
             polars_bail!(
                 SQLInterface: "ALTER TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
                 name, display_name(&table.full_name())
             );
         }
-        let tbl = object_name_to_string(&alter.name);
-        let parts = name_parts(&alter.name);
+        Err(self.catalog_tables_only("ALTER TABLE", &alter.name))
+    }
+
+    /// The error of `statement` on `name`, which is not a catalog table.
+    fn catalog_tables_only(&self, statement: &str, name: &ObjectName) -> PolarsError {
+        let tbl = object_name_to_string(name);
+        let parts = name_parts(name);
         // a registered table hides the catalog table of that name
         let hint = match parts
             .as_deref()
@@ -1807,7 +1823,59 @@ impl SQLContext {
                 .and_then(|parts| self.catalogs.unresolved_hint(&parts))
                 .unwrap_or_default(),
         };
-        polars_bail!(SQLInterface: "`ALTER TABLE` is supported only for catalog tables{}", hint)
+        polars_err!(SQLInterface: "`{}` is supported only for catalog tables{}", statement, hint)
+    }
+
+    /// The catalog DDL of an `INSERT`, if its table resolves to a catalog table; `outer` is a
+    /// query around it (`WITH ... INSERT ...`).
+    fn catalog_insert(
+        &self,
+        insert: &Insert,
+        outer: Option<&Query>,
+    ) -> PolarsResult<Option<CatalogDdl>> {
+        let TableObject::TableName(name) = &insert.table else {
+            polars_bail!(SQLInterface: "`INSERT` into a table function is not supported")
+        };
+        let Some((tbl, table)) = self.catalog_change_target(name)? else {
+            return Ok(None);
+        };
+        let Some(source) = insert_source(insert, outer)? else {
+            polars_bail!(SQLInterface: "`INSERT ... DEFAULT VALUES` is not supported for catalog tables")
+        };
+        let columns = insert
+            .columns
+            .iter()
+            .map(|column| match name_parts(column).as_deref() {
+                Some([part]) => Ok(part.clone()),
+                _ => polars_bail!(SQLInterface: "INSERT column names must be unqualified; found `{}`", column),
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        Ok(Some(CatalogDdl::Insert {
+            name: tbl,
+            table,
+            columns,
+            query: source.to_string(),
+            overwrite: insert.overwrite,
+        }))
+    }
+
+    // INSERT, which only a catalog table has
+    fn execute_insert(&self, insert: &Insert) -> PolarsResult<LazyFrame> {
+        let statement = if insert.overwrite {
+            "INSERT OVERWRITE"
+        } else {
+            "INSERT"
+        };
+        let TableObject::TableName(name) = &insert.table else {
+            polars_bail!(SQLInterface: "`INSERT` into a table function is not supported")
+        };
+        if let Some((tbl, table)) = self.catalog_change_target(name)? {
+            polars_bail!(
+                SQLInterface: "{} of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                statement, tbl, display_name(&table.full_name())
+            );
+        }
+        Err(self.catalog_tables_only(statement, name))
     }
 
     // DELETE FROM <tbl> [WHERE ...]
@@ -7445,6 +7513,82 @@ fn alter_table_operation(op: &AlterTableOperation) -> PolarsResult<CatalogAlter>
             SQLInterface: "`ALTER TABLE ... {}` is not supported for catalog tables", op
         ),
     })
+}
+
+/// The query whose rows an `INSERT` writes, with the `WITH` of a query around it; `None` for
+/// `DEFAULT VALUES`. Clauses a catalog table has no use for are refused.
+fn insert_source(insert: &Insert, outer: Option<&Query>) -> PolarsResult<Option<Query>> {
+    let statement = if insert.overwrite {
+        "INSERT OVERWRITE"
+    } else {
+        "INSERT"
+    };
+    let refused = [
+        (insert.or.is_some(), "`INSERT OR ...`"),
+        (insert.ignore, "`INSERT IGNORE`"),
+        (insert.replace_into, "`REPLACE INTO`"),
+        (insert.on.is_some(), "`ON CONFLICT` / `ON DUPLICATE KEY`"),
+        (insert.returning.is_some(), "`RETURNING`"),
+        (insert.table_alias.is_some(), "a table alias"),
+        (!insert.assignments.is_empty(), "`INSERT ... SET`"),
+    ];
+    for (found, clause) in refused {
+        polars_ensure!(!found, SQLInterface: "{} is not supported for catalog tables", clause);
+    }
+    if insert.partitioned.is_some() {
+        let hint = match insert.overwrite {
+            true => {
+                "; `sink_iceberg(..., partition_overwrite=\"dynamic\")` replaces only the partitions written"
+            },
+            false => "",
+        };
+        polars_bail!(SQLInterface: "`{} ... PARTITION (...)` is not supported for catalog tables{}", statement, hint);
+    }
+    polars_ensure!(
+        insert.after_columns.is_empty()
+            && insert.output.is_none()
+            && insert.priority.is_none()
+            && insert.insert_alias.is_none()
+            && insert.settings.is_none()
+            && insert.format_clause.is_none()
+            && insert.multi_table_insert_type.is_none()
+            && insert.multi_table_into_clauses.is_empty()
+            && insert.multi_table_when_clauses.is_empty()
+            && insert.multi_table_else_clause.is_none(),
+        SQLInterface: "unsupported {} statement: `{}`", statement, insert
+    );
+    let Some(source) = &insert.source else {
+        return Ok(None);
+    };
+    polars_ensure!(
+        !matches!(source.body.as_ref(), SetExpr::Table(_)),
+        SQLInterface: "`{} ... TABLE <name>` is not supported; write `SELECT * FROM <name>`", statement
+    );
+    polars_ensure!(
+        !matches!(
+            source.body.as_ref(),
+            SetExpr::Insert(_) | SetExpr::Update(_) | SetExpr::Delete(_) | SetExpr::Merge(_)
+        ),
+        SQLInterface: "the query of {} must not change a table", statement
+    );
+    let mut source = (**source).clone();
+    if let Some(outer) = outer {
+        polars_ensure!(
+            outer.order_by.is_none()
+                && outer.limit_clause.is_none()
+                && outer.fetch.is_none()
+                && outer.locks.is_empty(),
+            SQLInterface: "unsupported {} statement: `{}`", statement, outer
+        );
+        if let Some(with) = &outer.with {
+            polars_ensure!(
+                source.with.is_none(),
+                SQLInterface: "{} takes one WITH: before the statement or in its query", statement
+            );
+            source.with = Some(with.clone());
+        }
+    }
+    Ok(Some(source))
 }
 
 fn parse_single_statement(query: &str) -> PolarsResult<Statement> {

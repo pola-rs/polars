@@ -93,7 +93,7 @@ catalog explicit.
 Catalogs attached inside a `with SQLContext()` block are detached on exit, like the tables
 registered there.
 
-#### Create, alter and drop catalog tables and schemas
+#### Create, alter, write and drop catalog tables and schemas
 
 `CREATE TABLE` and `DROP TABLE` resolve the table name as a query does, and act on the catalog:
 
@@ -130,6 +130,14 @@ ctx.execute("DROP SCHEMA lake.sales")  # only an empty namespace: no tables or c
 ```python
 ctx.execute("ALTER TABLE lake.sales.orders ADD COLUMN discount DOUBLE")
 ctx.execute("ALTER TABLE lake.sales.orders RENAME COLUMN qty TO quantity")
+```
+
+`INSERT INTO` appends rows to a catalog table, and `INSERT OVERWRITE` replaces all of its rows, in
+every partition (a `WHERE` in the query selects the new rows, not the ones replaced):
+
+```python
+ctx.execute("INSERT INTO lake.sales.orders (id, quantity) VALUES (1, 10), (2, 20)")
+ctx.execute("INSERT OVERWRITE lake.sales.orders SELECT * FROM staged_orders")
 ```
 
 See `SQLContext.register_catalog` for the details.

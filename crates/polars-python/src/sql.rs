@@ -193,6 +193,21 @@ impl PySQLContext {
                 dict.set_item("namespace", namespace.namespace)?;
                 dict.set_item("if_exists", if_exists)?;
             },
+            CatalogDdl::Insert {
+                name,
+                table,
+                columns,
+                query,
+                overwrite,
+            } => {
+                dict.set_item("kind", "insert")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("columns", columns)?;
+                dict.set_item("query", query)?;
+                dict.set_item("overwrite", overwrite)?;
+            },
             CatalogDdl::AlterTable {
                 name,
                 table,
