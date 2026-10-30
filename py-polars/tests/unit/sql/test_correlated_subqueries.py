@@ -2168,3 +2168,192 @@ def test_correlated_subquery_inner_subquery_filter_reads_outer(query: str) -> No
     }
     with pytest.raises(pl.exceptions.SQLInterfaceError):
         pl.SQLContext(frames).execute(query, eager=True)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # The top group per outer row.
+        """
+        SELECT n.k, (
+            SELECT c.ck FROM c WHERE c.nk = n.k
+            GROUP BY c.ck ORDER BY SUM(c.x) DESC LIMIT 1
+        ) AS top FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT COUNT(*) FROM c WHERE c.nk = n.k
+            GROUP BY c.ck ORDER BY SUM(c.x) DESC, c.ck FETCH FIRST 1 ROW ONLY
+        ) AS top FROM n
+        """,
+        """
+        SELECT n.k, (
+            SELECT ck AS key FROM c WHERE c.nk = n.k AND c.x > 0
+            GROUP BY ck ORDER BY key DESC LIMIT 1
+        ) AS top FROM n
+        """,
+        # One group per outer row.
+        """
+        SELECT n.k, (
+            SELECT SUM(c.x) FROM c WHERE c.nk = n.k AND c.ck = n.k GROUP BY c.ck
+        ) AS s FROM n
+        """,
+        # Membership and existence over the groups that pass HAVING.
+        """
+        SELECT n.k FROM n WHERE 1 IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING SUM(c.x) > 2
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE n.k NOT IN (
+            SELECT COUNT(*) FROM c WHERE c.nk = n.k GROUP BY c.ck
+        )
+        """,
+        """
+        SELECT n.k FROM n WHERE EXISTS (
+            SELECT c.ck FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING COUNT(*) > 1
+        )
+        """,
+        # Correlated through a nested IN.
+        """
+        SELECT n.k, (
+            SELECT c.ck FROM c WHERE c.ck IN (SELECT d.ck FROM d WHERE d.nk = n.k)
+            GROUP BY c.ck ORDER BY SUM(c.x) DESC, c.ck LIMIT 1
+        ) AS top FROM n
+        """,
+        # Two correlation keys and DISTINCT.
+        """
+        SELECT n.k, n.j, (
+            SELECT DISTINCT MAX(c.x) FROM c WHERE c.nk = n.k AND c.ck = n.j
+            GROUP BY c.ck
+        ) AS m FROM n
+        """,
+    ],
+)
+def test_correlated_subquery_group_by(query: str) -> None:
+    frames = {
+        "n": pl.DataFrame({"k": [1, 2, 3, None], "j": [1, 3, 2, 1]}),
+        "c": pl.DataFrame(
+            {
+                "nk": [1, 1, 1, 2, 2, 2, 3, None],
+                "ck": [1, 1, 2, 3, 3, 4, 2, 1],
+                "x": [1, 2, 9, 5, 1, 4, None, 7],
+            }
+        ),
+        "d": pl.DataFrame({"nk": [1, 1, 2, 3], "ck": [1, 2, 4, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # `x` and the struct field `s.x` are different group keys.
+        """
+        SELECT o.b, (
+            SELECT s.x FROM r WHERE r.i = o.b GROUP BY x, s.x ORDER BY s.x LIMIT 1
+        ) AS v FROM o
+        """,
+        # ORDER BY binds a SELECT alias before a column of that name.
+        """
+        SELECT o.b, (
+            SELECT SUM(x) AS g FROM r WHERE r.i = o.b GROUP BY g ORDER BY g DESC LIMIT 1
+        ) AS v FROM o
+        """,
+        # An inner-only nested subquery.
+        """
+        SELECT o.b, (
+            SELECT SUM(x) FROM r
+            WHERE r.i = o.b AND EXISTS (SELECT 1 FROM d WHERE d.g = r.g)
+            GROUP BY g ORDER BY g LIMIT 1
+        ) AS v FROM o
+        """,
+        # The outer key is a column of the second outer relation.
+        """
+        SELECT o.a, p.a AS pa, (
+            SELECT MAX(r.x) FROM r WHERE r.i = p.a GROUP BY r.g ORDER BY r.g LIMIT 1
+        ) AS v FROM o CROSS JOIN p
+        """,
+    ],
+)
+def test_correlated_subquery_group_by_bindings(query: str) -> None:
+    frames = {
+        "o": pl.DataFrame({"a": [1.0, 2.0], "b": [1, 2]}),
+        "p": pl.DataFrame({"a": [1, 2]}),
+        "r": pl.DataFrame(
+            {
+                "i": [1, 1, 2],
+                "g": [1, 2, 2],
+                "x": [25, 20, 7],
+                "s": [{"x": 100}, {"x": 200}, {"x": 50}],
+            }
+        ),
+        "d": pl.DataFrame({"g": [2]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_row_order=False,
+        check_dtypes=False,
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # More than one group for an outer row.
+        "SELECT n.k, (SELECT SUM(c.x) FROM c WHERE c.nk = n.k GROUP BY c.ck) FROM n",
+        # Correlation other than equalities.
+        "SELECT n.k, (SELECT SUM(c.x) FROM c WHERE c.nk < n.k GROUP BY c.nk) FROM n",
+        # An outer column in HAVING.
+        """
+        SELECT n.k FROM n WHERE 1 IN (
+            SELECT c.ck FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING SUM(c.x) > n.k
+        )
+        """,
+        # A SELECT alias in HAVING.
+        """
+        SELECT n.k FROM n WHERE 1 IN (
+            SELECT c.ck AS s FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING s > 0
+        )
+        """,
+        # A correlation column that is not grouped.
+        "SELECT n.k, (SELECT MAX(c.nk) + c.nk FROM c WHERE c.nk = n.k GROUP BY c.ck) FROM n",
+        # Distinct inner values that equal one outer value.
+        "SELECT n.f, (SELECT c.ck FROM c WHERE c.nk = n.f GROUP BY c.ck LIMIT 1) FROM n",
+        # An operand reading both the subquery and the outer query.
+        """
+        SELECT n.k, (
+            SELECT c.ck FROM c WHERE c.nk = x + n.k GROUP BY c.ck ORDER BY c.ck LIMIT 1
+        ) FROM n
+        """,
+        "SELECT n.k FROM n WHERE 1 IN (SELECT c.ck FROM c WHERE c.nk = x + n.k GROUP BY c.ck)",
+        """
+        SELECT n.k FROM n
+        WHERE EXISTS (SELECT c.ck FROM c WHERE c.nk = x + n.k GROUP BY c.ck)
+        """,
+        # HAVING reads a column that is not grouped, or an alias that is also a column.
+        "SELECT n.k, (SELECT MAX(c.x) FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING c.nk = 1) FROM n",
+        """
+        SELECT n.k, (
+            SELECT SUM(c.x) AS nk FROM c WHERE c.nk = n.k GROUP BY c.ck HAVING nk > 1
+        ) FROM n
+        """,
+    ],
+)
+def test_correlated_subquery_group_by_errors(query: str) -> None:
+    frames = {
+        "n": pl.DataFrame({"k": [1, 2], "f": [1.0, 2.0], "x": [0, 0]}),
+        "c": pl.DataFrame({"nk": [1, 1, 2], "ck": [1, 2, 3], "x": [1, 2, 3]}),
+    }
+    with pytest.raises(pl.exceptions.PolarsError):
+        pl.SQLContext(frames).execute(query, eager=True)
