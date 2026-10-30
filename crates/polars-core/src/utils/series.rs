@@ -16,8 +16,8 @@ pub fn check_is_valid_struct_cast(
         polars_err!(
             InvalidOperation:
             "cast from `{}` to `{}` failed in column '{}': {}\n\n\
-            Ensure that any output struct has the same number of fields as the input, and that all struct field names in the output are present in the input.\n\
-            Use `strict=False` to force the cast, and Polars will select the first n fields from the struct.",
+            A strict cast requires the output struct to have the same field names as the input, in the same order.\n\
+            Use `strict=False` to match fields by name: output fields missing from the input become null, and extra input fields are dropped.",
             input_dtype,
             output_dtype,
             output_name,
