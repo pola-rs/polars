@@ -3408,3 +3408,65 @@ def test_join_where_number_with_string_raises(condition: str) -> None:
         pl.SQLContext(a=a, b=b).execute(
             f"SELECT a.k, b.s FROM a JOIN b ON {condition}", eager=True
         )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT a.k, d.k2, d.s FROM a JOIN (SELECT a.k AS k2, SUM(b.v) AS s "
+            "FROM b WHERE b.k = a.k GROUP BY a.k) d ON d.k2 = a.k ORDER BY a.k",
+            [(1, 1, 201), (2, 2, 200)],
+        ),
+        (
+            "SELECT a.x, d.v FROM a LEFT JOIN (SELECT a.x, b.v FROM b WHERE b.v > 150) d "
+            "ON d.x = a.x ORDER BY a.x, d.v",
+            [(10, 200), (10, 500), (20, 200), (20, 500), (30, 200), (30, 500)],
+        ),
+        (
+            "SELECT a.x, d.v FROM a LEFT JOIN (SELECT b.v FROM b JOIN b AS b2 "
+            "ON b2.v = b.v AND b.k = a.k) d ON TRUE ORDER BY a.x, d.v",
+            [(10, 100), (10, 101), (20, 200), (30, None)],
+        ),
+        (
+            "SELECT a.x, d.y FROM a JOIN LATERAL (SELECT a.x * 2 AS y) d "
+            "ON d.y > 20 ORDER BY a.x",
+            [(20, 40), (30, 60)],
+        ),
+        (
+            "SELECT a.x, d.v FROM a CROSS JOIN (SELECT b.v FROM b WHERE b.k = a.k) d "
+            "ORDER BY a.x, d.v",
+            [(10, 100), (10, 101), (20, 200)],
+        ),
+        (
+            "SELECT a.x, d.v FROM a LEFT JOIN (SELECT b.v FROM b "
+            "WHERE b.k IS NOT DISTINCT FROM a.k) d ON TRUE ORDER BY a.x, d.v",
+            [(10, 100), (10, 101), (20, 200), (30, 500)],
+        ),
+        (
+            "SELECT a.x, d.n FROM a JOIN (SELECT k, x + COUNT(*) AS n FROM b "
+            "GROUP BY k) d ON d.k = a.k ORDER BY a.x",
+            [(10, 12), (20, 21)],
+        ),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_lateral_derived_table(
+    query: str,
+    expected: list[tuple[Any, ...]],
+    engine: Literal["in-memory", "streaming"],
+) -> None:
+    a = pl.DataFrame({"k": [1, 2, None], "x": [10, 20, 30]})
+    b = pl.DataFrame({"k": [1, 1, 2, None], "v": [100, 101, 200, 500]})
+    result = pl.SQLContext(a=a, b=b).execute(query).collect(engine=engine)
+    assert result.rows() == expected
+
+
+def test_lateral_derived_table_column_names() -> None:
+    a = pl.DataFrame({"k": [1], "x": [10]})
+    b = pl.DataFrame({"k": [1], "v": [100]})
+    result = pl.SQLContext(a=a, b=b).execute(
+        "SELECT * FROM a JOIN (SELECT a.x, 1 + a.x, b.v FROM b) d ON d.v > 0",
+        eager=True,
+    )
+    assert result.columns == ["k", "x", "x:d", "literal", "v"]

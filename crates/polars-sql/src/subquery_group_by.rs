@@ -147,7 +147,7 @@ fn is_aggregate_call(ctx: &SQLContext, expr: &SQLExpr) -> bool {
         && PolarsSQLFunctions::try_from_sql(function, ctx).is_ok_and(|f| f.is_builtin_aggregate()))
 }
 
-fn is_count_star(expr: &SQLExpr) -> bool {
+pub(crate) fn is_count_star(expr: &SQLExpr) -> bool {
     let SQLExpr::Function(function) = expr else {
         return false;
     };

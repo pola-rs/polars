@@ -10,6 +10,7 @@ mod group_context;
 mod grouping_sets;
 mod join_keys;
 pub mod keywords;
+mod lateral;
 mod literal_folding;
 mod resolver;
 mod sql_expr;
