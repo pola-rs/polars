@@ -856,7 +856,7 @@ fn holds_values(from: &DataType, to: &DataType) -> bool {
 
 /// Whether `node` calls an aggregate outside of its subqueries. A function that isn't
 /// known counts as one.
-fn has_aggregate(ctx: &SQLContext, node: &(impl Visit + ?Sized)) -> bool {
+pub(crate) fn has_aggregate(ctx: &SQLContext, node: &(impl Visit + ?Sized)) -> bool {
     struct Aggregates<'a> {
         ctx: &'a SQLContext,
         query_depth: usize,

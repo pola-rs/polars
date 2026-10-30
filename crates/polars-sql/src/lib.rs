@@ -15,6 +15,7 @@ mod resolver;
 mod sql_expr;
 mod sql_visitors;
 mod subquery;
+mod subquery_outer_select;
 mod subquery_pull_up;
 #[cfg(any(
     feature = "csv",
