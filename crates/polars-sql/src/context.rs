@@ -6127,7 +6127,7 @@ impl RelationName {
 
     /// Whether `qualifier` equals the trailing parts of one of the names, ignoring case unless
     /// `exact`.
-    fn named_by(&self, qualifier: &[Ident], exact: bool) -> bool {
+    pub(crate) fn named_by(&self, qualifier: &[Ident], exact: bool) -> bool {
         let ends_with = |name: &[String]| {
             let Some(start) = name.len().checked_sub(qualifier.len()) else {
                 return false;

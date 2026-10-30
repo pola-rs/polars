@@ -525,34 +525,39 @@ pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
 /// wildcard, as an expression or a function argument, or a `COLUMNS(...)` call.
 pub(crate) fn has_column_selector(expr: &SQLExpr) -> bool {
     visit_expressions(expr, |e| {
-        let is_selector = match e {
-            SQLExpr::Wildcard(_) | SQLExpr::QualifiedWildcard(..) => true,
-            SQLExpr::Function(func) => {
-                let is_columns = func.name.0[0]
-                    .as_ident()
-                    .is_some_and(|ident| ident.value.eq_ignore_ascii_case("columns"));
-                let has_wildcard_arg = match &func.args {
-                    FunctionArguments::List(args) => args.args.iter().any(|arg| {
-                        matches!(
-                            arg,
-                            FunctionArg::Unnamed(
-                                FunctionArgExpr::Wildcard | FunctionArgExpr::QualifiedWildcard(_)
-                            )
-                        )
-                    }),
-                    _ => false,
-                };
-                is_columns || has_wildcard_arg
-            },
-            _ => false,
-        };
-        if is_selector {
+        if is_column_selector(e) {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
         }
     })
     .is_break()
+}
+
+/// Whether `expr` itself, not counting its children, is a column selector (see
+/// [`has_column_selector`]).
+pub(crate) fn is_column_selector(expr: &SQLExpr) -> bool {
+    match expr {
+        SQLExpr::Wildcard(_) | SQLExpr::QualifiedWildcard(..) => true,
+        SQLExpr::Function(func) => {
+            let is_columns = func.name.0[0]
+                .as_ident()
+                .is_some_and(|ident| ident.value.eq_ignore_ascii_case("columns"));
+            let has_wildcard_arg = match &func.args {
+                FunctionArguments::List(args) => args.args.iter().any(|arg| {
+                    matches!(
+                        arg,
+                        FunctionArg::Unnamed(
+                            FunctionArgExpr::Wildcard | FunctionArgExpr::QualifiedWildcard(_)
+                        )
+                    )
+                }),
+                _ => false,
+            };
+            is_columns || has_wildcard_arg
+        },
+        _ => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
