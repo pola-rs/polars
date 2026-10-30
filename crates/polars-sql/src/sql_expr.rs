@@ -310,6 +310,36 @@ fn string_to_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr
     parse_string_as_temporal(expr, dtype, strict)
 }
 
+/// `expr`, if it is an ISO string literal, as a value of the temporal `dtype` it is
+/// compared with or read as; else `expr` itself.
+pub(crate) fn temporal_string_as(expr: &Expr, dtype: Option<&DataType>) -> Expr {
+    let Some(s) = (match expr {
+        Expr::Literal(lv) => lv.extract_str(),
+        _ => None,
+    }) else {
+        return expr.clone();
+    };
+    let parsed = match dtype {
+        Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
+        Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
+        Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
+            let s = if s.len() == 10 {
+                // handle upcast from ISO date string (10 chars) to datetime
+                format!("{s}T00:00:00")
+            } else {
+                s.replacen(' ', "T", 1)
+            };
+            Some((s, dtype))
+        },
+        _ => None,
+    };
+    // A string that does not parse keeps its strict parse, which fails
+    // when the query runs.
+    parsed
+        .and_then(|(s, dtype)| string_to_temporal(lit(s), dtype, true))
+        .unwrap_or_else(|| expr.clone())
+}
+
 /// The operator of `b <op> a` given that of `a <op> b`.
 fn flip_comparison(op: &SQLBinaryOperator) -> Option<SQLBinaryOperator> {
     Some(match op {
@@ -909,31 +939,7 @@ impl SQLExprVisitor<'_> {
     ///   "dt = '2077-10-10'::date"
     ///   "dtm::date = '2077-10-10'
     fn convert_temporal_strings(&self, left: &Expr, right: &Expr) -> Expr {
-        let Some(s) = (match right {
-            Expr::Literal(lv) => lv.extract_str(),
-            _ => None,
-        }) else {
-            return right.clone();
-        };
-        let parsed = match self.cast_or_expr_dtype(left) {
-            Some(dtype @ DataType::Time) if is_iso_time(s) => Some((s.to_string(), dtype)),
-            Some(dtype @ DataType::Date) if is_iso_date(s) => Some((s.to_string(), dtype)),
-            Some(dtype @ DataType::Datetime(_, _)) if is_iso_datetime(s) || is_iso_date(s) => {
-                let s = if s.len() == 10 {
-                    // handle upcast from ISO date string (10 chars) to datetime
-                    format!("{s}T00:00:00")
-                } else {
-                    s.replacen(' ', "T", 1)
-                };
-                Some((s, dtype))
-            },
-            _ => None,
-        };
-        // A string that does not parse keeps its strict parse, which fails
-        // when the query runs.
-        parsed
-            .and_then(|(s, dtype)| string_to_temporal(lit(s), &dtype, true))
-            .unwrap_or_else(|| right.clone())
+        temporal_string_as(right, self.cast_or_expr_dtype(left).as_ref())
     }
 
     fn struct_field_access_expr(
