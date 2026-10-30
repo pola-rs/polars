@@ -253,7 +253,7 @@ pub struct SQLContext {
     active_relations: Vec<RelationName>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     /// The current statement's FROM items that are not tables, read only by qualified columns.
-    from_item_frames: PlHashMap<String, LazyFrame>,
+    pub(crate) from_item_frames: PlHashMap<String, LazyFrame>,
     join_base: Option<JoinBase>,
     /// The (joined table, column) pairs of the USING clauses of the joins processed so far in
     /// the current join chain.
@@ -2325,7 +2325,21 @@ impl SQLContext {
                     }
                 }
 
-                let (r_name, mut rf) = self.get_table(&join.relation)?;
+                let mut join_operator = Cow::Borrowed(&join.join_operator);
+                let mut lateral_keys = None;
+                let (r_name, mut rf) = match self.get_table(&join.relation) {
+                    Ok(table) => table,
+                    // A derived table that reads the relations joined before it.
+                    Err(err) => match self.lateral_join(&join.relation, &join.join_operator, &lf) {
+                        Some(lateral) => {
+                            lf = lateral.left;
+                            join_operator = Cow::Owned(lateral.join_operator);
+                            lateral_keys = Some(lateral.keys);
+                            (lateral.name, lateral.right)
+                        },
+                        None => return Err(err),
+                    },
+                };
                 if r_name.is_empty() {
                     // Require non-empty to avoid duplicate column errors from nested self-joins.
                     polars_bail!(
@@ -2336,7 +2350,7 @@ impl SQLContext {
                 let left_schema = self.get_frame_schema(&mut lf)?;
                 let right_schema = self.get_frame_schema(&mut rf)?;
 
-                lf = match &join.join_operator {
+                lf = match join_operator.as_ref() {
                     op @ (JoinOperator::Join(constraint)  // note: bare "join" is inner
                     | JoinOperator::FullOuter(constraint)
                     | JoinOperator::Left(constraint)
@@ -2428,6 +2442,12 @@ impl SQLContext {
                         polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type)
                     },
                 };
+                if let Some(keys) = lateral_keys {
+                    lf = lf.drop(Selector::ByName {
+                        names: keys.into(),
+                        strict: false,
+                    });
+                }
 
                 let joined_schema = self.get_frame_schema(&mut lf)?;
                 self.record_joined_aliases(
@@ -5014,7 +5034,10 @@ impl SQLContext {
         }
     }
 
-    fn get_table(&mut self, relation: &TableFactor) -> PolarsResult<(String, LazyFrame)> {
+    pub(crate) fn get_table(
+        &mut self,
+        relation: &TableFactor,
+    ) -> PolarsResult<(String, LazyFrame)> {
         if let Some(name) = get_table_name(relation) {
             self.from_item_frames.remove(&name);
         }
