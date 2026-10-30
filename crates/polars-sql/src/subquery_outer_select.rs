@@ -248,7 +248,7 @@ fn when_then(condition: SQLExpr, result: SQLExpr, else_result: Option<SQLExpr>) 
 /// Whether `expr` calls a function whose value depends on the query it is in: `UNNEST`,
 /// which can return several rows for one, `GROUPING` / `GROUPING_ID`, or a ranking or
 /// offset function, which may be called without OVER.
-fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
+pub(crate) fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
     visit_expressions(expr, |e| match e {
         SQLExpr::Function(function)
             if matches!(
