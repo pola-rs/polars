@@ -19,11 +19,12 @@ use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use polars_utils::unique_id::UniqueId;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions, Cte,
-    Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
-    GroupByExpr, HiveDistributionStyle, HiveFormat, Ident, JoinConstraint, JoinOperator,
-    LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy,
-    OrderByKind, Query, RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
+    AlterColumnOperation, AlterTable, AlterTableOperation, BinaryOperator as SQLBinaryOperator,
+    CreateTable, CreateTableLikeKind, CreateTableOptions, Cte, Delete, Distinct, DropBehavior,
+    ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr,
+    HiveDistributionStyle, HiveFormat, Ident, JoinConstraint, JoinOperator, LimitClause,
+    NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy, OrderByKind, Query,
+    RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
     TableAlias, TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator,
     Value as SQLValue, ValueWithSpan, Values, VisitorMut, WildcardAdditionalOptions, WindowSpec,
@@ -33,9 +34,10 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
-    CatalogDdl, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogTable, RewrittenName,
-    create_schema_options, create_table_columns, create_table_options, create_table_partitioning,
-    display_name, name_parts, name_position, rewrite_catalog_names,
+    CatalogAlter, CatalogDdl, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogTable,
+    RewrittenName, alter_table_column, alter_table_properties, create_schema_options,
+    create_table_columns, create_table_options, create_table_partitioning, display_name,
+    name_parts, name_position, rewrite_catalog_names,
 };
 use crate::dyn_visit::{self, visit_expressions, visit_expressions_mut};
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
@@ -450,6 +452,7 @@ impl SQLContext {
             Statement::CreateTable(create_table) if !create_table.temporary => {
                 return self.catalog_create_table(create_table);
             },
+            Statement::AlterTable(alter) => return self.catalog_alter_table(alter),
             Statement::CreateSchema { .. } => {
                 let (name, if_not_exists, options) = create_schema_parts(&stmt)?;
                 let Some((name, namespace)) = self.catalog_schema_target(name)? else {
@@ -900,6 +903,7 @@ impl SQLContext {
                 let (name, _) = drop_schema_parts(stmt)?;
                 self.execute_schema_ddl("DROP SCHEMA", name)?
             },
+            Statement::AlterTable(alter) => self.execute_alter_table(alter)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
@@ -1715,6 +1719,69 @@ impl SQLContext {
             SQLInterface: "schema '{}' has no catalog: no default catalog is set; write '<catalog>.{}'",
             object_name_to_string(name), object_name_to_string(name)
         )
+    }
+
+    /// The catalog table an `ALTER TABLE` of `name` changes, with its name as written. A
+    /// registered table of that name comes first, as in a read, and has no `ALTER TABLE`.
+    fn catalog_alter_target(
+        &self,
+        name: &ObjectName,
+    ) -> PolarsResult<Option<(String, CatalogTable)>> {
+        let tbl = object_name_to_string(name);
+        if self.registered_table_key(&tbl)?.is_some() {
+            return Ok(None);
+        }
+        Ok(name_parts(name)
+            .and_then(|parts| self.catalogs.resolve(&parts))
+            .map(|table| (tbl, table)))
+    }
+
+    /// The catalog DDL of an `ALTER TABLE`, if its name resolves to a catalog table.
+    fn catalog_alter_table(&self, alter: &AlterTable) -> PolarsResult<Option<CatalogDdl>> {
+        let Some((name, table)) = self.catalog_alter_target(&alter.name)? else {
+            return Ok(None);
+        };
+        polars_ensure!(!alter.only, SQLInterface: "`ALTER TABLE ONLY` is not supported");
+        polars_ensure!(
+            alter.location.is_none() && alter.on_cluster.is_none() && alter.table_type.is_none(),
+            SQLInterface: "unsupported ALTER TABLE statement: `{}`", alter
+        );
+        let [op] = alter.operations.as_slice() else {
+            polars_bail!(SQLInterface: "`ALTER TABLE` takes one operation per statement")
+        };
+        Ok(Some(CatalogDdl::AlterTable {
+            name,
+            table,
+            if_exists: alter.if_exists,
+            operation: alter_table_operation(op)?,
+        }))
+    }
+
+    // ALTER TABLE, which only a catalog table has
+    fn execute_alter_table(&self, alter: &AlterTable) -> PolarsResult<LazyFrame> {
+        if let Some((name, table)) = self.catalog_alter_target(&alter.name)? {
+            polars_bail!(
+                SQLInterface: "ALTER TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                name, display_name(&table.full_name())
+            );
+        }
+        let tbl = object_name_to_string(&alter.name);
+        let parts = name_parts(&alter.name);
+        // a registered table hides the catalog table of that name
+        let hint = match parts
+            .as_deref()
+            .and_then(|parts| self.catalogs.resolve(parts))
+        {
+            Some(table) => format!(
+                "; '{}' is a registered table, write '{}' for the catalog table",
+                tbl,
+                display_name(&table.full_name())
+            ),
+            None => parts
+                .and_then(|parts| self.catalogs.unresolved_hint(&parts))
+                .unwrap_or_default(),
+        };
+        polars_bail!(SQLInterface: "`ALTER TABLE` is supported only for catalog tables{}", hint)
     }
 
     // DELETE FROM <tbl> [WHERE ...]
@@ -7197,6 +7264,85 @@ fn drop_schema_parts(stmt: &Statement) -> PolarsResult<(&ObjectName, bool)> {
         polars_bail!(SQLInterface: "DROP SCHEMA takes one schema name")
     };
     Ok((name, *if_exists))
+}
+
+/// The change an `ALTER TABLE` operation makes to a catalog table.
+fn alter_table_operation(op: &AlterTableOperation) -> PolarsResult<CatalogAlter> {
+    Ok(match op {
+        AlterTableOperation::AddColumn {
+            if_not_exists,
+            column_def,
+            column_position,
+            ..
+        } => {
+            polars_ensure!(
+                column_position.is_none(),
+                SQLInterface: "`ADD COLUMN ... FIRST | AFTER` is not supported"
+            );
+            let (name, dtype) = alter_table_column(column_def)?;
+            CatalogAlter::AddColumn {
+                name,
+                dtype,
+                if_not_exists: *if_not_exists,
+            }
+        },
+        AlterTableOperation::DropColumn {
+            column_names,
+            if_exists,
+            drop_behavior,
+            ..
+        } => {
+            polars_ensure!(
+                !matches!(drop_behavior, Some(DropBehavior::Cascade)),
+                SQLInterface: "`DROP COLUMN ... CASCADE` is not supported"
+            );
+            let [column] = column_names.as_slice() else {
+                polars_bail!(SQLInterface: "`ALTER TABLE` takes one operation per statement")
+            };
+            CatalogAlter::DropColumn {
+                name: column.value.clone(),
+                if_exists: *if_exists,
+            }
+        },
+        AlterTableOperation::RenameColumn {
+            old_column_name,
+            new_column_name,
+        } => CatalogAlter::RenameColumn {
+            old: old_column_name.value.clone(),
+            new: new_column_name.value.clone(),
+        },
+        AlterTableOperation::AlterColumn { column_name, op } => {
+            let name = column_name.value.clone();
+            match op {
+                AlterColumnOperation::SetDataType {
+                    data_type, using, ..
+                } => {
+                    polars_ensure!(
+                        using.is_none(),
+                        SQLInterface: "`ALTER COLUMN ... TYPE ... USING` is not supported"
+                    );
+                    CatalogAlter::SetDataType {
+                        name,
+                        dtype: map_sql_dtype_to_polars(data_type)?,
+                    }
+                },
+                AlterColumnOperation::DropNotNull => CatalogAlter::DropNotNull { name },
+                AlterColumnOperation::SetNotNull => polars_bail!(
+                    SQLInterface: "`SET NOT NULL` is not supported: the rows of column '{}' may be null",
+                    name
+                ),
+                _ => polars_bail!(
+                    SQLInterface: "`ALTER COLUMN {} {}` is not supported for catalog tables", name, op
+                ),
+            }
+        },
+        AlterTableOperation::SetTblProperties { table_properties } => CatalogAlter::SetProperties {
+            properties: alter_table_properties(table_properties)?,
+        },
+        _ => polars_bail!(
+            SQLInterface: "`ALTER TABLE ... {}` is not supported for catalog tables", op
+        ),
+    })
 }
 
 fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
