@@ -522,6 +522,8 @@ class SQLContext(Generic[FrameType]):
                 lambda query: wrap_ldf(self._execute_with_catalogs(query)),
                 storage_options,
             )
+        elif stmt["kind"] == "truncate":
+            response = _truncate_catalog_table(catalog, stmt)
         else:
             msg = f"unsupported catalog statement {stmt['kind']!r}"
             raise NotImplementedError(msg)
@@ -615,7 +617,9 @@ class SQLContext(Generic[FrameType]):
           `VALUES` list or a query in one commit, and `INSERT OVERWRITE` replaces
           all of the table's rows. Values convert to the column types as described
           in :ref:`INSERT <insert>`.
-        * `TRUNCATE` and `DELETE` are not supported on catalog tables.
+        * `TRUNCATE [TABLE] [IF EXISTS] <name>` deletes all of a catalog table's
+          rows in one commit, without writing data files.
+        * `DELETE` is not supported on catalog tables.
 
         Catalogs attached inside a `with SQLContext()` block are detached on exit,
         like the tables registered there. If that detaches the default catalog, the
@@ -964,6 +968,57 @@ def _drop_catalog_table(catalog: pyiceberg.catalog.Catalog, ddl: dict[str, Any])
         )
         raise
     return response
+
+
+def _truncate_catalog_table(
+    catalog: pyiceberg.catalog.Catalog, stmt: dict[str, Any]
+) -> str:
+    """Delete all rows of the catalog table of a `TRUNCATE`, returning the response."""
+    from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+
+    identifier: tuple[str, ...] = tuple(stmt["identifier"])
+    name, full_name = stmt["name"], _display_name([stmt["catalog"], *identifier])
+    response = f"TRUNCATE TABLE {full_name}"
+    missing = (
+        f"table '{name}' does not exist: catalog table "
+        f"'{_display_name(identifier)}' could not be truncated"
+    )
+    # checked first, as not every catalog reports a missing table as one on load
+    if not _table_exists(catalog, identifier):
+        if stmt["if_exists"]:
+            return response
+        msg = f"{missing}; catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg)
+    try:
+        table = catalog.load_table(identifier)
+    except (NoSuchTableError, NoSuchNamespaceError) as error:
+        if stmt["if_exists"]:
+            return response
+        msg = f"{missing} ({error}); catalog identifiers are case-sensitive"
+        raise NoSuchTableError(msg) from error
+    try:
+        _delete_all_rows(table)
+    except Exception as error:
+        error.add_note(
+            f"table '{name}' could not be truncated: catalog table "
+            f"'{_display_name(identifier)}' of catalog '{stmt['catalog']}'"
+        )
+        raise
+    return response
+
+
+def _delete_all_rows(table: pyiceberg.table.Table) -> None:
+    """Delete all rows of `table` in one commit. An empty table commits nothing."""
+    from pyiceberg.expressions import AlwaysTrue
+
+    with table.transaction() as tx:
+        # data files are dropped whole, without reading or writing any
+        with tx.update_snapshot().delete() as delete:
+            delete.delete_by_predicate(AlwaysTrue())
+            rewrite = delete.rewrites_needed
+        if rewrite:
+            # a data file without a record count is read to drop its rows
+            tx.delete(AlwaysTrue())
 
 
 def _create_catalog_namespace(

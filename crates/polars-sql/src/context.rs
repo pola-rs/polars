@@ -26,7 +26,7 @@ use sqlparser::ast::{
     NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy, OrderByKind, Query,
     RenameSelectItem, SchemaName, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, SqlOption, Statement,
-    TableAlias, TableFactor, TableObject, TableWithJoins, Truncate,
+    TableAlias, TableFactor, TableObject, TableWithJoins, Truncate, TruncateTableTarget,
     UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan, Values, VisitorMut,
     WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
@@ -455,6 +455,7 @@ impl SQLContext {
             },
             Statement::AlterTable(alter) => return self.catalog_alter_table(alter),
             Statement::Insert(insert) => return self.catalog_insert(insert, None),
+            Statement::Truncate(truncate) => return self.catalog_truncate(truncate),
             Statement::Query(query) => {
                 let SetExpr::Insert(Statement::Insert(insert)) = query.body.as_ref() else {
                     return Ok(None);
@@ -634,25 +635,18 @@ impl SQLContext {
     /// Error for a statement changing a table of an attached catalog, which SQL can't do yet.
     /// The name resolves as in a read, so a table of the default catalog is also an error.
     /// With `local_first`, a registered table with the whole name is changed instead, and a
-    /// name starting with an attached catalog that resolves to no table is left to it. With
-    /// `if_exists`, only a name starting with an attached catalog is, so the statement's no-op
-    /// on a missing table applies.
+    /// name starting with an attached catalog that resolves to no table is left to it.
     fn ensure_not_catalog_table(
         &self,
         name: &ObjectName,
         statement: &str,
         local_first: bool,
-        if_exists: bool,
     ) -> PolarsResult<()> {
         let Some(parts) = name_parts(name) else {
             return Ok(());
         };
         let named = self.catalogs.named_catalog(&parts);
-        let table = match (named, if_exists) {
-            (None, true) => None,
-            _ => self.catalogs.resolve(&parts),
-        };
-        let Some(table) = table else {
+        let Some(table) = self.catalogs.resolve(&parts) else {
             return match named {
                 Some(catalog) if !local_first => polars_bail!(
                     SQLInterface: "{} on a table of attached catalog '{}' is not supported{}",
@@ -920,7 +914,7 @@ impl SQLContext {
             Statement::AlterTable(alter) => self.execute_alter_table(alter)?,
             Statement::Insert(insert) => self.execute_insert(insert)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
-            stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
+            Statement::Truncate(truncate) => self.execute_truncate_table(truncate)?,
             stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
             _ => polars_bail!(
                 SQLInterface: "statement type is not supported:\n{:?}", ast,
@@ -1927,7 +1921,7 @@ impl SQLContext {
             }
             self.set_active_relations(from_tables);
             if let TableFactor::Table { name, .. } = &tbl_expr.relation {
-                self.ensure_not_catalog_table(name, "DELETE", true, false)?;
+                self.ensure_not_catalog_table(name, "DELETE", true)?;
             }
             let (_, lf) = self.get_table(&tbl_expr.relation)?;
             if selection.is_none() {
@@ -1948,52 +1942,38 @@ impl SQLContext {
     }
 
     // TRUNCATE <tbl>
-    fn execute_truncate_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
-        if let Statement::Truncate(Truncate {
-            table_names,
-            partitions,
-            table: _, // whether the `TABLE` keyword was present: cosmetic
-            if_exists,
-            identity,
-            cascade,
-            on_cluster,
-        }) = stmt
-        {
-            polars_ensure!(identity.is_none(), SQLInterface: "`TRUNCATE ... RESTART/CONTINUE IDENTITY` is not supported");
-            polars_ensure!(cascade.is_none(), SQLInterface: "`TRUNCATE ... CASCADE/RESTRICT` is not supported");
-            polars_ensure!(on_cluster.is_none(), SQLInterface: "`TRUNCATE ... ON CLUSTER` is not supported");
-
-            match partitions {
-                None => {
-                    if table_names.len() != 1 {
-                        polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
-                    }
-                    self.ensure_not_catalog_table(
-                        &table_names[0].name,
-                        "TRUNCATE",
-                        true,
-                        *if_exists,
-                    )?;
-                    let tbl = object_name_to_string(&table_names[0].name);
-                    let mut table_map = self.table_map.write().unwrap();
-                    match key_ignoring_case(&table_map, &tbl)?.cloned() {
-                        Some(key) => {
-                            let lf = table_map.get_mut(&key).unwrap();
-                            *lf = lf.clone().clear();
-                            Ok(lf.clone())
-                        },
-                        // `TRUNCATE TABLE IF EXISTS <tbl>` is a no-op on a missing table.
-                        None if *if_exists => Ok(DataFrame::empty().lazy()),
-                        None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
-                    }
-                },
-                _ => {
-                    polars_bail!(SQLInterface: "TRUNCATE does not support use of 'partitions'")
-                },
-            }
-        } else {
-            polars_bail!(SQLInterface: "unexpected statement type; expected TRUNCATE")
+    fn execute_truncate_table(&mut self, truncate: &Truncate) -> PolarsResult<LazyFrame> {
+        let (name, if_exists) = truncate_parts(truncate)?;
+        if let Some((tbl, table)) = self.catalog_change_target(name)? {
+            polars_bail!(
+                SQLInterface: "TRUNCATE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
+                tbl, display_name(&table.full_name())
+            );
         }
+        let tbl = object_name_to_string(name);
+        let mut table_map = self.table_map.write().unwrap();
+        match key_ignoring_case(&table_map, &tbl)?.cloned() {
+            Some(key) => {
+                let lf = table_map.get_mut(&key).unwrap();
+                *lf = lf.clone().clear();
+                Ok(lf.clone())
+            },
+            // `TRUNCATE TABLE IF EXISTS <tbl>` is a no-op on a missing table.
+            None if if_exists => Ok(DataFrame::empty().lazy()),
+            None => polars_bail!(SQLInterface: "table '{}' does not exist", tbl),
+        }
+    }
+
+    /// The catalog statement of a `TRUNCATE`, if its name resolves to a catalog table.
+    fn catalog_truncate(&self, truncate: &Truncate) -> PolarsResult<Option<CatalogStatement>> {
+        let (name, if_exists) = truncate_parts(truncate)?;
+        Ok(self
+            .catalog_change_target(name)?
+            .map(|(name, table)| CatalogStatement::Truncate {
+                name,
+                table,
+                if_exists,
+            }))
     }
 
     fn register_cte(&mut self, name: &str, lf: LazyFrame) {
@@ -4958,7 +4938,7 @@ impl SQLContext {
             } else {
                 // The caller creates catalog tables (see `catalog_statement`); here they are an error.
                 self.catalog_create_target(name)?;
-                self.ensure_not_catalog_table(name, "CREATE TABLE", false, false)?;
+                self.ensure_not_catalog_table(name, "CREATE TABLE", false)?;
             }
             let tbl_name = object_name_to_string(name);
             let existing = self.registered_table_key(&tbl_name)?;
@@ -7458,6 +7438,36 @@ fn drop_schema_parts(stmt: &Statement) -> PolarsResult<(&ObjectName, bool)> {
     polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
     let [name] = names.as_slice() else {
         polars_bail!(SQLInterface: "DROP SCHEMA takes one schema name")
+    };
+    Ok((name, *if_exists))
+}
+
+/// The table name and `IF EXISTS` of a `TRUNCATE` statement, rejecting unsupported modifiers.
+fn truncate_parts(truncate: &Truncate) -> PolarsResult<(&ObjectName, bool)> {
+    // Destructure exhaustively so new sqlparser fields surface as compile errors.
+    let Truncate {
+        table_names,
+        partitions,
+        table: _, // whether the `TABLE` keyword was present: cosmetic
+        if_exists,
+        identity,
+        cascade,
+        on_cluster,
+    } = truncate;
+    polars_ensure!(identity.is_none(), SQLInterface: "`TRUNCATE ... RESTART/CONTINUE IDENTITY` is not supported");
+    polars_ensure!(cascade.is_none(), SQLInterface: "`TRUNCATE ... CASCADE/RESTRICT` is not supported");
+    polars_ensure!(on_cluster.is_none(), SQLInterface: "`TRUNCATE ... ON CLUSTER` is not supported");
+    polars_ensure!(partitions.is_none(), SQLInterface: "TRUNCATE does not support use of 'partitions'");
+    let [
+        TruncateTableTarget {
+            name,
+            // no table inheritance: cosmetic
+            only: _,
+            has_asterisk: _,
+        },
+    ] = table_names.as_slice()
+    else {
+        polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
     };
     Ok((name, *if_exists))
 }

@@ -208,6 +208,17 @@ impl PySQLContext {
                 dict.set_item("query", query)?;
                 dict.set_item("overwrite", overwrite)?;
             },
+            CatalogStatement::Truncate {
+                name,
+                table,
+                if_exists,
+            } => {
+                dict.set_item("kind", "truncate")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_exists", if_exists)?;
+            },
             CatalogStatement::AlterTable {
                 name,
                 table,

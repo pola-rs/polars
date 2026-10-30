@@ -104,6 +104,15 @@ pub enum CatalogStatement {
         /// `OVERWRITE`: replace the table's rows.
         overwrite: bool,
     },
+    /// `TRUNCATE [TABLE] [IF EXISTS] <name>`.
+    Truncate {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to empty.
+        table: CatalogTable,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
     /// `ALTER TABLE [IF EXISTS] <name> <operation>`.
     AlterTable {
         /// The table name as the statement wrote it.

@@ -215,21 +215,20 @@ Returns the Polars execution plan for a given SQL query.
 
 INSERT
 ------
-Write rows to a table of a catalog attached with :meth:`SQLContext.register_catalog`, with
-the name resolved as in a query, in one commit. ``INSERT INTO`` appends the rows of a
-``VALUES`` list or a query; ``INSERT OVERWRITE`` replaces all of the table's rows, in every
-partition (a ``WHERE`` in the query selects the new rows, not the rows replaced, and a
-query without rows leaves the table empty).
+Write rows to a table of a catalog attached with :meth:`SQLContext.register_catalog`, in
+one commit. ``INSERT INTO`` appends the rows of a ``VALUES`` list or a query.
+``INSERT OVERWRITE`` replaces all rows of the table, in every partition. A ``WHERE`` in its
+query selects the new rows, not the rows replaced.
 
-The values fill the table's columns in order, or the columns listed after the table name;
-the other columns get NULL, and a ``NOT NULL`` column must be given a value. Values are
-converted to the column types: numbers to any numeric type (a fractional value going into
-an integer column is rounded: a decimal half away from zero, a float half to even, while
-``CAST`` truncates; a decimal going to fewer decimal places rounds half to even), and dates
-and timestamps among themselves; a value that does not fit raises an error, and other
-conversions need an explicit ``CAST``. A commit that loses to
-another writer's commit is retried for ``INSERT INTO``; ``INSERT OVERWRITE`` raises an
-error and writes nothing.
+Values fill the columns in order, or the listed columns. Other columns get NULL. A
+``NOT NULL`` column needs a value. Numbers convert to any numeric type. A fraction going
+into an integer column rounds: a decimal half away from zero, a float half to even.
+``CAST`` truncates instead. Dates and timestamps convert among themselves. Other
+conversions need a ``CAST``. A value that does not fit raises an error.
+
+If another writer commits first, ``INSERT INTO`` retries. ``INSERT OVERWRITE`` fails if
+that writer added rows, unless the table's ``write.delete.isolation-level`` is
+``snapshot``.
 
 **Example:**
 
@@ -303,6 +302,9 @@ TRUNCATE
 Remove all data from a table *without* deleting the table itself. Truncating a
 table that does not exist raises an error unless the optional ``IF EXISTS``
 clause is given, in which case the statement is a no-op.
+
+On a catalog table, it commits once and writes no data files. Like ``INSERT OVERWRITE``,
+it fails if another writer added rows.
 
 **Example:**
 
