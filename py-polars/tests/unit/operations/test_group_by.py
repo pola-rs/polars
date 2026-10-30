@@ -3770,3 +3770,51 @@ def test_group_by_per_group_scalar_small_and_large_groups(
         .agg(pl.col(list(exprs(over=True))))
     )
     assert_frame_equal(out.collect(engine=engine), expected.collect(engine=engine))
+
+
+@pytest.mark.parametrize(
+    "agg",
+    [
+        Expr.first,
+        Expr.last,
+        lambda e: e.first(ignore_nulls=True),
+        lambda e: e.last(ignore_nulls=True),
+        Expr.min,
+        Expr.max,
+        Expr.mean,
+        Expr.median,
+        Expr.bitwise_and,
+        Expr.bitwise_or,
+    ],
+)
+@pytest.mark.parametrize(
+    ("keep", "is_sorted"),
+    [
+        ([True, False, True, False], False),
+        ([False, True, True, False], False),
+        ([True, True, False, False], True),
+        ([False, False, True, True], True),
+    ],
+)
+def test_group_by_literal_agg_empty_groups_sorted_flag_30326(
+    agg: Callable[[Expr], Expr], keep: list[bool], is_sorted: bool
+) -> None:
+    df = pl.DataFrame({"g": [1, 2, 3, 4], "keep": keep}).with_columns(v=pl.lit(5))
+    v = df.group_by("g", maintain_order=True).agg(agg(pl.col("v").filter("keep")))["v"]
+
+    assert v.to_list() == [5 if k else None for k in keep]
+    assert v.flags["SORTED_ASC"] == is_sorted
+    assert v.max() == 5
+    assert v.n_unique() == 2
+    assert v.unique().sort().to_list() == [None, 5]
+
+
+def test_group_by_literal_agg_empty_groups_categorical_30326() -> None:
+    df = pl.DataFrame({"g": [1, 2, 3, 4], "keep": [True, False, True, False]})
+    df = df.with_columns(v=pl.lit("x", dtype=pl.Categorical))
+    out = df.group_by("g", maintain_order=True).agg(pl.col("v").filter("keep").first())
+    v = out["v"]
+
+    # The sorted flag sits on the physical, which `flags` does not show.
+    assert v.n_unique() == 2
+    assert v.unique().len() == 2
