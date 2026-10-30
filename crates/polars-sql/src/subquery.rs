@@ -763,7 +763,7 @@ impl SQLContext {
     // Parse an outer-query expression, or `None` if it doesn't stand on the outer
     // relation alone: an unlowered subquery, or a column the outer frame lacks.
     // Any alias is cosmetic here and stripped.
-    fn try_parse_outer_only_expr(
+    pub(crate) fn try_parse_outer_only_expr(
         &mut self,
         sql_expr: &SQLExpr,
         outer_schema: &Schema,
@@ -3146,7 +3146,7 @@ pub(crate) fn strip_nested(mut expr: &SQLExpr) -> &SQLExpr {
 
 /// Call `f` on each compound identifier that `query` reads without naming one of
 /// its own relations.
-fn visit_foreign_qualifiers(
+pub(crate) fn visit_foreign_qualifiers(
     query: &Query,
     spellings: &CatalogSpellings,
     f: impl FnMut(&[Ident]) -> ControlFlow<()>,
@@ -3281,6 +3281,10 @@ impl CorrelatedLowering<'_> {
             .pull_up_nested(ScopeColumns::Frame(self.outer_schema), subquery);
         let original = subquery;
         let subquery = prepared.as_ref().unwrap_or(subquery);
+        let grouped = self
+            .ctx
+            .group_by_in_derived_table(self.outer_schema, subquery);
+        let subquery = grouped.as_ref().unwrap_or(subquery);
         // The frame is cloned rather than moved so it survives a declined lowering.
         let lowered = match &kind {
             SubqueryKind::Exists => self.ctx.try_decorrelate_exists_subquery(
