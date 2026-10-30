@@ -235,7 +235,11 @@ impl SQLContext {
     }
 }
 
-fn when_then(condition: SQLExpr, result: SQLExpr, else_result: Option<SQLExpr>) -> SQLExpr {
+pub(crate) fn when_then(
+    condition: SQLExpr,
+    result: SQLExpr,
+    else_result: Option<SQLExpr>,
+) -> SQLExpr {
     SQLExpr::Case {
         case_token: AttachedToken::empty(),
         end_token: AttachedToken::empty(),
@@ -277,7 +281,11 @@ pub(crate) fn calls_query_function(ctx: &SQLContext, expr: &SQLExpr) -> bool {
 /// `inner_schema`. An unqualified name binds to them when they have it; a qualified one
 /// when its qualifier names one of them or its first part is one of their (struct)
 /// columns.
-fn reads_inner_column(expr: &SQLExpr, inner_names: &[RelationName], inner_schema: &Schema) -> bool {
+pub(crate) fn reads_inner_column(
+    expr: &SQLExpr,
+    inner_names: &[RelationName],
+    inner_schema: &Schema,
+) -> bool {
     visit_expressions(expr, |e| {
         let inner = match e {
             SQLExpr::Identifier(ident) => inner_schema.contains(&ident.value),

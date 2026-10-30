@@ -528,15 +528,15 @@ impl SQLExprVisitor<'_> {
             SQLExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
-            SQLExpr::IsFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false))),
+            SQLExpr::IsFalse(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(false))),
             SQLExpr::IsNotDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.eq_missing(self.visit_expr(e2)?))
             },
-            SQLExpr::IsNotFalse(expr) => Ok(self.visit_expr(expr)?.eq(lit(false)).not()),
+            SQLExpr::IsNotFalse(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(false))),
             SQLExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
-            SQLExpr::IsNotTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true)).not()),
+            SQLExpr::IsNotTrue(expr) => Ok(self.visit_truth_value(expr)?.neq_missing(lit(true))),
             SQLExpr::IsNull(expr) => Ok(self.visit_expr(expr)?.is_null()),
-            SQLExpr::IsTrue(expr) => Ok(self.visit_expr(expr)?.eq(lit(true))),
+            SQLExpr::IsTrue(expr) => Ok(self.visit_truth_value(expr)?.eq_missing(lit(true))),
             SQLExpr::Like {
                 negated,
                 any,
@@ -965,6 +965,17 @@ impl SQLExprVisitor<'_> {
     }
 
     /// Best-effort dtype for an expression; `None` if it cannot be resolved.
+    /// `expr` as a truth value, where a number is true when it isn't zero.
+    fn visit_truth_value(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+        Ok(match self.expr_dtype(&expr) {
+            Some(dtype) if dtype.is_primitive_numeric() || dtype.is_decimal() => {
+                expr.cast(DataType::Boolean)
+            },
+            _ => expr,
+        })
+    }
+
     fn expr_dtype(&self, expr: &Expr) -> Option<DataType> {
         self.ctx.expr_dtype(expr, self.active_schema)
     }
