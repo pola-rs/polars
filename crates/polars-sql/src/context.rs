@@ -34,8 +34,8 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
-    CatalogAlter, CatalogDdl, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogTable,
-    RewrittenName, alter_table_column, alter_table_properties, create_schema_options,
+    CatalogAlter, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogStatement,
+    CatalogTable, RewrittenName, alter_table_column, alter_table_properties, create_schema_options,
     create_table_columns, create_table_options, create_table_partitioning, display_name,
     name_parts, name_position, rewrite_catalog_names,
 };
@@ -441,9 +441,9 @@ impl SQLContext {
         Ok(tables)
     }
 
-    /// The catalog DDL of `query`, if any, for the caller to perform: [`SQLContext::execute`]
-    /// rejects it.
-    pub fn catalog_ddl(&self, query: &str) -> PolarsResult<Option<CatalogDdl>> {
+    /// The catalog statement of `query`, if any, for the caller to perform:
+    /// [`SQLContext::execute`] rejects it.
+    pub fn catalog_statement(&self, query: &str) -> PolarsResult<Option<CatalogStatement>> {
         let stmt = parse_single_statement(query)?;
         match &stmt {
             Statement::Drop {
@@ -466,7 +466,7 @@ impl SQLContext {
                 let Some((name, namespace)) = self.catalog_schema_target(name)? else {
                     return Ok(None);
                 };
-                return Ok(Some(CatalogDdl::CreateSchema {
+                return Ok(Some(CatalogStatement::CreateSchema {
                     name,
                     namespace,
                     if_not_exists,
@@ -479,7 +479,7 @@ impl SQLContext {
             } => {
                 let (name, if_exists) = drop_schema_parts(&stmt)?;
                 return Ok(self.catalog_schema_target(name)?.map(|(name, namespace)| {
-                    CatalogDdl::DropSchema {
+                    CatalogStatement::DropSchema {
                         name,
                         namespace,
                         if_exists,
@@ -491,7 +491,7 @@ impl SQLContext {
         let (names, if_exists, purge) = drop_table_parts(&stmt)?;
         Ok(self
             .catalog_drop_target(names, purge)?
-            .map(|(name, table)| CatalogDdl::DropTable {
+            .map(|(name, table)| CatalogStatement::DropTable {
                 name,
                 table,
                 if_exists,
@@ -523,8 +523,11 @@ impl SQLContext {
         )
     }
 
-    /// The catalog DDL of a `CREATE TABLE`, if its name resolves to a catalog table.
-    fn catalog_create_table(&self, create_table: &CreateTable) -> PolarsResult<Option<CatalogDdl>> {
+    /// The catalog statement of a `CREATE TABLE`, if its name resolves to a catalog table.
+    fn catalog_create_table(
+        &self,
+        create_table: &CreateTable,
+    ) -> PolarsResult<Option<CatalogStatement>> {
         let Some(table) = self.catalog_create_target(&create_table.name)? else {
             return Ok(None);
         };
@@ -572,7 +575,7 @@ impl SQLContext {
                 tbl_name, registered
             );
         }
-        Ok(Some(CatalogDdl::CreateTable {
+        Ok(Some(CatalogStatement::CreateTable {
             name: tbl_name,
             table,
             if_not_exists: *if_not_exists,
@@ -1652,7 +1655,7 @@ impl SQLContext {
         let (names, if_exists, purge) = drop_table_parts(stmt)?;
         if let Some((name, table)) = self.catalog_drop_target(names, purge)? {
             polars_bail!(
-                SQLInterface: "DROP TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                SQLInterface: "DROP TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 name, display_name(&table.full_name())
             );
         }
@@ -1744,7 +1747,7 @@ impl SQLContext {
     fn execute_schema_ddl(&self, statement: &str, name: &ObjectName) -> PolarsResult<LazyFrame> {
         if let Some((name, namespace)) = self.catalog_schema_target(name)? {
             polars_bail!(
-                SQLInterface: "{} of catalog schema '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                SQLInterface: "{} of catalog schema '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 statement, name, display_name(&namespace.full_name())
             );
         }
@@ -1773,8 +1776,8 @@ impl SQLContext {
             .map(|table| (tbl, table)))
     }
 
-    /// The catalog DDL of an `ALTER TABLE`, if its name resolves to a catalog table.
-    fn catalog_alter_table(&self, alter: &AlterTable) -> PolarsResult<Option<CatalogDdl>> {
+    /// The catalog statement of an `ALTER TABLE`, if its name resolves to a catalog table.
+    fn catalog_alter_table(&self, alter: &AlterTable) -> PolarsResult<Option<CatalogStatement>> {
         let Some((name, table)) = self.catalog_change_target(&alter.name)? else {
             return Ok(None);
         };
@@ -1786,7 +1789,7 @@ impl SQLContext {
         let [op] = alter.operations.as_slice() else {
             polars_bail!(SQLInterface: "`ALTER TABLE` takes one operation per statement")
         };
-        Ok(Some(CatalogDdl::AlterTable {
+        Ok(Some(CatalogStatement::AlterTable {
             name,
             table,
             if_exists: alter.if_exists,
@@ -1798,7 +1801,7 @@ impl SQLContext {
     fn execute_alter_table(&self, alter: &AlterTable) -> PolarsResult<LazyFrame> {
         if let Some((name, table)) = self.catalog_change_target(&alter.name)? {
             polars_bail!(
-                SQLInterface: "ALTER TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                SQLInterface: "ALTER TABLE of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 name, display_name(&table.full_name())
             );
         }
@@ -1826,13 +1829,13 @@ impl SQLContext {
         polars_err!(SQLInterface: "`{}` is supported only for catalog tables{}", statement, hint)
     }
 
-    /// The catalog DDL of an `INSERT`, if its table resolves to a catalog table; `outer` is a
+    /// The catalog statement of an `INSERT`, if its table resolves to a catalog table; `outer` is a
     /// query around it (`WITH ... INSERT ...`).
     fn catalog_insert(
         &self,
         insert: &Insert,
         outer: Option<&Query>,
-    ) -> PolarsResult<Option<CatalogDdl>> {
+    ) -> PolarsResult<Option<CatalogStatement>> {
         let TableObject::TableName(name) = &insert.table else {
             polars_bail!(SQLInterface: "`INSERT` into a table function is not supported")
         };
@@ -1850,7 +1853,7 @@ impl SQLContext {
                 _ => polars_bail!(SQLInterface: "INSERT column names must be unqualified; found `{}`", column),
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(Some(CatalogDdl::Insert {
+        Ok(Some(CatalogStatement::Insert {
             name: tbl,
             table,
             columns,
@@ -1871,7 +1874,7 @@ impl SQLContext {
         };
         if let Some((tbl, table)) = self.catalog_change_target(name)? {
             polars_bail!(
-                SQLInterface: "{} of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_ddl`)",
+                SQLInterface: "{} of catalog table '{}' ('{}') must be performed on the catalog (see `SQLContext::catalog_statement`)",
                 statement, tbl, display_name(&table.full_name())
             );
         }
@@ -4953,7 +4956,7 @@ impl SQLContext {
                     polars_bail!(SQLInterface: "temporary tables cannot be created in catalog '{}'", catalog);
                 }
             } else {
-                // The caller creates catalog tables (see `catalog_ddl`); here they are an error.
+                // The caller creates catalog tables (see `catalog_statement`); here they are an error.
                 self.catalog_create_target(name)?;
                 self.ensure_not_catalog_table(name, "CREATE TABLE", false, false)?;
             }
