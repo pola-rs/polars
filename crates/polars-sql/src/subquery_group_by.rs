@@ -346,7 +346,7 @@ impl SQLContext {
             .copied()
             .chain(order_by_items.iter().map(|o| &o.expr))
             .chain(&select.having)
-            .any(|e| reads_query(e))
+            .any(reads_query)
         {
             return None;
         }
