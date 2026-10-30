@@ -2833,7 +2833,7 @@ pub(crate) fn exists_aggregates(
                 Ok(PolarsSQLFunctions::Explode) => self.unsupported = true,
                 Ok(f) if f.is_builtin_aggregate() && function.over.is_none() => {
                     // An aggregate belongs to the outer query if it reads only outer columns,
-                    // in its arguments or its FILTER clause.
+                    // in its arguments, its WITHIN GROUP order or its FILTER clause.
                     let mut columns = Columns {
                         inner_names: self.inner_names,
                         inner_schema: self.inner_schema,
@@ -2842,6 +2842,7 @@ pub(crate) fn exists_aggregates(
                         outer: false,
                     };
                     let _ = dyn_visit::visit(&function.args, &mut columns);
+                    let _ = dyn_visit::visit(&function.within_group, &mut columns);
                     let _ = dyn_visit::visit(&function.filter, &mut columns);
                     if columns.inner || !columns.outer {
                         self.local = true;
