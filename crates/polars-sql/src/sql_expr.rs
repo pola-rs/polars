@@ -2386,7 +2386,7 @@ pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
 
 /// The 0-indexed offset of a 1-indexed SUBSTRING start.
 pub(crate) fn substring_offset(start: Expr) -> Expr {
-    start.cast(DataType::Int64) - lit(1)
+    start.strict_cast(DataType::Int64) - lit(1)
 }
 
 /// A negative SUBSTRING length gives an empty string.

@@ -660,6 +660,10 @@ def test_string_substr_unsigned_start() -> None:
     res = df.sql("SELECT SUBSTR(s, n) AS a, SUBSTRING(s, n, 2) AS b FROM self")
     assert res.to_dict(as_series=False) == {"a": ["abc", "bc"], "b": ["a", "bc"]}
 
+    df = pl.DataFrame({"s": ["abc"], "n": ["bad"]})
+    with pytest.raises(InvalidOperationError):
+        df.sql("SELECT SUBSTRING(s FROM n) FROM self")
+
 
 def test_string_lpad_rpad() -> None:
     df = pl.DataFrame({"txt": ["hello", "hi", "a", None, "longstring"]})
