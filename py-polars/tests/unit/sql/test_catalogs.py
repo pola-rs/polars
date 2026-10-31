@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import pickle
 import re
+import shutil
 from datetime import UTC, date
 from pathlib import Path
 from typing import Any
@@ -293,14 +294,13 @@ def test_catalog_tables_in_subqueries(lake: CountingCatalog) -> None:
 @pytest.mark.parametrize(
     "statement",
     [
-        "TRUNCATE TABLE lake.tpch.lineitem",
-        "TRUNCATE TABLE tpch.lineitem",
-        "TRUNCATE TABLE IF EXISTS lake.tpch.lineitem",
         "DELETE FROM lineitem WHERE k = 1",
         "DELETE FROM lake.tpch.lineitem",
     ],
 )
-def test_catalog_ddl_is_not_supported(lake: CountingCatalog, statement: str) -> None:
+def test_catalog_statement_is_not_supported(
+    lake: CountingCatalog, statement: str
+) -> None:
     with pytest.raises(
         SQLInterfaceError, match="attached catalog 'lake' is not supported"
     ):
@@ -1598,9 +1598,7 @@ def test_create_temp_table_with_catalogs(lake: CountingCatalog) -> None:
 
 
 @pytest.mark.write_disk
-def test_if_exists_without_catalog_name_acts_on_registered_tables(
-    lake: CountingCatalog,
-) -> None:
+def test_if_exists_acts_on_registered_tables_first(lake: CountingCatalog) -> None:
     # a cleanup script keeps working once a default catalog is attached
     ctx = lake_ctx(lake)
     ctx.register("tmp", pl.LazyFrame({"x": [1]}))
@@ -1609,12 +1607,12 @@ def test_if_exists_without_catalog_name_acts_on_registered_tables(
         "DROP TABLE IF EXISTS tmp",
         "DROP TABLE IF EXISTS tmp",
         "TRUNCATE TABLE IF EXISTS staged",
-        "TRUNCATE TABLE IF EXISTS tpch.lineitem",
+        "TRUNCATE TABLE IF EXISTS tpch.missing",
     ):
         ctx.execute(statement)
     assert ctx.tables() == ["staged"]
     assert ctx.execute("SELECT * FROM staged", eager=True).is_empty()
-    assert lake.loads == []
+    assert lake.loads == [("tpch", "missing")]  # looked up, a no-op
     assert ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item() == 2
 
     # a name that fails leaves the other names of the statement in place
@@ -2995,6 +2993,157 @@ def test_insert_catalog_table_concurrent(tmp_path: Path) -> None:
     assert len(table_rows(lake, "tpch", "lineitem")) == 5
     written = set(Path(tmp_path).rglob("*.parquet")) - files
     assert len(written) == 1  # the other writer's file only
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "TRUNCATE TABLE lake.tpch.lineitem",
+        "TRUNCATE tpch.lineitem",
+        "TRUNCATE TABLE IF EXISTS lineitem",
+    ],
+)
+def test_truncate_catalog_table(
+    lake: CountingCatalog, tmp_path: Path, statement: str
+) -> None:
+    from pyiceberg.table.snapshots import Operation
+
+    ctx = lake_ctx(lake)
+    files = set(tmp_path.rglob("*.parquet"))
+    res = ctx.execute(statement, eager=True)
+    assert res.item() == "TRUNCATE TABLE lake.tpch.lineitem"
+    assert table_rows(lake, "tpch", "lineitem") == []
+    snapshot = lake.load_table(("tpch", "lineitem")).current_snapshot()
+    assert snapshot.summary.operation == Operation.DELETE
+    assert set(tmp_path.rglob("*.parquet")) == files  # no data files written
+    assert ctx.execute("SELECT COUNT(*) FROM lineitem", eager=True).item() == 0
+    assert len(table_rows(lake, "tpch", "orders")) == 3
+
+
+@pytest.mark.write_disk
+def test_truncate_catalog_table_empty_or_partitioned(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE p (k INT, g VARCHAR) PARTITION BY (g)")
+    # an empty table commits nothing, and PyIceberg's warnings stay silent
+    ctx.execute("TRUNCATE TABLE p")
+    assert lake.load_table(("tpch", "p")).current_snapshot() is None
+    ctx.execute("INSERT INTO p VALUES (1, 'a'), (2, 'b'), (3, 'a')")
+    ctx.execute("TRUNCATE TABLE p")
+    assert table_rows(lake, "tpch", "p") == []
+    snapshot = lake.load_table(("tpch", "p")).current_snapshot()
+    ctx.execute("TRUNCATE TABLE p")
+    assert lake.load_table(("tpch", "p")).current_snapshot() == snapshot
+    ctx.execute("INSERT INTO p VALUES (4, 'c')")
+    assert table_rows(lake, "tpch", "p") == [(4, "c")]
+    # merge-on-read deletes are moot when every data file is dropped
+    ctx.execute(
+        "ALTER TABLE p SET TBLPROPERTIES ('write.delete.mode' = 'merge-on-read')"
+    )
+    ctx.execute("TRUNCATE TABLE p")
+    assert table_rows(lake, "tpch", "p") == []
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("with_counted_file", [False, True])
+def test_truncate_catalog_table_without_record_count(
+    lake: CountingCatalog, with_counted_file: bool
+) -> None:
+    from pyiceberg.manifest import DataFile, DataFileContent
+    from pyiceberg.table.snapshots import Operation
+
+    # a data file whose writer did not record its row count is read to drop its rows
+    file = next(iter(lake.load_table(("tpch", "lineitem")).scan().plan_files())).file
+    uncounted = f"{file.file_path.removesuffix('.parquet')}-uncounted.parquet"
+    shutil.copy(
+        file.file_path.removeprefix("file://"), uncounted.removeprefix("file://")
+    )
+    table = lake.create_table(("tpch", "legacy"), schema=LINEITEM.to_arrow().schema)
+    with table.transaction() as tx, tx.update_snapshot().fast_append() as append:
+        if with_counted_file:
+            append.append_data_file(file)
+        append.append_data_file(
+            DataFile.from_args(
+                content=DataFileContent.DATA,
+                file_path=uncounted,
+                file_format=file.file_format,
+                partition=file.partition,
+                record_count=-1,
+                file_size_in_bytes=file.file_size_in_bytes,
+            )
+        )
+    assert len(table_rows(lake, "tpch", "legacy")) == 2 * (1 + with_counted_file)
+    lake_ctx(lake).execute("TRUNCATE TABLE legacy")
+    assert table_rows(lake, "tpch", "legacy") == []
+    snapshots = lake.load_table(("tpch", "legacy")).metadata.snapshots
+    # one commit: the counted file dropped whole, the other one read
+    assert [s.summary.operation for s in snapshots] == [
+        Operation.APPEND,
+        *([Operation.DELETE] if with_counted_file else []),
+        Operation.OVERWRITE,
+    ]
+
+
+@pytest.mark.write_disk
+def test_truncate_catalog_table_resolution(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    # a registered table of the name comes first, as in a read
+    ctx.register("lineitem", pl.LazyFrame({"x": [1]}))
+    ctx.execute("TRUNCATE TABLE lineitem")
+    assert ctx.execute("SELECT * FROM lineitem", eager=True).is_empty()
+    assert len(table_rows(lake, "tpch", "lineitem")) == 2
+    ctx.execute("TRUNCATE TABLE lake.tpch.lineitem")
+    assert table_rows(lake, "tpch", "lineitem") == []
+    # a missing table: a no-op with IF EXISTS
+    res = ctx.execute("TRUNCATE TABLE IF EXISTS lake.tpch.missing", eager=True)
+    assert res.item() == "TRUNCATE TABLE lake.tpch.missing"
+    with pytest.raises(NoSuchTableError, match="could not be truncated; catalog"):
+        ctx.execute("TRUNCATE TABLE lake.tpch.missing")
+    with pytest.raises(NoSuchTableError, match="identifiers are case-sensitive"):
+        ctx.execute("TRUNCATE TABLE ORDERS")
+    assert len(table_rows(lake, "tpch", "orders")) == 3
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("TRUNCATE TABLE orders CASCADE", "CASCADE/RESTRICT"),
+        ("TRUNCATE TABLE orders RESTART IDENTITY", "RESTART/CONTINUE IDENTITY"),
+        ("TRUNCATE TABLE orders, lake.tpch.lineitem", "exactly one table name"),
+        ("TRUNCATE TABLE orders PARTITION (k = 1)", "'partitions'"),
+    ],
+)
+def test_truncate_catalog_table_sql_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    with pytest.raises(SQLInterfaceError, match=re.escape(error)):
+        lake_ctx(lake).execute(statement)
+    assert len(table_rows(lake, "tpch", "orders")) == 3
+
+
+@pytest.mark.write_disk
+def test_truncate_catalog_table_concurrent(tmp_path: Path) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema)
+    LINEITEM.write_iceberg(table, mode="append")
+    # the delete would drop the other writer's row unseen: refused
+    lake.race = ("tpch", "lineitem")
+    with pytest.raises(ValidationException) as exc:
+        lake_ctx(lake).execute("TRUNCATE TABLE lineitem")
+    assert "could not be truncated" in exc.value.__notes__[-1]
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "a"), (2, "b"), (99, "raced")]
+    # with snapshot isolation, as the table asks, the other writer's rows are kept
+    with lake.load_table(("tpch", "lineitem")).transaction() as tx:
+        tx.set_properties({"write.delete.isolation-level": "snapshot"})
+    lake.race = ("tpch", "lineitem")
+    lake_ctx(lake).execute("TRUNCATE TABLE lineitem")
+    assert table_rows(lake, "tpch", "lineitem") == [(99, "raced")]
 
 
 @pytest.mark.write_disk

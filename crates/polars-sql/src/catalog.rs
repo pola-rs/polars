@@ -35,10 +35,10 @@ pub struct CatalogNamespace {
     pub namespace: Vec<String>,
 }
 
-/// A statement changing a catalog table, for the caller to perform (see
-/// [`SQLContext::catalog_ddl`](crate::SQLContext::catalog_ddl)).
+/// A DDL or DML statement on a catalog table or schema, for the caller to perform (see
+/// [`SQLContext::catalog_statement`](crate::SQLContext::catalog_statement)).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CatalogDdl {
+pub enum CatalogStatement {
     /// `DROP TABLE [IF EXISTS] <name> [PURGE]`.
     DropTable {
         /// The table name as the statement wrote it.
@@ -103,6 +103,15 @@ pub enum CatalogDdl {
         query: String,
         /// `OVERWRITE`: replace the table's rows.
         overwrite: bool,
+    },
+    /// `TRUNCATE [TABLE] [IF EXISTS] <name>`.
+    Truncate {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to empty.
+        table: CatalogTable,
+        /// `IF EXISTS`.
+        if_exists: bool,
     },
     /// `ALTER TABLE [IF EXISTS] <name> <operation>`.
     AlterTable {

@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use polars::sql::{CatalogAlter, CatalogDdl, SQLContext, extract_table_identifiers};
+use polars::sql::{CatalogAlter, CatalogStatement, SQLContext, extract_table_identifiers};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -105,23 +105,23 @@ impl PySQLContext {
             .collect())
     }
 
-    /// The catalog DDL of a query, as a dict keyed by `kind`, or None.
-    pub fn catalog_ddl<'py>(
+    /// The catalog statement of a query, as a dict keyed by `kind`, or None.
+    pub fn catalog_statement<'py>(
         &self,
         py: Python<'py>,
         query: &str,
     ) -> PyResult<Option<Bound<'py, PyDict>>> {
-        let ddl = self
+        let stmt = self
             .context
             .read()
-            .catalog_ddl(query)
+            .catalog_statement(query)
             .map_err(PyPolarsErr::from)?;
-        let Some(ddl) = ddl else {
+        let Some(stmt) = stmt else {
             return Ok(None);
         };
         let dict = PyDict::new(py);
-        match ddl {
-            CatalogDdl::DropTable {
+        match stmt {
+            CatalogStatement::DropTable {
                 name,
                 table,
                 if_exists,
@@ -134,7 +134,7 @@ impl PySQLContext {
                 dict.set_item("if_exists", if_exists)?;
                 dict.set_item("purge", purge)?;
             },
-            CatalogDdl::CreateTable {
+            CatalogStatement::CreateTable {
                 name,
                 table,
                 if_not_exists,
@@ -165,7 +165,7 @@ impl PySQLContext {
                     .collect();
                 dict.set_item("partition_by", partition_by)?;
             },
-            CatalogDdl::CreateSchema {
+            CatalogStatement::CreateSchema {
                 name,
                 namespace,
                 if_not_exists,
@@ -182,7 +182,7 @@ impl PySQLContext {
                 }
                 dict.set_item("properties", props)?;
             },
-            CatalogDdl::DropSchema {
+            CatalogStatement::DropSchema {
                 name,
                 namespace,
                 if_exists,
@@ -193,7 +193,7 @@ impl PySQLContext {
                 dict.set_item("namespace", namespace.namespace)?;
                 dict.set_item("if_exists", if_exists)?;
             },
-            CatalogDdl::Insert {
+            CatalogStatement::Insert {
                 name,
                 table,
                 columns,
@@ -208,7 +208,18 @@ impl PySQLContext {
                 dict.set_item("query", query)?;
                 dict.set_item("overwrite", overwrite)?;
             },
-            CatalogDdl::AlterTable {
+            CatalogStatement::Truncate {
+                name,
+                table,
+                if_exists,
+            } => {
+                dict.set_item("kind", "truncate")?;
+                dict.set_item("name", name)?;
+                dict.set_item("catalog", table.catalog)?;
+                dict.set_item("identifier", table.identifier)?;
+                dict.set_item("if_exists", if_exists)?;
+            },
+            CatalogStatement::AlterTable {
                 name,
                 table,
                 if_exists,
