@@ -1429,7 +1429,7 @@ def test_prefetch_kbytes_budget_below_download_chunk_29464(
     out = scan(paths).collect(engine="streaming")
     capture = capfd.readouterr().err
 
-    assert "prefetch_kbytes_limit: 1\n" in capture
+    assert "prefetch_kbytes_limit: 1 (env)\n" in capture
     assert_frame_equal(out, pl.concat(dfs))
 
 
