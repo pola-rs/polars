@@ -64,6 +64,10 @@ def dtype_from_database_typename(
     original_value = value
     value = value.upper().replace("TYPE", "")
 
+    # unwrap ClickHouse wrappers (eg: 'Nullable(Decimal(18, 4))' -> 'DECIMAL(18, 4)')
+    while m := re.fullmatch(r"(?:NULLABLE|LOWCARDINALITY)\((.+)\)", value):
+        value = m.group(1)
+
     # extract optional type modifier (eg: 'VARCHAR(64)' -> '64')
     if re.search(r"\([\w,: ]+\)$", value):
         modifier = value[value.find("(") + 1 : -1]

@@ -11,6 +11,10 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::dsl::{DslPlan, Expr};
 use crate::plans::{AExpr, ExprIR};
 
+#[cfg(feature = "io_plugin_ffi")]
+pub mod ffi;
+#[cfg(feature = "io_plugin_ffi")]
+pub mod filter_expr;
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -28,6 +32,8 @@ impl std::hash::Hash for DslResolver {
         match &self.variant {
             #[cfg(feature = "python")]
             DslResolverVariant::Python(x) => x.hash(state),
+            #[cfg(feature = "io_plugin_ffi")]
+            DslResolverVariant::Ffi(x) => x.hash(state),
             DslResolverVariant::Rust(()) => unimplemented!(),
         }
     }
@@ -38,6 +44,10 @@ impl PartialEq for DslResolver {
         match (&self.variant, &other.variant) {
             #[cfg(feature = "python")]
             (DslResolverVariant::Python(l), DslResolverVariant::Python(r)) => {
+                l.cse_eq(r).ok() == Some(true)
+            },
+            #[cfg(feature = "io_plugin_ffi")]
+            (DslResolverVariant::Ffi(l), DslResolverVariant::Ffi(r)) => {
                 l.cse_eq(r).ok() == Some(true)
             },
             (DslResolverVariant::Rust(()), DslResolverVariant::Rust(())) => unimplemented!(),
@@ -54,6 +64,10 @@ impl Eq for DslResolver {}
 enum DslResolverVariant {
     #[cfg(feature = "python")]
     Python(python::PythonDslResolver),
+    /// A resolver of an I/O plugin, called through `polars.io_plugin.lazyframe_resolver.v1`.
+    #[cfg(feature = "io_plugin_ffi")]
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
+    Ffi(ffi::FfiDslResolver),
     Rust(()), // Unimplemented. Placeholder to avoid empty enum without python feature.
 }
 
@@ -87,6 +101,8 @@ impl DslResolverTrait for DslResolver {
         match &self.variant {
             #[cfg(feature = "python")]
             DslResolverVariant::Python(py_resolver) => py_resolver.name(),
+            #[cfg(feature = "io_plugin_ffi")]
+            DslResolverVariant::Ffi(r) => r.name(),
             DslResolverVariant::Rust(()) => unimplemented!(),
         }
     }
@@ -102,6 +118,8 @@ impl DslResolverTrait for DslResolver {
             DslResolverVariant::Python(py_resolver) => {
                 py_resolver.schema(py_node_resolve_threadpool)
             },
+            #[cfg(feature = "io_plugin_ffi")]
+            DslResolverVariant::Ffi(r) => r.schema(),
             DslResolverVariant::Rust(()) => unimplemented!(),
         }
     }
@@ -127,6 +145,10 @@ impl DslResolverTrait for DslResolver {
                 resolver_schema,
                 py_node_resolve_threadpool,
             ),
+            #[cfg(feature = "io_plugin_ffi")]
+            DslResolverVariant::Ffi(r) => {
+                r.resolve_dsl(args, filters_eir, existing_resolved_version_key, expr_arena)
+            },
             DslResolverVariant::Rust(()) => unimplemented!(),
         }
     }
@@ -135,6 +157,8 @@ impl DslResolverTrait for DslResolver {
         match (&self.variant, &other.variant) {
             #[cfg(feature = "python")]
             (DslResolverVariant::Python(l), DslResolverVariant::Python(r)) => l.cse_eq(r),
+            #[cfg(feature = "io_plugin_ffi")]
+            (DslResolverVariant::Ffi(l), DslResolverVariant::Ffi(r)) => l.cse_eq(r),
             (DslResolverVariant::Rust(()), DslResolverVariant::Rust(())) => unimplemented!(),
             _ => Ok(false),
         }

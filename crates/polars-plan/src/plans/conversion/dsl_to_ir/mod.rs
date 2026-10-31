@@ -131,15 +131,20 @@ async fn fetch_metadata(
         (|| Arc::new(PyScanResolveThreadPool::new_scan_resolve_thread_pool())) as fn() -> _,
     ));
 
-    let mut futures = lp
-        .into_iter()
-        .filter_map(|dsl| match dsl {
+    // A resolver's schema may call a plugin on a blocking thread, which can't be aborted: it is
+    // waited for when anything fails, so that it doesn't keep running after the query returned.
+    let mut futures = FuturesUnordered::<Pin<Box<dyn Future<Output = PolarsResult<()>>>>>::new();
+    let mut resolver_futures =
+        FuturesUnordered::<Pin<Box<dyn Future<Output = PolarsResult<()>>>>>::new();
+
+    for dsl in lp.into_iter() {
+        match dsl {
             DslPlan::Scan {
                 sources,
                 unified_scan_args,
                 scan_type,
                 cached_ir,
-            } => Some(Box::pin(scans::dsl_to_ir(
+            } => futures.push(Box::pin(scans::dsl_to_ir(
                 sources.clone(),
                 unified_scan_args.clone(),
                 scan_type.clone(),
@@ -148,8 +153,7 @@ async fn fetch_metadata(
                 #[cfg(feature = "python")]
                 Arc::clone(&py_scan_resolve_threadpool),
                 verbose,
-            ))
-                as Pin<Box<dyn Future<Output = PolarsResult<()>>>>),
+            ))),
             DslPlan::Resolver {
                 resolver,
                 resolver_schema,
@@ -159,7 +163,7 @@ async fn fetch_metadata(
                 let resolver_schema = Arc::clone(resolver_schema);
 
                 if resolver_schema.lock().unwrap().is_none() {
-                    Some(
+                    resolver_futures.push(
                         match resolver.schema(
                             #[cfg(feature = "python")]
                             Arc::clone(&*py_scan_resolve_threadpool),
@@ -172,18 +176,31 @@ async fn fetch_metadata(
                             Err(e) => Box::pin(std::future::ready(Err(e))),
                         },
                     )
-                } else {
-                    None
                 }
             },
-            _ => None,
-        })
-        .collect::<FuturesUnordered<_>>();
+            _ => {},
+        }
+    }
 
+    let out = futures::future::try_join(run_all(&mut futures), run_all(&mut resolver_futures))
+        .await
+        .map(|_| ());
+    if out.is_err() {
+        drop(futures);
+        while resolver_futures.next().await.is_some() {}
+    }
+    out
+}
+
+/// Runs the futures until the first error.
+async fn run_all(
+    futures: &mut FuturesUnordered<Pin<Box<dyn Future<Output = PolarsResult<()>>>>>,
+) -> PolarsResult<()> {
+    use futures::stream::StreamExt;
     while let Some(result) = futures.next().await {
         result?
     }
-    Ok::<(), PolarsError>(())
+    Ok(())
 }
 
 /// converts LogicalPlan to IR

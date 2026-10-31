@@ -75,6 +75,21 @@ def _read_sql_connectorx(
     return DataFrame(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
+def _find_installed_adbc_driver(driver_name: str) -> tuple[str, str | None] | None:
+    """
+    Find an ADBC driver that isn't a pip package (e.g. installed with `dbc`).
+
+    Searches ADBC driver manifests the same way `scan_database` does:
+    `ADBC_DRIVER_PATH`, the virtual environment, then the user and system
+    configuration directories.
+    """
+    try:
+        from polars_database import find_adbc_driver
+    except ImportError:
+        return None
+    return find_adbc_driver(driver_name)
+
+
 def _read_sql_adbc(
     query: str,
     connection_uri: str,
@@ -83,7 +98,17 @@ def _read_sql_adbc(
 ) -> DataFrame:
     module_name = _get_adbc_module_name_from_uri(connection_uri)
     # import the driver first, to ensure a good error message if not installed
-    _import_optional_adbc_driver(module_name, dbapi_submodule=False)
+    try:
+        _import_optional_adbc_driver(module_name, dbapi_submodule=False)
+    except ModuleUpgradeRequiredError:
+        raise
+    except ModuleNotFoundError:
+        # not a pip package; it may still be installed as a manifest (e.g. with `dbc`)
+        if (
+            _find_installed_adbc_driver(_get_adbc_driver_name_from_uri(connection_uri))
+            is None
+        ):
+            raise
     adbc_driver_manager = import_optional("adbc_driver_manager")
     adbc_str_version = getattr(adbc_driver_manager, "__version__", "0.0")
     adbc_version = parse_version(adbc_str_version)
@@ -181,11 +206,26 @@ def _import_optional_adbc_driver(
 def _open_adbc_connection(connection_uri: str) -> Any:
     driver_name = _get_adbc_driver_name_from_uri(connection_uri)
     module_name = _get_adbc_module_name_from_uri(connection_uri)
-    adbc_driver = _import_optional_adbc_driver(module_name)
 
     # some backends require the driver name to be stripped from the URI
     if driver_name in ("duckdb", "snowflake", "sqlite"):
         connection_uri = re.sub(f"^{driver_name}:/{{,3}}", "", connection_uri)
+
+    try:
+        adbc_driver = _import_optional_adbc_driver(module_name)
+    except ModuleUpgradeRequiredError:
+        raise
+    except ModuleNotFoundError:
+        if (found := _find_installed_adbc_driver(driver_name)) is None:
+            raise
+        # load the driver library through the generic driver manager
+        dbapi = import_module("adbc_driver_manager.dbapi")
+        library, entrypoint = found
+        return dbapi.connect(
+            driver=library,
+            entrypoint=entrypoint,
+            db_kwargs={"uri": connection_uri},
+        )
 
     return adbc_driver.connect(connection_uri)
 

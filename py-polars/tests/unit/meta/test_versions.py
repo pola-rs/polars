@@ -18,3 +18,4 @@ def test_show_versions(capsys: Any) -> None:
     assert "Polars" in out
     assert "Runtime" in out
     assert "Optional dependencies" in out
+    assert "Database drivers" in out

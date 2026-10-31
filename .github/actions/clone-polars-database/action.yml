@@ -1,0 +1,24 @@
+name: Clone polars-database
+description: >
+  Clone https://github.com/pola-rs/polars-database to crates/polars-database (git-ignored),
+  making the `polars_database` I/O plugin a member of the workspace.
+
+inputs:
+  ref:
+    description: Commit SHA, tag or branch of polars-database to clone
+    # Pinned polars-database revision that CI tests against. Bump this to pick up polars-database changes.
+    default: abd7df8c8665ae95fc6c84db50fc441b937f7eee
+
+runs:
+  using: composite
+  steps:
+    - name: Clone polars-database
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        REF: ${{ inputs.ref }}
+      run: |
+        git init -q crates/polars-database
+        git -C crates/polars-database fetch -q --depth 1 https://github.com/pola-rs/polars-database "$REF"
+        git -C crates/polars-database checkout -q FETCH_HEAD
+        echo "polars-database $REF: $(git -C crates/polars-database rev-parse HEAD)"

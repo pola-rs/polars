@@ -925,6 +925,8 @@ class PyLazyFrame:
         scan_options: ScanOptions,
     ) -> PyLazyFrame: ...
     @staticmethod
+    def _from_io_plugin_resolver(package: str, capsule: Any) -> PyLazyFrame: ...
+    @staticmethod
     def scan_from_python_function_arrow_schema(
         schema: Any,
         scan_fn: Any,

@@ -9,6 +9,7 @@ on:
       - "**.rs"
       - "**.py"
       - .github/workflows/test-coverage.yml
+      - .github/actions/clone-polars-database/**
   workflow_dispatch:
 
 concurrency:
@@ -101,6 +102,9 @@ jobs:
       - name: Clone polars-iceberg
         uses: ./.github/actions/clone-polars-iceberg
 
+      - name: Clone polars-database
+        uses: ./.github/actions/clone-polars-database
+
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
@@ -163,6 +167,11 @@ jobs:
           make -C crates build-polars-iceberg
           .venv/bin/python -c 'import polars_iceberg'
 
+      - name: Install polars_database plugin
+        run: |
+          make -C crates build-polars-database
+          .venv/bin/python -c 'import polars_database'
+
       - name: Run Python tests
         working-directory: py-polars
         env:
@@ -209,6 +218,17 @@ jobs:
           -m "not release and not benchmark and not docs"
           --cov --cov-report xml:async.xml --cov-fail-under=0
 
+      # The polars-database tests live in its repository, with their own pytest settings. Tests
+      # needing a database server skip when their `POLARS_TEST_*_URI` variable is unset.
+      - name: Run Python tests - polars-database plugin
+        working-directory: crates/polars-database
+        env:
+          POLARS_TIMEOUT_MS: 60000
+        run: >
+          pytest tests
+          -n auto
+          --cov=polars --cov-branch --cov-report xml:../../py-polars/database.xml --cov-fail-under=0
+
       - name: Report Rust coverage
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
@@ -222,6 +242,7 @@ jobs:
             py-polars/in-memory.xml
             py-polars/small-morsel.xml
             py-polars/async.xml
+            py-polars/database.xml
 
   upload-coverage:
     needs: [coverage-rust, coverage-python]
@@ -240,5 +261,5 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml
+          files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml,py-polars/database.xml
           root_dir: ${{ github.workspace }}

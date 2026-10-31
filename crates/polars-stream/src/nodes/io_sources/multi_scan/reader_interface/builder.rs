@@ -45,6 +45,19 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
         None
     }
 
+    /// Whether the sources are remote, if the reader knows better than the path heuristic.
+    /// Sources that are ids rather than paths (database partitions, dataset fragments) look
+    /// like local paths but have remote latency.
+    fn sources_are_remote(&self) -> Option<bool> {
+        None
+    }
+
+    /// An upper bound on concurrently running readers, e.g. a database connection budget.
+    /// `POLARS_MAX_CONCURRENT_SCANS` can lower it but not raise it.
+    fn max_concurrent_scans(&self) -> Option<usize> {
+        None
+    }
+
     fn build_file_reader(
         &self,
         source: ScanSource,

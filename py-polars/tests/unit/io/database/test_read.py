@@ -1249,7 +1249,12 @@ def test_read_database_exceptions(
     execute_options: dict[str, Any] | None,
     pre_execution_query: str | list[str] | None,
     kwargs: dict[str, Any] | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # ignore ADBC drivers installed on this machine (e.g. with `dbc`)
+    monkeypatch.setattr(
+        "polars.io.database._utils._find_installed_adbc_driver", lambda _: None
+    )
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
         params = {

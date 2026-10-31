@@ -143,7 +143,9 @@ fn write_scan(
 
         for (k, v) in props {
             writeln!(f)?;
-            write!(EscapeLabel(f), "{:indent$}{k}: {v}", "")?;
+            // One line per property. This is text, not a graph label: quotes stay as they are.
+            let v = v.replace('\n', "\\n");
+            write!(f, "{:indent$}{k}: {v}", "")?;
         }
     }
 

@@ -625,8 +625,10 @@ class ConnectionExecutor:
             )
             result = cursor_execute(query, *positional_options)
 
-        # note: some cursors execute in-place, some access results via a property
-        result = self.cursor if (result is None or result is True) else result
+        # note: some cursors execute in-place, some access results via a property, and
+        # some (eg: pymysql, MySQLdb) return the affected row count
+        if result is None or result is True or type(result) is int:
+            result = self.cursor
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
             result = result.cursor  # type: ignore[union-attr]
 

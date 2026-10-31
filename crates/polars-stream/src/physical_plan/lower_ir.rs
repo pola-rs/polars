@@ -1084,6 +1084,10 @@ fn lower_ir_inner(
                                 py_multi_scan_context,
                             )) as _
                         },
+                        #[cfg(feature = "io_plugin_ffi")]
+                        ExternalReaderBuilder::Ffi(builder) => Arc::new(
+                            io_sources::external_ffi::FfiFileReaderBuilder::new(builder.clone())?,
+                        ) as _,
                         ExternalReaderBuilder::Rust(()) => unimplemented!(),
                     },
 

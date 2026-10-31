@@ -15,6 +15,7 @@ polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
+polars-io-ext-ffi = { workspace = true, optional = true, features = ["lazyframe_resolver"] }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
 polars-schema = { workspace = true }
@@ -160,6 +161,8 @@ temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []
 nightly = []
 python = ["pyo3", "polars-error/python", "polars-utils/python"]
+# Host side of the generic I/O plugin contracts (`file_reader.v1`, `lazyframe_resolver.v1`).
+io_plugin_ffi = ["dep:polars-io-ext-ffi", "dtype-struct"]
 allow_unused = []
 
 [package.metadata.docs.rs]
