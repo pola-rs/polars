@@ -213,3 +213,15 @@ def test_offset_by_rfc_5545_boundaries_non_existest(
     result = s.dt.offset_by(by)
     expected = pl.Series([expected_dt]).dt.replace_time_zone("Europe/Amsterdam")
     assert_series_equal(result, expected)
+
+
+def test_offset_by_overflow_sortedness_30111() -> None:
+    s = pl.Series(
+        [datetime(2000, 1, 1), datetime(2262, 4, 11)],
+        dtype=pl.Datetime("ns"),
+    ).sort()
+
+    out = s.dt.offset_by("1d")
+
+    assert out.flags["SORTED_ASC"] is False
+    assert out.max() == datetime(2000, 1, 2)
