@@ -716,6 +716,19 @@ fn try_move(
     let order_aggregates = order_by_exprs
         .iter()
         .any(|ob| has_aggregate(x_ctx, &ob.expr));
+    // The moved table reads the rows of every key at once.
+    if order_by_exprs
+        .iter()
+        .map(|ob| &ob.expr)
+        .chain(&select.selection)
+        .chain(select.projection.iter().filter_map(|item| match item {
+            SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
+            _ => None,
+        }))
+        .any(|e| numbers_rows(x_ctx, e))
+    {
+        return Ok(None);
+    }
     let value = match compare {
         Some(_) => {
             let [SelectItem::UnnamedExpr(value) | SelectItem::ExprWithAlias { expr: value, .. }] =
@@ -1260,6 +1273,56 @@ fn repeats_harmless(x: &Query, select: &Select, read_as: ReadAs) -> bool {
             .chain(&select.selection)
             .chain(join_conditions)
             .any(calls_function)
+}
+
+/// Whether `expr` calls a function without OVER that reads the other rows of its frame,
+/// such as `ROW_NUMBER()`, outside of its subqueries. A function that isn't known counts
+/// as one.
+fn numbers_rows(ctx: &SQLContext, expr: &SQLExpr) -> bool {
+    use PolarsSQLFunctions::*;
+    struct Functions<'a> {
+        ctx: &'a SQLContext,
+        query_depth: usize,
+    }
+
+    impl Visitor for Functions<'_> {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match expr {
+                SQLExpr::Function(function) if self.query_depth == 0 && function.over.is_none() => {
+                    match PolarsSQLFunctions::try_from_sql(function, self.ctx) {
+                        Ok(
+                            CumeDist | DenseRank | Lag | Lead | NthValue | Ntile | PercentRank
+                            | Rank | RowNumber | Udf(_),
+                        )
+                        | Err(_) => ControlFlow::Break(()),
+                        Ok(_) => ControlFlow::Continue(()),
+                    }
+                },
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    dyn_visit::visit(
+        expr,
+        &mut Functions {
+            ctx,
+            query_depth: 0,
+        },
+    )
+    .is_break()
 }
 
 /// Whether `expr` calls a function outside of its subqueries.
