@@ -649,6 +649,7 @@ SPILL_ENV = {
     params=[
         "at_once",
         "stored",
+        "partitioned",
         pytest.param("spilled", marks=[pytest.mark.write_disk, pytest.mark.slow]),
     ]
 )
@@ -664,7 +665,11 @@ def window_mode(
         plmonkeypatch.setenv("POLARS_WINDOW_NUM_PARTITIONS", str(num_partitions))
         plmonkeypatch.setenv("POLARS_WINDOW_BATCH_BYTES", "4096")
         plmonkeypatch.setenv("POLARS_WINDOW_RANGE_BYTES", "4096")
+    if mode == "partitioned":
+        # Rows are partitioned as they arrive once the stored morsels pass this size.
+        plmonkeypatch.setenv("POLARS_WINDOW_MAX_WHOLE_BYTES", "20000")
     if mode == "spilled":
+        plmonkeypatch.setenv("POLARS_WINDOW_MAX_WHOLE_BYTES", "0")
         for name, value in SPILL_ENV.items():
             plmonkeypatch.setenv(name, value)
         plmonkeypatch.setenv("POLARS_OOC_SPILL_DIR", str(tmp_path))
@@ -829,4 +834,93 @@ def test_window_mode_empty_morsels(
         .map_batches(lambda df: df.filter(pl.col("id") >= 1000), streamable=True)
         .with_columns(w=pl.col("x").cum_sum().over("g", order_by="t"))
     )
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def _payload_frame(n: int = 2000) -> pl.LazyFrame:
+    i = pl.col("id")
+    return (
+        _keyed_frame(n)
+        .lazy()
+        .with_columns(
+            s=pl.format("v{}", i).str.pad_end(pl.lit(1) + i % 40, "x"),
+            l=pl.int_ranges(i % 7),
+        )
+    )
+
+
+def test_window_mode_sql_dedup(window_mode: str) -> None:
+    q = pl.SQLContext(t=_payload_frame()).execute(
+        """
+        SELECT id, g, h, s, l FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY g ORDER BY t DESC, id) AS rn
+            FROM t
+        ) u
+        WHERE rn = 1
+        """
+    )
+    _assert_unordered_physical_windows(q)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("x").rank("ordinal").over(["g", "h"], order_by="t"),
+        pl.col("s").str.len_bytes().sum().over("h"),
+        pl.col("l").list.len().max().over("g"),
+    ],
+)
+def test_window_mode_unread_payload(window_mode: str, expr: pl.Expr) -> None:
+    q = _payload_frame().with_columns(w=expr).group_by("g").agg(pl.all().sort())
+    _assert_unordered_physical_windows(q)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )
+
+
+def test_window_mode_fewer_rows_than_partitions(window_mode: str) -> None:
+    q = (
+        _payload_frame(5)
+        .with_columns(w=pl.col("x").sum().over("g", order_by="t"))
+        .sort("x", "id")
+    )
+    _assert_unordered_physical_windows(q)
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
+def test_window_mode_unordered_error_in_partition(window_mode: str) -> None:
+    n = 2000
+    s = pl.Series("s", [str(j) if j < n - 3 else "x" for j in range(n)])
+    q = (
+        _keyed_frame(n)
+        .with_columns(s)
+        .lazy()
+        .with_columns(w=pl.col("s").cast(pl.Int64).sum().over("g", order_by="t"))
+        .sort("x", "id")
+    )
+    _assert_unordered_physical_windows(q)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        q.collect(engine="streaming")
+
+
+def test_window_mode_unordered_resume_over_join(
+    window_mode: str, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    # The join pauses its inputs after sampling a few rows.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "16")
+    lf = (
+        _payload_frame()
+        .with_columns(w=pl.col("x").sum().over("g", order_by="t"))
+        .with_columns(pl.col("h").cast(pl.Int64))
+    )
+    other = pl.LazyFrame({"h": range(13), "extra": range(13)})
+    q = lf.join(other, on="h", how="inner").sort("x", "id")
+    _assert_unordered_physical_windows(q)
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
