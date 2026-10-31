@@ -6,7 +6,10 @@ use std::sync::Arc;
 use edge::Edge;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, PlIndexMap, ScratchIndexMap, ScratchIndexSet};
+use polars_core::prelude::{
+    Column, DataType, IdxSize, PlIndexMap, ScratchIndexMap, ScratchIndexSet,
+};
+use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_defs::join::{JoinCoalesce, JoinType};
 use polars_io::RowIndex;
@@ -34,7 +37,7 @@ use crate::plans::{
     AExpr, ArenaExprIter, ArenaLpIter, ExprIR, FunctionIR, IR, IRAggExpr, IRBuilder,
     IRFunctionExpr, OutputName, det_join_schema,
 };
-use crate::prelude::{DistinctOptionsIR, ProjectionOptions};
+use crate::prelude::{DistinctOptionsIR, Operator, ProjectionOptions};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
@@ -1320,9 +1323,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
             } => {
                 // concat(a, b, ..).select(len())
                 //   -> concat(a.select(len()), b.select(len()), ..).select(col('len').cast(UInt128).sum().cast(IDX_DTYPE))
-                // A slice of the union would apply to the per-input lengths instead of the rows.
-                if out_edge.projection() == Projection::Len && !inputs.is_empty() && slice.is_none()
+                // A slice of the union would apply to the per-input lengths instead of the rows,
+                // so a slice with a non-negative offset is instead applied to the summed length.
+                if out_edge.projection() == Projection::Len
+                    && !inputs.is_empty()
+                    && slice.is_none_or(|(offset, _)| offset >= 0)
                 {
+                    let slice = slice.take();
                     *rechunk = false;
                     *maintain_order = false;
                     let len_schema =
@@ -1372,7 +1379,47 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             dtype: DataType::IDX_DTYPE,
                             options: CastOptions::Strict,
                         };
-                        self.expr_arena.add(e)
+                        let mut len = self.expr_arena.add(e);
+
+                        // slice(offset, length).len() == min(max(len, offset) - offset, length)
+                        if let Some((offset, length)) = slice {
+                            let arena = &mut *self.expr_arena;
+                            let mut lit = |v: usize| {
+                                let v = IdxSize::try_from(v).unwrap_or(IdxSize::MAX);
+                                arena.add(AExpr::Literal(Scalar::new_idxsize(v).into()))
+                            };
+                            let (offset_lit, length_lit) = (lit(offset as usize), lit(length));
+                            let gt = |arena: &mut Arena<AExpr>, left, right| {
+                                arena.add(AExpr::BinaryExpr {
+                                    left,
+                                    op: Operator::Gt,
+                                    right,
+                                })
+                            };
+
+                            if offset != 0 {
+                                let predicate = gt(arena, len, offset_lit);
+                                let max = arena.add(AExpr::Ternary {
+                                    predicate,
+                                    truthy: len,
+                                    falsy: offset_lit,
+                                });
+                                len = arena.add(AExpr::BinaryExpr {
+                                    left: max,
+                                    op: Operator::Minus,
+                                    right: offset_lit,
+                                });
+                            }
+
+                            let predicate = gt(arena, len, length_lit);
+                            len = arena.add(AExpr::Ternary {
+                                predicate,
+                                truthy: length_lit,
+                                falsy: len,
+                            });
+                        }
+
+                        len
                     };
 
                     extract_select_len_expr(
@@ -2153,6 +2200,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 if resolved_ir.is_some() {
                     edges.swap_input_output(0, 0);
                     return;
+                }
+
+                // Resolved plans preserve height with zero-width projections, so a count
+                // does not need to materialize a column before resolving the plan.
+                if out_edge.projection() == Projection::Len {
+                    *out_edge.projection_mut() = Projection::Names;
+                    out_edge.names_mut().clear();
                 }
 
                 let (projected_names, _) = projected_names_subset_or_return!();

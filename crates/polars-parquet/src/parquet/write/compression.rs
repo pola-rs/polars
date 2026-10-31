@@ -18,6 +18,7 @@ fn compress_data(
         descriptor,
         num_rows,
         num_nulls,
+        unencoded_byte_array_data_bytes,
         shared_capacity: _,
     } = page;
     let uncompressed_page_size = buffer.len();
@@ -44,7 +45,7 @@ fn compress_data(
         std::mem::swap(buffer.to_mut(), &mut compressed_buffer);
     }
 
-    Ok(CompressedDataPage::new(
+    let mut page = CompressedDataPage::new(
         header,
         CowBuffer::Owned(compressed_buffer),
         compression.into(),
@@ -52,7 +53,9 @@ fn compress_data(
         descriptor,
         num_rows,
         num_nulls,
-    ))
+    );
+    page.unencoded_byte_array_data_bytes = unencoded_byte_array_data_bytes;
+    Ok(page)
 }
 
 fn compress_dict(

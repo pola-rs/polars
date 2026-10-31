@@ -9,6 +9,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -79,6 +80,19 @@ def test_equal_not_equal() -> None:
         "5_eq_aware": [True, True, True, False, False],
         "6_neq_aware": [False, False, False, True, True],
     }
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        ("a IS DISTINCT FROM b AND c > 1", [False, False, True]),
+        ("a IS NOT DISTINCT FROM b OR c > 1", [True, True, True]),
+        ("c > 0 AND a IS DISTINCT FROM b OR c = 1", [True, False, True]),
+    ],
+)
+def test_is_distinct_from_precedence(predicate: str, expected: list[bool]) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 4], "c": [1, 2, 3]})
+    assert df.sql(f"SELECT {predicate} AS m FROM self")["m"].to_list() == expected
 
 
 def test_string_compared_with_integer_literals() -> None:
@@ -636,3 +650,20 @@ def test_unary_ops_8890() -> None:
             "c": [-3, -3],
             "d": [4, 4],
         }
+
+
+@pytest.mark.parametrize("op", ["IS TRUE", "IS NOT TRUE", "IS FALSE", "IS NOT FALSE"])
+def test_is_true_false_on_null(op: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t": pl.DataFrame(
+                {
+                    "x": [True, False, None],
+                    "n": [2, 0, None],
+                    "s": ["true", "false", None],
+                }
+            )
+        },
+        query=f"SELECT x {op} AS r, n {op} AS rn, s {op} AS rs FROM t",
+        compare_with="duckdb",
+    )

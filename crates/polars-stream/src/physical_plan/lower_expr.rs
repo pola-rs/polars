@@ -109,7 +109,10 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr, arena: &Arena<AExpr>) -
                     !is_single_literal_ae(input[1].node(), arena)
                 },
                 #[cfg(feature = "replace")]
-                F::Replace | F::ReplaceStrict { .. } => true,
+                F::Replace | F::ReplaceStrict { .. } => {
+                    !(is_single_literal_ae(input[1].node(), arena)
+                        && is_single_literal_ae(input[2].node(), arena))
+                },
                 _ => false,
             }
         },
@@ -1541,90 +1544,40 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
             },
 
-            // pl.row_index() maps to this.
+            // pl.row_index() and pl.int_range(0, pl.len()) map to this.
             #[cfg(feature = "range")]
-            AExpr::Function {
-                input: ref inner_exprs,
-                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
-                options: _,
-            } if {
-                let start_is_zero = match ctx.expr_arena.get(inner_exprs[0].node()) {
-                    AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
-                    _ => false,
-                };
-                let stop_is_len = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Len);
-
-                dtype == DataType::IDX_DTYPE && start_is_zero && stop_is_len
-            } =>
+            AExpr::Function { .. }
+                if let Some((length, dtype)) = int_range_over_length_ae(expr, ctx.expr_arena) =>
             {
-                let out_name = unique_column_name();
-                let row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
-                let row_idx_col_expr_ir =
-                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
-                let row_idx_stream = build_select_stream_with_ctx(
-                    build_row_idx_stream(input, out_name, None, ctx.phys_sm),
-                    &[row_idx_col_expr_ir],
-                    ctx,
-                )?;
-                input_streams.insert(row_idx_stream);
-                transformed_exprs.push(row_idx_col_aexpr);
-            },
-
-            #[cfg(feature = "range")]
-            AExpr::Function {
-                input: ref inner_exprs,
-                function: IRFunctionExpr::Range(IRRangeFunction::IntRange { step: 1, dtype }),
-                options: _,
-            } if {
-                let start_is_zero = match ctx.expr_arena.get(inner_exprs[0].node()) {
-                    AExpr::Literal(lit) => lit.extract_usize().ok() == Some(0),
-                    _ => false,
+                // `count()` numbers the values of its input that it counts, not the rows.
+                let input = match ctx.expr_arena.get(length) {
+                    AExpr::Agg(IRAggExpr::Count {
+                        input: input_expr,
+                        include_nulls,
+                    }) => {
+                        let (input_expr, include_nulls) = (*input_expr, *include_nulls);
+                        let mut input_expr = AExprBuilder::new_from_node(input_expr);
+                        if !include_nulls {
+                            input_expr = input_expr.drop_nulls(ctx.expr_arena);
+                        }
+                        let input_expr = input_expr.expr_ir_retain_name(ctx.expr_arena);
+                        build_select_stream_with_ctx(input, &[input_expr], ctx)?
+                    },
+                    _ => input,
                 };
-                let stop_is_count = matches!(
-                    ctx.expr_arena.get(inner_exprs[1].node()),
-                    AExpr::Agg(IRAggExpr::Count { .. })
-                );
-
-                start_is_zero && stop_is_count
-            } =>
-            {
-                let AExpr::Agg(IRAggExpr::Count {
-                    input: input_expr,
-                    include_nulls,
-                }) = ctx.expr_arena.get(inner_exprs[1].node())
-                else {
-                    unreachable!();
-                };
-                let (input_expr, include_nulls) = (*input_expr, *include_nulls);
 
                 let out_name = unique_column_name();
-                let mut row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
+                let mut row_idx = AExprBuilder::col(out_name.clone(), ctx.expr_arena);
                 if dtype != IDX_DTYPE {
-                    row_idx_col_aexpr = AExprBuilder::new_from_node(row_idx_col_aexpr)
-                        .cast(dtype, ctx.expr_arena)
-                        .node();
+                    row_idx = row_idx.cast(dtype, ctx.expr_arena);
                 }
-                let row_idx_col_expr_ir =
-                    ExprIR::new(row_idx_col_aexpr, OutputName::ColumnLhs(out_name.clone()));
-
-                let mut input_expr = AExprBuilder::new_from_node(input_expr);
-                if !include_nulls {
-                    input_expr = input_expr.drop_nulls(ctx.expr_arena);
-                }
-                let input_expr = input_expr.expr_ir_retain_name(ctx.expr_arena);
-
                 let row_idx_stream = build_select_stream_with_ctx(
-                    build_row_idx_stream(
-                        build_select_stream_with_ctx(input, &[input_expr], ctx)?,
-                        out_name,
-                        None,
-                        ctx.phys_sm,
-                    ),
-                    &[row_idx_col_expr_ir],
+                    build_row_idx_stream(input, out_name.clone(), None, ctx.phys_sm),
+                    &[row_idx.expr_ir(out_name.clone())],
                     ctx,
                 )?;
                 input_streams.insert(row_idx_stream);
-                transformed_exprs.push(row_idx_col_aexpr);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
             #[cfg(all(feature = "strings", feature = "temporal"))]
@@ -3253,8 +3206,8 @@ pub(crate) fn build_sort_stream_with_ctx(
                 RowEncodingVariant::Ordered {
                     descending: Some(std::mem::take(&mut sort_options.descending)),
                     nulls_last: Some(std::mem::take(&mut sort_options.nulls_last)),
-                    broadcast_nulls: None,
                 },
+                false,
                 ctx.expr_arena,
             );
             // The order is folded into the encoding, which has no nulls.

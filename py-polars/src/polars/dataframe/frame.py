@@ -1132,26 +1132,19 @@ class DataFrame:
             s = _prepare_other_arg(other, length=self.height)
             other = DataFrame([s.alias(f"n{i}") for i in range(self.width)])
 
-        orig_dtypes = other.dtypes
-        # TODO: Dispatch to a native floordiv
-        other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
-        df = self._from_pydf(self._df.div_df(other._df))
+        if not floordiv:
+            other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)
+            return self._from_pydf(self._df.div_df(other._df))
 
-        df = (
-            df
-            if not floordiv
-            else df.with_columns([s.floor() for s in df if s.dtype.is_float()])
-        )
-        if floordiv:
-            int_casts = [
-                col(column).cast(tp)
-                for i, (column, tp) in enumerate(self.schema.items())
-                if tp.is_integer()
-                and (orig_dtypes[i].is_integer() or orig_dtypes[i] == Null)
-            ]
-            if int_casts:
-                return df.with_columns(int_casts)
-        return df
+        df = self._from_pydf(self._df.floordiv_df(other._df))
+        int_casts = [
+            col(column).cast(tp)
+            for (column, tp), other_tp in zip(
+                self.schema.items(), other.dtypes, strict=False
+            )
+            if tp.is_integer() and (other_tp.is_integer() or other_tp == Null)
+        ]
+        return df.with_columns(int_casts) if int_casts else df
 
     def _cast_all_from_to(
         self, df: DataFrame, from_: frozenset[PolarsDataType], to: PolarsDataType
@@ -13497,6 +13490,9 @@ class DataFrame:
         unordered: bool = False,
         descending: list[bool] | None = None,
         nulls_last: list[bool] | None = None,
+        output: Literal["binary_offset", "binary", "optimal"] = "binary_offset",
+        encode_nulls: Sequence[bool] | None = None,
+        propagate_nulls: bool = False,
     ) -> Series:
         """
         Row encode the given DataFrame.
@@ -13515,6 +13511,9 @@ class DataFrame:
                 unordered=unordered,
                 descending=descending,
                 nulls_last=nulls_last,
+                output=output,
+                encode_nulls=encode_nulls,
+                propagate_nulls=propagate_nulls,
             )
         ).to_series()
 

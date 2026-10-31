@@ -87,6 +87,14 @@ impl PyDataFrame {
         py.enter_polars_df(|| &*self.df.read() / &*s.df.read())
     }
 
+    pub fn floordiv_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
+        py.enter_polars_df(|| {
+            self.df
+                .read()
+                .binary_aligned(&s.df.read(), &polars_ops::prelude::floor_div_series)
+        })
+    }
+
     pub fn rem_df(&self, py: Python<'_>, s: &Self) -> PyResult<Self> {
         py.enter_polars_df(|| &*self.df.read() % &*s.df.read())
     }

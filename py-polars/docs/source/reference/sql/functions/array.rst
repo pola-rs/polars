@@ -16,7 +16,7 @@ Array
    * - :ref:`ARRAY_INNER_PRODUCT <array_inner_product>`
      - Returns the inner product of two fixed-size arrays. Alias: ``ARRAY_DOT_PRODUCT``.
    * - :ref:`ARRAY_LENGTH <array_length>`
-     - Returns the length of the array.
+     - Returns the length of the array (optional: the dimension, which must be 1).
    * - :ref:`ARRAY_LOWER <array_lower>`
      - Returns the lower bound (min value) in an array.
    * - :ref:`ARRAY_MEAN <array_mean>`
@@ -31,6 +31,8 @@ Array
      - Returns the array with the unique elements.
    * - :ref:`ARRAY_UPPER <array_upper>`
      - Returns the upper bound (max value) in an array.
+   * - :ref:`CARDINALITY <cardinality>`
+     - Returns the number of elements in the array.
    * - :ref:`GENERATE_SERIES <generate_series>`
      - Returns an array of values from start to stop, stop included.
    * - :ref:`RANGE <range>`
@@ -183,7 +185,8 @@ Array is null for a row, the result for that row is null.
 
 ARRAY_LENGTH
 ------------
-Returns the length of the array.
+Returns the length of the array. An optional second argument names the dimension, which
+must be 1.
 
 **Example:**
 
@@ -390,6 +393,30 @@ Returns the upper bound (max value) in an array.
     # │ [5, 0]     ┆ 5        │
     # │ [4, 8, -2] ┆ 8        │
     # └────────────┴──────────┘
+
+.. _cardinality:
+
+CARDINALITY
+-----------
+Returns the number of elements in the array.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [[1, 2], [4, 3, 2]]})
+    df.sql("""
+      SELECT foo, CARDINALITY(foo) AS n_elems FROM self
+    """)
+    # shape: (2, 2)
+    # ┌───────────┬─────────┐
+    # │ foo       ┆ n_elems │
+    # │ ---       ┆ ---     │
+    # │ list[i64] ┆ u32     │
+    # ╞═══════════╪═════════╡
+    # │ [1, 2]    ┆ 2       │
+    # │ [4, 3, 2] ┆ 3       │
+    # └───────────┴─────────┘
 
 .. _generate_series:
 

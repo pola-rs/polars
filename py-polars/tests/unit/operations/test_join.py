@@ -346,6 +346,21 @@ def test_join_on_cast() -> None:
     }
 
 
+def test_join_multiple_keys_right_chunks_differ_from_key() -> None:
+    n = pl.thread_pool_size()
+    parts = [pl.DataFrame({"g": [i], "h": [i], "v": [f"v{i}"]}) for i in range(n - 1)]
+    rest = range(n - 1, 2 * n)
+    parts.append(
+        pl.DataFrame({"g": list(rest), "h": list(rest), "v": [f"v{i}" for i in rest]})
+    )
+    right = pl.concat(parts, rechunk=False)
+    left = pl.DataFrame({"g": range(2 * n), "h": range(2 * n)})
+
+    out = left.join(right, on=["g", "h"], how="left")
+    expected = left.with_columns(v=pl.format("v{}", "g"))
+    assert_frame_equal(out, expected)
+
+
 def test_join_chunks_alignment_4720() -> None:
     # https://github.com/pola-rs/polars/issues/4720
 
@@ -672,6 +687,36 @@ def test_join_concat_projection_pd_case_7071() -> None:
 
     expected = pl.DataFrame({"id": [1, 1, 3]}).lazy()
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_join_sorted_fast_paths_nan_30076(dtype: PolarsDataType) -> None:
+    nan = float("nan")
+    schema = {"k": dtype}
+    left = pl.DataFrame(
+        {"k": [1.0, 2.0, nan], "id": [1, 2, 3]}, schema_overrides=schema
+    ).sort("k")
+    right = pl.DataFrame({"k": [nan, 2.0], "rid": [10, 11]}, schema_overrides=schema)
+    expected_inner = pl.DataFrame(
+        {"k": [2.0, nan], "id": [2, 3], "rid": [11, 10]}, schema_overrides=schema
+    )
+    expected_left = pl.DataFrame(
+        {"k": [1.0, 2.0, nan], "id": [1, 2, 3], "rid": [None, 11, 10]},
+        schema_overrides=schema,
+    )
+    for r in [right, right.sort("k")]:
+        assert_frame_equal(
+            left.join(r, on="k", how="inner"), expected_inner, check_row_order=False
+        )
+        assert_frame_equal(
+            left.join(r, on="k", how="left"), expected_left, check_row_order=False
+        )
+    # Only the larger right side is sorted, so the left side gets arg-sorted.
+    assert_frame_equal(
+        right.join(left, on="k", how="inner"),
+        expected_inner.select("k", "rid", "id"),
+        check_row_order=False,
+    )
 
 
 def test_join_sorted_fast_paths_null_8269() -> None:

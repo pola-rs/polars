@@ -36,6 +36,7 @@ use polars_plan::dsl::ScanSources;
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::dsl::dsl_resolver::ResolvedDsl;
+use polars_plan::plans::RowEncodingOutputType;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
@@ -1314,6 +1315,24 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<UniqueKeepStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`keep` must be one of {{'first', 'last', 'any', 'none'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<RowEncodingOutputType> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "binary_offset" => RowEncodingOutputType::AlwaysBinaryOffset,
+            "binary" => RowEncodingOutputType::AlwaysBinary,
+            "optimal" => RowEncodingOutputType::Optimal,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`output` must be one of {{'binary_offset', 'binary', 'optimal'}}, got {v}",
                 )));
             },
         };

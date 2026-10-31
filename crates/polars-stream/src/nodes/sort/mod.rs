@@ -189,6 +189,8 @@ impl SortNode {
         let flush_rows =
             self.tuning
                 .flush_rows(total_bytes, total_rows, num_tasks * (num_buckets + 1));
+        // The rows a builder receives if the keys are spread evenly.
+        let reserve_rows = flush_rows.min(total_rows.div_ceil(num_tasks * num_buckets));
         let spill_ctx =
             MostRecentSpillContext::new("sort-partition".into(), state.task_metrics.clone());
 
@@ -239,6 +241,7 @@ impl SortNode {
                         input_schema,
                         key,
                         flush_rows,
+                        reserve_rows,
                         maintain_order,
                         spill_ctx,
                     )
@@ -490,12 +493,14 @@ fn drop_parallel<T: Send>(items: impl IntoIterator<Item = T>) {
 }
 
 /// Partitions one task's share of the buffered frames into per-bucket frames.
+#[allow(clippy::too_many_arguments)]
 async fn partition_frames(
     frames: Vec<SpillFrame>,
     classifier: &BucketClassifier,
     input_schema: &Arc<Schema>,
     key: &str,
     flush_rows: usize,
+    reserve_rows: usize,
     maintain_order: bool,
     spill_ctx: &MostRecentSpillContext,
 ) -> PolarsResult<Vec<Vec<SpillFrame>>> {
@@ -540,7 +545,7 @@ async fn partition_frames(
             }
             // Reserving up front avoids repeated reallocation while growing.
             if builders[b].is_empty() {
-                builders[b].reserve(flush_rows + idxs_per_bucket[b].len());
+                builders[b].reserve(reserve_rows + idxs_per_bucket[b].len());
             }
             // SAFETY: the indices are row offsets within the rechunked frame.
             unsafe {

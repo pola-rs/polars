@@ -6,7 +6,9 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca_unordered;
+use crate::chunked_array::ops::row_encode::{
+    _get_rows_encoded_ca_unordered, encode_rows_vertical_par_unordered,
+};
 use crate::config::verbose;
 use crate::series::BitRepr;
 use crate::utils::Container;

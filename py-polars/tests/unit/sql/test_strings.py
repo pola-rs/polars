@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLSyntaxError
-from polars.testing import assert_frame_equal
+from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
+from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 # TODO: Do not rely on I/O for these tests
@@ -312,6 +316,117 @@ def test_string_like_wildcards(pattern: str) -> None:
     assert res == [None if s is None else rx.fullmatch(s) is None for s in txt]
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "'%' || needle || '%'",
+        "('%' || needle || '%')",
+        "CONCAT('%', needle, '%')",
+    ],
+)
+@pytest.mark.parametrize("like", ["LIKE", "NOT LIKE", "ILIKE", "NOT ILIKE"])
+def test_string_like_column_substring(like: str, pattern: str) -> None:
+    txt = ["abc", "a.c", "a%c", "AbC", "a\nc", "(a)", "a\\c", "x$0y", "", None]
+    needle = [
+        "b", ".", "%", "_", "B", "", None, "\n", "(", "\\", "a_c", "a%c", "*",
+        "%b%", "%%", "_.", "(%)", "$0", "$0%", "\\_",
+    ]  # fmt: skip
+    df = pl.DataFrame(
+        [(t, n) for t in txt for n in needle],
+        schema={"txt": pl.String, "needle": pl.String},
+        orient="row",
+    )
+    q = f"SELECT txt {like} {pattern} AS m FROM self"
+    res = df.lazy().sql(q).collect(engine="in-memory")["m"]
+    assert_series_equal(df.lazy().sql(q).collect(engine="streaming")["m"], res)
+
+    # CONCAT reads a null as an empty string.
+    null_needle = "" if pattern.startswith("CONCAT") else None
+    flags = re.DOTALL | (re.IGNORECASE if "ILIKE" in like else 0)
+    expected: list[bool | None] = []
+    for t, n in df.rows():
+        n = null_needle if n is None else n
+        if t is None or n is None:
+            expected.append(None)
+            continue
+        rx = re.escape(n).replace("%", ".*").replace("_", ".")
+        expected.append((re.search(rx, t, flags) is not None) != like.startswith("NOT"))
+    assert res.to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("pattern", "value"),
+    [
+        ("needle", lambda n: n),
+        ("needle || '%'", lambda n: n + "%"),
+        ("'%' || needle", lambda n: "%" + n),
+        ("'a' || needle || 'c'", lambda n: "a" + n + "c"),
+        ("UPPER(needle)", lambda n: n.upper()),
+        ("CONCAT('a', needle)", lambda n: "a" + n),
+    ],
+)
+@pytest.mark.parametrize("like", ["LIKE", "NOT LIKE", "ILIKE", "NOT ILIKE"])
+def test_string_like_column_pattern(
+    like: str, pattern: str, value: Callable[[str], str]
+) -> None:
+    txt = ["abc", "a.c", "a%c", "AbC", "a\nc", "(a)", "a\\c", "x$0y", "", None]
+    needle = ["b", ".", "%", "_", "B", "", None, "abc", "a_c", "(", "\\", "$0", "%b%"]
+    df = pl.DataFrame(
+        [(t, n) for t in txt for n in needle],
+        schema={"txt": pl.String, "needle": pl.String},
+        orient="row",
+    )
+    q = f"SELECT txt {like} {pattern} AS m FROM self"
+    res = df.lazy().sql(q).collect(engine="in-memory")["m"]
+    assert_series_equal(df.lazy().sql(q).collect(engine="streaming")["m"], res)
+
+    flags = re.DOTALL | (re.IGNORECASE if "ILIKE" in like else 0)
+    expected: list[bool | None] = []
+    for t, n in df.rows():
+        if n is None and pattern.startswith("CONCAT"):
+            n = ""
+        elif n is None:
+            expected.append(None)
+            continue
+        if t is None:
+            expected.append(None)
+            continue
+        rx = re.escape(value(n)).replace("%", ".*").replace("_", ".")
+        expected.append(
+            (re.fullmatch(rx, t, flags) is not None) != like.startswith("NOT")
+        )
+    assert res.to_list() == expected
+
+
+@pytest.mark.parametrize(
+    "modifier", ["WITHIN GROUP (ORDER BY txt)", "IGNORE NULLS", "RESPECT NULLS"]
+)
+def test_string_like_concat_pattern_modifier_unsupported(modifier: str) -> None:
+    df = pl.DataFrame({"txt": ["abc"], "pat": ["b"]})
+    with pytest.raises(SQLInterfaceError, match="is not currently supported"):
+        df.sql(f"SELECT txt LIKE CONCAT('%', pat, '%') {modifier} FROM self")
+
+
+def test_string_like_constant_concat_pattern() -> None:
+    df = pl.DataFrame({"txt": ["Brand#12", "brand#1", "Other"]})
+    res = df.sql("SELECT txt FROM self WHERE txt LIKE CONCAT('Brand%', '%')")
+    assert res["txt"].to_list() == ["Brand#12"]
+
+
+def test_string_like_column_substring_non_string() -> None:
+    df = pl.DataFrame({"txt": ["a12b", "a3b", None], "n": [12, 4, 3]})
+    res = df.sql("SELECT txt FROM self WHERE txt LIKE '%' || n || '%'")
+    assert res["txt"].to_list() == ["a12b"]
+
+
+@pytest.mark.parametrize("escape", ["'!'", "('!')", "UPPER('!')"])
+@pytest.mark.parametrize("like", ["LIKE", "ILIKE"])
+def test_string_like_escape_unsupported(like: str, escape: str) -> None:
+    df = pl.DataFrame({"txt": ["a_b"]})
+    with pytest.raises(SQLInterfaceError, match="ESCAPE char for LIKE/ILIKE"):
+        df.sql(f"SELECT txt {like} 'a!_b' ESCAPE {escape} FROM self")
+
+
 @pytest.mark.parametrize("form", ["NFKC", "NFKD"])
 def test_string_normalize(form: str) -> None:
     df = pl.DataFrame({"txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"]})  # noqa: RUF001
@@ -552,3 +667,45 @@ def test_string_trim(foods_ipc_path: Path) -> None:
         lf.sql(
             "SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self"
         ).collect()
+
+
+def test_string_repeat() -> None:
+    df = pl.DataFrame({"s": ["ab", "c", "d", None], "n": [2, 0, -1, 1]})
+    res = df.sql(
+        """
+        SELECT
+          REPEAT(s, n) AS r1,
+          REPEAT('*', n) AS r2,
+          REPEAT(s, 2) AS r3,
+          REPEAT(s, NULL) AS r4
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "r1": ["abab", "", "", None],
+        "r2": ["**", "", "", "*"],
+        "r3": ["abab", "cc", "dd", None],
+        "r4": [None, None, None, None],
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT REPEAT(NULL, 2) AS r FROM self", [None, None]),
+        ("SELECT REPEAT(z, 2) AS r FROM self", [None, None]),
+        ("SELECT REPEAT('', 4294967296) AS r FROM self", ["", ""]),
+        (
+            "SELECT REPEAT(CAST(NULL AS VARCHAR), 4294967296) AS r FROM self",
+            [None, None],
+        ),
+    ],
+)
+def test_string_repeat_null_and_empty(query: str, expected: list[str | None]) -> None:
+    df = pl.DataFrame({"z": [None, None]})
+    assert df.sql(query)["r"].to_list() == expected
+
+
+def test_string_repeat_invalid_count() -> None:
+    with pytest.raises(InvalidOperationError, match="conversion"):
+        pl.sql("SELECT REPEAT('x', 'bad')", eager=True)

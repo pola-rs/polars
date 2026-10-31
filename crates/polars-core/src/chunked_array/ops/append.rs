@@ -26,6 +26,15 @@ pub(crate) fn new_chunks_owned(chunks: &mut Vec<ArrayRef>, other: Vec<ArrayRef>,
     }
 }
 
+/// Unit-length arrays are sorted but don't necessarily carry the flag.
+fn unit_or_sorted_flag<T: PolarsDataType>(ca: &ChunkedArray<T>) -> IsSorted {
+    if ca.len() == 1 {
+        IsSorted::Ascending
+    } else {
+        ca.is_sorted_flag()
+    }
+}
+
 pub(super) fn update_sorted_flag_before_append<T>(ca: &mut ChunkedArray<T>, other: &ChunkedArray<T>)
 where
     T: PolarsDataType,
@@ -44,10 +53,11 @@ where
             ca.is_empty()
                 || (
                     // lhs is non-empty and all-null, so rhs must have nulls ordered first
-                    other.is_sorted_any() && 1 + other.last_non_null().unwrap() == other.len()
+                    unit_or_sorted_flag(other) != IsSorted::Not
+                        && 1 + other.last_non_null().unwrap() == other.len()
                 )
             {
-                other.is_sorted_flag()
+                unit_or_sorted_flag(other)
             } else {
                 IsSorted::Not
             }
@@ -58,10 +68,10 @@ where
             other.is_empty()
                 || (
                     // rhs is non-empty and all-null, so lhs must have nulls ordered last
-                    ca.is_sorted_any() && ca.first_non_null().unwrap() == 0
+                    unit_or_sorted_flag(ca) != IsSorted::Not && ca.first_non_null().unwrap() == 0
                 )
             {
-                ca.is_sorted_flag()
+                unit_or_sorted_flag(ca)
             } else {
                 IsSorted::Not
             }

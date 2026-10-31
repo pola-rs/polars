@@ -7,11 +7,24 @@ use polars_utils::pl_path::PlRefPath;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::dsl::HivePartitions;
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct HivePartitionsDf(DataFrame);
 
 impl HivePartitionsDf {
+    pub fn try_new(partitions: &HivePartitions, num_sources: usize) -> PolarsResult<Self> {
+        polars_ensure!(
+            partitions.0.height() == num_sources,
+            ShapeMismatch:
+            "number of hive partition rows ({}) does not match number of scan sources ({})",
+            partitions.0.height(),
+            num_sources,
+        );
+        Ok(Self(partitions.0.as_ref().clone()))
+    }
+
     /// Filter the columns to those contained in `projected_columns`.
     pub fn filter_columns(&self, projected_columns: &Schema) -> Self {
         let columns: Vec<_> = self

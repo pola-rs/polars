@@ -91,6 +91,7 @@ approx_quantile = [
   "polars-compute/serde",
   "polars-utils/serde",
   "dep:serde",
+  "dtype-struct",
 ]
 business = ["dtype-date", "chrono"]
 fused = []

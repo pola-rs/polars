@@ -1,5 +1,6 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
+use polars_core::chunked_array::ops::row_encode::rows_dtype;
 use polars_core::utils::{get_supertype, materialize_dyn_int};
 
 use super::*;
@@ -564,9 +565,7 @@ impl IRFunctionExpr {
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
-                if f.dtype == DataType::Boolean {
-                    f.dtype = IDX_DTYPE;
-                }
+                f.dtype = sum_output_dtype(&f.dtype);
                 f
             }),
             MeanHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
@@ -602,14 +601,18 @@ impl IRFunctionExpr {
             Reinterpret(dtype) => mapper.with_dtype(dtype.clone()),
             ExtendConstant => mapper.with_same_dtype(),
 
-            RowEncode(..) => mapper.try_map_field(|_| {
-                Ok(Field::new(
-                    PlSmallStr::from_static("row_encoded"),
-                    DataType::BinaryOffset,
-                ))
+            RowEncode {
+                dtypes,
+                variant,
+                output,
+                encode_nulls,
+                propagate_nulls: _,
+            } => mapper.try_map_field(|_| {
+                let dtype = rows_dtype(&output.layout(dtypes, variant, encode_nulls.as_deref())?);
+                Ok(Field::new(PlSmallStr::from_static("row_encoded"), dtype))
             }),
             #[cfg(feature = "dtype-struct")]
-            RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+            RowDecode { fields, .. } => mapper.with_dtype(DataType::Struct(fields.to_vec())),
             DynamicPred { .. } | DynamicSkipBatch { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
