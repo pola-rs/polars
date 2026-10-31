@@ -106,6 +106,7 @@ def dict_to_pydf(
                 allow_multithreaded
                 and _check_for_numpy(val)
                 and isinstance(val, np.ndarray)
+                and val.ndim > 0
                 and len(val) > _MIN_NUMPY_SIZE_FOR_MULTITHREADING
                 # integers and non-nan floats are zero-copy
                 and nan_to_null
