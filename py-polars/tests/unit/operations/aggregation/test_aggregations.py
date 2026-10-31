@@ -725,6 +725,22 @@ def test_approx_quantile_merged_rank_error(method: ApproxQuantileMethod) -> None
     assert abs(got - _rank(quantile, n)) / n <= error
 
 
+def test_approx_quantile_small_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "100")
+    n, error, quantile = 100_000, 0.01, 0.5
+    values = _shuffled(n)
+    got = (
+        pl.LazyFrame({"a": values})
+        .select(pl.col("a").approx_quantile(quantile, error=error, method="kll"))
+        .collect()
+        .item()
+    )
+
+    assert got in values
+    # `error` holds in 99.7% of runs; twice it keeps the test from flaking.
+    assert abs(got - _rank(quantile, n)) / n <= 2 * error
+
+
 @pytest.mark.slow
 @given(
     values=st.lists(

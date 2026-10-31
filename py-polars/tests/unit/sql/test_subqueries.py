@@ -1187,7 +1187,7 @@ def test_quantified_subquery_nested_values(
         "SELECT t1.a FROM t1 AS f",
         # Shapes no lowering claims, which reach qualifier resolution.
         "SELECT a FROM t1 WHERE b IN"
-        " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a LIMIT 5)",
+        " (SELECT DISTINCT x.b FROM t1 AS x WHERE x.a < t1.a LIMIT 5)",
         "SELECT a FROM t1 WHERE b IN"
         " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a GROUP BY x.b)",
     ],

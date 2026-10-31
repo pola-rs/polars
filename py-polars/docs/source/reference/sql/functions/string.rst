@@ -39,6 +39,8 @@ String
      - Returns True if `pattern` matches the value (optional: `flags`).
    * - :ref:`REGEXP_REPLACE <regexp_replace>`
      - Replaces the first match of `pattern` with `replacement` (optional: `flags`; 'g' replaces all matches).
+   * - :ref:`REPEAT <repeat>`
+     - Returns the string repeated `n` times.
    * - :ref:`REPLACE <replace>`
      - Replaces a given substring with another string.
    * - :ref:`REVERSE <reverse>`
@@ -567,6 +569,31 @@ to the whole match.
     # │ ab-cd   ┆ cd-ab   │
     # │ x       ┆ x       │
     # └─────────┴─────────┘
+
+.. _repeat:
+
+REPEAT
+------
+Returns the string repeated `n` times; a negative `n` gives an empty string.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["ab", "c", None], "n": [2, 3, 1]})
+    df.sql("""
+      SELECT foo, REPEAT(foo, n) AS repeated FROM self
+    """)
+    # shape: (3, 2)
+    # ┌──────┬──────────┐
+    # │ foo  ┆ repeated │
+    # │ ---  ┆ ---      │
+    # │ str  ┆ str      │
+    # ╞══════╪══════════╡
+    # │ ab   ┆ abab     │
+    # │ c    ┆ ccc      │
+    # │ null ┆ null     │
+    # └──────┴──────────┘
 
 .. _replace:
 

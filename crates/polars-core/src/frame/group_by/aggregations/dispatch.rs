@@ -12,7 +12,7 @@ use crate::prelude::row_encode::encode_rows_unordered;
 const N_UNIQUE_SORT_FALLBACK_THRESHOLD: usize = 16384;
 
 /// Whether the nulls of `s`, if any, are all at its start or all at its end.
-fn nulls_at_one_end(s: &Series) -> bool {
+pub(crate) fn nulls_at_one_end(s: &Series) -> bool {
     let null_count = s.null_count();
     if null_count == 0 {
         return true;

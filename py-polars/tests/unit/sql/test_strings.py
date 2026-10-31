@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -667,3 +667,45 @@ def test_string_trim(foods_ipc_path: Path) -> None:
         lf.sql(
             "SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM self"
         ).collect()
+
+
+def test_string_repeat() -> None:
+    df = pl.DataFrame({"s": ["ab", "c", "d", None], "n": [2, 0, -1, 1]})
+    res = df.sql(
+        """
+        SELECT
+          REPEAT(s, n) AS r1,
+          REPEAT('*', n) AS r2,
+          REPEAT(s, 2) AS r3,
+          REPEAT(s, NULL) AS r4
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "r1": ["abab", "", "", None],
+        "r2": ["**", "", "", "*"],
+        "r3": ["abab", "cc", "dd", None],
+        "r4": [None, None, None, None],
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT REPEAT(NULL, 2) AS r FROM self", [None, None]),
+        ("SELECT REPEAT(z, 2) AS r FROM self", [None, None]),
+        ("SELECT REPEAT('', 4294967296) AS r FROM self", ["", ""]),
+        (
+            "SELECT REPEAT(CAST(NULL AS VARCHAR), 4294967296) AS r FROM self",
+            [None, None],
+        ),
+    ],
+)
+def test_string_repeat_null_and_empty(query: str, expected: list[str | None]) -> None:
+    df = pl.DataFrame({"z": [None, None]})
+    assert df.sql(query)["r"].to_list() == expected
+
+
+def test_string_repeat_invalid_count() -> None:
+    with pytest.raises(InvalidOperationError, match="conversion"):
+        pl.sql("SELECT REPEAT('x', 'bad')", eager=True)

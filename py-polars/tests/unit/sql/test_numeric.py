@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import EngineType, PolarsDataType
 
 
 def test_div() -> None:
@@ -113,6 +113,36 @@ def test_numeric_decimal_type(
         schema={"dec": expected_dtype},
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("sqltype", "error"),
+    [
+        ("DECIMAL(2, 3)", r"invalid DECIMAL scale \(expected 0-2, found 3\)"),
+        ("NUMERIC(10, 2147483648)", r"invalid DECIMAL scale \(expected 0-10"),
+        ("DECIMAL(39, 2)", r"invalid DECIMAL precision \(expected 1-38, found 39\)"),
+        ("DECIMAL(0)", r"invalid DECIMAL precision \(expected 1-38, found 0\)"),
+        ("DECIMAL(10, -1)", r"invalid DECIMAL scale \(expected 0-10, found -1\)"),
+        ("DEC(5, 6)", r"invalid DECIMAL scale \(expected 0-5, found 6\)"),
+        ("DECIMAL(2, 3)[]", r"invalid DECIMAL scale \(expected 0-2, found 3\)"),
+    ],
+)
+def test_numeric_decimal_type_invalid(sqltype: str, error: str) -> None:
+    # an error, not a panic in the cast
+    for query in (
+        f"SELECT CAST(1 AS {sqltype})",
+        f"SELECT TRY_CAST(1 AS {sqltype})",
+        f"SELECT 1::{sqltype}",
+    ):
+        with pytest.raises(SQLSyntaxError, match=error):
+            pl.sql(query, eager=True)
+
+
+@pytest.mark.parametrize("prec_scale", [(1, 0), (1, 1), (38, 0), (38, 38)])
+def test_numeric_decimal_type_bounds(prec_scale: tuple[int, int]) -> None:
+    precision, scale = prec_scale
+    res = pl.sql(f"SELECT CAST(0 AS DECIMAL({precision}, {scale})) AS d", eager=True)
+    assert res.schema["d"] == pl.Decimal(precision, scale)
 
 
 @pytest.mark.parametrize(
@@ -972,3 +1002,160 @@ def test_decimal_literal_converts_to_the_nearest_float(expr: str) -> None:
     # rounding the mantissa before dividing by 10^16 is one ULP off here
     df = pl.DataFrame({"f": [0.9728340843400927]})
     assert df.sql(f"SELECT {expr} AS x FROM self").item() is True
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_random(engine: EngineType) -> None:
+    t = pl.DataFrame({"x": range(100)})
+    ctx = pl.SQLContext(t=t)
+
+    res = ctx.execute(
+        "SELECT RANDOM() AS a, RANDOM() AS b FROM t WHERE x >= 10"
+    ).collect(engine=engine)
+    assert res.schema == pl.Schema({"a": pl.Float64, "b": pl.Float64})
+    assert res.height == 90
+    for s in res.iter_columns():
+        assert 0.0 <= s.min() <= s.max() < 1.0  # type: ignore[operator]
+        assert s.n_unique() == 90
+    assert not (res["a"] == res["b"]).any()
+
+    pl.set_random_seed(0)
+    first = ctx.execute("SELECT RANDOM() AS r FROM t").collect(engine=engine)
+    pl.set_random_seed(0)
+    second = ctx.execute("SELECT RANDOM() AS r FROM t").collect(engine=engine)
+    assert_frame_equal(first, second)
+
+    queries = {
+        "SELECT COUNT(*) FROM t WHERE RANDOM() < 0": 0,
+        "SELECT COUNT(*) FROM t WHERE RANDOM() < 1": 100,
+        "SELECT COUNT(*) FROM t AS a JOIN t AS b ON a.x < 3 AND RANDOM() < 1": 300,
+        "SELECT RANDOM() < 1": True,
+        (
+            "SELECT COUNT(b.x) FROM t AS a LEFT JOIN t AS b "
+            "ON b.x = (SELECT x FROM t ORDER BY RANDOM() LIMIT 1)"
+        ): 100,
+        "SELECT (SELECT x FROM t ORDER BY RANDOM() LIMIT 1) BETWEEN 0 AND 99": True,
+        "SELECT MIN(FLOOR(RANDOM() * 10)) >= 0 AND MAX(FLOOR(RANDOM() * 10)) <= 9 FROM t": True,
+    }
+    for query, expected in queries.items():
+        assert ctx.execute(query).collect(engine=engine).item() == expected
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_random_with_aggregates(engine: EngineType) -> None:
+    t = pl.DataFrame({"g": [1, 1, 2, 2, 2], "x": range(5)})
+    ctx = pl.SQLContext(t=t)
+
+    # Outside the aggregates, RANDOM() runs on the aggregated rows.
+    for query, height in [
+        ("SELECT RANDOM() AS r, COUNT(*) AS n FROM t", 1),
+        ("SELECT COUNT(*) AS n, RANDOM() AS r FROM t WHERE FALSE", 1),
+        ("SELECT g, FLOOR(RANDOM() * 10) AS r FROM t GROUP BY g", 2),
+        ("SELECT g, AVG(RANDOM()) AS r FROM t GROUP BY g", 2),
+        ("SELECT g, COUNT(*) AS n FROM t GROUP BY g HAVING AVG(RANDOM()) < 1", 2),
+        ("SELECT COUNT(*) AS n FROM t HAVING RANDOM() < 1", 1),
+        ("SELECT g, COUNT(*) AS n FROM t GROUP BY g ORDER BY RANDOM()", 2),
+    ]:
+        res = ctx.execute(query).collect(engine=engine)
+        assert res.height == height
+        assert all(dt.is_numeric() for dt in res.dtypes)
+
+    # Two calls are two draws.
+    u = pl.DataFrame({"y": range(10_000)})
+    n = (
+        pl.SQLContext(t=u, u=u)
+        .execute(
+            """
+            SELECT COUNT(*) FROM t WHERE EXISTS (
+                SELECT 1 FROM u WHERE u.y = t.y AND (RANDOM() < 0.5 OR RANDOM() < 0.5)
+            )
+            """
+        )
+        .collect(engine=engine)
+        .item()
+    )
+    assert 7_000 < n < 8_000
+
+    # Equal subqueries are separate draws too.
+    res = (
+        pl.SQLContext(t=u, u=u)
+        .execute(
+            """
+            SELECT
+                EXISTS (SELECT 1 FROM u WHERE u.y = t.y AND RANDOM() < 0.5) AS a,
+                EXISTS (SELECT 1 FROM u WHERE u.y = t.y AND RANDOM() < 0.5) AS b
+            FROM t
+            """
+        )
+        .collect(engine=engine)
+    )
+    assert 0.45 < (res["a"] == res["b"]).mean() < 0.55  # type: ignore[operator]
+
+    # GROUP BY and ORDER BY read a drawn value by its alias or position.
+    ctx = pl.SQLContext(t=u)
+    for group_by in ["r", "1"]:
+        res = ctx.execute(
+            "SELECT FLOOR(RANDOM() * 2) AS r, COUNT(*) AS n FROM t "
+            f"GROUP BY {group_by} ORDER BY r"
+        ).collect(engine=engine)
+        assert res["r"].to_list() == [0.0, 1.0]
+    res = ctx.execute("SELECT RANDOM() AS r FROM t ORDER BY r").collect(engine=engine)
+    assert res["r"].is_sorted()
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["RANDOM() < 0.5", "FLOOR(RANDOM() * 2) = 0", "(RANDOM() < 0.5) = TRUE"],
+)
+def test_random_join_condition(condition: str) -> None:
+    a = pl.DataFrame({"i": range(1000)})
+    ctx = pl.SQLContext(a=a, b=a.rename({"i": "j"}))
+
+    # The other conditions still pick how the join runs.
+    query = f"SELECT COUNT(*) FROM a JOIN b ON i = j AND {condition}"
+    plan = ctx.execute(query).explain()
+    assert "INNER JOIN" in plan
+    assert 'LEFT PLAN ON: [col("i")]' in plan
+    assert 400 < ctx.execute(query, eager=True).item() < 600
+
+    query = f"SELECT COUNT(*) FROM a JOIN b ON i < 10 AND j < 10 AND {condition}"
+    assert 20 < ctx.execute(query, eager=True).item() < 80
+
+
+@pytest.mark.parametrize(
+    ("query", "err"),
+    [
+        ("SELECT RANDOM(1)", "RANDOM"),
+        ("SELECT * FROM t LEFT JOIN t AS u ON RANDOM() < 0.5", "INNER JOIN"),
+        (
+            "SELECT * FROM t FULL JOIN t AS u ON t.x = u.x AND RANDOM() < 0.5",
+            "INNER JOIN",
+        ),
+        ("SELECT x FROM t GROUP BY x HAVING RANDOM() < 0.5", "HAVING"),
+        ("SELECT COUNT(*) FROM t GROUP BY FLOOR(RANDOM() * 2)", "GROUP BY"),
+        (
+            "SELECT FLOOR(RANDOM() * 2) AS r, COUNT(*) FROM t "
+            "GROUP BY ROLLUP (FLOOR(RANDOM() * 2))",
+            "GROUP BY",
+        ),
+        ("SELECT RANDOM() AS r FROM t ORDER BY (random())", "ORDER BY"),
+        ("SELECT ARRAY_AGG(DISTINCT RANDOM() ORDER BY RANDOM()) FROM t", "DISTINCT"),
+        (
+            "SELECT ARRAY_AGG(DISTINCT x * (SELECT RANDOM()) "
+            "ORDER BY x * (SELECT RANDOM())) FROM t",
+            "DISTINCT",
+        ),
+        (
+            "SELECT STRING_AGG(DISTINCT CAST(RANDOM() AS VARCHAR), ',' "
+            "ORDER BY CAST(RANDOM() AS VARCHAR)) FROM t",
+            "DISTINCT",
+        ),
+        (
+            "SELECT x, RANDOM() AS r FROM t GROUP BY GROUPING SETS ((x)) HAVING r < 0.5",
+            "HAVING",
+        ),
+    ],
+)
+def test_random_errors(query: str, err: str) -> None:
+    with pytest.raises(SQLInterfaceError, match=err):
+        pl.SQLContext(t=pl.DataFrame({"x": [1, 2]})).execute(query, eager=True)

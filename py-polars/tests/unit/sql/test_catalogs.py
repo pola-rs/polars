@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import io
 import pickle
-from datetime import date
+import re
+from datetime import UTC, date
 from pathlib import Path
 from typing import Any
 
@@ -2280,6 +2281,720 @@ def test_create_catalog_schema_of_default_namespace(lake: CountingCatalog) -> No
     ctx.execute("CREATE SCHEMA sales")
     ctx.execute("CREATE TABLE t AS SELECT 1 AS x")
     assert ctx.execute("SELECT * FROM lake.sales.t", eager=True).item() == 1
+
+
+def iceberg_columns(
+    catalog: CountingCatalog, *identifier: str
+) -> list[tuple[str, str]]:
+    # nested field ids depend on the order of assignment
+    schema = catalog.load_table(identifier).schema()
+    return [(f.name, re.sub(r"\d+: ", "", str(f.field_type))) for f in schema.fields]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("name", ["lake.tpch.lineitem", "tpch.lineitem", "lineitem"])
+def test_alter_catalog_table_columns(lake: CountingCatalog, name: str) -> None:
+    ctx = lake_ctx(lake)
+    res = ctx.execute(f"ALTER TABLE {name} ADD COLUMN w BIGINT", eager=True)
+    assert res.item() == "ALTER TABLE lake.tpch.lineitem"
+    assert iceberg_columns(lake, "tpch", "lineitem") == [
+        ("k", "long"),
+        ("v", "string"),
+        ("w", "long"),
+    ]
+    # a later statement reads the new schema
+    expected = LINEITEM.with_columns(w=pl.lit(None, pl.Int64))
+    assert_frame_equal(
+        ctx.execute(f"SELECT * FROM {name}", eager=True),
+        expected,
+        check_row_order=False,
+    )
+
+    ctx.execute(f"ALTER TABLE {name} RENAME COLUMN v TO v2")
+    ctx.execute(f"ALTER TABLE {name} DROP COLUMN w")
+    assert_frame_equal(
+        ctx.execute(f"SELECT * FROM {name}", eager=True),
+        LINEITEM.rename({"v": "v2"}),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_column_type(lake: CountingCatalog) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import FloatType, IntegerType, NestedField
+
+    schema = Schema(
+        NestedField(1, "c", IntegerType()), NestedField(2, "f", FloatType())
+    )
+    table = lake.create_table(("tpch", "promote"), schema=schema)
+    pl.DataFrame(
+        {"c": [7], "f": [1.5]}, schema={"c": pl.Int32, "f": pl.Float32}
+    ).write_iceberg(table, mode="append")
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE promote ALTER COLUMN c SET DATA TYPE BIGINT")
+    ctx.execute("ALTER TABLE promote ALTER COLUMN f TYPE DOUBLE")
+    # the type it has already: nothing to change
+    ctx.execute("ALTER TABLE promote ALTER COLUMN c SET DATA TYPE BIGINT")
+    assert iceberg_columns(lake, "tpch", "promote") == [("c", "long"), ("f", "double")]
+    assert ctx.execute("SELECT * FROM promote", eager=True).rows() == [(7, 1.5)]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_decimal_type(lake: CountingCatalog) -> None:
+    from decimal import Decimal
+
+    from polars.exceptions import InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE dec AS SELECT CAST(1.25 AS DECIMAL(10, 2)) AS d")
+    ctx.execute("ALTER TABLE dec ALTER COLUMN d SET DATA TYPE DECIMAL(12, 2)")
+    # only the precision widens: the stored values have the old scale
+    for target in ["DECIMAL(12, 3)", "DECIMAL(12, 1)"]:
+        with pytest.raises(InvalidOperationError, match="Iceberg only widens"):
+            ctx.execute(f"ALTER TABLE dec ALTER COLUMN d SET DATA TYPE {target}")
+    assert iceberg_columns(lake, "tpch", "dec") == [("d", "decimal(12, 2)")]
+    assert ctx.execute("SELECT d FROM dec", eager=True).item() == Decimal("1.25")
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_properties(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "ALTER TABLE lineitem SET TBLPROPERTIES ('probed-at' = 'x', 'n' = 1, 'b' = true)"
+    )
+    properties = lake.load_table(("tpch", "lineitem")).properties
+    assert {"probed-at": "x", "n": "1", "b": "true"}.items() <= properties.items()
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_if_exists(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE lineitem ADD COLUMN IF NOT EXISTS v BIGINT")
+    ctx.execute("ALTER TABLE lineitem DROP COLUMN IF EXISTS nope")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
+    res = ctx.execute("ALTER TABLE IF EXISTS nope ADD COLUMN w BIGINT", eager=True)
+    assert res.item() == "ALTER TABLE lake.tpch.nope"
+    with pytest.raises(NoSuchTableError, match="table 'nope' does not exist"):
+        ctx.execute("ALTER TABLE nope ADD COLUMN w BIGINT")
+    with pytest.raises(NoSuchTableError, match="identifiers are case-sensitive"):
+        ctx.execute("ALTER TABLE LINEITEM ADD COLUMN w BIGINT")
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_column_errors(lake: CountingCatalog) -> None:
+    from polars.exceptions import ColumnNotFoundError, DuplicateError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE nested (s STRUCT<x INT>)")
+    for statement, error, match in [
+        ("lineitem ADD COLUMN v BIGINT", DuplicateError, "column 'v' already exists"),
+        ("lineitem RENAME COLUMN v TO k", DuplicateError, "column 'k' already exists"),
+        ("lineitem RENAME COLUMN v TO v", DuplicateError, "column 'v' already exists"),
+        (
+            "lineitem DROP COLUMN V",
+            ColumnNotFoundError,
+            "column names are case-sensitive",
+        ),
+        ("lineitem RENAME COLUMN nope TO x", ColumnNotFoundError, "column 'nope'"),
+        ("lineitem ALTER COLUMN nope TYPE BIGINT", ColumnNotFoundError, "'nope'"),
+        ("lineitem ALTER COLUMN nope DROP NOT NULL", ColumnNotFoundError, "'nope'"),
+        # a dotted name is a top-level column, not the nested field `s.x`
+        ('nested DROP COLUMN "s.x"', ColumnNotFoundError, "column 's.x' not found"),
+    ]:
+        with pytest.raises(error, match=match):
+            ctx.execute(f"ALTER TABLE {statement}")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
+    assert iceberg_columns(lake, "tpch", "nested") == [("s", "struct<x: optional int>")]
+    ctx.execute('ALTER TABLE nested ADD COLUMN "s.z" BIGINT')
+    assert iceberg_columns(lake, "tpch", "nested") == [
+        ("s", "struct<x: optional int>"),
+        ("s.z", "long"),
+    ]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_catalog_errors(lake: CountingCatalog) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField
+
+    from polars.exceptions import InvalidOperationError
+
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "w", LongType()),
+        identifier_field_ids=[1],
+    )
+    lake.create_table(("tpch", "keyed"), schema=schema)
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE parted (id BIGINT, p VARCHAR) PARTITION BY (p)")
+    with pytest.raises(
+        InvalidOperationError, match="'id' of table 'keyed' is an identifier"
+    ):
+        ctx.execute("ALTER TABLE keyed ALTER COLUMN id DROP NOT NULL")
+    # what the catalog refuses passes through, with a note naming the statement
+    for statement in ["parted DROP COLUMN p", "keyed DROP COLUMN id"]:
+        table = statement.split()[0]
+        with pytest.raises(Exception) as exc:
+            ctx.execute(f"ALTER TABLE {statement}")
+        assert exc.value.__notes__ == [
+            f"table '{table}' could not be altered: catalog table 'tpch.{table}' of "
+            "catalog 'lake'"
+        ]
+    assert iceberg_columns(lake, "tpch", "parted") == [("id", "long"), ("p", "string")]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_type_changes(lake: CountingCatalog) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE typed (s STRUCT<x INT>, l INT[], b VARBINARY, t VARCHAR)")
+    # the type a column has already, nested ones included: nothing to change
+    ctx.execute("ALTER TABLE typed ALTER COLUMN s TYPE STRUCT<x INT>")
+    ctx.execute("ALTER TABLE typed ALTER COLUMN l TYPE INT[]")
+    # what Iceberg doesn't allow, although PyIceberg takes some of it
+    for column, target in [
+        ("t", "VARBINARY"),
+        ("b", "VARCHAR"),
+        ("t", "BIGINT"),
+        ("s", "STRUCT<x BIGINT>"),
+        ("l", "BIGINT"),
+    ]:
+        with pytest.raises(InvalidOperationError, match="Iceberg only widens"):
+            ctx.execute(f"ALTER TABLE typed ALTER COLUMN {column} TYPE {target}")
+    with pytest.raises(InvalidOperationError, match="Iceberg only widens"):
+        ctx.execute("ALTER TABLE lineitem ALTER COLUMN k SET DATA TYPE INT")
+    assert iceberg_columns(lake, "tpch", "typed") == [
+        ("s", "struct<x: optional int>"),
+        ("l", "list<int>"),
+        ("b", "binary"),
+        ("t", "string"),
+    ]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_invalid_decimal(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    for decimal in [
+        "DECIMAL(2, 3)",
+        "DECIMAL(10, 2147483648)",
+        "STRUCT<x DECIMAL(2, 3)>",
+    ]:
+        with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+            ctx.execute(f"ALTER TABLE lineitem ADD COLUMN d {decimal}")
+        with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+            ctx.execute(f"CREATE TABLE bad (d {decimal})")
+    ctx.execute("CREATE TABLE dec (d DECIMAL(10, 2))")
+    with pytest.raises(TypeError, match="an Iceberg decimal has a precision"):
+        ctx.execute("ALTER TABLE dec ALTER COLUMN d SET DATA TYPE DECIMAL(12, 13)")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
+    assert iceberg_columns(lake, "tpch", "dec") == [("d", "decimal(10, 2)")]
+    assert not lake.table_exists(("tpch", "bad"))
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_name_mapping(
+    lake: CountingCatalog, tmp_path: Path
+) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from polars.exceptions import DuplicateError
+
+    # a data file without field ids, read by name through the table's name mapping
+    table = lake.create_table(
+        ("tpch", "imported"),
+        schema=pa.schema([("k", pa.int64()), ("cat", pa.string())]),
+    )
+    path = tmp_path / "imported.parquet"
+    pq.write_table(pa.table({"k": [1], "cat": ["veg"]}), path)
+    table.add_files([f"file://{path}"])
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE imported RENAME COLUMN cat TO label")
+    # the old name still reads the file's column, so a new column must not take it
+    with pytest.raises(DuplicateError, match="its name mapping reads older data"):
+        ctx.execute("ALTER TABLE imported ADD COLUMN cat VARCHAR")
+    with pytest.raises(DuplicateError, match="its name mapping reads older data"):
+        ctx.execute("ALTER TABLE imported RENAME COLUMN k TO cat")
+    # back to a name of the same field
+    ctx.execute("ALTER TABLE imported RENAME COLUMN label TO cat")
+    ctx.execute("ALTER TABLE imported RENAME COLUMN cat TO label")
+    assert ctx.execute("SELECT * FROM imported", eager=True).rows() == [(1, "veg")]
+
+    # a mapped name without a field id is in use too
+    mapping = '[{"field-id": 1, "names": ["k"]}, {"names": ["ignored"]}]'
+    lake.load_table(("tpch", "lineitem")).transaction().set_properties(
+        {"schema.name-mapping.default": mapping}
+    ).commit_transaction()
+    with pytest.raises(DuplicateError, match="its name mapping reads older data"):
+        ctx.execute("ALTER TABLE lineitem ADD COLUMN ignored BIGINT")
+    with pytest.raises(DuplicateError, match="its name mapping reads older data"):
+        ctx.execute("ALTER TABLE lineitem RENAME COLUMN v TO ignored")
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_drop_only_column(lake: CountingCatalog) -> None:
+    from polars.exceptions import InvalidOperationError
+
+    ctx = lake_ctx(lake)
+    ctx.execute("ALTER TABLE lineitem DROP COLUMN v")
+    with pytest.raises(InvalidOperationError, match="'k' is the only column"):
+        ctx.execute("ALTER TABLE lineitem DROP COLUMN k")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long")]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_drop_not_null(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute("CREATE TABLE req (a BIGINT NOT NULL, b BIGINT DEFAULT NULL)")
+    ctx.execute("ALTER TABLE req ALTER COLUMN a DROP NOT NULL")
+    ctx.execute("ALTER TABLE req ADD COLUMN c BIGINT NULL")
+    ctx.execute("ALTER TABLE req ADD COLUMN d VARCHAR DEFAULT NULL")
+    fields = lake.load_table(("tpch", "req")).schema().fields
+    assert [(field.name, field.required) for field in fields] == [
+        ("a", False),
+        ("b", False),
+        ("c", False),
+        ("d", False),
+    ]
+
+
+@pytest.mark.write_disk
+def test_alter_catalog_table_added_types(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    for column in [
+        "a SMALLINT",
+        "b REAL",
+        "c DECIMAL(10, 2)",
+        "d TIMESTAMPTZ",
+        "e STRUCT<x BIGINT, y VARCHAR>",
+        "f BIGINT[]",
+    ]:
+        ctx.execute(f"ALTER TABLE lineitem ADD COLUMN {column}")
+    assert iceberg_columns(lake, "tpch", "lineitem")[2:] == [
+        ("a", "int"),
+        ("b", "float"),
+        ("c", "decimal(10, 2)"),
+        ("d", "timestamptz"),
+        ("e", "struct<x: optional long, y: optional string>"),
+        ("f", "list<long>"),
+    ]
+    with pytest.raises(TypeError, match="ALTER TABLE"):
+        ctx.execute("ALTER TABLE lineitem ADD COLUMN g UBIGINT")
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        ("ADD COLUMN w BIGINT NOT NULL", "`ADD COLUMN ... NOT NULL` is not supported"),
+        (
+            "ADD COLUMN w BIGINT DEFAULT 5",
+            "takes only NULL or DEFAULT NULL; found `DEFAULT 5`",
+        ),
+        ("ADD COLUMN w BIGINT COMMENT 'x'", "found `COMMENT 'x'`"),
+        (
+            "ADD COLUMN w BIGINT FIRST",
+            "`ADD COLUMN ... FIRST | AFTER` is not supported",
+        ),
+        (
+            "ADD COLUMN w BIGINT AFTER k",
+            "`ADD COLUMN ... FIRST | AFTER` is not supported",
+        ),
+        ("DROP COLUMN v CASCADE", "`DROP COLUMN ... CASCADE` is not supported"),
+        ("ALTER COLUMN v SET NOT NULL", "`SET NOT NULL` is not supported"),
+        (
+            "ALTER COLUMN k SET DEFAULT 1",
+            "`ALTER COLUMN k SET DEFAULT 1` is not supported",
+        ),
+        (
+            "ADD COLUMN a BIGINT, ADD COLUMN b BIGINT",
+            "takes one operation per statement",
+        ),
+        ("ADD COLUMN a BIGINT, DROP COLUMN v", "takes one operation per statement"),
+        ("SET TBLPROPERTIES ('format-version' = '2')", "'format-version' is reserved"),
+        ("SET TBLPROPERTIES ('uuid' = 'x')", "'uuid' is reserved"),
+        ("SET TBLPROPERTIES ('location' = '/x')", "location is not a property"),
+        ("SET TBLPROPERTIES ('Location' = '/x')", "did you mean 'location'"),
+        ("SET TBLPROPERTIES ('a' = 1, 'a' = 2)", "duplicate table property 'a'"),
+        ("RENAME TO t2", "`ALTER TABLE ... RENAME TO t2` is not supported"),
+        ("ADD CONSTRAINT c PRIMARY KEY (k)", "is not supported for catalog tables"),
+    ],
+)
+def test_alter_catalog_table_sql_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    with pytest.raises(SQLInterfaceError, match=error):
+        lake_ctx(lake).execute(f"ALTER TABLE lineitem {statement}")
+    assert iceberg_columns(lake, "tpch", "lineitem") == [("k", "long"), ("v", "string")]
+
+
+def test_alter_table_without_catalog(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.register("frame", pl.LazyFrame({"a": [1]}))
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        ctx.execute("ALTER TABLE frame ADD COLUMN b BIGINT")
+    # a registered table hides the catalog table of that name
+    ctx.register("lineitem", pl.LazyFrame({"a": [1]}))
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r"'lineitem' is a registered table, write 'lake\.tpch\.lineitem'",
+    ):
+        ctx.execute("ALTER TABLE lineitem ADD COLUMN b BIGINT")
+    with pytest.raises(SQLInterfaceError, match="no default catalog is set"):
+        lake_ctx(lake, default=False).execute(
+            "ALTER TABLE lineitem ADD COLUMN b BIGINT"
+        )
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        pl.SQLContext().execute("ALTER TABLE t ADD COLUMN b BIGINT")
+    with pytest.raises(SQLInterfaceError, match="`ALTER TABLE ONLY` is not supported"):
+        lake_ctx(lake).execute("ALTER TABLE ONLY lineitem ADD COLUMN b BIGINT")
+
+
+def table_rows(catalog: CountingCatalog, *identifier: str) -> list[tuple[Any, ...]]:
+    rows = catalog.load_table(identifier).scan().to_arrow().to_pylist()
+    # NULLs last within a column
+    return sorted(
+        (tuple(row.values()) for row in rows),
+        key=lambda row: tuple((v is None, 0 if v is None else v) for v in row),
+    )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("name", ["lake.tpch.lineitem", "tpch.lineitem", "lineitem"])
+def test_insert_catalog_table(lake: CountingCatalog, name: str) -> None:
+    ctx = lake_ctx(lake)
+    res = ctx.execute(f"INSERT INTO {name} VALUES (3, 'c'), (4, 'd')", eager=True)
+    assert res.item() == "INSERT INTO lake.tpch.lineitem"
+    assert table_rows(lake, "tpch", "lineitem") == [
+        (1, "a"),
+        (2, "b"),
+        (3, "c"),
+        (4, "d"),
+    ]
+    # the rows of a query, reading the table it writes (as it was before the write)
+    ctx.execute(f"INSERT INTO {name} SELECT k + 10, v FROM {name} WHERE k < 3")
+    ctx.execute(
+        f"WITH s AS (SELECT 20 AS k, 'w' AS v) INSERT INTO {name} SELECT * FROM s"
+    )
+    ctx.execute(f"INSERT INTO TABLE {name} WITH s AS (SELECT 21, 'x') SELECT * FROM s")
+    assert table_rows(lake, "tpch", "lineitem")[4:] == [
+        (11, "a"),
+        (12, "b"),
+        (20, "w"),
+        (21, "x"),
+    ]
+    # performed at execute, also for a lazy result
+    ctx.execute(f"INSERT INTO {name} VALUES (30, 'z')", eager=False)
+    assert ctx.execute(f"SELECT count(*) FROM {name}", eager=True).item() == 9
+
+
+@pytest.mark.write_disk
+def test_insert_catalog_table_columns(lake: CountingCatalog) -> None:
+    from polars.exceptions import ColumnNotFoundError, DuplicateError
+
+    ctx = lake_ctx(lake)
+    ctx.register("src", pl.LazyFrame({"x": [5], "y": ["e"]}))
+    ctx.execute("INSERT INTO lineitem (v, k) VALUES ('c', 3)")
+    ctx.execute("INSERT INTO lineitem (k) SELECT x FROM src")
+    ctx.execute("INSERT INTO lineitem SELECT * FROM src")
+    assert table_rows(lake, "tpch", "lineitem")[2:] == [(3, "c"), (5, "e"), (5, None)]
+    for statement, error, match in [
+        ("(k, k) VALUES (1, 2)", DuplicateError, "'k' is listed more than once"),
+        (
+            "(k, K) VALUES (1, 2)",
+            ColumnNotFoundError,
+            "column names are case-sensitive",
+        ),
+        (
+            "VALUES (1)",
+            SQLInterfaceError,
+            "writes 2 columns of table 'lineitem', but the query gives 1",
+        ),
+        ("(k) VALUES (1, 'a')", SQLInterfaceError, "writes 1 columns"),
+        ("(lineitem.k) VALUES (1)", SQLInterfaceError, "must be unqualified"),
+    ]:
+        with pytest.raises(error, match=match):
+            ctx.execute(f"INSERT INTO lineitem {statement}")
+    assert len(table_rows(lake, "tpch", "lineitem")) == 5
+
+
+@pytest.mark.write_disk
+def test_insert_catalog_table_overwrite(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    res = ctx.execute("INSERT OVERWRITE TABLE lineitem VALUES (7, 'g')", eager=True)
+    assert res.item() == "INSERT OVERWRITE lake.tpch.lineitem"
+    assert table_rows(lake, "tpch", "lineitem") == [(7, "g")]
+    # every partition, whichever ones the new rows are in
+    ctx.execute("CREATE TABLE parted (k BIGINT, p VARCHAR) PARTITION BY (p)")
+    ctx.execute("INSERT INTO parted VALUES (1, 'a'), (2, 'b')")
+    ctx.execute("INSERT OVERWRITE parted SELECT k + 10, p FROM parted WHERE p = 'a'")
+    assert table_rows(lake, "tpch", "parted") == [(11, "a")]
+    ctx.execute("INSERT OVERWRITE parted SELECT * FROM parted WHERE false")
+    assert table_rows(lake, "tpch", "parted") == []
+
+
+@pytest.mark.write_disk
+def test_insert_catalog_table_partitioned(lake: CountingCatalog) -> None:
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE parted (id BIGINT, v BIGINT, p VARCHAR) PARTITION BY (p, bucket(4, id))"
+    )
+    ctx.execute("INSERT INTO parted VALUES (1, 10, 'a'), (2, 20, 'a'), (3, 30, 'b')")
+    table = lake.load_table(("tpch", "parted"))
+    partitions = {task.file.partition[0] for task in table.scan().plan_files()}
+    assert partitions == {"a", "b"}
+    assert table_rows(lake, "tpch", "parted") == [
+        (1, 10, "a"),
+        (2, 20, "a"),
+        (3, 30, "b"),
+    ]
+
+
+@pytest.mark.write_disk
+def test_insert_catalog_table_casts(lake: CountingCatalog) -> None:
+    from decimal import Decimal
+
+    from polars.exceptions import InvalidOperationError, SchemaError
+
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE typed (i INT, l BIGINT, x DOUBLE, d DECIMAL(10, 2), dt DATE, "
+        "ts TIMESTAMPTZ, li BIGINT[])"
+    )
+    ctx.register("floats", pl.LazyFrame({"f": [0.5, 1.5, 2.5, -0.5, -1.5]}))
+    # a fractional decimal rounds half away from zero, a float half to even
+    ctx.execute(
+        "INSERT INTO typed (i) VALUES (0.5), (1.5), (2.5), (-0.5), (-1.5), (1.7)"
+    )
+    ctx.execute("INSERT INTO typed (l) SELECT f FROM floats")
+    ctx.execute(
+        "INSERT INTO typed (x, d, dt, ts, li) SELECT 3, 1.239, "
+        "CAST('2026-01-03 10:00:00' AS TIMESTAMP), CAST('2026-01-02 03:04:05' AS TIMESTAMP), "
+        "[1, 2]"
+    )
+    df = ctx.execute("SELECT * FROM typed", eager=True)
+    assert sorted(df["i"].drop_nulls().to_list()) == [-2, -1, 1, 2, 2, 3]
+    assert sorted(df["l"].drop_nulls().to_list()) == [-2, 0, 0, 2, 2]
+    row = df.filter(pl.col("x").is_not_null()).row(0, named=True)
+    assert row["x"] == 3.0
+    assert row["d"] == Decimal("1.24")
+    assert row["dt"] == date(2026, 1, 3)
+    assert str(row["ts"]) == "2026-01-02 03:04:05+00:00"
+    assert row["li"] == [1, 2]
+    rows = len(df)
+    # other kinds of values need an explicit CAST
+    for column, value in [
+        ("i", "'8'"),
+        ("dt", "'2026-01-03'"),
+        ("x", "true"),
+        ("li", "[1.5]"),
+    ]:
+        with pytest.raises(SchemaError, match=f"column '{column}' of table 'typed'"):
+            ctx.execute(f"INSERT INTO typed ({column}) SELECT {value}")
+    # a value that does not fit is reported by its column, and nothing is written
+    for column, value in [("i", "2147483648"), ("d", "123456789.5")]:
+        with pytest.raises(InvalidOperationError, match=f"in column '{column}'"):
+            ctx.execute(f"INSERT INTO typed ({column}) VALUES ({value})")
+    assert len(ctx.execute("SELECT * FROM typed", eager=True)) == rows
+
+
+@pytest.mark.write_disk
+def test_insert_catalog_table_conversions(lake: CountingCatalog) -> None:
+    from datetime import datetime
+
+    from polars.exceptions import InvalidOperationError, SchemaError
+
+    ctx = lake_ctx(lake)
+    ctx.execute(
+        "CREATE TABLE conv (ts TIMESTAMP, tz TIMESTAMPTZ, l BIGINT[], "
+        "s STRUCT<a BIGINT, b VARCHAR>)"
+    )
+    ctx.execute("CREATE TABLE ints (i INT, r REAL)")
+    # pattern-like column names are names, matched by position
+    ctx.register("odd", pl.LazyFrame({"*": [1], "^v$": ["x"]}))
+    ctx.execute("INSERT INTO lineitem SELECT * FROM odd")
+    assert (1, "x") in table_rows(lake, "tpch", "lineitem")
+    # overflow is checked after rounding
+    with pytest.raises(InvalidOperationError, match="in column 'i'"):
+        ctx.execute("INSERT INTO ints (i) VALUES (2147483647.5)")
+    # a decimal with no integer digits rounds too
+    ctx.execute("INSERT INTO ints (i) SELECT CAST(0.5 AS DECIMAL(38, 38))")
+    ctx.execute("INSERT INTO ints (i) SELECT CAST(9.5 AS DECIMAL(38, 37))")
+    assert sorted(ctx.execute("SELECT i FROM ints", eager=True)["i"].to_list()) == [
+        1,
+        10,
+    ]
+    # a double into a float column could overflow unchecked: an explicit CAST
+    ctx.register("big", pl.LazyFrame({"f": [1e100]}))
+    with pytest.raises(SchemaError, match="column 'r' of table 'ints'"):
+        ctx.execute("INSERT INTO ints (r) SELECT f FROM big")
+    ctx.register("u128", pl.LazyFrame({"u": pl.Series([2**128 - 1], dtype=pl.UInt128)}))
+    with pytest.raises(SchemaError, match="column 'r' of table 'ints'"):
+        ctx.execute("INSERT INTO ints (r) SELECT u FROM u128")
+    # an instant in another time zone keeps the instant; nested values widen
+    local = datetime(2026, 1, 2, 3, 4, 5)
+    src = pl.LazyFrame(
+        {"ts": [local], "tz": [local], "l": [[1, 2]], "s": [{"a": 1, "b": None}]},
+        schema={
+            "ts": pl.Datetime("ns"),
+            "tz": pl.Datetime("ns"),
+            "l": pl.List(pl.Int32),
+            "s": pl.Struct({"a": pl.Int32, "b": pl.Null}),
+        },
+    ).with_columns(pl.col("ts", "tz").dt.replace_time_zone("Europe/Amsterdam"))
+    ctx.register("src", src)
+    ctx.execute("INSERT INTO conv SELECT * FROM src")
+    row = ctx.execute("SELECT * FROM conv", eager=True).row(0, named=True)
+    assert row["tz"] == datetime(2026, 1, 2, 2, 4, 5, tzinfo=UTC)
+    assert row["ts"] == datetime(2026, 1, 2, 2, 4, 5)
+    assert row["l"] == [1, 2]
+    assert row["s"] == {"a": 1, "b": None}
+
+
+@pytest.mark.write_disk
+def test_insert_catalog_table_required(lake: CountingCatalog) -> None:
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField, StringType
+
+    from polars.exceptions import InvalidOperationError
+
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True),
+        NestedField(2, "v", StringType()),
+    )
+    lake.create_table(("tpch", "req"), schema=schema)
+    ctx = lake_ctx(lake)
+    ctx.execute("INSERT INTO req (id) VALUES (1)")
+    with pytest.raises(
+        InvalidOperationError, match="'id' of table 'req' is NOT NULL and has no"
+    ):
+        ctx.execute("INSERT INTO req (v) VALUES ('a')")
+    with pytest.raises(InvalidOperationError, match="'id' of table 'req' is NOT NULL"):
+        ctx.execute("INSERT INTO req VALUES (NULL, 'a')")
+    # a NULL from the query fails the write
+    with pytest.raises(Exception, match="NULL") as exc:
+        ctx.execute("INSERT INTO req SELECT CAST(NULL AS BIGINT), 'a'")
+    assert "could not be written by INSERT INTO" in exc.value.__notes__[-1]
+    assert table_rows(lake, "tpch", "req") == [(1, None)]
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("statement", "error"),
+    [
+        (
+            "INSERT INTO lineitem VALUES (1, 'a') RETURNING k",
+            "`RETURNING` is not supported",
+        ),
+        (
+            "INSERT INTO lineitem VALUES (1, 'a') ON CONFLICT DO NOTHING",
+            "`ON CONFLICT`",
+        ),
+        (
+            "INSERT OR REPLACE INTO lineitem VALUES (1, 'a')",
+            "`INSERT OR ...` is not supported",
+        ),
+        ("REPLACE INTO lineitem VALUES (1, 'a')", "`REPLACE INTO` is not supported"),
+        (
+            "INSERT INTO lineitem PARTITION (v) SELECT 1, 'a'",
+            "PARTITION \\(...\\)` is not supported",
+        ),
+        (
+            "INSERT OVERWRITE lineitem PARTITION (v = 'a') SELECT 1",
+            "partition_overwrite",
+        ),
+        ("INSERT INTO lineitem TABLE orders", "write `SELECT \\* FROM <name>`"),
+        (
+            "INSERT INTO lineitem DEFAULT VALUES",
+            "`INSERT ... DEFAULT VALUES` is not supported",
+        ),
+        (
+            "WITH s AS (SELECT 1, 'a') INSERT INTO lineitem WITH t AS (SELECT 2, 'b') SELECT * FROM t",
+            "takes one WITH",
+        ),
+        (
+            "INSERT INTO lineitem WITH q AS (SELECT 5, 'e') INSERT INTO orders SELECT * FROM q",
+            "must not change a table",
+        ),
+    ],
+)
+def test_insert_catalog_table_sql_errors(
+    lake: CountingCatalog, statement: str, error: str
+) -> None:
+    with pytest.raises(SQLInterfaceError, match=error):
+        lake_ctx(lake).execute(statement)
+    assert table_rows(lake, "tpch", "lineitem") == [(1, "a"), (2, "b")]
+
+
+def test_insert_without_catalog(lake: CountingCatalog) -> None:
+    from pyiceberg.exceptions import NoSuchTableError
+
+    ctx = lake_ctx(lake)
+    ctx.register("frame", pl.LazyFrame({"a": [1]}))
+    with pytest.raises(
+        SQLInterfaceError, match="`INSERT` is supported only for catalog"
+    ):
+        ctx.execute("INSERT INTO frame VALUES (2)")
+    ctx.register("lineitem", pl.LazyFrame({"a": [1]}))
+    with pytest.raises(
+        SQLInterfaceError,
+        match=r"`INSERT OVERWRITE` is supported only .* write 'lake\.tpch\.lineitem'",
+    ):
+        ctx.execute("INSERT OVERWRITE lineitem VALUES (2)")
+    with pytest.raises(SQLInterfaceError, match="supported only for catalog tables"):
+        pl.SQLContext().execute("INSERT INTO t VALUES (1)")
+    with pytest.raises(NoSuchTableError, match="identifiers are case-sensitive"):
+        lake_ctx(lake).execute("INSERT INTO LINEITEM VALUES (1, 'a')")
+
+
+class RacingCatalog(CountingCatalog):  # type: ignore[misc]
+    """A SQL catalog in which another writer appends a row just before a commit."""
+
+    race: tuple[str, ...] | None = None
+
+    def commit_table(self, table: Any, requirements: Any, updates: Any) -> Any:
+        if (race := self.race) is not None and table.name() == race:
+            import pyarrow as pa
+
+            self.race = None
+            other = self.load_table(race)
+            other.append(
+                pa.table({"k": [99], "v": ["raced"]}, schema=other.schema().as_arrow())
+            )
+        return super().commit_table(table, requirements, updates)
+
+
+@pytest.mark.write_disk
+def test_insert_catalog_table_concurrent(tmp_path: Path) -> None:
+    from pyiceberg.exceptions import ValidationException
+
+    lake = RacingCatalog(
+        "lake", uri=f"sqlite:///{tmp_path / 'c.db'}", warehouse=f"file://{tmp_path}"
+    )
+    lake.create_namespace(("tpch",))
+    table = lake.create_table(("tpch", "lineitem"), schema=LINEITEM.to_arrow().schema)
+    LINEITEM.write_iceberg(table, mode="append")
+    ctx = lake_ctx(lake)
+    # an append is retried on the new snapshot: both rows land
+    lake.race = ("tpch", "lineitem")
+    ctx.execute("INSERT INTO lineitem VALUES (5, 'e')")
+    assert table_rows(lake, "tpch", "lineitem") == [
+        (1, "a"),
+        (2, "b"),
+        (5, "e"),
+        (99, "raced"),
+    ]
+    # an overwrite would delete the other writer's row: refused, and its files deleted
+    files = set(Path(tmp_path).rglob("*.parquet"))
+    lake.race = ("tpch", "lineitem")
+    with pytest.raises(ValidationException) as exc:
+        ctx.execute("INSERT OVERWRITE lineitem VALUES (7, 'g')")
+    assert "could not be written by INSERT OVERWRITE" in exc.value.__notes__[-1]
+    assert len(table_rows(lake, "tpch", "lineitem")) == 5
+    written = set(Path(tmp_path).rglob("*.parquet")) - files
+    assert len(written) == 1  # the other writer's file only
 
 
 @pytest.mark.write_disk

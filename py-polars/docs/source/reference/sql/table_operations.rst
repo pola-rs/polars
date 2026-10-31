@@ -7,6 +7,8 @@ Table Operations
 
    * - Function
      - Description
+   * - :ref:`ALTER TABLE <alter_table>`
+     - Change the columns or properties of a table in an attached catalog.
    * - :ref:`CREATE SCHEMA <create_schema>`
      - Create a namespace in an attached catalog.
    * - :ref:`CREATE TABLE <create_table>`
@@ -19,6 +21,8 @@ Table Operations
      - Deletes the specified table, unregistering it.
    * - :ref:`EXPLAIN <explain>`
      - Returns the Polars execution plan for a given SQL query.
+   * - :ref:`INSERT <insert>`
+     - Append rows to a table in an attached catalog, or replace its rows.
    * - :ref:`SHOW TABLES <show_tables>`
      - Returns a list of all tables registered in the given context.
    * - :ref:`GENERATE_SERIES <generate_series_table_func>`
@@ -30,6 +34,34 @@ Table Operations
    * - :ref:`TRUNCATE <truncate>`
      - Remove all data from a table without actually deleting it.
 
+
+.. _alter_table:
+
+ALTER TABLE
+-----------
+Change a table of a catalog attached with :meth:`SQLContext.register_catalog`, with the
+name resolved as in a query. Each statement makes one change, in one commit:
+
+* ``ADD [COLUMN] [IF NOT EXISTS] <name> <type>`` adds a nullable column (``NOT NULL`` is not
+  supported, as the existing rows have no value for it);
+* ``DROP [COLUMN] [IF EXISTS] <name>`` drops a column;
+* ``RENAME COLUMN <name> TO <new_name>`` renames a column, keeping its data;
+* ``ALTER COLUMN <name> [SET DATA] TYPE <type>`` changes a column's type, as the catalog
+  allows (such as ``INT`` to ``BIGINT``, ``FLOAT`` to ``DOUBLE``, or a wider ``DECIMAL``);
+* ``ALTER COLUMN <name> DROP NOT NULL`` makes a column nullable;
+* ``SET TBLPROPERTIES ('key' = value, ...)`` sets table properties.
+
+Column names are case-sensitive and name top-level columns. ``ALTER TABLE IF EXISTS`` does
+nothing if the table does not exist.
+
+**Example:**
+
+.. code-block:: sql
+
+    ALTER TABLE lake.sales.orders ADD COLUMN discount DOUBLE
+    ALTER TABLE lake.sales.orders RENAME COLUMN qty TO quantity
+    ALTER TABLE lake.sales.orders ALTER COLUMN quantity SET DATA TYPE BIGINT
+    ALTER TABLE lake.sales.orders SET TBLPROPERTIES ('owner' = 'finance')
 
 .. _create_schema:
 
@@ -178,6 +210,34 @@ Returns the Polars execution plan for a given SQL query.
 .. code-block:: sql
 
     EXPLAIN SELECT * FROM some_table
+
+.. _insert:
+
+INSERT
+------
+Write rows to a table of a catalog attached with :meth:`SQLContext.register_catalog`, with
+the name resolved as in a query, in one commit. ``INSERT INTO`` appends the rows of a
+``VALUES`` list or a query; ``INSERT OVERWRITE`` replaces all of the table's rows, in every
+partition (a ``WHERE`` in the query selects the new rows, not the rows replaced, and a
+query without rows leaves the table empty).
+
+The values fill the table's columns in order, or the columns listed after the table name;
+the other columns get NULL, and a ``NOT NULL`` column must be given a value. Values are
+converted to the column types: numbers to any numeric type (a fractional value going into
+an integer column is rounded: a decimal half away from zero, a float half to even, while
+``CAST`` truncates; a decimal going to fewer decimal places rounds half to even), and dates
+and timestamps among themselves; a value that does not fit raises an error, and other
+conversions need an explicit ``CAST``. A commit that loses to
+another writer's commit is retried for ``INSERT INTO``; ``INSERT OVERWRITE`` raises an
+error and writes nothing.
+
+**Example:**
+
+.. code-block:: sql
+
+    INSERT INTO lake.sales.orders VALUES (1, 10), (2, 20)
+    INSERT INTO lake.sales.orders (quantity, id) SELECT qty, order_id FROM staged
+    INSERT OVERWRITE lake.sales.orders SELECT * FROM staged
 
 .. _show_tables:
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.fixture
@@ -177,3 +178,33 @@ def test_greatest_least() -> None:
                 }
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "COALESCE(d, '1900-01-01')",
+        "IFNULL(d, '1900-01-01')",
+        "NULLIF(d, '1997-01-01')",
+        "GREATEST(d, '1996-01-01')",
+        "LEAST('1996-01-01', d)",
+        "COALESCE(ts, '2000-01-01 10:30:00')",
+        "NULLIF(ts, '1997-01-01 12:00:00')",
+        "COALESCE(d, ts, '2000-01-01 10:30:00')",
+        "GREATEST(ts, d, '1996-01-01 10:30:00')",
+    ],
+)
+def test_conditional_temporal_strings(expr: str) -> None:
+    df = pl.DataFrame(
+        {
+            "d": [date(1995, 6, 1), None, date(1997, 1, 1)],
+            "ts": [datetime(1995, 6, 1), None, datetime(1997, 1, 1, 12)],
+        }
+    )
+    assert_sql_matches(
+        frames={"t": df},
+        query=f"SELECT {expr} AS x FROM t",
+        compare_with="duckdb",
+        check_row_order=False,
+        engines=["in-memory", "streaming"],
+    )

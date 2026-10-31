@@ -2981,3 +2981,51 @@ def test_rolling_trailing_empty_window_keeps_sorted_flag_30426() -> None:
     out = df.rolling("t", period="1i", offset="0i").agg(pl.col("v").first())["v"]
     assert out.to_list() == [2, 3, 4, None]
     assert out.flags["SORTED_ASC"]
+
+
+@pytest.mark.parametrize(
+    ("sliced", "period"),
+    [
+        # A per-window offset.
+        (lambda e: e.slice(pl.col("t").last() % 2, 1), "3i"),
+        # A per-window offset and length.
+        (lambda e: e.slice(pl.col("t").last() % 2, pl.col("t").last() % 3 + 1), "3i"),
+        # A constant negative offset on slices whose ends go down.
+        (
+            lambda e: e.slice(
+                0, pl.when(pl.col("t").last() < 5).then(10).otherwise(2)
+            ).slice(-1, 1),
+            "5i",
+        ),
+        # A nested `rolling`, whose windows step back inside overlapping outer windows.
+        (
+            lambda e: (
+                e.first().rolling("t", period="1i").slice(pl.col("t").last() % 2, 1)
+            ),
+            "3i",
+        ),
+    ],
+)
+@pytest.mark.parametrize("agg", [lambda e: e.first(), lambda e: e.min()])
+def test_rolling_slice_unordered_groups_30432(
+    sliced: Any, period: str, agg: Any
+) -> None:
+    df = pl.DataFrame({"t": range(6), "v": range(1, 7)}).sort("v")
+    out = df.rolling("t", period=period).agg(agg(sliced(pl.col("v"))))["v"]
+
+    values = out.to_list()
+    non_null = [x for x in values if x is not None]
+    nulls = [None] * (len(values) - len(non_null))
+    assert out.sort(nulls_last=True).to_list() == sorted(non_null) + nulls
+    assert out.n_unique() == len(set(values))
+
+
+def test_rolling_slice_per_window_offset_values_30432() -> None:
+    df = pl.DataFrame({"t": range(5), "v": range(1, 6)}).sort("v")
+    out = df.rolling("t", period="3i").agg(
+        first=pl.col("v").slice(pl.col("t").last() % 2, 1).first(),
+        window=pl.col("v").slice(pl.col("t").last() % 2, 2),
+    )
+    assert out["first"].to_list() == [1, 2, 1, 3, 3]
+    assert out["window"].to_list() == [[1], [2], [1, 2], [3, 4], [3, 4]]
+    assert not out["first"].flags["SORTED_ASC"]

@@ -395,9 +395,11 @@ impl PhysicalExpr for BinaryExpr {
         let mut has_not_agg_with_overlapping_groups = false;
         let mut not_agg_groups_may_diverge = false;
         let mut has_large_groups = false;
+        let mut has_objects = false;
 
         let mut previous: Option<&AggregationContext<'_>> = None;
         for ac in [&ac_l, &ac_r] {
+            has_objects |= ac.get_values().dtype().contains_objects();
             match ac.state {
                 AggState::AggregatedList(_) => {
                     has_agg_list = true;
@@ -423,7 +425,10 @@ impl PhysicalExpr for BinaryExpr {
         let elementwise_must_aggregate =
             has_not_agg && (has_agg_list || not_agg_groups_may_diverge);
         let mixes_scalars_and_values = has_agg_scalar && (has_agg_list || has_not_agg);
+        // Object values keep the per-group loop: repeating the scalars over them would rechunk them
+        // or rebuild lists from their inner values, which Object does not support.
         let may_broadcast_scalars = mixes_scalars_and_values
+            && !has_objects
             && !has_large_groups
             && !has_not_agg_with_overlapping_groups
             && !groups.is_empty();
