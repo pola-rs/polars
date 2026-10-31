@@ -689,6 +689,36 @@ def test_join_concat_projection_pd_case_7071() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_join_sorted_fast_paths_nan_30076(dtype: PolarsDataType) -> None:
+    nan = float("nan")
+    schema = {"k": dtype}
+    left = pl.DataFrame(
+        {"k": [1.0, 2.0, nan], "id": [1, 2, 3]}, schema_overrides=schema
+    ).sort("k")
+    right = pl.DataFrame({"k": [nan, 2.0], "rid": [10, 11]}, schema_overrides=schema)
+    expected_inner = pl.DataFrame(
+        {"k": [2.0, nan], "id": [2, 3], "rid": [11, 10]}, schema_overrides=schema
+    )
+    expected_left = pl.DataFrame(
+        {"k": [1.0, 2.0, nan], "id": [1, 2, 3], "rid": [None, 11, 10]},
+        schema_overrides=schema,
+    )
+    for r in [right, right.sort("k")]:
+        assert_frame_equal(
+            left.join(r, on="k", how="inner"), expected_inner, check_row_order=False
+        )
+        assert_frame_equal(
+            left.join(r, on="k", how="left"), expected_left, check_row_order=False
+        )
+    # Only the larger right side is sorted, so the left side gets arg-sorted.
+    assert_frame_equal(
+        right.join(left, on="k", how="inner"),
+        expected_inner.select("k", "rid", "id"),
+        check_row_order=False,
+    )
+
+
 def test_join_sorted_fast_paths_null_8269() -> None:
     df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
     df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})

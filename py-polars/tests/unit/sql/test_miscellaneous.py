@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
@@ -602,6 +602,67 @@ def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) ->
         ).cast(pl.Int64),
         pl.DataFrame({"a": 2, "b": 1}),
     )
+
+
+@pytest.mark.parametrize(
+    ("where", "order_by", "n_rows"),
+    [
+        ("WHERE FALSE", "", 0),
+        ("WHERE NULL", "", 0),
+        ("WHERE 1 = 2", "ORDER BY a", 0),
+        ("WHERE TRUE", "", 1),
+        ("WHERE 1 = 1", "ORDER BY 1", 1),
+    ],
+)
+def test_select_without_from_where(where: str, order_by: str, n_rows: int) -> None:
+    res = pl.sql(f"SELECT 1 AS a, 'x' AS b {where} {order_by}", eager=True)
+    assert res.rows() == [(1, "x")] * n_rows
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        'SELECT x AS "^x$", x + 10 AS y FROM t ORDER BY x',
+        'SELECT x AS "*", x + 10 AS y FROM t ORDER BY "*"',
+        'SELECT g AS "^x$", COUNT(*) AS y FROM t GROUP BY g ORDER BY y',
+        'SELECT DISTINCT g AS "*", 1 AS y FROM t ORDER BY 1',
+        'SELECT * FROM (SELECT x AS "^x$", x + 10 AS y FROM t) AS s ORDER BY y',
+        'SELECT s."^x$", s.y FROM (SELECT x AS "^x$", x + 10 AS y FROM t) AS s',
+        'WITH c AS (SELECT x AS "*", x + 10 AS y FROM t) SELECT * FROM c ORDER BY y',
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_select_regex_like_column_names(
+    query: str, engine: Literal["in-memory", "streaming"]
+) -> None:
+    t = pl.DataFrame({"x": [2, 1, 3], "g": [1, 1, 2]})
+    res = pl.SQLContext(t=t).execute(query).collect(engine=engine)
+    assert len(res.columns) == 2
+    assert res.columns[1] == "y"
+    assert res.columns[0] in ("^x$", "*")
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("SELECT COLUMNS('x') FROM t", {"x": [7], "^x$": [8]}),
+        ("SELECT COLUMNS('[*^]') FROM t", {"*": [9], "^x$": [8]}),
+        ('SELECT t."*" AS v FROM t', {"v": [9]}),
+        ('SELECT t."^x$" AS v FROM t', {"v": [8]}),
+        ('SELECT st."^x$" AS v FROM s', {"v": [2]}),
+        ('SELECT s.st."*" AS v FROM s', {"v": [3]}),
+        ("SELECT st.* FROM s", {"a": [1], "^x$": [2], "*": [3]}),
+        ("SELECT st->'^x$' AS v FROM s", {"v": [2]}),
+    ],
+)
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_regex_like_column_and_field_names(
+    query: str, expected: dict[str, Any], engine: Literal["in-memory", "streaming"]
+) -> None:
+    t = pl.DataFrame({"x": [7], "*": [9], "^x$": [8], "other": [1]})
+    s = pl.DataFrame({"st": [{"a": 1, "^x$": 2, "*": 3}]})
+    res = pl.SQLContext(t=t, s=s).execute(query).collect(engine=engine)
+    assert res.to_dict(as_series=False) == expected
 
 
 def test_select_explode_height_filter_order_by() -> None:

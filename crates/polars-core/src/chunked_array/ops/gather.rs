@@ -157,6 +157,29 @@ where
     }
 }
 
+/// The sorted flag of `out`, the gather of `ca` at `indices`. If both have nulls, they can end
+/// up at both ends of `out`, and then it is not sorted.
+fn gather_sorted_flag<T: PolarsDataType>(
+    ca: &ChunkedArray<T>,
+    indices: &IdxCa,
+    out: &ChunkedArray<T>,
+) -> IsSorted {
+    let flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+    if flag == IsSorted::Not || ca.null_count() == 0 || indices.null_count() == 0 {
+        return flag;
+    }
+    // `out` has no sorted flag yet, so these scan its validity.
+    let (Some(first), Some(last)) = (out.first_non_null(), out.last_non_null()) else {
+        return flag;
+    };
+    let null_count = out.null_count();
+    if first == null_count || out.len() - 1 - last == null_count {
+        flag
+    } else {
+        IsSorted::Not
+    }
+}
+
 pub fn _update_gather_sorted_flag(sorted_arr: IsSorted, sorted_idx: IsSorted) -> IsSorted {
     use crate::series::IsSorted::*;
     match (sorted_arr, sorted_idx) {
@@ -213,7 +236,7 @@ where
         });
 
         let mut out = ChunkedArray::from_chunk_iter_like(ca, chunks);
-        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+        let sorted_flag = gather_sorted_flag(ca, indices, &out);
 
         out.set_sorted_flag(sorted_flag);
         out
@@ -251,7 +274,7 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
         });
 
         let mut out = ChunkedArray::from_chunks(ca.name().clone(), chunks.collect());
-        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+        let sorted_flag = gather_sorted_flag(ca, indices, &out);
         out.set_sorted_flag(sorted_flag);
         out
     }
@@ -287,7 +310,7 @@ impl ChunkTakeUnchecked<IdxCa> for StringChunked {
         });
 
         let mut out = ChunkedArray::from_chunks(ca.name().clone(), chunks.collect());
-        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+        let sorted_flag = gather_sorted_flag(ca, indices, &out);
         out.set_sorted_flag(sorted_flag);
         out
     }
@@ -384,7 +407,7 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
         });
 
         let mut out = ca.with_chunks(chunks.collect());
-        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+        let sorted_flag = gather_sorted_flag(ca, indices, &out);
         out.set_sorted_flag(sorted_flag);
         out
     }
@@ -437,7 +460,7 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
         });
 
         let mut out = ca.with_chunks(chunks.collect());
-        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+        let sorted_flag = gather_sorted_flag(ca, indices, &out);
         out.set_sorted_flag(sorted_flag);
         out
     }

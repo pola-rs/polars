@@ -91,6 +91,75 @@ pub enum CatalogDdl {
         /// `IF EXISTS`.
         if_exists: bool,
     },
+    /// `INSERT INTO <name> [(<column>, ...)] <query>`, or `INSERT OVERWRITE ...`.
+    Insert {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to write.
+        table: CatalogTable,
+        /// The columns written, as listed; empty for all, in the table's order.
+        columns: Vec<String>,
+        /// The query giving the rows, as SQL.
+        query: String,
+        /// `OVERWRITE`: replace the table's rows.
+        overwrite: bool,
+    },
+    /// `ALTER TABLE [IF EXISTS] <name> <operation>`.
+    AlterTable {
+        /// The table name as the statement wrote it.
+        name: String,
+        /// The catalog table to change.
+        table: CatalogTable,
+        /// `IF EXISTS`.
+        if_exists: bool,
+        /// The change, one per statement.
+        operation: CatalogAlter,
+    },
+}
+
+/// A change to a catalog table's top-level columns or properties, by an `ALTER TABLE`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CatalogAlter {
+    /// `ADD [COLUMN] [IF NOT EXISTS] <name> <type>`: a nullable column.
+    AddColumn {
+        /// The column name, as written.
+        name: String,
+        /// The column type.
+        dtype: DataType,
+        /// `IF NOT EXISTS`.
+        if_not_exists: bool,
+    },
+    /// `DROP [COLUMN] [IF EXISTS] <name>`.
+    DropColumn {
+        /// The column name, as written.
+        name: String,
+        /// `IF EXISTS`.
+        if_exists: bool,
+    },
+    /// `RENAME COLUMN <old> TO <new>`.
+    RenameColumn {
+        /// The current column name.
+        old: String,
+        /// The new column name.
+        new: String,
+    },
+    /// `ALTER COLUMN <name> [SET DATA] TYPE <type>`.
+    SetDataType {
+        /// The column name, as written.
+        name: String,
+        /// The new column type.
+        dtype: DataType,
+    },
+    /// `ALTER COLUMN <name> DROP NOT NULL`.
+    DropNotNull {
+        /// The column name, as written.
+        name: String,
+    },
+    /// `SET TBLPROPERTIES ('key' = value, ...)`.
+    SetProperties {
+        /// The properties, in the order written.
+        properties: Vec<(String, String)>,
+    },
 }
 
 /// A partition field of a catalog table: an Iceberg transform of a top-level column.
@@ -556,9 +625,11 @@ pub(crate) fn create_table_columns(columns: &[ColumnDef]) -> PolarsResult<(Schem
         let name = col.name.value.as_str();
         let mut not_null = None;
         for option in &col.options {
-            let is_not_null = match option.option {
+            let is_not_null = match &option.option {
                 ColumnOption::NotNull => true,
                 ColumnOption::Null => false,
+                // the default of a nullable column anyway
+                ColumnOption::Default(expr) if is_null(expr) => continue,
                 _ => polars_bail!(
                     SQLInterface: "only NOT NULL constraints are supported for catalog tables; found `{}` on column '{}'",
                     option, name
@@ -580,6 +651,59 @@ pub(crate) fn create_table_columns(columns: &[ColumnDef]) -> PolarsResult<(Schem
         }
     }
     Ok((schema, required))
+}
+
+/// The name and type of a column added by `ALTER TABLE ... ADD COLUMN`, which is nullable.
+pub(crate) fn alter_table_column(col: &ColumnDef) -> PolarsResult<(String, DataType)> {
+    let name = col.name.value.as_str();
+    for option in &col.options {
+        match &option.option {
+            ColumnOption::Null => {},
+            ColumnOption::Default(expr) if is_null(expr) => {},
+            ColumnOption::NotNull => polars_bail!(
+                SQLInterface: "`ADD COLUMN ... NOT NULL` is not supported: the table's rows have no value for column '{}'",
+                name
+            ),
+            _ => polars_bail!(
+                SQLInterface: "`ADD COLUMN` takes only NULL or DEFAULT NULL; found `{}` on column '{}'",
+                option, name
+            ),
+        }
+    }
+    Ok((name.to_string(), map_sql_dtype_to_polars(&col.data_type)?))
+}
+
+/// Whether `expr` is the literal `NULL`.
+fn is_null(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Value(ValueWithSpan {
+            value: Value::Null,
+            ..
+        })
+    )
+}
+
+/// The properties of an `ALTER TABLE ... SET TBLPROPERTIES (...)`.
+pub(crate) fn alter_table_properties(options: &[SqlOption]) -> PolarsResult<Vec<(String, String)>> {
+    let mut properties: Vec<(String, String)> = Vec::new();
+    for option in options {
+        let (key, value) = option_key_value(option, "table", &["location", "format-version"])?;
+        polars_ensure!(
+            !RESERVED_TABLE_PROPERTIES.contains(&key) && key != "format-version",
+            SQLInterface: "table property '{}' is reserved by Iceberg", key
+        );
+        polars_ensure!(
+            key != "location",
+            SQLInterface: "a table's location is not a property and cannot be set"
+        );
+        polars_ensure!(
+            properties.iter().all(|(k, _)| k != key),
+            SQLInterface: "duplicate table property '{}'", key
+        );
+        properties.push((key.to_string(), value));
+    }
+    Ok(properties)
 }
 
 /// Iceberg's reserved table properties, other than `format-version`, which a create may set.

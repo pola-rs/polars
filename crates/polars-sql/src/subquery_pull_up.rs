@@ -820,7 +820,7 @@ fn local_dtype(
 
 /// Whether comparing a value of `inner` with one of `other` casts it without merging
 /// values, so that distinct values of `inner` never equal the same value of `other`.
-fn compares_exactly(inner: &DataType, other: &DataType) -> bool {
+pub(crate) fn compares_exactly(inner: &DataType, other: &DataType) -> bool {
     if inner == other {
         return true;
     }
@@ -856,7 +856,7 @@ fn holds_values(from: &DataType, to: &DataType) -> bool {
 
 /// Whether `node` calls an aggregate outside of its subqueries. A function that isn't
 /// known counts as one.
-fn has_aggregate(ctx: &SQLContext, node: &(impl Visit + ?Sized)) -> bool {
+pub(crate) fn has_aggregate(ctx: &SQLContext, node: &(impl Visit + ?Sized)) -> bool {
     struct Aggregates<'a> {
         ctx: &'a SQLContext,
         query_depth: usize,
