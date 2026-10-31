@@ -1367,6 +1367,16 @@ def test_struct_cast_strict_field_mismatch_28587(
     assert result.collect().to_series().to_list() == [{"x": None, "y": None}]
 
 
+def test_struct_cast_strict_dropped_field_28587() -> None:
+    lf = pl.LazyFrame({"s": [{"a": 1, "b": 2}]})
+    q = lf.select(pl.col("s").cast(pl.Struct({"a": pl.Int64})))
+
+    with pytest.raises(
+        InvalidOperationError, match="structs do not have the same number of fields"
+    ):
+        q.collect()
+
+
 @pytest.mark.filterwarnings("ignore:Comparisons with None always result in null.")
 def test_zip_outer_validity_infinite_recursion_21267() -> None:
     s = pl.Series("x", [None, None], pl.Struct({"f": pl.Null}))
