@@ -255,6 +255,12 @@ pub trait Reducer: Send + Sync + Clone + 'static {
     /// If so, `init` must be an identity of `combine`.
     const ORDER_INDEPENDENT: bool = false;
     fn init(&self) -> Self::Value;
+    /// Reads the arguments after the reduced column, each the same in every row, before the first
+    /// update with rows.
+    fn bind(&mut self, args: &[&Column]) -> PolarsResult<()> {
+        assert!(args.is_empty());
+        Ok(())
+    }
     #[inline(always)]
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
         Cow::Borrowed(s)
@@ -352,12 +358,30 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
     }
 }
 
+/// Splits `values` into the reduced column and the arguments, binding `reducer` to the latter on
+/// the first update with rows.
+fn bind_args<'a, R: Reducer>(
+    reducer: &mut R,
+    bound: &mut bool,
+    values: &[&'a Column],
+) -> PolarsResult<&'a Column> {
+    let [values, args @ ..] = values else {
+        unreachable!()
+    };
+    if !*bound && !values.is_empty() {
+        reducer.bind(args)?;
+        *bound = true;
+    }
+    Ok(values)
+}
+
 pub struct VecGroupedReduction<R: Reducer> {
     values: Vec<R::Value>,
     layout: LaneLayout,
     evicted_values: Vec<R::Value>,
     in_dtype: DataType,
     reducer: R,
+    bound: bool,
 }
 
 impl<R: Reducer> VecGroupedReduction<R> {
@@ -368,6 +392,7 @@ impl<R: Reducer> VecGroupedReduction<R> {
             evicted_values: Vec::new(),
             in_dtype,
             reducer,
+            bound: false,
         }
     }
 }
@@ -377,7 +402,10 @@ where
     R: Reducer,
 {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self::new(self.in_dtype.clone(), self.reducer.clone()))
+        Box::new(Self {
+            bound: self.bound,
+            ..Self::new(self.in_dtype.clone(), self.reducer.clone())
+        })
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -399,8 +427,7 @@ where
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
-        assert!(values.len() == 1);
-        let values = values[0];
+        let values = bind_args(&mut self.reducer, &mut self.bound, values)?;
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
@@ -418,7 +445,7 @@ where
         group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()> {
-        let &[values] = values else { unreachable!() };
+        let values = bind_args(&mut self.reducer, &mut self.bound, values)?;
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
@@ -461,7 +488,7 @@ where
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
-        let &[values] = values else { unreachable!() };
+        let values = bind_args(&mut self.reducer, &mut self.bound, values)?;
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
@@ -509,6 +536,10 @@ where
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(self.in_dtype == other.in_dtype);
         assert!(subset.len() == group_idxs.len());
+        if other.bound && !self.bound {
+            self.reducer = other.reducer.clone();
+            self.bound = true;
+        }
         let other_lanes = other.layout.num_lanes();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
@@ -533,6 +564,7 @@ where
             evicted_values: Vec::new(),
             in_dtype: self.in_dtype.clone(),
             reducer: self.reducer.clone(),
+            bound: self.bound,
         })
     }
 
@@ -615,6 +647,7 @@ pub struct VecMaskGroupedReduction<R: Reducer> {
     evicted_mask: BitmapBuilder,
     in_dtype: DataType,
     reducer: R,
+    bound: bool,
 }
 
 impl<R: Reducer> VecMaskGroupedReduction<R> {
@@ -627,6 +660,7 @@ impl<R: Reducer> VecMaskGroupedReduction<R> {
             evicted_mask: BitmapBuilder::new(),
             in_dtype,
             reducer,
+            bound: false,
         }
     }
 }
@@ -636,7 +670,10 @@ where
     R: Reducer,
 {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self::new(self.in_dtype.clone(), self.reducer.clone()))
+        Box::new(Self {
+            bound: self.bound,
+            ..Self::new(self.in_dtype.clone(), self.reducer.clone())
+        })
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -661,7 +698,7 @@ where
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
-        let &[values] = values else { unreachable!() };
+        let values = bind_args(&mut self.reducer, &mut self.bound, values)?;
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
@@ -682,7 +719,7 @@ where
         group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()> {
-        let &[values] = values else { unreachable!() };
+        let values = bind_args(&mut self.reducer, &mut self.bound, values)?;
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
@@ -716,7 +753,7 @@ where
         group_idxs: &[EvictIdx],
         seq_id: u64,
     ) -> PolarsResult<()> {
-        let &[values] = values else { unreachable!() };
+        let values = bind_args(&mut self.reducer, &mut self.bound, values)?;
         assert!(values.dtype() == &self.in_dtype);
         assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
@@ -757,6 +794,10 @@ where
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(self.in_dtype == other.in_dtype);
         assert!(subset.len() == group_idxs.len());
+        if other.bound && !self.bound {
+            self.reducer = other.reducer.clone();
+            self.bound = true;
+        }
         let other_lanes = other.layout.num_lanes();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
@@ -787,6 +828,7 @@ where
             evicted_mask: BitmapBuilder::new(),
             in_dtype: self.in_dtype.clone(),
             reducer: self.reducer.clone(),
+            bound: self.bound,
         })
     }
 
