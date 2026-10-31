@@ -1,14 +1,32 @@
 #![allow(unused)]
 use polars_core::error::{PolarsResult, polars_bail, polars_err};
+use polars_core::prelude::PlIndexMap;
 use polars_core::schema::*;
 use polars_defs::join::{JoinBuildSide, JoinValidation};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AExpr, aexpr_to_leaf_names_iter};
+use crate::plans::schema::join_right_output_names;
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR, OutputName};
 use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
+
+pub(super) fn join_right_output_to_input(
+    schema_left: &Schema,
+    schema_right: &Schema,
+    options: &JoinOptionsIR,
+) -> PolarsResult<PlIndexMap<PlSmallStr, PlSmallStr>> {
+    if options.args.how.is_semi_anti() {
+        return Ok(PlIndexMap::default());
+    }
+    let output_names = join_right_output_names(schema_left, schema_right, options)?;
+    Ok(schema_right
+        .iter_names()
+        .zip(output_names)
+        .filter_map(|(input, output)| Some((output?, input.clone())))
+        .collect())
+}
 
 /// Nothing about the join pins it to its inputs as written: no slice, no order to
 /// keep, no side named for validation, no forced build side.
