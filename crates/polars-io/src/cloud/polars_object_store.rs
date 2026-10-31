@@ -308,6 +308,30 @@ impl ObjectStoreErrorContext {
 
 pub use inner::PolarsObjectStore;
 
+/// `GetResult::bytes` for a streamed body of `len` bytes (the returned range) that reports arrived
+/// bytes to the controller as they come in, per `ARRIVAL_FLUSH_BYTES`.
+async fn collect_body(
+    stream: futures::stream::BoxStream<'static, object_store::Result<bytes::Bytes>>,
+    len: u64,
+    controller: &ConcurrencyController,
+) -> object_store::Result<bytes::Bytes> {
+    const ARRIVAL_FLUSH_BYTES: u64 = 64 * 1024;
+
+    let mut pending = 0;
+    let out = object_store::collect_bytes(
+        stream.inspect_ok(|chunk| {
+            pending += chunk.len() as u64;
+            if pending >= ARRIVAL_FLUSH_BYTES {
+                controller.record_arrived(std::mem::take(&mut pending));
+            }
+        }),
+        Some(len),
+    )
+    .await;
+    controller.record_arrived(pending);
+    out
+}
+
 pub type ObjectStorePath = object_store::path::Path;
 
 impl PolarsObjectStore {
@@ -348,6 +372,7 @@ impl PolarsObjectStore {
                     None => None,
                 };
 
+                let controller_ref = controller.as_deref();
                 let (out, ttfb) = self
                     .io_metrics()
                     .record_io_read(
@@ -364,7 +389,25 @@ impl PolarsObjectStore {
                                 )
                                 .await?;
                             let ttfb = t0.elapsed();
-                            let out = response.bytes().await?;
+                            let out = match controller_ref {
+                                Some(controller)
+                                    if matches!(
+                                        response.payload,
+                                        object_store::GetResultPayload::Stream(_)
+                                    ) =>
+                                {
+                                    let len = response.range.end - response.range.start;
+                                    collect_body(response.into_stream(), len, controller).await?
+                                },
+                                _ => {
+                                    let out = response.bytes().await?;
+                                    // Not streamed (local files): the bytes arrive at completion.
+                                    if let Some(controller) = controller_ref {
+                                        controller.record_arrived(out.len() as u64);
+                                    }
+                                    out
+                                },
+                            };
 
                             Ok((out, ttfb))
                         }),
@@ -711,6 +754,7 @@ impl PolarsObjectStore {
                 let bytes = response.bytes().await?;
 
                 if let Some(controller) = controller {
+                    controller.record_arrived(bytes.len() as u64);
                     controller.record_io(IoSample {
                         n_bytes: bytes.len() as u64,
                         ttfb,

@@ -32,7 +32,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::str::FromStr;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -55,7 +55,8 @@ static CONTROLLER_ID: AtomicU32 = AtomicU32::new(0);
 static LOG_HTTP_RATE_LIMIT: LazyLock<bool> =
     LazyLock::new(|| std::env::var("POLARS_LOG_HTTP_RATE_LIMIT").is_ok());
 
-// Request/s rate init and boundaries. Init is also the resting rate after idle.
+// Request/s rate init and boundaries. Init is also the resting rate after idle. Init is a start:
+// reads raise the rate ahead of demand until the first throttle; the ceiling is the cap.
 // Documented baselines (rps):
 // AWS S3 per prefix 5500 GET/HEAD, 3500 PUT/POST/DELETE;
 // GCS per bucket 5000 reads, 1000 writes;
@@ -72,9 +73,13 @@ const MIN_RATE: f64 = 1.0;
 // Increase / decrease parameters.
 // Cold-start multiplicative increase, per tick.
 const FAST_RAMP_FACTOR: f64 = 2.0;
-// Additive step increase (relative to max), per tick.
-const PROBE_FRACTION: f64 = 0.1;
-const PROBE_MIN: f64 = 5.0;
+// Track growth per `GROWTH_INTERVAL` that was busy and throttle-free: below the anchor
+// x `RECLAIM_STEP` (up to the anchor); above it x (1 + `PROBE_STEP`), and x (1 + `FAR_PROBE_STEP`)
+// from `FAR_FACTOR` x the anchor.
+const RECLAIM_STEP: f64 = 1.5;
+const PROBE_STEP: f64 = 0.125;
+const FAR_PROBE_STEP: f64 = 0.25;
+const FAR_FACTOR: f64 = 2.0;
 // Multiplicative decrease (on cut), with signal
 const BETA: f64 = 0.7;
 // Multiplicative decrease (on cut), no signal available (e.g. cold start)
@@ -97,8 +102,17 @@ const DEFAULT_RATE_MAX_WAIT_MS: u64 = 10_000;
 const TICK_INTERVAL: Duration = Duration::from_secs(1);
 // Period during which additional cuts will be suppressed.
 const REFRACTORY: Duration = Duration::from_secs(1);
-// Period after last cut where growth beyond last_max is deferred.
-const PROBE_QUIET_PERIOD: Duration = Duration::from_secs(2);
+// Recover: period after a cut without growth.
+const PROBE_QUIET_PERIOD: Duration = Duration::from_secs(1);
+// Fast check: before the first throttle, reads follow demand every `FOLLOW_INTERVAL` (the rate is
+// kept at least `FOLLOW_FACTOR` x the measured demand); otherwise it runs every `GROWTH_INTERVAL`
+// and grows the rate in Track.
+const FOLLOW_INTERVAL: Duration = Duration::from_millis(100);
+const FOLLOW_FACTOR: f64 = 4.0;
+const GROWTH_INTERVAL: Duration = Duration::from_millis(500);
+// First cut without a success-rate EWMA: evidence needed to anchor on the goodput so far.
+const FIRST_CUT_MIN_ELAPSED: Duration = Duration::from_millis(100);
+const FIRST_CUT_MIN_SUCCESSES: u64 = 50;
 
 // Load and freshness parameters.
 // Utilization bound for growth.
@@ -149,6 +163,8 @@ pub(crate) struct DirectionalRateLimitConfig {
     pub(crate) horizon: Duration,
     pub(crate) max_wait: Duration,
     pub(crate) init_policy: InitPolicy,
+    // Until the first throttle, keep the rate at least `FOLLOW_FACTOR` x the measured demand.
+    pub(crate) follows: bool,
 }
 
 /// Rate-limit parameters.
@@ -187,6 +203,7 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
                 horizon: defaults.horizon,
                 max_wait: defaults.max_wait,
                 init_policy: defaults.init_policy,
+                follows: defaults.follows,
             }
         }
 
@@ -205,6 +222,7 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
                 "POLARS_CLOUD_READ_INIT_RATE",
                 "POLARS_CLOUD_READ_FLOOR_RATE",
                 "POLARS_CLOUD_READ_CEILING_RATE",
+                true,
             )
         });
 
@@ -215,6 +233,7 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
                 "POLARS_CLOUD_WRITE_INIT_RATE",
                 "POLARS_CLOUD_WRITE_FLOOR_RATE",
                 "POLARS_CLOUD_WRITE_CEILING_RATE",
+                false,
             )
         });
 
@@ -224,6 +243,7 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
             init_rate_env: &'static str,
             floor_rate_env: &'static str,
             ceiling_rate_env: &'static str,
+            follows: bool,
         ) -> DirectionalRateLimitConfig {
             DirectionalRateLimitConfig {
                 init_rate: parse_env_var(default_init_rate, init_rate_env),
@@ -238,6 +258,7 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
                     "POLARS_CLOUD_RATE_MAX_WAIT_MS",
                 )),
                 init_policy: InitPolicy::Inherit,
+                follows,
             }
         }
 
@@ -260,12 +281,18 @@ impl From<CloudRateLimitConfig> for RateLimitConfig {
 #[derive(Debug, Clone)]
 pub struct PacingBudget {
     rate_bits: RateCell,
+    admitted: Arc<AtomicU64>,
     horizon: Duration,
 }
 
 impl PacingBudget {
     pub fn rate(&self) -> f64 {
         f64::from_bits(self.rate_bits.load(Relaxed))
+    }
+
+    /// Requests admitted by the pacer so far (monotonic).
+    pub fn admitted(&self) -> u64 {
+        self.admitted.load(Relaxed)
     }
 
     pub fn horizon(&self) -> Duration {
@@ -281,6 +308,10 @@ impl PacingBudget {
 pub(crate) struct RateState {
     pub rate_bits: RateCell,
     pub max_bits: RateCell, // NaN represents None
+    // Requests admitted by the pacer, across rebuilds (monotonic).
+    pub admitted: Arc<AtomicU64>,
+    // A throttle response was seen.
+    pub throttled: Arc<AtomicBool>,
 }
 
 impl RateState {
@@ -288,6 +319,8 @@ impl RateState {
         Self {
             rate_bits: Arc::new(AtomicU64::new(init_rate.to_bits())),
             max_bits: Arc::new(AtomicU64::new(f64::NAN.to_bits())),
+            admitted: Arc::new(AtomicU64::new(0)),
+            throttled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -317,6 +350,7 @@ impl RateState {
     pub fn reset(&self, init_rate: f64) {
         self.set_rate(init_rate);
         self.set_last_max(None);
+        self.throttled.store(false, Relaxed);
     }
 }
 
@@ -371,6 +405,7 @@ impl RateLimiter {
     pub(crate) fn read_budget(&self) -> PacingBudget {
         PacingBudget {
             rate_bits: Arc::clone(&self.state.read_state.rate_bits),
+            admitted: Arc::clone(&self.state.read_state.admitted),
             horizon: self.config.read.horizon,
         }
     }
@@ -381,6 +416,7 @@ impl RateLimiter {
     pub(crate) fn write_budget(&self) -> PacingBudget {
         PacingBudget {
             rate_bits: Arc::clone(&self.state.write_state.rate_bits),
+            admitted: Arc::clone(&self.state.write_state.admitted),
             horizon: self.config.write.horizon,
         }
     }
@@ -419,6 +455,14 @@ struct AimdState {
     prev_denied: u64,
     prev_resp_succeeded: u64,
     prev_resp_throttled: u64,
+
+    // Fast check: pacer admissions, throttle responses and time at the previous check, the demand
+    // measured since then (requests/s), and rate raises since the last tick.
+    check_prev_admitted: u64,
+    check_prev_throttled: u64,
+    check_prev_ns: u64,
+    demand: Option<f64>,
+    raises: u32,
 }
 
 impl AimdState {
@@ -466,6 +510,8 @@ impl AimdState {
 pub(crate) struct PacerSignal {
     // Fast-path view of window end.
     window_end_ns: AtomicU64,
+    // Fast-path view of the next fast check (u64::MAX: before traffic).
+    check_end_ns: AtomicU64,
     // Advisory refractory pre-check (0 = never).
     last_cut_ns: AtomicU64,
     // Cumulative HTTP response counters, since epoch.
@@ -483,6 +529,8 @@ pub(crate) struct AdaptiveRateController {
     signal: PacerSignal,
     // Cold path, change state and rate.
     state: Mutex<AimdState>,
+    // `RateState::throttled`, read and set without the lock.
+    throttled: Arc<AtomicBool>,
     label: &'static str,
     id: u32,
     config: DirectionalRateLimitConfig,
@@ -497,16 +545,19 @@ impl AdaptiveRateController {
     ) -> Self {
         let epoch = Instant::now();
 
+        // A store rebuild tracks the learned ceiling, except for reads that were never throttled.
+        let throttled = shared.throttled.clone();
         let regime = match shared.get_last_max() {
-            Some(anchor) => Regime::Track { anchor },
-            None => Regime::Search,
+            Some(anchor) if !config.follows || throttled.load(Relaxed) => Regime::Track { anchor },
+            _ => Regime::Search,
         };
 
         let token_bucket = Arc::new(TokenBucket::new(shared.rate_bits.clone()));
-        let pacer = Pacer::start(token_bucket, config.max_wait);
+        let pacer = Pacer::start(token_bucket, config.max_wait, shared.admitted.clone());
 
         let signal = PacerSignal {
             window_end_ns: AtomicU64::new(u64::MAX),
+            check_end_ns: AtomicU64::new(u64::MAX),
             last_cut_ns: AtomicU64::new(0),
             resp_succeeded: AtomicU64::new(0),
             resp_throttled: AtomicU64::new(0),
@@ -522,6 +573,11 @@ impl AdaptiveRateController {
             prev_denied: 0,
             prev_resp_succeeded: 0,
             prev_resp_throttled: 0,
+            check_prev_admitted: 0,
+            check_prev_throttled: 0,
+            check_prev_ns: 0,
+            demand: None,
+            raises: 0,
         });
 
         Self {
@@ -529,6 +585,7 @@ impl AdaptiveRateController {
             pacer,
             signal,
             state,
+            throttled,
             label,
             id,
             config,
@@ -550,12 +607,34 @@ impl AdaptiveRateController {
             self.signal
                 .window_end_ns
                 .store(now_ns + TICK_INTERVAL.as_nanos() as u64, Relaxed);
-            self.state.lock().unwrap().window_start = Some(Instant::now());
+            let mut state = self.state.lock().unwrap();
+            state.window_start = Some(Instant::now());
+            state.check_prev_admitted = self.pacer.admitted();
+            state.check_prev_throttled = self.signal.resp_throttled.load(Relaxed);
+            state.check_prev_ns = now_ns;
+            self.signal
+                .check_end_ns
+                .store(now_ns + self.check_interval().as_nanos() as u64, Relaxed);
+        }
+    }
+
+    /// Reads follow demand until the first throttle response.
+    fn follows(&self) -> bool {
+        self.config.follows && !self.throttled.load(Relaxed)
+    }
+
+    fn check_interval(&self) -> Duration {
+        if self.follows() {
+            FOLLOW_INTERVAL
+        } else {
+            GROWTH_INTERVAL
         }
     }
 
     fn on_congestion(&self) {
         self.signal.resp_throttled.fetch_add(1, Relaxed);
+        // Before `maybe_settle`: the follower stops at the first throttle response.
+        self.throttled.store(true, Relaxed);
 
         self.mark_first_traffic();
         self.maybe_settle();
@@ -579,12 +658,16 @@ impl AdaptiveRateController {
 
         // Calculate anchor rate, which is our (conservative) estimate for the unknown rate-limit enforced
         // by the back-end.
+        let rate = state.rate();
         let (anchor, beta) = match state.success_rate {
-            None => (state.rate(), BETA_NO_SIGNAL),
-            Some(success_rate) => (
-                state.rate().min(success_rate.max(self.config.floor_rate)),
-                BETA,
-            ),
+            Some(success_rate) => (rate.min(success_rate.max(self.config.floor_rate)), BETA),
+            // Reads without an EWMA (e.g. before the first settled tick): the goodput so far if it
+            // reaches the initial rate, else the initial rate.
+            None if self.config.follows => match self.goodput_so_far(&state, now) {
+                Some(goodput) if goodput >= self.config.init_rate => (rate.min(goodput), BETA),
+                _ => (rate.min(self.config.init_rate), BETA_NO_SIGNAL),
+            },
+            None => (rate, BETA_NO_SIGNAL),
         };
 
         // Activate new rate and update state.
@@ -626,11 +709,82 @@ impl AdaptiveRateController {
 
     #[inline]
     fn maybe_settle(&self) {
-        // Lock-free fast path when settlement is not due.
-
-        if self.now_ns() >= self.signal.window_end_ns.load(Relaxed) {
+        // Lock-free fast path when neither is due.
+        let now_ns = self.now_ns();
+        if now_ns >= self.signal.check_end_ns.load(Relaxed) {
+            self.fast_check();
+        }
+        if now_ns >= self.signal.window_end_ns.load(Relaxed) {
             self.settle_lazy_tick();
         }
+    }
+
+    // Before the first throttle, reads raise the rate to at least `FOLLOW_FACTOR` x the demand since
+    // the previous check. In Track, a busy and throttle-free check grows the rate.
+    fn fast_check(&self) {
+        let mut state = self.state.lock().unwrap();
+        let now_ns = self.now_ns();
+
+        // Another response may have run the check while we waited on the lock.
+        if now_ns < self.signal.check_end_ns.load(Relaxed) {
+            return;
+        }
+
+        let admitted = self.pacer.admitted();
+        let win_admitted = admitted.saturating_sub(state.check_prev_admitted);
+        state.check_prev_admitted = admitted;
+        let throttled = self.signal.resp_throttled.load(Relaxed);
+        let win_throttled = throttled.saturating_sub(state.check_prev_throttled);
+        state.check_prev_throttled = throttled;
+        let elapsed_s = now_ns.saturating_sub(state.check_prev_ns) as f64 / 1e9;
+        state.check_prev_ns = now_ns;
+        let demand = win_admitted as f64 / elapsed_s.max(1e-3);
+        state.demand = Some(demand);
+
+        if let Regime::Recover { until, anchor } = state.regime
+            && Instant::now() > until
+        {
+            state.regime = Regime::Track { anchor };
+        }
+
+        let rate = state.rate();
+        let new_rate = match state.regime {
+            Regime::Search if self.follows() => FOLLOW_FACTOR * demand,
+            Regime::Track { anchor }
+                if win_throttled == 0 && demand >= SATURATION_THRESHOLD * rate =>
+            {
+                if rate < anchor {
+                    (rate * RECLAIM_STEP).min(anchor)
+                } else if rate < FAR_FACTOR * anchor {
+                    rate * (1.0 + PROBE_STEP)
+                } else {
+                    rate * (1.0 + FAR_PROBE_STEP)
+                }
+            },
+            _ => rate,
+        }
+        .min(self.config.ceiling_rate);
+        if new_rate > rate {
+            state.set_rate(new_rate);
+            state.raises += 1;
+        }
+
+        self.signal
+            .check_end_ns
+            .store(now_ns + self.check_interval().as_nanos() as u64, Relaxed);
+    }
+
+    /// Successes per second since the window started, given at least `FIRST_CUT_MIN_ELAPSED` and
+    /// `FIRST_CUT_MIN_SUCCESSES`.
+    fn goodput_so_far(&self, state: &AimdState, now: Instant) -> Option<f64> {
+        let elapsed = now.duration_since(state.window_start?);
+        let successes = self
+            .signal
+            .resp_succeeded
+            .load(Relaxed)
+            .saturating_sub(state.prev_resp_succeeded);
+        (elapsed >= FIRST_CUT_MIN_ELAPSED && successes >= FIRST_CUT_MIN_SUCCESSES)
+            .then(|| successes as f64 / elapsed.as_secs_f64())
     }
 
     // Settle the rate-limiter after every tick interval, on the first success response.
@@ -665,11 +819,13 @@ impl AdaptiveRateController {
 
         // Growth conditions.
         let elapsed_s = elapsed.as_secs_f64();
-        let queued = self.pacer.queue_depth() > 0;
         let util_bound = win_admitted as f64 >= SATURATION_THRESHOLD * state.rate() * elapsed_s;
 
-        // Update signal, if any.
-        state.update_success_rate(win_succeeded, elapsed_s);
+        // Update signal, if any. A window of two or more ticks spans a gap without responses, which
+        // would dilute the success rate.
+        if ticks < 2.0 {
+            state.update_success_rate(win_succeeded, elapsed_s);
+        }
 
         // Goodput is a always a lower bound on capacity, so an observation may always
         // increase. It may only decrease when the system was pressure-tested (i.e., demand saturated).
@@ -689,12 +845,6 @@ impl AdaptiveRateController {
             let init_rate = self.config.init_rate;
             let floor_rate = self.config.floor_rate;
             let ceiling_rate = self.config.ceiling_rate;
-
-            if let Regime::Recover { until, anchor } = state.regime
-                && now > until
-            {
-                state.regime = Regime::Track { anchor }
-            };
 
             if win_admitted + win_denied == 0 {
                 // No demand - decay toward seed only if we are currently above it.
@@ -720,30 +870,8 @@ impl AdaptiveRateController {
                         // No-op, rate changes were handled in `on_congestion`
                         "hold (recover)"
                     },
-                    Regime::Track { anchor } => {
-                        // Below anchor + backlogged/saturated -> fast reclaim up to our known-good ceiling
-                        if rate < anchor && util_bound {
-                            state.set_rate((rate * FAST_RAMP_FACTOR).min(anchor).min(ceiling_rate));
-                            "increase (reclaim)"
-                        } else
-                        // Below anchor but not hitting capacity bounds -> wait for more traffic
-                        if rate < anchor {
-                            "hold (app-limited)"
-                        } else
-                        // At or above anchor + saturated + past quiet period -> cautious additive probing
-                        if util_bound {
-                            let delta = (PROBE_FRACTION * anchor).max(PROBE_MIN);
-                            state.set_rate((rate + delta).min(ceiling_rate));
-                            "increase (probe)"
-                        } else
-                        // At/above anchor and backlog is draining out.
-                        if queued {
-                            "hold (draining)"
-                        } else {
-                            // Fallback for unutilized capacity above the anchor.
-                            "hold (app-limited)"
-                        }
-                    },
+                    // Grows in `fast_check`.
+                    Regime::Track { .. } => "track",
                 }
             }
         };
@@ -755,10 +883,12 @@ impl AdaptiveRateController {
             .store(now_ns + TICK_INTERVAL.as_nanos() as u64, Relaxed);
 
         // Logging.
+        let raises = std::mem::take(&mut state.raises);
         if *LOG_HTTP_RATE_LIMIT {
             eprintln!(
                 "[http rate_limit #{}_{} {}] {}: rate: {:.1}, success_rate_ewma: {:.1}, last_max: {:.1}, \
-                    elapsed: {:.1}s, win_admit: {}, win_deny: {}, win_success: {}, win_throttle: {},  q_depth: {}",
+                    elapsed: {:.1}s, win_admit: {}, win_deny: {}, win_success: {}, win_throttle: {},  q_depth: {}, \
+                    demand: {:.1}, raises: {}",
                 self.id,
                 self.label,
                 Utc::now(),
@@ -772,6 +902,8 @@ impl AdaptiveRateController {
                 win_succeeded,
                 win_throttled,
                 self.pacer.queue_depth(),
+                state.demand.unwrap_or_default(),
+                raises,
             );
         }
     }
@@ -880,18 +1012,25 @@ pub struct Pacer {
     max_wait: Duration,
     // Decided to admit.
     admitted: AtomicU64,
+    // Decided to admit, across rebuilds (`PacingBudget::admitted`).
+    admitted_total: Arc<AtomicU64>,
     // Decided not to park.
     denied: AtomicU64,
 }
 
 impl Pacer {
     /// Construct and spawn the wake tick. The tick is per-pacer.
-    pub fn start(bucket: Arc<TokenBucket>, max_wait: Duration) -> Arc<Self> {
+    pub fn start(
+        bucket: Arc<TokenBucket>,
+        max_wait: Duration,
+        admitted_total: Arc<AtomicU64>,
+    ) -> Arc<Self> {
         let pacer = Arc::new(Self {
             bucket,
             queue: Arc::new(WaiterQueue::default()),
             max_wait,
             admitted: AtomicU64::new(0),
+            admitted_total,
             denied: AtomicU64::new(0),
         });
         Self::spawn_wake_tick(Arc::downgrade(&pacer));
@@ -904,6 +1043,7 @@ impl Pacer {
         // Anti-barge plus fast path.
         if self.queue.depth() == 0 && self.bucket.try_acquire().is_ok() {
             self.admitted.fetch_add(1, Relaxed);
+            self.admitted_total.fetch_add(1, Relaxed);
             return Ok(());
         }
 
@@ -926,6 +1066,7 @@ impl Pacer {
         // Wait. On Err, allow through unpaced when WaiterQueue/Pacer is torn down.
         let _ = rx.await;
         self.admitted.fetch_add(1, Relaxed);
+        self.admitted_total.fetch_add(1, Relaxed);
         Ok(())
     }
 
