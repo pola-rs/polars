@@ -308,16 +308,15 @@ def test_stop_cancels_a_partition_waiting_for_its_first_rows(
         ],
     )
     start = time.monotonic()
-    # the first partition alone answers the query, or fails it
+    # the first partition alone answers the query, or fails it (an early stop of the
+    # streaming engine; the in-memory engine reads the whole scan first)
     if stop == "head":
-        assert lf.filter(pl.col("a") == 1).head(3).collect()["id"].to_list() == [
-            1,
-            8,
-            15,
-        ]
+        q = lf.filter(pl.col("a") == 1).head(3)
+        assert q.collect(engine="streaming")["id"].to_list() == [1, 8, 15]
     else:
+        q = lf.select(pl.col("id").cast(pl.UInt8, strict=True))
         with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion"):
-            lf.select(pl.col("id").cast(pl.UInt8, strict=True)).collect()
+            q.collect(engine="streaming")
     # a statement blocked in the second partition was cancelled, and none starts later
     assert cancelled.is_set() or not waiting.is_set()
     assert time.monotonic() - start < 4
