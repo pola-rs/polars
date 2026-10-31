@@ -3193,6 +3193,29 @@ impl SQLContext {
                 }
                 is_new
             });
+            // Literal keys do not split the groups. `GROUPING()` needs every key.
+            let order_by_exprs = match &query.order_by {
+                Some(OrderBy {
+                    kind: OrderByKind::Expressions(exprs),
+                    ..
+                }) => exprs.iter().map(|ob| &ob.expr).collect(),
+                _ => vec![],
+            };
+            let uses_grouping = !self.group_scope.grouping_calls.is_empty()
+                || select_stmt
+                    .having
+                    .iter()
+                    .chain(&select_stmt.qualify)
+                    .chain(order_by_exprs)
+                    .any(|e| !collect_grouping_calls(e).is_empty());
+            if !uses_grouping {
+                let is_literal = |key: &Expr| matches!(strip_outer_alias(key), Expr::Literal(_));
+                if group_by_keys.iter().all(is_literal) {
+                    group_by_keys.truncate(1);
+                } else {
+                    group_by_keys.retain(|key| !is_literal(key));
+                }
+            }
         }
 
         let has_group_by = !group_by_keys.is_empty() || grouping_sets.is_some();
@@ -5385,6 +5408,12 @@ impl SQLContext {
                     None => resolve(self, e),
                 }
             },
+            // A constant key, as `GROUP BY 'all'`; numbers are ordinals.
+            SQLExpr::Value(ValueWithSpan { value, .. })
+                if !matches!(value, SQLValue::Number(..)) =>
+            {
+                parse_sql_expr(e, self, Some(schema))
+            },
             // Drop the alias that restores the unqualified name, so two
             // relations sharing a column name give distinct keys.
             SQLExpr::CompoundIdentifier(_) => resolve(self, e).map(|e| strip_outer_alias(&e)),
@@ -5777,7 +5806,11 @@ impl SQLContext {
                         e
                     }
                 };
-                let group_by = lf.group_by(group_by_keys);
+                let mut group_by = lf.group_by(group_by_keys);
+                if !has_column_key {
+                    // That select returns a row even when there are no input rows.
+                    group_by = group_by.having(len().gt(lit(0)));
+                }
                 match having {
                     Some(having) => group_by.having(in_groups(strip_aggregate_marks(
                         splitter.read_keys_per_group(having),

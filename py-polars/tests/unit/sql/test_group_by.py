@@ -429,12 +429,6 @@ def test_group_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match=r"GROUP BY requires a valid expression or positive ordinal; found '!!!'",
-    ):
-        df.sql("SELECT a, SUM(b) FROM self GROUP BY a, '!!!'")
-
-    with pytest.raises(
-        SQLSyntaxError,
         match=r"'a' should participate in the GROUP BY clause or an aggregate function",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY b")
@@ -1483,6 +1477,55 @@ def test_group_by_constants_empty_and_having(grouped: pl.DataFrame) -> None:
         "SELECT 2 FROM t GROUP BY a HAVING COUNT(*) > 1",
         pl.DataFrame({"literal": [2, 2]}, schema={"literal": pl.Int32}),
     )
+
+
+@pytest.mark.parametrize("key", ["'all'", "NULL", "'a', UPPER('b')", "1 + 1"])
+def test_group_by_constant_keys(grouped: pl.DataFrame, key: str) -> None:
+    # one group, and no group over no rows
+    query = f"SELECT 'all' AS k, SUM(b) AS s, COUNT(*) AS n FROM t GROUP BY {key}"
+    assert_group_by_matches(
+        grouped,
+        query,
+        pl.DataFrame(
+            {"k": ["all"], "s": [15], "n": [5]}, schema_overrides={"n": pl.Int64}
+        ),
+    )
+    assert_group_by_matches(
+        grouped.clear(),
+        query,
+        pl.DataFrame(schema={"k": pl.String, "s": pl.Int64, "n": pl.Int64}),
+    )
+    # next to a column key
+    assert_group_by_matches(
+        grouped,
+        f"SELECT a, SUM(b) AS s FROM t GROUP BY a, {key} ORDER BY a",
+        pl.DataFrame({"a": [0, 1, 2], "s": [3, 3, 9]}),
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a, GROUPING(1 + 1) AS g FROM t GROUP BY a, 1 + 1 ORDER BY a",
+        "SELECT a, GROUPING_ID(a, 'x') AS g FROM t GROUP BY a, 'x' ORDER BY a",
+        "SELECT a FROM t GROUP BY a, 1 + 1 HAVING GROUPING(1 + 1) = 0 ORDER BY a",
+    ],
+)
+def test_group_by_constant_key_in_grouping(grouped: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"t": grouped},
+        query=query,
+        compare_with="duckdb",
+        engines=GROUP_BY_ENGINES,
+    )
+
+
+def test_group_by_constant_key_errors_are_kept(grouped: pl.DataFrame) -> None:
+    for key in ["a, CAST('bad' AS INT)", "'x', CAST('bad' AS INT)"]:
+        with pytest.raises(InvalidOperationError, match="conversion"):
+            pl.SQLContext(t=grouped).execute(
+                f"SELECT COUNT(*) AS n FROM t GROUP BY {key}", eager=True
+            )
 
 
 def test_group_by_constant_named_like_key() -> None:

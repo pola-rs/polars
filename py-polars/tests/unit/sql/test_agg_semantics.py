@@ -317,15 +317,13 @@ def test_aggregate_of_constant_in_groups(group_by: str, has_check: bool) -> None
     for n_rows in [0, 3]:
         lf = pl.LazyFrame({"g": [1, 2, 2][:n_rows]}, schema={"g": pl.Int64})
         assert ("> 0" in lf.sql(query).explain()) == has_check
-        # Over no rows, a GROUP BY on constant keys gives a row in Polars.
-        if n_rows or group_by != "GROUP BY 1 + 1":
-            assert_sql_matches(
-                lf,
-                query=query,
-                compare_with="duckdb",
-                check_row_order=False,
-                engines=["in-memory", "streaming"],
-            )
+        assert_sql_matches(
+            lf,
+            query=query,
+            compare_with="duckdb",
+            check_row_order=False,
+            engines=["in-memory", "streaming"],
+        )
 
 
 def test_sum_of_constant_types() -> None:
