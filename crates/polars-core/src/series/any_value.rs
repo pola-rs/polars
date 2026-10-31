@@ -7,6 +7,8 @@ use polars_compute::cast::SerPrimitive;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
+use crate::datatypes::time_unit::time_unit_conversion_error;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
 use crate::prelude::*;
@@ -79,13 +81,25 @@ impl Series {
                     }
                     DataType::Decimal(prec, scale)
                 },
+                // Use the finest time unit(s), so that mixed-unit values can be
+                // represented without loss of precision (top-level datetimes and
+                // durations resolve this while building, avoiding a separate pass).
+                mut dt if dt.is_nested() && dt.contains_time_units() => {
+                    dt.merge_finest_time_units_from(
+                        values.iter().filter(|v| !v.is_null()).map(|v| v.dtype()),
+                    );
+                    dt
+                },
                 dt => dt,
             }
         } else {
             any_values_to_supertype(values)?
         };
 
-        Self::from_any_values_and_dtype(name, values, &dtype, strict)
+        // (the strict dtype is that of the first non-null value, so finer top-level time units
+        // are found while building; the non-strict supertype already has the finest units)
+        let infer_time_units = strict;
+        Self::from_any_values_and_dtype_impl(name, values, &dtype, strict, infer_time_units)
     }
 
     /// Construct a new [`Series`] with the given `dtype` from a slice of AnyValues.
@@ -99,7 +113,18 @@ impl Series {
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Self> {
-        Self::from_any_values_and_dtype_unnamed(values, dtype, strict)
+        Self::from_any_values_and_dtype_impl(name, values, dtype, strict, false)
+    }
+
+    /// If `infer_time_units`, top-level datetimes/durations use the finest time unit found.
+    fn from_any_values_and_dtype_impl(
+        name: PlSmallStr,
+        values: &[AnyValue],
+        dtype: &DataType,
+        strict: bool,
+        infer_time_units: bool,
+    ) -> PolarsResult<Self> {
+        Self::from_any_values_and_dtype_unnamed(values, dtype, strict, infer_time_units)
             .with_context(|| format!("while constructing Series '{name}'"))
             .map(|s| s.with_name(name))
     }
@@ -108,6 +133,7 @@ impl Series {
         values: &[AnyValue],
         dtype: &DataType,
         strict: bool,
+        infer_time_units: bool,
     ) -> PolarsResult<Self> {
         if values.is_empty() {
             return Ok(Self::new_empty(PlSmallStr::EMPTY, dtype));
@@ -146,10 +172,24 @@ impl Series {
             DataType::Time => any_values_to_time(values, strict)?.into_series(),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(tu, tz) => {
-                any_values_to_datetime(values, *tu, (*tz).clone(), strict)?.into_series()
+                let build = |tu| any_values_to_datetime(values, tu, tz.clone(), strict);
+                let (ca, finest_time_unit) = build(*tu)?;
+                if infer_time_units && finest_time_unit < *tu {
+                    build(finest_time_unit)?.0.into_series()
+                } else {
+                    ca.into_series()
+                }
             },
             #[cfg(feature = "dtype-duration")]
-            DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
+            DataType::Duration(tu) => {
+                let build = |tu| any_values_to_duration(values, tu, strict);
+                let (ca, finest_time_unit) = build(*tu)?;
+                if infer_time_units && finest_time_unit < *tu {
+                    build(finest_time_unit)?.0.into_series()
+                } else {
+                    ca.into_series()
+                }
+            },
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
                 any_values_to_categorical(values, dt, strict)?
@@ -181,7 +221,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, storage) => {
-                Series::from_any_values_and_dtype_unnamed(values, storage, strict)?
+                Series::from_any_values_and_dtype_unnamed(values, storage, strict, false)?
                     .into_extension(typ.clone())
             },
             DataType::List(inner) => any_values_to_list(values, inner, strict)?.into_series(),
@@ -538,19 +578,32 @@ fn any_values_to_time(values: &[AnyValue], strict: bool) -> PolarsResult<TimeChu
     Ok(builder.finish().into_time())
 }
 
+/// Also returns the finest time unit among the values.
 #[cfg(feature = "dtype-datetime")]
 fn any_values_to_datetime(
     values: &[AnyValue],
     time_unit: TimeUnit,
     time_zone: Option<TimeZone>,
     strict: bool,
-) -> PolarsResult<DatetimeChunked> {
+) -> PolarsResult<(DatetimeChunked, TimeUnit)> {
     let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(PlSmallStr::EMPTY, values.len());
     let target_dtype = DataType::Datetime(time_unit, time_zone.clone());
+    let mut finest_time_unit = time_unit;
     for av in values {
         match av {
             AnyValue::Datetime(i, tu, _) if *tu == time_unit => builder.append_value(*i),
             AnyValue::DatetimeOwned(i, tu, _) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::Datetime(i, tu, _) | AnyValue::DatetimeOwned(i, tu, _) => {
+                // Note: support mixed time units, even in 'strict' mode (only overflow is an error)
+                finest_time_unit = finest_time_unit.min(*tu);
+                match tu.rescale_to(time_unit).datetime_value(*i) {
+                    Some(v) => builder.append_value(v),
+                    None if strict => {
+                        return Err(time_unit_conversion_error(av.dtype(), &target_dtype, av));
+                    },
+                    None => builder.append_null(),
+                }
+            },
             AnyValue::Null => builder.append_null(),
             av => {
                 if strict {
@@ -564,20 +617,36 @@ fn any_values_to_datetime(
             },
         }
     }
-    Ok(builder.finish().into_datetime(time_unit, time_zone))
+    Ok((
+        builder.finish().into_datetime(time_unit, time_zone),
+        finest_time_unit,
+    ))
 }
 
+/// Also returns the finest time unit among the values.
 #[cfg(feature = "dtype-duration")]
 fn any_values_to_duration(
     values: &[AnyValue],
     time_unit: TimeUnit,
     strict: bool,
-) -> PolarsResult<DurationChunked> {
+) -> PolarsResult<(DurationChunked, TimeUnit)> {
     let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(PlSmallStr::EMPTY, values.len());
     let target_dtype = DataType::Duration(time_unit);
+    let mut finest_time_unit = time_unit;
     for av in values {
         match av {
             AnyValue::Duration(i, tu) if *tu == time_unit => builder.append_value(*i),
+            AnyValue::Duration(i, tu) => {
+                // Note: support mixed time units, even in 'strict' mode (only overflow is an error)
+                finest_time_unit = finest_time_unit.min(*tu);
+                match tu.rescale_to(time_unit).duration_value(*i) {
+                    Some(v) => builder.append_value(v),
+                    None if strict => {
+                        return Err(time_unit_conversion_error(av.dtype(), &target_dtype, av));
+                    },
+                    None => builder.append_null(),
+                }
+            },
             AnyValue::Null => builder.append_null(),
             av => {
                 if strict {
@@ -590,7 +659,7 @@ fn any_values_to_duration(
             },
         }
     }
-    Ok(builder.finish().into_duration(time_unit))
+    Ok((builder.finish().into_duration(time_unit), finest_time_unit))
 }
 
 #[cfg(feature = "dtype-categorical")]
@@ -742,6 +811,13 @@ fn any_values_to_list(
                     AnyValue::List(b) => match b.cast(inner_type) {
                         Ok(casted) => {
                             if casted.null_count() != b.null_count() {
+                                // (out-of-range temporal values raise as they do elsewhere)
+                                if strict
+                                    && inner_type.contains_time_units()
+                                    && let Err(err) = b.strict_cast(inner_type)
+                                {
+                                    return Err(err);
+                                }
                                 valid = !strict;
                             }
                             builder.append_series(&casted)?;

@@ -546,11 +546,11 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (AnyValue::Date(v), DataType::Datetime(tu, _)) => AnyValue::Datetime(
-                match tu {
-                    TimeUnit::Nanoseconds => (*v as i64) * NS_IN_DAY,
-                    TimeUnit::Microseconds => (*v as i64) * US_IN_DAY,
-                    TimeUnit::Milliseconds => (*v as i64) * MS_IN_DAY,
-                },
+                (*v as i64).checked_mul(match tu {
+                    TimeUnit::Nanoseconds => NS_IN_DAY,
+                    TimeUnit::Microseconds => US_IN_DAY,
+                    TimeUnit::Milliseconds => MS_IN_DAY,
+                })?,
                 *tu,
                 None,
             ),
@@ -559,15 +559,7 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _),
                 DataType::Datetime(tu_r, tz_r),
             ) => AnyValue::Datetime(
-                match (tu, tu_r) {
-                    (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => *v / 1_000i64,
-                    (TimeUnit::Nanoseconds, TimeUnit::Milliseconds) => *v / 1_000_000i64,
-                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => *v * 1_000i64,
-                    (TimeUnit::Microseconds, TimeUnit::Milliseconds) => *v / 1_000i64,
-                    (TimeUnit::Milliseconds, TimeUnit::Microseconds) => *v * 1_000i64,
-                    (TimeUnit::Milliseconds, TimeUnit::Nanoseconds) => *v * 1_000_000i64,
-                    _ => *v,
-                },
+                tu.rescale_to(*tu_r).datetime_value(*v)?,
                 *tu_r,
                 tz_r.as_ref(),
             ),
@@ -579,11 +571,14 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Date) => {
-                AnyValue::Date(match tu {
-                    TimeUnit::Nanoseconds => *v / NS_IN_DAY,
-                    TimeUnit::Microseconds => *v / US_IN_DAY,
-                    TimeUnit::Milliseconds => *v / MS_IN_DAY,
-                } as i32)
+                AnyValue::Date(
+                    i32::try_from(v.div_euclid(match tu {
+                        TimeUnit::Nanoseconds => NS_IN_DAY,
+                        TimeUnit::Microseconds => US_IN_DAY,
+                        TimeUnit::Milliseconds => MS_IN_DAY,
+                    }))
+                    .ok()?,
+                )
             },
 
             // to time
@@ -594,9 +589,9 @@ impl<'a> AnyValue<'a> {
             #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Time) => {
                 AnyValue::Time(match tu {
-                    TimeUnit::Nanoseconds => *v % NS_IN_DAY,
-                    TimeUnit::Microseconds => (*v % US_IN_DAY) * 1_000i64,
-                    TimeUnit::Milliseconds => (*v % MS_IN_DAY) * 1_000_000i64,
+                    TimeUnit::Nanoseconds => v.rem_euclid(NS_IN_DAY),
+                    TimeUnit::Microseconds => v.rem_euclid(US_IN_DAY) * 1_000i64,
+                    TimeUnit::Milliseconds => v.rem_euclid(MS_IN_DAY) * 1_000_000i64,
                 })
             },
 
@@ -610,19 +605,9 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Duration(tu.from_nsecs(*v), *tu)
             },
             #[cfg(feature = "dtype-duration")]
-            (AnyValue::Duration(v, tu), DataType::Duration(tu_r)) => AnyValue::Duration(
-                match (tu, tu_r) {
-                    (_, _) if tu == tu_r => *v,
-                    (TimeUnit::Nanoseconds, TimeUnit::Microseconds) => *v / 1_000i64,
-                    (TimeUnit::Nanoseconds, TimeUnit::Milliseconds) => *v / 1_000_000i64,
-                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => *v * 1_000i64,
-                    (TimeUnit::Microseconds, TimeUnit::Milliseconds) => *v / 1_000i64,
-                    (TimeUnit::Milliseconds, TimeUnit::Microseconds) => *v * 1_000i64,
-                    (TimeUnit::Milliseconds, TimeUnit::Nanoseconds) => *v * 1_000_000i64,
-                    _ => *v,
-                },
-                *tu_r,
-            ),
+            (AnyValue::Duration(v, tu), DataType::Duration(tu_r)) => {
+                AnyValue::Duration(tu.rescale_to(*tu_r).duration_value(*v)?, *tu_r)
+            },
 
             #[cfg(feature = "dtype-decimal")]
             (av, DataType::Decimal(p, s)) if av.is_integer() => {

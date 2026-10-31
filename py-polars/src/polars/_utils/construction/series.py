@@ -235,7 +235,7 @@ def sequence_to_pyseries(
     # temporal branch
     if issubclass(python_dtype, tuple(py_temporal_types)):
         if dtype is None:
-            dtype = parse_into_dtype(python_dtype)  # construct from integer
+            dtype = parse_into_dtype(python_dtype).base_type()
         elif dtype in py_temporal_types:
             dtype = parse_into_dtype(dtype)
 
@@ -248,19 +248,26 @@ def sequence_to_pyseries(
                 msg
             )
 
-        # We use the AnyValue builder to create the datetime array
-        # We store the values internally as UTC and set the timezone
-        py_series = PySeries.new_from_any_values(name, values, strict)
-
         time_unit = getattr(dtype, "time_unit", None)
         time_zone = getattr(dtype, "time_zone", None)
 
+        # We use the AnyValue builder to create the datetime array
+        # We store the values internally as UTC and set the timezone
+        py_series = PySeries.new_from_any_values(
+            name=name,
+            values=values,
+            strict=strict,
+            time_unit=time_unit,
+        )
+        s = wrap_s(py_series)
         if dtype.is_temporal() and values_dtype == String and dtype != Duration:
-            s = wrap_s(py_series).str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
-        elif time_unit is not None and values_dtype != Date:
-            s = wrap_s(py_series).dt.cast_time_unit(time_unit)
-        else:
-            s = wrap_s(py_series)
+            s = s.str.strptime(dtype, strict=strict)  # type: ignore[arg-type]
+        elif (
+            time_unit is not None
+            and values_dtype != Date
+            and getattr(s.dtype, "time_unit", None) != time_unit
+        ):
+            s = s.dt.cast_time_unit(time_unit)
 
         if (values_dtype == Date) & (dtype == Datetime):
             s = s.cast(Datetime(time_unit or "us"))

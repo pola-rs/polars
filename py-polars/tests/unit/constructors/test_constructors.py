@@ -20,7 +20,7 @@ import polars.selectors as cs
 from polars._dependencies import dataclasses, pydantic
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
-from polars.exceptions import DuplicateError, ShapeError
+from polars.exceptions import DuplicateError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
@@ -1749,6 +1749,45 @@ def test_datetime_date_subclasses() -> None:
     result = pl.Series([FakeDatetime(2020, 1, 1, 3)])
     expected = pl.Series([datetime(2020, 1, 1, 3)])
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "expected"),
+    [
+        ("us", datetime(1969, 12, 31, 23, 59, 59, 999999)),
+        ("ms", datetime(1969, 12, 31, 23, 59, 59, 999000)),
+    ],
+)
+def test_init_rows_timestamp_floors_to_time_unit_28869(
+    time_unit: Literal["us", "ms"], expected: datetime
+) -> None:
+    value = pd.Timestamp(-1, unit="ns")
+    schema = {"t": pl.Datetime(time_unit)}
+
+    for df in (
+        pl.from_dicts([{"t": value}], schema=schema),
+        pl.from_records([(value,)], schema=schema, orient="row"),
+        pl.Series([{"t": value}], dtype=pl.Struct(schema)).struct.unnest(),
+    ):
+        assert df.schema == schema
+        assert df.item() == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (datetime(3000, 1, 1), pl.Datetime("ns")),
+        (timedelta(days=300 * 365), pl.Duration("ns")),
+    ],
+)
+def test_init_rows_temporal_out_of_range(
+    value: datetime | timedelta, dtype: pl.DataType
+) -> None:
+    schema = {"t": dtype}
+    with pytest.raises(InvalidOperationError, match=r"conversion from .* failed"):
+        pl.from_dicts([{"t": value}], schema=schema)
+    with pytest.raises(InvalidOperationError, match=r"conversion from .* failed"):
+        pl.Series([{"t": value}], dtype=pl.Struct(schema))
 
 
 def test_list_null_constructor() -> None:

@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::BTreeMap;
 
 use polars_arrow::datatypes::{
@@ -775,6 +775,86 @@ impl DataType {
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.contains_categoricals(),
             _ => false,
+        }
+    }
+
+    /// Check if this [`DataType`] is, or contains, a type with a [`TimeUnit`].
+    pub fn contains_time_units(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_, _) => true,
+            #[cfg(feature = "dtype-duration")]
+            Duration(_) => true,
+            List(inner) => inner.contains_time_units(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_time_units(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_time_units()),
+            _ => false,
+        }
+    }
+
+    /// Adopt any finer [`TimeUnit`]s found at the same (possibly nested) positions in `others`,
+    /// so that values of all these types can be represented without loss of precision.
+    pub fn merge_finest_time_units_from(
+        &mut self,
+        others: impl IntoIterator<Item = impl Borrow<DataType>>,
+    ) {
+        let mut others = others.into_iter();
+        while !self.has_finest_time_units()
+            && let Some(other) = others.next()
+        {
+            self.merge_finest_time_units(other.borrow());
+        }
+    }
+
+    /// Check if all [`TimeUnit`]s in this [`DataType`] (if any) are already the finest.
+    fn has_finest_time_units(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, _) => *tu == TimeUnit::Nanoseconds,
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => *tu == TimeUnit::Nanoseconds,
+            List(inner) => inner.has_finest_time_units(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.has_finest_time_units(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .all(|field| field.dtype.has_finest_time_units()),
+            _ => true,
+        }
+    }
+
+    /// Adopt any finer [`TimeUnit`] found at the same (possibly nested) position in `other`.
+    fn merge_finest_time_units(&mut self, other: &DataType) {
+        use DataType::*;
+        match (self, other) {
+            #[cfg(feature = "dtype-datetime")]
+            (Datetime(tu, _), Datetime(other_tu, _)) => *tu = (*tu).min(*other_tu),
+            #[cfg(feature = "dtype-duration")]
+            (Duration(tu), Duration(other_tu)) => *tu = (*tu).min(*other_tu),
+            (List(inner), List(other_inner)) => inner.merge_finest_time_units(other_inner),
+            #[cfg(feature = "dtype-array")]
+            (Array(inner, _), Array(other_inner, _)) => inner.merge_finest_time_units(other_inner),
+            #[cfg(feature = "dtype-struct")]
+            (Struct(fields), Struct(other_fields)) => {
+                for (i, field) in fields.iter_mut().enumerate() {
+                    if !field.dtype.contains_time_units() {
+                        continue;
+                    }
+                    let other = match other_fields.get(i) {
+                        Some(other) if other.name == field.name => Some(other),
+                        _ => other_fields.iter().find(|f| f.name == field.name),
+                    };
+                    if let Some(other) = other {
+                        field.dtype.merge_finest_time_units(&other.dtype);
+                    }
+                }
+            },
+            _ => {},
         }
     }
 
