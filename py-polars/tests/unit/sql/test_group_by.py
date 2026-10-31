@@ -429,12 +429,6 @@ def test_group_by_errors() -> None:
 
     with pytest.raises(
         SQLSyntaxError,
-        match=r"GROUP BY requires a valid expression or positive ordinal; found '!!!'",
-    ):
-        df.sql("SELECT a, SUM(b) FROM self GROUP BY a, '!!!'")
-
-    with pytest.raises(
-        SQLSyntaxError,
         match=r"'a' should participate in the GROUP BY clause or an aggregate function",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY b")
@@ -1482,6 +1476,30 @@ def test_group_by_constants_empty_and_having(grouped: pl.DataFrame) -> None:
         grouped,
         "SELECT 2 FROM t GROUP BY a HAVING COUNT(*) > 1",
         pl.DataFrame({"literal": [2, 2]}, schema={"literal": pl.Int32}),
+    )
+
+
+@pytest.mark.parametrize("key", ["'all'", "NULL", "'a', UPPER('b')", "1 + 1"])
+def test_group_by_constant_keys(grouped: pl.DataFrame, key: str) -> None:
+    # one group, and no group over no rows
+    query = f"SELECT 'all' AS k, SUM(b) AS s, COUNT(*) AS n FROM t GROUP BY {key}"
+    assert_group_by_matches(
+        grouped,
+        query,
+        pl.DataFrame(
+            {"k": ["all"], "s": [15], "n": [5]}, schema_overrides={"n": pl.Int64}
+        ),
+    )
+    assert_group_by_matches(
+        grouped.clear(),
+        query,
+        pl.DataFrame(schema={"k": pl.String, "s": pl.Int64, "n": pl.Int64}),
+    )
+    # next to a column key
+    assert_group_by_matches(
+        grouped,
+        f"SELECT a, SUM(b) AS s FROM t GROUP BY a, {key} ORDER BY a",
+        pl.DataFrame({"a": [0, 1, 2], "s": [3, 3, 9]}),
     )
 
 

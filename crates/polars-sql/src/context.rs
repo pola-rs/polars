@@ -3193,6 +3193,15 @@ impl SQLContext {
                 }
                 is_new
             });
+            // Constant keys do not split the groups.
+            if group_by_keys
+                .iter()
+                .any(|key| !is_constant(&strip_outer_alias(key)))
+            {
+                group_by_keys.retain(|key| !is_constant(&strip_outer_alias(key)));
+            } else {
+                group_by_keys.truncate(1);
+            }
         }
 
         let has_group_by = !group_by_keys.is_empty() || grouping_sets.is_some();
@@ -5385,6 +5394,12 @@ impl SQLContext {
                     None => resolve(self, e),
                 }
             },
+            // A constant key, as `GROUP BY 'all'`; numbers are ordinals.
+            SQLExpr::Value(ValueWithSpan { value, .. })
+                if !matches!(value, SQLValue::Number(..)) =>
+            {
+                parse_sql_expr(e, self, Some(schema))
+            },
             // Drop the alias that restores the unqualified name, so two
             // relations sharing a column name give distinct keys.
             SQLExpr::CompoundIdentifier(_) => resolve(self, e).map(|e| strip_outer_alias(&e)),
@@ -5777,7 +5792,11 @@ impl SQLContext {
                         e
                     }
                 };
-                let group_by = lf.group_by(group_by_keys);
+                let mut group_by = lf.group_by(group_by_keys);
+                if !has_column_key {
+                    // That select returns a row even when there are no input rows.
+                    group_by = group_by.having(len().gt(lit(0)));
+                }
                 match having {
                     Some(having) => group_by.having(in_groups(strip_aggregate_marks(
                         splitter.read_keys_per_group(having),
