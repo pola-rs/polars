@@ -30,8 +30,6 @@ use sqlparser::ast::{
     UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan, Values, VisitorMut,
     WildcardAdditionalOptions, WindowSpec, WindowType, With,
 };
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::catalog::{
     CatalogAlter, CatalogDdl, CatalogNamespace, CatalogRegistry, CatalogSpellings, CatalogTable,
@@ -56,7 +54,7 @@ use crate::join_keys::{sql_join_key_pair, sql_join_where_predicate};
 use crate::sql_expr::{
     convert_int_literal_for_string, is_string_expr, order_by_sort_options, parse_sql_array,
     parse_sql_expr, resolve_compound_identifier, resolve_expr_dtype, series_from_literals,
-    to_sql_interface_err,
+    sql_parser, to_sql_interface_err,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_ambiguous_column,
@@ -7621,14 +7619,7 @@ fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
 }
 
 fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
-    let mut parser = Parser::new(&GenericDialect);
-    parser = parser.with_options(ParserOptions {
-        trailing_commas: true,
-        ..Default::default()
-    });
-    parser
-        .try_with_sql(query)
-        .map_err(to_sql_interface_err)?
+    sql_parser(query)?
         .parse_statements()
         .map_err(to_sql_interface_err)
 }
