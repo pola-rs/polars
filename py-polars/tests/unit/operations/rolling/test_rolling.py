@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
 import random
 import re
+import subprocess
+import sys
+import textwrap
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
@@ -3029,3 +3033,105 @@ def test_rolling_slice_per_window_offset_values_30432() -> None:
     assert out["first"].to_list() == [1, 2, 1, 3, 3]
     assert out["window"].to_list() == [[1], [2], [1, 2], [3, 4], [3, 4]]
     assert not out["first"].flags["SORTED_ASC"]
+
+
+def _windows_frame(n: int) -> pl.DataFrame:
+    i = pl.int_range(0, n, eager=True)
+    # Magnitudes far apart make the summation order visible in the result.
+    v = (i.cast(pl.Float64) * 0.618).sin() * (10.0 ** ((i % 7) * 3).cast(pl.Float64))
+    return pl.DataFrame({"k": i % 2, "t": i // 2, "i": i, "v": v, "w": (i * 7) % 11})
+
+
+def _window_aggs() -> list[pl.Expr]:
+    v = pl.col.v
+    return [
+        v.sum().alias("sum"),
+        v.min().alias("min"),
+        v.max().alias("max"),
+        v.mean().alias("mean"),
+        v.var().alias("var"),
+        v.std().alias("std"),
+        v.median().alias("median"),
+        v.quantile(0.3).alias("quantile"),
+        v.arg_min().alias("arg_min"),
+        v.arg_max().alias("arg_max"),
+        v.nan_min().alias("nan_min"),
+        v.nan_max().alias("nan_max"),
+        v.min_by("w").alias("min_by"),
+        pl.col.i.sum().alias("int_sum"),
+        pl.col.i.mean().alias("int_mean"),
+        pl.col.i.std().alias("int_std"),
+    ]
+
+
+def test_rolling_expr_chunked_input_28597() -> None:
+    # The window aggregations rechunk their input instead of recomputing every
+    # window, so a chunked frame gives exactly the results of one chunk.
+    df = _windows_frame(1200)
+    chunked = pl.concat([df[:400], df[400:800], df[800:]], rechunk=False)
+    assert chunked["v"].n_chunks() == 3
+    exprs = [e.rolling(index_column="i", period="50i") for e in _window_aggs()]
+    assert_frame_equal(
+        chunked.lazy().select(exprs).collect(engine="in-memory"),
+        df.lazy().select(exprs).collect(engine="in-memory"),
+        check_exact=True,
+    )
+
+
+def test_rolling_by_keys_matches_each_key_28597() -> None:
+    # Reordering by key leaves the columns chunked once the thread pool is larger
+    # than the frame is wide; every key must still get the results of its own frame.
+    # The pool size is fixed at import, so this runs in a fresh process.
+    script = textwrap.dedent(
+        """
+        import polars as pl
+        from polars.testing import assert_frame_equal
+
+        assert pl.thread_pool_size() == 8
+        i = pl.int_range(0, 4000, eager=True)
+        df = pl.DataFrame({"k": i % 2, "t": i // 2})
+        t = pl.col.t + pl.col.k
+        v = (t.cast(pl.Float64) * 0.618).sin() * (
+            10.0 ** ((t % 7) * 3).cast(pl.Float64)
+        )
+        aggs = [
+            v.sum().alias("sum"),
+            v.min().alias("min"),
+            v.max().alias("max"),
+            v.mean().alias("mean"),
+            v.var().alias("var"),
+            v.std().alias("std"),
+            v.median().alias("median"),
+            v.quantile(0.3).alias("quantile"),
+            v.arg_min().alias("arg_min"),
+            v.arg_max().alias("arg_max"),
+            v.nan_min().alias("nan_min"),
+            v.nan_max().alias("nan_max"),
+            v.min_by((t * 7) % 11).alias("min_by"),
+            t.sum().alias("int_sum"),
+            t.mean().alias("int_mean"),
+            t.std().alias("int_std"),
+        ]
+        for dynamic in (False, True):
+
+            def windows(lf, **kw):
+                if dynamic:
+                    return lf.group_by_dynamic("t", every="1i", period="50i", **kw)
+                return lf.rolling("t", period="50i", **kw)
+
+            out = windows(df.lazy(), group_by="k").agg(aggs).sort("k", "t")
+            expected = pl.concat(
+                windows(part.lazy())
+                .agg(aggs)
+                .select(pl.lit(key, dtype=pl.Int64).alias("k"), pl.all())
+                for (key,), part in df.partition_by("k", as_dict=True).items()
+            ).sort("k", "t")
+            assert_frame_equal(
+                out.collect(engine="in-memory"),
+                expected.collect(engine="in-memory"),
+                check_exact=True,
+            )
+        """
+    )
+    env = {**os.environ, "POLARS_MAX_THREADS": "8"}
+    subprocess.run([sys.executable, "-c", script], env=env, check=True)
