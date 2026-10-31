@@ -36,7 +36,7 @@ use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, approximate_literal, decimal_literal, decimal_literal_to_f64,
     interval_to_duration, order_by_sort_options, parse_extract_date_part, parse_sql_array,
-    parse_sql_expr, sql_binary, temporal_string_as,
+    parse_sql_expr, resolve_expr_dtype, sql_binary, temporal_string_as,
 };
 use crate::sql_visitors::{contains_random, grouping_call_args};
 use crate::window_frames::{MAX_ROW_OFFSET, is_frame_aggregate};
@@ -498,6 +498,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT REPLACE(col1, 'old', 'new') FROM df;
     /// ```
     Replace,
+    /// SQL 'repeat' function.
+    /// Returns the string repeated `n` times.
+    /// ```sql
+    /// SELECT REPEAT(col1, 3) FROM df;
+    /// ```
+    Repeat,
     /// SQL 'reverse' function.
     /// Return the reversed string.
     /// ```sql
@@ -778,11 +784,17 @@ pub(crate) enum PolarsSQLFunctions {
     // Array functions
     // ----
     /// SQL 'array_length' function.
-    /// Returns the length of the array.
+    /// Returns the length of the array (optional: the dimension, which must be 1).
     /// ```sql
     /// SELECT ARRAY_LENGTH(col1) FROM df;
     /// ```
     ArrayLength,
+    /// SQL 'cardinality' function.
+    /// Returns the number of elements in the array.
+    /// ```sql
+    /// SELECT CARDINALITY(col1) FROM df;
+    /// ```
+    Cardinality,
     /// SQL 'array_lower' function.
     /// Returns the minimum value in an array; equivalent to `array_min`.
     /// ```sql
@@ -993,6 +1005,7 @@ impl PolarsSQLFunctions {
             "bit_length",
             "bit_or",
             "bit_xor",
+            "cardinality",
             "cbrt",
             "ceil",
             "ceiling",
@@ -1080,6 +1093,7 @@ impl PolarsSQLFunctions {
             "rank",
             "regexp_like",
             "regexp_replace",
+            "repeat",
             "replace",
             "reverse",
             "right",
@@ -1230,6 +1244,7 @@ impl PolarsSQLFunctions {
             "octet_length" => Self::OctetLength,
             "regexp_like" => Self::RegexpLike,
             "regexp_replace" => Self::RegexpReplace,
+            "repeat" => Self::Repeat,
             "replace" => Self::Replace,
             "reverse" => Self::Reverse,
             "right" => Self::Right,
@@ -1279,6 +1294,7 @@ impl PolarsSQLFunctions {
             "array_dot_product" | "array_inner_product" => Self::ArrayInnerProduct,
             "array_get" => Self::ArrayGet,
             "array_length" => Self::ArrayLength,
+            "cardinality" => Self::Cardinality,
             "array_lower" => Self::ArrayMin,
             "array_mean" => Self::ArrayMean,
             "array_reverse" => Self::ArrayReverse,
@@ -1780,6 +1796,18 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             },
+            Repeat => self.visit_binary(|e: Expr, n: Expr| {
+                let e = e.cast(DataType::String);
+                let n = n.strict_cast(DataType::Int64).clip_min(lit(0));
+                // An empty or null string repeats to itself, so it needs no repetitions.
+                let n = when(e.clone().str().len_bytes().gt(lit(0)))
+                    .then(n.clone())
+                    .otherwise(n.clip_max(lit(0)));
+                let repeated = e.clone().repeat_by(n).list().join(lit(""), false);
+                when(e.is_null())
+                    .then(Expr::Literal(LiteralValue::untyped_null()))
+                    .otherwise(repeated)
+            }),
             Reverse => self.visit_unary(|e| e.str().reverse()),
             Right => self.try_visit_binary(|e, length| {
                 Ok(match length {
@@ -1983,7 +2011,24 @@ impl SQLFunctionVisitor<'_> {
                     e.list().get(idx, true)
                 })
             },
-            ArrayLength => self.visit_unary(|e| e.list().len()),
+            ArrayLength => {
+                let args = extract_args(function)?;
+                let schema = self.active_schema;
+                match args.len() {
+                    1 => self.visit_unary(|e| list_len(e, schema)),
+                    2 => self.try_visit_binary(|e, dimension| match dimension {
+                        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(1))) => {
+                            Ok(list_len(e, schema))
+                        },
+                        _ => polars_bail!(SQLInterface: "ARRAY_LENGTH only supports dimension 1 (found {})", args[1]),
+                    }),
+                    _ => polars_bail!(SQLSyntax: "ARRAY_LENGTH expects 1-2 arguments (found {})", args.len()),
+                }
+            },
+            Cardinality => {
+                let schema = self.active_schema;
+                self.visit_unary(|e| list_len(e, schema))
+            },
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),
             ArrayMin => self.visit_unary(|e| e.list().min()),
@@ -3463,6 +3508,14 @@ pub(crate) fn series_expr(
         [start, stop] => Ok(int_series(parse(start)?, parse(stop)?, lit(1i64))),
         [start, stop, step] => Ok(int_series(parse(start)?, parse(stop)?, parse(step)?)),
         _ => polars_bail!(SQLSyntax: "{} expects 1 to 3 arguments; found {}", fname, args.len()),
+    }
+}
+
+/// The number of elements of the list `e`; a NULL value has no list type to read.
+fn list_len(e: Expr, schema: Option<&Schema>) -> Expr {
+    match resolve_expr_dtype(&e, schema) {
+        Some(DataType::Null) => e.cast(polars_core::prelude::IDX_DTYPE),
+        _ => e.list().len(),
     }
 }
 
