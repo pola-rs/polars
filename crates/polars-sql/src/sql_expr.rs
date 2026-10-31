@@ -649,15 +649,9 @@ impl SQLExprVisitor<'_> {
                 self.visit_like(*negated, expr, pattern, &escape_str, true)
             },
             SQLExpr::Nested(expr) => self.visit_expr(expr),
-            SQLExpr::Position { expr, r#in } => Ok(
-                // note: SQL is 1-indexed
-                (self
-                    .visit_expr(r#in)?
-                    .str()
-                    .find(self.visit_expr(expr)?, true)
-                    + typed_lit(1u32))
-                .fill_null(typed_lit(0u32)),
-            ),
+            SQLExpr::Position { expr, r#in } => {
+                Ok(sql_position(self.visit_expr(r#in)?, self.visit_expr(expr)?))
+            },
             SQLExpr::RLike {
                 // note: parses both RLIKE and REGEXP
                 negated,
@@ -1979,7 +1973,7 @@ impl SQLExprVisitor<'_> {
             // SUBSTRING(expr FROM start FOR length)
             (Some(from_expr), Some(for_expr)) => {
                 let start = self.visit_expr(from_expr)?;
-                let length = approximate_literal(self.visit_expr(for_expr)?);
+                let length = clip_substring_length(approximate_literal(self.visit_expr(for_expr)?));
 
                 // note: SQL is 1-indexed, so we need to adjust the offsets accordingly
                 Ok(match (start.clone(), length.clone()) {
@@ -2000,7 +1994,7 @@ impl SQLExprVisitor<'_> {
                         polars_bail!(SQLSyntax: "invalid 'length' for SUBSTRING")
                     },
                     _ => {
-                        let adjusted_start = start - lit(1);
+                        let adjusted_start = substring_offset(start);
                         when(adjusted_start.clone().lt(lit(0)))
                             .then(e.clone().str().slice(
                                 lit(0),
@@ -2023,9 +2017,10 @@ impl SQLExprVisitor<'_> {
                     Expr::Literal(_) => {
                         polars_bail!(SQLSyntax: "invalid 'start' for SUBSTRING")
                     },
-                    _ => e
-                        .str()
-                        .slice(start - lit(1), lit(LiteralValue::untyped_null())),
+                    _ => e.str().slice(
+                        substring_offset(start).clip_min(lit(0)),
+                        lit(LiteralValue::untyped_null()),
+                    ),
                 })
             },
             // SUBSTRING(expr) - not valid, but handle gracefully
@@ -2316,32 +2311,6 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
         _ => field,
     };
     Ok(match field {
-        DateTimeField::Millennium => expr.dt().millennium(),
-        DateTimeField::Century => expr.dt().century(),
-        DateTimeField::Decade => expr.dt().year() / typed_lit(10i32),
-        DateTimeField::Isoyear => expr.dt().iso_year(),
-        DateTimeField::Year | DateTimeField::Years => expr.dt().year(),
-        DateTimeField::Quarter => expr.dt().quarter(),
-        DateTimeField::Month | DateTimeField::Months => expr.dt().month(),
-        DateTimeField::Week(weekday) => {
-            if weekday.is_some() {
-                polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
-            }
-            expr.dt().week()
-        },
-        DateTimeField::IsoWeek | DateTimeField::Weeks => expr.dt().week(),
-        DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
-        DateTimeField::DayOfWeek | DateTimeField::Dow => {
-            let w = expr.dt().weekday();
-            when(w.clone().eq(typed_lit(7i8)))
-                .then(typed_lit(0i8))
-                .otherwise(w)
-        },
-        DateTimeField::Isodow => expr.dt().weekday(),
-        DateTimeField::Day | DateTimeField::Days => expr.dt().day(),
-        DateTimeField::Hour | DateTimeField::Hours => expr.dt().hour(),
-        DateTimeField::Minute | DateTimeField::Minutes => expr.dt().minute(),
-        DateTimeField::Second | DateTimeField::Seconds => expr.dt().second(),
         DateTimeField::Millisecond | DateTimeField::Milliseconds => {
             (expr.clone().dt().second() * typed_lit(1_000f64))
                 + expr.dt().nanosecond().div(typed_lit(1_000_000f64))
@@ -2364,9 +2333,68 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
                 + expr.dt().nanosecond().div(typed_lit(1_000_000_000f64))
         },
         _ => {
-            polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
+            let part = match field {
+                DateTimeField::Millennium => expr.dt().millennium(),
+                DateTimeField::Century => expr.dt().century(),
+                DateTimeField::Decade => expr.dt().year() / typed_lit(10i32),
+                DateTimeField::Isoyear => expr.dt().iso_year(),
+                DateTimeField::Year | DateTimeField::Years => expr.dt().year(),
+                DateTimeField::Quarter => expr.dt().quarter(),
+                DateTimeField::Month | DateTimeField::Months => expr.dt().month(),
+                DateTimeField::Week(weekday) => {
+                    if weekday.is_some() {
+                        polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
+                    }
+                    expr.dt().week()
+                },
+                DateTimeField::IsoWeek | DateTimeField::Weeks => expr.dt().week(),
+                DateTimeField::DayOfYear | DateTimeField::Doy => expr.dt().ordinal_day(),
+                DateTimeField::DayOfWeek | DateTimeField::Dow => {
+                    let w = expr.dt().weekday();
+                    when(w.clone().eq(typed_lit(7i8)))
+                        .then(typed_lit(0i8))
+                        .otherwise(w)
+                },
+                DateTimeField::Isodow => expr.dt().weekday(),
+                DateTimeField::Day | DateTimeField::Days => expr.dt().day(),
+                DateTimeField::Hour | DateTimeField::Hours => expr.dt().hour(),
+                DateTimeField::Minute | DateTimeField::Minutes => expr.dt().minute(),
+                DateTimeField::Second | DateTimeField::Seconds => expr.dt().second(),
+                _ => {
+                    polars_bail!(SQLSyntax: "EXTRACT/DATE_PART does not support '{}' part", field)
+                },
+            };
+            part.cast(DataType::Int64)
         },
     })
+}
+
+/// The 1-indexed position of `substring` in `e`, or 0 if it is not found.
+pub(crate) fn sql_position(e: Expr, substring: Expr) -> Expr {
+    let e = e.cast(DataType::String);
+    let substring = substring.cast(DataType::String);
+    let found = e
+        .clone()
+        .str()
+        .find(substring.clone(), true)
+        .cast(DataType::Int64)
+        + typed_lit(1i64);
+    when(e.is_null().or(substring.is_null()))
+        .then(lit(LiteralValue::untyped_null()))
+        .otherwise(found.fill_null(typed_lit(0i64)))
+}
+
+/// The 0-indexed offset of a 1-indexed SUBSTRING start.
+pub(crate) fn substring_offset(start: Expr) -> Expr {
+    start.strict_cast(DataType::Int64) - lit(1)
+}
+
+/// A negative SUBSTRING length gives an empty string.
+pub(crate) fn clip_substring_length(length: Expr) -> Expr {
+    match length {
+        Expr::Literal(_) => length,
+        _ => length.clip_min(lit(0)),
+    }
 }
 
 /// Allow an expression that represents a 1-indexed parameter to
