@@ -42,7 +42,7 @@ use crate::sql_visitors::{
     contains_random, expr_contains_subquery, expr_has_window_functions, has_column_selector,
     is_subquery_expr,
 };
-use crate::subquery_outer_select::{reads_inner_column, when_then};
+use crate::subquery_outer_select::{calls_query_function, reads_inner_column, when_then};
 use crate::subquery_pull_up::{ScopeColumns, has_aggregate};
 use crate::{SQLContext, col, unique_column_name};
 
@@ -3567,6 +3567,7 @@ pub(crate) fn quantified_as_exists(ctx: &SQLContext, conj: &SQLExpr) -> Option<S
         || expr_contains_subquery(left)
         || contains_random(left.as_ref(), true)
         || has_column_selector(left)
+        || calls_query_function(ctx, left)
     {
         return None;
     }
@@ -3584,6 +3585,7 @@ pub(crate) fn quantified_as_exists(ctx: &SQLContext, conj: &SQLExpr) -> Option<S
             .as_ref()
             .is_some_and(|o| has_aggregate(ctx, o))
         || expr_has_window_functions(value)
+        || calls_query_function(ctx, value)
     {
         return None;
     }

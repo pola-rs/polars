@@ -876,6 +876,11 @@ def test_quantified_subquery_correlated(
         "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
         "SELECT a FROM t1 WHERE RANDOM() < ANY "
         "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        # a row number depends on the rows of the query it is in
+        "SELECT a FROM t1 WHERE 2 > ANY "
+        "(SELECT ROW_NUMBER() FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE ROW_NUMBER() > ANY "
+        "(SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
     ],
 )
 def test_quantified_subquery_correlated_ordering_rejected(query: str) -> None:
