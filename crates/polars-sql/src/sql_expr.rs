@@ -246,16 +246,16 @@ fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Optio
     })
 }
 
-/// `value` parsed as a literal of temporal `dtype`, or `None` if it does not parse.
-fn temporal_literal(value: &str, dtype: &DataType) -> Option<Expr> {
+/// `value` parsed as a literal of `dtype`, or `None` if it does not parse.
+fn parse_string_literal(value: &str, dtype: &DataType) -> Option<Expr> {
     let s = cast_literal_series(&Series::new(PlSmallStr::EMPTY, [value]), dtype).ok()?;
     let value = s.get(0).ok()?.into_static();
     (!value.is_null()).then(|| lit(Scalar::new(dtype.clone(), value)))
 }
 
-/// A `DATE`, `TIME` or `TIMESTAMP` literal as a value of `dtype`.
+/// A typed literal such as `DATE '2024-01-01'` or `SMALLINT '5'` as a value of `dtype`.
 fn typed_literal(value: &str, dtype: &DataType, sql_type: &SQLDataType) -> PolarsResult<Expr> {
-    temporal_literal(value, dtype)
+    parse_string_literal(value, dtype)
         .ok_or_else(|| polars_err!(SQLSyntax: "invalid {} literal '{}'", sql_type, value))
 }
 
@@ -346,7 +346,9 @@ fn like_pattern_regex(pattern: Expr, case_insensitive: bool, unanchored: bool) -
 /// that parses, else parsed when the query runs. `None` if `dtype` is not temporal.
 fn string_to_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr> {
     if let Expr::Literal(lv) = &expr
-        && let Some(value) = lv.extract_str().and_then(|s| temporal_literal(s, dtype))
+        && let Some(value) = lv
+            .extract_str()
+            .and_then(|s| parse_string_literal(s, dtype))
     {
         return Some(value);
     }
@@ -1854,7 +1856,12 @@ impl SQLExprVisitor<'_> {
                 map_sql_dtype_to_polars(data_type)
             },
             _ => {
-                polars_bail!(SQLInterface: "typed literal should be one of DATE, DATETIME, TIME, or TIMESTAMP (found {})", data_type)
+                let dtype = map_sql_dtype_to_polars(data_type)?;
+                polars_ensure!(
+                    dtype.is_primitive_numeric() || dtype.is_decimal() || dtype.is_string(),
+                    SQLInterface: "typed literal should be a numeric, string or temporal type (found {})", data_type
+                );
+                Ok(dtype)
             },
         }
     }

@@ -427,3 +427,36 @@ def test_exact_literal_beyond_38_digits_raises(literal: str) -> None:
         pl.sql(f"SELECT {literal} AS v", eager=True)
     # an exponent asks for an approximate value
     assert pl.sql("SELECT 1.5e40 AS v", eager=True).schema == {"v": pl.Float64}
+
+
+def test_numeric_typed_literals() -> None:
+    df = pl.DataFrame({"x": [5, 7, 10]}, schema={"x": pl.Int16})
+    res = df.sql(
+        """
+        SELECT
+          x,
+          SMALLINT '5' AS a,
+          BIGINT '-3' AS b,
+          DOUBLE '1.5' AS c,
+          DECIMAL(10, 2) '2.25' AS d,
+          VARCHAR 'xy' AS e
+        FROM self
+        WHERE x IN (SMALLINT '5', SMALLINT '10')
+        """
+    )
+    assert res.schema == {
+        "x": pl.Int16,
+        "a": pl.Int16,
+        "b": pl.Int64,
+        "c": pl.Float64,
+        "d": pl.Decimal(10, 2),
+        "e": pl.String,
+    }
+    assert res.rows() == [
+        (5, 5, -3, 1.5, D("2.25"), "xy"),
+        (10, 5, -3, 1.5, D("2.25"), "xy"),
+    ]
+    with pytest.raises(SQLSyntaxError, match="invalid SMALLINT literal 'abc'"):
+        pl.sql("SELECT SMALLINT 'abc' AS v", eager=True)
+    with pytest.raises(SQLInterfaceError, match="typed literal should be"):
+        pl.sql("SELECT BOOLEAN 'true' AS v", eager=True)
