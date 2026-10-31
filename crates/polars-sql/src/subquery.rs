@@ -43,7 +43,7 @@ use crate::sql_visitors::{
     is_subquery_expr,
 };
 use crate::subquery_outer_select::{reads_inner_column, when_then};
-use crate::subquery_pull_up::ScopeColumns;
+use crate::subquery_pull_up::{ReadAs, ScopeColumns};
 use crate::{SQLContext, col, unique_column_name};
 
 impl SQLContext {
@@ -3624,9 +3624,13 @@ impl CorrelatedLowering<'_> {
         {
             return Ok(Some(name.clone()));
         }
-        let prepared = self
-            .ctx
-            .pull_up_nested(ScopeColumns::Frame(self.outer_schema), subquery);
+        let read_as = match kind {
+            SubqueryKind::Scalar => ReadAs::Value,
+            SubqueryKind::Exists | SubqueryKind::In(_) => ReadAs::Set,
+        };
+        let prepared =
+            self.ctx
+                .pull_up_nested(ScopeColumns::Frame(self.outer_schema), subquery, read_as);
         let original = subquery;
         let subquery = prepared.as_ref().unwrap_or(subquery);
         let grouped = self

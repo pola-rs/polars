@@ -677,6 +677,9 @@ def test_correlated_exists_having(query: str) -> None:
         # `v` is the inner alias, not the outer column
         "SELECT k FROM a WHERE EXISTS (SELECT b.k AS v FROM b WHERE b.k = a.k "
         "AND v > (SELECT MIN(v) FROM c))",
+        # the nested subquery reads the inner `b.v`
+        "SELECT k FROM a WHERE EXISTS "
+        "(SELECT 1 FROM b WHERE a.k IN (SELECT c.k FROM c WHERE c.v = b.v))",
     ],
 )
 def test_exists_outer_subquery_conjunct(query: str) -> None:
@@ -692,9 +695,6 @@ def test_exists_outer_subquery_conjunct(query: str) -> None:
 @pytest.mark.parametrize(
     "query",
     [
-        # the nested subquery reads the inner `b.v`
-        "SELECT k FROM a WHERE EXISTS "
-        "(SELECT 1 FROM b WHERE a.k IN (SELECT c.k FROM c WHERE c.v = b.v))",
         # an aggregate without GROUP BY yields a row however WHERE filters
         "SELECT k FROM a WHERE EXISTS "
         "(SELECT COUNT(*) FROM b WHERE a.k IN (SELECT k FROM c))",

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
@@ -1570,6 +1571,22 @@ def test_correlated_scalar_subquery_ignores_unmatched_groups() -> None:
         "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.id IN (SELECT d.x FROM d WHERE d.x * 10 = a.v)))",
         # A wildcard in the subquery around it.
         "SELECT a.id FROM a WHERE EXISTS (SELECT * FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
+        # The outer column is compared with a subquery that reads the query around it.
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.x = (SELECT c.id FROM c WHERE a.id = (SELECT b.id FROM b WHERE b.id = c.b_id) ORDER BY c.id LIMIT 1)",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b WHERE a.id IN (SELECT c.b_id FROM c WHERE c.b_id = b.id))",
+        # A subquery without FROM is its value.
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM c WHERE c.b_id = (SELECT a.id))",
+        # An uncorrelated subquery next to an outer column.
+        "SELECT a.id, d.y FROM a LEFT JOIN d ON d.x = (SELECT MIN(c.id) FROM c WHERE c.b_id = a.id % (SELECT COUNT(*) FROM b))",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM c WHERE c.b_id = a.id - (SELECT MIN(b.id) FROM b) + 1)",
+        # A filter other than an equality, where a repeated row of the query around it
+        # doesn't change the result.
+        "SELECT a.id FROM a WHERE NOT EXISTS (SELECT 1 FROM b WHERE EXISTS (SELECT 1 FROM c WHERE c.b_id = b.id AND c.id > a.v / 5))",
+        "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.b_id > a.id))",
+        "SELECT a.id, (SELECT b.w FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.id < a.v / 5) ORDER BY b.w DESC LIMIT 1) AS w FROM a",
+        # A subquery in the condition of an inner join.
+        "SELECT a.id, (SELECT MAX(d.y) FROM d JOIN b ON b.id = (SELECT MIN(c.b_id) FROM c WHERE c.id = a.id) WHERE d.x <= b.id * 4) AS m FROM a",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b JOIN c ON c.b_id = b.id AND c.id = (SELECT d.x FROM d WHERE d.x = a.id))",
     ],
 )
 def test_correlated_subquery_reading_query_further_out(query: str) -> None:
@@ -1588,7 +1605,6 @@ def test_correlated_subquery_reading_query_further_out(query: str) -> None:
         # Read a query further out, but are not moved into the query around them.
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id NOT IN (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id = (SELECT COUNT(*) FROM c WHERE c.b_id = a.id))",
-        "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id IN (SELECT c.b_id FROM c WHERE c.b_id > a.id))",
         "SELECT a.id FROM a WHERE a.id IN (SELECT b.id FROM b WHERE b.id < (SELECT c.b_id FROM c WHERE c.b_id = a.id))",
         # `a.b.id` is a struct field of `a`, not a column of the joined `b`.
         "SELECT a.id FROM a JOIN b ON a.id < (SELECT c.id FROM c WHERE c.b_id = a.b.id)",
@@ -1679,12 +1695,43 @@ def test_correlated_subquery_reading_query_further_out_scopes(query: str) -> Non
         "SELECT a.id, (SELECT COUNT(*) FROM b WHERE EXISTS (SELECT 1 FROM c JOIN d ON d.k = a.id WHERE c.k = a.id)) AS n FROM a",
         # The unnamed derived table declares no `a`, and can't read the outer one.
         "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v IN (SELECT (SELECT a.id FROM (SELECT MIN(k) AS k FROM d)) FROM c WHERE c.k = a.id)) AS n FROM a",
+        # A count would see the rows that a filter other than an equality repeats.
+        "SELECT a.id, (SELECT COUNT(*) FROM d WHERE EXISTS (SELECT 1 FROM c WHERE c.k = d.k AND c.v > a.id)) AS n FROM a",
+        # The condition of an outer join keeps its subquery.
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b LEFT JOIN d ON d.k = (SELECT c.k FROM c WHERE c.v = a.id * 10))",
+        # In WHERE, `a.id` would read the `a` joined after the condition.
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM b JOIN d ON d.k = (SELECT c.k FROM c WHERE c.v = a.id) JOIN d AS a ON a.k = d.k)",
+        # A row number, or a scalar subquery with several rows, sees the repeated rows.
+        "SELECT a.id, 3 IN (SELECT ROW_NUMBER() OVER () FROM d WHERE EXISTS (SELECT 1 FROM c WHERE c.v < a.id * 10)) AS z FROM a",
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM d WHERE d.k = (SELECT c.k FROM c WHERE c.v < a.id * 10))",
+        # The value would be computed before the filter that reads `a` drops rows.
+        "SELECT a.id, EXISTS (SELECT 1 FROM d WHERE d.k IN (SELECT ROW_NUMBER() OVER () FROM c WHERE c.v < a.id)) AS z FROM a",
+        "SELECT a.id, EXISTS (SELECT 1 FROM d WHERE d.k IN (SELECT CAST(c.p AS INT) FROM c WHERE c.v < a.id)) AS z FROM a",
+        "SELECT a.id, EXISTS (SELECT 1 FROM d WHERE CAST(d.v AS VARCHAR) IN (SELECT SUBSTRING(c.p FROM 1 FOR c.v - 15) FROM c WHERE c.v < a.id * 10)) AS z FROM a",
+        # A row number would count the rows of every key.
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v = (SELECT ROW_NUMBER() FROM c WHERE c.k = a.id)) AS n FROM a",
+        "SELECT a.id, (SELECT COUNT(*) FROM b WHERE b.v = (SELECT c.v FROM c WHERE c.k = a.id ORDER BY ROW_NUMBER() % 2, c.v LIMIT 1)) AS n FROM a",
+        # The moved subquery would have no columns, and so no rows.
+        "SELECT a.id, EXISTS (SELECT 1 FROM b WHERE EXISTS (SELECT 1 FROM d WHERE a.id > b.v)) AS z FROM a",
+        # The dropped ORDER BY of a subquery without FROM must still be checked.
+        "SELECT a.id FROM a WHERE EXISTS (SELECT 1 FROM d WHERE d.k = (SELECT a.id ORDER BY CAST('bad' AS INT)))",
     ],
 )
 def test_correlated_subquery_reading_query_further_out_unsupported(query: str) -> None:
     ctx = pl.SQLContext(frames=_nested_frames())
     with pytest.raises(pl.exceptions.SQLInterfaceError):
         ctx.execute(query).collect()
+
+
+def test_correlated_subquery_reading_query_further_out_exists_ignores_projection() -> (
+    None
+):
+    # The projection of EXISTS is not computed, so its row number doesn't stop the move.
+    query = "SELECT a.id, (SELECT COUNT(*) FROM d WHERE EXISTS (SELECT ROW_NUMBER() FROM c WHERE c.k = a.id AND c.v > 5)) AS n FROM a"
+    res = pl.SQLContext(frames=_nested_frames()).execute(query, eager=True)
+    assert_frame_equal(
+        res.sort("id"), pl.DataFrame({"id": [1, 2], "n": [2, 0]}), check_dtypes=False
+    )
 
 
 @pytest.mark.parametrize(
