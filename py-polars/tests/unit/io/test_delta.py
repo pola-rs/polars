@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import pickle
 import re
@@ -1410,7 +1411,9 @@ def test_scan_delta_collect_without_version_scans_latest(
 
     version = table.version()
 
-    q_with_id = pl.scan_delta(table, use_pyarrow=use_pyarrow, version=version)
+    q_with_id = pl.scan_delta(
+        DeltaTable(tmp_path, version=version), use_pyarrow=use_pyarrow
+    )
 
     assert_frame_equal(q_with_id.collect().sort("*"), pl.DataFrame({"a": [0, 1]}))
 
@@ -2003,3 +2006,32 @@ def test_scan_delta_partition_values_from_log(tmp_path: Path) -> None:
     assert_frame_equal(lf.collect(), df, check_row_order=False)
     assert_frame_equal(lf.filter(pl.col("s") == "a=b/c").collect(), df[:1])
     assert_frame_equal(lf.filter(pl.col("t").is_null()).collect(), df[2:])
+
+
+@pytest.mark.write_disk
+def test_scan_delta_table_version_pickle_30205(tmp_path: Path) -> None:
+    pl.DataFrame({"a": [0]}).write_delta(tmp_path)
+    pl.DataFrame({"a": [1]}).write_delta(tmp_path, mode="append")
+
+    lf = pl.scan_delta(DeltaTable(tmp_path, version=0))
+    expected_v0 = pl.DataFrame({"a": [0]})
+    assert_frame_equal(lf.collect(), expected_v0)
+    assert_frame_equal(pickle.loads(pickle.dumps(lf)).collect(), expected_v0)
+    assert_frame_equal(
+        pl.LazyFrame.deserialize(io.BytesIO(lf.serialize())).collect(),
+        expected_v0,
+    )
+
+    with pytest.warns(
+        RuntimeWarning,
+        match="When supplying a DeltaTable directly, `version`, `storage_options`, and `delta_table_options` are ignored",
+    ):
+        lf2 = pl.scan_delta(DeltaTable(tmp_path), version=0)
+
+    expected_v1 = pl.DataFrame({"a": [0, 1]})
+    assert_frame_equal(lf2.collect().sort("a"), expected_v1)
+    assert_frame_equal(pickle.loads(pickle.dumps(lf2)).collect().sort("a"), expected_v1)
+    assert_frame_equal(
+        pl.LazyFrame.deserialize(io.BytesIO(lf2.serialize())).collect().sort("a"),
+        expected_v1,
+    )
