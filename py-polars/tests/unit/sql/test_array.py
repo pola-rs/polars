@@ -398,3 +398,42 @@ def test_array_literal_default_name() -> None:
     assert res.columns == [""]
     res = pl.sql('SELECT t."" AS arr FROM (SELECT ARRAY[1, 2]) t', eager=True)
     assert res.to_dict(as_series=False) == {"arr": [[1, 2]]}
+
+
+def test_array_length_and_cardinality() -> None:
+    df = pl.DataFrame({"s": ["a b", "", None, "x y z"]})
+    res = df.sql(
+        """
+        SELECT
+          ARRAY_LENGTH(STRING_TO_ARRAY(s, ' ')) AS n1,
+          ARRAY_LENGTH(STRING_TO_ARRAY(s, ' '), 1) AS n2,
+          CARDINALITY(STRING_TO_ARRAY(s, ' ')) AS n3
+        FROM self
+        """
+    )
+    expected = [2, 1, None, 3]
+    assert res.to_dict(as_series=False) == {
+        "n1": expected,
+        "n2": expected,
+        "n3": expected,
+    }
+
+    res = pl.sql(
+        "SELECT CARDINALITY(NULL) AS a, ARRAY_LENGTH(NULL, 1) AS b", eager=True
+    )
+    assert res.to_dict(as_series=False) == {"a": [None], "b": [None]}
+    nulls = pl.DataFrame({"z": [None, None]})
+    res = nulls.sql(
+        "SELECT CARDINALITY(z) AS a, ARRAY_LENGTH(z, 1) AS b, "
+        "CARDINALITY(COALESCE(NULL, NULL)) AS c FROM self"
+    )
+    assert res.to_dict(as_series=False) == {
+        "a": [None, None],
+        "b": [None, None],
+        "c": [None, None],
+    }
+
+    with pytest.raises(SQLInterfaceError, match="only supports dimension 1"):
+        df.sql("SELECT ARRAY_LENGTH(STRING_TO_ARRAY(s, ' '), 2) FROM self")
+    with pytest.raises(SQLSyntaxError, match="expects 1-2 arguments"):
+        df.sql("SELECT ARRAY_LENGTH(STRING_TO_ARRAY(s, ' '), 1, 2) FROM self")
