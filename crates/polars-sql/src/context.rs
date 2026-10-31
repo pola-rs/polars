@@ -3193,14 +3193,30 @@ impl SQLContext {
                 }
                 is_new
             });
-            // Constant keys do not split the groups.
-            if group_by_keys
-                .iter()
-                .any(|key| !is_constant(&strip_outer_alias(key)))
-            {
-                group_by_keys.retain(|key| !is_constant(&strip_outer_alias(key)));
-            } else {
-                group_by_keys.truncate(1);
+            // Constant keys do not split the groups. `GROUPING()` needs every key.
+            let order_by_exprs = match &query.order_by {
+                Some(OrderBy {
+                    kind: OrderByKind::Expressions(exprs),
+                    ..
+                }) => exprs.iter().map(|ob| &ob.expr).collect(),
+                _ => vec![],
+            };
+            let uses_grouping = !self.group_scope.grouping_calls.is_empty()
+                || select_stmt
+                    .having
+                    .iter()
+                    .chain(&select_stmt.qualify)
+                    .chain(order_by_exprs)
+                    .any(|e| !collect_grouping_calls(e).is_empty());
+            if !uses_grouping {
+                if group_by_keys
+                    .iter()
+                    .any(|key| !is_constant(&strip_outer_alias(key)))
+                {
+                    group_by_keys.retain(|key| !is_constant(&strip_outer_alias(key)));
+                } else {
+                    group_by_keys.truncate(1);
+                }
             }
         }
 

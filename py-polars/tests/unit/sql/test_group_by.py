@@ -1503,6 +1503,23 @@ def test_group_by_constant_keys(grouped: pl.DataFrame, key: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT a, GROUPING(1 + 1) AS g FROM t GROUP BY a, 1 + 1 ORDER BY a",
+        "SELECT a, GROUPING_ID(a, 'x') AS g FROM t GROUP BY a, 'x' ORDER BY a",
+        "SELECT a FROM t GROUP BY a, 1 + 1 HAVING GROUPING(1 + 1) = 0 ORDER BY a",
+    ],
+)
+def test_group_by_constant_key_in_grouping(grouped: pl.DataFrame, query: str) -> None:
+    assert_sql_matches(
+        {"t": grouped},
+        query=query,
+        compare_with="duckdb",
+        engines=GROUP_BY_ENGINES,
+    )
+
+
 def test_group_by_constant_named_like_key() -> None:
     frame = pl.DataFrame({"literal": [0, 0, 1]})
     assert_group_by_matches(
