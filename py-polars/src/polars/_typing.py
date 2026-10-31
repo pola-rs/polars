@@ -32,6 +32,12 @@ if TYPE_CHECKING:
     from polars._dependencies import numpy as np
     from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
+    from polars.io.parquet.encryption import (
+        ParquetDecryptionConfig,
+        ParquetDecryptionProperties,
+        ParquetEncryptionConfig,
+        ParquetEncryptionProperties,
+    )
     from polars.lazyframe.engine import Engine
     from polars.selectors import Selector
 
@@ -152,6 +158,12 @@ class TorchTensor(Protocol):
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[type["TemporalType"], "TemporalType"]
+ParquetEncryption: TypeAlias = Union[
+    "ParquetEncryptionProperties", "ParquetEncryptionConfig"
+]
+ParquetDecryption: TypeAlias = Union[
+    "ParquetDecryptionProperties", "ParquetDecryptionConfig"
+]
 PolarsIntegerType: TypeAlias = Union[type["IntegerType"], "IntegerType"]
 OneOrMoreDataTypes: TypeAlias = PolarsDataType | Iterable[PolarsDataType]
 PythonDataType: TypeAlias = (

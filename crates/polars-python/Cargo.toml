@@ -52,6 +52,7 @@ num-traits = { workspace = true }
 numpy = { workspace = true }
 object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true }
+parquet-key-management = { workspace = true, optional = true }
 pyo3 = { workspace = true, features = ["abi3-py311", "chrono", "chrono-tz", "multiple-pymethods", "uuid"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
@@ -148,7 +149,12 @@ c_api = []
 avro = ["polars/avro"]
 async = ["polars-lazy/async", "polars-io/async"]
 catalog = ["polars-lazy/catalog"]
-parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
+parquet = [
+  "polars/parquet",
+  "polars-parquet",
+  "polars-mem-engine/parquet",
+  "dep:parquet-key-management",
+]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]

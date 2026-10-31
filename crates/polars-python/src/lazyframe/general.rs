@@ -35,7 +35,7 @@ use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 #[cfg(feature = "json")]
 use crate::io::cloud_options::OptPyCloudOptions;
 #[cfg(feature = "parquet")]
-use crate::io::parquet_encryption::{PyFileDecryptionProperties, PyFileEncryptionProperties};
+use crate::io::parquet_encryption::{PyParquetDecryption, PyParquetEncryption};
 use crate::io::scan_options::PyScanOptions;
 use crate::io::sink_options::PySinkOptions;
 use crate::io::sink_output::PyFileSinkDestination;
@@ -313,7 +313,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (
-        sources, schema, scan_options, parallel, low_memory, use_statistics, decryption_properties
+        sources, schema, scan_options, parallel, low_memory, use_statistics, decryption
     ))]
     fn new_from_parquet(
         sources: Wrap<ScanSources>,
@@ -322,7 +322,7 @@ impl PyLazyFrame {
         parallel: Wrap<ParallelStrategy>,
         low_memory: bool,
         use_statistics: bool,
-        decryption_properties: Option<PyFileDecryptionProperties>,
+        decryption: Option<PyParquetDecryption>,
     ) -> PyResult<Self> {
         use crate::utils::to_py_err;
 
@@ -333,8 +333,7 @@ impl PyLazyFrame {
             parallel,
             low_memory,
             use_statistics,
-            decryption_properties: decryption_properties
-                .map(|p| PlFileDecryptionProperties(p.inner)),
+            decryption: decryption.map(|d| d.inner),
         };
 
         let sources = sources.0;
@@ -794,7 +793,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (
         target, sink_options, compression, compression_level, statistics, row_group_size, data_page_size,
-        metadata, arrow_schema, encryption_properties
+        metadata, arrow_schema, encryption
     ))]
     fn sink_parquet(
         &self,
@@ -808,7 +807,7 @@ impl PyLazyFrame {
         data_page_size: Option<usize>,
         metadata: Wrap<Option<KeyValueMetadata>>,
         arrow_schema: Option<Wrap<ArrowSchema>>,
-        encryption_properties: Option<PyFileEncryptionProperties>,
+        encryption: Option<PyParquetEncryption>,
     ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -820,8 +819,7 @@ impl PyLazyFrame {
             key_value_metadata: metadata.0,
             arrow_schema: arrow_schema.map(|x| Arc::new(x.0)),
             compat_level: None,
-            encryption_properties: encryption_properties
-                .map(|p| PlFileEncryptionProperties(p.inner)),
+            encryption: encryption.map(|e| e.inner),
         };
 
         let target = target.extract_file_sink_destination()?;

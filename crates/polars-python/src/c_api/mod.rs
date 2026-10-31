@@ -32,7 +32,11 @@ use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
 use crate::io::arrow_c_stream::PyArrowCStreamReader;
 #[cfg(feature = "parquet")]
-use crate::io::parquet_encryption::{PyFileDecryptionProperties, PyFileEncryptionProperties};
+use crate::io::parquet_encryption::{PyParquetDecryption, PyParquetEncryption};
+#[cfg(feature = "parquet")]
+use crate::io::parquet_kms::{
+    PyCryptoFactory, PyDecryptionConfiguration, PyEncryptionConfiguration, PyKmsConnectionConfig,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -313,9 +317,17 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     )
     .unwrap();
     #[cfg(feature = "parquet")]
-    m.add_class::<PyFileDecryptionProperties>().unwrap();
+    m.add_class::<PyParquetDecryption>().unwrap();
     #[cfg(feature = "parquet")]
-    m.add_class::<PyFileEncryptionProperties>().unwrap();
+    m.add_class::<PyParquetEncryption>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyKmsConnectionConfig>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyCryptoFactory>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyEncryptionConfiguration>().unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_class::<PyDecryptionConfiguration>().unwrap();
     #[cfg(all(feature = "parquet", feature = "json"))]
     m.add_wrapped(wrap_pyfunction!(
         functions::_bench_parquet_metadata_bincode_size

@@ -1,5 +1,6 @@
 from builtins import list as pylist
 from collections.abc import Callable, Sequence
+from datetime import timedelta
 from typing import Any, Literal, TypeAlias, overload
 
 from numpy.typing import NDArray
@@ -889,7 +890,7 @@ class PyLazyFrame:
         parallel: Any,
         low_memory: bool,
         use_statistics: bool,
-        decryption_properties: PyFileDecryptionProperties | None,
+        decryption: PyParquetDecryption | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_ipc(
@@ -1006,7 +1007,7 @@ class PyLazyFrame:
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
         arrow_schema: ArrowSchemaExportable | None = None,
-        encryption_properties: PyFileEncryptionProperties | None = None,
+        encryption: PyParquetEncryption | None = None,
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,
@@ -2182,24 +2183,74 @@ class PySelector:
     def all() -> PySelector: ...
     def hash(self) -> int: ...
 
-class PyFileDecryptionProperties:
+class PyKmsConnectionConfig:
     def __init__(
         self,
+        kms_instance_id: str,
+        kms_instance_url: str,
+        key_access_token: str,
+        custom_kms_conf: pylist[tuple[str, str]],
+    ) -> None: ...
+    @property
+    def kms_instance_id(self) -> str: ...
+    @property
+    def kms_instance_url(self) -> str: ...
+    @property
+    def key_access_token(self) -> str: ...
+    @property
+    def custom_kms_conf(self) -> dict[str, str]: ...
+    def refresh_key_access_token(self, value: str) -> None: ...
+
+class PyCryptoFactory:
+    def __init__(
+        self, kms_client_factory: Callable[[PyKmsConnectionConfig], Any]
+    ) -> None: ...
+
+class PyEncryptionConfiguration:
+    def __init__(
+        self,
+        footer_key: str,
+        column_keys: pylist[tuple[str, pylist[str]]],
+        plaintext_footer: bool,
+        double_wrapping: bool,
+        cache_lifetime: timedelta | None,
+    ) -> None: ...
+
+class PyDecryptionConfiguration:
+    def __init__(
+        self, cache_lifetime: timedelta | None, read_kms_url: bool
+    ) -> None: ...
+
+class PyParquetDecryption:
+    @staticmethod
+    def from_keys(
         footer_key: bytes,
         column_keys: pylist[tuple[str, bytes]],
         aad_prefix: bytes | None,
         verify_footer_signature: bool,
-    ) -> None: ...
+    ) -> PyParquetDecryption: ...
+    @staticmethod
+    def from_kms(
+        crypto_factory: PyCryptoFactory,
+        kms_connection_config: PyKmsConnectionConfig,
+        decryption_config: PyDecryptionConfiguration,
+    ) -> PyParquetDecryption: ...
 
-class PyFileEncryptionProperties:
-    def __init__(
-        self,
+class PyParquetEncryption:
+    @staticmethod
+    def from_keys(
         footer_key: bytes,
         column_keys: pylist[tuple[str, bytes]],
         plaintext_footer: bool,
         aad_prefix: bytes | None,
         store_aad_prefix: bool,
-    ) -> None: ...
+    ) -> PyParquetEncryption: ...
+    @staticmethod
+    def from_kms(
+        crypto_factory: PyCryptoFactory,
+        kms_connection_config: PyKmsConnectionConfig,
+        encryption_config: PyEncryptionConfiguration,
+    ) -> PyParquetEncryption: ...
 
 class PyOptFlags:
     def __init__(self) -> None: ...
