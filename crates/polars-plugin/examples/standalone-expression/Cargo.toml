@@ -1,0 +1,16 @@
+[package]
+name = "standalone_plugin"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+polars-plugin = { path = "../.." }
+serde = { version = "1", features = ["derive"] }
+
+[features]
+bigidx = ["polars-plugin/bigidx"]
