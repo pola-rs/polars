@@ -43,7 +43,7 @@ use crate::sql_visitors::{
     is_subquery_expr,
 };
 use crate::subquery_outer_select::{reads_inner_column, when_then};
-use crate::subquery_pull_up::ScopeColumns;
+use crate::subquery_pull_up::{ScopeColumns, has_aggregate};
 use crate::{SQLContext, col, unique_column_name};
 
 impl SQLContext {
@@ -3534,6 +3534,92 @@ fn declared_anywhere(query: &Query, spellings: &CatalogSpellings) -> Vec<Relatio
     let mut declared = Declared(Vec::new(), spellings);
     let _ = dyn_visit::visit(query, &mut declared);
     declared.0
+}
+
+/// `x <op> ANY (SELECT e FROM .. WHERE p)` over a correlated subquery as
+/// `EXISTS (SELECT 1 FROM .. WHERE p AND x <op> e)`, and `x <op> ALL (..)` as
+/// `NOT EXISTS (SELECT 1 FROM .. WHERE p AND (x <op> e) IS NOT TRUE)`. These differ
+/// only where the comparison is NULL, so they hold for a WHERE conjunct, which keeps
+/// the rows where it is true. `x` must name only relations the subquery does not
+/// declare, so moving it into the subquery does not change what it reads.
+pub(crate) fn quantified_as_exists(ctx: &SQLContext, conj: &SQLExpr) -> Option<SQLExpr> {
+    let (left, compare_op, right, all) = match conj {
+        SQLExpr::AnyOp {
+            left,
+            compare_op,
+            right,
+            ..
+        } => (left, compare_op, right, false),
+        SQLExpr::AllOp {
+            left,
+            compare_op,
+            right,
+        } => (left, compare_op, right, true),
+        _ => return None,
+    };
+    let SQLExpr::Subquery(subquery) = right.as_ref() else {
+        return None;
+    };
+    let spellings = ctx.catalog_spellings();
+    if !is_correlated_subquery(subquery, spellings) || expr_contains_subquery(left) {
+        return None;
+    }
+    let select = eligible_subquery_select(subquery)?;
+    let [SelectItem::UnnamedExpr(value) | SelectItem::ExprWithAlias { expr: value, .. }] =
+        select.projection.as_slice()
+    else {
+        return None;
+    };
+    if matches!(select.distinct, Some(Distinct::On(_)))
+        || has_aggregate(ctx, value)
+        || expr_has_window_functions(value)
+    {
+        return None;
+    }
+    let declared = declared_anywhere(subquery, spellings);
+    let mut reads_inner = false;
+    let _ = visit_expressions(left.as_ref(), |e: &SQLExpr| {
+        reads_inner |= match e {
+            SQLExpr::Identifier(_) => true,
+            SQLExpr::CompoundIdentifier(parts) => match_qualifier(parts, declared.iter()).is_some(),
+            _ => false,
+        };
+        ControlFlow::<()>::Continue(())
+    });
+    if reads_inner {
+        return None;
+    }
+    let compare = SQLExpr::Nested(Box::new(SQLExpr::BinaryOp {
+        left: left.clone(),
+        op: compare_op.clone(),
+        right: Box::new(value.clone()),
+    }));
+    let condition = if all {
+        SQLExpr::IsNotTrue(Box::new(compare))
+    } else {
+        compare
+    };
+    let mut select = select.clone();
+    select.projection = vec![SelectItem::UnnamedExpr(SQLExpr::value(SQLValue::Number(
+        "1".into(),
+        false,
+    )))];
+    select.selection = combine_conditions(
+        select
+            .selection
+            .take()
+            .into_iter()
+            .chain([condition])
+            .collect(),
+        SQLBinaryOperator::And,
+    );
+    let mut subquery = subquery.as_ref().clone();
+    subquery.body = Box::new(SetExpr::Select(Box::new(select)));
+    subquery.order_by = None;
+    Some(SQLExpr::Exists {
+        subquery: Box::new(subquery),
+        negated: all,
+    })
 }
 
 /// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`

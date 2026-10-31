@@ -833,18 +833,47 @@ def test_quantified_subquery_matches_in(
     )
 
 
-@pytest.mark.parametrize("projection", ["x.b", "MAX(x.b)"])
-@pytest.mark.parametrize("op", [">", "<", ">=", "<="])
+@pytest.mark.parametrize("op", [">", "<", ">=", "<=", "=", "<>"])
 @pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
-def test_quantified_subquery_correlated_ordering_rejected(
-    projection: str, op: str, quantifier: str
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        "SELECT x.b FROM t1 AS x WHERE x.a < o.a",
+        "SELECT x.b FROM t1 AS x WHERE x.a = o.a",
+        "SELECT DISTINCT x.b + 5 FROM t1 AS x WHERE x.a > o.a AND x.b IS NOT NULL",
+    ],
+)
+def test_quantified_subquery_correlated(
+    op: str,
+    quantifier: str,
+    subquery: str,
+    correlated_in_frames: dict[str, pl.DataFrame],
 ) -> None:
+    assert_sql_matches(
+        frames=correlated_in_frames,
+        query=(
+            f"SELECT a FROM t1 o WHERE o.a > 1 AND o.b {op} {quantifier} ({subquery})"
+            " ORDER BY a"
+        ),
+        compare_with="duckdb",
+        engines=["in-memory", "streaming"],
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # `b` would read the subquery's own column
+        "SELECT a FROM t1 WHERE b > ALL (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE t1.b > ALL (SELECT MAX(x.b) FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT a FROM t1 WHERE NOT t1.b > ALL (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)",
+        "SELECT t1.b > ANY (SELECT x.b FROM t1 AS x WHERE x.a < t1.a) FROM t1",
+    ],
+)
+def test_quantified_subquery_correlated_ordering_rejected(query: str) -> None:
     ctx = pl.SQLContext(t1=pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     with pytest.raises(SQLInterfaceError, match="correlated subquery"):
-        ctx.execute(
-            f"SELECT a FROM t1 WHERE b {op} {quantifier}"
-            f" (SELECT {projection} FROM t1 AS x WHERE x.a < t1.a)"
-        ).collect()
+        ctx.execute(query).collect()
 
 
 @pytest.mark.parametrize("op", [">", "<", ">=", "<="])

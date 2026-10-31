@@ -64,7 +64,7 @@ use crate::sql_visitors::{
 };
 use crate::subquery::{
     LowerScope, RewriteStage, SubqueryBindings, desugar_quantified_subqueries,
-    is_correlated_subquery, row_indexed_once,
+    is_correlated_subquery, quantified_as_exists, row_indexed_once,
 };
 use crate::subquery_pull_up::NESTED_PREFIX;
 use crate::table_functions::PolarsTableFunctions;
@@ -3524,6 +3524,23 @@ impl SQLContext {
         bindings: &mut SubqueryBindings,
         select_stmt: Option<&Select>,
     ) -> PolarsResult<LazyFrame> {
+        let quantified = where_expr.and_then(|where_expr| {
+            let conjuncts = flatten_and_conditions(where_expr);
+            let rewritten: Vec<_> = conjuncts
+                .iter()
+                .map(|conj| quantified_as_exists(self, conj))
+                .collect();
+            rewritten.iter().any(Option::is_some).then(|| {
+                let conjuncts = conjuncts
+                    .into_iter()
+                    .zip(rewritten)
+                    .map(|(conj, rewritten)| rewritten.unwrap_or_else(|| conj.clone()))
+                    .collect();
+                combine_conditions(conjuncts, SQLBinaryOperator::And).unwrap()
+            })
+        });
+        let where_expr = quantified.as_ref().or(where_expr);
+
         // A correlated scalar subquery is lowered against the frame as it stands, so
         // the conjuncts that don't need it are applied first: the lowering can then
         // restrict its aggregate to the rows that survive them.
